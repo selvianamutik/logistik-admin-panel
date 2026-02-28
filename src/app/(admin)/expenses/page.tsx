@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { useToast, useApp } from '../layout';
-import { Plus, Search, Wallet, Save, X, FileDown } from 'lucide-react';
+import { Plus, Search, Wallet, Save, X, FileDown, Printer } from 'lucide-react';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { exportExpenses } from '@/lib/export';
+import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
 import type { Expense, ExpenseCategory } from '@/lib/types';
 
 export default function ExpensesPage() {
@@ -38,8 +39,17 @@ export default function ExpensesPage() {
     return (
         <div>
             <div className="page-header"><div className="page-header-left"><h1 className="page-title">Pengeluaran</h1><p className="page-subtitle">Kelola catatan pengeluaran</p></div>
-                <div className="page-actions">
-                    <button className="btn btn-secondary" onClick={() => exportExpenses(filtered as unknown as Record<string, unknown>[])}><FileDown size={16} /> Export Excel</button>
+                <div className="page-actions" style={{ flexWrap: 'wrap' }}>
+                    <button className="btn btn-secondary btn-sm" onClick={() => exportExpenses(filtered as unknown as Record<string, unknown>[])}><FileDown size={15} /> Excel</button>
+                    <button className="btn btn-secondary btn-sm" onClick={async () => {
+                        const co = await fetchCompanyProfile();
+                        openBrandedPrint({
+                            title: 'Daftar Pengeluaran', company: co, bodyHtml: `
+                            <table><thead><tr><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th class="r">Jumlah</th></tr></thead>
+                            <tbody>${filtered.map(e => `<tr><td>${formatDate(e.date)}</td><td class="b">${e.categoryName || '-'}</td><td>${e.note || e.description || '-'}</td><td class="r b">${formatCurrency(e.amount)}</td></tr>`).join('')}
+                            <tr style="border-top:2px solid #1e293b"><td colspan="3" class="r b">TOTAL</td><td class="r b">${formatCurrency(filtered.reduce((s, e) => s + e.amount, 0))}</td></tr></tbody></table>`
+                        });
+                    }}><Printer size={15} /> Print</button>
                     <button className="btn btn-primary" onClick={() => setShowModal(true)}><Plus size={18} /> Tambah Pengeluaran</button>
                 </div></div>
             <div className="table-container">

@@ -3,7 +3,9 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useToast } from '../layout';
-import { Plus, Search, Edit, Trash2, Users, Save, X } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, Users, Save, X, FileDown, Printer } from 'lucide-react';
+import { exportToExcel } from '@/lib/export';
+import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
 import type { Customer } from '@/lib/types';
 
 export default function CustomersPage() {
@@ -46,8 +48,29 @@ export default function CustomersPage() {
     return (
         <div>
             <div className="page-header">
-                <div className="page-header-left"><h1 className="page-title">Customer</h1><p className="page-subtitle">Kelola data customer / pengirim</p></div>
-                <div className="page-actions"><button className="btn btn-primary" onClick={openNew}><Plus size={18} /> Tambah Customer</button></div>
+                <div className="page-header-left">
+                    <h1 className="page-title">Customer</h1>
+                    <p className="page-subtitle">Kelola data pelanggan</p>
+                </div>
+                <div className="page-actions" style={{ flexWrap: 'wrap' }}>
+                    <button className="btn btn-secondary btn-sm" onClick={() => {
+                        exportToExcel(filtered as unknown as Record<string, unknown>[], [
+                            { header: 'Nama', key: 'name', width: 25 },
+                            { header: 'Kontak', key: 'contactPerson', width: 20 },
+                            { header: 'Telepon', key: 'phone', width: 18 },
+                            { header: 'Email', key: 'email', width: 25 },
+                            { header: 'Alamat', key: 'address', width: 35 },
+                        ], `customer-${new Date().toISOString().split('T')[0]}`, 'Customer');
+                    }}><FileDown size={15} /> Excel</button>
+                    <button className="btn btn-secondary btn-sm" onClick={async () => {
+                        const co = await fetchCompanyProfile();
+                        openBrandedPrint({
+                            title: 'Daftar Customer', company: co, bodyHtml: `
+                            <table><thead><tr><th>Nama</th><th>Kontak</th><th>Telepon</th><th>Email</th><th>Alamat</th></tr></thead>
+                            <tbody>${filtered.map(c => `<tr><td class="b">${c.name}</td><td>${c.contactPerson || '-'}</td><td>${c.phone || '-'}</td><td>${c.email || '-'}</td><td>${c.address || '-'}</td></tr>`).join('')}</tbody></table>`
+                        });
+                    }}><Printer size={15} /> Print</button>
+                    <button className="btn btn-primary" onClick={openNew}><Plus size={18} /> Tambah Customer</button></div>
             </div>
             <div className="table-container">
                 <div className="table-toolbar"><div className="table-toolbar-left"><div className="table-search"><Search size={16} className="table-search-icon" /><input type="text" placeholder="Cari customer..." value={search} onChange={e => setSearch(e.target.value)} /></div></div></div>

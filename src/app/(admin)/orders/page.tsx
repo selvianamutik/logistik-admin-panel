@@ -4,9 +4,10 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useToast } from '../layout';
-import { Plus, Search, Eye, Edit, Trash2, Package, FileDown } from 'lucide-react';
+import { Plus, Search, Eye, Edit, Trash2, Package, FileDown, Printer } from 'lucide-react';
 import { formatDate, ORDER_STATUS_MAP } from '@/lib/utils';
 import { exportOrders } from '@/lib/export';
+import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
 import type { Order } from '@/lib/types';
 
 export default function OrdersPage() {
@@ -54,10 +55,18 @@ export default function OrdersPage() {
                     <h1 className="page-title">Order / Resi</h1>
                     <p className="page-subtitle">Kelola semua order pengiriman</p>
                 </div>
-                <div className="page-actions">
-                    <button className="btn btn-secondary" onClick={() => exportOrders(filtered as unknown as Record<string, unknown>[])}>
-                        <FileDown size={16} /> Export Excel
+                <div className="page-actions" style={{ flexWrap: 'wrap' }}>
+                    <button className="btn btn-secondary btn-sm" onClick={() => exportOrders(filtered as unknown as Record<string, unknown>[])}>
+                        <FileDown size={15} /> Excel
                     </button>
+                    <button className="btn btn-secondary btn-sm" onClick={async () => {
+                        const co = await fetchCompanyProfile();
+                        openBrandedPrint({
+                            title: 'Daftar Order / Resi', company: co, bodyHtml: `
+                            <table><thead><tr><th>Resi</th><th>Customer</th><th>Penerima</th><th>Alamat</th><th>Tanggal</th><th>Status</th></tr></thead>
+                            <tbody>${filtered.map(o => `<tr><td class="b">${o.masterResi}</td><td>${o.customerName || '-'}</td><td>${o.receiverName || '-'}</td><td>${o.receiverAddress || '-'}</td><td>${formatDate(o.createdAt)}</td><td>${ORDER_STATUS_MAP[o.status]?.label || o.status}</td></tr>`).join('')}</tbody></table>`
+                        });
+                    }}><Printer size={15} /> Print</button>
                     <Link href="/orders/new" className="btn btn-primary">
                         <Plus size={18} className="btn-icon" /> Tambah Order
                     </Link>

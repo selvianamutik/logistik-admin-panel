@@ -3,8 +3,10 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Search, Eye, Truck } from 'lucide-react';
+import { Search, Eye, Truck, FileDown, Printer } from 'lucide-react';
 import { formatDate, DO_STATUS_MAP } from '@/lib/utils';
+import { exportToExcel } from '@/lib/export';
+import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
 import type { DeliveryOrder } from '@/lib/types';
 
 export default function DeliveryOrdersPage() {
@@ -30,6 +32,27 @@ export default function DeliveryOrdersPage() {
                 <div className="page-header-left">
                     <h1 className="page-title">Surat Jalan (DO)</h1>
                     <p className="page-subtitle">Kelola semua surat jalan pengiriman</p>
+                </div>
+                <div className="page-actions" style={{ flexWrap: 'wrap' }}>
+                    <button className="btn btn-secondary btn-sm" onClick={() => {
+                        exportToExcel(filtered as unknown as Record<string, unknown>[], [
+                            { header: 'No. DO', key: 'doNumber', width: 18 },
+                            { header: 'Resi', key: 'masterResi', width: 18 },
+                            { header: 'Customer', key: 'customerName', width: 25 },
+                            { header: 'Kendaraan', key: 'vehiclePlate', width: 15 },
+                            { header: 'Driver', key: 'driverName', width: 20 },
+                            { header: 'Tanggal', key: 'date', width: 15 },
+                            { header: 'Status', key: 'status', width: 15 },
+                        ], `surat-jalan-${new Date().toISOString().split('T')[0]}`, 'Surat Jalan');
+                    }}><FileDown size={15} /> Excel</button>
+                    <button className="btn btn-secondary btn-sm" onClick={async () => {
+                        const co = await fetchCompanyProfile();
+                        openBrandedPrint({
+                            title: 'Daftar Surat Jalan', company: co, bodyHtml: `
+                            <table><thead><tr><th>No. DO</th><th>Resi</th><th>Customer</th><th>Kendaraan</th><th>Driver</th><th>Tanggal</th><th>Status</th></tr></thead>
+                            <tbody>${filtered.map(d => `<tr><td class="b">${d.doNumber}</td><td>${d.masterResi || '-'}</td><td>${d.customerName || '-'}</td><td>${d.vehiclePlate || '-'}</td><td>${d.driverName || '-'}</td><td>${formatDate(d.date)}</td><td>${DO_STATUS_MAP[d.status]?.label || d.status}</td></tr>`).join('')}</tbody></table>`
+                        });
+                    }}><Printer size={15} /> Print</button>
                 </div>
             </div>
             <div className="table-container">
