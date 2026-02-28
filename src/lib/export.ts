@@ -24,7 +24,7 @@ export function exportToExcel(
             const value = item[col.key];
             if (col.formatter) return col.formatter(value);
             if (value === undefined || value === null) return '';
-            return String(value);
+            return typeof value === 'number' ? value : String(value);
         })
     );
 
@@ -36,7 +36,18 @@ export function exportToExcel(
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
-    XLSX.writeFile(wb, `${filename}.xlsx`);
+
+    // Generate proper binary .xlsx file
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${filename}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
 }
 
 export function exportToCSV(
