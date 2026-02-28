@@ -43,6 +43,8 @@ export const SANITY_TYPE_MAP: Record<string, string> = {
     incidents: 'incident',
     'incident-action-logs': 'incidentActionLog',
     'audit-logs': 'auditLog',
+    'bank-accounts': 'bankAccount',
+    'bank-transactions': 'bankTransaction',
     company: 'companyProfile',
 };
 

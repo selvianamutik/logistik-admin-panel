@@ -50,7 +50,7 @@ export default function UsersPage() {
                 <div className="table-wrapper">
                     <table>
                         <thead><tr><th>Nama</th><th>Email</th><th>Role</th><th>Status</th><th>Aksi</th></tr></thead>
-                        <tbody>
+                        <tbody suppressHydrationWarning>
                             {loading ? [1, 2].map(i => <tr key={i}>{[1, 2, 3, 4, 5].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 users.map(u => (
                                     <tr key={u._id}>

@@ -7,7 +7,7 @@ import { useToast, useApp } from '../../layout';
 import { ArrowLeft, Printer, FileDown, DollarSign } from 'lucide-react';
 import { formatDate, formatCurrency, INVOICE_STATUS_MAP, PAYMENT_METHOD_MAP, terbilang } from '@/lib/utils';
 import { generateInvoicePdf } from '@/lib/pdf/invoiceTemplate';
-import type { Invoice, InvoiceItem, Payment, CompanyProfile } from '@/lib/types';
+import type { Invoice, InvoiceItem, Payment, CompanyProfile, BankAccount } from '@/lib/types';
 
 export default function InvoiceDetailPage() {
     const params = useParams();
@@ -23,6 +23,8 @@ export default function InvoiceDetailPage() {
     const [payMethod, setPayMethod] = useState('TRANSFER');
     const [payDate, setPayDate] = useState(new Date().toISOString().split('T')[0]);
     const [payNote, setPayNote] = useState('');
+    const [payBankRef, setPayBankRef] = useState('');
+    const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
 
     useEffect(() => {
         const id = params.id as string;
@@ -36,6 +38,8 @@ export default function InvoiceDetailPage() {
             setPayments((pay.data || []).filter((p: Payment) => p.invoiceRef === id));
             setLoading(false);
         }).catch(() => setLoading(false));
+        // Fetch bank accounts
+        fetch('/api/data?entity=bank-accounts').then(r => r.json()).then(d => setBankAccounts((d.data || []).filter((a: BankAccount) => a.active !== false)));
     }, [params.id]);
 
     const totalPaid = payments.reduce((s, p) => s + p.amount, 0);
@@ -46,7 +50,7 @@ export default function InvoiceDetailPage() {
         try {
             await fetch('/api/data', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ entity: 'payments', data: { invoiceRef: invoice?._id, date: payDate, amount: payAmount, method: payMethod, note: payNote } }),
+                body: JSON.stringify({ entity: 'payments', data: { invoiceRef: invoice?._id, date: payDate, amount: payAmount, method: payMethod, note: payNote, bankAccountRef: payBankRef || undefined } }),
             });
             addToast('success', 'Pembayaran dicatat');
             setShowPayModal(false);
@@ -145,13 +149,14 @@ export default function InvoiceDetailPage() {
                 <div className="card-header"><span className="card-header-title">Riwayat Pembayaran ({payments.length})</span></div>
                 <div className="table-wrapper">
                     <table>
-                        <thead><tr><th>Tanggal</th><th>Metode</th><th>Jumlah</th><th>Catatan</th></tr></thead>
+                        <thead><tr><th>Tanggal</th><th>Metode</th><th>Rekening</th><th>Jumlah</th><th>Catatan</th></tr></thead>
                         <tbody>
-                            {payments.length === 0 ? <tr><td colSpan={4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada pembayaran</td></tr> :
+                            {payments.length === 0 ? <tr><td colSpan={5} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada pembayaran</td></tr> :
                                 payments.map(p => (
                                     <tr key={p._id}>
                                         <td>{formatDate(p.date)}</td>
                                         <td>{PAYMENT_METHOD_MAP[p.method] || p.method}</td>
+                                        <td className="text-muted">{p.bankAccountName || '-'}</td>
                                         <td className="font-medium" style={{ color: 'var(--color-success)' }}>{formatCurrency(p.amount)}</td>
                                         <td className="text-muted">{p.note || '-'}</td>
                                     </tr>
@@ -175,6 +180,12 @@ export default function InvoiceDetailPage() {
                                 </select>
                             </div>
                             <div className="form-group"><label className="form-label">Catatan</label><textarea className="form-textarea" rows={2} value={payNote} onChange={e => setPayNote(e.target.value)} /></div>
+                            <div className="form-group"><label className="form-label">Masuk ke Rekening</label>
+                                <select className="form-select" value={payBankRef} onChange={e => setPayBankRef(e.target.value)}>
+                                    <option value="">-- Tidak dipilih --</option>
+                                    {bankAccounts.map(a => <option key={a._id} value={a._id}>{a.bankName} - {a.accountNumber}</option>)}
+                                </select>
+                            </div>
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setShowPayModal(false)}>Batal</button>

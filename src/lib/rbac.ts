@@ -88,6 +88,10 @@ const permissionMatrix: Record<string, Record<UserRole, ModulePermissions>> = {
         OWNER: { view: true, create: true, update: true, delete: true, export: false, print: false },
         ADMIN: { view: true, create: true, update: true, delete: false, export: false, print: false },
     },
+    bankAccounts: {
+        OWNER: { view: true, create: true, update: true, delete: true, export: true, print: false },
+        ADMIN: { view: true, create: false, update: false, delete: false, export: false, print: false },
+    },
 };
 
 // ── Check Permission ──
@@ -157,6 +161,7 @@ export function getSidebarMenu(role: UserRole): SidebarMenuGroup[] {
                 { label: 'Invoice', href: '/invoices', icon: 'FileText', module: 'invoices' },
                 { label: 'Pengeluaran', href: '/expenses', icon: 'Wallet', module: 'expenses' },
                 { label: 'Kategori Biaya', href: '/expense-categories', icon: 'Tags', module: 'expenseCategories' },
+                { label: 'Rekening Bank', href: '/bank-accounts', icon: 'Landmark', module: 'bankAccounts' },
                 ...(role === 'OWNER' ? [{ label: 'Laporan', href: '/reports', icon: 'BarChart3', module: 'reports' }] : []),
             ],
         },

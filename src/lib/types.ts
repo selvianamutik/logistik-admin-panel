@@ -222,6 +222,8 @@ export interface Payment {
   _id: string;
   _type: 'payment';
   invoiceRef: string;
+  bankAccountRef?: string;
+  bankAccountName?: string;
   date: string;
   amount: number;
   method: PaymentMethod;
@@ -254,6 +256,8 @@ export interface Expense {
   description?: string;
   receiptUrl?: string;
   privacyLevel: PrivacyLevel;
+  bankAccountRef?: string;
+  bankAccountName?: string;
   relatedVehicleRef?: string;
   relatedIncidentRef?: string;
   relatedMaintenanceRef?: string;
@@ -373,6 +377,38 @@ export interface AuditLog {
   entityRef?: string;
   changesSummary: string;
   timestamp: string;
+}
+
+// ── Bank Account ──
+export interface BankAccount {
+  _id: string;
+  _type: 'bankAccount';
+  bankName: string;
+  accountNumber: string;
+  accountHolder: string;
+  initialBalance: number;
+  currentBalance: number;
+  active: boolean;
+  notes?: string;
+}
+
+// ── Bank Transaction ──
+export type BankTransactionType = 'CREDIT' | 'DEBIT' | 'TRANSFER_IN' | 'TRANSFER_OUT';
+
+export interface BankTransaction {
+  _id: string;
+  _type: 'bankTransaction';
+  bankAccountRef: string;
+  bankAccountName?: string;
+  type: BankTransactionType;
+  amount: number;
+  date: string;
+  description: string;
+  balanceAfter: number;
+  relatedPaymentRef?: string;
+  relatedExpenseRef?: string;
+  relatedTransferRef?: string;
+  _createdAt?: string;
 }
 
 // ── UI Helpers ──

@@ -204,7 +204,7 @@ export async function POST(request: Request) {
         const created = await sanityCreate(newDoc);
         const newId = (created as Record<string, unknown>)._id as string;
 
-        // Payment: auto-create income + update invoice status
+        // Payment: auto-create income + update invoice status + bank transaction
         if (entity === 'payments') {
             // Create income record
             await sanityCreate({
@@ -215,6 +215,26 @@ export async function POST(request: Request) {
                 amount: data.amount,
                 note: `Pembayaran invoice`,
             });
+
+            // Bank transaction: CREDIT to selected bank account
+            if (data.bankAccountRef) {
+                const bankAcc = await sanityGetById<{ _id: string; currentBalance: number; bankName: string }>(data.bankAccountRef);
+                if (bankAcc) {
+                    const newBalance = (bankAcc.currentBalance || 0) + data.amount;
+                    await sanityCreate({
+                        _type: 'bankTransaction',
+                        bankAccountRef: data.bankAccountRef,
+                        bankAccountName: bankAcc.bankName,
+                        type: 'CREDIT',
+                        amount: data.amount,
+                        date: data.date,
+                        description: `Pembayaran invoice masuk`,
+                        balanceAfter: newBalance,
+                        relatedPaymentRef: newId,
+                    });
+                    await sanityUpdate(data.bankAccountRef, { currentBalance: newBalance });
+                }
+            }
 
             // Update invoice status
             if (data.invoiceRef) {
@@ -228,6 +248,74 @@ export async function POST(request: Request) {
                     const newStatus = totalPaid >= invoice.totalAmount ? 'PAID' : 'PARTIAL';
                     await sanityUpdate(data.invoiceRef, { status: newStatus });
                 }
+            }
+        }
+
+        // Expense: bank transaction DEBIT
+        if (entity === 'expenses' && data.bankAccountRef) {
+            const bankAcc = await sanityGetById<{ _id: string; currentBalance: number; bankName: string }>(data.bankAccountRef);
+            if (bankAcc) {
+                const newBalance = (bankAcc.currentBalance || 0) - data.amount;
+                await sanityCreate({
+                    _type: 'bankTransaction',
+                    bankAccountRef: data.bankAccountRef,
+                    bankAccountName: bankAcc.bankName,
+                    type: 'DEBIT',
+                    amount: data.amount,
+                    date: data.date,
+                    description: data.description || data.note || 'Pengeluaran',
+                    balanceAfter: newBalance,
+                    relatedExpenseRef: newId,
+                });
+                await sanityUpdate(data.bankAccountRef, { currentBalance: newBalance });
+            }
+        }
+
+        // Bank Account: set currentBalance = initialBalance on create
+        if (entity === 'bank-accounts') {
+            await sanityUpdate(newId, { currentBalance: data.initialBalance || 0 });
+        }
+
+        // Transfer between bank accounts
+        if (entity === 'bank-transactions' && data.action === 'transfer') {
+            const fromAcc = await sanityGetById<{ _id: string; currentBalance: number; bankName: string }>(data.fromAccountRef);
+            const toAcc = await sanityGetById<{ _id: string; currentBalance: number; bankName: string }>(data.toAccountRef);
+            if (fromAcc && toAcc) {
+                const transferId = `transfer-${Date.now()}`;
+                const fromBalance = (fromAcc.currentBalance || 0) - data.amount;
+                const toBalance = (toAcc.currentBalance || 0) + data.amount;
+
+                // TRANSFER_OUT from source
+                await sanityCreate({
+                    _type: 'bankTransaction',
+                    bankAccountRef: data.fromAccountRef,
+                    bankAccountName: fromAcc.bankName,
+                    type: 'TRANSFER_OUT',
+                    amount: data.amount,
+                    date: data.date || new Date().toISOString().slice(0, 10),
+                    description: `Transfer ke ${toAcc.bankName}`,
+                    balanceAfter: fromBalance,
+                    relatedTransferRef: transferId,
+                });
+
+                // TRANSFER_IN to destination
+                await sanityCreate({
+                    _type: 'bankTransaction',
+                    bankAccountRef: data.toAccountRef,
+                    bankAccountName: toAcc.bankName,
+                    type: 'TRANSFER_IN',
+                    amount: data.amount,
+                    date: data.date || new Date().toISOString().slice(0, 10),
+                    description: `Transfer dari ${fromAcc.bankName}`,
+                    balanceAfter: toBalance,
+                    relatedTransferRef: transferId,
+                });
+
+                // Update both balances
+                await sanityUpdate(data.fromAccountRef, { currentBalance: fromBalance });
+                await sanityUpdate(data.toAccountRef, { currentBalance: toBalance });
+
+                return NextResponse.json({ success: true, transferId });
             }
         }
 

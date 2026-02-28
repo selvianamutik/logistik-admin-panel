@@ -6,7 +6,7 @@ import Link from 'next/link';
 import {
     LayoutDashboard, Package, Truck, Users, Layers, FileText, Wallet, Tags,
     BarChart3, Car, Wrench, AlertTriangle, User, Lock, Building2, UserCog,
-    ScrollText, ChevronLeft, Menu, LogOut, X, CheckCircle, XCircle, Info, AlertCircle
+    ScrollText, ChevronLeft, Menu, LogOut, X, CheckCircle, XCircle, Info, AlertCircle, Landmark
 } from 'lucide-react';
 import { getSidebarMenu } from '@/lib/rbac';
 import type { SessionUser, ToastMessage } from '@/lib/types';
@@ -30,6 +30,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
     Building2: <Building2 size={20} />,
     UserCog: <UserCog size={20} />,
     ScrollText: <ScrollText size={20} />,
+    Landmark: <Landmark size={20} />,
 };
 
 // ── Toast Context ──
@@ -140,7 +141,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     return (
         <AppContext.Provider value={{ user, setUser }}>
             <ToastContext.Provider value={{ toasts, addToast, removeToast }}>
-                <div className="admin-layout">
+                <div className="admin-layout" suppressHydrationWarning>
                     {/* Sidebar Overlay (Mobile) */}
                     <div
                         className={`sidebar-overlay ${mobileOpen ? 'active' : ''}`}
