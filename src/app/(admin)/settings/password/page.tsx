@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useToast, useApp } from '../../../layout';
+import { useToast, useApp } from '../../layout';
 import { ArrowLeft, Save, Lock } from 'lucide-react';
 
 export default function PasswordPage() {

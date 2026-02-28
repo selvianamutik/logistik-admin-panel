@@ -75,7 +75,7 @@ export async function GET(request: Request) {
 
             // RLC: sanitize vehicle for ADMIN
             if (entity === 'vehicles' && session.role !== 'OWNER') {
-                item = sanitizeVehicleForRole(item as Vehicle, session.role);
+                item = sanitizeVehicleForRole(item as unknown as Vehicle, session.role) as unknown as Record<string, unknown>;
             }
             return NextResponse.json({ data: item });
         }
@@ -96,12 +96,12 @@ export async function GET(request: Request) {
 
         // RLC: filter expenses by privacy
         if (entity === 'expenses') {
-            items = filterExpensesByRole(items as Expense[], session.role);
+            items = filterExpensesByRole(items as unknown as Expense[], session.role) as unknown as Record<string, unknown>[];
         }
 
         // RLC: sanitize vehicles for ADMIN
         if (entity === 'vehicles' && session.role !== 'OWNER') {
-            items = (items as Vehicle[]).map(v => sanitizeVehicleForRole(v, session.role));
+            items = (items as unknown as Vehicle[]).map(v => sanitizeVehicleForRole(v, session.role)) as unknown as Record<string, unknown>[];
         }
 
         // Admin cannot see audit logs
@@ -166,7 +166,7 @@ export async function POST(request: Request) {
         }
 
         // ── CREATE NEW DOCUMENT ──
-        const newDoc: Record<string, unknown> = { _type: docType, ...data };
+        const newDoc: { _type: string;[key: string]: unknown } = { _type: docType, ...data };
 
         // Auto-generate numbers
         if (entity === 'orders') {

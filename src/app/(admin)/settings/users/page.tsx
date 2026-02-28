@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useToast } from '../../../layout';
+import { useToast } from '../../layout';
 import { Plus, Edit, Trash2, UserCog, Save, X, RefreshCw } from 'lucide-react';
 import type { User } from '@/lib/types';
 

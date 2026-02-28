@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useApp, useToast } from '../../../layout';
+import { useApp, useToast } from '../../layout';
 import { Save, User } from 'lucide-react';
 
 export default function ProfilePage() {

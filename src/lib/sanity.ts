@@ -80,7 +80,7 @@ export async function sanityGetByFilter<T = Record<string, unknown>>(
 
 // ── Mutation: Create document ──
 export async function sanityCreate<T = Record<string, unknown>>(
-    doc: Record<string, unknown>
+    doc: { _type: string;[key: string]: unknown }
 ): Promise<T> {
     const result = await sanityClient.create(doc);
     return result as T;

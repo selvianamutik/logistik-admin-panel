@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useToast } from '../../../layout';
+import { useToast } from '../../layout';
 import { Save, Building2 } from 'lucide-react';
 import type { CompanyProfile } from '@/lib/types';
 
