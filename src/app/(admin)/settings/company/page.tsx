@@ -56,6 +56,18 @@ export default function CompanyPage() {
                         <div className="form-row">
                             <div className="form-group"><label className="form-label">NPWP</label><input className="form-input" value={data.npwp || ''} onChange={e => u('npwp', e.target.value)} /></div>
                         </div>
+                        <div className="form-section-title">Logo Perusahaan</div>
+                        <div className="form-group">
+                            <label className="form-label">URL Logo</label>
+                            <input className="form-input" value={data.logoUrl || ''} onChange={e => u('logoUrl', e.target.value)} placeholder="https://example.com/logo.png" />
+                            <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Logo akan tampil di semua dokumen cetak & export (Invoice, PDF, Excel, Print Preview)</p>
+                            {data.logoUrl && (
+                                <div style={{ marginTop: '0.5rem', padding: '0.75rem', border: '1px solid var(--border-color)', borderRadius: '0.5rem', background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                    <img src={data.logoUrl} alt="Preview" style={{ height: 48, width: 'auto', maxWidth: 200, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Preview logo</span>
+                                </div>
+                            )}
+                        </div>
                         <div className="form-section-title">Rekening Bank</div>
                         <div className="form-row">
                             <div className="form-group"><label className="form-label">Bank</label><input className="form-input" value={data.bankName || ''} onChange={e => u('bankName', e.target.value)} /></div>

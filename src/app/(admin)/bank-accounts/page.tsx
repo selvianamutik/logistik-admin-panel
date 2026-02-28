@@ -5,36 +5,44 @@ import { useToast } from '../layout';
 import { Plus, Edit, Trash2, ArrowRightLeft, TrendingUp, TrendingDown, Eye, FileDown, Printer } from 'lucide-react';
 import Link from 'next/link';
 import { exportToExcel } from '@/lib/export';
-import type { BankAccount } from '@/lib/types';
+import type { BankAccount, CompanyProfile } from '@/lib/types';
 
-// ── Bank presets with colors ──
-const BANK_PRESETS: Record<string, { label: string; color: string; gradient: string }> = {
-    BCA: { label: 'BCA', color: '#003b7b', gradient: 'linear-gradient(135deg, #003b7b 0%, #0060c7 100%)' },
-    Mandiri: { label: 'Mandiri', color: '#003868', gradient: 'linear-gradient(135deg, #003868 0%, #005ba5 100%)' },
-    BRI: { label: 'BRI', color: '#00529c', gradient: 'linear-gradient(135deg, #00529c 0%, #0078d4 100%)' },
-    BNI: { label: 'BNI', color: '#e35205', gradient: 'linear-gradient(135deg, #e35205 0%, #f97316 100%)' },
-    BSI: { label: 'BSI', color: '#00a650', gradient: 'linear-gradient(135deg, #00a650 0%, #22c55e 100%)' },
-    CIMB: { label: 'CIMB Niaga', color: '#6d0e0e', gradient: 'linear-gradient(135deg, #6d0e0e 0%, #dc2626 100%)' },
-    Permata: { label: 'Permata', color: '#003f2d', gradient: 'linear-gradient(135deg, #003f2d 0%, #059669 100%)' },
-    Danamon: { label: 'Danamon', color: '#002d62', gradient: 'linear-gradient(135deg, #002d62 0%, #1d4ed8 100%)' },
-    Mega: { label: 'Mega', color: '#003478', gradient: 'linear-gradient(135deg, #003478 0%, #2563eb 100%)' },
-    OCBC: { label: 'OCBC NISP', color: '#e60012', gradient: 'linear-gradient(135deg, #e60012 0%, #f43f5e 100%)' },
-    Jago: { label: 'Jago', color: '#fbbf24', gradient: 'linear-gradient(135deg, #78350f 0%, #d97706 100%)' },
-    Jenius: { label: 'Jenius/BTPN', color: '#00b4d8', gradient: 'linear-gradient(135deg, #0e7490 0%, #06b6d4 100%)' },
-    OTHER: { label: 'Lainnya', color: '#6b7280', gradient: 'linear-gradient(135deg, #374151 0%, #6b7280 100%)' },
+// ── Bank presets with real logo URLs and colors ──
+const BANK_PRESETS: Record<string, { label: string; color: string; gradient: string; logo: string }> = {
+    BCA: { label: 'BCA', color: '#003b7b', gradient: 'linear-gradient(135deg, #003b7b 0%, #0060c7 100%)', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5c/Bank_Central_Asia.svg/200px-Bank_Central_Asia.svg.png' },
+    Mandiri: { label: 'Mandiri', color: '#003868', gradient: 'linear-gradient(135deg, #003868 0%, #005ba5 100%)', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ad/Bank_Mandiri_logo_2016.svg/200px-Bank_Mandiri_logo_2016.svg.png' },
+    BRI: { label: 'BRI', color: '#00529c', gradient: 'linear-gradient(135deg, #00529c 0%, #0078d4 100%)', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/68/BANK_BRI_logo.svg/200px-BANK_BRI_logo.svg.png' },
+    BNI: { label: 'BNI', color: '#e35205', gradient: 'linear-gradient(135deg, #e35205 0%, #f97316 100%)', logo: 'https://upload.wikimedia.org/wikipedia/id/thumb/5/55/BNI_logo.svg/200px-BNI_logo.svg.png' },
+    BSI: { label: 'BSI', color: '#00a650', gradient: 'linear-gradient(135deg, #00a650 0%, #22c55e 100%)', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Bank_Syariah_Indonesia.svg/200px-Bank_Syariah_Indonesia.svg.png' },
+    CIMB: { label: 'CIMB Niaga', color: '#6d0e0e', gradient: 'linear-gradient(135deg, #6d0e0e 0%, #dc2626 100%)', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e9/CIMB_Niaga_logo.svg/200px-CIMB_Niaga_logo.svg.png' },
+    Permata: { label: 'PermataBank', color: '#003f2d', gradient: 'linear-gradient(135deg, #003f2d 0%, #059669 100%)', logo: 'https://upload.wikimedia.org/wikipedia/id/thumb/0/0f/PermataBank_logo.svg/200px-PermataBank_logo.svg.png' },
+    Danamon: { label: 'Danamon', color: '#002d62', gradient: 'linear-gradient(135deg, #002d62 0%, #1d4ed8 100%)', logo: 'https://upload.wikimedia.org/wikipedia/id/thumb/4/4e/Bank_Danamon_logo.svg/200px-Bank_Danamon_logo.svg.png' },
+    Mega: { label: 'Bank Mega', color: '#003478', gradient: 'linear-gradient(135deg, #003478 0%, #2563eb 100%)', logo: 'https://upload.wikimedia.org/wikipedia/id/thumb/c/ca/Logo_Bank_Mega.svg/200px-Logo_Bank_Mega.svg.png' },
+    OCBC: { label: 'OCBC NISP', color: '#e60012', gradient: 'linear-gradient(135deg, #e60012 0%, #f43f5e 100%)', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/53/OCBC_Bank_logo.svg/200px-OCBC_Bank_logo.svg.png' },
+    Jago: { label: 'Bank Jago', color: '#fbbf24', gradient: 'linear-gradient(135deg, #78350f 0%, #d97706 100%)', logo: 'https://upload.wikimedia.org/wikipedia/id/thumb/c/cb/Logo_Bank_Jago.svg/200px-Logo_Bank_Jago.svg.png' },
+    Jenius: { label: 'Jenius/BTPN', color: '#00b4d8', gradient: 'linear-gradient(135deg, #0e7490 0%, #06b6d4 100%)', logo: 'https://upload.wikimedia.org/wikipedia/id/thumb/b/b4/BTPN_Syariah_Logo.svg/200px-BTPN_Syariah_Logo.svg.png' },
+    OTHER: { label: 'Lainnya', color: '#6b7280', gradient: 'linear-gradient(135deg, #374151 0%, #6b7280 100%)', logo: '' },
 };
 
 function getBankPreset(bankName: string) {
-    const key = Object.keys(BANK_PRESETS).find(k => bankName.toUpperCase().includes(k.toUpperCase()));
-    return BANK_PRESETS[key || 'OTHER'];
+    const key = Object.keys(BANK_PRESETS).find(k => k !== 'OTHER' && bankName.toUpperCase().includes(k.toUpperCase()));
+    return { ...(BANK_PRESETS[key || 'OTHER']), key: key || 'OTHER' };
 }
 
 function BankLogo({ name, size = 36 }: { name: string; size?: number }) {
     const preset = getBankPreset(name);
+    const [imgErr, setImgErr] = useState(false);
     const initials = name.slice(0, 3).toUpperCase();
+    if (preset.logo && !imgErr) {
+        return (
+            <div style={{ width: size, height: size, borderRadius: '0.5rem', background: '#fff', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden', padding: size * 0.08 }}>
+                <img src={preset.logo} alt={name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} onError={() => setImgErr(true)} />
+            </div>
+        );
+    }
     return (
         <div style={{
-            width: size, height: size, borderRadius: '0.6rem', background: preset.gradient,
+            width: size, height: size, borderRadius: '0.5rem', background: preset.gradient,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             color: '#fff', fontWeight: 800, fontSize: size * 0.32, letterSpacing: '-0.02em',
             flexShrink: 0, boxShadow: `0 2px 8px ${preset.color}40`
@@ -45,6 +53,7 @@ function BankLogo({ name, size = 36 }: { name: string; size?: number }) {
 export default function BankAccountsPage() {
     const { addToast } = useToast();
     const [accounts, setAccounts] = useState<BankAccount[]>([]);
+    const [company, setCompany] = useState<CompanyProfile | null>(null);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
     const [showTransfer, setShowTransfer] = useState(false);
@@ -61,7 +70,10 @@ export default function BankAccountsPage() {
         });
     }, []);
 
-    useEffect(() => { loadAccounts(); }, [loadAccounts]);
+    useEffect(() => {
+        loadAccounts();
+        fetch('/api/data?entity=company').then(r => r.json()).then(d => setCompany(d.data || null));
+    }, [loadAccounts]);
 
     const openNew = () => { setEditAccount(null); setForm({ bankName: '', accountNumber: '', accountHolder: '', initialBalance: 0, notes: '' }); setShowModal(true); };
     const openEdit = (a: BankAccount) => { setEditAccount(a); setForm({ bankName: a.bankName, accountNumber: a.accountNumber, accountHolder: a.accountHolder, initialBalance: a.initialBalance, notes: a.notes || '' }); setShowModal(true); };
@@ -108,8 +120,21 @@ export default function BankAccountsPage() {
     };
 
     const fmt = (n: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
+    const fmtN = (n: number) => new Intl.NumberFormat('id-ID').format(n);
     const totalBalance = accounts.reduce((sum, a) => sum + (a.currentBalance || 0), 0);
     const totalInitial = accounts.reduce((sum, a) => sum + (a.initialBalance || 0), 0);
+    const companyName = company?.name || 'LOGISTIK';
+    const companyLogo = company?.logoUrl || '';
+
+    const printHeader = (title: string) => `
+        <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem;padding-bottom:1rem;border-bottom:2px solid #1e293b">
+            ${companyLogo ? `<img src="${companyLogo}" style="height:48px;width:auto;object-fit:contain" />` : ''}
+            <div>
+                <div style="font-size:1.3rem;font-weight:800;color:#1e293b">${companyName}</div>
+                <div style="font-size:0.85rem;color:#64748b">${title}</div>
+            </div>
+            <div style="margin-left:auto;text-align:right;font-size:0.75rem;color:#94a3b8">Dicetak: ${new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })}</div>
+        </div>`;
 
     return (
         <div>
@@ -163,10 +188,8 @@ export default function BankAccountsPage() {
                         <div key={acc._id} className="card" style={{ overflow: 'hidden', transition: 'transform 0.15s, box-shadow 0.15s', cursor: 'default' }}
                             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)'; (e.currentTarget as HTMLElement).style.boxShadow = '0 8px 25px rgba(0,0,0,0.1)'; }}
                             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = ''; (e.currentTarget as HTMLElement).style.boxShadow = ''; }}>
-                            {/* Colored top bar */}
                             <div style={{ height: 4, background: preset.gradient }} />
                             <div className="card-body" style={{ padding: '1.25rem' }}>
-                                {/* Bank header */}
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
                                     <BankLogo name={acc.bankName} size={44} />
                                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -174,13 +197,9 @@ export default function BankAccountsPage() {
                                         <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono, monospace)', letterSpacing: '0.03em' }}>{acc.accountNumber}</div>
                                     </div>
                                 </div>
-
-                                {/* Account holder */}
                                 <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                                     <span style={{ opacity: 0.6 }}>a.n.</span> {acc.accountHolder}
                                 </div>
-
-                                {/* Balance */}
                                 <div style={{ background: 'var(--bg-secondary, #f8fafc)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '0.75rem' }}>
                                     <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.2rem' }}>Saldo</div>
                                     <div style={{ fontSize: '1.4rem', fontWeight: 700, color: (acc.currentBalance || 0) >= 0 ? 'var(--text-primary, #1e293b)' : 'var(--danger)' }}>{fmt(acc.currentBalance || 0)}</div>
@@ -189,8 +208,6 @@ export default function BankAccountsPage() {
                                         {diff >= 0 ? '+' : ''}{fmt(diff)} dari saldo awal
                                     </div>
                                 </div>
-
-                                {/* Actions */}
                                 <div style={{ display: 'flex', gap: '0.4rem' }}>
                                     <Link href={`/bank-accounts/${acc._id}`} className="btn btn-sm btn-secondary" style={{ flex: 1, fontSize: '0.75rem', padding: '0.4rem 0.5rem', justifyContent: 'center' }}><Eye size={13} /> Detail</Link>
                                     <button className="btn btn-sm btn-secondary" style={{ fontSize: '0.75rem', padding: '0.4rem 0.5rem' }} onClick={() => openEdit(acc)}><Edit size={13} /></button>
@@ -200,8 +217,6 @@ export default function BankAccountsPage() {
                         </div>
                     );
                 })}
-
-                {/* Add new card */}
                 {!loading && (
                     <div className="card" style={{ border: '2px dashed var(--border-color)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 200, transition: 'border-color 0.2s, background 0.2s' }}
                         onClick={openNew}
@@ -221,18 +236,17 @@ export default function BankAccountsPage() {
                     <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
                         <div className="modal-header"><h3 className="modal-title">{editAccount ? 'Edit Rekening' : 'Tambah Rekening Baru'}</h3><button className="modal-close" onClick={() => setShowModal(false)}>×</button></div>
                         <div className="modal-body">
-                            {/* Bank Type Selector */}
                             <div className="form-group">
                                 <label className="form-label">Jenis Bank <span className="required">*</span></label>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.4rem', marginBottom: '0.5rem' }}>
                                     {Object.entries(BANK_PRESETS).filter(([k]) => k !== 'OTHER').map(([key, preset]) => (
                                         <button key={key} type="button" onClick={() => setForm({ ...form, bankName: preset.label })}
                                             style={{
-                                                padding: '0.5rem 0.35rem', borderRadius: '0.5rem', border: form.bankName === preset.label ? `2px solid ${preset.color}` : '1px solid var(--border-color)',
-                                                background: form.bankName === preset.label ? `${preset.color}10` : 'var(--bg-primary)', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem', transition: 'all 0.15s', fontSize: '0.68rem', fontWeight: 600, color: 'var(--text-primary)'
+                                                padding: '0.45rem 0.25rem', borderRadius: '0.5rem', border: form.bankName === preset.label ? `2px solid ${preset.color}` : '1px solid var(--border-color)',
+                                                background: form.bankName === preset.label ? `${preset.color}10` : 'var(--bg-primary)', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem', transition: 'all 0.15s', fontSize: '0.65rem', fontWeight: 600, color: 'var(--text-primary)'
                                             }}>
                                             <BankLogo name={key} size={28} />
-                                            {preset.label}
+                                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{preset.label}</span>
                                         </button>
                                     ))}
                                 </div>
@@ -303,31 +317,30 @@ export default function BankAccountsPage() {
             {/* Print Preview Modal */}
             {showPrint && (
                 <div className="modal-overlay" onClick={() => setShowPrint(false)}>
-                    <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 750, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+                    <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 800, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
                         <div className="modal-header">
                             <h3 className="modal-title">Print Preview — Rekening Bank</h3>
                             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                                 <button className="btn btn-primary btn-sm" onClick={() => {
                                     const w = window.open('', '_blank');
                                     if (!w) return;
-                                    w.document.write(`<!DOCTYPE html><html><head><title>Rekening Bank</title><style>
-                                        body { font-family: 'Segoe UI', sans-serif; padding: 2rem; color: #1e293b; }
-                                        h2 { margin: 0 0 0.5rem; } .sub { color: #64748b; font-size: 0.85rem; margin-bottom: 1.5rem; }
-                                        table { width: 100%; border-collapse: collapse; } th, td { padding: 0.6rem 0.75rem; text-align: left; border-bottom: 1px solid #e2e8f0; font-size: 0.85rem; }
+                                    w.document.write(`<!DOCTYPE html><html><head><title>Rekening Bank — ${companyName}</title><style>
+                                        body { font-family: 'Segoe UI', sans-serif; padding: 2rem; color: #1e293b; max-width: 900px; margin: 0 auto; }
+                                        table { width: 100%; border-collapse: collapse; margin-top: 1rem; } th, td { padding: 0.6rem 0.75rem; text-align: left; border-bottom: 1px solid #e2e8f0; font-size: 0.85rem; }
                                         th { background: #f1f5f9; font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; }
                                         .r { text-align: right; } .b { font-weight: 700; } .s { color: #16a34a; } .d { color: #dc2626; }
-                                        .footer { margin-top: 1.5rem; font-size: 0.75rem; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 0.75rem; }
+                                        .footer { margin-top: 1.5rem; font-size: 0.72rem; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 0.75rem; }
+                                        @media print { body { padding: 0.5rem; } }
                                     </style></head><body>
-                                        <h2>Laporan Rekening Bank</h2>
-                                        <div class="sub">Dicetak: ${new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })}</div>
+                                        ${printHeader('Laporan Rekening Bank')}
                                         <table><thead><tr><th>Bank</th><th>No. Rekening</th><th>Atas Nama</th><th class="r">Saldo Awal</th><th class="r">Saldo Saat Ini</th><th class="r">Perubahan</th></tr></thead>
                                         <tbody>${accounts.map(a => {
                                         const d = (a.currentBalance || 0) - (a.initialBalance || 0);
-                                        return `<tr><td class="b">${a.bankName}</td><td>${a.accountNumber}</td><td>${a.accountHolder}</td><td class="r">${new Intl.NumberFormat('id-ID').format(a.initialBalance || 0)}</td><td class="r b">${new Intl.NumberFormat('id-ID').format(a.currentBalance || 0)}</td><td class="r ${d >= 0 ? 's' : 'd'}">${d >= 0 ? '+' : ''}${new Intl.NumberFormat('id-ID').format(d)}</td></tr>`;
+                                        return `<tr><td class="b">${a.bankName}</td><td>${a.accountNumber}</td><td>${a.accountHolder}</td><td class="r">${fmtN(a.initialBalance || 0)}</td><td class="r b">${fmtN(a.currentBalance || 0)}</td><td class="r ${d >= 0 ? 's' : 'd'}">${d >= 0 ? '+' : ''}${fmtN(d)}</td></tr>`;
                                     }).join('')}
-                                        <tr style="background:#f1f5f9;font-weight:700"><td colspan="3">TOTAL</td><td class="r">${new Intl.NumberFormat('id-ID').format(totalInitial)}</td><td class="r">${new Intl.NumberFormat('id-ID').format(totalBalance)}</td><td class="r ${totalBalance - totalInitial >= 0 ? 's' : 'd'}">${totalBalance - totalInitial >= 0 ? '+' : ''}${new Intl.NumberFormat('id-ID').format(totalBalance - totalInitial)}</td></tr>
+                                        <tr style="background:#f1f5f9;font-weight:700"><td colspan="3">TOTAL</td><td class="r">${fmtN(totalInitial)}</td><td class="r">${fmtN(totalBalance)}</td><td class="r ${totalBalance - totalInitial >= 0 ? 's' : 'd'}">${totalBalance - totalInitial >= 0 ? '+' : ''}${fmtN(totalBalance - totalInitial)}</td></tr>
                                         </tbody></table>
-                                        <div class="footer">LOGISTIK Admin Panel • ${accounts.length} rekening aktif</div>
+                                        <div class="footer">${companyName} • ${accounts.length} rekening aktif</div>
                                     </body></html>`);
                                     w.document.close();
                                     setTimeout(() => { w.print(); }, 300);
@@ -336,22 +349,41 @@ export default function BankAccountsPage() {
                             </div>
                         </div>
                         <div style={{ flex: 1, overflow: 'auto', padding: '1.5rem' }}>
-                            <h3 style={{ margin: '0 0 0.25rem', fontSize: '1.1rem' }}>Laporan Rekening Bank</h3>
-                            <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '1rem' }}>Dicetak: {new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+                            {/* Preview company header */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '2px solid var(--border-color)' }}>
+                                {companyLogo && <img src={companyLogo} alt="Logo" style={{ height: 40, width: 'auto', objectFit: 'contain' }} />}
+                                <div style={{ flex: 1 }}>
+                                    <div style={{ fontWeight: 800, fontSize: '1.1rem' }}>{companyName}</div>
+                                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Laporan Rekening Bank</div>
+                                </div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textAlign: 'right' }}>Dicetak:<br />{new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })}</div>
+                            </div>
+
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
-                                <thead><tr style={{ background: 'var(--bg-secondary)' }}><th style={{ padding: '0.5rem 0.6rem', textAlign: 'left', fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.03em', borderBottom: '2px solid var(--border-color)' }}>Bank</th><th style={{ padding: '0.5rem 0.6rem', textAlign: 'left', fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase', borderBottom: '2px solid var(--border-color)' }}>No. Rekening</th><th style={{ padding: '0.5rem 0.6rem', textAlign: 'left', fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase', borderBottom: '2px solid var(--border-color)' }}>Atas Nama</th><th style={{ padding: '0.5rem 0.6rem', textAlign: 'right', fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase', borderBottom: '2px solid var(--border-color)' }}>Saldo Saat Ini</th></tr></thead>
-                                <tbody>
-                                    {accounts.map(a => (
-                                        <tr key={a._id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                                            <td style={{ padding: '0.5rem 0.6rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}><BankLogo name={a.bankName} size={24} /> {a.bankName}</td>
-                                            <td style={{ padding: '0.5rem 0.6rem', fontFamily: 'monospace' }}>{a.accountNumber}</td>
-                                            <td style={{ padding: '0.5rem 0.6rem' }}>{a.accountHolder}</td>
-                                            <td style={{ padding: '0.5rem 0.6rem', textAlign: 'right', fontWeight: 700 }}>{fmt(a.currentBalance || 0)}</td>
-                                        </tr>
+                                <thead><tr style={{ background: 'var(--bg-secondary)' }}>
+                                    {['Bank', 'No. Rekening', 'Atas Nama', 'Saldo Awal', 'Saldo Saat Ini', 'Perubahan'].map((h, i) => (
+                                        <th key={h} style={{ padding: '0.5rem 0.6rem', textAlign: i >= 3 ? 'right' : 'left', fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.03em', borderBottom: '2px solid var(--border-color)' }}>{h}</th>
                                     ))}
+                                </tr></thead>
+                                <tbody>
+                                    {accounts.map(a => {
+                                        const d = (a.currentBalance || 0) - (a.initialBalance || 0);
+                                        return (
+                                            <tr key={a._id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                                <td style={{ padding: '0.5rem 0.6rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}><BankLogo name={a.bankName} size={22} /> {a.bankName}</td>
+                                                <td style={{ padding: '0.5rem 0.6rem', fontFamily: 'monospace' }}>{a.accountNumber}</td>
+                                                <td style={{ padding: '0.5rem 0.6rem' }}>{a.accountHolder}</td>
+                                                <td style={{ padding: '0.5rem 0.6rem', textAlign: 'right' }}>{fmt(a.initialBalance || 0)}</td>
+                                                <td style={{ padding: '0.5rem 0.6rem', textAlign: 'right', fontWeight: 700 }}>{fmt(a.currentBalance || 0)}</td>
+                                                <td style={{ padding: '0.5rem 0.6rem', textAlign: 'right', color: d >= 0 ? 'var(--success)' : 'var(--danger)' }}>{d >= 0 ? '+' : ''}{fmt(d)}</td>
+                                            </tr>
+                                        );
+                                    })}
                                     <tr style={{ background: 'var(--bg-secondary)', fontWeight: 700 }}>
                                         <td colSpan={3} style={{ padding: '0.6rem', textAlign: 'right' }}>TOTAL</td>
+                                        <td style={{ padding: '0.6rem', textAlign: 'right' }}>{fmt(totalInitial)}</td>
                                         <td style={{ padding: '0.6rem', textAlign: 'right' }}>{fmt(totalBalance)}</td>
+                                        <td style={{ padding: '0.6rem', textAlign: 'right', color: totalBalance - totalInitial >= 0 ? 'var(--success)' : 'var(--danger)' }}>{totalBalance - totalInitial >= 0 ? '+' : ''}{fmt(totalBalance - totalInitial)}</td>
                                     </tr>
                                 </tbody>
                             </table>

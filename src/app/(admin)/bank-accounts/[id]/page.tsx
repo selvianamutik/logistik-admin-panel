@@ -4,21 +4,38 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, TrendingUp, TrendingDown, ArrowRightLeft, FileDown, Printer } from 'lucide-react';
 import { exportToExcel } from '@/lib/export';
-import type { BankAccount, BankTransaction } from '@/lib/types';
+import type { BankAccount, BankTransaction, CompanyProfile } from '@/lib/types';
 
-// ── Bank colors (copied from list page for consistency) ──
-const BANK_COLORS: Record<string, { gradient: string; color: string }> = {
-    BCA: { color: '#003b7b', gradient: 'linear-gradient(135deg, #003b7b 0%, #0060c7 100%)' },
-    MANDIRI: { color: '#003868', gradient: 'linear-gradient(135deg, #003868 0%, #005ba5 100%)' },
-    BRI: { color: '#00529c', gradient: 'linear-gradient(135deg, #00529c 0%, #0078d4 100%)' },
-    BNI: { color: '#e35205', gradient: 'linear-gradient(135deg, #e35205 0%, #f97316 100%)' },
-    BSI: { color: '#00a650', gradient: 'linear-gradient(135deg, #00a650 0%, #22c55e 100%)' },
-    DEFAULT: { color: '#6b7280', gradient: 'linear-gradient(135deg, #374151 0%, #6b7280 100%)' },
+// ── Bank real logos ──
+const BANK_LOGOS: Record<string, { logo: string; color: string; gradient: string }> = {
+    BCA: { color: '#003b7b', gradient: 'linear-gradient(135deg, #003b7b 0%, #0060c7 100%)', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5c/Bank_Central_Asia.svg/200px-Bank_Central_Asia.svg.png' },
+    MANDIRI: { color: '#003868', gradient: 'linear-gradient(135deg, #003868 0%, #005ba5 100%)', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ad/Bank_Mandiri_logo_2016.svg/200px-Bank_Mandiri_logo_2016.svg.png' },
+    BRI: { color: '#00529c', gradient: 'linear-gradient(135deg, #00529c 0%, #0078d4 100%)', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/68/BANK_BRI_logo.svg/200px-BANK_BRI_logo.svg.png' },
+    BNI: { color: '#e35205', gradient: 'linear-gradient(135deg, #e35205 0%, #f97316 100%)', logo: 'https://upload.wikimedia.org/wikipedia/id/thumb/5/55/BNI_logo.svg/200px-BNI_logo.svg.png' },
+    BSI: { color: '#00a650', gradient: 'linear-gradient(135deg, #00a650 0%, #22c55e 100%)', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Bank_Syariah_Indonesia.svg/200px-Bank_Syariah_Indonesia.svg.png' },
+    DEFAULT: { color: '#6b7280', gradient: 'linear-gradient(135deg, #374151 0%, #6b7280 100%)', logo: '' },
 };
 
-function getBankColor(name: string) {
-    const key = Object.keys(BANK_COLORS).find(k => name.toUpperCase().includes(k));
-    return BANK_COLORS[key || 'DEFAULT'];
+function getBankInfo(name: string) {
+    const key = Object.keys(BANK_LOGOS).find(k => k !== 'DEFAULT' && name.toUpperCase().includes(k));
+    return BANK_LOGOS[key || 'DEFAULT'];
+}
+
+function BankDetailLogo({ name, size = 48 }: { name: string; size?: number }) {
+    const info = getBankInfo(name);
+    const [err, setErr] = useState(false);
+    if (info.logo && !err) {
+        return (
+            <div style={{ width: size, height: size, borderRadius: '0.6rem', background: '#fff', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden', padding: size * 0.08 }}>
+                <img src={info.logo} alt={name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} onError={() => setErr(true)} />
+            </div>
+        );
+    }
+    return (
+        <div style={{ width: size, height: size, borderRadius: '0.6rem', background: info.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: size * 0.32, flexShrink: 0, boxShadow: `0 2px 8px ${info.color}40` }}>
+            {name.slice(0, 3).toUpperCase()}
+        </div>
+    );
 }
 
 export default function BankAccountDetailPage() {
@@ -26,6 +43,7 @@ export default function BankAccountDetailPage() {
     const router = useRouter();
     const [account, setAccount] = useState<BankAccount | null>(null);
     const [transactions, setTransactions] = useState<BankTransaction[]>([]);
+    const [company, setCompany] = useState<CompanyProfile | null>(null);
     const [loading, setLoading] = useState(true);
     const [showPrint, setShowPrint] = useState(false);
 
@@ -33,17 +51,18 @@ export default function BankAccountDetailPage() {
         Promise.all([
             fetch(`/api/data?entity=bank-accounts&id=${id}`).then(r => r.json()),
             fetch(`/api/data?entity=bank-transactions&filter=${encodeURIComponent(JSON.stringify({ bankAccountRef: id }))}`).then(r => r.json()),
-        ]).then(([accRes, txRes]) => {
+            fetch('/api/data?entity=company').then(r => r.json()),
+        ]).then(([accRes, txRes, coRes]) => {
             setAccount(accRes.data);
             setTransactions((txRes.data || []).sort((a: BankTransaction, b: BankTransaction) => new Date(b.date || b._createdAt || '').getTime() - new Date(a.date || a._createdAt || '').getTime()));
+            setCompany(coRes.data || null);
             setLoading(false);
         });
     }, [id]);
 
     const fmt = (n: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
-    const fmtNum = (n: number) => new Intl.NumberFormat('id-ID').format(n);
+    const fmtN = (n: number) => new Intl.NumberFormat('id-ID').format(n);
     const fmtDate = (d: string) => { try { return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return d; } };
-    const fmtDateLong = (d: string) => { try { return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }); } catch { return d; } };
 
     const typeConfig: Record<string, { label: string; badge: string; sign: string; icon: React.ReactNode }> = {
         CREDIT: { label: 'Masuk', badge: 'badge-success', sign: '+', icon: <TrendingUp size={14} /> },
@@ -62,59 +81,61 @@ export default function BankAccountDetailPage() {
         ], `transaksi-${account?.bankName || 'bank'}-${new Date().toISOString().split('T')[0]}`, 'Transaksi');
     };
 
+    if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 120 }} /><div className="skeleton skeleton-card" style={{ height: 300 }} /></div>;
+    if (!account) return <div className="card"><div className="card-body">Rekening tidak ditemukan</div></div>;
+
+    const bankInfo = getBankInfo(account.bankName);
+    const totalIn = transactions.filter(t => t.type === 'CREDIT' || t.type === 'TRANSFER_IN').reduce((s, t) => s + t.amount, 0);
+    const totalOut = transactions.filter(t => t.type === 'DEBIT' || t.type === 'TRANSFER_OUT').reduce((s, t) => s + t.amount, 0);
+    const companyName = company?.name || 'LOGISTIK';
+    const companyLogo = company?.logoUrl || '';
+
     const handlePrint = () => {
-        if (!account) return;
-        const bankColor = getBankColor(account.bankName);
         const w = window.open('', '_blank');
         if (!w) return;
-        w.document.write(`<!DOCTYPE html><html><head><title>Mutasi ${account.bankName}</title><style>
+        w.document.write(`<!DOCTYPE html><html><head><title>Mutasi ${account.bankName} — ${companyName}</title><style>
             body { font-family: 'Segoe UI', sans-serif; padding: 2rem; color: #1e293b; max-width: 800px; margin: 0 auto; }
-            .hdr { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 2px solid #e2e8f0; }
-            .logo { width: 48px; height: 48px; border-radius: 10px; background: ${bankColor.gradient}; color: #fff; font-weight: 800; font-size: 16px; display: flex; align-items: center; justify-content: center; }
-            h2 { margin: 0; } .sub { color: #64748b; font-size: 0.85rem; }
-            .stats { display: flex; gap: 2rem; margin-bottom: 1.5rem; }
+            .co-hdr { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 2px solid #1e293b; }
+            .co-hdr img { height: 48px; width: auto; object-fit: contain; }
+            .co-name { font-size: 1.3rem; font-weight: 800; } .co-sub { color: #64748b; font-size: 0.85rem; }
+            .stats { display: flex; gap: 1.5rem; margin-bottom: 1.5rem; }
             .stat { flex: 1; text-align: center; padding: 0.75rem; background: #f8fafc; border-radius: 8px; }
-            .stat-label { font-size: 0.7rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
-            .stat-value { font-size: 1.25rem; font-weight: 700; margin-top: 0.2rem; }
+            .stat-l { font-size: 0.7rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+            .stat-v { font-size: 1.15rem; font-weight: 700; margin-top: 0.2rem; }
             table { width: 100%; border-collapse: collapse; } th, td { padding: 0.5rem 0.6rem; text-align: left; border-bottom: 1px solid #e2e8f0; font-size: 0.82rem; }
             th { background: #f1f5f9; font-weight: 600; font-size: 0.72rem; text-transform: uppercase; }
             .r { text-align: right; } .b { font-weight: 700; } .s { color: #16a34a; } .d { color: #dc2626; }
             .footer { margin-top: 1.5rem; font-size: 0.72rem; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 0.5rem; }
-            @media print { body { padding: 0.5rem; } .no-print { display: none !important; } }
+            @media print { body { padding: 0.5rem; } }
         </style></head><body>
-            <div class="hdr"><div class="logo">${account.bankName.slice(0, 3).toUpperCase()}</div><div><h2>Mutasi Rekening ${account.bankName}</h2><div class="sub">${account.accountNumber} — a.n. ${account.accountHolder} | Dicetak: ${new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })}</div></div></div>
+            <div class="co-hdr">
+                ${companyLogo ? `<img src="${companyLogo}" />` : ''}
+                <div><div class="co-name">${companyName}</div><div class="co-sub">Mutasi Rekening ${account.bankName} — ${account.accountNumber} — a.n. ${account.accountHolder}</div></div>
+                <div style="margin-left:auto;text-align:right;font-size:0.75rem;color:#94a3b8">Dicetak:<br/>${new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })}</div>
+            </div>
             <div class="stats">
-                <div class="stat"><div class="stat-label">Saldo Saat Ini</div><div class="stat-value">${fmtNum(account.currentBalance || 0)}</div></div>
-                <div class="stat"><div class="stat-label">Total Masuk</div><div class="stat-value s">${fmtNum(totalIn)}</div></div>
-                <div class="stat"><div class="stat-label">Total Keluar</div><div class="stat-value d">${fmtNum(totalOut)}</div></div>
+                <div class="stat"><div class="stat-l">Saldo Saat Ini</div><div class="stat-v">${fmtN(account.currentBalance || 0)}</div></div>
+                <div class="stat"><div class="stat-l">Total Masuk</div><div class="stat-v s">${fmtN(totalIn)}</div></div>
+                <div class="stat"><div class="stat-l">Total Keluar</div><div class="stat-v d">${fmtN(totalOut)}</div></div>
             </div>
             <table><thead><tr><th>Tanggal</th><th>Tipe</th><th>Deskripsi</th><th class="r">Jumlah</th><th class="r">Saldo</th></tr></thead>
             <tbody>${transactions.map(tx => {
             const cfg = typeConfig[tx.type] || typeConfig.CREDIT;
-            return `<tr><td>${fmtDate(tx.date)}</td><td>${cfg.label}</td><td>${tx.description}</td><td class="r ${cfg.sign === '+' ? 's' : 'd'} b">${cfg.sign}${fmtNum(tx.amount)}</td><td class="r b">${fmtNum(tx.balanceAfter)}</td></tr>`;
+            return `<tr><td>${fmtDate(tx.date)}</td><td>${cfg.label}</td><td>${tx.description}</td><td class="r ${cfg.sign === '+' ? 's' : 'd'} b">${cfg.sign}${fmtN(tx.amount)}</td><td class="r b">${fmtN(tx.balanceAfter)}</td></tr>`;
         }).join('')}</tbody></table>
-            <div class="footer">LOGISTIK Admin Panel • ${transactions.length} transaksi</div>
+            <div class="footer">${companyName} • ${transactions.length} transaksi</div>
         </body></html>`);
         w.document.close();
         setTimeout(() => { w.print(); }, 300);
     };
 
-    if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 120 }} /><div className="skeleton skeleton-card" style={{ height: 300 }} /></div>;
-    if (!account) return <div className="card"><div className="card-body">Rekening tidak ditemukan</div></div>;
-
-    const bankColor = getBankColor(account.bankName);
-    const totalIn = transactions.filter(t => t.type === 'CREDIT' || t.type === 'TRANSFER_IN').reduce((s, t) => s + t.amount, 0);
-    const totalOut = transactions.filter(t => t.type === 'DEBIT' || t.type === 'TRANSFER_OUT').reduce((s, t) => s + t.amount, 0);
-
     return (
         <div>
-            {/* Header with bank branding */}
+            {/* Header */}
             <div className="page-header">
                 <div className="page-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                     <button className="btn btn-secondary btn-sm" onClick={() => router.push('/bank-accounts')}><ArrowLeft size={16} /></button>
-                    <div style={{ width: 44, height: 44, borderRadius: '0.6rem', background: bankColor.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 15, flexShrink: 0, boxShadow: `0 2px 8px ${bankColor.color}40` }}>
-                        {account.bankName.slice(0, 3).toUpperCase()}
-                    </div>
+                    <BankDetailLogo name={account.bankName} size={44} />
                     <div>
                         <h1 className="page-title">{account.bankName}</h1>
                         <p className="page-subtitle" style={{ fontFamily: 'var(--font-mono, monospace)', letterSpacing: '0.03em' }}>{account.accountNumber} — a.n. {account.accountHolder}</p>
@@ -128,7 +149,7 @@ export default function BankAccountDetailPage() {
 
             {/* Summary Cards */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
-                <div className="card" style={{ background: bankColor.gradient, color: '#fff', overflow: 'hidden', position: 'relative' }}>
+                <div className="card" style={{ background: bankInfo.gradient, color: '#fff', overflow: 'hidden', position: 'relative' }}>
                     <div style={{ position: 'absolute', right: -15, top: -15, width: 80, height: 80, borderRadius: '50%', background: 'rgba(255,255,255,0.08)' }} />
                     <div className="card-body" style={{ padding: '1.1rem', position: 'relative' }}>
                         <div style={{ fontSize: '0.7rem', opacity: 0.8, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>Saldo Saat Ini</div>
@@ -183,9 +204,7 @@ export default function BankAccountDetailPage() {
                                     <tr key={tx._id} style={{ transition: 'background 0.1s' }}
                                         onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-secondary, #f8fafc)')}
                                         onMouseLeave={e => (e.currentTarget.style.background = '')}>
-                                        <td style={{ whiteSpace: 'nowrap' }}>
-                                            <div style={{ fontSize: '0.85rem' }}>{fmtDate(tx.date)}</div>
-                                        </td>
+                                        <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(tx.date)}</td>
                                         <td>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                                                 <span style={{ color: isPositive ? 'var(--success)' : 'var(--danger)', display: 'flex' }}>{cfg.icon}</span>
@@ -217,32 +236,27 @@ export default function BankAccountDetailPage() {
                             </div>
                         </div>
                         <div style={{ flex: 1, overflow: 'auto', padding: '1.5rem' }}>
-                            {/* Preview header */}
+                            {/* Company header preview */}
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '2px solid var(--border-color)' }}>
-                                <div style={{ width: 40, height: 40, borderRadius: '0.5rem', background: bankColor.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 14 }}>{account.bankName.slice(0, 3).toUpperCase()}</div>
-                                <div>
-                                    <div style={{ fontWeight: 700, fontSize: '1rem' }}>Mutasi Rekening {account.bankName}</div>
-                                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{account.accountNumber} — a.n. {account.accountHolder} | Dicetak: {fmtDateLong(new Date().toISOString())}</div>
+                                {companyLogo && <img src={companyLogo} alt="Logo" style={{ height: 40, width: 'auto', objectFit: 'contain' }} />}
+                                <div style={{ flex: 1 }}>
+                                    <div style={{ fontWeight: 800, fontSize: '1.1rem' }}>{companyName}</div>
+                                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Mutasi Rekening {account.bankName} — {account.accountNumber} — a.n. {account.accountHolder}</div>
                                 </div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textAlign: 'right' }}>Dicetak:<br />{new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })}</div>
                             </div>
 
-                            {/* Preview stats */}
+                            {/* Stats preview */}
                             <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
-                                <div style={{ flex: 1, textAlign: 'center', padding: '0.6rem', background: 'var(--bg-secondary)', borderRadius: '0.4rem' }}>
-                                    <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Saldo</div>
-                                    <div style={{ fontWeight: 700, fontSize: '1rem' }}>{fmt(account.currentBalance || 0)}</div>
-                                </div>
-                                <div style={{ flex: 1, textAlign: 'center', padding: '0.6rem', background: 'var(--bg-secondary)', borderRadius: '0.4rem' }}>
-                                    <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Masuk</div>
-                                    <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--success)' }}>{fmt(totalIn)}</div>
-                                </div>
-                                <div style={{ flex: 1, textAlign: 'center', padding: '0.6rem', background: 'var(--bg-secondary)', borderRadius: '0.4rem' }}>
-                                    <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Keluar</div>
-                                    <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--danger)' }}>{fmt(totalOut)}</div>
-                                </div>
+                                {[{ l: 'Saldo', v: fmt(account.currentBalance || 0) }, { l: 'Total Masuk', v: fmt(totalIn), c: 'var(--success)' }, { l: 'Total Keluar', v: fmt(totalOut), c: 'var(--danger)' }].map(s => (
+                                    <div key={s.l} style={{ flex: 1, textAlign: 'center', padding: '0.6rem', background: 'var(--bg-secondary)', borderRadius: '0.4rem' }}>
+                                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{s.l}</div>
+                                        <div style={{ fontWeight: 700, fontSize: '1rem', color: s.c }}>{s.v}</div>
+                                    </div>
+                                ))}
                             </div>
 
-                            {/* Preview table */}
+                            {/* Table preview */}
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
                                 <thead><tr style={{ background: 'var(--bg-secondary)' }}>
                                     {['Tanggal', 'Tipe', 'Deskripsi', 'Jumlah', 'Saldo'].map(h => (
@@ -266,7 +280,7 @@ export default function BankAccountDetailPage() {
                                 </tbody>
                             </table>
                             <div style={{ marginTop: '1rem', fontSize: '0.72rem', color: 'var(--text-muted)', borderTop: '1px solid var(--border-color)', paddingTop: '0.5rem' }}>
-                                LOGISTIK Admin Panel • {transactions.length} transaksi
+                                {companyName} • {transactions.length} transaksi
                             </div>
                         </div>
                     </div>
