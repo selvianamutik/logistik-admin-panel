@@ -11,7 +11,16 @@ export default function CompanyPage() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
 
-    useEffect(() => { fetch('/api/data?entity=company').then(r => r.json()).then(d => { setData(d.data); setLoading(false); }); }, []);
+    useEffect(() => {
+        fetch('/api/data?entity=company').then(r => r.json()).then(d => {
+            const profile = d.data || {};
+            // Ensure nested settings objects exist with defaults
+            profile.numberingSettings = profile.numberingSettings || { resiPrefix: 'R-', resiCounter: 0, doPrefix: 'DO-', doCounter: 0, invoicePrefix: 'INV-', invoiceCounter: 0, incidentPrefix: 'INC-', incidentCounter: 0 };
+            profile.invoiceSettings = profile.invoiceSettings || { defaultTermDays: 30, dueDateDays: 14, footerNote: '', invoiceMode: 'ORDER' };
+            profile.documentSettings = profile.documentSettings || { showContact: true, dateFormat: 'DD/MM/YYYY' };
+            setData(profile); setLoading(false);
+        });
+    }, []);
 
     const handleSave = async () => {
         if (!data) return;
@@ -24,8 +33,8 @@ export default function CompanyPage() {
     };
 
     const u = (field: string, value: unknown) => setData(prev => prev ? { ...prev, [field]: value } : prev);
-    const uNum = (field: string, value: unknown) => setData(prev => prev ? { ...prev, numberingSettings: { ...prev.numberingSettings, [field]: value } } : prev);
-    const uInv = (field: string, value: unknown) => setData(prev => prev ? { ...prev, invoiceSettings: { ...prev.invoiceSettings, [field]: value } } : prev);
+    const uNum = (field: string, value: unknown) => setData(prev => prev ? { ...prev, numberingSettings: { ...(prev.numberingSettings || {}), [field]: value } } as CompanyProfile : prev);
+    const uInv = (field: string, value: unknown) => setData(prev => prev ? { ...prev, invoiceSettings: { ...(prev.invoiceSettings || {}), [field]: value } } as CompanyProfile : prev);
 
     if (loading || !data) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 300 }} /></div>;
 
