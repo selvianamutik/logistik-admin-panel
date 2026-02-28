@@ -40,14 +40,29 @@ export function exportToExcel(
     // Generate proper binary .xlsx file
     const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${filename}.xlsx`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+
+    // Robust download with proper filename
+    const fullFilename = `${filename}.xlsx`;
+    if (typeof window !== 'undefined' && (window.navigator as unknown as Record<string, unknown>).msSaveOrOpenBlob) {
+        // IE/Edge legacy
+        (window.navigator as unknown as Record<string, (...args: unknown[]) => void>).msSaveOrOpenBlob(blob, fullFilename);
+    } else {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.style.display = 'none';
+        link.href = url;
+        link.download = fullFilename;
+        link.setAttribute('download', fullFilename);
+        document.body.appendChild(link);
+        // Use setTimeout to ensure the browser processes the download attribute
+        setTimeout(() => {
+            link.click();
+            setTimeout(() => {
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            }, 200);
+        }, 0);
+    }
 }
 
 export function exportToCSV(
