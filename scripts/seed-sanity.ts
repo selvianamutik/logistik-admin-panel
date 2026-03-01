@@ -5,10 +5,14 @@
 
 import { createClient } from '@sanity/client';
 
+const projectId = 'p6do50hl';
+const dataset = 'production';
+const apiVersion = '2024-01-01';
+
 const client = createClient({
-    projectId: 'p6do50hl',
-    dataset: 'production',
-    apiVersion: '2024-01-01',
+    projectId,
+    dataset,
+    apiVersion,
     token: 'sky7V0P7lW7gtRk3CP3GHuYd18QmYN5BYgzPZyLF7AiH4AcDc9M19pSEvef7RAAGqVoewy7sZd5hozupK9WXcXSNb3a1tS76KAduc16IzBBOwT6kx9ErKJgVKSYdQhd3pDLJi5bUtFlyAfYVtXFwJ8oNlpa793MONpBKyscK2Z75tXfpCdQ4',
     useCdn: false,
 });
@@ -260,7 +264,7 @@ const seedDocuments: SeedDoc[] = [
 
 async function seed() {
     console.log(`Seeding ${seedDocuments.length} documents to Sanity...`);
-    console.log(`Project: p6do50h1 | Dataset: production`);
+    console.log(`Project: ${projectId} | Dataset: ${dataset}`);
     console.log('---');
 
     let success = 0;

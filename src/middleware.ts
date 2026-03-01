@@ -15,6 +15,11 @@ const PUBLIC_PATHS = ['/login', '/api/auth/login'];
 export async function middleware(request: NextRequest) {
     const { pathname } = request.nextUrl;
 
+    // Let API routes handle their own auth/authorization responses (401/403 JSON)
+    if (pathname.startsWith('/api')) {
+        return NextResponse.next();
+    }
+
     // Allow public paths
     if (PUBLIC_PATHS.some(p => pathname.startsWith(p))) {
         return NextResponse.next();

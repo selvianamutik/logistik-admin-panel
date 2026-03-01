@@ -1,0 +1,187 @@
+[
+    {
+        "id":  "ENV-001",
+        "status":  "PASS",
+        "detail":  "Dev server ready at http://127.0.0.1:3000"
+    },
+    {
+        "id":  "AUTH-001",
+        "status":  "PASS",
+        "detail":  "Missing credentials returns 400"
+    },
+    {
+        "id":  "AUTH-002",
+        "status":  "PASS",
+        "detail":  "Wrong email returns 401"
+    },
+    {
+        "id":  "AUTH-003",
+        "status":  "PASS",
+        "detail":  "Owner login success"
+    },
+    {
+        "id":  "AUTH-004",
+        "status":  "PASS",
+        "detail":  "Admin login success"
+    },
+    {
+        "id":  "AUTH-005",
+        "status":  "PASS",
+        "detail":  "Session endpoint returns owner user"
+    },
+    {
+        "id":  "AUTH-006",
+        "status":  "PASS",
+        "detail":  "Session without cookie returns 401"
+    },
+    {
+        "id":  "AUTH-007",
+        "status":  "PASS",
+        "detail":  "Logout clears session"
+    },
+    {
+        "id":  "AUTH-008",
+        "status":  "PASS",
+        "detail":  "Anonymous dashboard redirects to login (307)"
+    },
+    {
+        "id":  "AUTH-009",
+        "status":  "PASS",
+        "detail":  "Root redirects to dashboard (307)"
+    },
+    {
+        "id":  "RBAC-001",
+        "status":  "PASS",
+        "detail":  "Admin redirected from /settings/users"
+    },
+    {
+        "id":  "RBAC-002",
+        "status":  "PASS",
+        "detail":  "Admin redirected from /reports"
+    },
+    {
+        "id":  "RBAC-003",
+        "status":  "PASS",
+        "detail":  "Admin cannot see ownerOnly expenses"
+    },
+    {
+        "id":  "RBAC-004",
+        "status":  "PASS",
+        "detail":  "Admin vehicle fields sanitized"
+    },
+    {
+        "id":  "RBAC-006",
+        "status":  "PASS",
+        "detail":  "Admin forbidden for audit logs API"
+    },
+    {
+        "id":  "API-001",
+        "status":  "PASS",
+        "detail":  "GET /api/data unauthorized without session"
+    },
+    {
+        "id":  "API-002",
+        "status":  "PASS",
+        "detail":  "POST /api/data unauthorized without session"
+    },
+    {
+        "id":  "API-003",
+        "status":  "PASS",
+        "detail":  "Invalid entity on GET returns 400"
+    },
+    {
+        "id":  "API-004",
+        "status":  "PASS",
+        "detail":  "Invalid entity on POST returns 400"
+    },
+    {
+        "id":  "API-005",
+        "status":  "PASS",
+        "detail":  "GET by unknown id returns 404"
+    },
+    {
+        "id":  "API-006",
+        "status":  "PASS",
+        "detail":  "Update customer succeeded"
+    },
+    {
+        "id":  "API-007",
+        "status":  "PASS",
+        "detail":  "Delete customer succeeded"
+    },
+    {
+        "id":  "API-008",
+        "status":  "PASS",
+        "detail":  "Valid filter returns only matching records"
+    },
+    {
+        "id":  "API-009",
+        "status":  "PASS",
+        "detail":  "Invalid filter falls back without crashing"
+    },
+    {
+        "id":  "API-010",
+        "status":  "PASS",
+        "detail":  "Order auto fields generated (id=XUBEWnVTdIC36u5Vuiux8e)"
+    },
+    {
+        "id":  "API-011",
+        "status":  "PASS",
+        "detail":  "Delivery order auto number/status generated"
+    },
+    {
+        "id":  "API-012",
+        "status":  "PASS",
+        "detail":  "Invoice auto number/status generated"
+    },
+    {
+        "id":  "API-013",
+        "status":  "PASS",
+        "detail":  "Incident auto number/status generated"
+    },
+    {
+        "id":  "API-014",
+        "status":  "PASS",
+        "detail":  "User create stores passwordHash and active flag"
+    },
+    {
+        "id":  "API-015",
+        "status":  "PASS",
+        "detail":  "Company upsert (no-op payload) succeeded"
+    },
+    {
+        "id":  "SCR-003",
+        "status":  "PASS",
+        "detail":  "Seed log project id matches client projectId (p6do50hl)"
+    },
+    {
+        "id":  "ENV-004",
+        "status":  "PASS",
+        "detail":  "test-sanity.ts validated correct vs wrong project id behavior"
+    },
+    {
+        "id":  "SCR-004",
+        "status":  "PASS",
+        "detail":  "test-sanity.ts produced expected success/failure pattern"
+    },
+    {
+        "id":  "SCR-001",
+        "status":  "PASS",
+        "detail":  "First seed run completed with summary output"
+    },
+    {
+        "id":  "SCR-002",
+        "status":  "PASS",
+        "detail":  "Second seed run indicates idempotent skip behavior"
+    },
+    {
+        "id":  "ENV-005",
+        "status":  "PASS",
+        "detail":  "npm run lint passed"
+    },
+    {
+        "id":  "ENV-002",
+        "status":  "PASS",
+        "detail":  "npm run build passed"
+    }
+]

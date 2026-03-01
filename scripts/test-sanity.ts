@@ -15,8 +15,10 @@ async function test() {
         const result = await client.fetch('*[0..1]');
         console.log('SUCCESS! Found:', result?.length, 'docs');
         console.log(JSON.stringify(result, null, 2));
-    } catch (err: any) {
-        console.log('FAILED:', err.statusCode, err.message);
+    } catch (err: unknown) {
+        const statusCode = typeof err === 'object' && err !== null && 'statusCode' in err ? (err as { statusCode?: number }).statusCode : undefined;
+        const message = err instanceof Error ? err.message : String(err);
+        console.log('FAILED:', statusCode, message);
     }
 
     // Also test with digit 1
@@ -32,8 +34,10 @@ async function test() {
         const result = await client2.fetch('*[0..1]');
         console.log('SUCCESS! Found:', result?.length, 'docs');
         console.log(JSON.stringify(result, null, 2));
-    } catch (err: any) {
-        console.log('FAILED:', err.statusCode, err.message);
+    } catch (err: unknown) {
+        const statusCode = typeof err === 'object' && err !== null && 'statusCode' in err ? (err as { statusCode?: number }).statusCode : undefined;
+        const message = err instanceof Error ? err.message : String(err);
+        console.log('FAILED:', statusCode, message);
     }
 }
 

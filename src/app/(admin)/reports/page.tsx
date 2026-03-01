@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { TrendingUp, TrendingDown, BarChart3, FileDown, Printer, ArrowRightLeft, DollarSign, Wallet, Landmark, ChevronLeft, ChevronRight } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { exportToExcel } from '@/lib/export';
@@ -47,19 +47,19 @@ export default function ReportsPage() {
     }, []);
 
     // Filter by period
-    const inPeriod = (dateStr: string) => {
+    const inPeriod = useCallback((dateStr: string) => {
         if (periodMode === 'all') return true;
         const d = new Date(dateStr);
         if (periodMode === 'year') return d.getFullYear() === year;
         return d.getMonth() === month && d.getFullYear() === year;
-    };
+    }, [month, periodMode, year]);
 
     const periodLabel = periodMode === 'all' ? 'Semua Periode' : periodMode === 'year' ? `Tahun ${year}` : `${monthNames[month]} ${year}`;
 
     // Filtered data
-    const filteredPayments = useMemo(() => payments.filter(p => inPeriod(p.date)), [payments, month, year, periodMode]);
-    const filteredExpenses = useMemo(() => expenses.filter(e => inPeriod(e.date)), [expenses, month, year, periodMode]);
-    const filteredBankTx = useMemo(() => bankTransactions.filter(t => inPeriod(t.date)), [bankTransactions, month, year, periodMode]);
+    const filteredPayments = useMemo(() => payments.filter(p => inPeriod(p.date)), [payments, inPeriod]);
+    const filteredExpenses = useMemo(() => expenses.filter(e => inPeriod(e.date)), [expenses, inPeriod]);
+    const filteredBankTx = useMemo(() => bankTransactions.filter(t => inPeriod(t.date)), [bankTransactions, inPeriod]);
 
     // P&L calculations
     const totalRevenue = filteredPayments.reduce((s, p) => s + p.amount, 0);

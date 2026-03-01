@@ -1,0 +1,92 @@
+﻿[
+    {
+        "id":  "ENV-001",
+        "status":  "PASS",
+        "detail":  "Dev server reachable at http://127.0.0.1:3105/login"
+    },
+    {
+        "id":  "AUTH-001",
+        "status":  "PASS",
+        "detail":  "Expected 400, got 400"
+    },
+    {
+        "id":  "AUTH-002",
+        "status":  "PASS",
+        "detail":  "Expected 401, got 401"
+    },
+    {
+        "id":  "AUTH-003",
+        "status":  "PASS",
+        "detail":  "Owner login status 200"
+    },
+    {
+        "id":  "AUTH-004",
+        "status":  "PASS",
+        "detail":  "Admin login status 200"
+    },
+    {
+        "id":  "AUTH-005",
+        "status":  "PASS",
+        "detail":  "Session status 200, user=\u0027Owner Utama\u0027"
+    },
+    {
+        "id":  "AUTH-006",
+        "status":  "PASS",
+        "detail":  "Expected 401, got 401"
+    },
+    {
+        "id":  "AUTH-007",
+        "status":  "PASS",
+        "detail":  "Logout 200, session after logout 401"
+    },
+    {
+        "id":  "AUTH-008",
+        "status":  "PASS",
+        "detail":  "Status 307, location \u0027/login\u0027"
+    },
+    {
+        "id":  "AUTH-009",
+        "status":  "PASS",
+        "detail":  "Status 307, location \u0027/dashboard\u0027"
+    },
+    {
+        "id":  "RBAC-001",
+        "status":  "PASS",
+        "detail":  "Status 307, location \u0027/dashboard\u0027"
+    },
+    {
+        "id":  "RBAC-002",
+        "status":  "PASS",
+        "detail":  "Status 307, location \u0027/dashboard\u0027"
+    },
+    {
+        "id":  "API-001",
+        "status":  "PASS",
+        "detail":  "Expected 401, got 401"
+    },
+    {
+        "id":  "API-002",
+        "status":  "PASS",
+        "detail":  "Expected 401, got 401"
+    },
+    {
+        "id":  "API-003",
+        "status":  "PASS",
+        "detail":  "Expected 400, got 400"
+    },
+    {
+        "id":  "API-004",
+        "status":  "PASS",
+        "detail":  "Expected 400, got 400"
+    },
+    {
+        "id":  "API-005",
+        "status":  "PASS",
+        "detail":  "Expected 404, got 404"
+    },
+    {
+        "id":  "RBAC-006",
+        "status":  "PASS",
+        "detail":  "Expected 403, got 403"
+    }
+]

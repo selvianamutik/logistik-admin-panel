@@ -1,0 +1,21 @@
+I checked MCP discovery and directly probed `testsprite` without running any file-modifying actions.
+
+**What I found**
+1. `list_mcp_resources` (all servers): returned no resources.
+2. `list_mcp_resource_templates` (all servers): returned no templates.
+3. Probe `server="testsprite"` with both list methods: server responded with MCP `-32601 Method not found` for discovery methods.
+
+**Testsprite reachability**
+- `testsprite` appears **reachable** (it responded), but it does **not** implement MCP resource/template discovery endpoints.
+
+**MCP tools currently exposed for testsprite**
+1. `mcp__testsprite__testsprite_bootstrap`
+2. `mcp__testsprite__testsprite_generate_backend_test_plan`
+3. `mcp__testsprite__testsprite_generate_code_and_execute`
+4. `mcp__testsprite__testsprite_generate_code_summary`
+5. `mcp__testsprite__testsprite_generate_frontend_test_plan`
+6. `mcp__testsprite__testsprite_generate_standardized_prd`
+7. `mcp__testsprite__testsprite_open_test_result_dashboard`
+8. `mcp__testsprite__testsprite_rerun_tests`
+
+No files were modified.

@@ -1,0 +1,28 @@
+
+> app@0.1.0 dev
+> next dev --hostname 127.0.0.1 --port 3105
+
+▲ Next.js 16.1.6 (Turbopack)
+- Local:         http://127.0.0.1:3105
+- Network:       http://127.0.0.1:3105
+- Environments: .env.local
+
+✓ Starting...
+Creating turbopack project { dir: 'D:\\lain_lain\\Coding\\project\\logistik', testMode: true }
+✓ Ready in 2.6s
+ GET /login 200 in 2.9s (compile: 2.2s, proxy.ts: 353ms, render: 348ms)
+ POST /api/auth/login 400 in 330ms (compile: 293ms, proxy.ts: 16ms, render: 21ms)
+ POST /api/auth/login 401 in 461ms (compile: 5ms, proxy.ts: 6ms, render: 449ms)
+ POST /api/auth/login 200 in 733ms (compile: 40ms, proxy.ts: 9ms, render: 684ms)
+ POST /api/auth/login 200 in 764ms (compile: 18ms, proxy.ts: 10ms, render: 737ms)
+ GET /api/auth/session 200 in 79ms (compile: 55ms, proxy.ts: 9ms, render: 15ms)
+ GET /api/auth/session 401 in 21ms (compile: 3ms, proxy.ts: 7ms, render: 11ms)
+ POST /api/auth/logout 200 in 83ms (compile: 62ms, proxy.ts: 5ms, render: 16ms)
+ GET /api/auth/session 401 in 18ms (compile: 4ms, proxy.ts: 5ms, render: 9ms)
+ POST /api/auth/login 200 in 269ms (compile: 5ms, proxy.ts: 3ms, render: 260ms)
+ GET /api/data?entity=orders 401 in 76ms (compile: 65ms, proxy.ts: 4ms, render: 7ms)
+ POST /api/data 401 in 20ms (compile: 4ms, proxy.ts: 6ms, render: 10ms)
+ GET /api/data?entity=invalid 400 in 15ms (compile: 3ms, proxy.ts: 3ms, render: 10ms)
+ POST /api/data 400 in 28ms (compile: 8ms, proxy.ts: 3ms, render: 17ms)
+ GET /api/data?entity=orders&id=non-existent-id 404 in 271ms (compile: 3ms, proxy.ts: 4ms, render: 265ms)
+ GET /api/data?entity=audit-logs 403 in 281ms (compile: 3ms, proxy.ts: 4ms, render: 274ms)
