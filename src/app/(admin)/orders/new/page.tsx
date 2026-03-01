@@ -102,7 +102,7 @@ export default function NewOrderPage() {
         <div>
             <div className="page-header">
                 <div className="page-header-left">
-                    <button className="btn btn-ghost btn-sm" onClick={() => router.push('/orders')} style={{ flexShrink: 0 }}>
+                    <button className="btn-back" onClick={() => router.push('/orders')}>
                         <ArrowLeft size={16} />
                     </button>
                     <h1 className="page-title">Buat Order Baru</h1>

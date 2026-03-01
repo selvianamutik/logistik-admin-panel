@@ -68,6 +68,9 @@ export default function CompanyPage() {
         root.style.setProperty('--color-primary-600', hex);
         root.style.setProperty('--color-primary-700', toHex(h, s, Math.max(0, l - 8)));
         root.style.setProperty('--color-primary-800', toHex(h, s, Math.max(0, l - 16)));
+        // Sidebar active colors
+        root.style.setProperty('--sidebar-active-bg', hex + '33');
+        root.style.setProperty('--sidebar-active-text', toHex(h, Math.min(100, s + 15), Math.min(85, l + 30)));
     };
 
     if (loading || !data) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 300 }} /></div>;
@@ -92,15 +95,40 @@ export default function CompanyPage() {
                         </div>
                         <div className="form-section-title">Logo Perusahaan</div>
                         <div className="form-group">
-                            <label className="form-label">URL Logo</label>
-                            <input className="form-input" value={data.logoUrl || ''} onChange={e => u('logoUrl', e.target.value)} placeholder="https://example.com/logo.png" />
-                            <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Logo akan tampil di semua dokumen cetak & export (Invoice, PDF, Excel, Print Preview)</p>
-                            {data.logoUrl && (
-                                <div style={{ marginTop: '0.5rem', padding: '0.75rem', border: '1px solid var(--border-color)', borderRadius: '0.5rem', background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                    <img src={data.logoUrl} alt="Preview" style={{ height: 48, width: 'auto', maxWidth: 200, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Preview logo</span>
+                            <label className="form-label">Upload / Import Logo</label>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
+                                {data.logoUrl ? (
+                                    <div style={{ position: 'relative', width: 64, height: 64, borderRadius: '0.5rem', border: '2px solid var(--border-color)', overflow: 'hidden', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                        <img src={data.logoUrl} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 4 }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                                        <button type="button" onClick={() => u('logoUrl', '')} style={{ position: 'absolute', top: 2, right: 2, width: 18, height: 18, borderRadius: '50%', border: 'none', background: '#ef4444', color: '#fff', fontSize: '0.65rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>✕</button>
+                                    </div>
+                                ) : (
+                                    <div style={{ width: 64, height: 64, borderRadius: '0.5rem', border: '2px dashed var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.7rem', flexShrink: 0, background: 'var(--bg-secondary)' }}>
+                                        No Logo
+                                    </div>
+                                )}
+                                <div style={{ flex: 1 }}>
+                                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 0.85rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-primary)', color: 'var(--color-primary)', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s', background: 'transparent' }}
+                                        onMouseOver={e => { (e.currentTarget as HTMLElement).style.background = 'var(--color-primary)'; (e.currentTarget as HTMLElement).style.color = '#fff'; }}
+                                        onMouseOut={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'var(--color-primary)'; }}>
+                                        📁 Pilih File
+                                        <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => {
+                                            const file = e.target.files?.[0];
+                                            if (!file) return;
+                                            if (file.size > 500 * 1024) { alert('Ukuran file max 500KB'); return; }
+                                            const reader = new FileReader();
+                                            reader.onload = () => { u('logoUrl', reader.result as string); };
+                                            reader.readAsDataURL(file);
+                                        }} />
+                                    </label>
+                                    <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>PNG, JPG, SVG • Max 500KB</p>
                                 </div>
-                            )}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>atau URL:</span>
+                                <input className="form-input" value={data.logoUrl?.startsWith('data:') ? '' : (data.logoUrl || '')} onChange={e => u('logoUrl', e.target.value)} placeholder="https://example.com/logo.png" style={{ fontSize: '0.8rem' }} />
+                            </div>
+                            <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Logo tampil di sidebar, cetak, dan export (Invoice, PDF, Excel)</p>
                         </div>
                         <div className="form-section-title">🎨 Tema Warna Aplikasi</div>
                         <div className="form-group">

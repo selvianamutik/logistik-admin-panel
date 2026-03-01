@@ -48,7 +48,7 @@ export default function ExpenseNewPage() {
         <div>
             <div className="page-header">
                 <div className="page-header-left">
-                    <button className="btn btn-ghost btn-sm" onClick={() => router.push('/expenses')} style={{ flexShrink: 0 }}><ArrowLeft size={16} /></button>
+                    <button className="btn-back" onClick={() => router.push('/expenses')}><ArrowLeft size={16} /></button>
                     <h1 className="page-title">Tambah Pengeluaran</h1>
                 </div>
             </div>

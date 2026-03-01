@@ -56,7 +56,7 @@ export default function CustomerDetailPage() {
         <div>
             <div className="page-header">
                 <div className="page-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <button className="btn btn-ghost btn-sm" onClick={() => router.push('/customers')} style={{ flexShrink: 0 }}><ArrowLeft size={16} /></button>
+                    <button className="btn-back" onClick={() => router.push('/customers')}><ArrowLeft size={16} /></button>
                     <h1 className="page-title">{customer.name}</h1>
                 </div>
                 <div className="page-actions">

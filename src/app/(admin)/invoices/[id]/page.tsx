@@ -68,7 +68,7 @@ export default function InvoiceDetailPage() {
         <div>
             {/* Compact Header */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
-                <button className="btn btn-ghost btn-sm" onClick={() => router.push('/invoices')}><ArrowLeft size={16} /></button>
+                <button className="btn-back" onClick={() => router.push('/invoices')}><ArrowLeft size={16} /></button>
                 <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
                         <h1 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>{invoice.invoiceNumber}</h1>

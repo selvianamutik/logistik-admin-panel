@@ -204,7 +204,7 @@ export default function OrderDetailPage() {
         <div>
             <div className="page-header">
                 <div className="page-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <button className="btn btn-ghost btn-sm" onClick={() => router.push('/orders')} style={{ flexShrink: 0 }}><ArrowLeft size={16} /></button>
+                    <button className="btn-back" onClick={() => router.push('/orders')}><ArrowLeft size={16} /></button>
                     <div>
                         <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             {order.masterResi}

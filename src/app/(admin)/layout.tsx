@@ -113,6 +113,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         root.style.setProperty('--color-primary-600', hex);
         root.style.setProperty('--color-primary-700', hslToHex(hsl[0], hsl[1], Math.max(0, hsl[2] - 8)));
         root.style.setProperty('--color-primary-800', hslToHex(hsl[0], hsl[1], Math.max(0, hsl[2] - 16)));
+        // Sidebar active colors from theme
+        root.style.setProperty('--sidebar-active-bg', hex + '33');
+        root.style.setProperty('--sidebar-active-text', hslToHex(hsl[0], Math.min(100, hsl[1] + 15), Math.min(85, hsl[2] + 30)));
     }, []);
 
     // Fetch session + company profile
@@ -129,6 +132,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             if (co.data) {
                 setCompany(co.data);
                 if (co.data.themeColor) applyTheme(co.data.themeColor);
+                // Set browser title dynamically
+                if (co.data.name) {
+                    document.title = `Sistem Manajemen - ${co.data.name}`;
+                }
             }
             setLoading(false);
         }).catch(() => {
@@ -200,7 +207,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                             ) : (
                                 <div className="sidebar-logo-icon">{(company?.name || 'L').charAt(0)}</div>
                             )}
-                            <span className="sidebar-logo-text">{company?.name || 'LOGISTIK'}</span>
+                            <div className="sidebar-logo-text-wrap">
+                                <span className="sidebar-logo-text">{company?.name || 'LOGISTIK'}</span>
+                                <span className="sidebar-logo-subtitle">Sistem Manajemen</span>
+                            </div>
                         </div>
 
                         <nav className="sidebar-nav">

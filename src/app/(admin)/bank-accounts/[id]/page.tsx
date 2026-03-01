@@ -134,7 +134,7 @@ export default function BankAccountDetailPage() {
             {/* Header */}
             <div className="page-header">
                 <div className="page-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <button className="btn btn-secondary btn-sm" onClick={() => router.push('/bank-accounts')}><ArrowLeft size={16} /></button>
+                    <button className="btn-back" onClick={() => router.push('/bank-accounts')}><ArrowLeft size={16} /></button>
                     <BankDetailLogo name={account.bankName} size={44} />
                     <div>
                         <h1 className="page-title">{account.bankName}</h1>

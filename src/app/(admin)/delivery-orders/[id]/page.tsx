@@ -107,7 +107,7 @@ export default function DODetailPage() {
         <div>
             <div className="page-header">
                 <div className="page-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <button className="btn btn-ghost btn-sm" onClick={() => router.push('/delivery-orders')} style={{ flexShrink: 0 }}>
+                    <button className="btn-back" onClick={() => router.push('/delivery-orders')}>
                         <ArrowLeft size={16} />
                     </button>
                     <div>

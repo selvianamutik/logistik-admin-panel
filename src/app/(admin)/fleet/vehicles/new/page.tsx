@@ -38,7 +38,7 @@ export default function VehicleNewPage() {
         <div>
             <div className="page-header">
                 <div className="page-header-left">
-                    <button className="btn btn-ghost btn-sm" onClick={() => router.push('/fleet/vehicles')} style={{ flexShrink: 0 }}><ArrowLeft size={16} /></button>
+                    <button className="btn-back" onClick={() => router.push('/fleet/vehicles')}><ArrowLeft size={16} /></button>
                     <h1 className="page-title">Tambah Kendaraan Baru</h1>
                 </div>
             </div>
