@@ -51,7 +51,7 @@ export default function VehicleDetailPage() {
         <div>
             <div className="page-header">
                 <div className="page-header-left">
-                    <button className="btn btn-ghost btn-sm mb-2" onClick={() => router.push('/fleet/vehicles')}><ArrowLeft size={16} /> Kembali</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => router.push('/fleet/vehicles')} style={{ flexShrink: 0 }}><ArrowLeft size={16} /></button>
                     <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                         {vehicle.plateNumber}
                         <span className={`badge badge-${VEHICLE_STATUS_MAP[vehicle.status]?.color}`}><span className="badge-dot" /> {VEHICLE_STATUS_MAP[vehicle.status]?.label}</span>

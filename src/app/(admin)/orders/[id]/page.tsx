@@ -203,17 +203,17 @@ export default function OrderDetailPage() {
     return (
         <div>
             <div className="page-header">
-                <div className="page-header-left">
-                    <button className="btn btn-ghost btn-sm mb-2" onClick={() => router.push('/orders')}>
-                        <ArrowLeft size={16} /> Kembali
-                    </button>
-                    <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        {order.masterResi}
-                        <span className={`badge badge-${ORDER_STATUS_MAP[order.status]?.color || 'gray'}`}>
-                            <span className="badge-dot" /> {ORDER_STATUS_MAP[order.status]?.label}
-                        </span>
-                    </h1>
-                    <p className="page-subtitle">Detail order dan pengiriman</p>
+                <div className="page-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <button className="btn btn-ghost btn-sm" onClick={() => router.push('/orders')} style={{ flexShrink: 0 }}><ArrowLeft size={16} /></button>
+                    <div>
+                        <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            {order.masterResi}
+                            <span className={`badge badge-${ORDER_STATUS_MAP[order.status]?.color || 'gray'}`}>
+                                <span className="badge-dot" /> {ORDER_STATUS_MAP[order.status]?.label}
+                            </span>
+                        </h1>
+                        <p className="page-subtitle">Detail order dan pengiriman</p>
+                    </div>
                 </div>
                 <div className="page-actions">
                     <button className="btn btn-primary" onClick={() => setShowDOModal(true)} disabled={availableItems.length === 0}>

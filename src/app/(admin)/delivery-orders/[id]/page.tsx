@@ -106,16 +106,18 @@ export default function DODetailPage() {
     return (
         <div>
             <div className="page-header">
-                <div className="page-header-left">
-                    <button className="btn btn-ghost btn-sm mb-2" onClick={() => router.push('/delivery-orders')}>
-                        <ArrowLeft size={16} /> Kembali
+                <div className="page-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <button className="btn btn-ghost btn-sm" onClick={() => router.push('/delivery-orders')} style={{ flexShrink: 0 }}>
+                        <ArrowLeft size={16} />
                     </button>
-                    <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        {doData.doNumber}
-                        <span className={`badge badge-${DO_STATUS_MAP[doData.status]?.color}`}>
-                            <span className="badge-dot" /> {DO_STATUS_MAP[doData.status]?.label}
-                        </span>
-                    </h1>
+                    <div>
+                        <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            {doData.doNumber}
+                            <span className={`badge badge-${DO_STATUS_MAP[doData.status]?.color}`}>
+                                <span className="badge-dot" /> {DO_STATUS_MAP[doData.status]?.label}
+                            </span>
+                        </h1>
+                    </div>
                 </div>
                 <div className="page-actions">
                     {nextStatuses.length > 0 && (

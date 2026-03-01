@@ -102,8 +102,8 @@ export default function NewOrderPage() {
         <div>
             <div className="page-header">
                 <div className="page-header-left">
-                    <button className="btn btn-ghost btn-sm mb-2" onClick={() => router.push('/orders')}>
-                        <ArrowLeft size={16} /> Kembali
+                    <button className="btn btn-ghost btn-sm" onClick={() => router.push('/orders')} style={{ flexShrink: 0 }}>
+                        <ArrowLeft size={16} />
                     </button>
                     <h1 className="page-title">Buat Order Baru</h1>
                     <p className="page-subtitle">Isi data pengiriman dan item barang</p>

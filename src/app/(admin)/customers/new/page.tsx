@@ -37,7 +37,7 @@ export default function CustomerNewPage() {
         <div>
             <div className="page-header">
                 <div className="page-header-left">
-                    <button className="btn btn-ghost btn-sm mb-2" onClick={() => router.push('/customers')}><ArrowLeft size={16} /> Kembali</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => router.push('/customers')} style={{ flexShrink: 0 }}><ArrowLeft size={16} /></button>
                     <h1 className="page-title">Tambah Customer Baru</h1>
                 </div>
             </div>

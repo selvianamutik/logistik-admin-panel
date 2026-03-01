@@ -50,7 +50,7 @@ export default function IncidentDetailPage() {
         <div>
             <div className="page-header">
                 <div className="page-header-left">
-                    <button className="btn btn-ghost btn-sm mb-2" onClick={() => router.push('/fleet/incidents')}><ArrowLeft size={16} /> Kembali</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => router.push('/fleet/incidents')} style={{ flexShrink: 0 }}><ArrowLeft size={16} /></button>
                     <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                         {incident.incidentNumber}
                         <span className={`badge badge-${INCIDENT_STATUS_MAP[incident.status]?.color}`}><span className="badge-dot" /> {INCIDENT_STATUS_MAP[incident.status]?.label}</span>
