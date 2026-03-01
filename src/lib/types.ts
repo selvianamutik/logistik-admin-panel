@@ -36,6 +36,7 @@ export interface CompanyProfile {
   bankAccount?: string;
   bankHolder?: string;
   logoUrl?: string;
+  themeColor?: string;
   headerStampUrl?: string;
   signatureStampUrl?: string;
   numberingSettings: {

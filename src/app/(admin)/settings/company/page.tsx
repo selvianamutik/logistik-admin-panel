@@ -68,6 +68,35 @@ export default function CompanyPage() {
                                 </div>
                             )}
                         </div>
+                        <div className="form-section-title">🎨 Tema Warna Aplikasi</div>
+                        <div className="form-group">
+                            <label className="form-label">Pilih Warna Tema</label>
+                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+                                {[
+                                    { color: '#4f46e5', name: 'Indigo' },
+                                    { color: '#2563eb', name: 'Biru' },
+                                    { color: '#0891b2', name: 'Cyan' },
+                                    { color: '#059669', name: 'Hijau' },
+                                    { color: '#d97706', name: 'Orange' },
+                                    { color: '#dc2626', name: 'Merah' },
+                                    { color: '#7c3aed', name: 'Ungu' },
+                                    { color: '#db2777', name: 'Pink' },
+                                ].map(t => (
+                                    <button key={t.color} onClick={() => u('themeColor', t.color)} title={t.name}
+                                        style={{
+                                            width: 40, height: 40, borderRadius: '0.5rem', border: data.themeColor === t.color ? '3px solid #1e293b' : '2px solid #e2e8f0',
+                                            background: t.color, cursor: 'pointer', boxShadow: data.themeColor === t.color ? '0 0 0 2px white, 0 0 0 4px ' + t.color : 'none',
+                                            transition: 'all 0.15s'
+                                        }} />
+                                ))}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <input type="color" value={data.themeColor || '#4f46e5'} onChange={e => u('themeColor', e.target.value)}
+                                    style={{ width: 40, height: 36, padding: 0, border: '1px solid #e2e8f0', borderRadius: '0.375rem', cursor: 'pointer' }} />
+                                <input className="form-input" value={data.themeColor || '#4f46e5'} onChange={e => u('themeColor', e.target.value)} placeholder="#4f46e5" style={{ maxWidth: 140 }} />
+                                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Warna kustom</span>
+                            </div>
+                        </div>
                         <div className="form-section-title">Rekening Bank</div>
                         <div className="form-row">
                             <div className="form-group"><label className="form-label">Bank</label><input className="form-input" value={data.bankName || ''} onChange={e => u('bankName', e.target.value)} /></div>
