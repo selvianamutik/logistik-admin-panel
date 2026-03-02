@@ -146,11 +146,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             router.push('/login');
             setLoading(false);
         });
-        // Track mobile state
-        const checkMobile = () => setIsMobile(window.innerWidth <= 768);
-        checkMobile();
-        window.addEventListener('resize', checkMobile);
-        return () => window.removeEventListener('resize', checkMobile);
+        // Track mobile state using matchMedia (matches CSS @media breakpoint exactly)
+        const mobileQuery = window.matchMedia('(max-width: 768px)');
+        const checkMobile = (e: MediaQueryList | MediaQueryListEvent) => setIsMobile(e.matches);
+        checkMobile(mobileQuery);
+        mobileQuery.addEventListener('change', checkMobile);
+        return () => mobileQuery.removeEventListener('change', checkMobile);
     }, [router, applyTheme]);
 
     const addToast = useCallback((type: ToastMessage['type'], message: string) => {
