@@ -97,6 +97,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     const [mobileOpen, setMobileOpen] = useState(false);
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
     const [loading, setLoading] = useState(true);
+    const [isMobile, setIsMobile] = useState(false);
 
     // Generate theme palette from a single hex color
     const applyTheme = useCallback((hex: string) => {
@@ -142,6 +143,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             router.push('/login');
             setLoading(false);
         });
+        // Track mobile state
+        const checkMobile = () => setIsMobile(window.innerWidth <= 768);
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
     }, [router, applyTheme]);
 
     const addToast = useCallback((type: ToastMessage['type'], message: string) => {
@@ -255,7 +261,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                                     className="topbar-toggle"
                                     onClick={() => {
                                         // On mobile, toggle mobile menu
-                                        if (window.innerWidth <= 768) {
+                                        if (isMobile) {
                                             setMobileOpen(!mobileOpen);
                                         } else {
                                             setSidebarCollapsed(!sidebarCollapsed);
@@ -263,7 +269,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                                     }}
                                     aria-label="Toggle sidebar"
                                 >
-                                    {sidebarCollapsed ? <Menu size={20} /> : <ChevronLeft size={20} />}
+                                    {isMobile ? (mobileOpen ? <X size={20} /> : <Menu size={20} />) : (sidebarCollapsed ? <Menu size={20} /> : <ChevronLeft size={20} />)}
                                 </button>
 
                                 <nav className="breadcrumbs">
