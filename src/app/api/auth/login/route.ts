@@ -7,6 +7,10 @@ import { sanityClient } from '@/lib/sanity';
 import { verifyPassword, createSession, setSessionCookie } from '@/lib/auth';
 import type { User } from '@/lib/types';
 
+export async function GET() {
+    return NextResponse.json({ error: 'Use POST method', methods: ['POST'] }, { status: 405 });
+}
+
 export async function POST(request: Request) {
     try {
         const { email, password } = await request.json();
