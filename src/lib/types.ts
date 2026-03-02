@@ -99,7 +99,43 @@ export interface Driver {
   name: string;
   phone: string;
   licenseNumber: string;
+  ktpNumber?: string;
+  simExpiry?: string;
+  address?: string;
   active: boolean;
+}
+
+// ── Driver Voucher (Bon Supir) ──
+export type DriverVoucherStatus = 'DRAFT' | 'ISSUED' | 'SETTLED';
+
+export interface DriverVoucher {
+  _id: string;
+  _type: 'driverVoucher';
+  bonNumber: string;
+  driverRef: string;
+  driverName?: string;
+  deliveryOrderRef?: string;
+  doNumber?: string;
+  vehicleRef?: string;
+  vehiclePlate?: string;
+  route?: string;
+  issuedDate: string;
+  cashGiven: number;
+  totalSpent: number;
+  balance: number;
+  status: DriverVoucherStatus;
+  notes?: string;
+  settledDate?: string;
+  settledBy?: string;
+}
+
+export interface DriverVoucherItem {
+  _id: string;
+  _type: 'driverVoucherItem';
+  voucherRef: string;
+  category: string;
+  description: string;
+  amount: number;
 }
 
 // ── Order ──

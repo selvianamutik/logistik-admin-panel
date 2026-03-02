@@ -6,7 +6,8 @@ import Link from 'next/link';
 import {
     LayoutDashboard, Package, Truck, Users, Layers, FileText, Wallet, Tags,
     BarChart3, Car, Wrench, AlertTriangle, User, Lock, Building2, UserCog,
-    ScrollText, ChevronLeft, Menu, LogOut, X, CheckCircle, XCircle, Info, AlertCircle, Landmark
+    ScrollText, ChevronLeft, Menu, LogOut, X, CheckCircle, XCircle, Info, AlertCircle, Landmark,
+    UserCircle, Receipt
 } from 'lucide-react';
 import { getSidebarMenu } from '@/lib/rbac';
 import type { SessionUser, ToastMessage, CompanyProfile } from '@/lib/types';
@@ -53,6 +54,8 @@ const ICON_MAP: Record<string, React.ReactNode> = {
     UserCog: <UserCog size={20} />,
     ScrollText: <ScrollText size={20} />,
     Landmark: <Landmark size={20} />,
+    UserCircle: <UserCircle size={20} />,
+    Receipt: <Receipt size={20} />,
 };
 
 // ── Toast Context ──

@@ -45,6 +45,8 @@ export const SANITY_TYPE_MAP: Record<string, string> = {
     'audit-logs': 'auditLog',
     'bank-accounts': 'bankAccount',
     'bank-transactions': 'bankTransaction',
+    'driver-vouchers': 'driverVoucher',
+    'driver-voucher-items': 'driverVoucherItem',
     company: 'companyProfile',
 };
 

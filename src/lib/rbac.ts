@@ -92,6 +92,10 @@ const permissionMatrix: Record<string, Record<UserRole, ModulePermissions>> = {
         OWNER: { view: true, create: true, update: true, delete: true, export: true, print: false },
         ADMIN: { view: true, create: false, update: false, delete: false, export: false, print: false },
     },
+    driverVouchers: {
+        OWNER: { view: true, create: true, update: true, delete: true, export: true, print: true },
+        ADMIN: { view: true, create: true, update: true, delete: false, export: true, print: true },
+    },
 };
 
 // ── Check Permission ──
@@ -159,6 +163,7 @@ export function getSidebarMenu(role: UserRole): SidebarMenuGroup[] {
             label: 'Keuangan',
             items: [
                 { label: 'Invoice', href: '/invoices', icon: 'FileText', module: 'invoices' },
+                { label: 'Bon Supir', href: '/driver-vouchers', icon: 'Receipt', module: 'driverVouchers' },
                 { label: 'Pengeluaran', href: '/expenses', icon: 'Wallet', module: 'expenses' },
                 { label: 'Kategori Biaya', href: '/expense-categories', icon: 'Tags', module: 'expenseCategories' },
                 { label: 'Rekening Bank', href: '/bank-accounts', icon: 'Landmark', module: 'bankAccounts' },
@@ -169,6 +174,7 @@ export function getSidebarMenu(role: UserRole): SidebarMenuGroup[] {
             label: 'Armada',
             items: [
                 { label: 'Kendaraan', href: '/fleet/vehicles', icon: 'Car', module: 'vehicles' },
+                { label: 'Supir', href: '/fleet/drivers', icon: 'UserCircle', module: 'drivers' },
                 { label: 'Maintenance', href: '/fleet/maintenance', icon: 'Wrench', module: 'maintenance' },
                 { label: 'Ban', href: '/fleet/tires', icon: 'Wrench', module: 'tires' },
                 { label: 'Insiden', href: '/fleet/incidents', icon: 'AlertTriangle', module: 'incidents' },
