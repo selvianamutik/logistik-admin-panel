@@ -36,7 +36,7 @@ export default function DriverVoucherDetailPage() {
         setLoading(false);
     }, [params.id]);
 
-    useEffect(() => { loadData(); }, [loadData]);
+    useEffect(() => { loadData(); }, [loadData]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const totalSpent = items.reduce((s, i) => s + i.amount, 0);
     const balance = (voucher?.cashGiven || 0) - totalSpent;
@@ -54,7 +54,7 @@ export default function DriverVoucherDetailPage() {
         // Update voucher totals
         await fetch('/api/data', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ entity: 'driver-vouchers', action: 'update', id: params.id, data: { totalSpent: newTotal, balance: (voucher?.cashGiven || 0) - newTotal } })
+            body: JSON.stringify({ entity: 'driver-vouchers', action: 'update', data: { id: params.id, updates: { totalSpent: newTotal, balance: (voucher?.cashGiven || 0) - newTotal } } })
         });
         setVoucher(prev => prev ? { ...prev, totalSpent: newTotal, balance: (prev.cashGiven || 0) - newTotal } : null);
         addToast('success', 'Item pengeluaran ditambahkan');
@@ -63,13 +63,13 @@ export default function DriverVoucherDetailPage() {
     };
 
     const handleDeleteItem = async (itemId: string) => {
-        await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'driver-voucher-items', action: 'delete', id: itemId }) });
+        await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'driver-voucher-items', action: 'delete', data: { id: itemId } }) });
         const newItems = items.filter(i => i._id !== itemId);
         setItems(newItems);
         const newTotal = newItems.reduce((s, i) => s + i.amount, 0);
         await fetch('/api/data', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ entity: 'driver-vouchers', action: 'update', id: params.id, data: { totalSpent: newTotal, balance: (voucher?.cashGiven || 0) - newTotal } })
+            body: JSON.stringify({ entity: 'driver-vouchers', action: 'update', data: { id: params.id, updates: { totalSpent: newTotal, balance: (voucher?.cashGiven || 0) - newTotal } } })
         });
         setVoucher(prev => prev ? { ...prev, totalSpent: newTotal, balance: (prev.cashGiven || 0) - newTotal } : null);
         addToast('success', 'Item dihapus');
@@ -80,8 +80,8 @@ export default function DriverVoucherDetailPage() {
         await fetch('/api/data', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                entity: 'driver-vouchers', action: 'update', id: params.id,
-                data: { status: 'SETTLED', settledDate: new Date().toISOString(), totalSpent, balance }
+                entity: 'driver-vouchers', action: 'update',
+                data: { id: params.id, updates: { status: 'SETTLED', settledDate: new Date().toISOString(), totalSpent, balance } }
             })
         });
         setVoucher(prev => prev ? { ...prev, status: 'SETTLED', settledDate: new Date().toISOString() } : null);

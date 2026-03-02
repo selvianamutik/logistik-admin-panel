@@ -83,10 +83,10 @@ export default function NewDriverVoucherPage() {
         });
         const result = await res.json();
 
-        // Update bon counter
+        // Update bon counter - company entity uses singleton path (no action needed)
         await fetch('/api/data', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ entity: 'company', action: 'update', id: co._id, data: { numberingSettings: { ...co.numberingSettings, bonPrefix: prefix, bonCounter: counter } } })
+            body: JSON.stringify({ entity: 'company', data: { numberingSettings: { ...co.numberingSettings, bonPrefix: prefix, bonCounter: counter } } })
         });
 
         addToast('success', `Bon ${bonNumber} berhasil dibuat`);

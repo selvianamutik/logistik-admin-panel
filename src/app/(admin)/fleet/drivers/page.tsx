@@ -25,7 +25,7 @@ export default function DriversPage() {
         const res = await fetch('/api/data', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(editId
-                ? { entity: 'drivers', action: 'update', id: editId, data: form }
+                ? { entity: 'drivers', action: 'update', data: { id: editId, updates: form } }
                 : { entity: 'drivers', data: form })
         });
         const d = await res.json();
@@ -40,7 +40,7 @@ export default function DriversPage() {
     };
 
     const toggleActive = async (driver: Driver) => {
-        const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'drivers', action: 'update', id: driver._id, data: { active: !driver.active } }) });
+        const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'drivers', action: 'update', data: { id: driver._id, updates: { active: !driver.active } } }) });
         const d = await res.json();
         setItems(prev => prev.map(i => i._id === driver._id ? d.data : i));
         addToast('success', driver.active ? 'Supir dinon-aktifkan' : 'Supir diaktifkan');
