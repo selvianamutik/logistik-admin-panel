@@ -5,9 +5,9 @@
 
 import { createClient } from '@sanity/client';
 
-const projectId = process.env.NEXT_PUBLIC_SANITY_PROJECT_ID!;
+const projectId = process.env.NEXT_PUBLIC_SANITY_PROJECT_ID || 'p6do50hl';
 const dataset = process.env.NEXT_PUBLIC_SANITY_DATASET || 'production';
-const token = process.env.SANITY_API_TOKEN!;
+const token = process.env.SANITY_API_TOKEN || 'sky7V0P7lW7gtRk3CP3GHuYd18QmYN5BYgzPZyLF7AiH4AcDc9M19pSEvef7RAAGqVoewy7sZd5hozupK9WXcXSNb3a1tS76KAduc16IzBBOwT6kx9ErKJgVKSYdQhd3pDLJi5bUtFlyAfYVtXFwJ8oNlpa793MONpBKyscK2Z75tXfpCdQ4';
 const apiVersion = process.env.SANITY_API_VERSION || '2024-01-01';
 
 // Read-only client (for GROQ queries)
