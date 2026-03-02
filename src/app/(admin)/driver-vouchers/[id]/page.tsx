@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useToast } from '../../layout';
 import { ArrowLeft, Plus, Save, X, CheckCircle, Printer, Trash2 } from 'lucide-react';
@@ -26,17 +26,19 @@ export default function DriverVoucherDetailPage() {
     const [showAddItem, setShowAddItem] = useState(false);
     const [itemForm, setItemForm] = useState({ category: 'Solar/BBM', description: '', amount: 0 });
 
-    const loadData = useCallback(async () => {
-        const [vRes, iRes] = await Promise.all([
+    useEffect(() => {
+        let cancelled = false;
+        Promise.all([
             fetch(`/api/data?entity=driver-vouchers&id=${params.id}`).then(r => r.json()),
             fetch(`/api/data?entity=driver-voucher-items&filter=${encodeURIComponent(JSON.stringify({ voucherRef: params.id }))}`).then(r => r.json()),
-        ]);
-        setVoucher(vRes.data || null);
-        setItems(iRes.data || []);
-        setLoading(false);
+        ]).then(([vRes, iRes]) => {
+            if (cancelled) return;
+            setVoucher(vRes.data || null);
+            setItems(iRes.data || []);
+            setLoading(false);
+        });
+        return () => { cancelled = true; };
     }, [params.id]);
-
-    useEffect(() => { loadData(); }, [loadData]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const totalSpent = items.reduce((s, i) => s + i.amount, 0);
     const balance = (voucher?.cashGiven || 0) - totalSpent;
