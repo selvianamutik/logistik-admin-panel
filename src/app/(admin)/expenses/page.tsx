@@ -36,6 +36,15 @@ export default function ExpensesPage() {
         setForm({ categoryRef: '', date: new Date().toISOString().split('T')[0], amount: 0, note: '', description: '', privacyLevel: 'internal' });
     };
 
+    // Compute totals per category for breakdown
+    const categoryTotals = filtered.reduce<Record<string, number>>((acc, e) => {
+        const cat = e.categoryName || 'Lainnya';
+        acc[cat] = (acc[cat] || 0) + e.amount;
+        return acc;
+    }, {});
+    const grandTotal = filtered.reduce((s, e) => s + e.amount, 0);
+    const avgAmount = filtered.length > 0 ? grandTotal / filtered.length : 0;
+
     return (
         <div>
             <div className="page-header"><div className="page-header-left"><h1 className="page-title">Pengeluaran</h1><p className="page-subtitle">Kelola catatan pengeluaran</p></div>
@@ -52,6 +61,48 @@ export default function ExpensesPage() {
                     }}><Printer size={15} /> Print</button>
                     <button className="btn btn-primary" onClick={() => setShowModal(true)}><Plus size={18} /> Tambah Pengeluaran</button>
                 </div></div>
+
+            {/* KPI Summary */}
+            <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
+                <div className="kpi-card">
+                    <div className="kpi-icon danger"><Wallet size={20} /></div>
+                    <div className="kpi-content">
+                        <div className="kpi-label">Total Pengeluaran</div>
+                        <div className="kpi-value" style={{ fontSize: '1.1rem', color: 'var(--color-danger)' }}>{formatCurrency(grandTotal)}</div>
+                    </div>
+                </div>
+                <div className="kpi-card">
+                    <div className="kpi-icon info"><Search size={20} /></div>
+                    <div className="kpi-content">
+                        <div className="kpi-label">Jumlah Transaksi</div>
+                        <div className="kpi-value">{filtered.length}</div>
+                    </div>
+                </div>
+                <div className="kpi-card">
+                    <div className="kpi-icon warning"><Wallet size={20} /></div>
+                    <div className="kpi-content">
+                        <div className="kpi-label">Rata-rata / Transaksi</div>
+                        <div className="kpi-value" style={{ fontSize: '1rem' }}>{formatCurrency(Math.round(avgAmount))}</div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Category Breakdown */}
+            {!loading && Object.keys(categoryTotals).length > 1 && (
+                <div className="card" style={{ marginBottom: '1rem', padding: '0.875rem 1rem' }}>
+                    <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Breakdown per Kategori</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        {Object.entries(categoryTotals).sort((a, b) => b[1] - a[1]).map(([cat, total]) => (
+                            <div key={cat} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)', borderRadius: 8, padding: '0.4rem 0.75rem' }}>
+                                <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-text-primary)' }}>{cat}</span>
+                                <span style={{ fontSize: '0.8rem', color: 'var(--color-danger)', fontWeight: 700 }}>{formatCurrency(total)}</span>
+                                <span style={{ fontSize: '0.72rem', color: 'var(--color-text-secondary)' }}>({grandTotal > 0 ? Math.round((total / grandTotal) * 100) : 0}%)</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             <div className="table-container">
                 <div className="table-toolbar"><div className="table-toolbar-left"><div className="table-search"><Search size={16} className="table-search-icon" /><input placeholder="Cari..." value={search} onChange={e => setSearch(e.target.value)} /></div></div></div>
                 <div className="table-wrapper">
@@ -69,11 +120,20 @@ export default function ExpensesPage() {
                                             {isOwner && <td><span className={`badge ${e.privacyLevel === 'ownerOnly' ? 'badge-purple' : 'badge-info'}`}>{e.privacyLevel === 'ownerOnly' ? 'Owner Only' : 'Internal'}</span></td>}
                                         </tr>
                                     ))}
+                            {/* Total row */}
+                            {!loading && filtered.length > 0 && (
+                                <tr style={{ background: 'var(--color-bg-secondary)', borderTop: '2px solid var(--color-border)' }}>
+                                    <td colSpan={isOwner ? 3 : 3} className="font-semibold" style={{ textAlign: 'right', color: 'var(--color-text-secondary)', fontSize: '0.85rem' }}>TOTAL</td>
+                                    <td className="font-semibold" style={{ color: 'var(--color-danger)', fontSize: '1rem' }}>{formatCurrency(grandTotal)}</td>
+                                    {isOwner && <td />}
+                                </tr>
+                            )}
                         </tbody>
                     </table>
                 </div>
-                {filtered.length > 0 && <div className="pagination"><div className="pagination-info">Total: {formatCurrency(filtered.reduce((s, e) => s + e.amount, 0))}</div></div>}
+                {filtered.length > 0 && <div className="pagination"><div className="pagination-info">Menampilkan {filtered.length} transaksi · Total: <strong style={{ color: 'var(--color-danger)' }}>{formatCurrency(grandTotal)}</strong></div></div>}
             </div>
+
 
             {showModal && (
                 <div className="modal-overlay" onClick={() => setShowModal(false)}>
