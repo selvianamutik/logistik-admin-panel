@@ -7,7 +7,7 @@ import { NextResponse } from 'next/server';
 import { getSession, hashPassword } from '@/lib/auth';
 import { filterExpensesByRole, sanitizeVehicleForRole } from '@/lib/rbac';
 import {
-    sanityClient,
+    getSanityClient,
     SANITY_TYPE_MAP,
     sanityGetAll,
     sanityGetById,
@@ -240,7 +240,7 @@ export async function POST(request: Request) {
             if (data.invoiceRef) {
                 const invoice = await sanityGetById<Invoice>(data.invoiceRef);
                 if (invoice) {
-                    const allPayments = await sanityClient.fetch<Payment[]>(
+                    const allPayments = await getSanityClient().fetch<Payment[]>(
                         `*[_type == "payment" && invoiceRef == $ref]`,
                         { ref: data.invoiceRef }
                     );

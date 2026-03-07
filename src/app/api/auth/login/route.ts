@@ -3,7 +3,7 @@
    ============================================================ */
 
 import { NextResponse } from 'next/server';
-import { sanityClient } from '@/lib/sanity';
+import { getSanityClient } from '@/lib/sanity';
 import { verifyPassword, createSession, setSessionCookie } from '@/lib/auth';
 import type { User } from '@/lib/types';
 
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
         }
 
         // Find user from Sanity
-        const user = await sanityClient.fetch<User | null>(
+        const user = await getSanityClient().fetch<User | null>(
             `*[_type == "user" && email == $email && active == true][0]`,
             { email }
         );

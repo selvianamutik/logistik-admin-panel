@@ -5,19 +5,53 @@
 
 import { createClient } from '@sanity/client';
 
-const projectId = process.env.NEXT_PUBLIC_SANITY_PROJECT_ID || 'p6do50hl';
-const dataset = process.env.NEXT_PUBLIC_SANITY_DATASET || 'production';
-const token = process.env.SANITY_API_TOKEN || 'sky7V0P7lW7gtRk3CP3GHuYd18QmYN5BYgzPZyLF7AiH4AcDc9M19pSEvef7RAAGqVoewy7sZd5hozupK9WXcXSNb3a1tS76KAduc16IzBBOwT6kx9ErKJgVKSYdQhd3pDLJi5bUtFlyAfYVtXFwJ8oNlpa793MONpBKyscK2Z75tXfpCdQ4';
-const apiVersion = process.env.SANITY_API_VERSION || '2024-01-01';
+type SanityConfig = {
+    projectId: string;
+    dataset: string;
+    apiVersion: string;
+    token?: string;
+};
 
-// Read-only client (for GROQ queries)
-export const sanityClient = createClient({
-    projectId,
-    dataset,
-    apiVersion,
-    useCdn: false, // always fresh data for admin panel
-    token,
-});
+function cleanEnv(value: string | undefined): string | undefined {
+    if (!value) return undefined;
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    return trimmed.replace(/^['"]+|['"]+$/g, '');
+}
+
+function getSanityConfig(): SanityConfig {
+    const projectId = cleanEnv(process.env.NEXT_PUBLIC_SANITY_PROJECT_ID) || 'p6do50hl';
+    const dataset = cleanEnv(process.env.NEXT_PUBLIC_SANITY_DATASET) || 'production';
+    const apiVersion = cleanEnv(process.env.SANITY_API_VERSION) || '2024-01-01';
+    const token = cleanEnv(process.env.SANITY_API_TOKEN);
+
+    if (!/^[a-z0-9-]+$/.test(projectId)) {
+        throw new Error(
+            `Invalid NEXT_PUBLIC_SANITY_PROJECT_ID: "${projectId}". Use lowercase letters, numbers, or dashes.`
+        );
+    }
+
+    if (!/^[a-z0-9_]+$/.test(dataset)) {
+        throw new Error(
+            `Invalid NEXT_PUBLIC_SANITY_DATASET: "${dataset}". Use lowercase letters, numbers, or underscores.`
+        );
+    }
+
+    return { projectId, dataset, apiVersion, token };
+}
+
+let cachedClient: ReturnType<typeof createClient> | null = null;
+
+// Build client lazily so misconfigured env does not crash route-module import time.
+export function getSanityClient() {
+    if (cachedClient) return cachedClient;
+    const config = getSanityConfig();
+    cachedClient = createClient({
+        ...config,
+        useCdn: false, // always fresh data for admin panel
+    });
+    return cachedClient;
+}
 
 // ── Sanity _type mapping ──
 // URL entity name -> Sanity document _type
@@ -53,13 +87,13 @@ export const SANITY_TYPE_MAP: Record<string, string> = {
 // ── GROQ: Fetch all documents of a type ──
 export async function sanityGetAll<T = Record<string, unknown>>(docType: string): Promise<T[]> {
     const query = `*[_type == $type] | order(_createdAt desc)`;
-    return sanityClient.fetch<T[]>(query, { type: docType });
+    return getSanityClient().fetch<T[]>(query, { type: docType });
 }
 
 // ── GROQ: Fetch single document by _id ──
 export async function sanityGetById<T = Record<string, unknown>>(id: string): Promise<T | null> {
     const query = `*[_id == $id][0]`;
-    return sanityClient.fetch<T | null>(query, { id });
+    return getSanityClient().fetch<T | null>(query, { id });
 }
 
 // ── GROQ: Fetch documents with filter ──
@@ -79,14 +113,14 @@ export async function sanityGetByFilter<T = Record<string, unknown>>(
     const filterStr = conditions.join(' && ');
     const query = `*[_type == $type && ${filterStr}] | order(_createdAt desc)`;
     const params = { type: docType, ...filterObj };
-    return sanityClient.fetch<T[]>(query, params);
+    return getSanityClient().fetch<T[]>(query, params);
 }
 
 // ── Mutation: Create document ──
 export async function sanityCreate<T = Record<string, unknown>>(
     doc: { _type: string;[key: string]: unknown }
 ): Promise<T> {
-    const result = await sanityClient.create(doc);
+    const result = await getSanityClient().create(doc);
     return result as T;
 }
 
@@ -95,20 +129,20 @@ export async function sanityUpdate<T = Record<string, unknown>>(
     id: string,
     updates: Record<string, unknown>
 ): Promise<T> {
-    const result = await sanityClient.patch(id).set(updates).commit();
+    const result = await getSanityClient().patch(id).set(updates).commit();
     return result as T;
 }
 
 // ── Mutation: Delete document ──
 export async function sanityDelete(id: string): Promise<boolean> {
-    await sanityClient.delete(id);
+    await getSanityClient().delete(id);
     return true;
 }
 
 // ── Get Company Profile (singleton) ──
 export async function sanityGetCompanyProfile() {
     const query = `*[_type == "companyProfile"][0]`;
-    return sanityClient.fetch(query);
+    return getSanityClient().fetch(query);
 }
 
 // ── Generate next number (sequential numbering) ──
@@ -130,7 +164,7 @@ export async function sanityGetNextNumber(prefix: string): Promise<string> {
 
     // Count existing docs with same prefix this month
     const query = `count(*[_type == $type && ${config.field} match $pattern])`;
-    const count = await sanityClient.fetch<number>(query, {
+    const count = await getSanityClient().fetch<number>(query, {
         type: config.type,
         pattern: `${config.format}*`,
     });

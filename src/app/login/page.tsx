@@ -24,10 +24,19 @@ export default function LoginPage() {
                 body: JSON.stringify({ email, password }),
             });
 
-            const data = await res.json();
+            const raw = await res.text();
+            let data: { error?: string } = {};
+            if (raw) {
+                try {
+                    data = JSON.parse(raw) as { error?: string };
+                } catch {
+                    // Keep a fallback message for non-JSON server responses.
+                    data = {};
+                }
+            }
 
             if (!res.ok) {
-                setError(data.error || 'Login gagal');
+                setError(data.error || `Login gagal (${res.status})`);
                 setLoading(false);
                 return;
             }

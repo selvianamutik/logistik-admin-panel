@@ -356,14 +356,13 @@ export interface TireEvent {
   _type: 'tireEvent';
   vehicleRef: string;
   vehiclePlate?: string;
-  date: string;
-  odometer: number;
-  tirePosition: TirePosition;
-  action: TireAction;
-  cause?: TireCause;
+  posisi: string;
+  tireType: 'Tubeless' | 'Tube Type' | 'Solid';
+  tireBrand: string;
+  tireSize: string;
+  installDate: string;
+  replaceDate?: string;
   notes?: string;
-  attachmentUrls?: string[];
-  relatedExpenseRef?: string;
 }
 
 // ── Incident ──
