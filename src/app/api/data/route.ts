@@ -18,7 +18,7 @@ import {
     sanityGetCompanyProfile,
     sanityGetNextNumber,
 } from '@/lib/sanity';
-import type { Expense, Vehicle, Invoice, Payment } from '@/lib/types';
+import type { Expense, Vehicle, Payment } from '@/lib/types';
 
 // ── Audit Log helper ──
 async function addAuditLog(
@@ -186,6 +186,16 @@ export async function POST(request: Request) {
             newDoc.status = 'UNPAID';
         }
 
+        if (entity === 'freight-notas') {
+            newDoc.notaNumber = await sanityGetNextNumber('nota');
+            newDoc.status = 'UNPAID';
+        }
+
+        if (entity === 'driver-borongans') {
+            newDoc.boronganNumber = await sanityGetNextNumber('borong');
+            newDoc.status = 'UNPAID';
+        }
+
         if (entity === 'incidents') {
             newDoc.incidentNumber = await sanityGetNextNumber('incident');
             newDoc.status = 'OPEN';
@@ -236,17 +246,24 @@ export async function POST(request: Request) {
                 }
             }
 
-            // Update invoice status
+            // Update invoice or nota status based on payments
             if (data.invoiceRef) {
-                const invoice = await sanityGetById<Invoice>(data.invoiceRef);
-                if (invoice) {
+                const doc = await sanityGetById<Record<string, unknown>>(data.invoiceRef);
+                if (doc) {
+                    const docType = doc._type as string;
+                    const docTotal = (doc.totalAmount as number) || 0;
                     const allPayments = await getSanityClient().fetch<Payment[]>(
                         `*[_type == "payment" && invoiceRef == $ref]`,
                         { ref: data.invoiceRef }
                     );
                     const totalPaid = allPayments.reduce((sum, p) => sum + p.amount, 0) + data.amount;
-                    const newStatus = totalPaid >= invoice.totalAmount ? 'PAID' : 'PARTIAL';
-                    await sanityUpdate(data.invoiceRef, { status: newStatus });
+                    if (docType === 'driverBorongan') {
+                        // Borongan: simple PAID/UNPAID only
+                        await sanityUpdate(data.invoiceRef, { status: totalPaid >= docTotal ? 'PAID' : 'UNPAID' });
+                    } else {
+                        const newStatus = totalPaid >= docTotal ? 'PAID' : (totalPaid > 0 ? 'PARTIAL' : 'UNPAID');
+                        await sanityUpdate(data.invoiceRef, { status: newStatus });
+                    }
                 }
             }
         }
