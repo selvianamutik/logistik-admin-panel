@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useToast } from '../../layout';
 import { ArrowLeft, Printer, CheckCircle, Trash2 } from 'lucide-react';
 import { formatDate, formatCurrency } from '@/lib/utils';
-import type { DriverBorongan, DriverBoronganItem } from '@/lib/types';
+import type { DriverBorongan, DriverBoronganItem, BankAccount } from '@/lib/types';
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
     UNPAID: { label: 'Belum Dibayar', color: 'danger' },
@@ -18,32 +18,67 @@ export default function BoronganDetailPage() {
     const { addToast } = useToast();
     const [borong, setBorong] = useState<DriverBorongan | null>(null);
     const [items, setItems] = useState<DriverBoronganItem[]>([]);
+    const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
     const [loading, setLoading] = useState(true);
+
+    // Payment modal state
+    const [showPayModal, setShowPayModal] = useState(false);
+    const [payDate, setPayDate] = useState(new Date().toISOString().split('T')[0]);
+    const [payMethod, setPayMethod] = useState('CASH');
+    const [payBankRef, setPayBankRef] = useState('');
+    const [payNote, setPayNote] = useState('');
+    const [paying, setPaying] = useState(false);
 
     useEffect(() => {
         const id = params.id as string;
         Promise.all([
             fetch(`/api/data?entity=driver-borongans&id=${id}`).then(r => r.json()),
             fetch(`/api/data?entity=driver-borogan-items`).then(r => r.json()),
-        ]).then(([b, bi]) => {
+            fetch(`/api/data?entity=bank-accounts`).then(r => r.json()),
+        ]).then(([b, bi, ba]) => {
             setBorong(b.data);
             setItems((bi.data || []).filter((i: DriverBoronganItem) => i.boronganRef === id));
+            setBankAccounts((ba.data || []).filter((a: BankAccount) => a.active !== false));
             setLoading(false);
         }).catch(() => setLoading(false));
     }, [params.id]);
 
     const handleMarkPaid = async () => {
-        if (!confirm('Tandai sebagai SUDAH DIBAYAR?')) return;
-        await fetch('/api/data', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                entity: 'driver-borongans',
-                action: 'update',
-                data: { id: borong?._id, updates: { status: 'PAID', paidDate: new Date().toISOString().split('T')[0] } }
-            })
-        });
-        addToast('success', 'Slip ditandai sudah dibayar');
-        window.location.reload();
+        if (!borong) return;
+        setPaying(true);
+        try {
+            // 1. Update borongan status
+            await fetch('/api/data', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'driver-borongans', action: 'update',
+                    data: { id: borong._id, updates: { status: 'PAID', paidDate: payDate, paidMethod: payMethod, paidBankRef: payBankRef || undefined } }
+                })
+            });
+
+            // 2. Create expense record (pengeluaran kas)
+            await fetch('/api/data', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'expenses',
+                    data: {
+                        date: payDate, amount: borong.totalAmount,
+                        description: `Upah borongan supir ${borong.driverName} — ${borong.boronganNumber}`,
+                        paymentMethod: payMethod,
+                        bankAccountRef: payBankRef || undefined,
+                        note: payNote || undefined,
+                        boronganRef: borong._id,
+                    }
+                })
+            });
+
+            addToast('success', 'Pembayaran borongan berhasil dicatat');
+            setShowPayModal(false);
+            window.location.reload();
+        } catch {
+            addToast('error', 'Gagal mencatat pembayaran');
+        }
+        setPaying(false);
     };
 
     const handleDelete = async () => {
@@ -95,7 +130,11 @@ export default function BoronganDetailPage() {
                     </div>
                 </div>
                 <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                    {borong.status === 'UNPAID' && <button className="btn btn-success btn-sm" onClick={handleMarkPaid}><CheckCircle size={14} /> Tandai Dibayar</button>}
+                    {borong.status === 'UNPAID' && (
+                        <button className="btn btn-success btn-sm" onClick={() => setShowPayModal(true)}>
+                            <CheckCircle size={14} /> Bayar Borongan
+                        </button>
+                    )}
                     <button className="btn btn-secondary btn-sm" onClick={handlePrint}><Printer size={14} /> Cetak Slip</button>
                     <button className="btn btn-secondary btn-sm" onClick={handleDelete}><Trash2 size={14} /></button>
                 </div>
@@ -119,7 +158,12 @@ export default function BoronganDetailPage() {
                                 <div className="detail-item"><div className="detail-label">Total Collie</div><div className="detail-value">{borong.totalCollie || 0}</div></div>
                                 <div className="detail-item"><div className="detail-label">Total Berat</div><div className="detail-value">{(borong.totalWeightKg || 0).toLocaleString('id')} kg</div></div>
                             </div>
-                            {borong.paidDate && <div className="detail-row"><div className="detail-item"><div className="detail-label">Tanggal Bayar</div><div className="detail-value">{formatDate(borong.paidDate)}</div></div></div>}
+                            {borong.paidDate && (
+                                <div className="detail-row">
+                                    <div className="detail-item"><div className="detail-label">Tanggal Bayar</div><div className="detail-value">{formatDate(borong.paidDate)}</div></div>
+                                    <div className="detail-item"><div className="detail-label">Metode</div><div className="detail-value">{(borong as unknown as Record<string,string>).paidMethod || '-'}</div></div>
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -176,12 +220,12 @@ export default function BoronganDetailPage() {
                                 <span className="text-muted">Total Berat</span><strong>{(borong.totalWeightKg || 0).toLocaleString('id')} kg</strong>
                             </div>
                             {borong.status === 'UNPAID' && (
-                                <button className="btn btn-success" style={{ width: '100%' }} onClick={handleMarkPaid}>
-                                    <CheckCircle size={16} /> Tandai Sudah Dibayar
+                                <button className="btn btn-success" style={{ width: '100%' }} onClick={() => setShowPayModal(true)}>
+                                    <CheckCircle size={16} /> Bayar Borongan Supir
                                 </button>
                             )}
                             {borong.status === 'PAID' && (
-                                <div style={{ textAlign: 'center', color: 'var(--color-success)', fontWeight: 600, fontSize: '0.9rem' }}>
+                                <div style={{ textAlign: 'center', color: 'var(--color-success)', fontWeight: 600, fontSize: '0.9rem', padding: '0.5rem' }}>
                                     ✓ Sudah Dibayar {borong.paidDate ? `(${formatDate(borong.paidDate)})` : ''}
                                 </div>
                             )}
@@ -232,6 +276,62 @@ export default function BoronganDetailPage() {
                 </table>
                 {borong.notes && <div style={{ marginTop: 10, fontSize: 9 }}>Catatan: {borong.notes}</div>}
             </div>
+
+            {/* Payment Modal */}
+            {showPayModal && (
+                <div className="modal-overlay" onClick={() => setShowPayModal(false)}>
+                    <div className="modal" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Bayar Upah Borongan</h3>
+                            <button className="modal-close" onClick={() => setShowPayModal(false)}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            {/* Summary */}
+                            <div style={{ background: 'var(--color-warning-light)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem' }}>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--color-warning)', textTransform: 'uppercase', fontWeight: 600 }}>Total yang akan dibayar ke {borong.driverName}</div>
+                                <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--color-warning)' }}>{formatCurrency(borong.totalAmount)}</div>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--color-gray-500)', marginTop: '0.25rem' }}>⚠ Pengeluaran ini akan tercatat dan mengurangi saldo rekening bank yang dipilih</div>
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Tanggal Bayar</label>
+                                <input type="date" className="form-input" value={payDate} onChange={e => setPayDate(e.target.value)} />
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Metode Pembayaran</label>
+                                    <select className="form-select" value={payMethod} onChange={e => setPayMethod(e.target.value)}>
+                                        <option value="CASH">Tunai</option>
+                                        <option value="TRANSFER">Transfer</option>
+                                        <option value="OTHER">Lainnya</option>
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Rekening Bank <span style={{ fontSize: '0.7rem', color: 'var(--color-gray-400)' }}>(opsional, untuk debit)</span></label>
+                                    <select className="form-select" value={payBankRef} onChange={e => setPayBankRef(e.target.value)}>
+                                        <option value="">-- Tanpa Rekening --</option>
+                                        {bankAccounts.map(a => (
+                                            <option key={a._id} value={a._id}>
+                                                {a.bankName} - {a.accountNumber} (Saldo: {formatCurrency(a.currentBalance || 0)})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Catatan</label>
+                                <textarea className="form-textarea" rows={2} value={payNote} onChange={e => setPayNote(e.target.value)} placeholder="Opsional..." />
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setShowPayModal(false)}>Batal</button>
+                            <button className="btn btn-success" onClick={handleMarkPaid} disabled={paying}>
+                                <CheckCircle size={16} /> {paying ? 'Memproses...' : 'Konfirmasi Pembayaran'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

@@ -24,6 +24,10 @@ export default function DODetailPage() {
     const [podName, setPodName] = useState('');
     const [podDate, setPodDate] = useState(new Date().toISOString().split('T')[0]);
     const [podNote, setPodNote] = useState('');
+    const [editingTarip, setEditingTarip] = useState(false);
+    const [taripBorongan, setTaripBorongan] = useState<number>(0);
+    const [keteranganBorongan, setKeteranganBorongan] = useState('');
+    const [savingTarip, setSavingTarip] = useState(false);
 
     useEffect(() => {
         const id = params.id as string;
@@ -33,6 +37,8 @@ export default function DODetailPage() {
             fetch(`/api/data?entity=tracking-logs`).then(r => r.json()),
         ]).then(([d, items, logs]) => {
             setDoData(d.data);
+            setTaripBorongan(d.data?.taripBorongan || 0);
+            setKeteranganBorongan(d.data?.keteranganBorongan || '');
             setDoItems((items.data || []).filter((i: DeliveryOrderItem) => i.deliveryOrderRef === id));
             setTrackingLogs((logs.data || []).filter((l: TrackingLog) => l.refRef === id && l.refType === 'DO').sort((a: TrackingLog, b: TrackingLog) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()));
             setLoading(false);
@@ -88,6 +94,18 @@ export default function DODetailPage() {
             console.error('PDF Export Error:', err);
             addToast('error', `Gagal membuat PDF: ${err instanceof Error ? err.message : 'Unknown error'}`);
         }
+    };
+
+    const saveTaripBorongan = async () => {
+        setSavingTarip(true);
+        await fetch('/api/data', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ entity: 'delivery-orders', action: 'update', data: { id: doData?._id, updates: { taripBorongan, keteranganBorongan } } }),
+        });
+        setDoData(prev => prev ? { ...prev, taripBorongan, keteranganBorongan } : prev);
+        setEditingTarip(false);
+        setSavingTarip(false);
+        addToast('success', 'Tarip borongan disimpan');
     };
 
     const getNextStatuses = (current: string): string[] => {
@@ -173,6 +191,51 @@ export default function DODetailPage() {
                                 <div className="detail-item"><div className="detail-label">Tanggal Terima</div><div className="detail-value">{formatDate(doData.podReceivedDate)}</div></div>
                             </div>
                             {doData.podNote && <div className="mt-2"><div className="detail-label">Catatan</div><div className="detail-value">{doData.podNote}</div></div>}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Borongan Tarip - Set Sebelum Berangkat */}
+            <div className="card" style={{ marginTop: '1rem', border: '1.5px solid var(--color-warning-light)' }}>
+                <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--color-warning-light)' }}>
+                    <span className="card-header-title" style={{ color: 'var(--color-warning)' }}>🚛 Tarip Borongan Supir</span>
+                    {!editingTarip && (
+                        <button className="btn btn-sm btn-secondary" onClick={() => setEditingTarip(true)}>Edit Tarip</button>
+                    )}
+                </div>
+                <div className="card-body">
+                    {!editingTarip ? (
+                        <div className="detail-row">
+                            <div className="detail-item">
+                                <div className="detail-label">Tarip per kg</div>
+                                <div className="detail-value font-semibold" style={{ color: doData.taripBorongan ? 'var(--color-primary)' : 'var(--color-gray-400)' }}>
+                                    {doData.taripBorongan ? `Rp ${doData.taripBorongan.toLocaleString('id')}/kg` : '— Belum diisi —'}
+                                </div>
+                            </div>
+                            <div className="detail-item">
+                                <div className="detail-label">Keterangan</div>
+                                <div className="detail-value">{doData.keteranganBorongan || '-'}</div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Tarip per kg (Rp) <span className="required">*</span></label>
+                                    <input type="number" className="form-input" value={taripBorongan || ''} onChange={e => setTaripBorongan(Number(e.target.value))} placeholder="Contoh: 50" />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Keterangan</label>
+                                    <input className="form-input" value={keteranganBorongan} onChange={e => setKeteranganBorongan(e.target.value)} placeholder="Opsional..." />
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                <button className="btn btn-primary btn-sm" onClick={saveTaripBorongan} disabled={savingTarip}>
+                                    <Save size={14} /> {savingTarip ? 'Menyimpan...' : 'Simpan Tarip'}
+                                </button>
+                                <button className="btn btn-secondary btn-sm" onClick={() => setEditingTarip(false)}>Batal</button>
+                            </div>
                         </div>
                     )}
                 </div>

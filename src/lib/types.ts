@@ -196,6 +196,8 @@ export interface DeliveryOrder {
   customerName?: string;
   receiverName?: string;
   receiverAddress?: string;
+  taripBorongan?: number;       // Tarif upah supir per kg, diinput SEBELUM berangkat
+  keteranganBorongan?: string;  // Keterangan tarip borongan
 }
 
 export interface DeliveryOrderItem {

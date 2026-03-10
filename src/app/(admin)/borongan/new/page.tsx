@@ -38,6 +38,8 @@ export default function NewBoronganPage() {
     const [rows, setRows] = useState<BoronganRow[]>([newRow()]);
 
     function newRow(doData?: DeliveryOrder): BoronganRow {
+        const tarip = doData?.taripBorongan || 0;
+        const beratKg = 0;
         return {
             id: Math.random().toString(36).slice(2),
             doRef: doData?._id || '',
@@ -48,10 +50,10 @@ export default function NewBoronganPage() {
             tujuan: doData?.receiverAddress || '',
             barang: '',
             collie: 0,
-            beratKg: 0,
-            tarip: 0,
-            uangRp: 0,
-            ket: '',
+            beratKg,
+            tarip,               // ← auto-filled from DO's taripBorongan (set pre-departure)
+            uangRp: beratKg * tarip,
+            ket: doData?.keteranganBorongan || '',
         };
     }
 
