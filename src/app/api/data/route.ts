@@ -138,6 +138,26 @@ export async function POST(request: Request) {
             if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
             addAuditLog(session, 'UPDATE', entity, id, `Updated ${entity}: ${JSON.stringify(updates).slice(0, 200)}`);
+
+            // Auto-complete order when all its DOs are DELIVERED
+            if (entity === 'delivery-orders' && updates.status === 'DELIVERED') {
+                const doDoc = await sanityGetById<{ _id: string; orderRef?: string }>(id);
+                if (doDoc?.orderRef) {
+                    const siblingDOs = await getSanityClient().fetch<{ _id: string; status: string }[]>(
+                        `*[_type == "deliveryOrder" && orderRef == $ref]{ _id, status }`,
+                        { ref: doDoc.orderRef }
+                    );
+                    // Consider the current DO as DELIVERED (it was just updated)
+                    const allDelivered = siblingDOs.length > 0 &&
+                        siblingDOs.every(d => d._id === id || d.status === 'DELIVERED');
+                    if (allDelivered) {
+                        await sanityUpdate(doDoc.orderRef, { status: 'COMPLETE' });
+                        addAuditLog(session, 'UPDATE', 'orders', doDoc.orderRef,
+                            `Order auto-COMPLETE: semua ${siblingDOs.length} DO sudah DELIVERED`);
+                    }
+                }
+            }
+
             return NextResponse.json({ data: updated });
         }
 

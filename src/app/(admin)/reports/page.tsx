@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { TrendingUp, TrendingDown, BarChart3, FileDown, Printer, ArrowRightLeft, DollarSign, Wallet, Landmark, ChevronLeft, ChevronRight } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { exportToExcel } from '@/lib/export';
-import type { Expense, Invoice, Payment, BankAccount, BankTransaction, CompanyProfile } from '@/lib/types';
+import type { Expense, Invoice, Payment, BankAccount, BankTransaction, CompanyProfile, FreightNota } from '@/lib/types';
 
 type Tab = 'pnl' | 'cashflow';
 
@@ -13,6 +13,7 @@ export default function ReportsPage() {
     const [payments, setPayments] = useState<Payment[]>([]);
     const [expenses, setExpenses] = useState<Expense[]>([]);
     const [invoices, setInvoices] = useState<Invoice[]>([]);
+    const [freightNotas, setFreightNotas] = useState<FreightNota[]>([]);
     const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
     const [bankTransactions, setBankTransactions] = useState<BankTransaction[]>([]);
     const [company, setCompany] = useState<CompanyProfile | null>(null);
@@ -32,13 +33,15 @@ export default function ReportsPage() {
             fetch('/api/data?entity=payments').then(r => r.json()),
             fetch('/api/data?entity=expenses').then(r => r.json()),
             fetch('/api/data?entity=invoices').then(r => r.json()),
+            fetch('/api/data?entity=freight-notas').then(r => r.json()),
             fetch('/api/data?entity=bank-accounts').then(r => r.json()),
             fetch('/api/data?entity=bank-transactions').then(r => r.json()),
             fetch('/api/data?entity=company').then(r => r.json()),
-        ]).then(([pay, exp, inv, ba, bt, co]) => {
+        ]).then(([pay, exp, inv, fn, ba, bt, co]) => {
             setPayments(pay.data || []);
             setExpenses(exp.data || []);
             setInvoices(inv.data || []);
+            setFreightNotas(fn.data || []);
             setBankAccounts((ba.data || []).filter((a: BankAccount) => a.active !== false));
             setBankTransactions(bt.data || []);
             setCompany(co.data || null);
@@ -86,9 +89,15 @@ export default function ReportsPage() {
         else entry.outflow += tx.amount;
     });
 
-    // Invoice stats
-    const totalInvoiced = invoices.filter(i => inPeriod(i.issueDate)).reduce((s, i) => s + i.totalAmount, 0);
-    const totalOutstanding = invoices.filter(i => i.status !== 'PAID' && inPeriod(i.issueDate)).reduce((s, i) => s + i.totalAmount, 0);
+    // Invoice + Nota Ongkos stats (gabungan)
+    const totalInvoiced = [
+        ...invoices.filter(i => inPeriod(i.issueDate)).map(i => i.totalAmount),
+        ...freightNotas.filter(n => inPeriod(n.issueDate)).map(n => n.totalAmount),
+    ].reduce((s, a) => s + a, 0);
+    const totalOutstanding = [
+        ...invoices.filter(i => i.status !== 'PAID' && inPeriod(i.issueDate)).map(i => i.totalAmount),
+        ...freightNotas.filter(n => n.status !== 'PAID' && inPeriod(n.issueDate)).map(n => n.totalAmount),
+    ].reduce((s, a) => s + a, 0);
 
     const companyName = company?.name || 'LOGISTIK';
     const companyLogo = company?.logoUrl || '';

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useToast } from '../../layout';
 import { ArrowLeft, Plus, Trash2, Save } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
-import type { Customer, DeliveryOrder } from '@/lib/types';
+import type { Customer, DeliveryOrder, Order } from '@/lib/types';
 
 interface NotaItemRow {
     id: string;
@@ -29,6 +29,7 @@ export default function NewNotaPage() {
     const { addToast } = useToast();
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([]);
+    const [orders, setOrders] = useState<Order[]>([]);
     const [saving, setSaving] = useState(false);
 
     const [customerRef, setCustomerRef] = useState('');
@@ -61,9 +62,11 @@ export default function NewNotaPage() {
         Promise.all([
             fetch('/api/data?entity=customers').then(r => r.json()),
             fetch('/api/data?entity=delivery-orders').then(r => r.json()),
-        ]).then(([cust, dos]) => {
+            fetch('/api/data?entity=orders').then(r => r.json()),
+        ]).then(([cust, dos, ords]) => {
             setCustomers(cust.data || []);
             setDeliveryOrders((dos.data || []).filter((d: DeliveryOrder) => d.status === 'DELIVERED'));
+            setOrders(ords.data || []);
         });
     }, []);
 
@@ -148,9 +151,20 @@ export default function NewNotaPage() {
         setSaving(false);
     };
 
-    const customerDOs = customerRef
-        ? deliveryOrders.filter(d => d.customerName === customerName)
+    // Filter DOs: jika ada customer dipilih, cari order milik customer tsb,
+    // lalu filter DO berdasarkan orderRef. Lebih reliable dari string customerName.
+    const customerOrderIds = customerRef
+        ? new Set(orders.filter(o => o.customerRef === customerRef).map(o => o._id))
+        : null;
+
+    const customerDOs = customerOrderIds
+        ? deliveryOrders.filter(d => customerOrderIds.has(d.orderRef || ''))
         : deliveryOrders;
+
+    // DOs yang tidak cocok customer masih bisa ditambah manual (tampilkan semua di dropdown, tapi pisahkan)
+    const otherDOs = customerOrderIds
+        ? deliveryOrders.filter(d => !customerOrderIds.has(d.orderRef || ''))
+        : [];
 
     return (
         <div>
@@ -206,7 +220,16 @@ export default function NewNotaPage() {
                         <div className="card-body">
                             <select className="form-select" onChange={e => { if (e.target.value) { addDORow(e.target.value); e.target.value = ''; } }}>
                                 <option value="">-- Pilih DO yang selesai --</option>
-                                {customerDOs.map(d => <option key={d._id} value={d._id}>{d.doNumber} — {d.driverName || '-'} — {d.receiverAddress || '-'}</option>)}
+                                {customerDOs.length > 0 && (
+                                    <optgroup label={customerRef ? `✓ DO milik ${customerName} (${customerDOs.length})` : `Semua DO Selesai`}>
+                                        {customerDOs.map(d => <option key={d._id} value={d._id}>{d.doNumber} — {d.vehiclePlate || '-'} — {d.receiverAddress || '-'}</option>)}
+                                    </optgroup>
+                                )}
+                                {otherDOs.length > 0 && (
+                                    <optgroup label={`DO Customer Lain (${otherDOs.length})`}>
+                                        {otherDOs.map(d => <option key={d._id} value={d._id}>{d.doNumber} — {d.vehiclePlate || '-'} — {d.receiverAddress || '-'}</option>)}
+                                    </optgroup>
+                                )}
                             </select>
                         </div>
                     </div>
