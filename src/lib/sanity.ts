@@ -161,6 +161,8 @@ export async function sanityGetNextNumber(prefix: string): Promise<string> {
         do: { type: 'deliveryOrder', field: 'doNumber', format: `DO-20${datePrefix}-` },
         invoice: { type: 'invoice', field: 'invoiceNumber', format: `INV-20${datePrefix}-` },
         incident: { type: 'incident', field: 'incidentNumber', format: `INC-20${datePrefix}-` },
+        nota: { type: 'freightNota', field: 'notaNumber', format: `NOTA-20${datePrefix}-` },
+        borong: { type: 'driverBorongan', field: 'boronganNumber', format: `BRG-20${datePrefix}-` },
     };
 
     const config = prefixMap[prefix];

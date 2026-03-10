@@ -35,8 +35,12 @@ export default function BoronganDetailPage() {
     const handleMarkPaid = async () => {
         if (!confirm('Tandai sebagai SUDAH DIBAYAR?')) return;
         await fetch('/api/data', {
-            method: 'PUT', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ entity: 'driver-borongans', id: borong?._id, data: { status: 'PAID', paidDate: new Date().toISOString().split('T')[0] } })
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                entity: 'driver-borongans',
+                action: 'update',
+                data: { id: borong?._id, updates: { status: 'PAID', paidDate: new Date().toISOString().split('T')[0] } }
+            })
         });
         addToast('success', 'Slip ditandai sudah dibayar');
         window.location.reload();
@@ -44,7 +48,10 @@ export default function BoronganDetailPage() {
 
     const handleDelete = async () => {
         if (!confirm('Hapus slip borongan ini?')) return;
-        await fetch('/api/data', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'driver-borongans', id: borong?._id }) });
+        await fetch('/api/data', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ entity: 'driver-borongans', action: 'delete', data: { id: borong?._id } })
+        });
         addToast('success', 'Slip dihapus');
         router.push('/borongan');
     };

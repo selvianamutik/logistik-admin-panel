@@ -92,7 +92,10 @@ export default function NotaDetailPage() {
 
     const handleDelete = async () => {
         if (!confirm('Hapus nota ini?')) return;
-        await fetch('/api/data', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'freight-notas', id: nota?._id }) });
+        await fetch('/api/data', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ entity: 'freight-notas', action: 'delete', data: { id: nota?._id } })
+        });
         addToast('success', 'Nota dihapus');
         router.push('/invoices');
     };
