@@ -96,6 +96,14 @@ const permissionMatrix: Record<string, Record<UserRole, ModulePermissions>> = {
         OWNER: { view: true, create: true, update: true, delete: true, export: true, print: true },
         ADMIN: { view: true, create: true, update: true, delete: false, export: true, print: true },
     },
+    freightNotas: {
+        OWNER: { view: true, create: true, update: true, delete: true, export: true, print: true },
+        ADMIN: { view: true, create: true, update: true, delete: false, export: true, print: true },
+    },
+    driverBorongans: {
+        OWNER: { view: true, create: true, update: true, delete: true, export: true, print: true },
+        ADMIN: { view: true, create: true, update: true, delete: false, export: true, print: true },
+    },
 };
 
 // ── Check Permission ──
@@ -162,8 +170,9 @@ export function getSidebarMenu(role: UserRole): SidebarMenuGroup[] {
         {
             label: 'Keuangan',
             items: [
-                { label: 'Invoice', href: '/invoices', icon: 'FileText', module: 'invoices' },
-                { label: 'Bon Supir', href: '/driver-vouchers', icon: 'Receipt', module: 'driverVouchers' },
+                { label: 'Nota Ongkos Angkut', href: '/invoices', icon: 'FileText', module: 'freightNotas' },
+                { label: 'Borongan Supir', href: '/borongan', icon: 'Receipt', module: 'driverBorongans' },
+                { label: 'Bon Supir', href: '/driver-vouchers', icon: 'Wallet', module: 'driverVouchers' },
                 { label: 'Pengeluaran', href: '/expenses', icon: 'Wallet', module: 'expenses' },
                 { label: 'Kategori Biaya', href: '/expense-categories', icon: 'Tags', module: 'expenseCategories' },
                 { label: 'Rekening Bank', href: '/bank-accounts', icon: 'Landmark', module: 'bankAccounts' },

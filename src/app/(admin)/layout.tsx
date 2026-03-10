@@ -188,13 +188,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         const href = '/' + pathParts.slice(0, idx + 1).join('/');
         const labels: Record<string, string> = {
             dashboard: 'Dashboard', orders: 'Order', 'delivery-orders': 'Surat Jalan',
-            invoices: 'Invoice', customers: 'Customer', services: 'Layanan',
+            invoices: 'Nota Ongkos', customers: 'Customer', services: 'Layanan',
             'expense-categories': 'Kategori Biaya', expenses: 'Pengeluaran',
             reports: 'Laporan', fleet: 'Armada', vehicles: 'Kendaraan',
             maintenance: 'Maintenance', incidents: 'Insiden', settings: 'Pengaturan',
             profile: 'Profil', password: 'Password', company: 'Perusahaan',
             users: 'User', 'audit-logs': 'Audit Log', new: 'Baru', edit: 'Edit',
-            tires: 'Ban', 'bank-accounts': 'Rekening Bank',
+            tires: 'Ban', 'bank-accounts': 'Rekening Bank', borongan: 'Borongan Supir', 'driver-vouchers': 'Bon Supir',
         };
         return { label: labels[part] || part, href, isLast: idx === pathParts.length - 1 };
     });

@@ -1,84 +1,119 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useApp } from '../layout';
-import { Search, Eye, FileText, FileDown, Printer } from 'lucide-react';
-import { formatDate, formatCurrency, INVOICE_STATUS_MAP } from '@/lib/utils';
-import { exportInvoices } from '@/lib/export';
+import { Search, Plus, FileText, FileDown, Printer } from 'lucide-react';
+import { formatDate, formatCurrency } from '@/lib/utils';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
-import type { Invoice } from '@/lib/types';
+import type { FreightNota } from '@/lib/types';
 
-export default function InvoicesPage() {
+const STATUS_MAP: Record<string, { label: string; color: string }> = {
+    UNPAID: { label: 'Belum Lunas', color: 'danger' },
+    PARTIAL: { label: 'Sebagian', color: 'warning' },
+    PAID: { label: 'Lunas', color: 'success' },
+};
+
+export default function NotaListPage() {
     const router = useRouter();
-    const { user } = useApp();
-    const [items, setItems] = useState<Invoice[]>([]);
+    const [items, setItems] = useState<FreightNota[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
 
     useEffect(() => {
-        fetch('/api/data?entity=invoices').then(r => r.json()).then(d => { setItems(d.data || []); setLoading(false); });
+        fetch('/api/data?entity=freight-notas').then(r => r.json()).then(d => {
+            setItems(d.data || []);
+            setLoading(false);
+        });
     }, []);
 
-    const filtered = items.filter(i => {
-        const m = !search || i.invoiceNumber?.toLowerCase().includes(search.toLowerCase()) || i.customerName?.toLowerCase().includes(search.toLowerCase());
-        const s = !statusFilter || i.status === statusFilter;
+    const filtered = items.filter(n => {
+        const m = !search || n.notaNumber?.toLowerCase().includes(search.toLowerCase()) || n.customerName?.toLowerCase().includes(search.toLowerCase());
+        const s = !statusFilter || n.status === statusFilter;
         return m && s;
     });
 
-    const isOwner = user?.role === 'OWNER';
+    const grandTotal = filtered.reduce((s, n) => s + n.totalAmount, 0);
 
     return (
         <div>
             <div className="page-header">
-                <div className="page-header-left"><h1 className="page-title">Invoice</h1><p className="page-subtitle">Kelola semua invoice dan pembayaran</p></div>
-                <div className="page-actions" style={{ flexWrap: 'wrap' }}>
-                    <button className="btn btn-secondary btn-sm" onClick={() => exportInvoices(filtered as unknown as Record<string, unknown>[])}><FileDown size={15} /> Excel</button>
+                <div className="page-header-left">
+                    <h1 className="page-title">Nota Ongkos Angkut</h1>
+                    <p className="page-subtitle">Tagihan ongkos angkut ke customer</p>
+                </div>
+                <div className="page-actions">
                     <button className="btn btn-secondary btn-sm" onClick={async () => {
                         const co = await fetchCompanyProfile();
                         openBrandedPrint({
-                            title: 'Daftar Invoice', company: co, bodyHtml: `
-                            <table><thead><tr><th>No. Invoice</th><th>Customer</th><th>Resi</th><th>Terbit</th><th>Tempo</th><th class="r">Total</th><th>Status</th></tr></thead>
-                            <tbody>${filtered.map(inv => `<tr><td class="b">${inv.invoiceNumber}</td><td>${inv.customerName || '-'}</td><td>${inv.masterResi || '-'}</td><td>${formatDate(inv.issueDate)}</td><td>${formatDate(inv.dueDate)}</td><td class="r b">${formatCurrency(inv.totalAmount)}</td><td>${INVOICE_STATUS_MAP[inv.status]?.label || inv.status}</td></tr>`).join('')}</tbody></table>`
+                            title: 'Daftar Nota Ongkos Angkut', company: co, bodyHtml: `
+                            <table><thead><tr><th>No. Nota</th><th>Customer</th><th>Tanggal</th><th>Total Collie</th><th>Total Berat</th><th class="r">Total Ongkos</th><th>Status</th></tr></thead>
+                            <tbody>${filtered.map(n => `<tr><td class="b">${n.notaNumber}</td><td>${n.customerName}</td><td>${formatDate(n.issueDate)}</td><td>${n.totalCollie || 0}</td><td>${n.totalWeightKg || 0} kg</td><td class="r b">${formatCurrency(n.totalAmount)}</td><td>${STATUS_MAP[n.status]?.label || n.status}</td></tr>`).join('')}
+                            <tr style="border-top:2px solid #1e293b"><td colspan="5" class="r b">TOTAL</td><td class="r b">${formatCurrency(grandTotal)}</td><td></td></tr></tbody></table>`
                         });
                     }}><Printer size={15} /> Print</button>
+                    <button className="btn btn-primary" onClick={() => router.push('/invoices/new')}><Plus size={18} /> Buat Nota</button>
                 </div>
             </div>
+
+            {/* KPI */}
+            <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
+                <div className="kpi-card">
+                    <div className="kpi-icon danger"><FileText size={20} /></div>
+                    <div className="kpi-content">
+                        <div className="kpi-label">Total Tagihan</div>
+                        <div className="kpi-value" style={{ fontSize: '1.05rem', color: 'var(--color-danger)' }}>{formatCurrency(grandTotal)}</div>
+                    </div>
+                </div>
+                <div className="kpi-card">
+                    <div className="kpi-icon warning"><FileText size={20} /></div>
+                    <div className="kpi-content">
+                        <div className="kpi-label">Belum Lunas</div>
+                        <div className="kpi-value">{filtered.filter(n => n.status !== 'PAID').length}</div>
+                    </div>
+                </div>
+                <div className="kpi-card">
+                    <div className="kpi-icon success"><FileText size={20} /></div>
+                    <div className="kpi-content">
+                        <div className="kpi-label">Lunas</div>
+                        <div className="kpi-value">{filtered.filter(n => n.status === 'PAID').length}</div>
+                    </div>
+                </div>
+            </div>
+
             <div className="table-container">
                 <div className="table-toolbar">
                     <div className="table-toolbar-left">
-                        <div className="table-search"><Search size={16} className="table-search-icon" /><input type="text" placeholder="Cari invoice, customer..." value={search} onChange={e => setSearch(e.target.value)} /></div>
+                        <div className="table-search"><Search size={16} className="table-search-icon" /><input placeholder="Cari nota, customer..." value={search} onChange={e => setSearch(e.target.value)} /></div>
                         <select className="form-select" style={{ width: 'auto', minWidth: 140 }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
                             <option value="">Semua Status</option>
-                            {Object.entries(INVOICE_STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                            {Object.entries(STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                         </select>
                     </div>
                 </div>
                 <div className="table-wrapper">
                     <table>
-                        <thead><tr><th>No. Invoice</th><th>Customer</th><th>Resi</th><th>Tanggal</th><th>Jatuh Tempo</th>{isOwner && <th>Total</th>}<th>Status</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>No. Nota</th><th>Customer</th><th>Tanggal</th><th>Total Collie</th><th>Total Berat</th><th>Total Ongkos</th><th>Status</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 filtered.length === 0 ? (
-                                    <tr><td colSpan={isOwner ? 8 : 7}><div className="empty-state"><FileText size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada invoice</div><div className="empty-state-text">Buat invoice dari halaman detail order</div></div></td></tr>
-                                ) : filtered.map(inv => (
-                                    <tr key={inv._id}>
-                                        <td><Link href={`/invoices/${inv._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{inv.invoiceNumber}</Link></td>
-                                        <td>{inv.customerName}</td>
-                                        <td><Link href={`/orders/${inv.orderRef}`} className="text-muted">{inv.masterResi}</Link></td>
-                                        <td className="text-muted">{formatDate(inv.issueDate)}</td>
-                                        <td className="text-muted">{formatDate(inv.dueDate)}</td>
-                                        {isOwner && <td className="font-medium">{formatCurrency(inv.totalAmount)}</td>}
-                                        <td><span className={`badge badge-${INVOICE_STATUS_MAP[inv.status]?.color}`}><span className="badge-dot" /> {INVOICE_STATUS_MAP[inv.status]?.label}</span></td>
-                                        <td><button className="table-action-btn" onClick={() => router.push(`/invoices/${inv._id}`)}><Eye size={14} /> Lihat</button></td>
+                                    <tr><td colSpan={8}><div className="empty-state"><FileText size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada nota</div><div className="empty-state-text">Klik tombol "Buat Nota" untuk membuat nota baru</div></div></td></tr>
+                                ) : filtered.map(n => (
+                                    <tr key={n._id}>
+                                        <td><span className="font-semibold" style={{ color: 'var(--color-primary)', cursor: 'pointer' }} onClick={() => router.push(`/invoices/${n._id}`)}>{n.notaNumber}</span></td>
+                                        <td>{n.customerName}</td>
+                                        <td className="text-muted">{formatDate(n.issueDate)}</td>
+                                        <td>{n.totalCollie || 0}</td>
+                                        <td>{(n.totalWeightKg || 0).toLocaleString('id')} kg</td>
+                                        <td className="font-semibold">{formatCurrency(n.totalAmount)}</td>
+                                        <td><span className={`badge badge-${STATUS_MAP[n.status]?.color}`}><span className="badge-dot" /> {STATUS_MAP[n.status]?.label}</span></td>
+                                        <td><button className="table-action-btn" onClick={() => router.push(`/invoices/${n._id}`)}>Lihat</button></td>
                                     </tr>
                                 ))}
                         </tbody>
                     </table>
                 </div>
-                {filtered.length > 0 && <div className="pagination"><div className="pagination-info">Menampilkan {filtered.length} invoice</div></div>}
+                {filtered.length > 0 && <div className="pagination"><div className="pagination-info">Menampilkan {filtered.length} nota · Total: <strong style={{ color: 'var(--color-danger)' }}>{formatCurrency(grandTotal)}</strong></div></div>}
             </div>
         </div>
     );

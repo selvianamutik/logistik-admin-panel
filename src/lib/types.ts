@@ -222,7 +222,82 @@ export interface TrackingLog {
   userName?: string;
 }
 
-// ── Invoice ──
+// ── Freight Nota (Nota Ongkos Angkut) ──
+export type NotaStatus = 'UNPAID' | 'PARTIAL' | 'PAID';
+
+export interface FreightNota {
+  _id: string;
+  _type: 'freightNota';
+  notaNumber: string;
+  customerRef?: string;
+  customerName: string;
+  issueDate: string;
+  dueDate?: string;
+  status: NotaStatus;
+  totalAmount: number;
+  totalCollie: number;
+  totalWeightKg: number;
+  bankAccountRef?: string;
+  notes?: string;
+}
+
+export interface FreightNotaItem {
+  _id: string;
+  _type: 'freightNotaItem';
+  notaRef: string;
+  doRef?: string;
+  doNumber?: string;
+  vehiclePlate?: string;
+  date: string;
+  noSJ: string;
+  dari: string;
+  tujuan: string;
+  barang?: string;
+  collie?: number;
+  beratKg: number;
+  tarip: number;
+  uangRp: number;
+  ket?: string;
+}
+
+// ── Driver Borongan (Slip Upah Supir) ──
+export type BoronganStatus = 'UNPAID' | 'PAID';
+
+export interface DriverBorongan {
+  _id: string;
+  _type: 'driverBorongan';
+  boronganNumber: string;
+  driverRef?: string;
+  driverName: string;
+  periodStart: string;
+  periodEnd: string;
+  status: BoronganStatus;
+  totalAmount: number;
+  totalCollie: number;
+  totalWeightKg: number;
+  notes?: string;
+  paidDate?: string;
+}
+
+export interface DriverBoronganItem {
+  _id: string;
+  _type: 'driverBoronganItem';
+  boronganRef: string;
+  doRef?: string;
+  doNumber?: string;
+  vehiclePlate?: string;
+  date: string;
+  noSJ: string;
+  tujuan: string;
+  barang?: string;
+  collie?: number;
+  beratKg: number;
+  tarip: number;
+  uangRp: number;
+  ket?: string;
+}
+
+// ── Invoice (legacy, kept for existing data) ──
 export type InvoiceStatus = 'UNPAID' | 'PARTIAL' | 'PAID';
 
 export interface Invoice {
