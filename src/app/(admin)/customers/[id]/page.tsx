@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useToast } from '../../layout';
 import { ArrowLeft, Edit, Package, DollarSign } from 'lucide-react';
 import { formatDate, formatCurrency } from '@/lib/utils';
-import type { Customer, Order, Invoice } from '@/lib/types';
+import type { Customer, Order, FreightNota } from '@/lib/types';
 
 export default function CustomerDetailPage() {
     const params = useParams();
@@ -15,7 +15,7 @@ export default function CustomerDetailPage() {
     const customerId = params.id as string;
     const [customer, setCustomer] = useState<Customer | null>(null);
     const [orders, setOrders] = useState<Order[]>([]);
-    const [invoices, setInvoices] = useState<Invoice[]>([]);
+    const [notas, setNotas] = useState<FreightNota[]>([]);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(false);
     const [form, setForm] = useState({ name: '', address: '', contactPerson: '', phone: '', email: '', npwp: '' });
@@ -33,15 +33,15 @@ export default function CustomerDetailPage() {
         const loadCustomerDetail = async () => {
             setLoading(true);
             try {
-                const [cust, customerOrders, customerInvoices] = await Promise.all([
+                const [cust, customerOrders, customerNotas] = await Promise.all([
                     fetchEntity<Customer | null>(`/api/data?entity=customers&id=${customerId}`),
                     fetchEntity<Order[]>(`/api/data?entity=orders&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`),
-                    fetchEntity<Invoice[]>(`/api/data?entity=invoices&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`),
+                    fetchEntity<FreightNota[]>(`/api/data?entity=freight-notas&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`),
                 ]);
 
                 setCustomer(cust);
                 setOrders(customerOrders || []);
-                setInvoices(customerInvoices || []);
+                setNotas(customerNotas || []);
                 if (cust) {
                     setForm({
                         name: cust.name,
@@ -137,7 +137,7 @@ export default function CustomerDetailPage() {
                     <div className="card-body">
                         <div className="kpi-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
                             <div className="kpi-card"><div className="kpi-icon" style={{ background: 'var(--color-primary-light)' }}><Package size={20} /></div><div className="kpi-value">{orders.length}</div><div className="kpi-label">Total Order</div></div>
-                            <div className="kpi-card"><div className="kpi-icon" style={{ background: 'var(--color-success-light)' }}><DollarSign size={20} /></div><div className="kpi-value">{invoices.length}</div><div className="kpi-label">Total Invoice</div></div>
+                            <div className="kpi-card"><div className="kpi-icon" style={{ background: 'var(--color-success-light)' }}><DollarSign size={20} /></div><div className="kpi-value">{notas.length}</div><div className="kpi-label">Total Nota</div></div>
                         </div>
                     </div>
                 </div>
@@ -164,20 +164,20 @@ export default function CustomerDetailPage() {
                 </div>
             </div>
 
-            {/* Recent Invoices */}
+            {/* Recent Notas */}
             <div className="card mt-6">
-                <div className="card-header"><span className="card-header-title">Invoice ({invoices.length})</span></div>
+                <div className="card-header"><span className="card-header-title">Nota Ongkos ({notas.length})</span></div>
                 <div className="table-wrapper">
                     <table>
-                        <thead><tr><th>No. Invoice</th><th>Total</th><th>Status</th><th>Jatuh Tempo</th></tr></thead>
+                        <thead><tr><th>No. Nota</th><th>Total</th><th>Status</th><th>Jatuh Tempo</th></tr></thead>
                         <tbody>
-                            {invoices.length === 0 ? <tr><td colSpan={4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada invoice</td></tr> :
-                                invoices.map(inv => (
-                                    <tr key={inv._id}>
-                                        <td><Link href={`/invoices/${inv._id}`} style={{ color: 'var(--color-primary)' }}>{inv.invoiceNumber}</Link></td>
-                                        <td className="font-medium">{formatCurrency(inv.totalAmount)}</td>
-                                        <td>{inv.status}</td>
-                                        <td className="text-muted">{formatDate(inv.dueDate)}</td>
+                            {notas.length === 0 ? <tr><td colSpan={4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada nota</td></tr> :
+                                notas.map(nota => (
+                                    <tr key={nota._id}>
+                                        <td><Link href={`/invoices/${nota._id}`} style={{ color: 'var(--color-primary)' }}>{nota.notaNumber}</Link></td>
+                                        <td className="font-medium">{formatCurrency(nota.totalAmount)}</td>
+                                        <td>{nota.status}</td>
+                                        <td className="text-muted">{formatDate(nota.dueDate)}</td>
                                     </tr>
                                 ))}
                         </tbody>

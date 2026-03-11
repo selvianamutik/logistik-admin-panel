@@ -12,12 +12,12 @@ import Link from 'next/link';
 interface DashboardData {
     orderStats: { total: number; open: number; partial: number; complete: number; onHold: number };
     doStats: { total: number; onDelivery: number };
-    invoiceStats: { unpaid: number; totalOutstanding: number };
+    notaStats: { unpaid: number; totalOutstanding: number };
+    boronganStats: { unpaid: number; totalOutstanding: number };
+    voucherStats: { unsettled: number; totalIssued: number };
     fleetStats: { openIncidents: number; maintenanceDue: number };
     recentOrders: Array<{ _id: string; masterResi: string; customerName: string; status: string; createdAt: string }>;
-    recentInvoices: Array<{ _id: string; invoiceNumber: string; customerName: string; status: string; totalAmount: number }>;
-    expenses: { total: number };
-    income: { total: number };
+    recentNotas: Array<{ _id: string; notaNumber: string; customerName: string; status: string; totalAmount: number }>;
 }
 
 export default function DashboardPage() {
@@ -102,9 +102,9 @@ export default function DashboardPage() {
                     <div className="kpi-card">
                         <div className="kpi-icon warning"><FileText size={24} /></div>
                         <div className="kpi-content">
-                            <div className="kpi-label">Invoice Belum Lunas</div>
-                            <div className="kpi-value">{data.invoiceStats.unpaid}</div>
-                            {isOwner && <div className="kpi-sub">{formatCurrency(data.invoiceStats.totalOutstanding)} outstanding</div>}
+                            <div className="kpi-label">Nota Belum Lunas</div>
+                            <div className="kpi-value">{data.notaStats.unpaid}</div>
+                            {isOwner && <div className="kpi-sub">{formatCurrency(data.notaStats.totalOutstanding)} outstanding</div>}
                         </div>
                     </div>
                 </Link>
@@ -131,20 +131,16 @@ export default function DashboardPage() {
                     </div>
                 </Link>
 
-                {isOwner && (
+                <Link href="/borongan" style={{ textDecoration: 'none' }}>
                     <div className="kpi-card">
                         <div className="kpi-icon success"><DollarSign size={24} /></div>
                         <div className="kpi-content">
-                            <div className="kpi-label">Pendapatan vs Pengeluaran</div>
-                            <div className="kpi-value" style={{ fontSize: '1.125rem' }}>
-                                <span style={{ color: 'var(--color-success)' }}>{formatCurrency(data.income.total)}</span>
-                            </div>
-                            <div className="kpi-sub" style={{ color: 'var(--color-danger)' }}>
-                                Pengeluaran: {formatCurrency(data.expenses.total)}
-                            </div>
+                            <div className="kpi-label">Borongan Belum Dibayar</div>
+                            <div className="kpi-value">{data.boronganStats.unpaid}</div>
+                            {isOwner && <div className="kpi-sub">{formatCurrency(data.boronganStats.totalOutstanding)} outstanding</div>}
                         </div>
                     </div>
-                )}
+                </Link>
             </div>
 
             {/* Tables */}
@@ -189,10 +185,10 @@ export default function DashboardPage() {
                     </div>
                 </div>
 
-                {/* Recent Invoices */}
+                {/* Recent Notas */}
                 <div className="card">
                     <div className="card-header">
-                        <span className="card-header-title">Invoice Terbaru</span>
+                        <span className="card-header-title">Nota Terbaru</span>
                         <Link href="/invoices" className="btn btn-ghost btn-sm">
                             Lihat Semua <ArrowUpRight size={14} />
                         </Link>
@@ -201,28 +197,28 @@ export default function DashboardPage() {
                         <table>
                             <thead>
                                 <tr>
-                                    <th>No. Invoice</th>
+                                    <th>No. Nota</th>
                                     <th>Customer</th>
                                     <th>Status</th>
                                     {isOwner && <th>Jumlah</th>}
                                 </tr>
                             </thead>
                             <tbody>
-                                {data.recentInvoices.length === 0 ? (
-                                    <tr><td colSpan={isOwner ? 4 : 3} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada invoice</td></tr>
+                                {data.recentNotas.length === 0 ? (
+                                    <tr><td colSpan={isOwner ? 4 : 3} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada nota</td></tr>
                                 ) : (
-                                    data.recentInvoices.map(inv => (
-                                        <tr key={inv._id}>
+                                    data.recentNotas.map(nota => (
+                                        <tr key={nota._id}>
                                             <td>
-                                                <Link href={`/invoices/${inv._id}`} className="font-medium">{inv.invoiceNumber}</Link>
+                                                <Link href={`/invoices/${nota._id}`} className="font-medium">{nota.notaNumber}</Link>
                                             </td>
-                                            <td>{inv.customerName}</td>
+                                            <td>{nota.customerName}</td>
                                             <td>
-                                                <span className={`badge badge-${INVOICE_STATUS_MAP[inv.status]?.color || 'gray'}`}>
-                                                    {INVOICE_STATUS_MAP[inv.status]?.label || inv.status}
+                                                <span className={`badge badge-${INVOICE_STATUS_MAP[nota.status]?.color || 'gray'}`}>
+                                                    {INVOICE_STATUS_MAP[nota.status]?.label || nota.status}
                                                 </span>
                                             </td>
-                                            {isOwner && <td className="font-medium">{formatCurrency(inv.totalAmount)}</td>}
+                                            {isOwner && <td className="font-medium">{formatCurrency(nota.totalAmount)}</td>}
                                         </tr>
                                     ))
                                 )}
@@ -248,11 +244,27 @@ export default function DashboardPage() {
                                     </div>
                                 </li>
                             )}
-                            {data.invoiceStats.unpaid > 0 && (
+                            {data.notaStats.unpaid > 0 && (
                                 <li className="reminder-item">
                                     <div className="reminder-icon danger"><FileText size={16} /></div>
                                     <div>
-                                        <strong>{data.invoiceStats.unpaid} invoice</strong> belum lunas ({formatCurrency(data.invoiceStats.totalOutstanding)})
+                                        <strong>{data.notaStats.unpaid} nota</strong> belum lunas ({formatCurrency(data.notaStats.totalOutstanding)})
+                                    </div>
+                                </li>
+                            )}
+                            {data.boronganStats.unpaid > 0 && (
+                                <li className="reminder-item">
+                                    <div className="reminder-icon warning"><DollarSign size={16} /></div>
+                                    <div>
+                                        <strong>{data.boronganStats.unpaid} slip borongan</strong> belum dibayar ({formatCurrency(data.boronganStats.totalOutstanding)})
+                                    </div>
+                                </li>
+                            )}
+                            {data.voucherStats.unsettled > 0 && (
+                                <li className="reminder-item">
+                                    <div className="reminder-icon info"><DollarSign size={16} /></div>
+                                    <div>
+                                        <strong>{data.voucherStats.unsettled} bon supir</strong> belum settle{isOwner ? ` (${formatCurrency(data.voucherStats.totalIssued)} kas keluar)` : ''}
                                     </div>
                                 </li>
                             )}
@@ -272,7 +284,12 @@ export default function DashboardPage() {
                                     </div>
                                 </li>
                             )}
-                            {data.orderStats.onHold === 0 && data.invoiceStats.unpaid === 0 && data.fleetStats.maintenanceDue === 0 && data.fleetStats.openIncidents === 0 && (
+                            {data.orderStats.onHold === 0 &&
+                                data.notaStats.unpaid === 0 &&
+                                data.boronganStats.unpaid === 0 &&
+                                data.voucherStats.unsettled === 0 &&
+                                data.fleetStats.maintenanceDue === 0 &&
+                                data.fleetStats.openIncidents === 0 && (
                                 <li className="reminder-item">
                                     <div className="reminder-icon" style={{ background: 'var(--color-success-light)', color: 'var(--color-success)' }}>
                                         <TrendingUp size={16} />

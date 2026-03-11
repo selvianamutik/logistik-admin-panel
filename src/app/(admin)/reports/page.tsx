@@ -214,11 +214,11 @@ export default function ReportsPage() {
 
   const handleExportExcel = () => {
     if (tab === "pnl") {
-      const rows = [
+        const rows = [
         ...filteredPayments.map((item) => ({
           tipe: "Pendapatan",
           tanggal: item.date,
-          deskripsi: item.note || "Pembayaran Invoice",
+          deskripsi: item.note || "Pembayaran Nota",
           jumlah: item.amount,
         })),
         ...filteredExpenses.map((item) => ({
@@ -274,7 +274,7 @@ export default function ReportsPage() {
       subtitle: periodLabel,
       company,
       bodyHtml: isPnl
-        ? `<div class="stats-row"><div class="stat-box"><div class="stat-label">Pendapatan</div><div class="stat-value s">${fmtN(totalRevenue)}</div></div><div class="stat-box"><div class="stat-label">Pengeluaran</div><div class="stat-value d">${fmtN(totalExpense)}</div></div><div class="stat-box"><div class="stat-label">Laba/Rugi Bersih</div><div class="stat-value ${netProfit >= 0 ? "s" : "d"}">${netProfit >= 0 ? "+" : ""}${fmtN(netProfit)}</div></div></div><table><thead><tr><th>Kategori</th><th class="r">Jumlah</th><th class="r">%</th></tr></thead><tbody><tr class="b"><td>PENDAPATAN</td><td class="r s">${fmtN(totalRevenue)}</td><td class="r">100%</td></tr><tr><td style="padding-left:1.5rem">Pembayaran Invoice (${filteredPayments.length}x)</td><td class="r">${fmtN(totalRevenue)}</td><td class="r">100%</td></tr><tr class="b" style="border-top:2px solid #e2e8f0"><td>PENGELUARAN</td><td class="r d">${fmtN(totalExpense)}</td><td class="r">100%</td></tr>${sortedCategories.map(([cat, amt]) => `<tr><td style="padding-left:1.5rem">${cat}</td><td class="r">${fmtN(amt)}</td><td class="r">${totalExpense > 0 ? ((amt / totalExpense) * 100).toFixed(1) : 0}%</td></tr>`).join("")}<tr class="b" style="border-top:2px solid #1e293b"><td>LABA / RUGI BERSIH</td><td class="r ${netProfit >= 0 ? "s" : "d"}">${netProfit >= 0 ? "+" : ""}${fmtN(netProfit)}</td><td></td></tr></tbody></table>`
+        ? `<div class="stats-row"><div class="stat-box"><div class="stat-label">Pendapatan</div><div class="stat-value s">${fmtN(totalRevenue)}</div></div><div class="stat-box"><div class="stat-label">Pengeluaran</div><div class="stat-value d">${fmtN(totalExpense)}</div></div><div class="stat-box"><div class="stat-label">Laba/Rugi Bersih</div><div class="stat-value ${netProfit >= 0 ? "s" : "d"}">${netProfit >= 0 ? "+" : ""}${fmtN(netProfit)}</div></div></div><table><thead><tr><th>Kategori</th><th class="r">Jumlah</th><th class="r">%</th></tr></thead><tbody><tr class="b"><td>PENDAPATAN</td><td class="r s">${fmtN(totalRevenue)}</td><td class="r">100%</td></tr><tr><td style="padding-left:1.5rem">Pembayaran Nota (${filteredPayments.length}x)</td><td class="r">${fmtN(totalRevenue)}</td><td class="r">100%</td></tr><tr class="b" style="border-top:2px solid #e2e8f0"><td>PENGELUARAN</td><td class="r d">${fmtN(totalExpense)}</td><td class="r">100%</td></tr>${sortedCategories.map(([cat, amt]) => `<tr><td style="padding-left:1.5rem">${cat}</td><td class="r">${fmtN(amt)}</td><td class="r">${totalExpense > 0 ? ((amt / totalExpense) * 100).toFixed(1) : 0}%</td></tr>`).join("")}<tr class="b" style="border-top:2px solid #1e293b"><td>LABA / RUGI BERSIH</td><td class="r ${netProfit >= 0 ? "s" : "d"}">${netProfit >= 0 ? "+" : ""}${fmtN(netProfit)}</td><td></td></tr></tbody></table>`
         : `<div class="stats-row">${Object.entries(cashFlowByBank)
             .map(
               ([, value]) =>
@@ -407,6 +407,25 @@ export default function ReportsPage() {
         </div>
       </div>
 
+      {tab === "cashflow" && (
+        <div
+          className="card"
+          style={{ marginBottom: "1rem", background: "var(--color-gray-25)" }}
+        >
+          <div className="card-body" style={{ padding: "0.9rem 1rem" }}>
+            <div style={{ fontWeight: 700, marginBottom: "0.25rem" }}>
+              Catatan Arus Kas
+            </div>
+            <div style={{ fontSize: "0.82rem", color: "var(--color-gray-600)" }}>
+              Tab ini hanya menampilkan mutasi rekening bank dari{" "}
+              <code style={{ margin: "0 0.25rem" }}>bankTransaction</code>.
+              Transaksi tunai tanpa rekening tetap masuk ke laba rugi, tetapi
+              tidak muncul di arus kas bank.
+            </div>
+          </div>
+        </div>
+      )}
+
       {tab === "pnl" ? (
         <div>
           <div
@@ -440,7 +459,7 @@ export default function ReportsPage() {
                     : "var(--color-danger)",
               },
               {
-                label: "Invoice Outstanding",
+                label: "Tagihan Outstanding",
                 value: formatCurrency(totalOutstanding),
                 note: `Total terbit ${formatCurrency(totalInvoiced)}`,
                 color: "var(--color-warning)",
@@ -688,7 +707,7 @@ export default function ReportsPage() {
                   <div
                     style={{ display: "flex", justifyContent: "space-between" }}
                   >
-                    <span>Pembayaran Invoice ({filteredPayments.length}x)</span>
+                    <span>Pembayaran Nota ({filteredPayments.length}x)</span>
                     <span style={{ fontWeight: 600 }}>
                       {formatCurrency(totalRevenue)}
                     </span>

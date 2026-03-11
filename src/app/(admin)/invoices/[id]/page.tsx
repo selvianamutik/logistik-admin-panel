@@ -336,6 +336,13 @@ export default function NotaDetailPage() {
                                     </select>
                                 </div>
                             </div>
+                            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--color-gray-600)', marginBottom: '1rem' }}>
+                                {payMethod === 'TRANSFER'
+                                    ? 'Transfer akan mengurangi sisa tagihan, mencatat pendapatan, dan menambah saldo rekening yang dipilih.'
+                                    : payMethod === 'CASH'
+                                        ? 'Tunai tetap mengurangi sisa tagihan dan mencatat pendapatan. Jika rekening dibiarkan kosong, saldo bank dan tab Arus Kas tidak berubah.'
+                                        : 'Metode lain tetap mengurangi sisa tagihan dan mencatat pendapatan. Mutasi bank hanya dibuat jika rekening dipilih.'}
+                            </div>
                             <div className="form-group"><label className="form-label">Catatan</label><textarea className="form-textarea" rows={2} value={payNote} onChange={e => setPayNote(e.target.value)} /></div>
                         </div>
                         <div className="modal-footer">

@@ -84,12 +84,12 @@ type NormalizedTireEventPayload = {
 type DashboardSummary = {
     orderStats: { total: number; open: number; partial: number; complete: number; onHold: number };
     doStats: { total: number; onDelivery: number };
-    invoiceStats: { unpaid: number; totalOutstanding: number };
+    notaStats: { unpaid: number; totalOutstanding: number };
+    boronganStats: { unpaid: number; totalOutstanding: number };
+    voucherStats: { unsettled: number; totalIssued: number };
     fleetStats: { openIncidents: number; maintenanceDue: number };
     recentOrders: Array<{ _id: string; masterResi?: string; customerName?: string; status?: string; createdAt?: string }>;
-    recentInvoices: Array<{ _id: string; invoiceNumber?: string; customerName?: string; status?: string; totalAmount?: number }>;
-    expenses: { total: number };
-    income: { total: number };
+    recentNotas: Array<{ _id: string; notaNumber?: string; customerName?: string; status?: string; totalAmount?: number }>;
 };
 
 const INCIDENT_STATUS_TRANSITIONS: Record<string, string[]> = {
@@ -229,13 +229,12 @@ async function getDashboardSummary(session: Session): Promise<DashboardSummary> 
     const [
         orderStats,
         doStats,
-        unpaidInvoiceCount,
-        unpaidInvoiceAmounts,
+        unpaidNotas,
+        unpaidBorongans,
+        openVouchers,
         fleetStats,
         recentOrders,
-        recentInvoices,
-        visibleExpenses,
-        visibleIncomes,
+        recentNotas,
     ] = await Promise.all([
         client.fetch<DashboardSummary['orderStats']>(`{
             "total": count(*[_type == "order"]),
@@ -248,10 +247,9 @@ async function getDashboardSummary(session: Session): Promise<DashboardSummary> 
             "total": count(*[_type == "deliveryOrder"]),
             "onDelivery": count(*[_type == "deliveryOrder" && status == "ON_DELIVERY"])
         }`),
-        client.fetch<number>(`count(*[_type == "invoice" && status != "PAID"])`),
-        session.role === 'OWNER'
-            ? client.fetch<Array<{ totalAmount?: number }>>(`*[_type == "invoice" && status != "PAID"]{ totalAmount }`)
-            : Promise.resolve([] as Array<{ totalAmount?: number }>),
+        client.fetch<Array<{ totalAmount?: number }>>(`*[_type == "freightNota" && status != "PAID"]{ totalAmount }`),
+        client.fetch<Array<{ totalAmount?: number }>>(`*[_type == "driverBorongan" && status != "PAID"]{ totalAmount }`),
+        client.fetch<Array<{ cashGiven?: number }>>(`*[_type == "driverVoucher" && status != "SETTLED"]{ cashGiven }`),
         client.fetch<DashboardSummary['fleetStats']>(`{
             "openIncidents": count(*[_type == "incident" && (status == "OPEN" || status == "IN_PROGRESS")]),
             "maintenanceDue": count(*[_type == "maintenance" && status == "SCHEDULED"])
@@ -263,45 +261,46 @@ async function getDashboardSummary(session: Session): Promise<DashboardSummary> 
             status,
             createdAt
         }`),
-        client.fetch<DashboardSummary['recentInvoices']>(`*[_type == "invoice"] | order(_createdAt desc)[0...5]{
+        client.fetch<DashboardSummary['recentNotas']>(`*[_type == "freightNota"] | order(_createdAt desc)[0...5]{
             _id,
-            invoiceNumber,
+            notaNumber,
             customerName,
             status,
             totalAmount
         }`),
-        session.role === 'OWNER'
-            ? client.fetch<Array<Pick<Expense, '_id' | 'amount' | 'privacyLevel'>>>(`*[_type == "expense"]{
-                _id,
-                amount,
-                privacyLevel
-            }`)
-            : Promise.resolve([] as Array<Pick<Expense, '_id' | 'amount' | 'privacyLevel'>>),
-        session.role === 'OWNER'
-            ? client.fetch<Array<{ amount?: number }>>(`*[_type == "income"]{ amount }`)
-            : Promise.resolve([] as Array<{ amount?: number }>),
     ]);
 
-    const expenseTotal = filterExpensesByRole(visibleExpenses as Expense[], session.role)
-        .reduce((sum, expense) => sum + (typeof expense.amount === 'number' ? expense.amount : 0), 0);
-    const incomeTotal = visibleIncomes.reduce((sum, income) => sum + (typeof income.amount === 'number' ? income.amount : 0), 0);
-    const totalOutstanding = unpaidInvoiceAmounts.reduce(
-        (sum, invoice) => sum + (typeof invoice.totalAmount === 'number' ? invoice.totalAmount : 0),
+    const notaOutstanding = unpaidNotas.reduce(
+        (sum, nota) => sum + (typeof nota.totalAmount === 'number' ? nota.totalAmount : 0),
+        0
+    );
+    const boronganOutstanding = unpaidBorongans.reduce(
+        (sum, borongan) => sum + (typeof borongan.totalAmount === 'number' ? borongan.totalAmount : 0),
+        0
+    );
+    const voucherIssued = openVouchers.reduce(
+        (sum, voucher) => sum + (typeof voucher.cashGiven === 'number' ? voucher.cashGiven : 0),
         0
     );
 
     return {
         orderStats,
         doStats,
-        invoiceStats: {
-            unpaid: unpaidInvoiceCount,
-            totalOutstanding: session.role === 'OWNER' ? totalOutstanding : 0,
+        notaStats: {
+            unpaid: unpaidNotas.length,
+            totalOutstanding: session.role === 'OWNER' ? notaOutstanding : 0,
+        },
+        boronganStats: {
+            unpaid: unpaidBorongans.length,
+            totalOutstanding: session.role === 'OWNER' ? boronganOutstanding : 0,
+        },
+        voucherStats: {
+            unsettled: openVouchers.length,
+            totalIssued: session.role === 'OWNER' ? voucherIssued : 0,
         },
         fleetStats,
         recentOrders,
-        recentInvoices,
-        expenses: { total: session.role === 'OWNER' ? expenseTotal : 0 },
-        income: { total: session.role === 'OWNER' ? incomeTotal : 0 },
+        recentNotas,
     };
 }
 

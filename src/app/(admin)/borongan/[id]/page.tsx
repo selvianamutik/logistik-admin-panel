@@ -431,7 +431,7 @@ export default function BoronganDetailPage() {
                                     {formatCurrency(borong.totalAmount)}
                                 </div>
                                 <div style={{ fontSize: '0.75rem', color: 'var(--color-gray-500)', marginTop: '0.25rem' }}>
-                                    Catatan: pengeluaran ini akan tercatat dan mengurangi saldo rekening bank yang dipilih.
+                                    Catatan: pembayaran ini selalu tercatat sebagai pengeluaran. Saldo bank hanya berkurang jika kamu memilih rekening.
                                 </div>
                             </div>
 
@@ -461,6 +461,13 @@ export default function BoronganDetailPage() {
                                         ))}
                                     </select>
                                 </div>
+                            </div>
+                            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--color-gray-600)', marginBottom: '1rem' }}>
+                                {payMethod === 'TRANSFER'
+                                    ? 'Transfer akan mencatat expense dan membuat mutasi DEBIT pada rekening yang dipilih.'
+                                    : payMethod === 'CASH'
+                                        ? 'Tunai akan tetap mencatat expense dan menandai borongan lunas. Jika rekening kosong, saldo bank dan tab Arus Kas tidak berubah.'
+                                        : 'Metode lain tetap mencatat expense. Mutasi bank hanya dibuat jika rekening dipilih.'}
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Catatan</label>

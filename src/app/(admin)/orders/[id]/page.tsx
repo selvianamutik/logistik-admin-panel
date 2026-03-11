@@ -4,9 +4,9 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '../../layout';
-import { ArrowLeft, Truck, FileText, Plus, Edit, Eye } from 'lucide-react';
+import { ArrowLeft, Truck, FileText, Edit, Eye } from 'lucide-react';
 import { formatDate, formatCurrency, ORDER_STATUS_MAP, ITEM_STATUS_MAP, DO_STATUS_MAP, INVOICE_STATUS_MAP } from '@/lib/utils';
-import type { Order, OrderItem, DeliveryOrder, Invoice, DeliveryOrderItem, Vehicle } from '@/lib/types';
+import type { Order, OrderItem, DeliveryOrder, DeliveryOrderItem, FreightNota, FreightNotaItem, Vehicle } from '@/lib/types';
 
 export default function OrderDetailPage() {
     const params = useParams();
@@ -17,18 +17,15 @@ export default function OrderDetailPage() {
     const [items, setItems] = useState<OrderItem[]>([]);
     const [dos, setDos] = useState<DeliveryOrder[]>([]);
     const [doItems, setDoItems] = useState<DeliveryOrderItem[]>([]);
-    const [invoices, setInvoices] = useState<Invoice[]>([]);
+    const [notas, setNotas] = useState<FreightNota[]>([]);
     const [loading, setLoading] = useState(true);
     const [showDOModal, setShowDOModal] = useState(false);
-    const [showInvModal, setShowInvModal] = useState(false);
     // DO form
     const [doDate, setDoDate] = useState(new Date().toISOString().split('T')[0]);
     const [doVehicle, setDoVehicle] = useState('');
     const [doNotes, setDoNotes] = useState('');
     const [selectedItems, setSelectedItems] = useState<string[]>([]);
     const [vehicles, setVehicles] = useState<Array<Pick<Vehicle, '_id' | 'plateNumber'>>>([]);
-    // Invoice form
-    const [invItems, setInvItems] = useState<Array<{ description: string; qty: number; price: number; subtotal: number }>>([]);
 
     useEffect(() => {
         const fetchEntity = async <T,>(url: string) => {
@@ -43,23 +40,31 @@ export default function OrderDetailPage() {
         const loadOrderDetail = async () => {
             setLoading(true);
             try {
-                const [orderData, itemData, deliveryOrders, invoiceData, vehicleData] = await Promise.all([
+                const [orderData, itemData, deliveryOrders, vehicleData] = await Promise.all([
                     fetchEntity<Order | null>(`/api/data?entity=orders&id=${orderId}`),
                     fetchEntity<OrderItem[]>(`/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`),
                     fetchEntity<DeliveryOrder[]>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`),
-                    fetchEntity<Invoice[]>(`/api/data?entity=invoices&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`),
                     fetchEntity<Array<Pick<Vehicle, '_id' | 'plateNumber'>>>(`/api/data?entity=vehicles&filter=${encodeURIComponent(JSON.stringify({ status: ['ACTIVE', 'IN_SERVICE'] }))}`),
                 ]);
                 const deliveryOrderIds = (deliveryOrders || []).map(item => item._id);
-                const deliveryOrderItems = deliveryOrderIds.length > 0
-                    ? await fetchEntity<DeliveryOrderItem[]>(`/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: deliveryOrderIds }))}`)
+                const [deliveryOrderItems, notaItems] = await Promise.all([
+                    deliveryOrderIds.length > 0
+                        ? fetchEntity<DeliveryOrderItem[]>(`/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: deliveryOrderIds }))}`)
+                        : Promise.resolve([] as DeliveryOrderItem[]),
+                    deliveryOrderIds.length > 0
+                        ? fetchEntity<FreightNotaItem[]>(`/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ doRef: deliveryOrderIds }))}`)
+                        : Promise.resolve([] as FreightNotaItem[]),
+                ]);
+                const notaIds = [...new Set((notaItems || []).map(item => item.notaRef).filter(Boolean))];
+                const orderNotas = notaIds.length > 0
+                    ? await fetchEntity<FreightNota[]>(`/api/data?entity=freight-notas&filter=${encodeURIComponent(JSON.stringify({ _id: notaIds }))}`)
                     : [];
 
                 setOrder(orderData);
                 setItems(itemData || []);
                 setDos(deliveryOrders || []);
                 setDoItems(deliveryOrderItems);
-                setInvoices(invoiceData || []);
+                setNotas(orderNotas || []);
                 setVehicles(vehicleData || []);
             } catch (error) {
                 addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail order');
@@ -80,6 +85,7 @@ export default function OrderDetailPage() {
     const deliveredCount = items.filter(i => i.status === 'DELIVERED').length;
     const holdCount = items.filter(i => i.status === 'HOLD').length;
     const pendingCount = items.filter(i => i.status === 'PENDING').length;
+    const deliveredDoCount = dos.filter(d => d.status === 'DELIVERED').length;
     const progress = items.length > 0 ? Math.round((deliveredCount / items.length) * 100) : 0;
 
     const handleCreateDO = async () => {
@@ -123,44 +129,6 @@ export default function OrderDetailPage() {
             window.location.reload();
         } catch {
             addToast('error', 'Gagal membuat surat jalan');
-        }
-    };
-
-    const handleCreateInvoice = async () => {
-        if (invItems.length === 0) {
-            addToast('error', 'Tambahkan minimal 1 item invoice');
-            return;
-        }
-        try {
-            const total = invItems.reduce((s, i) => s + i.subtotal, 0);
-            const invRes = await fetch('/api/data', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    entity: 'invoices',
-                    action: 'create-with-items',
-                    data: {
-                        mode: 'ORDER', orderRef: order?._id,
-                        customerRef: order?.customerRef, customerName: order?.customerName, masterResi: order?.masterResi,
-                        issueDate: new Date().toISOString().split('T')[0],
-                        dueDate: new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
-                        totalAmount: total, notes: '',
-                        items: invItems,
-                    }
-                }),
-            });
-            const invData = await invRes.json();
-            if (!invRes.ok) {
-                addToast('error', invData.error || 'Gagal membuat invoice');
-                return;
-            }
-
-            addToast('success', `Invoice dibuat: ${invData.data?.invoiceNumber || ''}`);
-            setShowInvModal(false);
-            setInvItems([]);
-            window.location.reload();
-        } catch {
-            addToast('error', 'Gagal membuat invoice');
         }
     };
 
@@ -222,8 +190,8 @@ export default function OrderDetailPage() {
                     <button className="btn btn-primary" onClick={() => setShowDOModal(true)} disabled={availableItems.length === 0}>
                         <Truck size={16} /> Buat Surat Jalan
                     </button>
-                    <button className="btn btn-secondary" onClick={() => setShowInvModal(true)}>
-                        <FileText size={16} /> Buat Invoice
+                    <button className="btn btn-secondary" onClick={() => router.push('/invoices/new')}>
+                        <FileText size={16} /> Buat Nota
                     </button>
                     <button className="btn btn-ghost" onClick={() => router.push(`/orders/${order._id}/edit`)}>
                         <Edit size={16} /> Edit
@@ -338,22 +306,29 @@ export default function OrderDetailPage() {
                 </div>
             </div>
 
-            {/* Invoices */}
+            {/* Notas */}
             <div className="card mt-6">
-                <div className="card-header"><span className="card-header-title">Invoice ({invoices.length})</span></div>
+                <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center' }}>
+                    <span className="card-header-title">Nota Ongkos ({notas.length})</span>
+                    <span className="text-muted" style={{ fontSize: '0.78rem' }}>Nota dibuat dari DO yang sudah selesai dikirim</span>
+                </div>
                 <div className="table-wrapper">
                     <table>
-                        <thead><tr><th>No. Invoice</th><th>Tanggal</th><th>Total</th><th>Status</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>No. Nota</th><th>Tanggal</th><th>Total</th><th>Status</th><th>Aksi</th></tr></thead>
                         <tbody>
-                            {invoices.length === 0 ? (
-                                <tr><td colSpan={5} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada invoice</td></tr>
-                            ) : invoices.map(inv => (
-                                <tr key={inv._id}>
-                                    <td><Link href={`/invoices/${inv._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{inv.invoiceNumber}</Link></td>
-                                    <td>{formatDate(inv.issueDate)}</td>
-                                    <td className="font-medium">{formatCurrency(inv.totalAmount)}</td>
-                                    <td><span className={`badge badge-${INVOICE_STATUS_MAP[inv.status]?.color}`}><span className="badge-dot" /> {INVOICE_STATUS_MAP[inv.status]?.label}</span></td>
-                                    <td><Link href={`/invoices/${inv._id}`} className="table-action-btn"><Eye size={14} /> Lihat</Link></td>
+                            {notas.length === 0 ? (
+                                <tr>
+                                    <td colSpan={5} className="text-center text-muted" style={{ padding: '2rem' }}>
+                                        {deliveredDoCount === 0 ? 'Belum ada DO selesai yang bisa ditagihkan' : 'Belum ada nota untuk order ini'}
+                                    </td>
+                                </tr>
+                            ) : notas.map(nota => (
+                                <tr key={nota._id}>
+                                    <td><Link href={`/invoices/${nota._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{nota.notaNumber}</Link></td>
+                                    <td>{formatDate(nota.issueDate)}</td>
+                                    <td className="font-medium">{formatCurrency(nota.totalAmount)}</td>
+                                    <td><span className={`badge badge-${INVOICE_STATUS_MAP[nota.status]?.color}`}><span className="badge-dot" /> {INVOICE_STATUS_MAP[nota.status]?.label}</span></td>
+                                    <td><Link href={`/invoices/${nota._id}`} className="table-action-btn"><Eye size={14} /> Lihat</Link></td>
                                 </tr>
                             ))}
                         </tbody>
@@ -422,42 +397,6 @@ export default function OrderDetailPage() {
                             <button className="btn btn-secondary" onClick={() => setShowDOModal(false)}>Batal</button>
                             <button className="btn btn-primary" onClick={handleCreateDO} disabled={selectedItems.length === 0}>
                                 <Truck size={16} /> Buat Surat Jalan ({selectedItems.length} item)
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Create Invoice Modal */}
-            {showInvModal && (
-                <div className="modal-overlay" onClick={() => setShowInvModal(false)}>
-                    <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h3 className="modal-title">Buat Invoice</h3>
-                            <button className="modal-close" onClick={() => setShowInvModal(false)}>&times;</button>
-                        </div>
-                        <div className="modal-body">
-                            <div className="form-section-title">Item Invoice</div>
-                            {invItems.map((item, idx) => (
-                                <div key={idx} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-                                    <input className="form-input" placeholder="Deskripsi" value={item.description}
-                                        onChange={e => { const n = [...invItems]; n[idx].description = e.target.value; setInvItems(n); }} style={{ flex: 2 }} />
-                                    <input className="form-input" type="number" placeholder="Harga" value={item.price || ''}
-                                        onChange={e => { const n = [...invItems]; n[idx].price = Number(e.target.value); n[idx].subtotal = n[idx].qty * n[idx].price; setInvItems(n); }} style={{ flex: 1 }} />
-                                    <button className="btn btn-ghost btn-sm" onClick={() => setInvItems(prev => prev.filter((_, i) => i !== idx))}>x</button>
-                                </div>
-                            ))}
-                            <button className="btn btn-secondary btn-sm" onClick={() => setInvItems(prev => [...prev, { description: '', qty: 1, price: 0, subtotal: 0 }])}>
-                                <Plus size={14} /> Tambah Item
-                            </button>
-                            <div className="mt-4" style={{ textAlign: 'right', fontSize: 'var(--font-size-lg)', fontWeight: 700 }}>
-                                Total: {formatCurrency(invItems.reduce((s, i) => s + (i.qty * i.price), 0))}
-                            </div>
-                        </div>
-                        <div className="modal-footer">
-                            <button className="btn btn-secondary" onClick={() => setShowInvModal(false)}>Batal</button>
-                            <button className="btn btn-primary" onClick={handleCreateInvoice} disabled={invItems.length === 0}>
-                                <FileText size={16} /> Buat Invoice
                             </button>
                         </div>
                     </div>
