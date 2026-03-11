@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Plus, FileText, Printer } from 'lucide-react';
+import { Search, Plus, FileText, Printer, FileDown } from 'lucide-react';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
+import { exportInvoices } from '@/lib/export';
 import type { FreightNota } from '@/lib/types';
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
@@ -43,6 +44,12 @@ export default function NotaListPage() {
                     <p className="page-subtitle">Tagihan ongkos angkut ke customer</p>
                 </div>
                 <div className="page-actions">
+                    <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => exportInvoices(filtered as unknown as Record<string, unknown>[])}
+                    >
+                        <FileDown size={15} /> Excel
+                    </button>
                     <button className="btn btn-secondary btn-sm" onClick={async () => {
                         const co = await fetchCompanyProfile();
                         openBrandedPrint({

@@ -3,8 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useToast } from '../../layout';
-import { ArrowLeft, Printer, DollarSign, Landmark, Trash2 } from 'lucide-react';
+import { ArrowLeft, Printer, DollarSign, Landmark, Trash2, FileDown } from 'lucide-react';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
+import { exportFreightNotaDetail } from '@/lib/export';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import type { FreightNota, FreightNotaItem, Payment, BankAccount } from '@/lib/types';
 
@@ -131,6 +132,17 @@ export default function NotaDetailPage() {
         router.push('/invoices');
     };
 
+    const handleExportExcel = async () => {
+        if (!nota) return;
+        try {
+            const company = await fetchCompanyProfile();
+            await exportFreightNotaDetail(nota, items, company);
+            addToast('success', 'Excel nota berhasil di-download');
+        } catch {
+            addToast('error', 'Gagal menyiapkan Excel nota');
+        }
+    };
+
     if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 200 }} /></div>;
     if (!nota) return <div className="empty-state"><div className="empty-state-title">Nota tidak ditemukan</div></div>;
 
@@ -148,6 +160,7 @@ export default function NotaDetailPage() {
                 </div>
                 <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
                     {nota.status !== 'PAID' && <button className="btn btn-success btn-sm" onClick={() => setShowPayModal(true)}><DollarSign size={14} /> Bayar</button>}
+                    <button className="btn btn-secondary btn-sm" onClick={handleExportExcel}><FileDown size={14} /> Excel</button>
                     <button className="btn btn-secondary btn-sm" onClick={handlePrint}><Printer size={14} /> Cetak Nota</button>
                     <button className="btn btn-secondary btn-sm" onClick={handleDelete}><Trash2 size={14} /></button>
                 </div>
