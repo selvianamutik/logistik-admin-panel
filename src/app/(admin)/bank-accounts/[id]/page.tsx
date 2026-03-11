@@ -10,6 +10,7 @@ import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
 import type { BankAccount, BankTransaction } from '@/lib/types';
 
 const BANK_LOGOS: Record<string, { logo: string; color: string; gradient: string }> = {
+    CASH: { color: '#14532d', gradient: 'linear-gradient(135deg, #14532d 0%, #16a34a 100%)', logo: '' },
     BCA: { color: '#003b7b', gradient: 'linear-gradient(135deg, #003b7b 0%, #0060c7 100%)', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5c/Bank_Central_Asia.svg/200px-Bank_Central_Asia.svg.png' },
     MANDIRI: { color: '#003868', gradient: 'linear-gradient(135deg, #003868 0%, #005ba5 100%)', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ad/Bank_Mandiri_logo_2016.svg/200px-Bank_Mandiri_logo_2016.svg.png' },
     BRI: { color: '#00529c', gradient: 'linear-gradient(135deg, #00529c 0%, #0078d4 100%)', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/68/BANK_BRI_logo.svg/200px-Bank_BRI_logo.svg.png' },
@@ -17,6 +18,10 @@ const BANK_LOGOS: Record<string, { logo: string; color: string; gradient: string
     BSI: { color: '#00a650', gradient: 'linear-gradient(135deg, #00a650 0%, #22c55e 100%)', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Bank_Syariah_Indonesia.svg/200px-Bank_Syariah_Indonesia.svg.png' },
     DEFAULT: { color: '#6b7280', gradient: 'linear-gradient(135deg, #374151 0%, #6b7280 100%)', logo: '' },
 };
+
+function isCashAccount(account: Pick<BankAccount, 'accountType' | 'systemKey'>) {
+    return account.accountType === 'CASH' || account.systemKey === 'cash-on-hand';
+}
 
 function getBankInfo(name: string) {
     const key = Object.keys(BANK_LOGOS).find(bank => bank !== 'DEFAULT' && name.toUpperCase().includes(bank));
@@ -114,7 +119,7 @@ export default function BankAccountDetailPage() {
                 { header: 'Jumlah', key: 'amount', width: 18 },
                 { header: 'Saldo Setelah', key: 'balanceAfter', width: 18 },
             ],
-            `transaksi-${account?.bankName || 'bank'}-${new Date().toISOString().split('T')[0]}`,
+            `mutasi-${account?.bankName || 'akun'}-${new Date().toISOString().split('T')[0]}`,
             'Transaksi'
         );
     };
@@ -127,7 +132,8 @@ export default function BankAccountDetailPage() {
         return <div className="card"><div className="card-body">Rekening tidak ditemukan</div></div>;
     }
 
-    const bankInfo = getBankInfo(account.bankName);
+    const cashAccount = isCashAccount(account);
+    const bankInfo = cashAccount ? BANK_LOGOS.CASH : getBankInfo(account.bankName);
     const totalIn = transactions.filter(tx => tx.type === 'CREDIT' || tx.type === 'TRANSFER_IN').reduce((sum, tx) => sum + tx.amount, 0);
     const totalOut = transactions.filter(tx => tx.type === 'DEBIT' || tx.type === 'TRANSFER_OUT').reduce((sum, tx) => sum + tx.amount, 0);
 
@@ -142,7 +148,7 @@ export default function BankAccountDetailPage() {
                 }).join('');
 
             openBrandedPrint({
-                title: `Mutasi Rekening ${account.bankName}`,
+                title: cashAccount ? `Mutasi Kas ${account.bankName}` : `Mutasi Rekening ${account.bankName}`,
                 subtitle: `${account.accountNumber} - a.n. ${account.accountHolder}`,
                 company,
                 bodyHtml: `
@@ -171,7 +177,10 @@ export default function BankAccountDetailPage() {
                     <button className="btn-back" onClick={() => router.push('/bank-accounts')}><ArrowLeft size={16} /></button>
                     <BankDetailLogo name={account.bankName} size={44} />
                     <div>
-                        <h1 className="page-title">{account.bankName}</h1>
+                        <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            {account.bankName}
+                            {cashAccount && <span className="badge badge-success">Kas Tunai</span>}
+                        </h1>
                         <p className="page-subtitle" style={{ fontFamily: 'var(--font-mono, monospace)', letterSpacing: '0.03em' }}>{account.accountNumber} - a.n. {account.accountHolder}</p>
                     </div>
                 </div>

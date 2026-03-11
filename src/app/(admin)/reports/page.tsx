@@ -417,10 +417,11 @@ export default function ReportsPage() {
               Catatan Arus Kas
             </div>
             <div style={{ fontSize: "0.82rem", color: "var(--color-gray-600)" }}>
-              Tab ini hanya menampilkan mutasi rekening bank dari{" "}
-              <code style={{ margin: "0 0.25rem" }}>bankTransaction</code>.
-              Transaksi tunai tanpa rekening tetap masuk ke laba rugi, tetapi
-              tidak muncul di arus kas bank.
+              Tab ini menampilkan mutasi dari{" "}
+              <code style={{ margin: "0 0.25rem" }}>bankTransaction</code>,
+              termasuk rekening bank dan akun <strong>Kas Tunai</strong>.
+              Transaksi tunai baru akan muncul di sini jika diposting ke akun
+              kas tersebut.
             </div>
           </div>
         </div>

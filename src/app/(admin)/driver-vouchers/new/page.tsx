@@ -139,10 +139,10 @@ export default function NewDriverVoucherPage() {
                             <input className="form-input" placeholder="Contoh: Jakarta → Surabaya" value={form.route} onChange={e => setForm({ ...form, route: e.target.value })} />
                         </div>
                         <div className="form-group">
-                            <label className="form-label">Rekening Sumber <span className="required">*</span></label>
+                            <label className="form-label">Rekening / Kas Sumber <span className="required">*</span></label>
                             <select className="form-select" value={form.issueBankRef} onChange={e => setForm({ ...form, issueBankRef: e.target.value })}>
-                                <option value="">Pilih rekening</option>
-                                {bankAccounts.map(b => <option key={b._id} value={b._id}>{b.bankName} - {b.accountNumber}</option>)}
+                                <option value="">Pilih rekening atau kas</option>
+                                {bankAccounts.map(b => <option key={b._id} value={b._id}>{b.bankName} - {b.accountNumber}{b.accountType === 'CASH' ? ' (Kas Tunai)' : ''}</option>)}
                             </select>
                         </div>
                     </div>

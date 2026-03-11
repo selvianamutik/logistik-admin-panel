@@ -18,7 +18,7 @@ Fokusnya bukan menambah fitur sebanyak mungkin, tetapi memastikan owner tahu:
   - borongan supir
   - bon supir
   - pengeluaran
-  - rekening bank
+  - rekening dan kas
   - laporan
 - Gate teknis sudah hidup:
   - lint
@@ -43,20 +43,19 @@ Kalau dibiarkan, ini bikin data dan UI tidak konsisten:
 Kesimpulan:
 masalah terbesar aplikasi sekarang bukan kekurangan fitur, tetapi sisa konsep lama yang belum dibersihkan.
 
-### 2.2 Transaksi tunai masih punya blind spot
+### 2.2 Transaksi tunai sebelumnya punya blind spot
 
-Saat pembayaran/pengeluaran tunai tidak diarahkan ke rekening:
+Sebelumnya transaksi tunai membuat user bingung karena:
 
 - transaksi tetap tercatat di laba rugi,
 - status dokumen tetap berubah,
-- tetapi tidak masuk mutasi bank.
+- tetapi saldo kas tidak ikut bergerak.
 
-Ini bukan bug hitung saat ini, tetapi memang batas desain sistem:
-aplikasi baru punya ledger rekening bank, belum punya ledger `Kas Tunai`.
+Gap ini sekarang sudah ditutup dengan akun sistem `Kas Tunai`.
 
 ### 2.3 Dashboard owner sebelumnya kurang actionable
 
-Sebelum perbaikan, dashboard lebih menampilkan angka yang “bagus dilihat” daripada yang perlu ditindak:
+Sebelum perbaikan, dashboard lebih menampilkan angka yang "bagus dilihat" daripada yang perlu ditindak:
 
 - tagihan aktif tidak membaca nota yang benar,
 - tidak mengingatkan borongan belum bayar,
@@ -85,28 +84,21 @@ Kalau preview memakai env/data yang sama dengan production:
 - Detail order sekarang menampilkan `Nota Ongkos` yang benar-benar terkait ke DO order itu.
 - Tombol `Buat Invoice` legacy di detail order dihapus dari alur aktif.
   Sekarang user diarahkan ke flow nota yang benar.
+- Akun sistem `Kas Tunai` sekarang tersedia otomatis dan bisa dipakai lintas modul.
+- Pembayaran `CASH` tanpa rekening pilihan sekarang otomatis masuk ke `Kas Tunai`.
+- Pembayaran borongan `CASH` tanpa rekening pilihan sekarang otomatis masuk ke `Kas Tunai`.
+- Modul rekening sekarang menjadi sumber kebenaran untuk rekening bank dan kas tunai.
 - Penjelasan workflow sudah ditulis di `WORKFLOW.md`.
 - Helper text untuk pembayaran tunai sudah ditambahkan di UI.
 
 ## 4. Yang sengaja belum dikerjakan sekarang
 
-### 4.1 Ledger Kas Tunai terpisah
-
-Ini perbaikan yang masuk akal, tetapi bukan patch kecil.
-Kalau dikerjakan setengah-setengah, hasilnya malah menambah kebingungan.
-
-Kapan layak dikerjakan:
-
-- kalau operasional tunai memang dominan,
-- kalau owner ingin saldo kas fisik tampil seperti rekening,
-- kalau laporan arus kas harus mencakup bank + kas.
-
-### 4.2 Memecah API besar menjadi service per domain
+### 4.1 Memecah API besar menjadi service per domain
 
 Ini sehat secara engineering, tetapi belum prioritas bisnis harian.
 Selama rule bisnis utama masih dijaga dan test manual kuat, ini bisa ditunda.
 
-### 4.3 Menambah dashboard analytics yang terlalu canggih
+### 4.2 Menambah dashboard analytics yang terlalu canggih
 
 Belum perlu:
 
@@ -121,6 +113,6 @@ angka yang benar, pengingat yang jelas, dan alur yang tidak menipu.
 ## 5. Prioritas berikutnya yang paling masuk akal
 
 1. Pisahkan env preview dari production.
-2. Putuskan apakah `Kas Tunai` perlu menjadi ledger resmi.
-3. Bersihkan sisa jejak legacy `invoice` yang masih tidak dipakai user-facing.
-4. Tambahkan smoke test browser untuk flow owner yang paling penting.
+2. Bersihkan sisa jejak legacy `invoice` yang masih tidak dipakai user-facing.
+3. Tambahkan smoke test browser untuk flow owner yang paling penting.
+4. Pertimbangkan pagination/report optimization kalau volume data mulai besar.

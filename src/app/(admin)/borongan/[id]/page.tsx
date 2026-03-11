@@ -450,13 +450,13 @@ export default function BoronganDetailPage() {
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">
-                                        Rekening Bank <span style={{ fontSize: '0.7rem', color: 'var(--color-gray-400)' }}>(opsional, untuk debit)</span>
+                                        Rekening / Kas <span style={{ fontSize: '0.7rem', color: 'var(--color-gray-400)' }}>(opsional, untuk debit)</span>
                                     </label>
                                     <select className="form-select" value={payBankRef} onChange={(e) => setPayBankRef(e.target.value)}>
-                                        <option value="">-- Tanpa Rekening --</option>
+                                        <option value="">{payMethod === 'CASH' ? '-- Otomatis ke Kas Tunai --' : '-- Tanpa Rekening --'}</option>
                                         {bankAccounts.map((account) => (
                                             <option key={account._id} value={account._id}>
-                                                {account.bankName} - {account.accountNumber} (Saldo: {formatCurrency(account.currentBalance || 0)})
+                                                {account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''} (Saldo: {formatCurrency(account.currentBalance || 0)})
                                             </option>
                                         ))}
                                     </select>
@@ -466,7 +466,7 @@ export default function BoronganDetailPage() {
                                 {payMethod === 'TRANSFER'
                                     ? 'Transfer akan mencatat expense dan membuat mutasi DEBIT pada rekening yang dipilih.'
                                     : payMethod === 'CASH'
-                                        ? 'Tunai akan tetap mencatat expense dan menandai borongan lunas. Jika rekening kosong, saldo bank dan tab Arus Kas tidak berubah.'
+                                        ? 'Tunai akan tetap mencatat expense dan menandai borongan lunas. Jika rekening kosong, sistem otomatis mem-posting ke akun Kas Tunai.'
                                         : 'Metode lain tetap mencatat expense. Mutasi bank hanya dibuat jika rekening dipilih.'}
                             </div>
                             <div className="form-group">

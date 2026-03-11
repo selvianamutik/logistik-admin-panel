@@ -35,8 +35,9 @@ Sistem saat ini memisahkan dua hal:
 
 Artinya:
 
-- transaksi bisa tercatat di laba rugi tetapi tidak muncul di arus kas bank,
-- itu terjadi kalau transaksi tersebut tunai dan tidak diarahkan ke rekening bank.
+- transaksi bisa tercatat di laba rugi tetapi tidak muncul di arus kas,
+- itu terjadi kalau transaksi tersebut tidak diposting ke akun keuangan.
+- untuk metode `CASH`, sistem sekarang otomatis memakai akun `Kas Tunai` bila user tidak memilih rekening.
 
 ## 3. Alur Order -> DO
 
@@ -112,17 +113,17 @@ Efeknya:
 - sisa tagihan tetap berkurang,
 - status nota tetap disinkronkan.
 
-Tetapi:
+Jika user tidak memilih rekening:
 
-- kalau tidak ada `bankAccountRef`, sistem tidak membuat `bankTransaction`,
-- jadi saldo rekening bank tidak berubah,
-- transaksi tidak muncul di tab `Arus Kas`,
-- tetapi tetap muncul di `Laba Rugi`.
+- sistem otomatis mem-posting ke akun `Kas Tunai`,
+- sistem membuat `bankTransaction`,
+- saldo kas tunai bertambah,
+- transaksi muncul di tab `Arus Kas`.
 
 Jadi perilaku saat ini adalah:
 
 - `Tunai` = tercatat sebagai pendapatan / pelunasan,
-- `Tunai tanpa rekening` = tidak dianggap mutasi bank.
+- `Tunai tanpa rekening pilihan` = dianggap masuk ke `Kas Tunai`.
 
 ## 5. Alur Borongan Supir
 
@@ -151,12 +152,12 @@ Saat user menekan bayar:
 
 - expense tetap tercatat,
 - status borongan tetap jadi `PAID`,
-- tetapi kalau rekening kosong, tidak ada mutasi bank.
+- jika rekening kosong, sistem otomatis memakai akun `Kas Tunai`.
 
 Efeknya:
 
 - muncul di `Laba Rugi` sebagai pengeluaran,
-- tidak muncul di `Arus Kas` bank kalau tanpa rekening.
+- muncul juga di `Arus Kas` sebagai mutasi kas tunai.
 
 ## 6. Alur Bon Supir
 
@@ -204,32 +205,38 @@ Saat user membuat pengeluaran biasa:
   - sistem membuat `bankTransaction` `DEBIT`,
   - saldo rekening berkurang.
 
-Kalau tidak memilih rekening:
+Kalau user ingin pengeluaran tunai ikut mengurangi saldo kas:
+
+- pilih akun `Kas Tunai` pada field rekening / kas.
+
+Kalau tidak memilih akun apa pun:
 
 - pengeluaran tetap masuk laba rugi,
-- tetapi tidak masuk arus kas bank.
+- tetapi tidak masuk arus kas.
 
-## 8. Alur Rekening Bank
+## 8. Alur Rekening dan Kas
 
 ### 8.1 Fungsi modul rekening
 
-Modul ini hanya merepresentasikan rekening bank.
-Bukan dompet kas fisik.
+Modul ini sekarang merepresentasikan:
 
-### 8.2 Apa saja yang mengubah saldo rekening
+- rekening bank,
+- akun `Kas Tunai`.
+
+### 8.2 Apa saja yang mengubah saldo rekening / kas
 
 - payment customer yang diarahkan ke rekening,
+- payment tunai yang otomatis masuk ke `Kas Tunai`,
 - pembayaran borongan yang diarahkan ke rekening,
+- pembayaran borongan tunai yang otomatis masuk ke `Kas Tunai`,
 - expense yang diarahkan ke rekening,
 - terbit bon supir,
 - settlement bon supir,
 - transfer antar rekening.
 
-### 8.3 Apa yang tidak mengubah saldo rekening
+### 8.3 Apa yang tidak mengubah saldo rekening / kas
 
-- payment tunai tanpa rekening,
-- expense tunai tanpa rekening,
-- borongan tunai tanpa rekening.
+- transaksi yang memang tidak diposting ke akun apa pun.
 
 ## 9. Alur Laporan
 
@@ -250,11 +257,10 @@ Sumber:
 
 Jadi tab ini bukan laporan kas umum, melainkan mutasi rekening bank.
 
-Kalau ada pembayaran tunai dan user tidak memilih rekening:
+Sekarang tab ini mencakup:
 
-- nota bisa lunas,
-- pendapatan masuk,
-- tetapi tab `Arus Kas` tidak berubah.
+- rekening bank,
+- akun `Kas Tunai`.
 
 Ini perilaku sistem saat ini.
 

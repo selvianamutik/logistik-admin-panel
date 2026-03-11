@@ -331,8 +331,8 @@ export default function NotaDetailPage() {
                                 </div>
                                 <div className="form-group"><label className="form-label">Rekening</label>
                                     <select className="form-select" value={payBankRef} onChange={e => setPayBankRef(e.target.value)}>
-                                        <option value="">-- Pilih --</option>
-                                        {bankAccounts.map(a => <option key={a._id} value={a._id}>{a.bankName} - {a.accountNumber}</option>)}
+                                        <option value="">{payMethod === 'CASH' ? '-- Otomatis ke Kas Tunai --' : '-- Pilih --'}</option>
+                                        {bankAccounts.map(a => <option key={a._id} value={a._id}>{a.bankName} - {a.accountNumber}{a.accountType === 'CASH' ? ' (Kas Tunai)' : ''}</option>)}
                                     </select>
                                 </div>
                             </div>
@@ -340,7 +340,7 @@ export default function NotaDetailPage() {
                                 {payMethod === 'TRANSFER'
                                     ? 'Transfer akan mengurangi sisa tagihan, mencatat pendapatan, dan menambah saldo rekening yang dipilih.'
                                     : payMethod === 'CASH'
-                                        ? 'Tunai tetap mengurangi sisa tagihan dan mencatat pendapatan. Jika rekening dibiarkan kosong, saldo bank dan tab Arus Kas tidak berubah.'
+                                        ? 'Tunai tetap mengurangi sisa tagihan dan mencatat pendapatan. Jika rekening dibiarkan kosong, sistem otomatis mem-posting ke akun Kas Tunai.'
                                         : 'Metode lain tetap mengurangi sisa tagihan dan mencatat pendapatan. Mutasi bank hanya dibuat jika rekening dipilih.'}
                             </div>
                             <div className="form-group"><label className="form-label">Catatan</label><textarea className="form-textarea" rows={2} value={payNote} onChange={e => setPayNote(e.target.value)} /></div>

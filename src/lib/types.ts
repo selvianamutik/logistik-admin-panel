@@ -520,6 +520,8 @@ export interface BankAccount {
   bankName: string;
   accountNumber: string;
   accountHolder: string;
+  accountType?: 'BANK' | 'CASH';
+  systemKey?: string;
   initialBalance: number;
   currentBalance: number;
   active: boolean;

@@ -22,7 +22,16 @@ import {
 import type { Expense, Payment, User, Vehicle } from '@/lib/types';
 
 type Session = { _id: string; name: string; role: User['role'] };
-type BankAccountSummary = { _id: string; currentBalance: number; bankName: string };
+type BankAccountSummary = {
+    _id: string;
+    currentBalance: number;
+    bankName: string;
+    accountNumber?: string;
+    accountType?: 'BANK' | 'CASH';
+    systemKey?: string;
+    accountHolder?: string;
+    active?: boolean;
+};
 type OrderItemStatusSummary = { status?: string };
 type MaintenanceCreatePayload = {
     vehicleRef: string;
@@ -107,6 +116,7 @@ const DO_STATUS_TRANSITIONS: Record<string, string[]> = {
 
 const OWNER_ONLY_READ_ENTITIES = new Set(['audit-logs']);
 const OWNER_ONLY_MUTATION_ENTITIES = new Set(['company', 'audit-logs', 'bank-accounts', 'bank-transactions', 'services', 'expense-categories']);
+const CASH_ACCOUNT_SYSTEM_KEY = 'cash-on-hand';
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const VEHICLE_STATUS_VALUES = new Set(['ACTIVE', 'IN_SERVICE', 'OUT_OF_SERVICE', 'SOLD']);
 
@@ -192,6 +202,52 @@ function extractRefId(value: unknown) {
 
 function validateEntity(entity: string | null): entity is keyof typeof SANITY_TYPE_MAP {
     return Boolean(entity && SANITY_TYPE_MAP[entity]);
+}
+
+async function ensureCashAccount() {
+    const existing = await getSanityClient().fetch<BankAccountSummary | null>(
+        `*[_type == "bankAccount" && systemKey == $key][0]{
+            _id,
+            currentBalance,
+            bankName,
+            accountNumber,
+            accountType,
+            systemKey,
+            accountHolder,
+            active
+        }`,
+        { key: CASH_ACCOUNT_SYSTEM_KEY }
+    );
+    if (existing) {
+        if (existing.active === false) {
+            await sanityUpdate(existing._id, { active: true });
+            return { ...existing, active: true };
+        }
+        return existing;
+    }
+
+    const company = await sanityGetCompanyProfile() as { name?: string } | null;
+    return sanityCreate<BankAccountSummary>({
+        _id: 'bank-cash-on-hand',
+        _type: 'bankAccount',
+        bankName: 'Kas Tunai',
+        accountNumber: 'CASH',
+        accountHolder: company?.name || 'Perusahaan',
+        accountType: 'CASH',
+        systemKey: CASH_ACCOUNT_SYSTEM_KEY,
+        initialBalance: 0,
+        currentBalance: 0,
+        active: true,
+        notes: 'Akun sistem untuk mencatat kas tunai operasional.',
+    });
+}
+
+async function getLedgerAccount(accountRef: string) {
+    const account = await sanityGetById<BankAccountSummary>(accountRef);
+    if (!account || account.active === false) {
+        return null;
+    }
+    return account;
 }
 
 function forbidOwnerOnlyEntity(session: Session, entity: string) {
@@ -736,10 +792,10 @@ async function handleBankTransfer(data: Record<string, unknown>) {
         return NextResponse.json({ error: 'Rekening transfer tidak valid' }, { status: 400 });
     }
 
-    const fromAcc = await sanityGetById<BankAccountSummary>(fromAccountRef);
-    const toAcc = await sanityGetById<BankAccountSummary>(toAccountRef);
+    const fromAcc = await getLedgerAccount(fromAccountRef);
+    const toAcc = await getLedgerAccount(toAccountRef);
     if (!fromAcc || !toAcc) {
-        return NextResponse.json({ error: 'Rekening bank tidak ditemukan' }, { status: 404 });
+        return NextResponse.json({ error: 'Akun sumber atau tujuan tidak ditemukan' }, { status: 404 });
     }
 
     const transferId = `transfer-${Date.now()}`;
@@ -2115,18 +2171,24 @@ async function handleBoronganPayment(data: Record<string, unknown>) {
     }
 
     const paymentMethod = typeof data.paymentMethod === 'string' ? data.paymentMethod : 'CASH';
-    const bankAccountRef = typeof data.bankAccountRef === 'string' && data.bankAccountRef ? data.bankAccountRef : undefined;
-    if (paymentMethod === 'TRANSFER' && !bankAccountRef) {
+    const selectedAccountRef = typeof data.bankAccountRef === 'string' && data.bankAccountRef ? data.bankAccountRef : undefined;
+    if (paymentMethod === 'TRANSFER' && !selectedAccountRef) {
         return NextResponse.json({ error: 'Rekening bank wajib dipilih untuk transfer' }, { status: 400 });
     }
 
     let bankAccount: BankAccountSummary | null = null;
-    if (bankAccountRef) {
-        bankAccount = await sanityGetById<BankAccountSummary>(bankAccountRef);
+    if (selectedAccountRef) {
+        bankAccount = await getLedgerAccount(selectedAccountRef);
         if (!bankAccount) {
             return NextResponse.json({ error: 'Rekening bank tidak ditemukan' }, { status: 404 });
         }
+    } else if (paymentMethod === 'CASH') {
+        bankAccount = await ensureCashAccount();
     }
+    if (paymentMethod === 'TRANSFER' && bankAccount?.accountType === 'CASH') {
+        return NextResponse.json({ error: 'Metode transfer harus memakai rekening bank, bukan akun Kas Tunai' }, { status: 400 });
+    }
+    const bankAccountRef = bankAccount?._id;
 
     const paidDate =
         typeof data.date === 'string' && data.date
@@ -2604,6 +2666,10 @@ export async function GET(request: Request) {
             return NextResponse.json({ data: profile });
         }
 
+        if (entity === 'bank-accounts') {
+            await ensureCashAccount();
+        }
+
         if (id) {
             let item = await sanityGetById(id);
             if (!item) return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -2756,6 +2822,19 @@ export async function POST(request: Request) {
             if (entity === 'bank-accounts') {
                 if ('currentBalance' in updates || 'initialBalance' in updates) {
                     return NextResponse.json({ error: 'Saldo rekening tidak boleh diubah manual lewat API umum' }, { status: 409 });
+                }
+
+                const existingAccount = await sanityGetById<BankAccountSummary>(id);
+                if (!existingAccount) {
+                    return NextResponse.json({ error: 'Rekening tidak ditemukan' }, { status: 404 });
+                }
+                if (existingAccount.systemKey === CASH_ACCOUNT_SYSTEM_KEY) {
+                    if ('active' in updates && updates.active === false) {
+                        return NextResponse.json({ error: 'Akun Kas Tunai sistem tidak boleh dinonaktifkan' }, { status: 409 });
+                    }
+                    if ('bankName' in updates || 'accountNumber' in updates || 'accountHolder' in updates || 'accountType' in updates || 'systemKey' in updates) {
+                        return NextResponse.json({ error: 'Identitas akun Kas Tunai sistem tidak boleh diubah manual' }, { status: 409 });
+                    }
                 }
             }
 
@@ -3029,6 +3108,13 @@ export async function POST(request: Request) {
             Object.assign(newDoc, normalizedTireEvent);
         }
 
+        if (entity === 'bank-accounts') {
+            if (data.accountType === 'CASH' || typeof data.systemKey === 'string') {
+                return NextResponse.json({ error: 'Akun sistem tidak boleh dibuat manual' }, { status: 409 });
+            }
+            newDoc.accountType = 'BANK';
+        }
+
         if (entity === 'payments') {
             const amount = typeof data.amount === 'number' ? data.amount : Number(data.amount);
             if (!Number.isFinite(amount) || amount <= 0) {
@@ -3041,8 +3127,8 @@ export async function POST(request: Request) {
             }
 
             const paymentMethod = typeof data.method === 'string' ? data.method : 'CASH';
-            const bankAccountRef = typeof data.bankAccountRef === 'string' && data.bankAccountRef ? data.bankAccountRef : undefined;
-            if (paymentMethod === 'TRANSFER' && !bankAccountRef) {
+            const selectedAccountRef = typeof data.bankAccountRef === 'string' && data.bankAccountRef ? data.bankAccountRef : undefined;
+            if (paymentMethod === 'TRANSFER' && !selectedAccountRef) {
                 return NextResponse.json({ error: 'Rekening bank wajib dipilih untuk transfer' }, { status: 400 });
             }
 
@@ -3054,11 +3140,20 @@ export async function POST(request: Request) {
                 return NextResponse.json({ error: `Pembayaran melebihi sisa tagihan (${remaining})` }, { status: 400 });
             }
 
-            if (bankAccountRef) {
-                const bankAcc = await sanityGetById<BankAccountSummary>(bankAccountRef);
+            let bankAcc: BankAccountSummary | null = null;
+            if (selectedAccountRef) {
+                bankAcc = await getLedgerAccount(selectedAccountRef);
                 if (!bankAcc) {
                     return NextResponse.json({ error: 'Rekening bank tidak ditemukan' }, { status: 404 });
                 }
+            } else if (paymentMethod === 'CASH') {
+                bankAcc = await ensureCashAccount();
+            }
+            if (paymentMethod === 'TRANSFER' && bankAcc?.accountType === 'CASH') {
+                return NextResponse.json({ error: 'Metode transfer harus memakai rekening bank, bukan akun Kas Tunai' }, { status: 400 });
+            }
+            if (bankAcc) {
+                newDoc.bankAccountRef = bankAcc._id;
                 newDoc.bankAccountName = bankAcc.bankName;
             }
         }
@@ -3081,22 +3176,29 @@ export async function POST(request: Request) {
                 note: loaded.doc._type === 'freightNota' ? 'Pembayaran nota ongkos' : 'Pembayaran invoice',
             });
 
-            if (typeof data.bankAccountRef === 'string' && data.bankAccountRef) {
-                const bankAcc = await sanityGetById<BankAccountSummary>(data.bankAccountRef);
+            const postedPayment = created as Record<string, unknown>;
+            const bankAccountRef = typeof postedPayment.bankAccountRef === 'string' ? postedPayment.bankAccountRef : '';
+            if (bankAccountRef) {
+                const bankAcc = await getLedgerAccount(bankAccountRef);
                 if (bankAcc) {
                     const newBalance = (bankAcc.currentBalance || 0) + amount;
                     await sanityCreate({
                         _type: 'bankTransaction',
-                        bankAccountRef: data.bankAccountRef,
+                        bankAccountRef,
                         bankAccountName: bankAcc.bankName,
                         type: 'CREDIT',
                         amount,
                         date: data.date,
-                        description: 'Pembayaran invoice masuk',
+                        description:
+                            bankAcc.accountType === 'CASH'
+                                ? 'Pembayaran tunai masuk'
+                                : loaded.doc._type === 'freightNota'
+                                    ? 'Pembayaran nota masuk'
+                                    : 'Pembayaran invoice masuk',
                         balanceAfter: newBalance,
                         relatedPaymentRef: newId,
                     });
-                    await sanityUpdate(data.bankAccountRef, { currentBalance: newBalance });
+                    await sanityUpdate(bankAccountRef, { currentBalance: newBalance });
                 }
             }
 

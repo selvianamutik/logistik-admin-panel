@@ -20,6 +20,12 @@ const BANK_PRESETS: Record<
   string,
   { label: string; color: string; gradient: string; logo: string }
 > = {
+  CASH: {
+    label: "Kas Tunai",
+    color: "#14532d",
+    gradient: "linear-gradient(135deg, #14532d 0%, #16a34a 100%)",
+    logo: "",
+  },
   BCA: {
     label: "BCA",
     color: "#003b7b",
@@ -51,6 +57,12 @@ const BANK_PRESETS: Record<
     logo: "",
   },
 };
+
+function isCashAccount(account: Pick<BankAccount, "accountType" | "systemKey">) {
+  return (
+    account.accountType === "CASH" || account.systemKey === "cash-on-hand"
+  );
+}
 
 function getBankPreset(bankName: string) {
   const key = Object.keys(BANK_PRESETS).find(
@@ -150,7 +162,12 @@ export default function BankAccountsPage() {
     setAccounts(
       (payload.data || []).filter(
         (account: BankAccount) => account.active !== false,
-      ),
+      ).sort((a: BankAccount, b: BankAccount) => {
+        const aCash = isCashAccount(a) ? 0 : 1;
+        const bCash = isCashAccount(b) ? 0 : 1;
+        if (aCash !== bCash) return aCash - bCash;
+        return (a.bankName || "").localeCompare(b.bankName || "");
+      }),
     );
   }, []);
 
@@ -328,17 +345,26 @@ export default function BankAccountsPage() {
   };
 
   const handleExportExcel = () => {
+    const rows = accounts.map((account) => ({
+      accountType: isCashAccount(account) ? "Kas Tunai" : "Bank",
+      bankName: account.bankName,
+      accountNumber: account.accountNumber,
+      accountHolder: account.accountHolder,
+      initialBalance: account.initialBalance,
+      currentBalance: account.currentBalance,
+    }));
     exportToExcel(
-      accounts as unknown as Record<string, unknown>[],
+      rows as unknown as Record<string, unknown>[],
       [
+        { header: "Tipe", key: "accountType", width: 12 },
         { header: "Bank", key: "bankName", width: 18 },
         { header: "No. Rekening", key: "accountNumber", width: 20 },
         { header: "Atas Nama", key: "accountHolder", width: 25 },
         { header: "Saldo Awal", key: "initialBalance", width: 18 },
         { header: "Saldo Saat Ini", key: "currentBalance", width: 18 },
       ],
-      `rekening-bank-${new Date().toISOString().split("T")[0]}`,
-      "Rekening Bank",
+      `rekening-dan-kas-${new Date().toISOString().split("T")[0]}`,
+      "Rekening dan Kas",
     );
     addToast("success", "Excel berhasil di-download");
   };
@@ -355,7 +381,7 @@ export default function BankAccountsPage() {
   const handleBrandedPrint = () => {
     const change = totalBalance - totalInitial;
     openBrandedPrint({
-      title: "Laporan Rekening Bank",
+      title: "Laporan Rekening dan Kas",
       company,
       bodyHtml: `
                 <div class="stats-row">
@@ -364,17 +390,18 @@ export default function BankAccountsPage() {
                     <div class="stat-box"><div class="stat-label">Perubahan</div><div class="stat-value ${change >= 0 ? "s" : "d"}">${change >= 0 ? "+" : ""}${fmtN(change)}</div></div>
                 </div>
                 <table>
-                    <thead><tr><th>Bank</th><th>No. Rekening</th><th>Atas Nama</th><th class="r">Saldo Awal</th><th class="r">Saldo Saat Ini</th><th class="r">Perubahan</th></tr></thead>
+                    <thead><tr><th>Tipe</th><th>Nama</th><th>No. Referensi</th><th>Atas Nama</th><th class="r">Saldo Awal</th><th class="r">Saldo Saat Ini</th><th class="r">Perubahan</th></tr></thead>
                     <tbody>
                         ${accounts
                           .map((account) => {
                             const delta =
                               (account.currentBalance || 0) -
                               (account.initialBalance || 0);
-                            return `<tr><td class="b">${account.bankName}</td><td>${account.accountNumber}</td><td>${account.accountHolder}</td><td class="r">${fmtN(account.initialBalance || 0)}</td><td class="r b">${fmtN(account.currentBalance || 0)}</td><td class="r ${delta >= 0 ? "s" : "d"}">${delta >= 0 ? "+" : ""}${fmtN(delta)}</td></tr>`;
+                            const accountType = isCashAccount(account) ? "Kas Tunai" : "Bank";
+                            return `<tr><td>${accountType}</td><td class="b">${account.bankName}</td><td>${account.accountNumber}</td><td>${account.accountHolder}</td><td class="r">${fmtN(account.initialBalance || 0)}</td><td class="r b">${fmtN(account.currentBalance || 0)}</td><td class="r ${delta >= 0 ? "s" : "d"}">${delta >= 0 ? "+" : ""}${fmtN(delta)}</td></tr>`;
                           })
                           .join("")}
-                        <tr style="background:#f8fafc;font-weight:700"><td colspan="3">TOTAL</td><td class="r">${fmtN(totalInitial)}</td><td class="r">${fmtN(totalBalance)}</td><td class="r ${change >= 0 ? "s" : "d"}">${change >= 0 ? "+" : ""}${fmtN(change)}</td></tr>
+                        <tr style="background:#f8fafc;font-weight:700"><td colspan="4">TOTAL</td><td class="r">${fmtN(totalInitial)}</td><td class="r">${fmtN(totalBalance)}</td><td class="r ${change >= 0 ? "s" : "d"}">${change >= 0 ? "+" : ""}${fmtN(change)}</td></tr>
                     </tbody>
                 </table>
             `,
@@ -385,9 +412,9 @@ export default function BankAccountsPage() {
     <div>
       <div className="page-header">
         <div className="page-header-left">
-          <h1 className="page-title">Rekening Bank</h1>
+          <h1 className="page-title">Rekening &amp; Kas</h1>
           <p className="page-subtitle">
-            Kelola rekening bank dan tracking saldo real-time
+            Kelola rekening bank, Kas Tunai, dan tracking saldo real-time
           </p>
         </div>
         <div className="page-actions" style={{ flexWrap: "wrap" }}>
@@ -492,9 +519,12 @@ export default function BankAccountsPage() {
               </div>
             ))
           : accounts.map((account) => {
-              const preset = getBankPreset(account.bankName);
+              const preset = isCashAccount(account)
+                ? BANK_PRESETS.CASH
+                : getBankPreset(account.bankName);
               const diff =
                 (account.currentBalance || 0) - (account.initialBalance || 0);
+              const systemCash = isCashAccount(account);
               return (
                 <div
                   key={account._id}
@@ -513,8 +543,21 @@ export default function BankAccountsPage() {
                     >
                       <BankLogo name={account.bankName} />
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontWeight: 700 }}>
+                        <div
+                          style={{
+                            fontWeight: 700,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "0.4rem",
+                            flexWrap: "wrap",
+                          }}
+                        >
                           {account.bankName}
+                          {systemCash && (
+                            <span className="badge badge-success">
+                              Kas Tunai
+                            </span>
+                          )}
                         </div>
                         <div
                           style={{
@@ -575,23 +618,27 @@ export default function BankAccountsPage() {
                       >
                         <Eye size={13} /> Detail
                       </Link>
-                      <button
-                        className="btn btn-sm btn-secondary"
-                        onClick={() => openEdit(account)}
-                      >
-                        <Edit size={13} />
-                      </button>
-                      <button
-                        className="btn btn-sm"
-                        style={{
-                          color: "var(--danger)",
-                          border: "1px solid var(--danger)",
-                          background: "transparent",
-                        }}
-                        onClick={() => setDeleteConfirm(account._id)}
-                      >
-                        <Trash2 size={13} />
-                      </button>
+                      {!systemCash && (
+                        <button
+                          className="btn btn-sm btn-secondary"
+                          onClick={() => openEdit(account)}
+                        >
+                          <Edit size={13} />
+                        </button>
+                      )}
+                      {!systemCash && (
+                        <button
+                          className="btn btn-sm"
+                          style={{
+                            color: "var(--danger)",
+                            border: "1px solid var(--danger)",
+                            background: "transparent",
+                          }}
+                          onClick={() => setDeleteConfirm(account._id)}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -655,7 +702,7 @@ export default function BankAccountsPage() {
                   }}
                 >
                   {Object.entries(BANK_PRESETS)
-                    .filter(([key]) => key !== "OTHER")
+                    .filter(([key]) => key !== "OTHER" && key !== "CASH")
                     .map(([key, preset]) => (
                       <button
                         key={key}

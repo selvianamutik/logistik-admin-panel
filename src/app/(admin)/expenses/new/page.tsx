@@ -90,14 +90,17 @@ export default function ExpenseNewPage() {
                             <textarea className="form-textarea" rows={3} value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} placeholder="Keterangan pengeluaran..." />
                         </div>
                         <div className="form-group">
-                            <label className="form-label">Bayar dari Rekening</label>
+                            <label className="form-label">Bayar dari Rekening / Kas</label>
                             <select className="form-select" value={form.bankAccountRef} onChange={e => {
                                 const acc = bankAccounts.find(a => a._id === e.target.value);
                                 setForm({ ...form, bankAccountRef: e.target.value, bankAccountName: acc?.bankName || '' });
                             }}>
                                 <option value="">-- Tidak dipilih --</option>
-                                {bankAccounts.map(a => <option key={a._id} value={a._id}>{a.bankName} - {a.accountNumber}</option>)}
+                                {bankAccounts.map(a => <option key={a._id} value={a._id}>{a.bankName} - {a.accountNumber}{a.accountType === 'CASH' ? ' (Kas Tunai)' : ''}</option>)}
                             </select>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                Pilih <strong>Kas Tunai</strong> kalau pengeluaran dibayar tunai dan kamu ingin saldo kas ikut berkurang di arus kas.
+                            </div>
                         </div>
                     </div>
                 </div>

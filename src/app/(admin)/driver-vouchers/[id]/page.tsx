@@ -261,10 +261,10 @@ export default function DriverVoucherDetailPage() {
                         </div>
                         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
                             <div className="form-group" style={{ minWidth: 260, marginBottom: 0 }}>
-                                <label className="form-label">Rekening Sumber</label>
+                                <label className="form-label">Rekening / Kas Sumber</label>
                                 <select className="form-select" value={issueBankRepairRef} onChange={event => setIssueBankRepairRef(event.target.value)}>
-                                    <option value="">Pilih rekening</option>
-                                    {bankAccounts.map(account => <option key={account._id} value={account._id}>{account.bankName} - {account.accountNumber}</option>)}
+                                    <option value="">Pilih rekening atau kas</option>
+                                    {bankAccounts.map(account => <option key={account._id} value={account._id}>{account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''}</option>)}
                                 </select>
                             </div>
                             <button className="btn btn-primary" onClick={handleRepairIssueLedger} disabled={repairingIssueLedger}>
@@ -371,10 +371,10 @@ export default function DriverVoucherDetailPage() {
                                 <input type="date" className="form-input" value={settlementDate} onChange={event => setSettlementDate(event.target.value)} />
                             </div>
                             <div className="form-group">
-                                <label className="form-label">Rekening Settlement {balance !== 0 ? <span className="required">*</span> : null}</label>
+                                <label className="form-label">Rekening / Kas Settlement {balance !== 0 ? <span className="required">*</span> : null}</label>
                                 <select className="form-select" value={settlementBankRef} onChange={event => setSettlementBankRef(event.target.value)}>
-                                    <option value="">Pilih rekening</option>
-                                    {bankAccounts.map(account => <option key={account._id} value={account._id}>{account.bankName} - {account.accountNumber}</option>)}
+                                    <option value="">Pilih rekening atau kas</option>
+                                    {bankAccounts.map(account => <option key={account._id} value={account._id}>{account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''}</option>)}
                                 </select>
                                 <div className="text-muted" style={{ fontSize: '0.78rem', marginTop: '0.35rem' }}>{settlementLabel}</div>
                             </div>
