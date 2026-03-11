@@ -2608,6 +2608,9 @@ export async function GET(request: Request) {
         if (id) {
             let item = await sanityGetById(id);
             if (!item) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+            if ((item as { _type?: string })._type !== docType) {
+                return NextResponse.json({ error: 'Not found' }, { status: 404 });
+            }
 
             if (entity === 'vehicles' && session.role !== 'OWNER') {
                 item = sanitizeVehicleForRole(item as unknown as Vehicle, session.role) as unknown as Record<string, unknown>;
