@@ -131,6 +131,7 @@ body {
   line-height: 1.6;
   color: var(--color-gray-800);
   background: var(--color-gray-50);
+  overflow-x: hidden;
 }
 
 a {
@@ -152,6 +153,7 @@ a:hover {
   flex: 1;
   margin-left: var(--sidebar-width);
   padding-top: var(--topbar-height);
+  min-width: 0;
   transition: margin-left var(--transition-slow);
 }
 
@@ -160,9 +162,11 @@ a:hover {
 }
 
 .page-container {
+  width: 100%;
   padding: var(--space-6) var(--space-8);
   max-width: 1440px;
   margin: 0 auto;
+  min-width: 0;
 }
 
 /* ── Sidebar ── */
@@ -351,6 +355,7 @@ a:hover {
   display: flex;
   align-items: center;
   gap: var(--space-4);
+  min-width: 0;
 }
 
 .topbar-toggle {
@@ -402,6 +407,7 @@ a:hover {
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  min-width: 0;
 }
 
 .topbar-user {
@@ -412,6 +418,7 @@ a:hover {
   border-radius: var(--radius-md);
   cursor: pointer;
   transition: background var(--transition-fast);
+  min-width: 0;
 }
 
 .topbar-user:hover {
@@ -460,6 +467,7 @@ a:hover {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  min-width: 0;
 }
 
 .page-title {
@@ -467,11 +475,13 @@ a:hover {
   font-weight: 700;
   color: var(--color-gray-900);
   line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 
 .page-subtitle {
   font-size: var(--font-size-sm);
   color: var(--color-gray-500);
+  overflow-wrap: anywhere;
 }
 
 .page-actions {
@@ -606,6 +616,8 @@ a:hover {
   border: 1px solid var(--color-gray-200);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-xs);
+  min-width: 0;
+  max-width: 100%;
 }
 
 .card-header {
@@ -615,12 +627,14 @@ a:hover {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
+  min-width: 0;
 }
 
 .card-header-title {
   font-size: var(--font-size-md);
   font-weight: 600;
   color: var(--color-gray-900);
+  overflow-wrap: anywhere;
 }
 
 .card-body {
@@ -642,6 +656,10 @@ a:hover {
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: var(--space-5);
   margin-bottom: var(--space-6);
+}
+
+.kpi-grid > * {
+  min-width: 0;
 }
 
 .kpi-card {
@@ -728,6 +746,8 @@ a:hover {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-xs);
   overflow: hidden;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .table-toolbar {
@@ -745,12 +765,14 @@ a:hover {
   align-items: center;
   gap: var(--space-3);
   flex: 1;
+  min-width: 0;
 }
 
 .table-search {
   position: relative;
   max-width: 320px;
   flex: 1;
+  min-width: 0;
 }
 
 .table-search-icon {
@@ -786,6 +808,9 @@ a:hover {
 
 .table-wrapper {
   overflow-x: auto;
+  width: 100%;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
 }
 
 table {
@@ -844,6 +869,7 @@ tbody td {
   display: flex;
   align-items: center;
   gap: var(--space-1);
+  flex-wrap: wrap;
 }
 
 .table-action-btn {
@@ -1527,6 +1553,10 @@ tbody td {
   gap: var(--space-6);
 }
 
+.detail-grid > * {
+  min-width: 0;
+}
+
 .detail-full {
   grid-column: 1 / -1;
 }
@@ -1719,6 +1749,10 @@ tbody td {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--space-6);
+}
+
+.chart-grid > * {
+  min-width: 0;
 }
 
 /* ── Reminder list ── */
@@ -2001,6 +2035,7 @@ tbody td {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-2);
+    min-width: 0;
   }
 
   .page-actions .btn {
@@ -2016,7 +2051,7 @@ tbody td {
   }
 
   .kpi-grid {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
     gap: var(--space-2);
   }
 
@@ -2024,6 +2059,11 @@ tbody td {
     flex-direction: column;
     align-items: stretch;
     gap: var(--space-2);
+  }
+
+  .table-toolbar-left {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .table-search {
@@ -2037,7 +2077,7 @@ tbody td {
   }
 
   table {
-    min-width: 600px;
+    min-width: 100%;
   }
 
   .topbar-user-info {
@@ -2065,6 +2105,15 @@ tbody td {
     padding: var(--space-4);
   }
 
+  .card-header {
+    padding: var(--space-4);
+    align-items: flex-start;
+  }
+
+  .table-actions {
+    justify-content: flex-start;
+  }
+
   .btn-back {
     width: 32px;
     height: 32px;
@@ -2074,5 +2123,17 @@ tbody td {
     width: 95vw !important;
     max-width: 95vw !important;
     margin: var(--space-3);
+  }
+}
+
+@media (max-width: 480px) {
+  .page-actions .btn {
+    width: 100%;
+  }
+
+  .login-header,
+  .login-body {
+    padding-left: var(--space-5);
+    padding-right: var(--space-5);
   }
 }

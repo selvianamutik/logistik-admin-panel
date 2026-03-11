@@ -50,7 +50,7 @@ export default function LoginPage() {
     };
 
     return (
-        <div className="login-page">
+        <main className="login-page">
             <div className="login-card">
                 <div className="login-header">
                     <div className="login-logo">L</div>
@@ -128,6 +128,6 @@ export default function LoginPage() {
                     </form>
                 </div>
             </div>
-        </div>
+        </main>
     );
 }
