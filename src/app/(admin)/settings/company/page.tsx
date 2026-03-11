@@ -15,7 +15,7 @@ export default function CompanyPage() {
         fetch('/api/data?entity=company').then(r => r.json()).then(d => {
             const profile = d.data || {};
             // Ensure nested settings objects exist with defaults
-            profile.numberingSettings = profile.numberingSettings || { resiPrefix: 'R-', resiCounter: 0, doPrefix: 'DO-', doCounter: 0, invoicePrefix: 'INV-', invoiceCounter: 0, incidentPrefix: 'INC-', incidentCounter: 0 };
+            profile.numberingSettings = profile.numberingSettings || { resiPrefix: 'R-', resiCounter: 0, doPrefix: 'DO-', doCounter: 0, invoicePrefix: 'INV-', invoiceCounter: 0, notaPrefix: 'NOTA-', notaCounter: 0, boronganPrefix: 'BRG-', boronganCounter: 0, bonPrefix: 'BON-', bonCounter: 0, incidentPrefix: 'INC-', incidentCounter: 0 };
             profile.invoiceSettings = profile.invoiceSettings || { defaultTermDays: 30, dueDateDays: 14, footerNote: '', invoiceMode: 'ORDER' };
             profile.documentSettings = profile.documentSettings || { showContact: true, dateFormat: 'DD/MM/YYYY' };
             setData(profile); setLoading(false);
@@ -99,6 +99,7 @@ export default function CompanyPage() {
                             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
                                 {data.logoUrl ? (
                                     <div style={{ position: 'relative', width: 64, height: 64, borderRadius: '0.5rem', border: '2px solid var(--border-color)', overflow: 'hidden', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
                                         <img src={data.logoUrl} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 4 }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                                         <button type="button" onClick={() => u('logoUrl', '')} style={{ position: 'absolute', top: 2, right: 2, width: 18, height: 18, borderRadius: '50%', border: 'none', background: '#ef4444', color: '#fff', fontSize: '0.65rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>✕</button>
                                     </div>
@@ -187,6 +188,13 @@ export default function CompanyPage() {
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Prefix Invoice</label><input className="form-input" value={data.numberingSettings.invoicePrefix} onChange={e => uNum('invoicePrefix', e.target.value)} /></div>
                                 <div className="form-group"><label className="form-label">Prefix Insiden</label><input className="form-input" value={data.numberingSettings.incidentPrefix} onChange={e => uNum('incidentPrefix', e.target.value)} /></div>
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group"><label className="form-label">Prefix Nota</label><input className="form-input" value={data.numberingSettings.notaPrefix || 'NOTA-'} onChange={e => uNum('notaPrefix', e.target.value)} /></div>
+                                <div className="form-group"><label className="form-label">Prefix Borongan</label><input className="form-input" value={data.numberingSettings.boronganPrefix || 'BRG-'} onChange={e => uNum('boronganPrefix', e.target.value)} /></div>
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group"><label className="form-label">Prefix Bon</label><input className="form-input" value={data.numberingSettings.bonPrefix || 'BON-'} onChange={e => uNum('bonPrefix', e.target.value)} /></div>
                             </div>
                         </div>
                     </div>

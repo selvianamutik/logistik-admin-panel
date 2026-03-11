@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useToast } from '../../layout';
-import { Plus, Search, Eye, AlertTriangle, Save, X } from 'lucide-react';
-import { formatDate, formatDateTime, INCIDENT_STATUS_MAP, URGENCY_MAP, INCIDENT_TYPE_MAP } from '@/lib/utils';
+import { Plus, Search, Eye, AlertTriangle, X } from 'lucide-react';
+import { formatDateTime, INCIDENT_STATUS_MAP, URGENCY_MAP, INCIDENT_TYPE_MAP } from '@/lib/utils';
 import type { Incident, Vehicle, DeliveryOrder } from '@/lib/types';
 
 export default function IncidentsPage() {
@@ -31,9 +31,12 @@ export default function IncidentsPage() {
         const doData = dos.find(d => d._id === form.relatedDeliveryOrderRef);
         const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'incidents', data: { ...form, vehiclePlate: veh?.plateNumber, relatedDONumber: doData?.doNumber } }) });
         const d = await res.json();
-        // Create initial action log
-        await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'incident-action-logs', data: { incidentRef: d.data?._id || d.id, timestamp: new Date().toISOString(), note: 'Laporan insiden dibuat' } }) });
+        if (!res.ok) {
+            addToast('error', d.error || 'Gagal membuat insiden');
+            return;
+        }
         setItems(prev => [...prev, d.data]);
+        setForm({ vehicleRef: '', incidentType: 'OTHER', urgency: 'MEDIUM', locationText: '', odometer: 0, description: '', dateTime: new Date().toISOString().slice(0, 16), relatedDeliveryOrderRef: '' });
         addToast('success', `Insiden dilaporkan: ${d.data?.incidentNumber || ''}`);
         setShowModal(false);
     };

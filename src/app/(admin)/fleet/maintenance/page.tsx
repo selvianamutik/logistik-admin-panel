@@ -1,15 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useToast } from '../../layout';
-import { Plus, Search, Eye, Wrench, Save, X } from 'lucide-react';
+import { Plus, Search, Wrench, Save, X } from 'lucide-react';
 import { formatDate, MAINTENANCE_STATUS_MAP } from '@/lib/utils';
 import type { Maintenance, Vehicle } from '@/lib/types';
 
 export default function MaintenancePage() {
-    const router = useRouter();
     const { addToast } = useToast();
     const [items, setItems] = useState<Maintenance[]>([]);
     const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -29,13 +26,23 @@ export default function MaintenancePage() {
         const veh = vehicles.find(v => v._id === form.vehicleRef);
         const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'maintenances', data: { ...form, vehiclePlate: veh?.plateNumber, status: 'SCHEDULED' } }) });
         const d = await res.json();
+        if (!res.ok) {
+            addToast('error', d.error || 'Gagal menjadwalkan maintenance');
+            return;
+        }
         setItems(prev => [...prev, d.data]);
+        setForm({ vehicleRef: '', type: '', scheduleType: 'DATE', plannedDate: '', plannedOdometer: 0, notes: '' });
         addToast('success', 'Maintenance dijadwalkan');
         setShowModal(false);
     };
 
     const updateStatus = async (id: string, status: string) => {
-        await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'maintenances', action: 'update', data: { id, updates: { status, completedDate: new Date().toISOString().split('T')[0] } } }) });
+        const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'maintenances', action: 'update', data: { id, updates: { status, completedDate: new Date().toISOString().split('T')[0] } } }) });
+        const d = await res.json();
+        if (!res.ok) {
+            addToast('error', d.error || 'Gagal memperbarui maintenance');
+            return;
+        }
         setItems(prev => prev.map(m => m._id === id ? { ...m, status: status as Maintenance['status'] } : m));
         addToast('success', `Status maintenance diubah ke ${MAINTENANCE_STATUS_MAP[status]?.label}`);
     };

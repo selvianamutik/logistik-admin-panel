@@ -72,16 +72,26 @@ export default function TiresPage() {
             const veh = vehicles.find(v => v._id === form.vehicleRef);
             const payload = { ...form, vehiclePlate: veh?.plateNumber, replaceDate: form.replaceDate || undefined };
             if (editTarget) {
-                await fetch('/api/data', {
+                const res = await fetch('/api/data', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ entity: 'tire-events', action: 'update', data: { id: editTarget._id, updates: payload } }),
                 });
+                const result = await res.json();
+                if (!res.ok) {
+                    addToast('error', result.error || 'Gagal memperbarui catatan ban');
+                    return;
+                }
                 addToast('success', 'Data ban berhasil diperbarui');
             } else {
-                await fetch('/api/data', {
+                const res = await fetch('/api/data', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ entity: 'tire-events', data: payload }),
                 });
+                const result = await res.json();
+                if (!res.ok) {
+                    addToast('error', result.error || 'Gagal mencatat ban');
+                    return;
+                }
                 addToast('success', 'Ban berhasil dicatat');
             }
             setShowModal(false);
@@ -92,10 +102,15 @@ export default function TiresPage() {
     const handleDelete = async (id: string) => {
         if (!confirm('Hapus catatan ban ini?')) return;
         try {
-            await fetch('/api/data', {
+            const res = await fetch('/api/data', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ entity: 'tire-events', action: 'delete', data: { id } }),
             });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menghapus catatan ban');
+                return;
+            }
             addToast('success', 'Catatan ban dihapus');
             loadData();
         } catch { addToast('error', 'Gagal menghapus'); }

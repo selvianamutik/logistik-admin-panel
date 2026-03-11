@@ -30,6 +30,10 @@ export default function ExpensesPage() {
         const cat = categories.find(c => c._id === form.categoryRef);
         const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'expenses', data: { ...form, categoryName: cat?.name || '' } }) });
         const d = await res.json();
+        if (!res.ok) {
+            addToast('error', d.error || 'Gagal mencatat pengeluaran');
+            return;
+        }
         setItems(prev => [...prev, d.data]);
         addToast('success', 'Pengeluaran dicatat');
         setShowModal(false);

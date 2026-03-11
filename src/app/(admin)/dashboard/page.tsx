@@ -1,12 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useApp } from '../layout';
+import { useApp, useToast } from '../layout';
 import {
     Package, Truck, FileText, AlertTriangle, Wrench, DollarSign,
-    TrendingUp, Clock, BarChart3, ArrowUpRight
+    TrendingUp, Clock, ArrowUpRight
 } from 'lucide-react';
-import { formatCurrency, ORDER_STATUS_MAP, INVOICE_STATUS_MAP, INCIDENT_STATUS_MAP } from '@/lib/utils';
+import { formatCurrency, ORDER_STATUS_MAP, INVOICE_STATUS_MAP } from '@/lib/utils';
 import Link from 'next/link';
 
 interface DashboardData {
@@ -22,63 +22,29 @@ interface DashboardData {
 
 export default function DashboardPage() {
     const { user } = useApp();
+    const { addToast } = useToast();
     const [data, setData] = useState<DashboardData | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         async function load() {
             try {
-                const [ordersRes, dosRes, invoicesRes, incidentsRes, maintsRes, expensesRes, incomesRes] = await Promise.all([
-                    fetch('/api/data?entity=orders'),
-                    fetch('/api/data?entity=delivery-orders'),
-                    fetch('/api/data?entity=invoices'),
-                    fetch('/api/data?entity=incidents'),
-                    fetch('/api/data?entity=maintenances'),
-                    fetch('/api/data?entity=expenses'),
-                    fetch('/api/data?entity=incomes'),
-                ]);
+                const res = await fetch('/api/data?entity=dashboard-summary');
+                const payload = await res.json();
+                if (!res.ok) {
+                    throw new Error(payload.error || 'Gagal memuat dashboard');
+                }
 
-                const orders = (await ordersRes.json()).data || [];
-                const dos = (await dosRes.json()).data || [];
-                const invoices = (await invoicesRes.json()).data || [];
-                const incidents = (await incidentsRes.json()).data || [];
-                const maints = (await maintsRes.json()).data || [];
-                const expenses = (await expensesRes.json()).data || [];
-                const incomes = (await incomesRes.json()).data || [];
-
-                setData({
-                    orderStats: {
-                        total: orders.length,
-                        open: orders.filter((o: { status: string }) => o.status === 'OPEN').length,
-                        partial: orders.filter((o: { status: string }) => o.status === 'PARTIAL').length,
-                        complete: orders.filter((o: { status: string }) => o.status === 'COMPLETE').length,
-                        onHold: orders.filter((o: { status: string }) => o.status === 'ON_HOLD').length,
-                    },
-                    doStats: {
-                        total: dos.length,
-                        onDelivery: dos.filter((d: { status: string }) => d.status === 'ON_DELIVERY').length,
-                    },
-                    invoiceStats: {
-                        unpaid: invoices.filter((i: { status: string }) => i.status !== 'PAID').length,
-                        totalOutstanding: invoices.filter((i: { status: string }) => i.status !== 'PAID')
-                            .reduce((sum: number, i: { totalAmount: number }) => sum + (i.totalAmount || 0), 0),
-                    },
-                    fleetStats: {
-                        openIncidents: incidents.filter((i: { status: string }) => i.status === 'OPEN' || i.status === 'IN_PROGRESS').length,
-                        maintenanceDue: maints.filter((m: { status: string }) => m.status === 'SCHEDULED').length,
-                    },
-                    recentOrders: orders.slice(-5).reverse(),
-                    recentInvoices: invoices.slice(-5).reverse(),
-                    expenses: { total: expenses.reduce((sum: number, e: { amount: number }) => sum + e.amount, 0) },
-                    income: { total: incomes.reduce((sum: number, i: { amount: number }) => sum + i.amount, 0) },
-                });
+                setData(payload.data);
             } catch (err) {
                 console.error('Dashboard load error:', err);
+                addToast('error', err instanceof Error ? err.message : 'Gagal memuat dashboard');
+            } finally {
+                setLoading(false);
             }
-            setLoading(false);
         }
-        load();
-    }, []);
+        void load();
+    }, [addToast]);
 
     if (loading) {
         return (

@@ -41,6 +41,28 @@ function getSanityConfig(): SanityConfig {
 }
 
 let cachedClient: ReturnType<typeof createClient> | null = null;
+const NUMBERING_CONFIG = {
+    resi: { prefixField: 'resiPrefix', counterField: 'resiCounter', periodField: 'resiPeriod', defaultPrefix: 'R-', docType: 'order', docField: 'masterResi' },
+    do: { prefixField: 'doPrefix', counterField: 'doCounter', periodField: 'doPeriod', defaultPrefix: 'DO-', docType: 'deliveryOrder', docField: 'doNumber' },
+    invoice: { prefixField: 'invoicePrefix', counterField: 'invoiceCounter', periodField: 'invoicePeriod', defaultPrefix: 'INV-', docType: 'invoice', docField: 'invoiceNumber' },
+    nota: { prefixField: 'notaPrefix', counterField: 'notaCounter', periodField: 'notaPeriod', defaultPrefix: 'NOTA-', docType: 'freightNota', docField: 'notaNumber' },
+    borong: { prefixField: 'boronganPrefix', counterField: 'boronganCounter', periodField: 'boronganPeriod', defaultPrefix: 'BRG-', docType: 'driverBorongan', docField: 'boronganNumber' },
+    bon: { prefixField: 'bonPrefix', counterField: 'bonCounter', periodField: 'bonPeriod', defaultPrefix: 'BON-', docType: 'driverVoucher', docField: 'bonNumber' },
+    incident: { prefixField: 'incidentPrefix', counterField: 'incidentCounter', periodField: 'incidentPeriod', defaultPrefix: 'INC-', docType: 'incident', docField: 'incidentNumber' },
+} as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function normalizePrefix(prefix: unknown, fallback: string) {
+    const value = typeof prefix === 'string' && prefix.trim() ? prefix.trim() : fallback;
+    return value.endsWith('-') ? value : `${value}-`;
+}
+
+function numberFromUnknown(value: unknown) {
+    return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
 
 // Build client lazily so misconfigured env does not crash route-module import time.
 export function getSanityClient() {
@@ -107,8 +129,13 @@ export async function sanityGetByFilter<T = Record<string, unknown>>(
 ): Promise<T[]> {
     // Build dynamic GROQ filter conditions
     const conditions = Object.entries(filterObj)
-        .filter(([, v]) => v !== '' && v !== null && v !== undefined)
-        .map(([key]) => `${key} == $${key}`);
+        .filter(([, value]) => {
+            if (Array.isArray(value)) {
+                return value.length > 0;
+            }
+            return value !== '' && value !== null && value !== undefined;
+        })
+        .map(([key, value]) => (Array.isArray(value) ? `${key} in $${key}` : `${key} == $${key}`));
 
     if (conditions.length === 0) {
         return sanityGetAll<T>(docType);
@@ -151,30 +178,58 @@ export async function sanityGetCompanyProfile() {
 
 // ── Generate next number (sequential numbering) ──
 export async function sanityGetNextNumber(prefix: string): Promise<string> {
-    const now = new Date();
-    const year = now.getFullYear().toString().slice(-2);
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const datePrefix = `${year}${month}`;
-
-    const prefixMap: Record<string, { type: string; field: string; format: string }> = {
-        resi: { type: 'order', field: 'masterResi', format: `R-20${datePrefix}-` },
-        do: { type: 'deliveryOrder', field: 'doNumber', format: `DO-20${datePrefix}-` },
-        invoice: { type: 'invoice', field: 'invoiceNumber', format: `INV-20${datePrefix}-` },
-        incident: { type: 'incident', field: 'incidentNumber', format: `INC-20${datePrefix}-` },
-        nota: { type: 'freightNota', field: 'notaNumber', format: `NOTA-20${datePrefix}-` },
-        borong: { type: 'driverBorongan', field: 'boronganNumber', format: `BRG-20${datePrefix}-` },
-    };
-
-    const config = prefixMap[prefix];
+    const config = NUMBERING_CONFIG[prefix as keyof typeof NUMBERING_CONFIG];
     if (!config) return `${prefix}-${Date.now()}`;
 
-    // Count existing docs with same prefix this month
-    const query = `count(*[_type == $type && ${config.field} match $pattern])`;
-    const count = await getSanityClient().fetch<number>(query, {
-        type: config.type,
-        pattern: `${config.format}*`,
-    });
+    const now = new Date();
+    const period = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-    const nextNum = String((count || 0) + 1).padStart(4, '0');
-    return `${config.format}${nextNum}`;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+        const company = await sanityGetCompanyProfile() as {
+            _id?: string;
+            _rev?: string;
+            numberingSettings?: Record<string, unknown>;
+        } | null;
+
+        if (!company?._id || !company._rev) {
+            break;
+        }
+
+        const settings = isRecord(company.numberingSettings) ? company.numberingSettings : {};
+        const normalizedPrefix = normalizePrefix(settings[config.prefixField], config.defaultPrefix);
+        const currentPeriod =
+            typeof settings[config.periodField] === 'string' ? settings[config.periodField] : '';
+        const currentCounter = currentPeriod === period ? numberFromUnknown(settings[config.counterField]) : 0;
+        const existingCount = await getSanityClient().fetch<number>(
+            `count(*[_type == $type && ${config.docField} match $pattern])`,
+            {
+                type: config.docType,
+                pattern: `${normalizedPrefix}${period}-*`,
+            }
+        );
+        const nextCounter = Math.max(currentCounter, existingCount || 0) + 1;
+        const nextNumber = `${normalizedPrefix}${period}-${String(nextCounter).padStart(4, '0')}`;
+
+        try {
+            await getSanityClient()
+                .patch(company._id)
+                .ifRevisionId(company._rev)
+                .set({
+                    numberingSettings: {
+                        ...settings,
+                        [config.prefixField]: normalizedPrefix,
+                        [config.counterField]: nextCounter,
+                        [config.periodField]: period,
+                    },
+                })
+                .commit();
+            return nextNumber;
+        } catch (error) {
+            if (attempt === 4) {
+                throw error;
+            }
+        }
+    }
+
+    return `${normalizePrefix(undefined, config.defaultPrefix)}${period}-${String(Date.now()).slice(-4)}`;
 }

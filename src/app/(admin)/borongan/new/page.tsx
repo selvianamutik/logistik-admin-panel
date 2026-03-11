@@ -97,43 +97,23 @@ export default function NewBoronganPage() {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     entity: 'driver-borongans',
+                    action: 'create-with-items',
                     data: {
                         driverRef: driverRef || undefined,
                         driverName,
                         periodStart,
                         periodEnd,
-                        status: 'UNPAID',
-                        totalAmount,
-                        totalCollie,
-                        totalWeightKg: totalBerat,
                         notes: notes || undefined,
+                        items: rows,
                     }
                 })
             });
             const d = await res.json();
+            if (!res.ok) {
+                addToast('error', d.error || 'Gagal membuat slip borongan');
+                return;
+            }
             const boronganId = d.data._id;
-
-            await Promise.all(rows.map(r => fetch('/api/data', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    entity: 'driver-borogan-items',
-                    data: {
-                        boronganRef: boronganId,
-                        doRef: r.doRef || undefined,
-                        doNumber: r.doNumber || undefined,
-                        vehiclePlate: r.vehiclePlate || undefined,
-                        date: r.date,
-                        noSJ: r.noSJ,
-                        tujuan: r.tujuan,
-                        barang: r.barang || undefined,
-                        collie: r.collie || undefined,
-                        beratKg: r.beratKg,
-                        tarip: r.tarip,
-                        uangRp: r.uangRp,
-                        ket: r.ket || undefined,
-                    }
-                })
-            })));
 
             addToast('success', 'Slip borongan berhasil dibuat');
             router.push(`/borongan/${boronganId}`);

@@ -1,6 +1,6 @@
 # 🚛 LOGISTIK — Admin Panel
 
-Sistem manajemen logistik berbasis web. Dibangun dengan **Next.js 14**, **Sanity CMS**, dan di-deploy ke **Vercel**.
+Sistem manajemen logistik berbasis web. Dibangun dengan **Next.js 16**, **Sanity CMS**, dan di-deploy ke **Vercel**.
 
 ---
 
@@ -109,6 +109,12 @@ Sistem manajemen logistik berbasis web. Dibangun dengan **Next.js 14**, **Sanity
 
 ### 4. Bon Supir (Uang Jalan)
 
+Catatan terbaru:
+- Bon wajib memilih rekening sumber saat diterbitkan.
+- Pencairan bon langsung membuat mutasi bank `DEBIT`.
+- Settlement bon mem-posting item menjadi expense.
+- Sisa uang menghasilkan mutasi `CREDIT`; kekurangan menghasilkan `DEBIT`.
+
 ```
 💴 Buat Bon (/driver-vouchers/new)
    └─ Supir minta uang jalan sebelum berangkat
@@ -213,13 +219,17 @@ Order ──► Delivery Order (DO) ──► Nota Ongkos Angkut
 
 ## ⚙️ Tech Stack
 
-- **Framework**: Next.js 14 (App Router)
+- **Framework**: Next.js 16 (App Router)
 - **Database**: Sanity CMS
 - **Auth**: Custom session-based auth
 - **Deploy**: Vercel
 - **PDF**: Client-side print window
 
 ## 🛠️ Development
+
+Catatan:
+- Build produksi default memakai `webpack` karena pada environment lokal Windows ini `next start` dari build Turbopack sempat mengembalikan asset `/_next/static/*` sebagai `404/500`.
+- `build:turbopack` disediakan hanya untuk eksperimen, bukan jalur stabil yang direkomendasikan saat ini.
 
 ```bash
 # Install
@@ -230,6 +240,18 @@ npm run dev
 
 # Build
 npm run build
+
+# Opsional: build Turbopack eksperimental
+npm run build:turbopack
+
+# Type check
+npm run typecheck
+
+# Reset seluruh dataset lalu seed ulang
+npm run reseed:sanity
+
+# Audit konsistensi data finansial
+npm run audit:finance
 
 # Deploy
 npx vercel --prod
@@ -242,5 +264,5 @@ NEXT_PUBLIC_SANITY_PROJECT_ID=xxx
 NEXT_PUBLIC_SANITY_DATASET=production
 SANITY_API_VERSION=2024-01-01
 SANITY_API_TOKEN=xxx
-NEXTAUTH_SECRET=xxx
+JWT_SECRET=xxx
 ```

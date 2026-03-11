@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useToast } from '../../layout';
-import { ArrowLeft, Printer, FileDown, DollarSign, Landmark, Trash2 } from 'lucide-react';
+import { ArrowLeft, Printer, DollarSign, Landmark, Trash2 } from 'lucide-react';
+import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import type { FreightNota, FreightNotaItem, Payment, BankAccount } from '@/lib/types';
 
@@ -17,6 +18,7 @@ export default function NotaDetailPage() {
     const params = useParams();
     const router = useRouter();
     const { addToast } = useToast();
+    const notaId = params.id as string;
     const [nota, setNota] = useState<FreightNota | null>(null);
     const [items, setItems] = useState<FreightNotaItem[]>([]);
     const [payments, setPayments] = useState<Payment[]>([]);
@@ -30,20 +32,38 @@ export default function NotaDetailPage() {
     const [payBankRef, setPayBankRef] = useState('');
 
     useEffect(() => {
-        const id = params.id as string;
-        Promise.all([
-            fetch(`/api/data?entity=freight-notas&id=${id}`).then(r => r.json()),
-            fetch(`/api/data?entity=freight-nota-items`).then(r => r.json()),
-            fetch(`/api/data?entity=payments`).then(r => r.json()),
-            fetch(`/api/data?entity=bank-accounts`).then(r => r.json()),
-        ]).then(([n, ni, pay, ba]) => {
-            setNota(n.data);
-            setItems((ni.data || []).filter((i: FreightNotaItem) => i.notaRef === id));
-            setPayments((pay.data || []).filter((p: Payment) => p.invoiceRef === id));
-            setBankAccounts((ba.data || []).filter((a: BankAccount) => a.active !== false));
-            setLoading(false);
-        }).catch(() => setLoading(false));
-    }, [params.id]);
+        const fetchEntity = async <T,>(url: string) => {
+            const res = await fetch(url);
+            const result = await res.json();
+            if (!res.ok) {
+                throw new Error(result.error || 'Gagal memuat detail nota');
+            }
+            return result.data as T;
+        };
+
+        const loadNotaDetail = async () => {
+            setLoading(true);
+            try {
+                const [notaData, notaItems, paymentRows, accounts] = await Promise.all([
+                    fetchEntity<FreightNota | null>(`/api/data?entity=freight-notas&id=${notaId}`),
+                    fetchEntity<FreightNotaItem[]>(`/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ notaRef: notaId }))}`),
+                    fetchEntity<Payment[]>(`/api/data?entity=payments&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: notaId }))}`),
+                    fetchEntity<BankAccount[]>('/api/data?entity=bank-accounts'),
+                ]);
+
+                setNota(notaData);
+                setItems(notaItems || []);
+                setPayments(paymentRows || []);
+                setBankAccounts((accounts || []).filter(account => account.active !== false));
+            } catch (error) {
+                addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail nota');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        void loadNotaDetail();
+    }, [addToast, notaId]);
 
     const totalPaid = payments.reduce((s, p) => s + p.amount, 0);
     const remaining = (nota?.totalAmount || 0) - totalPaid;
@@ -51,51 +71,62 @@ export default function NotaDetailPage() {
 
     const handleAddPayment = async () => {
         if (payAmount <= 0) { addToast('error', 'Nominal harus lebih dari 0'); return; }
+        if (payAmount > remaining) { addToast('error', 'Nominal melebihi sisa tagihan'); return; }
+        if (payMethod === 'TRANSFER' && !payBankRef) { addToast('error', 'Pilih rekening bank untuk transfer'); return; }
         try {
-            await fetch('/api/data', {
+            const res = await fetch('/api/data', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     entity: 'payments',
                     data: { invoiceRef: nota?._id, date: payDate, amount: payAmount, method: payMethod, note: payNote, bankAccountRef: payBankRef || undefined }
                 }),
             });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal');
+                return;
+            }
             addToast('success', 'Pembayaran dicatat');
             setShowPayModal(false);
             window.location.reload();
         } catch { addToast('error', 'Gagal'); }
     };
 
-    const handlePrint = () => {
+    const handlePrint = async () => {
         const printContent = document.getElementById('nota-print-area')?.innerHTML;
         if (!printContent) return;
-        const w = window.open('', '_blank');
-        if (!w) return;
-        w.document.write(`
-        <!DOCTYPE html><html><head><title>${nota?.notaNumber}</title>
-        <style>
-            body { font-family: Arial, sans-serif; font-size: 10px; margin: 20px; color: #000; }
-            h2 { font-size: 13px; margin: 0; }
-            .sub { font-size: 9px; margin: 1px 0; }
-            .header-grid { display: flex; justify-content: space-between; margin-bottom: 8px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-            th { background: #1a1a2e; color: white; padding: 4px 5px; text-align: left; font-size: 9px; }
-            td { padding: 3px 5px; border: 1px solid #ccc; font-size: 9px; }
-            tr:nth-child(even) { background: #f5f5f5; }
-            .total-row { background: #eee !important; font-weight: bold; }
-            .right { text-align: right; }
-            .note { margin-top: 10px; font-size: 9px; }
-            .bold { font-weight: bold; }
-        </style></head><body>${printContent}</body></html>`);
-        w.document.close();
-        w.print();
+        try {
+            const company = await fetchCompanyProfile();
+            openBrandedPrint({
+                title: 'Nota Ongkos Angkut',
+                subtitle: nota?.notaNumber,
+                company,
+                bodyHtml: printContent,
+                extraStyles: `
+                    .header-grid { display: flex; justify-content: space-between; margin-bottom: 0.75rem; gap: 1rem; }
+                    .sub { font-size: 0.78rem; margin: 0.1rem 0; color: #475569; }
+                    .right { text-align: right; }
+                    .bold { font-weight: 700; }
+                    .note { margin-top: 0.9rem; font-size: 0.78rem; color: #475569; }
+                    .total-row { background: #f8fafc !important; font-weight: 700; }
+                `,
+            });
+        } catch {
+            addToast('error', 'Gagal menyiapkan dokumen cetak');
+        }
     };
 
     const handleDelete = async () => {
         if (!confirm('Hapus nota ini?')) return;
-        await fetch('/api/data', {
+        const res = await fetch('/api/data', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ entity: 'freight-notas', action: 'delete', data: { id: nota?._id } })
+            body: JSON.stringify({ entity: 'freight-notas', action: 'delete', data: { id: notaId } })
         });
+        const result = await res.json();
+        if (!res.ok) {
+            addToast('error', result.error || 'Gagal menghapus nota');
+            return;
+        }
         addToast('success', 'Nota dihapus');
         router.push('/invoices');
     };

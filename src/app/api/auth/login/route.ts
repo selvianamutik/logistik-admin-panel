@@ -36,7 +36,7 @@ export async function POST(request: Request) {
         }
 
         // Verify password
-        const isValid = verifyPassword(password, user.passwordHash);
+        const isValid = await verifyPassword(password, user.passwordHash);
         if (!isValid) {
             return NextResponse.json(
                 { error: 'Email atau password salah' },

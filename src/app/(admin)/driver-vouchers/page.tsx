@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useToast } from '../layout';
-import { Plus, Search, Receipt, FileDown, Printer } from 'lucide-react';
+import { Plus, Search, Receipt, Printer } from 'lucide-react';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
 import type { DriverVoucher } from '@/lib/types';
@@ -16,7 +15,6 @@ const STATUS_MAP: Record<string, { label: string; cls: string }> = {
 
 export default function DriverVouchersPage() {
     const router = useRouter();
-    const { addToast } = useToast();
     const [items, setItems] = useState<DriverVoucher[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
@@ -80,7 +78,12 @@ export default function DriverVouchersPage() {
                                                 <td className="font-medium">{formatCurrency(v.cashGiven)}</td>
                                                 <td>{formatCurrency(v.totalSpent)}</td>
                                                 <td className={v.balance >= 0 ? 'font-medium' : 'font-medium'} style={{ color: v.balance < 0 ? '#ef4444' : v.balance > 0 ? '#16a34a' : undefined }}>{formatCurrency(v.balance)}</td>
-                                                <td><span className={`badge ${st.cls}`}>{st.label}</span></td>
+                                                <td>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', alignItems: 'flex-start' }}>
+                                                        <span className={`badge ${st.cls}`}>{st.label}</span>
+                                                        {!v.issueBankRef && <span className="badge badge-warning">Perlu Rekonsiliasi</span>}
+                                                    </div>
+                                                </td>
                                             </tr>
                                         );
                                     })}

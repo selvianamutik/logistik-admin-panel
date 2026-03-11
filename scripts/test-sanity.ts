@@ -1,39 +1,32 @@
 import { createClient } from '@sanity/client';
+import { loadScriptEnv, requireEnv } from './_env';
 
-// Test with 'l' (lowercase L) at the end
+loadScriptEnv();
+
+const dataset = process.env.NEXT_PUBLIC_SANITY_DATASET?.trim() || 'production';
+const apiVersion = process.env.SANITY_API_VERSION?.trim() || '2024-01-01';
+const token = requireEnv('SANITY_API_TOKEN');
+
 const client = createClient({
-    projectId: 'p6do50hl',
-    dataset: 'production',
-    apiVersion: '2024-01-01',
-    token: 'skJtNtmXpKUQtDZmYTPwCdlk4t6l3OCXQNWfZzLLyJUcxhtdWNbcE7sZP5xlA8KG8TiQsFZSp3qG2B2sXARgjtLMWu7grNc1p9uEnHOgmZ8tDQK6JyzRW0LhBi3OYJbfGTslrCp6LOR28kLWAZgmC3Rli5AgFlnPcVnkVM7sJLvKgaHACB8F',
+    projectId: requireEnv('NEXT_PUBLIC_SANITY_PROJECT_ID'),
+    dataset,
+    apiVersion,
+    token,
     useCdn: false,
 });
 
 async function test() {
-    console.log('Testing with project ID: p6do50hl (lowercase L)');
+    console.log(`Testing with project ID: ${process.env.NEXT_PUBLIC_SANITY_PROJECT_ID}`);
     try {
         const result = await client.fetch('*[0..1]');
         console.log('SUCCESS! Found:', result?.length, 'docs');
         console.log(JSON.stringify(result, null, 2));
-    } catch (err: any) {
-        console.log('FAILED:', err.statusCode, err.message);
-    }
-
-    // Also test with digit 1
-    console.log('\nTesting with project ID: p6do50h1 (digit 1)');
-    const client2 = createClient({
-        projectId: 'p6do50h1',
-        dataset: 'production',
-        apiVersion: '2024-01-01',
-        token: 'skJtNtmXpKUQtDZmYTPwCdlk4t6l3OCXQNWfZzLLyJUcxhtdWNbcE7sZP5xlA8KG8TiQsFZSp3qG2B2sXARgjtLMWu7grNc1p9uEnHOgmZ8tDQK6JyzRW0LhBi3OYJbfGTslrCp6LOR28kLWAZgmC3Rli5AgFlnPcVnkVM7sJLvKgaHACB8F',
-        useCdn: false,
-    });
-    try {
-        const result = await client2.fetch('*[0..1]');
-        console.log('SUCCESS! Found:', result?.length, 'docs');
-        console.log(JSON.stringify(result, null, 2));
-    } catch (err: any) {
-        console.log('FAILED:', err.statusCode, err.message);
+    } catch (err: unknown) {
+        if (err instanceof Error) {
+            console.log('FAILED:', err.message);
+            return;
+        }
+        console.log('FAILED:', String(err));
     }
 }
 

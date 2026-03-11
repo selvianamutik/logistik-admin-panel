@@ -4,9 +4,15 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --webpack",
+    "build:turbopack": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "npx next typegen && tsc --noEmit",
+    "audit:finance": "node scripts/audit-finance.mjs",
+    "reset:sanity": "npx tsx scripts/reset-sanity.ts",
+    "seed:sanity": "npx tsx scripts/seed-sanity.ts",
+    "reseed:sanity": "npm run reset:sanity && npm run seed:sanity"
   },
   "dependencies": {
     "@sanity/client": "^7.16.0",

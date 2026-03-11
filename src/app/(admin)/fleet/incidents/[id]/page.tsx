@@ -3,8 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useToast } from '../../../layout';
-import { ArrowLeft, Printer, Save, Plus } from 'lucide-react';
-import { formatDate, formatDateTime, INCIDENT_STATUS_MAP, URGENCY_MAP, INCIDENT_TYPE_MAP } from '@/lib/utils';
+import { ArrowLeft, Printer, Save } from 'lucide-react';
+import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
+import { formatDateTime, INCIDENT_STATUS_MAP, URGENCY_MAP, INCIDENT_TYPE_MAP } from '@/lib/utils';
 import type { Incident, IncidentActionLog } from '@/lib/types';
 
 export default function IncidentDetailPage() {
@@ -20,23 +21,44 @@ export default function IncidentDetailPage() {
 
     useEffect(() => {
         const id = params.id as string;
+        const filter = encodeURIComponent(JSON.stringify({ incidentRef: id }));
         Promise.all([
             fetch(`/api/data?entity=incidents&id=${id}`).then(r => r.json()),
-            fetch(`/api/data?entity=incident-action-logs`).then(r => r.json()),
+            fetch(`/api/data?entity=incident-action-logs&filter=${filter}`).then(r => r.json()),
         ]).then(([inc, al]) => {
             setIncident(inc.data);
-            setLogs((al.data || []).filter((l: IncidentActionLog) => l.incidentRef === id).sort((a: IncidentActionLog, b: IncidentActionLog) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()));
+            setLogs((al.data || []).sort((a: IncidentActionLog, b: IncidentActionLog) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()));
+            setLoading(false);
+        }).catch(() => {
             setLoading(false);
         });
     }, [params.id]);
 
     const updateStatus = async () => {
         if (!newStatus || !actionNote) { addToast('error', 'Status dan catatan wajib'); return; }
-        await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'incidents', action: 'update', data: { id: incident?._id, updates: { status: newStatus } } }) });
-        await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'incident-action-logs', data: { incidentRef: incident?._id, timestamp: new Date().toISOString(), note: actionNote } }) });
+        const res = await fetch('/api/data', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ entity: 'incidents', action: 'set-status', data: { id: incident?._id, status: newStatus, note: actionNote } }),
+        });
+        const d = await res.json();
+        if (!res.ok) {
+            addToast('error', d.error || 'Gagal memperbarui status insiden');
+            return;
+        }
+
+        const timestamp = new Date().toISOString();
         setIncident(prev => prev ? { ...prev, status: newStatus as Incident['status'] } : prev);
-        setLogs(prev => [...prev, { _id: 'new-' + Date.now(), _type: 'incidentActionLog', incidentRef: incident?._id || '', timestamp: new Date().toISOString(), note: actionNote }]);
-        setShowStatusModal(false); setActionNote('');
+        setLogs(prev => [...prev, {
+            _id: 'new-' + Date.now(),
+            _type: 'incidentActionLog',
+            incidentRef: incident?._id || '',
+            timestamp,
+            note: actionNote,
+        }]);
+        setShowStatusModal(false);
+        setActionNote('');
+        setNewStatus('');
         addToast('success', 'Status insiden diperbarui');
     };
 
@@ -45,6 +67,74 @@ export default function IncidentDetailPage() {
 
     const nextStatuses: Record<string, string[]> = { OPEN: ['IN_PROGRESS'], IN_PROGRESS: ['RESOLVED'], RESOLVED: ['CLOSED'] };
     const available = nextStatuses[incident.status] || [];
+    const handlePrint = async () => {
+        try {
+            const company = await fetchCompanyProfile();
+            openBrandedPrint({
+                title: 'Laporan Insiden Armada',
+                subtitle: incident.incidentNumber,
+                company,
+                bodyHtml: `
+                    <div style="margin-bottom:16px">
+                        <table style="width:100%;border:none"><tbody>
+                            <tr>
+                                <td style="border:none;padding:2px 8px;width:140px;font-weight:600">No. Insiden</td>
+                                <td style="border:none;padding:2px 8px">${incident.incidentNumber}</td>
+                                <td style="border:none;padding:2px 8px;width:140px;font-weight:600">Waktu</td>
+                                <td style="border:none;padding:2px 8px">${formatDateTime(incident.dateTime)}</td>
+                            </tr>
+                            <tr>
+                                <td style="border:none;padding:2px 8px;font-weight:600">Tipe</td>
+                                <td style="border:none;padding:2px 8px">${INCIDENT_TYPE_MAP[incident.incidentType] || incident.incidentType}</td>
+                                <td style="border:none;padding:2px 8px;font-weight:600">Status</td>
+                                <td style="border:none;padding:2px 8px">${INCIDENT_STATUS_MAP[incident.status]?.label || incident.status}</td>
+                            </tr>
+                            <tr>
+                                <td style="border:none;padding:2px 8px;font-weight:600">Urgensi</td>
+                                <td style="border:none;padding:2px 8px">${URGENCY_MAP[incident.urgency]?.label || incident.urgency}</td>
+                                <td style="border:none;padding:2px 8px;font-weight:600">Kendaraan</td>
+                                <td style="border:none;padding:2px 8px">${incident.vehiclePlate || '-'}</td>
+                            </tr>
+                            <tr>
+                                <td style="border:none;padding:2px 8px;font-weight:600">Driver</td>
+                                <td style="border:none;padding:2px 8px">${incident.driverName || '-'}</td>
+                                <td style="border:none;padding:2px 8px;font-weight:600">Odometer</td>
+                                <td style="border:none;padding:2px 8px">${incident.odometer?.toLocaleString('id-ID') || '-'} km</td>
+                            </tr>
+                            <tr>
+                                <td style="border:none;padding:2px 8px;font-weight:600">Lokasi</td>
+                                <td colspan="3" style="border:none;padding:2px 8px">${incident.locationText || '-'}</td>
+                            </tr>
+                            ${incident.relatedDONumber ? `<tr><td style="border:none;padding:2px 8px;font-weight:600">DO Terkait</td><td colspan="3" style="border:none;padding:2px 8px">${incident.relatedDONumber}</td></tr>` : ''}
+                        </tbody></table>
+                    </div>
+                    <div class="section-title">Kronologi</div>
+                    <div style="line-height:1.7;color:#334155">${incident.description || '-'}</div>
+                    <div class="section-title">Timeline Penanganan</div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Waktu</th>
+                                <th>Catatan</th>
+                                <th>Petugas</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${logs.length > 0 ? logs.map((item) => `
+                                <tr>
+                                    <td>${formatDateTime(item.timestamp)}</td>
+                                    <td>${item.note || '-'}</td>
+                                    <td>${item.userName || '-'}</td>
+                                </tr>
+                            `).join('') : '<tr><td colspan="3" class="c">Belum ada log penanganan</td></tr>'}
+                        </tbody>
+                    </table>
+                `,
+            });
+        } catch {
+            addToast('error', 'Gagal menyiapkan dokumen cetak');
+        }
+    };
 
     return (
         <div>
@@ -59,7 +149,7 @@ export default function IncidentDetailPage() {
                 </div>
                 <div className="page-actions">
                     {available.length > 0 && <button className="btn btn-primary" onClick={() => setShowStatusModal(true)}><Save size={16} /> Ubah Status</button>}
-                    <button className="btn btn-secondary" onClick={() => window.print()}><Printer size={16} /> Print</button>
+                    <button className="btn btn-secondary" onClick={handlePrint}><Printer size={16} /> Print</button>
                 </div>
             </div>
 

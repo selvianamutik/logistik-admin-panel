@@ -46,6 +46,11 @@ export default function NewOrderPage() {
             addToast('error', 'Mohon lengkapi data wajib');
             return;
         }
+        const validItems = items.filter(item => item.description.trim());
+        if (validItems.length === 0) {
+            addToast('error', 'Minimal 1 item order wajib diisi');
+            return;
+        }
         setLoading(true);
 
         try {
@@ -57,38 +62,23 @@ export default function NewOrderPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     entity: 'orders',
+                    action: 'create-with-items',
                     data: {
                         customerRef, customerName: selCustomer?.name || '',
                         receiverName, receiverPhone, receiverAddress, receiverCompany,
                         pickupAddress, serviceRef, serviceName: selService?.name || '',
                         notes,
+                        items: validItems,
                     },
                 }),
             });
 
             const orderData = await res.json();
-            const orderId = orderData.data?._id || orderData.id;
-
-            // Create items
-            for (const item of items) {
-                if (!item.description) continue;
-                await fetch('/api/data', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        entity: 'order-items',
-                        data: {
-                            orderRef: orderId,
-                            description: item.description,
-                            qtyKoli: item.qtyKoli,
-                            weight: item.weight,
-                            volume: item.volume || undefined,
-                            value: item.value || undefined,
-                            status: 'PENDING',
-                        },
-                    }),
-                });
+            if (!res.ok) {
+                addToast('error', orderData.error || 'Gagal membuat order');
+                return;
             }
+            const orderId = orderData.data?._id || orderData.id;
 
             addToast('success', `Order dibuat: ${orderData.data?.masterResi || ''}`);
             router.push(`/orders/${orderId}`);

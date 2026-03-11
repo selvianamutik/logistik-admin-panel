@@ -1,36 +1,34 @@
 /* ============================================================
-   LOGISTIK — Auth Utilities
+   LOGISTIK - Auth Utilities
    JWT sessions with httpOnly cookies
    ============================================================ */
 
-import { SignJWT, jwtVerify } from 'jose';
-import { cookies } from 'next/headers';
-import { SessionUser, User } from './types';
+import { compare, hash } from 'bcryptjs';
+import { cookies, headers } from 'next/headers';
 
-const JWT_SECRET = new TextEncoder().encode(
-    process.env.JWT_SECRET || 'logistik-admin-panel-secret-key-2026-very-secure'
-);
+import type { SessionUser, User } from './types';
+import {
+    createSessionToken,
+    SESSION_COOKIE,
+    SESSION_MAX_AGE,
+    verifySessionToken,
+} from './session';
 
-const SESSION_COOKIE = 'logistik-session';
-const SESSION_MAX_AGE = 60 * 60 * 24; // 24 hours
+const BCRYPT_PREFIX = /^\$2[aby]\$/;
 
-// ── Password Comparison (simplified for demo — no bcrypt dependency needed) ──
-export function verifyPassword(plainPassword: string, storedHash: string): boolean {
-    // For demo: direct comparison with known password
-    // In production: use bcrypt.compare
-    if (storedHash === '$2a$10$dummyhashforTEST1234ownerpassword') {
-        return plainPassword === 'TEST1234';
+export async function verifyPassword(plainPassword: string, storedHash: string): Promise<boolean> {
+    if (!storedHash) return false;
+    if (BCRYPT_PREFIX.test(storedHash)) {
+        return compare(plainPassword, storedHash);
     }
-    // For dynamically created users, we store password directly (demo only)
+    // Transitional support for legacy plaintext rows already stored in Sanity.
     return plainPassword === storedHash;
 }
 
-export function hashPassword(password: string): string {
-    // For demo: store directly (in production use bcrypt)
-    return password;
+export async function hashPassword(password: string): Promise<string> {
+    return hash(password, 10);
 }
 
-// ── JWT ──
 export async function createSession(user: User): Promise<string> {
     const payload: SessionUser = {
         _id: user._id,
@@ -39,13 +37,7 @@ export async function createSession(user: User): Promise<string> {
         role: user.role,
     };
 
-    const token = await new SignJWT({ user: payload })
-        .setProtectedHeader({ alg: 'HS256' })
-        .setIssuedAt()
-        .setExpirationTime(`${SESSION_MAX_AGE}s`)
-        .sign(JWT_SECRET);
-
-    return token;
+    return createSessionToken(payload);
 }
 
 export async function getSession(): Promise<SessionUser | null> {
@@ -54,18 +46,30 @@ export async function getSession(): Promise<SessionUser | null> {
         const token = cookieStore.get(SESSION_COOKIE)?.value;
         if (!token) return null;
 
-        const { payload } = await jwtVerify(token, JWT_SECRET);
-        return (payload as { user: SessionUser }).user;
+        return await verifySessionToken(token);
     } catch {
         return null;
     }
+}
+
+async function shouldUseSecureCookies(): Promise<boolean> {
+    if (process.env.NODE_ENV !== 'production') return false;
+
+    const headerStore = await headers();
+    const forwardedProto = headerStore.get('x-forwarded-proto')?.toLowerCase();
+    if (forwardedProto) {
+        return forwardedProto === 'https';
+    }
+
+    const host = headerStore.get('host')?.toLowerCase() ?? '';
+    return !/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host);
 }
 
 export async function setSessionCookie(token: string): Promise<void> {
     const cookieStore = await cookies();
     cookieStore.set(SESSION_COOKIE, token, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
+        secure: await shouldUseSecureCookies(),
         sameSite: 'lax',
         maxAge: SESSION_MAX_AGE,
         path: '/',

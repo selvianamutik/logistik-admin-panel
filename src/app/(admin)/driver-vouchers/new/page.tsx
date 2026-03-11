@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '../../layout';
 import { ArrowLeft, Save } from 'lucide-react';
-import type { Driver, DeliveryOrder, Vehicle } from '@/lib/types';
+import type { BankAccount, Driver, DeliveryOrder, Vehicle } from '@/lib/types';
 
 export default function NewDriverVoucherPage() {
     const router = useRouter();
@@ -12,10 +12,11 @@ export default function NewDriverVoucherPage() {
     const [drivers, setDrivers] = useState<Driver[]>([]);
     const [dos, setDos] = useState<DeliveryOrder[]>([]);
     const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+    const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [form, setForm] = useState({
-        driverRef: '', deliveryOrderRef: '', vehicleRef: '', route: '',
+        driverRef: '', deliveryOrderRef: '', vehicleRef: '', route: '', issueBankRef: '',
         issuedDate: new Date().toISOString().split('T')[0], cashGiven: 0, notes: ''
     });
 
@@ -24,10 +25,12 @@ export default function NewDriverVoucherPage() {
             fetch('/api/data?entity=drivers').then(r => r.json()),
             fetch('/api/data?entity=delivery-orders').then(r => r.json()),
             fetch('/api/data?entity=vehicles').then(r => r.json()),
-        ]).then(([d, o, v]) => {
+            fetch('/api/data?entity=bank-accounts').then(r => r.json()),
+        ]).then(([d, o, v, b]) => {
             setDrivers((d.data || []).filter((x: Driver) => x.active));
             setDos(o.data || []);
             setVehicles((v.data || []).filter((x: Vehicle) => x.status === 'ACTIVE'));
+            setBankAccounts((b.data || []).filter((x: BankAccount) => x.active !== false));
             setLoading(false);
         });
     }, []);
@@ -46,22 +49,15 @@ export default function NewDriverVoucherPage() {
     const handleSave = async () => {
         if (!form.driverRef) { addToast('error', 'Pilih supir terlebih dahulu'); return; }
         if (!form.cashGiven || form.cashGiven <= 0) { addToast('error', 'Nominal uang harus diisi'); return; }
+        if (!form.issueBankRef) { addToast('error', 'Pilih rekening sumber bon'); return; }
         setSaving(true);
 
         const driver = drivers.find(d => d._id === form.driverRef);
         const doItem = dos.find(d => d._id === form.deliveryOrderRef);
         const vehicle = vehicles.find(v => v._id === form.vehicleRef);
-
-        // Get bon number
-        const coRes = await fetch('/api/data?entity=company');
-        const coData = await coRes.json();
-        const co = coData.data;
-        const prefix = co?.numberingSettings?.bonPrefix || 'BON';
-        const counter = (co?.numberingSettings?.bonCounter || 0) + 1;
-        const bonNumber = `${prefix}-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(counter).padStart(4, '0')}`;
+        const issueBank = bankAccounts.find(b => b._id === form.issueBankRef);
 
         const voucherData = {
-            bonNumber,
             driverRef: form.driverRef,
             driverName: driver?.name || '',
             deliveryOrderRef: form.deliveryOrderRef || undefined,
@@ -71,6 +67,8 @@ export default function NewDriverVoucherPage() {
             route: form.route || undefined,
             issuedDate: form.issuedDate,
             cashGiven: form.cashGiven,
+            issueBankRef: form.issueBankRef,
+            issueBankName: issueBank?.bankName || undefined,
             totalSpent: 0,
             balance: form.cashGiven,
             status: 'ISSUED',
@@ -82,14 +80,13 @@ export default function NewDriverVoucherPage() {
             body: JSON.stringify({ entity: 'driver-vouchers', data: voucherData })
         });
         const result = await res.json();
+        if (!res.ok) {
+            addToast('error', result.error || 'Gagal membuat bon supir');
+            setSaving(false);
+            return;
+        }
 
-        // Update bon counter - company entity uses singleton path (no action needed)
-        await fetch('/api/data', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ entity: 'company', data: { numberingSettings: { ...co.numberingSettings, bonPrefix: prefix, bonCounter: counter } } })
-        });
-
-        addToast('success', `Bon ${bonNumber} berhasil dibuat`);
+        addToast('success', `Bon ${result.data?.bonNumber || ''} berhasil dibuat`);
         router.push(`/driver-vouchers/${result.data._id}`);
     };
 
@@ -141,6 +138,15 @@ export default function NewDriverVoucherPage() {
                             <label className="form-label">Rute</label>
                             <input className="form-input" placeholder="Contoh: Jakarta → Surabaya" value={form.route} onChange={e => setForm({ ...form, route: e.target.value })} />
                         </div>
+                        <div className="form-group">
+                            <label className="form-label">Rekening Sumber <span className="required">*</span></label>
+                            <select className="form-select" value={form.issueBankRef} onChange={e => setForm({ ...form, issueBankRef: e.target.value })}>
+                                <option value="">Pilih rekening</option>
+                                {bankAccounts.map(b => <option key={b._id} value={b._id}>{b.bankName} - {b.accountNumber}</option>)}
+                            </select>
+                        </div>
+                    </div>
+                    <div className="form-row">
                         <div className="form-group">
                             <label className="form-label">Uang Diberikan <span className="required">*</span></label>
                             <input type="number" className="form-input" placeholder="0" value={form.cashGiven || ''} onChange={e => setForm({ ...form, cashGiven: Number(e.target.value) })} />

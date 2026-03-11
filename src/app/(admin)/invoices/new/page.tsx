@@ -98,50 +98,27 @@ export default function NewNotaPage() {
         if (rows.length === 0) { addToast('error', 'Minimal 1 baris perjalanan'); return; }
         setSaving(true);
         try {
-            // Create nota header
             const notaRes = await fetch('/api/data', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     entity: 'freight-notas',
+                    action: 'create-with-items',
                     data: {
                         customerRef: customerRef || undefined,
                         customerName,
                         issueDate,
                         dueDate: dueDate || undefined,
-                        status: 'UNPAID',
-                        totalAmount,
-                        totalCollie,
-                        totalWeightKg: totalBerat,
                         notes: notes || undefined,
+                        items: rows,
                     }
                 })
             });
             const notaData = await notaRes.json();
+            if (!notaRes.ok) {
+                addToast('error', notaData.error || 'Gagal membuat nota');
+                return;
+            }
             const notaId = notaData.data._id;
-
-            // Create nota items
-            await Promise.all(rows.map(r => fetch('/api/data', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    entity: 'freight-nota-items',
-                    data: {
-                        notaRef: notaId,
-                        doRef: r.doRef || undefined,
-                        doNumber: r.doNumber || undefined,
-                        vehiclePlate: r.vehiclePlate || undefined,
-                        date: r.date,
-                        noSJ: r.noSJ,
-                        dari: r.dari,
-                        tujuan: r.tujuan,
-                        barang: r.barang || undefined,
-                        collie: r.collie || undefined,
-                        beratKg: r.beratKg,
-                        tarip: r.tarip,
-                        uangRp: r.uangRp,
-                        ket: r.ket || undefined,
-                    }
-                })
-            })));
 
             addToast('success', 'Nota berhasil dibuat');
             router.push(`/invoices/${notaId}`);

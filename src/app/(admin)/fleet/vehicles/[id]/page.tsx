@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useApp, useToast } from '../../../layout';
-import { ArrowLeft, Save, Car, Wrench, AlertTriangle, Truck } from 'lucide-react';
+import { useApp } from '../../../layout';
+import { ArrowLeft, Car, Wrench, AlertTriangle, Truck, Edit } from 'lucide-react';
 import { VEHICLE_STATUS_MAP, MAINTENANCE_STATUS_MAP, INCIDENT_STATUS_MAP, DO_STATUS_MAP, formatDate, formatCurrency } from '@/lib/utils';
 import type { Vehicle, Maintenance, Incident, DeliveryOrder, TireEvent, Expense } from '@/lib/types';
 
@@ -11,7 +11,6 @@ export default function VehicleDetailPage() {
     const params = useParams();
     const router = useRouter();
     const { user } = useApp();
-    const { addToast } = useToast();
     const [vehicle, setVehicle] = useState<Vehicle | null>(null);
     const [maints, setMaints] = useState<Maintenance[]>([]);
     const [incidents, setIncidents] = useState<Incident[]>([]);
@@ -57,6 +56,11 @@ export default function VehicleDetailPage() {
                         <span className={`badge badge-${VEHICLE_STATUS_MAP[vehicle.status]?.color}`}><span className="badge-dot" /> {VEHICLE_STATUS_MAP[vehicle.status]?.label}</span>
                     </h1>
                     <p className="page-subtitle">{vehicle.brandModel} - {vehicle.unitCode}</p>
+                </div>
+                <div className="page-actions">
+                    <button className="btn btn-secondary" onClick={() => router.push(`/fleet/vehicles/${vehicle._id}/edit`)}>
+                        <Edit size={16} /> Edit Kendaraan
+                    </button>
                 </div>
             </div>
 

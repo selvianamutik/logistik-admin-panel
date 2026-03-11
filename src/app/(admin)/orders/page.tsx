@@ -41,10 +41,14 @@ export default function OrdersPage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ entity: 'orders', action: 'delete', data: { id } }),
         });
-        if (res.ok) {
-            setOrders(prev => prev.filter(o => o._id !== id));
-            addToast('success', 'Order berhasil dihapus');
+        const result = await res.json();
+        if (!res.ok) {
+            addToast('error', result.error || 'Gagal menghapus order');
+            setDeleteId(null);
+            return;
         }
+        setOrders(prev => prev.filter(o => o._id !== id));
+        addToast('success', 'Order berhasil dihapus');
         setDeleteId(null);
     };
 

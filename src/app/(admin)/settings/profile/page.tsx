@@ -2,10 +2,10 @@
 
 import { useState } from 'react';
 import { useApp, useToast } from '../../layout';
-import { Save, User } from 'lucide-react';
+import { Save } from 'lucide-react';
 
 export default function ProfilePage() {
-    const { user } = useApp();
+    const { user, setUser } = useApp();
     const { addToast } = useToast();
     const [name, setName] = useState(user?.name || '');
     const [loading, setLoading] = useState(false);
@@ -14,9 +14,22 @@ export default function ProfilePage() {
         e.preventDefault();
         setLoading(true);
         try {
-            await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'users', action: 'update', data: { id: user?._id, updates: { name } } }) });
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entity: 'users', action: 'update', data: { id: user?._id, updates: { name } } }),
+            });
+            const payload = await res.json();
+            if (!res.ok) {
+                throw new Error(payload.error || 'Gagal memperbarui profil');
+            }
+            if (payload.data && user) {
+                setUser({ ...user, name: payload.data.name });
+            }
             addToast('success', 'Profil berhasil diperbarui');
-        } catch { addToast('error', 'Gagal memperbarui profil'); }
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memperbarui profil');
+        }
         setLoading(false);
     };
 

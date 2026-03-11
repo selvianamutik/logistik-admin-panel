@@ -42,12 +42,25 @@ export interface CompanyProfile {
   numberingSettings: {
     resiPrefix: string;
     resiCounter: number;
+    resiPeriod?: string;
     doPrefix: string;
     doCounter: number;
+    doPeriod?: string;
     invoicePrefix: string;
     invoiceCounter: number;
+    invoicePeriod?: string;
+    notaPrefix?: string;
+    notaCounter?: number;
+    notaPeriod?: string;
+    boronganPrefix?: string;
+    boronganCounter?: number;
+    boronganPeriod?: string;
+    bonPrefix?: string;
+    bonCounter?: number;
+    bonPeriod?: string;
     incidentPrefix: string;
     incidentCounter: number;
+    incidentPeriod?: string;
   };
   invoiceSettings: {
     defaultTermDays: number;
@@ -121,12 +134,16 @@ export interface DriverVoucher {
   route?: string;
   issuedDate: string;
   cashGiven: number;
+  issueBankRef?: string;
+  issueBankName?: string;
   totalSpent: number;
   balance: number;
   status: DriverVoucherStatus;
   notes?: string;
   settledDate?: string;
   settledBy?: string;
+  settlementBankRef?: string;
+  settlementBankName?: string;
 }
 
 export interface DriverVoucherItem {
@@ -279,6 +296,8 @@ export interface DriverBorongan {
   totalWeightKg: number;
   notes?: string;
   paidDate?: string;
+  paidMethod?: PaymentMethod;
+  paidBankRef?: string;
 }
 
 export interface DriverBoronganItem {
@@ -375,6 +394,8 @@ export interface Expense {
   relatedVehicleRef?: string;
   relatedIncidentRef?: string;
   relatedMaintenanceRef?: string;
+  boronganRef?: string;
+  voucherRef?: string;
 }
 
 // ── Vehicle ──
@@ -521,6 +542,7 @@ export interface BankTransaction {
   relatedPaymentRef?: string;
   relatedExpenseRef?: string;
   relatedTransferRef?: string;
+  relatedVoucherRef?: string;
   _createdAt?: string;
 }
 

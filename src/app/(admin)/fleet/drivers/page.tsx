@@ -15,8 +15,23 @@ export default function DriversPage() {
     const [form, setForm] = useState({ name: '', phone: '', licenseNumber: '', ktpNumber: '', simExpiry: '', address: '', active: true });
 
     useEffect(() => {
-        fetch('/api/data?entity=drivers').then(r => r.json()).then(d => { setItems(d.data || []); setLoading(false); });
-    }, []);
+        const loadDrivers = async () => {
+            try {
+                const res = await fetch('/api/data?entity=drivers');
+                const payload = await res.json();
+                if (!res.ok) {
+                    throw new Error(payload.error || 'Gagal memuat data supir');
+                }
+                setItems(payload.data || []);
+            } catch (error) {
+                addToast('error', error instanceof Error ? error.message : 'Gagal memuat data supir');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        void loadDrivers();
+    }, [addToast]);
 
     const filtered = items.filter(d => !search || d.name.toLowerCase().includes(search.toLowerCase()) || d.phone.includes(search) || d.licenseNumber.toLowerCase().includes(search.toLowerCase()));
 
@@ -29,6 +44,10 @@ export default function DriversPage() {
                 : { entity: 'drivers', data: form })
         });
         const d = await res.json();
+        if (!res.ok) {
+            addToast('error', d.error || 'Gagal menyimpan data supir');
+            return;
+        }
         if (editId) {
             setItems(prev => prev.map(i => i._id === editId ? d.data : i));
             addToast('success', 'Supir diperbarui');
@@ -42,6 +61,10 @@ export default function DriversPage() {
     const toggleActive = async (driver: Driver) => {
         const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'drivers', action: 'update', data: { id: driver._id, updates: { active: !driver.active } } }) });
         const d = await res.json();
+        if (!res.ok) {
+            addToast('error', d.error || 'Gagal memperbarui status supir');
+            return;
+        }
         setItems(prev => prev.map(i => i._id === driver._id ? d.data : i));
         addToast('success', driver.active ? 'Supir dinon-aktifkan' : 'Supir diaktifkan');
     };

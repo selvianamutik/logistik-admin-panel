@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Plus, FileText, FileDown, Printer } from 'lucide-react';
+import { Search, Plus, FileText, Printer } from 'lucide-react';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
 import type { FreightNota } from '@/lib/types';
@@ -97,7 +97,7 @@ export default function NotaListPage() {
                         <tbody>
                             {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 filtered.length === 0 ? (
-                                    <tr><td colSpan={8}><div className="empty-state"><FileText size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada nota</div><div className="empty-state-text">Klik tombol "Buat Nota" untuk membuat nota baru</div></div></td></tr>
+                                    <tr><td colSpan={8}><div className="empty-state"><FileText size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada nota</div><div className="empty-state-text">Klik tombol &quot;Buat Nota&quot; untuk membuat nota baru</div></div></td></tr>
                                 ) : filtered.map(n => (
                                     <tr key={n._id}>
                                         <td><span className="font-semibold" style={{ color: 'var(--color-primary)', cursor: 'pointer' }} onClick={() => router.push(`/invoices/${n._id}`)}>{n.notaNumber}</span></td>

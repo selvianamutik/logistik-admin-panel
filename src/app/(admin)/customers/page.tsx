@@ -28,12 +28,15 @@ export default function CustomersPage() {
     const handleSave = async () => {
         if (!form.name) { addToast('error', 'Nama customer wajib diisi'); return; }
         if (editItem) {
-            await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'customers', action: 'update', data: { id: editItem._id, updates: { ...form, active: true } } }) });
+            const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'customers', action: 'update', data: { id: editItem._id, updates: { ...form, active: true } } }) });
+            const result = await res.json();
+            if (!res.ok) { addToast('error', result.error || 'Gagal memperbarui customer'); return; }
             setItems(prev => prev.map(c => c._id === editItem._id ? { ...c, ...form } : c));
             addToast('success', 'Customer diperbarui');
         } else {
             const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'customers', data: { ...form, active: true } }) });
             const d = await res.json();
+            if (!res.ok) { addToast('error', d.error || 'Gagal menambahkan customer'); return; }
             setItems(prev => [...prev, d.data]);
             addToast('success', 'Customer ditambahkan');
         }
@@ -41,7 +44,9 @@ export default function CustomersPage() {
     };
 
     const handleDelete = async (id: string) => {
-        await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'customers', action: 'delete', data: { id } }) });
+        const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'customers', action: 'delete', data: { id } }) });
+        const result = await res.json();
+        if (!res.ok) { addToast('error', result.error || 'Gagal menghapus customer'); setDeleteId(null); return; }
         setItems(prev => prev.filter(c => c._id !== id)); setDeleteId(null); addToast('success', 'Customer dihapus');
     };
 

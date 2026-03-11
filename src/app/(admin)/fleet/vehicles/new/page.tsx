@@ -2,11 +2,12 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useToast } from '../../../layout';
+import { useApp, useToast } from '../../../layout';
 import { ArrowLeft, Save } from 'lucide-react';
 
 export default function VehicleNewPage() {
     const router = useRouter();
+    const { user } = useApp();
     const { addToast } = useToast();
     const [saving, setSaving] = useState(false);
     const [form, setForm] = useState({
@@ -14,6 +15,7 @@ export default function VehicleNewPage() {
         year: new Date().getFullYear(), capacityKg: 0, capacityVolume: 0,
         chassisNumber: '', engineNumber: '', base: '', notes: ''
     });
+    const isOwner = user?.role === 'OWNER';
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -23,14 +25,31 @@ export default function VehicleNewPage() {
         }
         setSaving(true);
         try {
+            const payload = {
+                unitCode: form.unitCode,
+                plateNumber: form.plateNumber,
+                vehicleType: form.vehicleType,
+                brandModel: form.brandModel,
+                year: form.year,
+                capacityKg: form.capacityKg,
+                capacityVolume: form.capacityVolume,
+                base: form.base,
+                notes: form.notes,
+                status: 'ACTIVE',
+                lastOdometer: 0,
+                ...(isOwner ? { chassisNumber: form.chassisNumber, engineNumber: form.engineNumber } : {}),
+            };
             const res = await fetch('/api/data', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ entity: 'vehicles', data: { ...form, status: 'ACTIVE', lastOdometer: 0 } }),
+                body: JSON.stringify({ entity: 'vehicles', data: payload }),
             });
             const d = await res.json();
+            if (!res.ok) {
+                throw new Error(d.error || 'Gagal menyimpan kendaraan');
+            }
             addToast('success', 'Kendaraan berhasil ditambahkan');
             router.push(`/fleet/vehicles/${d.data?._id || d.id}`);
-        } catch { addToast('error', 'Gagal menyimpan'); }
+        } catch (error) { addToast('error', error instanceof Error ? error.message : 'Gagal menyimpan'); }
         setSaving(false);
     };
 
@@ -72,10 +91,10 @@ export default function VehicleNewPage() {
                                 <div className="form-group"><label className="form-label">Kapasitas (kg)</label><input type="number" className="form-input" value={form.capacityKg || ''} onChange={e => setForm({ ...form, capacityKg: Number(e.target.value) })} /></div>
                                 <div className="form-group"><label className="form-label">Volume (m3)</label><input type="number" className="form-input" value={form.capacityVolume || ''} onChange={e => setForm({ ...form, capacityVolume: Number(e.target.value) })} /></div>
                             </div>
-                            <div className="form-row">
+                            {isOwner && <div className="form-row">
                                 <div className="form-group"><label className="form-label">No. Rangka</label><input className="form-input" value={form.chassisNumber} onChange={e => setForm({ ...form, chassisNumber: e.target.value })} placeholder="MHMFE74P..." /></div>
                                 <div className="form-group"><label className="form-label">No. Mesin</label><input className="form-input" value={form.engineNumber} onChange={e => setForm({ ...form, engineNumber: e.target.value })} placeholder="4D34T..." /></div>
-                            </div>
+                            </div>}
                             <div className="form-group"><label className="form-label">Catatan</label><textarea className="form-textarea" rows={3} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
                         </div>
                     </div>

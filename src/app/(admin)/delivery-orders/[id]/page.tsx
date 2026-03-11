@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '../../layout';
 import { ArrowLeft, Printer, FileDown, Truck, Upload, Save } from 'lucide-react';
+import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
 import { formatDate, formatDateTime, DO_STATUS_MAP } from '@/lib/utils';
 import { generateDOPdf } from '@/lib/pdf/doTemplate';
 import type { DeliveryOrder, DeliveryOrderItem, TrackingLog, CompanyProfile } from '@/lib/types';
@@ -13,6 +14,7 @@ export default function DODetailPage() {
     const params = useParams();
     const router = useRouter();
     const { addToast } = useToast();
+    const doId = params.id as string;
     const [doData, setDoData] = useState<DeliveryOrder | null>(null);
     const [doItems, setDoItems] = useState<DeliveryOrderItem[]>([]);
     const [trackingLogs, setTrackingLogs] = useState<TrackingLog[]>([]);
@@ -30,59 +32,170 @@ export default function DODetailPage() {
     const [savingTarip, setSavingTarip] = useState(false);
 
     useEffect(() => {
-        const id = params.id as string;
-        Promise.all([
-            fetch(`/api/data?entity=delivery-orders&id=${id}`).then(r => r.json()),
-            fetch(`/api/data?entity=delivery-order-items`).then(r => r.json()),
-            fetch(`/api/data?entity=tracking-logs`).then(r => r.json()),
-        ]).then(([d, items, logs]) => {
-            setDoData(d.data);
-            setTaripBorongan(d.data?.taripBorongan || 0);
-            setKeteranganBorongan(d.data?.keteranganBorongan || '');
-            setDoItems((items.data || []).filter((i: DeliveryOrderItem) => i.deliveryOrderRef === id));
-            setTrackingLogs((logs.data || []).filter((l: TrackingLog) => l.refRef === id && l.refType === 'DO').sort((a: TrackingLog, b: TrackingLog) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()));
-            setLoading(false);
-        }).catch(() => setLoading(false));
-    }, [params.id]);
+        const fetchEntity = async <T,>(url: string) => {
+            const res = await fetch(url);
+            const result = await res.json();
+            if (!res.ok) {
+                throw new Error(result.error || 'Gagal memuat detail surat jalan');
+            }
+            return result.data as T;
+        };
+
+        const loadDO = async () => {
+            setLoading(true);
+            try {
+                const [deliveryOrder, itemRows, logRows] = await Promise.all([
+                    fetchEntity<DeliveryOrder | null>(`/api/data?entity=delivery-orders&id=${doId}`),
+                    fetchEntity<DeliveryOrderItem[]>(`/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: doId }))}`),
+                    fetchEntity<TrackingLog[]>(`/api/data?entity=tracking-logs&filter=${encodeURIComponent(JSON.stringify({ refRef: doId, refType: 'DO' }))}`),
+                ]);
+
+                setDoData(deliveryOrder);
+                setTaripBorongan(deliveryOrder?.taripBorongan || 0);
+                setKeteranganBorongan(deliveryOrder?.keteranganBorongan || '');
+                setDoItems(itemRows || []);
+                setTrackingLogs((logRows || []).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()));
+            } catch (error) {
+                addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail surat jalan');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        void loadDO();
+    }, [addToast, doId]);
 
     const updateDOStatus = async () => {
         if (!newStatus) return;
-        await fetch('/api/data', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ entity: 'delivery-orders', action: 'update', data: { id: doData?._id, updates: { status: newStatus } } }),
+        const res = await fetch('/api/data', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ entity: 'delivery-orders', action: 'set-status', data: { id: doData?._id, status: newStatus, note: statusNote } }),
         });
-        // Add tracking log
-        await fetch('/api/data', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ entity: 'tracking-logs', data: { refType: 'DO', refRef: doData?._id, status: newStatus, note: statusNote, timestamp: new Date().toISOString() } }),
-        });
-        // Update order item statuses if DO becomes ON_DELIVERY or DELIVERED
-        if (newStatus === 'ON_DELIVERY' || newStatus === 'DELIVERED') {
-            for (const doi of doItems) {
-                await fetch('/api/data', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ entity: 'order-items', action: 'update', data: { id: doi.orderItemRef, updates: { status: newStatus === 'ON_DELIVERY' ? 'ON_DELIVERY' : 'DELIVERED' } } }),
-                });
-            }
+        const d = await res.json();
+        if (!res.ok) {
+            addToast('error', d.error || 'Gagal memperbarui status surat jalan');
+            return;
         }
+
         setDoData(prev => prev ? { ...prev, status: newStatus as DeliveryOrder['status'] } : prev);
-        setTrackingLogs(prev => [...prev, { _id: 'new', _type: 'trackingLog', refType: 'DO', refRef: doData?._id || '', status: newStatus, note: statusNote, timestamp: new Date().toISOString() }]);
+        setTrackingLogs(prev => [...prev, {
+            _id: 'new-' + Date.now(),
+            _type: 'trackingLog',
+            refType: 'DO',
+            refRef: doData?._id || '',
+            status: newStatus,
+            note: statusNote || undefined,
+            timestamp: new Date().toISOString(),
+        }]);
         setShowStatusModal(false);
         setStatusNote('');
         addToast('success', `Status DO diperbarui ke ${DO_STATUS_MAP[newStatus]?.label || newStatus}`);
     };
 
     const savePOD = async () => {
-        await fetch('/api/data', {
+        const res = await fetch('/api/data', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ entity: 'delivery-orders', action: 'update', data: { id: doData?._id, updates: { podReceiverName: podName, podReceivedDate: podDate, podNote } } }),
         });
+        const result = await res.json();
+        if (!res.ok) {
+            addToast('error', result.error || 'Gagal menyimpan POD');
+            return;
+        }
         setDoData(prev => prev ? { ...prev, podReceiverName: podName, podReceivedDate: podDate, podNote } : prev);
         setShowPODModal(false);
         addToast('success', 'POD berhasil disimpan');
     };
 
-    const handlePrint = () => window.print();
+    const handlePrint = async () => {
+        try {
+            const company = await fetchCompanyProfile();
+            openBrandedPrint({
+                title: 'Surat Jalan',
+                subtitle: doData?.doNumber,
+                company,
+                bodyHtml: `
+                    <div style="margin-bottom:16px">
+                        <table style="width:100%;border:none"><tbody>
+                            <tr>
+                                <td style="border:none;padding:2px 8px;width:140px;font-weight:600">No. DO</td>
+                                <td style="border:none;padding:2px 8px">${doData?.doNumber || '-'}</td>
+                                <td style="border:none;padding:2px 8px;width:140px;font-weight:600">Tanggal</td>
+                                <td style="border:none;padding:2px 8px">${formatDate(doData?.date || '')}</td>
+                            </tr>
+                            <tr>
+                                <td style="border:none;padding:2px 8px;font-weight:600">Master Resi</td>
+                                <td style="border:none;padding:2px 8px">${doData?.masterResi || '-'}</td>
+                                <td style="border:none;padding:2px 8px;font-weight:600">Status</td>
+                                <td style="border:none;padding:2px 8px">${DO_STATUS_MAP[doData?.status || '']?.label || doData?.status || '-'}</td>
+                            </tr>
+                            <tr>
+                                <td style="border:none;padding:2px 8px;font-weight:600">Customer</td>
+                                <td style="border:none;padding:2px 8px">${doData?.customerName || '-'}</td>
+                                <td style="border:none;padding:2px 8px;font-weight:600">Kendaraan</td>
+                                <td style="border:none;padding:2px 8px">${doData?.vehiclePlate || '-'}</td>
+                            </tr>
+                            <tr>
+                                <td style="border:none;padding:2px 8px;font-weight:600">Driver</td>
+                                <td style="border:none;padding:2px 8px">${doData?.driverName || '-'}</td>
+                                <td style="border:none;padding:2px 8px;font-weight:600">Penerima</td>
+                                <td style="border:none;padding:2px 8px">${doData?.receiverName || '-'}</td>
+                            </tr>
+                            <tr>
+                                <td style="border:none;padding:2px 8px;font-weight:600">Alamat Penerima</td>
+                                <td colspan="3" style="border:none;padding:2px 8px">${doData?.receiverAddress || '-'}</td>
+                            </tr>
+                            ${doData?.notes ? `<tr><td style="border:none;padding:2px 8px;font-weight:600">Catatan</td><td colspan="3" style="border:none;padding:2px 8px">${doData.notes}</td></tr>` : ''}
+                            ${doData?.podReceiverName ? `<tr><td style="border:none;padding:2px 8px;font-weight:600">POD</td><td colspan="3" style="border:none;padding:2px 8px">Diterima oleh ${doData.podReceiverName} pada ${formatDate(doData.podReceivedDate || '')}${doData.podNote ? ` - ${doData.podNote}` : ''}</td></tr>` : ''}
+                        </tbody></table>
+                    </div>
+                    <div class="section-title">Detail Barang</div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>No</th>
+                                <th>Deskripsi</th>
+                                <th class="r">Koli</th>
+                                <th class="r">Berat</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${doItems.map((item, index) => `
+                                <tr>
+                                    <td>${index + 1}</td>
+                                    <td>${item.orderItemDescription || '-'}</td>
+                                    <td class="r">${item.orderItemQtyKoli || 0}</td>
+                                    <td class="r">${item.orderItemWeight || 0} kg</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                    <div class="section-title">Timeline Pengiriman</div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Waktu</th>
+                                <th>Status</th>
+                                <th>Catatan</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${trackingLogs.length > 0 ? trackingLogs.map((item) => `
+                                <tr>
+                                    <td>${formatDateTime(item.timestamp)}</td>
+                                    <td>${DO_STATUS_MAP[item.status]?.label || item.status || '-'}</td>
+                                    <td>${item.note || '-'}</td>
+                                </tr>
+                            `).join('') : '<tr><td colspan="3" class="c">Belum ada log tracking</td></tr>'}
+                        </tbody>
+                    </table>
+                `,
+            });
+        } catch {
+            addToast('error', 'Gagal menyiapkan dokumen cetak');
+        }
+    };
 
     const handleExportPDF = async () => {
         try {
@@ -98,10 +211,16 @@ export default function DODetailPage() {
 
     const saveTaripBorongan = async () => {
         setSavingTarip(true);
-        await fetch('/api/data', {
+        const res = await fetch('/api/data', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ entity: 'delivery-orders', action: 'update', data: { id: doData?._id, updates: { taripBorongan, keteranganBorongan } } }),
         });
+        const result = await res.json();
+        if (!res.ok) {
+            addToast('error', result.error || 'Gagal menyimpan tarip borongan');
+            setSavingTarip(false);
+            return;
+        }
         setDoData(prev => prev ? { ...prev, taripBorongan, keteranganBorongan } : prev);
         setEditingTarip(false);
         setSavingTarip(false);

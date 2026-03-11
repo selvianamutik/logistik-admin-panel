@@ -371,13 +371,13 @@ const seedData: DataStore = {
             _type: 'tireEvent',
             vehicleRef: 'veh-001',
             vehiclePlate: 'B 1234 XYZ',
-            date: '2026-02-23',
-            odometer: 45100,
-            tirePosition: 'FRONT_LEFT',
-            action: 'REPLACE_NEW',
-            cause: 'BLOWOUT',
+            posisi: 'FRONT_LEFT',
+            tireType: 'Tubeless',
+            tireBrand: 'Bridgestone',
+            tireSize: '195/70 R14',
+            installDate: '2026-02-23',
+            replaceDate: '2027-02-23',
             notes: 'Ban meletus di tol Cikampek KM 45. Diganti ban baru Bridgestone.',
-            relatedExpenseRef: 'exp-001'
         }
     ],
 

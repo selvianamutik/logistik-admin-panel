@@ -3,16 +3,16 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useToast, useApp } from '../../layout';
-import { ArrowLeft, Truck, FileText, Plus, Edit, Printer, Package, Eye } from 'lucide-react';
-import { formatDate, formatDateTime, formatCurrency, ORDER_STATUS_MAP, ITEM_STATUS_MAP, DO_STATUS_MAP, INVOICE_STATUS_MAP } from '@/lib/utils';
-import type { Order, OrderItem, DeliveryOrder, Invoice, TrackingLog, DeliveryOrderItem } from '@/lib/types';
+import { useToast } from '../../layout';
+import { ArrowLeft, Truck, FileText, Plus, Edit, Eye } from 'lucide-react';
+import { formatDate, formatCurrency, ORDER_STATUS_MAP, ITEM_STATUS_MAP, DO_STATUS_MAP, INVOICE_STATUS_MAP } from '@/lib/utils';
+import type { Order, OrderItem, DeliveryOrder, Invoice, DeliveryOrderItem, Vehicle } from '@/lib/types';
 
 export default function OrderDetailPage() {
     const params = useParams();
     const router = useRouter();
     const { addToast } = useToast();
-    const { user } = useApp();
+    const orderId = params.id as string;
     const [order, setOrder] = useState<Order | null>(null);
     const [items, setItems] = useState<OrderItem[]>([]);
     const [dos, setDos] = useState<DeliveryOrder[]>([]);
@@ -26,35 +26,54 @@ export default function OrderDetailPage() {
     const [doVehicle, setDoVehicle] = useState('');
     const [doNotes, setDoNotes] = useState('');
     const [selectedItems, setSelectedItems] = useState<string[]>([]);
-    const [vehicles, setVehicles] = useState<Array<{ _id: string; plateNumber: string }>>([]);
+    const [vehicles, setVehicles] = useState<Array<Pick<Vehicle, '_id' | 'plateNumber'>>>([]);
     // Invoice form
-    const [invDesc, setInvDesc] = useState('');
-    const [invPrice, setInvPrice] = useState(0);
     const [invItems, setInvItems] = useState<Array<{ description: string; qty: number; price: number; subtotal: number }>>([]);
 
     useEffect(() => {
-        const id = params.id as string;
-        Promise.all([
-            fetch(`/api/data?entity=orders&id=${id}`).then(r => r.json()),
-            fetch(`/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ orderRef: id }))}`).then(r => r.json()),
-            fetch(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ orderRef: id }))}`).then(r => r.json()),
-            fetch(`/api/data?entity=delivery-order-items`).then(r => r.json()),
-            fetch(`/api/data?entity=invoices&filter=${encodeURIComponent(JSON.stringify({ orderRef: id }))}`).then(r => r.json()),
-            fetch(`/api/data?entity=vehicles`).then(r => r.json()),
-        ]).then(([orderRes, itemsRes, dosRes, doItemsRes, invRes, vehRes]) => {
-            setOrder(orderRes.data);
-            setItems(itemsRes.data || []);
-            setDos(dosRes.data || []);
-            setDoItems(doItemsRes.data || []);
-            setInvoices(invRes.data || []);
-            setVehicles(vehRes.data || []);
-            setLoading(false);
-        }).catch(() => setLoading(false));
-    }, [params.id]);
+        const fetchEntity = async <T,>(url: string) => {
+            const res = await fetch(url);
+            const result = await res.json();
+            if (!res.ok) {
+                throw new Error(result.error || 'Gagal memuat detail order');
+            }
+            return result.data as T;
+        };
+
+        const loadOrderDetail = async () => {
+            setLoading(true);
+            try {
+                const [orderData, itemData, deliveryOrders, invoiceData, vehicleData] = await Promise.all([
+                    fetchEntity<Order | null>(`/api/data?entity=orders&id=${orderId}`),
+                    fetchEntity<OrderItem[]>(`/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`),
+                    fetchEntity<DeliveryOrder[]>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`),
+                    fetchEntity<Invoice[]>(`/api/data?entity=invoices&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`),
+                    fetchEntity<Array<Pick<Vehicle, '_id' | 'plateNumber'>>>(`/api/data?entity=vehicles&filter=${encodeURIComponent(JSON.stringify({ status: ['ACTIVE', 'IN_SERVICE'] }))}`),
+                ]);
+                const deliveryOrderIds = (deliveryOrders || []).map(item => item._id);
+                const deliveryOrderItems = deliveryOrderIds.length > 0
+                    ? await fetchEntity<DeliveryOrderItem[]>(`/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: deliveryOrderIds }))}`)
+                    : [];
+
+                setOrder(orderData);
+                setItems(itemData || []);
+                setDos(deliveryOrders || []);
+                setDoItems(deliveryOrderItems);
+                setInvoices(invoiceData || []);
+                setVehicles(vehicleData || []);
+            } catch (error) {
+                addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail order');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        void loadOrderDetail();
+    }, [addToast, orderId]);
 
     // Get already assigned item IDs
     const assignedItemIds = doItems
-        .filter(doi => dos.some(d => d._id === doi.deliveryOrderRef))
+        .filter(doi => dos.some(d => d._id === doi.deliveryOrderRef && d.status !== 'CANCELLED'))
         .map(doi => doi.orderItemRef);
 
     const availableItems = items.filter(i => !assignedItemIds.includes(i._id));
@@ -75,8 +94,10 @@ export default function OrderDetailPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     entity: 'delivery-orders',
+                    action: 'create-with-items',
                     data: {
                         orderRef: order?._id,
+                        itemRefs: selectedItems,
                         masterResi: order?.masterResi,
                         vehicleRef: doVehicle || undefined,
                         vehiclePlate: selVeh?.plateNumber || '',
@@ -89,25 +110,9 @@ export default function OrderDetailPage() {
                 }),
             });
             const doData = await doRes.json();
-            const doId = doData.data?._id || doData.id;
-
-            // Create DO items
-            for (const itemId of selectedItems) {
-                const item = items.find(i => i._id === itemId);
-                await fetch('/api/data', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        entity: 'delivery-order-items',
-                        data: {
-                            deliveryOrderRef: doId,
-                            orderItemRef: itemId,
-                            orderItemDescription: item?.description,
-                            orderItemQtyKoli: item?.qtyKoli,
-                            orderItemWeight: item?.weight,
-                        }
-                    }),
-                });
+            if (!doRes.ok) {
+                addToast('error', doData.error || 'Gagal membuat surat jalan');
+                return;
             }
 
             addToast('success', `Surat Jalan dibuat: ${doData.data?.doNumber || ''}`);
@@ -133,24 +138,21 @@ export default function OrderDetailPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     entity: 'invoices',
+                    action: 'create-with-items',
                     data: {
                         mode: 'ORDER', orderRef: order?._id,
                         customerRef: order?.customerRef, customerName: order?.customerName, masterResi: order?.masterResi,
                         issueDate: new Date().toISOString().split('T')[0],
                         dueDate: new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
                         totalAmount: total, notes: '',
+                        items: invItems,
                     }
                 }),
             });
             const invData = await invRes.json();
-            const invId = invData.data?._id || invData.id;
-
-            for (const item of invItems) {
-                await fetch('/api/data', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ entity: 'invoice-items', data: { invoiceRef: invId, ...item } }),
-                });
+            if (!invRes.ok) {
+                addToast('error', invData.error || 'Gagal membuat invoice');
+                return;
             }
 
             addToast('success', `Invoice dibuat: ${invData.data?.invoiceNumber || ''}`);
@@ -163,29 +165,30 @@ export default function OrderDetailPage() {
     };
 
     const updateItemStatus = async (itemId: string, newStatus: string) => {
-        await fetch('/api/data', {
+        const res = await fetch('/api/data', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ entity: 'order-items', action: 'update', data: { id: itemId, updates: { status: newStatus } } }),
         });
+        const result = await res.json();
+        if (!res.ok) {
+            addToast('error', result.error || 'Gagal memperbarui status item');
+            return;
+        }
         setItems(prev => prev.map(i => i._id === itemId ? { ...i, status: newStatus as OrderItem['status'] } : i));
 
         // Recalculate order status
         const updatedItems = items.map(i => i._id === itemId ? { ...i, status: newStatus } : i);
         const allDelivered = updatedItems.every(i => i.status === 'DELIVERED');
-        const anyDelivered = updatedItems.some(i => i.status === 'DELIVERED');
+        const anyInProgress = updatedItems.some(i => i.status === 'DELIVERED' || i.status === 'ON_DELIVERY');
         const anyHold = updatedItems.some(i => i.status === 'HOLD');
         let newOrderStatus = order?.status || 'OPEN';
         if (allDelivered) newOrderStatus = 'COMPLETE';
-        else if (anyDelivered) newOrderStatus = 'PARTIAL';
-        else if (anyHold && !anyDelivered) newOrderStatus = 'ON_HOLD';
+        else if (anyInProgress) newOrderStatus = 'PARTIAL';
+        else if (anyHold) newOrderStatus = 'ON_HOLD';
+        else newOrderStatus = 'OPEN';
 
         if (newOrderStatus !== order?.status) {
-            await fetch('/api/data', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ entity: 'orders', action: 'update', data: { id: order?._id, updates: { status: newOrderStatus } } }),
-            });
             setOrder(prev => prev ? { ...prev, status: newOrderStatus as Order['status'] } : prev);
         }
 

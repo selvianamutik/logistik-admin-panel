@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useToast } from '../../layout';
-import { Plus, Edit, Trash2, UserCog, Save, X, RefreshCw } from 'lucide-react';
+import { Plus, Edit, Save, X, RefreshCw } from 'lucide-react';
 import type { User } from '@/lib/types';
 
 export default function UsersPage() {
@@ -13,7 +13,24 @@ export default function UsersPage() {
     const [editUser, setEditUser] = useState<User | null>(null);
     const [form, setForm] = useState({ name: '', email: '', role: 'ADMIN' as 'OWNER' | 'ADMIN', password: '' });
 
-    useEffect(() => { fetch('/api/data?entity=users').then(r => r.json()).then(d => { setUsers(d.data || []); setLoading(false); }); }, []);
+    useEffect(() => {
+        const loadUsers = async () => {
+            try {
+                const res = await fetch('/api/data?entity=users');
+                const payload = await res.json();
+                if (!res.ok) {
+                    throw new Error(payload.error || 'Gagal memuat data user');
+                }
+                setUsers(payload.data || []);
+            } catch (error) {
+                addToast('error', error instanceof Error ? error.message : 'Gagal memuat data user');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        void loadUsers();
+    }, [addToast]);
 
     const openNew = () => { setEditUser(null); setForm({ name: '', email: '', role: 'ADMIN', password: '' }); setShowModal(true); };
     const openEdit = (u: User) => { setEditUser(u); setForm({ name: u.name, email: u.email, role: u.role, password: '' }); setShowModal(true); };
@@ -21,24 +38,51 @@ export default function UsersPage() {
     const handleSave = async () => {
         if (!form.name || !form.email) { addToast('error', 'Nama dan email wajib'); return; }
         if (!editUser && !form.password) { addToast('error', 'Password wajib untuk user baru'); return; }
+        if (form.password && form.password.length < 8) { addToast('error', 'Password minimal 8 karakter'); return; }
         if (editUser) {
             const updates: Record<string, unknown> = { name: form.name, email: form.email, role: form.role };
-            if (form.password) updates.passwordHash = form.password;
-            await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'users', action: 'update', data: { id: editUser._id, updates } }) });
-            setUsers(prev => prev.map(u => u._id === editUser._id ? { ...u, ...updates } as User : u));
+            if (form.password) updates.password = form.password;
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entity: 'users', action: 'update', data: { id: editUser._id, updates } }),
+            });
+            const payload = await res.json();
+            if (!res.ok) {
+                addToast('error', payload.error || 'Gagal memperbarui user');
+                return;
+            }
+            setUsers(prev => prev.map(u => u._id === editUser._id ? payload.data as User : u));
             addToast('success', 'User diperbarui');
         } else {
-            const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'users', data: { name: form.name, email: form.email, role: form.role, password: form.password } }) });
-            const d = await res.json();
-            setUsers(prev => [...prev, d.data]);
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entity: 'users', data: { name: form.name, email: form.email, role: form.role, password: form.password } }),
+            });
+            const payload = await res.json();
+            if (!res.ok) {
+                addToast('error', payload.error || 'Gagal menambah user');
+                return;
+            }
+            setUsers(prev => [...prev, payload.data as User]);
             addToast('success', 'User ditambahkan');
         }
         setShowModal(false);
     };
 
     const toggleActive = async (u: User) => {
-        await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'users', action: 'update', data: { id: u._id, updates: { active: !u.active } } }) });
-        setUsers(prev => prev.map(x => x._id === u._id ? { ...x, active: !x.active } : x));
+        const res = await fetch('/api/data', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ entity: 'users', action: 'update', data: { id: u._id, updates: { active: !u.active } } }),
+        });
+        const payload = await res.json();
+        if (!res.ok) {
+            addToast('error', payload.error || 'Gagal memperbarui status user');
+            return;
+        }
+        setUsers(prev => prev.map(x => x._id === u._id ? payload.data as User : x));
         addToast('success', `User ${!u.active ? 'diaktifkan' : 'dinonaktifkan'}`);
     };
 
@@ -80,7 +124,7 @@ export default function UsersPage() {
                                     <option value="ADMIN">ADMIN</option><option value="OWNER">OWNER</option>
                                 </select>
                             </div>
-                            <div className="form-group"><label className="form-label">{editUser ? 'Reset Password (kosongkan jika tidak diubah)' : 'Password *'}</label><input className="form-input" type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} /></div>
+                            <div className="form-group"><label className="form-label">{editUser ? 'Reset Password (kosongkan jika tidak diubah)' : 'Password *'}</label><input className="form-input" type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} /><div className="form-hint">Minimal 8 karakter</div></div>
                         </div>
                         <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowModal(false)}>Batal</button><button className="btn btn-primary" onClick={handleSave}><Save size={16} /> Simpan</button></div>
                     </div>

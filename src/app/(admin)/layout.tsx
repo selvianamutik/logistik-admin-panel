@@ -181,6 +181,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
 
     const menuGroups = getSidebarMenu(user.role);
+    const nonNavigableBreadcrumbs = new Set(['/fleet', '/settings']);
 
     // Breadcrumbs
     const pathParts = pathname.split('/').filter(Boolean);
@@ -196,7 +197,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             users: 'User', 'audit-logs': 'Audit Log', new: 'Baru', edit: 'Edit',
             tires: 'Ban', 'bank-accounts': 'Rekening Bank', borongan: 'Borongan Supir', 'driver-vouchers': 'Bon Supir',
         };
-        return { label: labels[part] || part, href, isLast: idx === pathParts.length - 1 };
+        return {
+            label: labels[part] || part,
+            href,
+            isLast: idx === pathParts.length - 1,
+            isNavigable: !nonNavigableBreadcrumbs.has(href),
+        };
     });
 
     return (
@@ -213,6 +219,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                     <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
                         <div className="sidebar-logo">
                             {company?.logoUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
                                 <img src={company.logoUrl} alt="" className="sidebar-logo-img" />
                             ) : (
                                 <div className="sidebar-logo-icon">{(company?.name || 'L').charAt(0)}</div>
@@ -280,7 +287,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                                     {breadcrumbs.map((crumb, idx) => (
                                         <React.Fragment key={crumb.href}>
                                             {idx > 0 && <span className="breadcrumbs-separator">/</span>}
-                                            {crumb.isLast ? (
+                                            {crumb.isLast || !crumb.isNavigable ? (
                                                 <span className="breadcrumbs-current">{crumb.label}</span>
                                             ) : (
                                                 <Link href={crumb.href}>{crumb.label}</Link>

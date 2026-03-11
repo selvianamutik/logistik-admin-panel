@@ -12,6 +12,7 @@ export default function CustomerDetailPage() {
     const params = useParams();
     const router = useRouter();
     const { addToast } = useToast();
+    const customerId = params.id as string;
     const [customer, setCustomer] = useState<Customer | null>(null);
     const [orders, setOrders] = useState<Order[]>([]);
     const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -20,29 +21,58 @@ export default function CustomerDetailPage() {
     const [form, setForm] = useState({ name: '', address: '', contactPerson: '', phone: '', email: '', npwp: '' });
 
     useEffect(() => {
-        const id = params.id as string;
-        Promise.all([
-            fetch(`/api/data?entity=customers&id=${id}`).then(r => r.json()),
-            fetch('/api/data?entity=orders').then(r => r.json()),
-            fetch('/api/data?entity=invoices').then(r => r.json()),
-        ]).then(([c, o, i]) => {
-            const cust = c.data as Customer;
-            setCustomer(cust);
-            if (cust) {
-                setForm({ name: cust.name, address: cust.address, contactPerson: cust.contactPerson, phone: cust.phone, email: cust.email, npwp: cust.npwp || '' });
-                setOrders((o.data || []).filter((ord: Order) => ord.customerRef === id));
-                setInvoices((i.data || []).filter((inv: Invoice) => inv.customerRef === id));
+        const fetchEntity = async <T,>(url: string) => {
+            const res = await fetch(url);
+            const result = await res.json();
+            if (!res.ok) {
+                throw new Error(result.error || 'Gagal memuat data customer');
             }
-            setLoading(false);
-        }).catch(() => setLoading(false));
-    }, [params.id]);
+            return result.data as T;
+        };
+
+        const loadCustomerDetail = async () => {
+            setLoading(true);
+            try {
+                const [cust, customerOrders, customerInvoices] = await Promise.all([
+                    fetchEntity<Customer | null>(`/api/data?entity=customers&id=${customerId}`),
+                    fetchEntity<Order[]>(`/api/data?entity=orders&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`),
+                    fetchEntity<Invoice[]>(`/api/data?entity=invoices&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`),
+                ]);
+
+                setCustomer(cust);
+                setOrders(customerOrders || []);
+                setInvoices(customerInvoices || []);
+                if (cust) {
+                    setForm({
+                        name: cust.name,
+                        address: cust.address,
+                        contactPerson: cust.contactPerson,
+                        phone: cust.phone,
+                        email: cust.email,
+                        npwp: cust.npwp || '',
+                    });
+                }
+            } catch (error) {
+                addToast('error', error instanceof Error ? error.message : 'Gagal memuat data customer');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        void loadCustomerDetail();
+    }, [addToast, customerId]);
 
     const handleSave = async () => {
         try {
-            await fetch('/api/data', {
+            const res = await fetch('/api/data', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ entity: 'customers', action: 'update', data: { id: params.id, updates: form } }),
+                body: JSON.stringify({ entity: 'customers', action: 'update', data: { id: customerId, updates: form } }),
             });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menyimpan perubahan customer');
+                return;
+            }
             setCustomer(prev => prev ? { ...prev, ...form } : prev);
             setEditing(false);
             addToast('success', 'Customer berhasil diperbarui');
