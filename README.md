@@ -18,7 +18,7 @@ Sistem manajemen logistik berbasis web. Dibangun dengan **Next.js 16**, **Sanity
 | Bon Supir | `/driver-vouchers` | Uang jalan / bon supir |
 | Pengeluaran | `/expenses` | Pencatatan biaya operasional |
 | Kategori Biaya | `/expense-categories` | Kategori pengeluaran |
-| Rekening Bank | `/bank-accounts` | Manajemen rekening |
+| Rekening & Kas | `/bank-accounts` | Manajemen rekening bank dan kas tunai |
 | Laporan | `/reports` | Laba rugi & arus kas |
 | Fleet | `/fleet/*` | Kendaraan, supir, maintenance, ban, insiden |
 | Pengaturan | `/settings/*` | Profil, perusahaan, user, audit log |
@@ -138,10 +138,10 @@ Catatan terbaru:
    └─ Pendapatan: dari semua pembayaran masuk (payment)
    └─ Pengeluaran: dari semua expense (termasuk upah borongan)
    └─ Laba Bersih = Pendapatan - Pengeluaran
-   └─ Outstanding: gabungan Invoice lama + Nota Ongkos baru
+   └─ Outstanding aktif: Nota Ongkos yang belum lunas
 
 💳 Arus Kas (/reports → tab Arus Kas)
-   └─ Per rekening bank: masuk & keluar
+   └─ Per rekening bank dan kas tunai: masuk & keluar
    └─ Semua transaksi kronologis
 ```
 
@@ -191,7 +191,7 @@ Catatan terbaru:
 | Laporan | ✅ | ✅ | ❌ |
 | Audit Log | ✅ | ❌ | ❌ |
 | User Management | ✅ | ❌ | ❌ |
-| Rekening Bank | ✅ | ✅ | ❌ |
+| Rekening & Kas | ✅ | ✅ | ❌ |
 
 ---
 

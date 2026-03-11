@@ -84,6 +84,9 @@ Kalau preview memakai env/data yang sama dengan production:
 - Detail order sekarang menampilkan `Nota Ongkos` yang benar-benar terkait ke DO order itu.
 - Tombol `Buat Invoice` legacy di detail order dihapus dari alur aktif.
   Sekarang user diarahkan ke flow nota yang benar.
+- Laporan owner sekarang menghitung tagihan aktif dari `Nota Ongkos`, bukan lagi mencampur invoice legacy.
+- Kalau invoice legacy masih ada, laporan menampilkannya sebagai catatan historis, bukan angka operasional aktif.
+- Jalur write API untuk `invoice` legacy sekarang dibekukan agar tidak ada dual-billing baru.
 - Akun sistem `Kas Tunai` sekarang tersedia otomatis dan bisa dipakai lintas modul.
 - Pembayaran `CASH` tanpa rekening pilihan sekarang otomatis masuk ke `Kas Tunai`.
 - Pembayaran borongan `CASH` tanpa rekening pilihan sekarang otomatis masuk ke `Kas Tunai`.
@@ -113,6 +116,6 @@ angka yang benar, pengingat yang jelas, dan alur yang tidak menipu.
 ## 5. Prioritas berikutnya yang paling masuk akal
 
 1. Pisahkan env preview dari production.
-2. Bersihkan sisa jejak legacy `invoice` yang masih tidak dipakai user-facing.
+2. Putuskan apakah histori `invoice` legacy akan dimigrasikan penuh ke `freightNota` atau cukup dibiarkan read-only.
 3. Tambahkan smoke test browser untuk flow owner yang paling penting.
 4. Pertimbangkan pagination/report optimization kalau volume data mulai besar.

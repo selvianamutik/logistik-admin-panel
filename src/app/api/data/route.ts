@@ -116,6 +116,7 @@ const DO_STATUS_TRANSITIONS: Record<string, string[]> = {
 
 const OWNER_ONLY_READ_ENTITIES = new Set(['audit-logs']);
 const OWNER_ONLY_MUTATION_ENTITIES = new Set(['company', 'audit-logs', 'bank-accounts', 'bank-transactions', 'services', 'expense-categories']);
+const LEGACY_READ_ONLY_ENTITIES = new Set(['invoices', 'invoice-items']);
 const CASH_ACCOUNT_SYSTEM_KEY = 'cash-on-hand';
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const VEHICLE_STATUS_VALUES = new Set(['ACTIVE', 'IN_SERVICE', 'OUT_OF_SERVICE', 'SOLD']);
@@ -2728,6 +2729,13 @@ export async function POST(request: Request) {
 
         if (!validateEntity(entity)) {
             return NextResponse.json({ error: 'Invalid entity type' }, { status: 400 });
+        }
+
+        if (LEGACY_READ_ONLY_ENTITIES.has(entity)) {
+            return NextResponse.json(
+                { error: 'Invoice legacy sudah dibekukan. Gunakan Nota Ongkos untuk workflow tagihan aktif.' },
+                { status: 409 }
+            );
         }
 
         if (entity === 'users') {

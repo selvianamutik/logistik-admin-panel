@@ -56,6 +56,18 @@ function printSection(title, findings) {
     }
 }
 
+function printInfoSection(title, notes) {
+    console.log(`\n${title}`);
+    if (notes.length === 0) {
+        console.log('  Tidak ada catatan');
+        return;
+    }
+
+    for (const note of notes) {
+        console.log(`  - ${note}`);
+    }
+}
+
 async function main() {
     const client = getClient();
     const data = await client.fetch(`{
@@ -78,7 +90,7 @@ async function main() {
         }
     }`);
 
-    const invoiceFindings = [];
+    const receivableFindings = [];
     const paymentGroups = groupBy(data.payments, payment => payment.invoiceRef || '');
     const receivableDocs = [
         ...data.invoices.map(item => ({ ...item, label: item.invoiceNumber || item._id, kind: 'Invoice' })),
@@ -88,21 +100,35 @@ async function main() {
 
     for (const payment of data.payments) {
         if (!receivableMap.has(payment.invoiceRef)) {
-            invoiceFindings.push(`Payment ${payment._id} mengarah ke tagihan yang tidak ada (${payment.invoiceRef || '-'})`);
+            receivableFindings.push(`Payment ${payment._id} mengarah ke tagihan yang tidak ada (${payment.invoiceRef || '-'})`);
         }
     }
 
-    for (const doc of receivableDocs) {
+    for (const doc of data.freightNotas.map(item => ({ ...item, label: item.notaNumber || item._id }))) {
         const docPayments = paymentGroups.get(doc._id) || [];
         const totalPaid = sum(docPayments, item => item.amount || 0);
         const expectedStatus = totalPaid >= (doc.totalAmount || 0) ? 'PAID' : totalPaid > 0 ? 'PARTIAL' : 'UNPAID';
 
         if (totalPaid > (doc.totalAmount || 0)) {
-            invoiceFindings.push(`${doc.kind} ${doc.label} overpaid ${fmtCurrency(totalPaid)} dari total ${fmtCurrency(doc.totalAmount)}`);
+            receivableFindings.push(`Nota ${doc.label} overpaid ${fmtCurrency(totalPaid)} dari total ${fmtCurrency(doc.totalAmount)}`);
         }
         if (doc.status !== expectedStatus) {
-            invoiceFindings.push(`${doc.kind} ${doc.label} status ${doc.status} tidak cocok dengan pembayaran (${expectedStatus})`);
+            receivableFindings.push(`Nota ${doc.label} status ${doc.status} tidak cocok dengan pembayaran (${expectedStatus})`);
         }
+    }
+
+    const legacyInvoiceNotes = [];
+    if (data.invoices.length > 0) {
+        const outstandingLegacy = sum(
+            data.invoices.filter(item => item.status !== 'PAID'),
+            item => item.totalAmount || 0
+        );
+        legacyInvoiceNotes.push(
+            `${data.invoices.length} invoice legacy masih ada di dataset dengan outstanding ${fmtCurrency(outstandingLegacy)}`
+        );
+        legacyInvoiceNotes.push(
+            'Invoice legacy tidak dihitung sebagai tagihan aktif; workflow billing aktif memakai Freight Nota.'
+        );
     }
 
     const boronganFindings = [];
@@ -189,7 +215,7 @@ async function main() {
     }
 
     const allSections = [
-        ['Invoice & Nota', invoiceFindings],
+        ['Tagihan Aktif (Nota)', receivableFindings],
         ['Borongan', boronganFindings],
         ['Bon Supir', voucherFindings],
         ['Expense', expenseFindings],
@@ -205,6 +231,8 @@ async function main() {
     for (const [title, findings] of allSections) {
         printSection(title, findings);
     }
+
+    printInfoSection('Legacy Invoice (Info)', legacyInvoiceNotes);
 
     console.log(`\nTotal temuan: ${totalFindings}`);
     process.exitCode = totalFindings > 0 ? 1 : 0;

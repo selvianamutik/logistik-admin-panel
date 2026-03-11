@@ -34,7 +34,6 @@ export default function CompanyPage() {
 
     const u = (field: string, value: unknown) => setData(prev => prev ? { ...prev, [field]: value } : prev);
     const uNum = (field: string, value: unknown) => setData(prev => prev ? { ...prev, numberingSettings: { ...(prev.numberingSettings || {}), [field]: value } } as CompanyProfile : prev);
-    const uInv = (field: string, value: unknown) => setData(prev => prev ? { ...prev, invoiceSettings: { ...(prev.invoiceSettings || {}), [field]: value } } as CompanyProfile : prev);
 
     // Live theme preview — apply CSS vars instantly
     const previewTheme = (hex: string) => {
@@ -77,7 +76,7 @@ export default function CompanyPage() {
 
     return (
         <div>
-            <div className="page-header"><div className="page-header-left"><h1 className="page-title">Pengaturan Perusahaan</h1><p className="page-subtitle">Kelola profil dan branding perusahaan</p></div>
+            <div className="page-header"><div className="page-header-left"><h1 className="page-title">Pengaturan Perusahaan</h1><p className="page-subtitle">Kelola profil, branding, dan dokumen aktif perusahaan</p></div>
                 <div className="page-actions"><button className="btn btn-primary" onClick={handleSave} disabled={saving}><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}</button></div></div>
 
             <div className="detail-grid">
@@ -129,7 +128,7 @@ export default function CompanyPage() {
                                 <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>atau URL:</span>
                                 <input className="form-input" value={data.logoUrl?.startsWith('data:') ? '' : (data.logoUrl || '')} onChange={e => u('logoUrl', e.target.value)} placeholder="https://example.com/logo.png" style={{ fontSize: '0.8rem' }} />
                             </div>
-                            <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Logo tampil di sidebar, cetak, dan export (Invoice, PDF, Excel)</p>
+                            <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Logo tampil di sidebar, cetak, dan export dokumen aktif (PDF, Excel).</p>
                         </div>
                         <div className="form-section-title">🎨 Tema Warna Aplikasi</div>
                         <div className="form-group">
@@ -179,6 +178,16 @@ export default function CompanyPage() {
 
                 <div>
                     <div className="card mb-6">
+                        <div className="card-header"><span className="card-header-title">Workflow Tagihan Aktif</span></div>
+                        <div className="card-body">
+                            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                                Tagihan operasional yang aktif di aplikasi ini adalah <strong>Nota Ongkos</strong> pada modul <code>/invoices</code>.
+                                Pengaturan invoice legacy tetap disimpan untuk kompatibilitas data lama, tetapi tidak lagi dipakai di workflow harian.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="card mb-6">
                         <div className="card-header"><span className="card-header-title">Penomoran Dokumen</span></div>
                         <div className="card-body">
                             <div className="form-row">
@@ -186,32 +195,13 @@ export default function CompanyPage() {
                                 <div className="form-group"><label className="form-label">Prefix DO</label><input className="form-input" value={data.numberingSettings.doPrefix} onChange={e => uNum('doPrefix', e.target.value)} /></div>
                             </div>
                             <div className="form-row">
-                                <div className="form-group"><label className="form-label">Prefix Invoice</label><input className="form-input" value={data.numberingSettings.invoicePrefix} onChange={e => uNum('invoicePrefix', e.target.value)} /></div>
-                                <div className="form-group"><label className="form-label">Prefix Insiden</label><input className="form-input" value={data.numberingSettings.incidentPrefix} onChange={e => uNum('incidentPrefix', e.target.value)} /></div>
-                            </div>
-                            <div className="form-row">
                                 <div className="form-group"><label className="form-label">Prefix Nota</label><input className="form-input" value={data.numberingSettings.notaPrefix || 'NOTA-'} onChange={e => uNum('notaPrefix', e.target.value)} /></div>
                                 <div className="form-group"><label className="form-label">Prefix Borongan</label><input className="form-input" value={data.numberingSettings.boronganPrefix || 'BRG-'} onChange={e => uNum('boronganPrefix', e.target.value)} /></div>
                             </div>
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Prefix Bon</label><input className="form-input" value={data.numberingSettings.bonPrefix || 'BON-'} onChange={e => uNum('bonPrefix', e.target.value)} /></div>
+                                <div className="form-group"><label className="form-label">Prefix Insiden</label><input className="form-input" value={data.numberingSettings.incidentPrefix} onChange={e => uNum('incidentPrefix', e.target.value)} /></div>
                             </div>
-                        </div>
-                    </div>
-
-                    <div className="card">
-                        <div className="card-header"><span className="card-header-title">Pengaturan Invoice</span></div>
-                        <div className="card-body">
-                            <div className="form-row">
-                                <div className="form-group"><label className="form-label">Termin Default (hari)</label><input className="form-input" type="number" value={data.invoiceSettings.defaultTermDays} onChange={e => uInv('defaultTermDays', Number(e.target.value))} /></div>
-                                <div className="form-group"><label className="form-label">Due Date (+N hari)</label><input className="form-input" type="number" value={data.invoiceSettings.dueDateDays} onChange={e => uInv('dueDateDays', Number(e.target.value))} /></div>
-                            </div>
-                            <div className="form-group"><label className="form-label">Mode Invoice Default</label>
-                                <select className="form-select" value={data.invoiceSettings.invoiceMode} onChange={e => uInv('invoiceMode', e.target.value)}>
-                                    <option value="ORDER">Per Order</option><option value="DO">Per DO</option>
-                                </select>
-                            </div>
-                            <div className="form-group"><label className="form-label">Footer Note Invoice</label><textarea className="form-textarea" rows={3} value={data.invoiceSettings.footerNote} onChange={e => uInv('footerNote', e.target.value)} /></div>
                         </div>
                     </div>
                 </div>

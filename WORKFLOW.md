@@ -22,7 +22,7 @@ Fokusnya bukan teori bisnis umum, tetapi perilaku aplikasi yang sekarang benar-b
 - `Expense`
   Pencatatan pengeluaran operasional.
 - `Bank Transaction`
-  Mutasi rekening bank.
+  Mutasi rekening bank dan kas.
 
 ## 2. Prinsip akuntansi yang dipakai aplikasi
 
@@ -247,7 +247,11 @@ Sumber:
 - semua `payment`
 - semua `expense`
 
-Jadi transaksi tunai tetap masuk ke tab ini.
+Artinya:
+
+- pembayaran customer masuk sebagai pendapatan,
+- pengeluaran operasional masuk sebagai biaya,
+- transaksi tunai tetap masuk ke tab ini.
 
 ### 9.2 Tab `Arus Kas`
 
@@ -255,99 +259,89 @@ Sumber:
 
 - semua `bankTransaction`
 
-Jadi tab ini bukan laporan kas umum, melainkan mutasi rekening bank.
-
 Sekarang tab ini mencakup:
 
 - rekening bank,
-- akun `Kas Tunai`.
+- akun sistem `Kas Tunai`.
 
-Ini perilaku sistem saat ini.
+Jadi arus kas saat ini bukan hanya mutasi bank, tetapi mutasi bank + kas yang memang diposting ke ledger.
+
+### 9.3 Ringkasan tagihan yang aktif
+
+Untuk owner, ringkasan tagihan aktif sekarang dihitung dari:
+
+- `Freight Nota / Nota Ongkos`
+
+Bukan dari `invoice` legacy.
+
+Kalau masih ada data `invoice` lama di dataset:
+
+- itu hanya referensi historis,
+- tidak lagi dihitung sebagai tagihan operasional aktif di dashboard dan laporan owner.
 
 ## 10. Jawaban atas kebingungan "kalau tunai kenapa tidak berkurang / tidak berubah?"
 
-Jawabannya tergantung yang kamu lihat.
+Jawabannya tergantung dokumen apa yang sedang dilihat.
 
 ### 10.1 Kalau yang dimaksud `sisa tagihan nota`
 
-Seharusnya tetap berkurang.
-Karena payment tunai tetap masuk ke tabel `payment` dan status tagihan tetap disinkronkan.
+Harusnya berkurang.
 
-### 10.2 Kalau yang dimaksud `saldo rekening` atau `tab arus kas`
+Karena pembayaran tunai tetap:
 
-Memang tidak berubah bila pembayaran dibuat sebagai tunai tanpa rekening.
-Alasannya:
+- membuat `payment`,
+- membuat `income`,
+- menyinkronkan status nota.
 
-- sistem hanya mengurangi / menambah saldo rekening lewat `bankTransaction`,
-- `bankTransaction` hanya dibuat jika transaksi diarahkan ke rekening bank.
+### 10.2 Kalau yang dimaksud `saldo kas / arus kas`
+
+Sekarang juga harus berubah.
+
+Karena untuk metode `CASH`:
+
+- jika user tidak memilih rekening,
+- sistem otomatis memakai akun `Kas Tunai`,
+- sistem membuat `bankTransaction`,
+- saldo `Kas Tunai` ikut bergerak.
 
 ### 10.3 Jadi tunai tercatat di mana?
 
 Saat ini tunai tercatat sebagai:
 
-- `payment` + `income` untuk penerimaan customer,
+- `payment` + `income` untuk pembayaran customer,
 - `expense` untuk pengeluaran,
-
-tetapi bukan sebagai mutasi rekening bank kalau tanpa `bankAccountRef`.
+- `bankTransaction` pada akun `Kas Tunai` bila tidak diarahkan ke rekening bank tertentu.
 
 ## 11. Keterbatasan desain saat ini
 
-Sistem sekarang belum punya ledger `Kas Tunai` terpisah.
+Yang belum ada sekarang bukan ledger kas, tetapi rincian kas yang lebih detail.
 
-Akibatnya:
+Contohnya belum ada:
 
-- uang tunai bisa tercatat di laba rugi,
-- tetapi tidak punya saldo kas fisik yang bisa dipantau seperti rekening.
+- lebih dari satu kas fisik,
+- petty cash per cabang,
+- approval atau closing kas harian,
+- rekonsiliasi setoran kas ke bank secara formal.
 
-## 12. Kalau mau perilaku tunai lebih jelas, ada 2 opsi desain
+Saat ini sistem baru punya satu akun sistem:
 
-### Opsi A - Tetap seperti sekarang
+- `Kas Tunai`
 
-Gunakan:
+Itu sudah cukup untuk operasional dasar, tapi belum cocok kalau nanti perusahaan butuh kontrol kas multi-lokasi.
 
-- `TRANSFER` bila memang mempengaruhi rekening bank,
-- `CASH` bila hanya mau mencatat pendapatan / pengeluaran tanpa mempengaruhi bank.
+## 12. Rekomendasi operasional sekarang
 
-Kelebihan:
+- Jika uang masuk atau keluar lewat rekening, pilih rekening yang sesuai.
+- Jika transaksi terjadi tunai, gunakan metode `CASH`.
+- Bila field rekening dibiarkan kosong pada transaksi tunai, sistem otomatis memakai `Kas Tunai`.
+- Gunakan tab `Laba Rugi` untuk melihat performa usaha.
+- Gunakan tab `Arus Kas` untuk melihat mutasi rekening bank dan kas tunai yang benar-benar tercatat.
 
-- sederhana,
-- tidak perlu modul tambahan.
-
-Kekurangan:
-
-- tidak ada saldo kas fisik.
-
-### Opsi B - Tambah `Kas` sebagai akun resmi
-
-Contoh:
-
-- buat akun pseudo seperti `Kas Kantor`,
-- perlakukan seperti rekening pada level laporan,
-- semua tunai diarahkan ke akun kas itu.
-
-Kelebihan:
-
-- tunai punya saldo,
-- arus kas menjadi lengkap.
-
-Kekurangan:
-
-- perlu perubahan model data dan laporan.
-
-## 13. Rekomendasi praktis untuk operasional sekarang
-
-- Kalau uang benar-benar masuk rekening, pilih `TRANSFER` dan isi rekening.
-- Kalau uang diterima tunai dan tidak disetorkan ke bank, pilih `CASH` dan biarkan rekening kosong.
-- Jangan berharap `Arus Kas` bank berubah untuk transaksi tunai tanpa rekening.
-- Untuk audit internal, baca:
-  - `Laba Rugi` untuk performa pendapatan/pengeluaran
-  - `Arus Kas` untuk mutasi rekening bank
-
-## 14. Istilah yang perlu dibedakan
+## 13. Istilah yang perlu dibedakan
 
 - `Invoice` lama
-  Dokumen legacy yang masih ada untuk kompatibilitas data lama.
+  Dokumen legacy yang masih disimpan untuk kompatibilitas histori.
 - `Freight Nota / Nota Ongkos`
   Dokumen tagihan ongkos aktif yang sekarang dipakai di modul `/invoices`.
 
-Kalau ada data lama dengan prefix `INV-...`, itu bukan format nota ongkos baru.
+Kalau ada data lama dengan prefix `INV-...`, itu adalah histori domain lama, bukan tagihan aktif baru.

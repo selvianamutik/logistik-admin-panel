@@ -136,22 +136,18 @@ export default function ReportsPage() {
     0,
   );
   const netProfit = totalRevenue - totalExpense;
-  const totalInvoiced = [
-    ...invoices
-      .filter((item) => inPeriod(item.issueDate))
-      .map((item) => item.totalAmount),
-    ...freightNotas
-      .filter((item) => inPeriod(item.issueDate))
-      .map((item) => item.totalAmount),
-  ].reduce((sum, amount) => sum + amount, 0);
-  const totalOutstanding = [
-    ...invoices
-      .filter((item) => item.status !== "PAID" && inPeriod(item.issueDate))
-      .map((item) => item.totalAmount),
-    ...freightNotas
-      .filter((item) => item.status !== "PAID" && inPeriod(item.issueDate))
-      .map((item) => item.totalAmount),
-  ].reduce((sum, amount) => sum + amount, 0);
+  const legacyInvoicesInPeriod = invoices.filter((item) =>
+    inPeriod(item.issueDate),
+  );
+  const legacyInvoiceOutstanding = legacyInvoicesInPeriod
+    .filter((item) => item.status !== "PAID")
+    .reduce((sum, item) => sum + item.totalAmount, 0);
+  const totalNotaIssued = freightNotas
+    .filter((item) => inPeriod(item.issueDate))
+    .reduce((sum, item) => sum + item.totalAmount, 0);
+  const totalNotaOutstanding = freightNotas
+    .filter((item) => item.status !== "PAID" && inPeriod(item.issueDate))
+    .reduce((sum, item) => sum + item.totalAmount, 0);
   const openDriverVouchers = driverVouchers
     .filter((item) => item.status !== "SETTLED")
     .sort((a, b) => b.issuedDate.localeCompare(a.issuedDate));
@@ -218,7 +214,7 @@ export default function ReportsPage() {
         ...filteredPayments.map((item) => ({
           tipe: "Pendapatan",
           tanggal: item.date,
-          deskripsi: item.note || "Pembayaran Nota",
+          deskripsi: item.note || "Pembayaran customer",
           jumlah: item.amount,
         })),
         ...filteredExpenses.map((item) => ({
@@ -274,7 +270,7 @@ export default function ReportsPage() {
       subtitle: periodLabel,
       company,
       bodyHtml: isPnl
-        ? `<div class="stats-row"><div class="stat-box"><div class="stat-label">Pendapatan</div><div class="stat-value s">${fmtN(totalRevenue)}</div></div><div class="stat-box"><div class="stat-label">Pengeluaran</div><div class="stat-value d">${fmtN(totalExpense)}</div></div><div class="stat-box"><div class="stat-label">Laba/Rugi Bersih</div><div class="stat-value ${netProfit >= 0 ? "s" : "d"}">${netProfit >= 0 ? "+" : ""}${fmtN(netProfit)}</div></div></div><table><thead><tr><th>Kategori</th><th class="r">Jumlah</th><th class="r">%</th></tr></thead><tbody><tr class="b"><td>PENDAPATAN</td><td class="r s">${fmtN(totalRevenue)}</td><td class="r">100%</td></tr><tr><td style="padding-left:1.5rem">Pembayaran Nota (${filteredPayments.length}x)</td><td class="r">${fmtN(totalRevenue)}</td><td class="r">100%</td></tr><tr class="b" style="border-top:2px solid #e2e8f0"><td>PENGELUARAN</td><td class="r d">${fmtN(totalExpense)}</td><td class="r">100%</td></tr>${sortedCategories.map(([cat, amt]) => `<tr><td style="padding-left:1.5rem">${cat}</td><td class="r">${fmtN(amt)}</td><td class="r">${totalExpense > 0 ? ((amt / totalExpense) * 100).toFixed(1) : 0}%</td></tr>`).join("")}<tr class="b" style="border-top:2px solid #1e293b"><td>LABA / RUGI BERSIH</td><td class="r ${netProfit >= 0 ? "s" : "d"}">${netProfit >= 0 ? "+" : ""}${fmtN(netProfit)}</td><td></td></tr></tbody></table>`
+        ? `<div class="stats-row"><div class="stat-box"><div class="stat-label">Pendapatan</div><div class="stat-value s">${fmtN(totalRevenue)}</div></div><div class="stat-box"><div class="stat-label">Pengeluaran</div><div class="stat-value d">${fmtN(totalExpense)}</div></div><div class="stat-box"><div class="stat-label">Laba/Rugi Bersih</div><div class="stat-value ${netProfit >= 0 ? "s" : "d"}">${netProfit >= 0 ? "+" : ""}${fmtN(netProfit)}</div></div></div><table><thead><tr><th>Kategori</th><th class="r">Jumlah</th><th class="r">%</th></tr></thead><tbody><tr class="b"><td>PENDAPATAN</td><td class="r s">${fmtN(totalRevenue)}</td><td class="r">100%</td></tr><tr><td style="padding-left:1.5rem">Pembayaran customer (${filteredPayments.length}x)</td><td class="r">${fmtN(totalRevenue)}</td><td class="r">100%</td></tr><tr class="b" style="border-top:2px solid #e2e8f0"><td>PENGELUARAN</td><td class="r d">${fmtN(totalExpense)}</td><td class="r">100%</td></tr>${sortedCategories.map(([cat, amt]) => `<tr><td style="padding-left:1.5rem">${cat}</td><td class="r">${fmtN(amt)}</td><td class="r">${totalExpense > 0 ? ((amt / totalExpense) * 100).toFixed(1) : 0}%</td></tr>`).join("")}<tr class="b" style="border-top:2px solid #1e293b"><td>LABA / RUGI BERSIH</td><td class="r ${netProfit >= 0 ? "s" : "d"}">${netProfit >= 0 ? "+" : ""}${fmtN(netProfit)}</td><td></td></tr></tbody></table>`
         : `<div class="stats-row">${Object.entries(cashFlowByBank)
             .map(
               ([, value]) =>
@@ -309,7 +305,7 @@ export default function ReportsPage() {
       <div className="page-header">
         <div className="page-header-left">
           <h1 className="page-title">Laporan Keuangan</h1>
-          <p className="page-subtitle">Laba rugi dan arus kas per periode</p>
+          <p className="page-subtitle">Laba rugi, arus kas, dan tagihan aktif per periode</p>
         </div>
         <div className="page-actions" style={{ flexWrap: "wrap" }}>
           <button
@@ -429,6 +425,32 @@ export default function ReportsPage() {
 
       {tab === "pnl" ? (
         <div>
+          {invoices.length > 0 && (
+            <div
+              className="card"
+              style={{
+                marginBottom: "1rem",
+                borderColor: "var(--color-warning)",
+                background: "var(--color-warning-soft, #fff7ed)",
+              }}
+            >
+              <div className="card-body" style={{ padding: "0.9rem 1rem" }}>
+                <div style={{ fontWeight: 700, marginBottom: "0.25rem" }}>
+                  Catatan Legacy Invoice
+                </div>
+                <div
+                  style={{ fontSize: "0.82rem", color: "var(--color-gray-700)" }}
+                >
+                  Ada {invoices.length} invoice legacy di dataset. Ringkasan
+                  tagihan pada halaman ini hanya menghitung{" "}
+                  <strong>Nota Ongkos aktif</strong>. Dalam periode ini ada{" "}
+                  {legacyInvoicesInPeriod.length} invoice legacy dengan
+                  outstanding {formatCurrency(legacyInvoiceOutstanding)} untuk
+                  referensi historis.
+                </div>
+              </div>
+            </div>
+          )}
           <div
             style={{
               display: "grid",
@@ -460,9 +482,9 @@ export default function ReportsPage() {
                     : "var(--color-danger)",
               },
               {
-                label: "Tagihan Outstanding",
-                value: formatCurrency(totalOutstanding),
-                note: `Total terbit ${formatCurrency(totalInvoiced)}`,
+                label: "Nota Outstanding",
+                value: formatCurrency(totalNotaOutstanding),
+                note: `Nota terbit ${formatCurrency(totalNotaIssued)}`,
                 color: "var(--color-warning)",
               },
               {
@@ -708,7 +730,7 @@ export default function ReportsPage() {
                   <div
                     style={{ display: "flex", justifyContent: "space-between" }}
                   >
-                    <span>Pembayaran Nota ({filteredPayments.length}x)</span>
+                    <span>Pembayaran Customer ({filteredPayments.length}x)</span>
                     <span style={{ fontWeight: 600 }}>
                       {formatCurrency(totalRevenue)}
                     </span>
