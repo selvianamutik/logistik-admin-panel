@@ -6,20 +6,40 @@ import { Plus, Search, Wallet, Save, X, FileDown, Printer } from 'lucide-react';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { exportExpenses } from '@/lib/export';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
-import type { Expense, ExpenseCategory } from '@/lib/types';
+import type { BankAccount, Expense, ExpenseCategory } from '@/lib/types';
 
 export default function ExpensesPage() {
     const { addToast } = useToast();
     const { user } = useApp();
     const [items, setItems] = useState<Expense[]>([]);
     const [categories, setCategories] = useState<ExpenseCategory[]>([]);
+    const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [showModal, setShowModal] = useState(false);
-    const [form, setForm] = useState({ categoryRef: '', date: new Date().toISOString().split('T')[0], amount: 0, note: '', description: '', privacyLevel: 'internal' as 'internal' | 'ownerOnly' });
+    const [saving, setSaving] = useState(false);
+    const [form, setForm] = useState({
+        categoryRef: '',
+        date: new Date().toISOString().split('T')[0],
+        amount: 0,
+        note: '',
+        description: '',
+        privacyLevel: 'internal' as 'internal' | 'ownerOnly',
+        bankAccountRef: '',
+        bankAccountName: '',
+    });
 
     useEffect(() => {
-        Promise.all([fetch('/api/data?entity=expenses').then(r => r.json()), fetch('/api/data?entity=expense-categories').then(r => r.json())]).then(([e, c]) => { setItems(e.data || []); setCategories(c.data || []); setLoading(false); });
+        Promise.all([
+            fetch('/api/data?entity=expenses').then(r => r.json()),
+            fetch('/api/data?entity=expense-categories').then(r => r.json()),
+            fetch('/api/data?entity=bank-accounts').then(r => r.json()),
+        ]).then(([e, c, b]) => {
+            setItems(e.data || []);
+            setCategories(c.data || []);
+            setBankAccounts((b.data || []).filter((account: BankAccount) => account.active !== false));
+            setLoading(false);
+        });
     }, []);
 
     const isOwner = user?.role === 'OWNER';
@@ -28,16 +48,30 @@ export default function ExpensesPage() {
     const handleSave = async () => {
         if (!form.categoryRef || !form.amount) { addToast('error', 'Kategori dan nominal wajib'); return; }
         const cat = categories.find(c => c._id === form.categoryRef);
-        const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'expenses', data: { ...form, categoryName: cat?.name || '' } }) });
-        const d = await res.json();
-        if (!res.ok) {
-            addToast('error', d.error || 'Gagal mencatat pengeluaran');
-            return;
+        setSaving(true);
+        try {
+            const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'expenses', data: { ...form, categoryName: cat?.name || '' } }) });
+            const d = await res.json();
+            if (!res.ok) {
+                addToast('error', d.error || 'Gagal mencatat pengeluaran');
+                return;
+            }
+            setItems(prev => [...prev, d.data]);
+            addToast('success', 'Pengeluaran dicatat');
+            setShowModal(false);
+            setForm({
+                categoryRef: '',
+                date: new Date().toISOString().split('T')[0],
+                amount: 0,
+                note: '',
+                description: '',
+                privacyLevel: 'internal',
+                bankAccountRef: '',
+                bankAccountName: '',
+            });
+        } finally {
+            setSaving(false);
         }
-        setItems(prev => [...prev, d.data]);
-        addToast('success', 'Pengeluaran dicatat');
-        setShowModal(false);
-        setForm({ categoryRef: '', date: new Date().toISOString().split('T')[0], amount: 0, note: '', description: '', privacyLevel: 'internal' });
     };
 
     // Compute totals per category for breakdown
@@ -154,13 +188,22 @@ export default function ExpensesPage() {
                                 <div className="form-group"><label className="form-label">Nominal <span className="required">*</span></label><input type="number" className="form-input" value={form.amount || ''} onChange={e => setForm({ ...form, amount: Number(e.target.value) })} /></div>
                             </div>
                             <div className="form-group"><label className="form-label">Catatan/Deskripsi</label><textarea className="form-textarea" rows={2} value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} /></div>
+                            <div className="form-group"><label className="form-label">Bayar dari Rekening / Kas</label>
+                                <select className="form-select" value={form.bankAccountRef} onChange={e => {
+                                    const acc = bankAccounts.find(account => account._id === e.target.value);
+                                    setForm({ ...form, bankAccountRef: e.target.value, bankAccountName: acc?.bankName || '' });
+                                }}>
+                                    <option value="">-- Tidak dipilih --</option>
+                                    {bankAccounts.map(account => <option key={account._id} value={account._id}>{account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''}</option>)}
+                                </select>
+                            </div>
                             {isOwner && <div className="form-group"><label className="form-label">Privacy Level</label>
                                 <select className="form-select" value={form.privacyLevel} onChange={e => setForm({ ...form, privacyLevel: e.target.value as 'internal' | 'ownerOnly' })}>
                                     <option value="internal">Internal</option><option value="ownerOnly">Owner Only</option>
                                 </select>
                             </div>}
                         </div>
-                        <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowModal(false)}>Batal</button><button className="btn btn-primary" onClick={handleSave}><Save size={16} /> Simpan</button></div>
+                        <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowModal(false)} disabled={saving}>Batal</button><button className="btn btn-primary" onClick={handleSave} disabled={saving}><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}</button></div>
                     </div>
                 </div>
             )}
