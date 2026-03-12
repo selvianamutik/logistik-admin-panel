@@ -380,76 +380,189 @@ export async function exportFreightNotaDetail(
 ) {
     const resolvedCompany = company ?? await fetchCompanyProfile();
     const displayNumber = formatFreightNotaDisplayNumber(nota, resolvedCompany);
-    const transferLineParts = [
-        resolvedCompany?.bankName && resolvedCompany?.bankAccount
-            ? `NOTE: ONGKOS ANGKUTAN HARAP DITRANSFER KE: ${resolvedCompany.bankName} A/C ${resolvedCompany.bankAccount}${resolvedCompany.bankHolder ? ` A/N ${resolvedCompany.bankHolder}` : ''}`
-            : '',
-        resolvedCompany?.invoiceSettings?.footerNote || '',
-        nota.notes ? `CATATAN: ${nota.notes}` : '',
-    ].filter(Boolean);
-    const transferLine = transferLineParts.join(' ');
+    const groupedRows = items.reduce<Array<{
+        no: number;
+        vehiclePlate: string;
+        date: string;
+        entries: Array<{
+            noSJ: string;
+            dari: string;
+            tujuan: string;
+            barang: string;
+            collie: string | number;
+            beratKg: string | number;
+            tarip: string | number;
+            uangRp: string | number;
+            ket: string;
+        }>;
+    }>>((groups, item) => {
+        const vehiclePlate = item.vehiclePlate || '';
+        const date = fmtDate(item.date || '');
+        const key = `${vehiclePlate}__${date}`;
+        const existing = groups.find(group => `${group.vehiclePlate}__${group.date}` === key);
+        const entry = {
+            noSJ: item.noSJ || item.doNumber || '',
+            dari: item.dari || '',
+            tujuan: item.tujuan || '',
+            barang: item.barang || '',
+            collie: item.collie || '',
+            beratKg: item.beratKg ? fmtNumber(item.beratKg) : '',
+            tarip: item.tarip ? fmtNumber(item.tarip) : '',
+            uangRp: item.uangRp ? fmtNumber(item.uangRp) : '',
+            ket: item.ket || '',
+        };
 
-    const companyLines = [
-        resolvedCompany?.name,
-        resolvedCompany?.address,
-        `TGL: ${fmtDate(nota.issueDate)}`,
-        [resolvedCompany?.phone ? `Telp. ${resolvedCompany.phone}` : '', resolvedCompany?.email ? `Email: ${resolvedCompany.email}` : '']
-            .filter(Boolean)
-            .join(' | '),
-    ].filter(Boolean) as string[];
+        if (existing) {
+            existing.entries.push(entry);
+            return groups;
+        }
 
-    await exportToExcel(
-        items.map((item, index) => ({
-            no: index + 1,
-            vehiclePlate: item.vehiclePlate || '-',
-            date: item.date,
-            noSJ: item.noSJ,
-            dari: item.dari,
-            tujuan: item.tujuan,
-            barang: item.barang || '-',
-            collie: item.collie || 0,
-            beratKg: item.beratKg || 0,
-            tarip: item.tarip || 0,
-            uangRp: item.uangRp || 0,
-            ket: item.ket || '-',
-        })),
-        [
-            { header: 'NO', key: 'no', width: 8 },
-            { header: 'NO.TRUCK', key: 'vehiclePlate', width: 14 },
-            { header: 'TANGGAL', key: 'date', width: 16, formatter: (value) => fmtDate(String(value || '')) },
-            { header: 'NO. SJ', key: 'noSJ', width: 22 },
-            { header: 'DARI', key: 'dari', width: 18 },
-            { header: 'TUJUAN', key: 'tujuan', width: 18 },
-            { header: 'BARANG', key: 'barang', width: 18 },
-            { header: 'COLLIE', key: 'collie', width: 10 },
-            { header: 'BERAT KG', key: 'beratKg', width: 12 },
-            { header: 'TARIP', key: 'tarip', width: 12 },
-            { header: 'UANG RP.', key: 'uangRp', width: 16 },
-            { header: 'KET', key: 'ket', width: 18 },
-        ],
-        `nota-${displayNumber}`,
-        'Nota Detail',
-        {
-            title: `PERINCIAN ONGKOS ANGKUT NO. ${displayNumber}`,
-            company: resolvedCompany,
-            metadata: [
-                { label: 'KEPADA YANG TERHORMAT :', value: nota.customerName },
-                { label: 'NO. SISTEM :', value: nota.notaNumber },
-            ],
-            totalRow: {
-                label: 'Jumlah',
-                values: {
-                    collie: nota.totalCollie || 0,
-                    beratKg: nota.totalWeightKg || 0,
-                    uangRp: nota.totalAmount || 0,
-                },
-            },
-            footnotes: [
-                transferLine,
-                ...companyLines,
-            ].filter(Boolean),
-            showCompanyHeader: false,
-            includeRowCount: false,
-        },
-    );
+        groups.push({
+            no: groups.length + 1,
+            vehiclePlate,
+            date,
+            entries: [entry],
+        });
+        return groups;
+    }, []);
+
+    const rows: ExportValue[][] = [];
+    const merges: XLSX.Range[] = [];
+    const totalColumns = 12;
+    const lastColumn = totalColumns - 1;
+    const addMerge = (rowIndex: number, startCol: number, endCol: number) => {
+        if (endCol > startCol) {
+            merges.push({ s: { r: rowIndex, c: startCol }, e: { r: rowIndex, c: endCol } });
+        }
+    };
+
+    const companyLine = [resolvedCompany?.phone ? `TELP. ${resolvedCompany.phone}` : '', resolvedCompany?.email ? `EMAIL : ${resolvedCompany.email}` : '']
+        .filter(Boolean)
+        .join('  ');
+    const noteLine = resolvedCompany?.bankName && resolvedCompany?.bankAccount
+        ? `${resolvedCompany.bankName} A/C ${resolvedCompany.bankAccount}${resolvedCompany.bankHolder ? ` A/N ${resolvedCompany.bankHolder}` : ''}`
+        : '';
+    const extraNote = [resolvedCompany?.invoiceSettings?.footerNote, nota.notes].filter(Boolean).join(' ');
+
+    rows.push([resolvedCompany?.name || 'LOGISTIK']);
+    addMerge(0, 0, 4);
+    rows[0][5] = `PERINCIAN ONGKOS ANGKUT NO.${displayNumber}`;
+    addMerge(0, 5, 9);
+    rows[0][10] = 'TGL.';
+    rows[0][11] = fmtDate(nota.issueDate);
+
+    rows.push([resolvedCompany?.address || '']);
+    addMerge(1, 0, 4);
+    rows[1][5] = 'KEPADA YANG TERHORMAT :';
+    addMerge(1, 5, lastColumn);
+
+    rows.push([companyLine]);
+    addMerge(2, 0, 4);
+    rows[2][5] = nota.customerName;
+    addMerge(2, 5, lastColumn);
+
+    rows.push([]);
+    addMerge(3, 0, lastColumn);
+
+    const headerRowIndex = rows.length;
+    rows.push(['NO', 'NO.TRUCK', 'TANGGAL', 'NO. SJ', 'DARI', 'TUJUAN', 'BARANG', 'COLLIE', 'BERAT KG', 'TARIP', 'UANG RP.', 'KET']);
+
+    groupedRows.forEach(group => {
+        const groupStart = rows.length;
+        group.entries.forEach((entry, index) => {
+            rows.push([
+                index === 0 ? group.no : '',
+                index === 0 ? group.vehiclePlate : '',
+                index === 0 ? group.date : '',
+                entry.noSJ,
+                entry.dari,
+                entry.tujuan,
+                entry.barang,
+                entry.collie,
+                entry.beratKg,
+                entry.tarip,
+                entry.uangRp,
+                entry.ket,
+            ]);
+        });
+
+        const groupEnd = rows.length - 1;
+        if (groupEnd > groupStart) {
+            merges.push({ s: { r: groupStart, c: 0 }, e: { r: groupEnd, c: 0 } });
+            merges.push({ s: { r: groupStart, c: 1 }, e: { r: groupEnd, c: 1 } });
+            merges.push({ s: { r: groupStart, c: 2 }, e: { r: groupEnd, c: 2 } });
+        }
+    });
+
+    const fillerCount = Math.max(13 - items.length, 0);
+    for (let i = 0; i < fillerCount; i += 1) {
+        rows.push(Array.from({ length: totalColumns }, () => ''));
+    }
+
+    const totalRowIndex = rows.length;
+    rows.push(['Jumlah']);
+    addMerge(totalRowIndex, 0, 6);
+    rows[totalRowIndex][7] = nota.totalCollie || 0;
+    rows[totalRowIndex][8] = nota.totalWeightKg ? fmtNumber(nota.totalWeightKg) : 0;
+    rows[totalRowIndex][10] = nota.totalAmount ? fmtNumber(nota.totalAmount) : 0;
+
+    rows.push([]);
+    addMerge(rows.length - 1, 0, lastColumn);
+    rows.push(['NOTE : ONGKOS ANGKUTAN HARAP DITRANSFER KE :']);
+    addMerge(rows.length - 1, 0, lastColumn);
+    if (noteLine) {
+        rows.push([noteLine]);
+        addMerge(rows.length - 1, 0, lastColumn);
+    }
+    if (extraNote) {
+        rows.push([extraNote]);
+        addMerge(rows.length - 1, 0, lastColumn);
+    }
+    rows.push([`NO. SISTEM : ${nota.notaNumber}`]);
+    addMerge(rows.length - 1, 0, lastColumn);
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [
+        { wch: 6 },
+        { wch: 14 },
+        { wch: 12 },
+        { wch: 20 },
+        { wch: 16 },
+        { wch: 16 },
+        { wch: 14 },
+        { wch: 8 },
+        { wch: 10 },
+        { wch: 10 },
+        { wch: 14 },
+        { wch: 12 },
+    ];
+    ws['!merges'] = merges;
+    ws['!autofilter'] = {
+        ref: XLSX.utils.encode_range({
+            s: { r: headerRowIndex, c: 0 },
+            e: { r: Math.max(headerRowIndex, totalRowIndex - 1), c: lastColumn },
+        }),
+    };
+
+    for (let colIndex = 0; colIndex < totalColumns; colIndex += 1) {
+        setCellFormat(ws, headerRowIndex, colIndex, rows[headerRowIndex][colIndex]);
+    }
+
+    const numberColumns = new Set([7, 8, 9, 10]);
+    for (let rowIndex = headerRowIndex + 1; rowIndex < totalRowIndex; rowIndex += 1) {
+        for (let colIndex = 0; colIndex < totalColumns; colIndex += 1) {
+            const value = rows[rowIndex][colIndex];
+            const ref = XLSX.utils.encode_cell({ r: rowIndex, c: colIndex });
+            const cell = ws[ref];
+            if (!cell) continue;
+            if (numberColumns.has(colIndex) && typeof value === 'number') {
+                cell.t = 'n';
+                cell.z = '#,##0';
+            }
+        }
+    }
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, sanitizeSheetName('Nota Detail'));
+    downloadWorkbook(wb, `nota-${displayNumber}`);
 }
