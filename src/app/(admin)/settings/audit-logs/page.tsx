@@ -4,13 +4,32 @@ import { useState, useEffect } from 'react';
 import { Search, ScrollText } from 'lucide-react';
 import { formatDateTime } from '@/lib/utils';
 import type { AuditLog } from '@/lib/types';
+import { useToast } from '../../layout';
 
 export default function AuditLogsPage() {
+    const { addToast } = useToast();
     const [logs, setLogs] = useState<AuditLog[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
 
-    useEffect(() => { fetch('/api/data?entity=audit-logs').then(r => r.json()).then(d => { setLogs((d.data || []).reverse()); setLoading(false); }); }, []);
+    useEffect(() => {
+        const loadAuditLogs = async () => {
+            try {
+                const res = await fetch('/api/data?entity=audit-logs');
+                const payload = await res.json();
+                if (!res.ok) {
+                    throw new Error(payload.error || 'Gagal memuat audit log');
+                }
+                setLogs((payload.data || []).reverse());
+            } catch (error) {
+                addToast('error', error instanceof Error ? error.message : 'Gagal memuat audit log');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        void loadAuditLogs();
+    }, [addToast]);
 
     const filtered = logs.filter(l => !search || l.changesSummary?.toLowerCase().includes(search.toLowerCase()) || l.actorUserName?.toLowerCase().includes(search.toLowerCase()) || l.entityType?.toLowerCase().includes(search.toLowerCase()));
 

@@ -16,8 +16,27 @@ export default function MaintenancePage() {
     const [form, setForm] = useState({ vehicleRef: '', type: '', scheduleType: 'DATE' as 'DATE' | 'ODOMETER', plannedDate: '', plannedOdometer: 0, notes: '' });
 
     useEffect(() => {
-        Promise.all([fetch('/api/data?entity=maintenances').then(r => r.json()), fetch('/api/data?entity=vehicles').then(r => r.json())]).then(([m, v]) => { setItems(m.data || []); setVehicles(v.data || []); setLoading(false); });
-    }, []);
+        const fetchEntity = async <T,>(url: string) => {
+            const res = await fetch(url);
+            const payload = await res.json();
+            if (!res.ok) {
+                throw new Error(payload.error || 'Gagal memuat maintenance');
+            }
+            return payload.data as T;
+        };
+
+        Promise.all([
+            fetchEntity<Maintenance[]>('/api/data?entity=maintenances'),
+            fetchEntity<Vehicle[]>('/api/data?entity=vehicles'),
+        ]).then(([maintenanceRows, vehicleRows]) => {
+            setItems(maintenanceRows || []);
+            setVehicles(vehicleRows || []);
+        }).catch(error => {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat maintenance');
+        }).finally(() => {
+            setLoading(false);
+        });
+    }, [addToast]);
 
     const filtered = items.filter(m => !search || m.type?.toLowerCase().includes(search.toLowerCase()) || m.vehiclePlate?.toLowerCase().includes(search.toLowerCase()));
 

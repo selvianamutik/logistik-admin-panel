@@ -18,7 +18,24 @@ export default function CustomersPage() {
     const [form, setForm] = useState({ name: '', address: '', contactPerson: '', phone: '', email: '', defaultPaymentTerm: 14, npwp: '' });
     const [deleteId, setDeleteId] = useState<string | null>(null);
 
-    useEffect(() => { fetch('/api/data?entity=customers').then(r => r.json()).then(d => { setItems(d.data || []); setLoading(false); }); }, []);
+    useEffect(() => {
+        const loadCustomers = async () => {
+            try {
+                const res = await fetch('/api/data?entity=customers');
+                const payload = await res.json();
+                if (!res.ok) {
+                    throw new Error(payload.error || 'Gagal memuat customer');
+                }
+                setItems(payload.data || []);
+            } catch (error) {
+                addToast('error', error instanceof Error ? error.message : 'Gagal memuat customer');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        void loadCustomers();
+    }, [addToast]);
 
     const filtered = items.filter(c => !search || c.name?.toLowerCase().includes(search.toLowerCase()) || c.contactPerson?.toLowerCase().includes(search.toLowerCase()));
 
@@ -27,27 +44,36 @@ export default function CustomersPage() {
 
     const handleSave = async () => {
         if (!form.name) { addToast('error', 'Nama customer wajib diisi'); return; }
-        if (editItem) {
-            const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'customers', action: 'update', data: { id: editItem._id, updates: { ...form, active: true } } }) });
-            const result = await res.json();
-            if (!res.ok) { addToast('error', result.error || 'Gagal memperbarui customer'); return; }
-            setItems(prev => prev.map(c => c._id === editItem._id ? { ...c, ...form } : c));
-            addToast('success', 'Customer diperbarui');
-        } else {
-            const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'customers', data: { ...form, active: true } }) });
-            const d = await res.json();
-            if (!res.ok) { addToast('error', d.error || 'Gagal menambahkan customer'); return; }
-            setItems(prev => [...prev, d.data]);
-            addToast('success', 'Customer ditambahkan');
+        try {
+            if (editItem) {
+                const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'customers', action: 'update', data: { id: editItem._id, updates: { ...form, active: true } } }) });
+                const result = await res.json();
+                if (!res.ok) { addToast('error', result.error || 'Gagal memperbarui customer'); return; }
+                setItems(prev => prev.map(c => c._id === editItem._id ? { ...c, ...form } : c));
+                addToast('success', 'Customer diperbarui');
+            } else {
+                const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'customers', data: { ...form, active: true } }) });
+                const d = await res.json();
+                if (!res.ok) { addToast('error', d.error || 'Gagal menambahkan customer'); return; }
+                setItems(prev => [...prev, d.data]);
+                addToast('success', 'Customer ditambahkan');
+            }
+            setShowModal(false);
+        } catch {
+            addToast('error', editItem ? 'Gagal memperbarui customer' : 'Gagal menambahkan customer');
         }
-        setShowModal(false);
     };
 
     const handleDelete = async (id: string) => {
-        const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'customers', action: 'delete', data: { id } }) });
-        const result = await res.json();
-        if (!res.ok) { addToast('error', result.error || 'Gagal menghapus customer'); setDeleteId(null); return; }
-        setItems(prev => prev.filter(c => c._id !== id)); setDeleteId(null); addToast('success', 'Customer dihapus');
+        try {
+            const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'customers', action: 'delete', data: { id } }) });
+            const result = await res.json();
+            if (!res.ok) { addToast('error', result.error || 'Gagal menghapus customer'); setDeleteId(null); return; }
+            setItems(prev => prev.filter(c => c._id !== id)); setDeleteId(null); addToast('success', 'Customer dihapus');
+        } catch {
+            addToast('error', 'Gagal menghapus customer');
+            setDeleteId(null);
+        }
     };
 
     return (

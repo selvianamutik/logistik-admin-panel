@@ -8,17 +8,34 @@ import { formatDate, DO_STATUS_MAP } from '@/lib/utils';
 import { exportToExcel } from '@/lib/export';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
 import type { DeliveryOrder } from '@/lib/types';
+import { useToast } from '../layout';
 
 export default function DeliveryOrdersPage() {
     const router = useRouter();
+    const { addToast } = useToast();
     const [items, setItems] = useState<DeliveryOrder[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
 
     useEffect(() => {
-        fetch('/api/data?entity=delivery-orders').then(r => r.json()).then(d => { setItems(d.data || []); setLoading(false); });
-    }, []);
+        const loadDeliveryOrders = async () => {
+            try {
+                const res = await fetch('/api/data?entity=delivery-orders');
+                const payload = await res.json();
+                if (!res.ok) {
+                    throw new Error(payload.error || 'Gagal memuat surat jalan');
+                }
+                setItems(payload.data || []);
+            } catch (error) {
+                addToast('error', error instanceof Error ? error.message : 'Gagal memuat surat jalan');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        void loadDeliveryOrders();
+    }, [addToast]);
 
     const filtered = items.filter(d => {
         const m = !search || d.doNumber?.toLowerCase().includes(search.toLowerCase()) || d.customerName?.toLowerCase().includes(search.toLowerCase());

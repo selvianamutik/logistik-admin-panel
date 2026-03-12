@@ -21,19 +21,31 @@ export default function NewDriverVoucherPage() {
     });
 
     useEffect(() => {
+        const fetchEntity = async <T,>(url: string) => {
+            const res = await fetch(url);
+            const payload = await res.json();
+            if (!res.ok) {
+                throw new Error(payload.error || 'Gagal memuat form bon supir');
+            }
+            return payload.data as T;
+        };
+
         Promise.all([
-            fetch('/api/data?entity=drivers').then(r => r.json()),
-            fetch('/api/data?entity=delivery-orders').then(r => r.json()),
-            fetch('/api/data?entity=vehicles').then(r => r.json()),
-            fetch('/api/data?entity=bank-accounts').then(r => r.json()),
-        ]).then(([d, o, v, b]) => {
-            setDrivers((d.data || []).filter((x: Driver) => x.active));
-            setDos(o.data || []);
-            setVehicles((v.data || []).filter((x: Vehicle) => x.status === 'ACTIVE'));
-            setBankAccounts((b.data || []).filter((x: BankAccount) => x.active !== false));
+            fetchEntity<Driver[]>('/api/data?entity=drivers'),
+            fetchEntity<DeliveryOrder[]>('/api/data?entity=delivery-orders'),
+            fetchEntity<Vehicle[]>('/api/data?entity=vehicles'),
+            fetchEntity<BankAccount[]>('/api/data?entity=bank-accounts'),
+        ]).then(([driverRows, deliveryOrders, vehicleRows, accountRows]) => {
+            setDrivers((driverRows || []).filter((x) => x.active));
+            setDos(deliveryOrders || []);
+            setVehicles((vehicleRows || []).filter((x) => x.status === 'ACTIVE'));
+            setBankAccounts((accountRows || []).filter((x) => x.active !== false));
+        }).catch(error => {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat form bon supir');
+        }).finally(() => {
             setLoading(false);
         });
-    }, []);
+    }, [addToast]);
 
     // Auto-fill vehicle/driver when DO selected
     const handleDOChange = (doId: string) => {
@@ -75,19 +87,25 @@ export default function NewDriverVoucherPage() {
             notes: form.notes || undefined,
         };
 
-        const res = await fetch('/api/data', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ entity: 'driver-vouchers', data: voucherData })
-        });
-        const result = await res.json();
-        if (!res.ok) {
-            addToast('error', result.error || 'Gagal membuat bon supir');
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entity: 'driver-vouchers', data: voucherData })
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal membuat bon supir');
+                setSaving(false);
+                return;
+            }
+
+            addToast('success', `Bon ${result.data?.bonNumber || ''} berhasil dibuat`);
+            router.push(`/driver-vouchers/${result.data._id}`);
+        } catch {
+            addToast('error', 'Gagal membuat bon supir');
             setSaving(false);
             return;
         }
-
-        addToast('success', `Bon ${result.data?.bonNumber || ''} berhasil dibuat`);
-        router.push(`/driver-vouchers/${result.data._id}`);
     };
 
     if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 300 }} /></div>;

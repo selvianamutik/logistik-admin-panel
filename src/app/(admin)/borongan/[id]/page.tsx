@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, CheckCircle, Printer, Trash2 } from 'lucide-react';
 import { useToast } from '../../layout';
@@ -35,7 +35,7 @@ export default function BoronganDetailPage() {
     const [payNote, setPayNote] = useState('');
     const [paying, setPaying] = useState(false);
 
-    useEffect(() => {
+    const loadBoronganDetail = useCallback(async () => {
         const fetchEntity = async <T,>(url: string) => {
             const res = await fetch(url);
             const result = await res.json();
@@ -45,27 +45,27 @@ export default function BoronganDetailPage() {
             return result.data as T;
         };
 
-        const loadBoronganDetail = async () => {
-            setLoading(true);
-            try {
-                const [boronganData, boronganItems, accounts] = await Promise.all([
-                    fetchEntity<DriverBorongan | null>(`/api/data?entity=driver-borongans&id=${boronganId}`),
-                    fetchEntity<DriverBoronganItem[]>(`/api/data?entity=driver-borogan-items&filter=${encodeURIComponent(JSON.stringify({ boronganRef: boronganId }))}`),
-                    fetchEntity<BankAccount[]>('/api/data?entity=bank-accounts'),
-                ]);
+        setLoading(true);
+        try {
+            const [boronganData, boronganItems, accounts] = await Promise.all([
+                fetchEntity<DriverBorongan | null>(`/api/data?entity=driver-borongans&id=${boronganId}`),
+                fetchEntity<DriverBoronganItem[]>(`/api/data?entity=driver-borogan-items&filter=${encodeURIComponent(JSON.stringify({ boronganRef: boronganId }))}`),
+                fetchEntity<BankAccount[]>('/api/data?entity=bank-accounts'),
+            ]);
 
-                setBorong(boronganData);
-                setItems(boronganItems || []);
-                setBankAccounts((accounts || []).filter((account) => account.active !== false));
-            } catch (error) {
-                addToast('error', error instanceof Error ? error.message : 'Gagal memuat slip borongan');
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        void loadBoronganDetail();
+            setBorong(boronganData);
+            setItems(boronganItems || []);
+            setBankAccounts((accounts || []).filter((account) => account.active !== false));
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat slip borongan');
+        } finally {
+            setLoading(false);
+        }
     }, [addToast, boronganId]);
+
+    useEffect(() => {
+        void loadBoronganDetail();
+    }, [loadBoronganDetail]);
 
     const handleMarkPaid = async () => {
         if (!borong) return;
@@ -100,7 +100,9 @@ export default function BoronganDetailPage() {
 
             addToast('success', 'Pembayaran borongan berhasil dicatat');
             setShowPayModal(false);
-            window.location.reload();
+            setPayBankRef('');
+            setPayNote('');
+            await loadBoronganDetail();
         } catch {
             addToast('error', 'Gagal mencatat pembayaran');
         } finally {

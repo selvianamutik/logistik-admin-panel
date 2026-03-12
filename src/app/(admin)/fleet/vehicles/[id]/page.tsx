@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useApp } from '../../../layout';
+import { useApp, useToast } from '../../../layout';
 import { ArrowLeft, Car, Wrench, AlertTriangle, Truck, Edit } from 'lucide-react';
 import { VEHICLE_STATUS_MAP, MAINTENANCE_STATUS_MAP, INCIDENT_STATUS_MAP, DO_STATUS_MAP, formatDate, formatCurrency } from '@/lib/utils';
 import type { Vehicle, Maintenance, Incident, DeliveryOrder, TireEvent, Expense } from '@/lib/types';
@@ -11,6 +11,8 @@ export default function VehicleDetailPage() {
     const params = useParams();
     const router = useRouter();
     const { user } = useApp();
+    const { addToast } = useToast();
+    const vehicleId = params.id as string;
     const [vehicle, setVehicle] = useState<Vehicle | null>(null);
     const [maints, setMaints] = useState<Maintenance[]>([]);
     const [incidents, setIncidents] = useState<Incident[]>([]);
@@ -21,25 +23,45 @@ export default function VehicleDetailPage() {
     const [tab, setTab] = useState('profil');
     const isOwner = user?.role === 'OWNER';
 
-    useEffect(() => {
-        const id = params.id as string;
-        Promise.all([
-            fetch(`/api/data?entity=vehicles&id=${id}`).then(r => r.json()),
-            fetch(`/api/data?entity=maintenances`).then(r => r.json()),
-            fetch(`/api/data?entity=incidents`).then(r => r.json()),
-            fetch(`/api/data?entity=delivery-orders`).then(r => r.json()),
-            fetch(`/api/data?entity=tire-events`).then(r => r.json()),
-            fetch(`/api/data?entity=expenses`).then(r => r.json()),
-        ]).then(([v, m, i, d, t, e]) => {
-            setVehicle(v.data);
-            setMaints((m.data || []).filter((x: Maintenance) => x.vehicleRef === id));
-            setIncidents((i.data || []).filter((x: Incident) => x.vehicleRef === id));
-            setDos((d.data || []).filter((x: DeliveryOrder) => x.vehicleRef === id));
-            setTireEvents((t.data || []).filter((x: TireEvent) => x.vehicleRef === id));
-            setExpenses((e.data || []).filter((x: Expense) => x.relatedVehicleRef === id));
+    const loadVehicleDetail = useCallback(async () => {
+        const fetchEntity = async <T,>(url: string, fallbackMessage: string) => {
+            const res = await fetch(url);
+            const payload = await res.json();
+            if (!res.ok) {
+                throw new Error(payload.error || fallbackMessage);
+            }
+            return payload.data as T;
+        };
+
+        setLoading(true);
+        try {
+            const vehicleFilter = encodeURIComponent(JSON.stringify({ vehicleRef: vehicleId }));
+            const expenseFilter = encodeURIComponent(JSON.stringify({ relatedVehicleRef: vehicleId }));
+            const [vehicleData, maintenanceRows, incidentRows, doRows, tireRows, expenseRows] = await Promise.all([
+                fetchEntity<Vehicle | null>(`/api/data?entity=vehicles&id=${vehicleId}`, 'Gagal memuat kendaraan'),
+                fetchEntity<Maintenance[]>(`/api/data?entity=maintenances&filter=${vehicleFilter}`, 'Gagal memuat maintenance'),
+                fetchEntity<Incident[]>(`/api/data?entity=incidents&filter=${vehicleFilter}`, 'Gagal memuat insiden'),
+                fetchEntity<DeliveryOrder[]>(`/api/data?entity=delivery-orders&filter=${vehicleFilter}`, 'Gagal memuat riwayat DO'),
+                fetchEntity<TireEvent[]>(`/api/data?entity=tire-events&filter=${vehicleFilter}`, 'Gagal memuat catatan ban'),
+                fetchEntity<Expense[]>(`/api/data?entity=expenses&filter=${expenseFilter}`, 'Gagal memuat biaya kendaraan'),
+            ]);
+
+            setVehicle(vehicleData);
+            setMaints(maintenanceRows || []);
+            setIncidents(incidentRows || []);
+            setDos(doRows || []);
+            setTireEvents(tireRows || []);
+            setExpenses(expenseRows || []);
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail kendaraan');
+        } finally {
             setLoading(false);
-        });
-    }, [params.id]);
+        }
+    }, [addToast, vehicleId]);
+
+    useEffect(() => {
+        void loadVehicleDetail();
+    }, [loadVehicleDetail]);
 
     if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 300 }} /></div>;
     if (!vehicle) return <div className="empty-state"><div className="empty-state-title">Kendaraan tidak ditemukan</div></div>;

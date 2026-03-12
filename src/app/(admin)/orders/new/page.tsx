@@ -25,14 +25,25 @@ export default function NewOrderPage() {
     const [items, setItems] = useState([{ description: '', qtyKoli: 1, weight: 0, volume: 0, value: 0 }]);
 
     useEffect(() => {
+        const fetchEntity = async <T,>(url: string) => {
+            const res = await fetch(url);
+            const payload = await res.json();
+            if (!res.ok) {
+                throw new Error(payload.error || 'Gagal memuat form order');
+            }
+            return payload.data as T;
+        };
+
         Promise.all([
-            fetch('/api/data?entity=customers').then(r => r.json()),
-            fetch('/api/data?entity=services').then(r => r.json()),
-        ]).then(([c, s]) => {
-            setCustomers(c.data || []);
-            setServices(s.data || []);
+            fetchEntity<Customer[]>('/api/data?entity=customers'),
+            fetchEntity<Service[]>('/api/data?entity=services'),
+        ]).then(([customerRows, serviceRows]) => {
+            setCustomers(customerRows || []);
+            setServices(serviceRows || []);
+        }).catch(error => {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat form order');
         });
-    }, []);
+    }, [addToast]);
 
     const addItem = () => setItems(prev => [...prev, { description: '', qtyKoli: 1, weight: 0, volume: 0, value: 0 }]);
     const removeItem = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx));

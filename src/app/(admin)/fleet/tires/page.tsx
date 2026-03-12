@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '../../layout';
 import { Plus, Search, Disc3, CheckCircle, Clock } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
@@ -29,18 +29,34 @@ export default function TiresPage() {
         notes: '',
     });
 
-    const loadData = () => {
-        Promise.all([
-            fetch('/api/data?entity=tire-events').then(r => r.json()),
-            fetch('/api/data?entity=vehicles').then(r => r.json()),
-        ]).then(([te, v]) => {
-            setEvents(te.data || []);
-            setVehicles(v.data || []);
-            setLoading(false);
-        }).catch(() => setLoading(false));
-    };
+    const loadData = useCallback(async () => {
+        const fetchEntity = async <T,>(url: string) => {
+            const res = await fetch(url);
+            const payload = await res.json();
+            if (!res.ok) {
+                throw new Error(payload.error || 'Gagal memuat data ban');
+            }
+            return payload.data as T;
+        };
 
-    useEffect(() => { loadData(); }, []);
+        setLoading(true);
+        try {
+            const [tireRows, vehicleRows] = await Promise.all([
+                fetchEntity<TireEvent[]>('/api/data?entity=tire-events'),
+                fetchEntity<Vehicle[]>('/api/data?entity=vehicles'),
+            ]);
+            setEvents(tireRows || []);
+            setVehicles(vehicleRows || []);
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat data ban');
+        } finally {
+            setLoading(false);
+        }
+    }, [addToast]);
+
+    useEffect(() => {
+        void loadData();
+    }, [loadData]);
 
     const openAdd = () => {
         setEditTarget(null);

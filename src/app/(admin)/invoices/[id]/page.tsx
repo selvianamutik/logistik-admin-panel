@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useToast } from '../../layout';
 import { ArrowLeft, Printer, DollarSign, Landmark, Trash2, FileDown } from 'lucide-react';
@@ -39,7 +39,7 @@ export default function NotaDetailPage() {
     const [payNote, setPayNote] = useState('');
     const [payBankRef, setPayBankRef] = useState('');
 
-    useEffect(() => {
+    const loadNotaDetail = useCallback(async () => {
         const fetchEntity = async <T,>(url: string) => {
             const res = await fetch(url);
             const result = await res.json();
@@ -49,31 +49,31 @@ export default function NotaDetailPage() {
             return result.data as T;
         };
 
-        const loadNotaDetail = async () => {
-            setLoading(true);
-            try {
-                const [notaData, notaItems, paymentRows, accounts, companyData] = await Promise.all([
-                    fetchEntity<FreightNota | null>(`/api/data?entity=freight-notas&id=${notaId}`),
-                    fetchEntity<FreightNotaItem[]>(`/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ notaRef: notaId }))}`),
-                    fetchEntity<Payment[]>(`/api/data?entity=payments&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: notaId }))}`),
-                    fetchEntity<BankAccount[]>('/api/data?entity=bank-accounts'),
-                    fetchCompanyProfile(),
-                ]);
+        setLoading(true);
+        try {
+            const [notaData, notaItems, paymentRows, accounts, companyData] = await Promise.all([
+                fetchEntity<FreightNota | null>(`/api/data?entity=freight-notas&id=${notaId}`),
+                fetchEntity<FreightNotaItem[]>(`/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ notaRef: notaId }))}`),
+                fetchEntity<Payment[]>(`/api/data?entity=payments&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: notaId }))}`),
+                fetchEntity<BankAccount[]>('/api/data?entity=bank-accounts'),
+                fetchCompanyProfile(),
+            ]);
 
-                setNota(notaData);
-                setItems(notaItems || []);
-                setPayments(paymentRows || []);
-                setBankAccounts((accounts || []).filter(account => account.active !== false));
-                setCompany(companyData);
-            } catch (error) {
-                addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail nota');
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        void loadNotaDetail();
+            setNota(notaData);
+            setItems(notaItems || []);
+            setPayments(paymentRows || []);
+            setBankAccounts((accounts || []).filter(account => account.active !== false));
+            setCompany(companyData);
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail nota');
+        } finally {
+            setLoading(false);
+        }
     }, [addToast, notaId]);
+
+    useEffect(() => {
+        void loadNotaDetail();
+    }, [loadNotaDetail]);
 
     const totalPaid = payments.reduce((s, p) => s + p.amount, 0);
     const remaining = (nota?.totalAmount || 0) - totalPaid;
@@ -100,7 +100,10 @@ export default function NotaDetailPage() {
             }
             addToast('success', 'Pembayaran dicatat');
             setShowPayModal(false);
-            window.location.reload();
+            setPayAmount(0);
+            setPayNote('');
+            setPayBankRef('');
+            await loadNotaDetail();
         } catch {
             addToast('error', 'Gagal');
         } finally {

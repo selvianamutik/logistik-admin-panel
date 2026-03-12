@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useToast } from '../../../layout';
 import { ArrowLeft, Printer, Save } from 'lucide-react';
@@ -12,6 +12,7 @@ export default function IncidentDetailPage() {
     const params = useParams();
     const router = useRouter();
     const { addToast } = useToast();
+    const incidentId = params.id as string;
     const [incident, setIncident] = useState<Incident | null>(null);
     const [logs, setLogs] = useState<IncidentActionLog[]>([]);
     const [loading, setLoading] = useState(true);
@@ -19,20 +20,36 @@ export default function IncidentDetailPage() {
     const [newStatus, setNewStatus] = useState('');
     const [actionNote, setActionNote] = useState('');
 
+    const loadIncidentDetail = useCallback(async () => {
+        const fetchEntity = async <T,>(url: string, fallbackMessage: string) => {
+            const res = await fetch(url);
+            const payload = await res.json();
+            if (!res.ok) {
+                throw new Error(payload.error || fallbackMessage);
+            }
+            return payload.data as T;
+        };
+
+        setLoading(true);
+        try {
+            const filter = encodeURIComponent(JSON.stringify({ incidentRef: incidentId }));
+            const [incidentData, actionLogs] = await Promise.all([
+                fetchEntity<Incident | null>(`/api/data?entity=incidents&id=${incidentId}`, 'Gagal memuat insiden'),
+                fetchEntity<IncidentActionLog[]>(`/api/data?entity=incident-action-logs&filter=${filter}`, 'Gagal memuat log insiden'),
+            ]);
+
+            setIncident(incidentData);
+            setLogs((actionLogs || []).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()));
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail insiden');
+        } finally {
+            setLoading(false);
+        }
+    }, [addToast, incidentId]);
+
     useEffect(() => {
-        const id = params.id as string;
-        const filter = encodeURIComponent(JSON.stringify({ incidentRef: id }));
-        Promise.all([
-            fetch(`/api/data?entity=incidents&id=${id}`).then(r => r.json()),
-            fetch(`/api/data?entity=incident-action-logs&filter=${filter}`).then(r => r.json()),
-        ]).then(([inc, al]) => {
-            setIncident(inc.data);
-            setLogs((al.data || []).sort((a: IncidentActionLog, b: IncidentActionLog) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()));
-            setLoading(false);
-        }).catch(() => {
-            setLoading(false);
-        });
-    }, [params.id]);
+        void loadIncidentDetail();
+    }, [loadIncidentDetail]);
 
     const updateStatus = async () => {
         if (!newStatus || !actionNote) { addToast('error', 'Status dan catatan wajib'); return; }

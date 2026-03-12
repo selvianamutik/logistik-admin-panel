@@ -124,28 +124,40 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
     // Fetch session + company profile
     useEffect(() => {
-        Promise.all([
-            fetch('/api/auth/session').then(r => r.json()),
-            fetch('/api/data?entity=company').then(r => r.json()).catch(() => ({ data: null }))
-        ]).then(([session, co]) => {
-            if (session.user) {
-                setUser(session.user);
-            } else {
-                router.push('/login');
-            }
-            if (co.data) {
-                setCompany(co.data);
-                if (co.data.themeColor) applyTheme(co.data.themeColor);
-                // Set browser title dynamically
-                if (co.data.name) {
-                    document.title = `Sistem Manajemen - ${co.data.name}`;
+        const loadAppContext = async () => {
+            try {
+                const [sessionRes, companyRes] = await Promise.all([
+                    fetch('/api/auth/session'),
+                    fetch('/api/data?entity=company').catch(() => null),
+                ]);
+
+                if (!sessionRes.ok) {
+                    throw new Error('Sesi tidak valid');
                 }
+
+                const session = await sessionRes.json();
+                const co = companyRes ? await companyRes.json() : { data: null };
+
+                if (session.user) {
+                    setUser(session.user);
+                } else {
+                    router.push('/login');
+                }
+                if (companyRes?.ok && co.data) {
+                    setCompany(co.data);
+                    if (co.data.themeColor) applyTheme(co.data.themeColor);
+                    if (co.data.name) {
+                        document.title = `Sistem Manajemen - ${co.data.name}`;
+                    }
+                }
+            } catch {
+                router.push('/login');
+            } finally {
+                setLoading(false);
             }
-            setLoading(false);
-        }).catch(() => {
-            router.push('/login');
-            setLoading(false);
-        });
+        };
+
+        void loadAppContext();
         // Track mobile state using matchMedia (matches CSS @media breakpoint exactly)
         const mobileQuery = window.matchMedia('(max-width: 768px)');
         const checkMobile = (e: MediaQueryList | MediaQueryListEvent) => setIsMobile(e.matches);

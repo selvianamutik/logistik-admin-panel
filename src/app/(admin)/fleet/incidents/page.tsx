@@ -20,8 +20,29 @@ export default function IncidentsPage() {
     const [form, setForm] = useState({ vehicleRef: '', incidentType: 'OTHER' as Incident['incidentType'], urgency: 'MEDIUM' as Incident['urgency'], locationText: '', odometer: 0, description: '', dateTime: new Date().toISOString().slice(0, 16), relatedDeliveryOrderRef: '' });
 
     useEffect(() => {
-        Promise.all([fetch('/api/data?entity=incidents').then(r => r.json()), fetch('/api/data?entity=vehicles').then(r => r.json()), fetch('/api/data?entity=delivery-orders').then(r => r.json())]).then(([i, v, d]) => { setItems(i.data || []); setVehicles(v.data || []); setDos(d.data || []); setLoading(false); });
-    }, []);
+        const fetchEntity = async <T,>(url: string) => {
+            const res = await fetch(url);
+            const payload = await res.json();
+            if (!res.ok) {
+                throw new Error(payload.error || 'Gagal memuat insiden');
+            }
+            return payload.data as T;
+        };
+
+        Promise.all([
+            fetchEntity<Incident[]>('/api/data?entity=incidents'),
+            fetchEntity<Vehicle[]>('/api/data?entity=vehicles'),
+            fetchEntity<DeliveryOrder[]>('/api/data?entity=delivery-orders'),
+        ]).then(([incidentRows, vehicleRows, deliveryOrders]) => {
+            setItems(incidentRows || []);
+            setVehicles(vehicleRows || []);
+            setDos(deliveryOrders || []);
+        }).catch(error => {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat insiden');
+        }).finally(() => {
+            setLoading(false);
+        });
+    }, [addToast]);
 
     const filtered = items.filter(i => !search || i.incidentNumber?.toLowerCase().includes(search.toLowerCase()) || i.vehiclePlate?.toLowerCase().includes(search.toLowerCase()) || i.locationText?.toLowerCase().includes(search.toLowerCase()));
 

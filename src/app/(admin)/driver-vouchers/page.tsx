@@ -6,6 +6,7 @@ import { Plus, Search, Receipt, Printer } from 'lucide-react';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
 import type { DriverVoucher } from '@/lib/types';
+import { useToast } from '../layout';
 
 const STATUS_MAP: Record<string, { label: string; cls: string }> = {
     DRAFT: { label: 'Draft', cls: 'badge-gray' },
@@ -15,14 +16,30 @@ const STATUS_MAP: Record<string, { label: string; cls: string }> = {
 
 export default function DriverVouchersPage() {
     const router = useRouter();
+    const { addToast } = useToast();
     const [items, setItems] = useState<DriverVoucher[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
 
     useEffect(() => {
-        fetch('/api/data?entity=driver-vouchers').then(r => r.json()).then(d => { setItems(d.data || []); setLoading(false); });
-    }, []);
+        const loadVouchers = async () => {
+            try {
+                const res = await fetch('/api/data?entity=driver-vouchers');
+                const payload = await res.json();
+                if (!res.ok) {
+                    throw new Error(payload.error || 'Gagal memuat bon supir');
+                }
+                setItems(payload.data || []);
+            } catch (error) {
+                addToast('error', error instanceof Error ? error.message : 'Gagal memuat bon supir');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        void loadVouchers();
+    }, [addToast]);
 
     const filtered = items.filter(v => {
         if (statusFilter && v.status !== statusFilter) return false;

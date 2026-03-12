@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '../../layout';
@@ -27,7 +27,7 @@ export default function OrderDetailPage() {
     const [selectedItems, setSelectedItems] = useState<string[]>([]);
     const [vehicles, setVehicles] = useState<Array<Pick<Vehicle, '_id' | 'plateNumber'>>>([]);
 
-    useEffect(() => {
+    const loadOrderDetail = useCallback(async () => {
         const fetchEntity = async <T,>(url: string) => {
             const res = await fetch(url);
             const result = await res.json();
@@ -37,44 +37,44 @@ export default function OrderDetailPage() {
             return result.data as T;
         };
 
-        const loadOrderDetail = async () => {
-            setLoading(true);
-            try {
-                const [orderData, itemData, deliveryOrders, vehicleData] = await Promise.all([
-                    fetchEntity<Order | null>(`/api/data?entity=orders&id=${orderId}`),
-                    fetchEntity<OrderItem[]>(`/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`),
-                    fetchEntity<DeliveryOrder[]>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`),
-                    fetchEntity<Array<Pick<Vehicle, '_id' | 'plateNumber'>>>(`/api/data?entity=vehicles&filter=${encodeURIComponent(JSON.stringify({ status: ['ACTIVE', 'IN_SERVICE'] }))}`),
-                ]);
-                const deliveryOrderIds = (deliveryOrders || []).map(item => item._id);
-                const [deliveryOrderItems, notaItems] = await Promise.all([
-                    deliveryOrderIds.length > 0
-                        ? fetchEntity<DeliveryOrderItem[]>(`/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: deliveryOrderIds }))}`)
-                        : Promise.resolve([] as DeliveryOrderItem[]),
-                    deliveryOrderIds.length > 0
-                        ? fetchEntity<FreightNotaItem[]>(`/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ doRef: deliveryOrderIds }))}`)
-                        : Promise.resolve([] as FreightNotaItem[]),
-                ]);
-                const notaIds = [...new Set((notaItems || []).map(item => item.notaRef).filter(Boolean))];
-                const orderNotas = notaIds.length > 0
-                    ? await fetchEntity<FreightNota[]>(`/api/data?entity=freight-notas&filter=${encodeURIComponent(JSON.stringify({ _id: notaIds }))}`)
-                    : [];
+        setLoading(true);
+        try {
+            const [orderData, itemData, deliveryOrders, vehicleData] = await Promise.all([
+                fetchEntity<Order | null>(`/api/data?entity=orders&id=${orderId}`),
+                fetchEntity<OrderItem[]>(`/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`),
+                fetchEntity<DeliveryOrder[]>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`),
+                fetchEntity<Array<Pick<Vehicle, '_id' | 'plateNumber'>>>(`/api/data?entity=vehicles&filter=${encodeURIComponent(JSON.stringify({ status: ['ACTIVE', 'IN_SERVICE'] }))}`),
+            ]);
+            const deliveryOrderIds = (deliveryOrders || []).map(item => item._id);
+            const [deliveryOrderItems, notaItems] = await Promise.all([
+                deliveryOrderIds.length > 0
+                    ? fetchEntity<DeliveryOrderItem[]>(`/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: deliveryOrderIds }))}`)
+                    : Promise.resolve([] as DeliveryOrderItem[]),
+                deliveryOrderIds.length > 0
+                    ? fetchEntity<FreightNotaItem[]>(`/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ doRef: deliveryOrderIds }))}`)
+                    : Promise.resolve([] as FreightNotaItem[]),
+            ]);
+            const notaIds = [...new Set((notaItems || []).map(item => item.notaRef).filter(Boolean))];
+            const orderNotas = notaIds.length > 0
+                ? await fetchEntity<FreightNota[]>(`/api/data?entity=freight-notas&filter=${encodeURIComponent(JSON.stringify({ _id: notaIds }))}`)
+                : [];
 
-                setOrder(orderData);
-                setItems(itemData || []);
-                setDos(deliveryOrders || []);
-                setDoItems(deliveryOrderItems);
-                setNotas(orderNotas || []);
-                setVehicles(vehicleData || []);
-            } catch (error) {
-                addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail order');
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        void loadOrderDetail();
+            setOrder(orderData);
+            setItems(itemData || []);
+            setDos(deliveryOrders || []);
+            setDoItems(deliveryOrderItems);
+            setNotas(orderNotas || []);
+            setVehicles(vehicleData || []);
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail order');
+        } finally {
+            setLoading(false);
+        }
     }, [addToast, orderId]);
+
+    useEffect(() => {
+        void loadOrderDetail();
+    }, [loadOrderDetail]);
 
     // Get already assigned item IDs
     const assignedItemIds = doItems
@@ -124,9 +124,7 @@ export default function OrderDetailPage() {
             addToast('success', `Surat Jalan dibuat: ${doData.data?.doNumber || ''}`);
             setShowDOModal(false);
             setSelectedItems([]);
-            router.refresh();
-            // Reload data
-            window.location.reload();
+            await loadOrderDetail();
         } catch {
             addToast('error', 'Gagal membuat surat jalan');
         }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, CheckCircle, Plus, Printer, Save, Trash2, X } from 'lucide-react';
 
@@ -34,26 +34,37 @@ export default function DriverVoucherDetailPage() {
     const [settlementBankRef, setSettlementBankRef] = useState('');
     const [issueBankRepairRef, setIssueBankRepairRef] = useState('');
 
-    useEffect(() => {
-        let cancelled = false;
+    const loadVoucherDetail = useCallback(async () => {
+        const fetchEntity = async <T,>(url: string) => {
+            const res = await fetch(url);
+            const payload = await res.json();
+            if (!res.ok) {
+                throw new Error(payload.error || 'Gagal memuat detail bon supir');
+            }
+            return payload.data as T;
+        };
 
-        Promise.all([
-            fetch(`/api/data?entity=driver-vouchers&id=${params.id}`).then(r => r.json()),
-            fetch(`/api/data?entity=driver-voucher-items&filter=${encodeURIComponent(JSON.stringify({ voucherRef: params.id }))}`).then(r => r.json()),
-            fetch('/api/data?entity=bank-accounts').then(r => r.json()),
-        ]).then(([voucherRes, itemRes, bankRes]) => {
-            if (cancelled) return;
-            setVoucher(voucherRes.data || null);
-            setItems(itemRes.data || []);
-            setBankAccounts((bankRes.data || []).filter((account: BankAccount) => account.active !== false));
-            setIssueBankRepairRef(voucherRes.data?.issueBankRef || '');
+        setLoading(true);
+        try {
+            const [voucherData, voucherItems, accounts] = await Promise.all([
+                fetchEntity<DriverVoucher | null>(`/api/data?entity=driver-vouchers&id=${params.id}`),
+                fetchEntity<DriverVoucherItem[]>(`/api/data?entity=driver-voucher-items&filter=${encodeURIComponent(JSON.stringify({ voucherRef: params.id }))}`),
+                fetchEntity<BankAccount[]>('/api/data?entity=bank-accounts'),
+            ]);
+            setVoucher(voucherData || null);
+            setItems(voucherItems || []);
+            setBankAccounts((accounts || []).filter((account) => account.active !== false));
+            setIssueBankRepairRef(voucherData?.issueBankRef || '');
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail bon supir');
+        } finally {
             setLoading(false);
-        }).catch(() => {
-            if (!cancelled) setLoading(false);
-        });
+        }
+    }, [addToast, params.id]);
 
-        return () => { cancelled = true; };
-    }, [params.id]);
+    useEffect(() => {
+        void loadVoucherDetail();
+    }, [loadVoucherDetail]);
 
     const totalSpent = items.reduce((sum, item) => sum + item.amount, 0);
     const balance = (voucher?.cashGiven || 0) - totalSpent;

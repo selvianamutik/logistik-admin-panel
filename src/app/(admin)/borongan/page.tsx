@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Search, Plus, Receipt } from 'lucide-react';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import type { DriverBorongan } from '@/lib/types';
+import { useToast } from '../layout';
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
     UNPAID: { label: 'Belum Dibayar', color: 'danger' },
@@ -13,17 +14,30 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
 
 export default function BoronganListPage() {
     const router = useRouter();
+    const { addToast } = useToast();
     const [items, setItems] = useState<DriverBorongan[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
 
     useEffect(() => {
-        fetch('/api/data?entity=driver-borongans').then(r => r.json()).then(d => {
-            setItems(d.data || []);
-            setLoading(false);
-        });
-    }, []);
+        const loadBorongan = async () => {
+            try {
+                const res = await fetch('/api/data?entity=driver-borongans');
+                const payload = await res.json();
+                if (!res.ok) {
+                    throw new Error(payload.error || 'Gagal memuat slip borongan');
+                }
+                setItems(payload.data || []);
+            } catch (error) {
+                addToast('error', error instanceof Error ? error.message : 'Gagal memuat slip borongan');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        void loadBorongan();
+    }, [addToast]);
 
     const filtered = items.filter(b => {
         const m = !search || b.boronganNumber?.toLowerCase().includes(search.toLowerCase()) || b.driverName?.toLowerCase().includes(search.toLowerCase());

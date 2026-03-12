@@ -26,17 +26,27 @@ export default function NotaListPage() {
     const [statusFilter, setStatusFilter] = useState('');
 
     useEffect(() => {
+        const fetchNotas = async () => {
+            const res = await fetch('/api/data?entity=freight-notas');
+            const payload = await res.json();
+            if (!res.ok) {
+                throw new Error(payload.error || 'Gagal memuat nota ongkos');
+            }
+            return payload.data as FreightNota[];
+        };
+
         Promise.all([
-            fetch('/api/data?entity=freight-notas').then(r => r.json()),
+            fetchNotas(),
             fetchCompanyProfile(),
-        ]).then(([notaPayload, companyPayload]) => {
-            setItems(notaPayload.data || []);
+        ]).then(([notaRows, companyPayload]) => {
+            setItems(notaRows || []);
             setCompany(companyPayload);
-            setLoading(false);
-        }).catch(() => {
+        }).catch(error => {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat nota ongkos');
+        }).finally(() => {
             setLoading(false);
         });
-    }, []);
+    }, [addToast]);
 
     const filtered = items.filter(n => {
         const query = search.toLowerCase();
