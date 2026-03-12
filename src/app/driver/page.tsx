@@ -204,6 +204,10 @@ export default function DriverPortalPage() {
                     });
                     await loadOrders();
                 } catch (error) {
+                    if (error instanceof Error && 'status' in error && (error.status === 401 || error.status === 403)) {
+                        handleDriverAuthFailure(error.message);
+                        return;
+                    }
                     setFeedback({
                         type: 'error',
                         message: error instanceof Error ? error.message : 'Gagal memulai tracking',
@@ -213,7 +217,7 @@ export default function DriverPortalPage() {
                 }
             });
         },
-        [loadOrders, postTrackingAction, withCurrentPosition]
+        [handleDriverAuthFailure, loadOrders, postTrackingAction, withCurrentPosition]
     );
 
     const runSimpleTrackingAction = useCallback(
@@ -227,6 +231,10 @@ export default function DriverPortalPage() {
                 });
                 await loadOrders();
             } catch (error) {
+                if (error instanceof Error && 'status' in error && (error.status === 401 || error.status === 403)) {
+                    handleDriverAuthFailure(error.message);
+                    return;
+                }
                 setFeedback({
                     type: 'error',
                     message: error instanceof Error ? error.message : 'Gagal memperbarui tracking',
@@ -235,7 +243,7 @@ export default function DriverPortalPage() {
                 setActionLoadingId(null);
             }
         },
-        [loadOrders, postTrackingAction]
+        [handleDriverAuthFailure, loadOrders, postTrackingAction]
     );
 
     useEffect(() => {

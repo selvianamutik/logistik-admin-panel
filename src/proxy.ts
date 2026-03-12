@@ -12,10 +12,7 @@ const OWNER_ONLY_PATHS = ['/settings/company', '/settings/users', '/settings/aud
 
 export async function proxy(request: NextRequest) {
     const { pathname } = request.nextUrl;
-
-    if (PUBLIC_PATHS.some(path => pathname.startsWith(path))) {
-        return NextResponse.next();
-    }
+    const isPublicPath = PUBLIC_PATHS.some(path => pathname.startsWith(path));
 
     if (
         pathname.startsWith('/api/') ||
@@ -28,12 +25,20 @@ export async function proxy(request: NextRequest) {
 
     const token = request.cookies.get(SESSION_COOKIE)?.value;
     if (!token) {
+        if (isPublicPath) {
+            return NextResponse.next();
+        }
         const loginPath = pathname.startsWith('/driver') ? '/driver/login' : '/login';
         return NextResponse.redirect(new URL(loginPath, request.url));
     }
 
     try {
         const user = await verifySessionToken(token);
+
+        if (isPublicPath) {
+            const redirectPath = user.role === 'DRIVER' ? '/driver' : '/dashboard';
+            return NextResponse.redirect(new URL(redirectPath, request.url));
+        }
 
         if (user.role === 'DRIVER') {
             if (pathname === '/' || pathname === '/dashboard' || !pathname.startsWith('/driver')) {
