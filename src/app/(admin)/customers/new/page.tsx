@@ -27,10 +27,16 @@ export default function CustomerNewPage() {
                 body: JSON.stringify({ entity: 'customers', data: { ...form, active: true } }),
             });
             const d = await res.json();
+            if (!res.ok) {
+                throw new Error(d.error || 'Gagal menambahkan customer');
+            }
             addToast('success', 'Customer berhasil ditambahkan');
             router.push(`/customers/${d.data?._id || d.id || ''}`);
-        } catch { addToast('error', 'Gagal menyimpan'); }
-        setSaving(false);
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal menyimpan');
+        } finally {
+            setSaving(false);
+        }
     };
 
     return (

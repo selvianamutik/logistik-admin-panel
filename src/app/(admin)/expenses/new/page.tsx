@@ -22,9 +22,25 @@ export default function ExpenseNewPage() {
     });
 
     useEffect(() => {
-        fetch('/api/data?entity=expense-categories').then(r => r.json()).then(d => setCategories(d.data || []));
-        fetch('/api/data?entity=bank-accounts').then(r => r.json()).then(d => setBankAccounts((d.data || []).filter((a: BankAccount) => a.active !== false)));
-    }, []);
+        const fetchEntity = async <T,>(url: string) => {
+            const res = await fetch(url);
+            const payload = await res.json();
+            if (!res.ok) {
+                throw new Error(payload.error || 'Gagal memuat form pengeluaran');
+            }
+            return payload.data as T;
+        };
+
+        Promise.all([
+            fetchEntity<ExpenseCategory[]>('/api/data?entity=expense-categories'),
+            fetchEntity<BankAccount[]>('/api/data?entity=bank-accounts'),
+        ]).then(([categoryRows, accountRows]) => {
+            setCategories(categoryRows || []);
+            setBankAccounts((accountRows || []).filter((a) => a.active !== false));
+        }).catch(error => {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat form pengeluaran');
+        });
+    }, [addToast]);
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();

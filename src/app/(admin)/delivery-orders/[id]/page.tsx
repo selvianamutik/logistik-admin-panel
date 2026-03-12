@@ -201,6 +201,9 @@ export default function DODetailPage() {
         try {
             const companyRes = await fetch('/api/data?entity=company');
             const companyData = await companyRes.json();
+            if (!companyRes.ok || !companyData.data) {
+                throw new Error(companyData.error || 'Profil perusahaan tidak tersedia');
+            }
             generateDOPdf(doData!, doItems, companyData.data as CompanyProfile);
             addToast('success', 'PDF Surat Jalan berhasil di-download');
         } catch (err) {

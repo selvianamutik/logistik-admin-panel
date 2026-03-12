@@ -1142,6 +1142,7 @@ async function handleExpenseCreate(session: Session, data: Record<string, unknow
             ...expenseDocBase,
             bankAccountRef: selectedAccountRef,
             bankAccountName: bankAcc.bankName,
+            bankAccountNumber: bankAcc.accountNumber,
         };
 
         const transaction = getSanityClient()
@@ -2642,6 +2643,7 @@ async function handleBoronganPayment(session: Session, data: Record<string, unkn
                 paymentMethod,
                 bankAccountRef,
                 bankAccountName: bankAccount?.bankName,
+                bankAccountNumber: bankAccount?.accountNumber,
                 boronganRef: boronganId,
             })
             .patch(boronganId, {
@@ -2651,6 +2653,8 @@ async function handleBoronganPayment(session: Session, data: Record<string, unkn
                     paidDate,
                     paidMethod: paymentMethod,
                     paidBankRef: bankAccountRef,
+                    paidBankName: bankAccount?.bankName,
+                    paidBankNumber: bankAccount?.accountNumber,
                 },
             });
 
@@ -2692,6 +2696,8 @@ async function handleBoronganPayment(session: Session, data: Record<string, unkn
                     paidDate,
                     paidMethod: paymentMethod,
                     paidBankRef: bankAccountRef,
+                    paidBankName: bankAccount?.bankName,
+                    paidBankNumber: bankAccount?.accountNumber,
                 },
                 expenseId,
             });

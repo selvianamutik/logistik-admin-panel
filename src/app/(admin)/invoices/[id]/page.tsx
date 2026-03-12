@@ -14,6 +14,11 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
     PARTIAL: { label: 'Sebagian', color: 'warning' },
     PAID: { label: 'Lunas', color: 'success' },
 };
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+    TRANSFER: 'Transfer',
+    CASH: 'Tunai',
+    OTHER: 'Lainnya',
+};
 
 export default function NotaDetailPage() {
     const params = useParams();
@@ -284,7 +289,9 @@ export default function NotaDetailPage() {
                                         ? `${p.bankAccountName}${p.bankAccountNumber || matchedAccount?.accountNumber ? ` - ${p.bankAccountNumber || matchedAccount?.accountNumber}` : ''}`
                                         : matchedAccount
                                             ? `${matchedAccount.bankName} - ${matchedAccount.accountNumber}`
-                                            : '';
+                                            : p.method === 'CASH'
+                                                ? 'Kas / rekening tidak tercatat'
+                                                : '';
                                     return (
                                 <div key={p._id} style={{ padding: '0.75rem 1rem', borderBottom: i < payments.length - 1 ? '1px solid var(--color-gray-100)' : 'none' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
@@ -292,7 +299,7 @@ export default function NotaDetailPage() {
                                         <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--color-success)' }}>+{formatCurrency(p.amount)}</div>
                                     </div>
                                     <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.72rem', color: 'var(--color-gray-400)' }}>
-                                        <span className={`badge badge-${p.method === 'CASH' ? 'warning' : 'info'}`} style={{ fontSize: '0.62rem' }}>{p.method}</span>
+                                        <span className={`badge badge-${p.method === 'CASH' ? 'warning' : 'info'}`} style={{ fontSize: '0.62rem' }}>{PAYMENT_METHOD_LABELS[p.method] || p.method}</span>
                                         {accountLabel && <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Landmark size={10} /> {accountLabel}</span>}
                                         {p.note && <span>| {p.note}</span>}
                                     </div>

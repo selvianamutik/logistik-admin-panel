@@ -12,25 +12,45 @@ export default function CompanyPage() {
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
-        fetch('/api/data?entity=company').then(r => r.json()).then(d => {
-            const profile = d.data || {};
-            // Ensure nested settings objects exist with defaults
-            profile.numberingSettings = profile.numberingSettings || { resiPrefix: 'R-', resiCounter: 0, doPrefix: 'DO-', doCounter: 0, invoicePrefix: 'INV-', invoiceCounter: 0, notaPrefix: 'NOTA-', notaCounter: 0, notaSeriesCode: '3', boronganPrefix: 'BRG-', boronganCounter: 0, bonPrefix: 'BON-', bonCounter: 0, incidentPrefix: 'INC-', incidentCounter: 0 };
-            profile.numberingSettings.notaSeriesCode = profile.numberingSettings.notaSeriesCode || '3';
-            profile.invoiceSettings = profile.invoiceSettings || { defaultTermDays: 30, dueDateDays: 14, footerNote: '', invoiceMode: 'ORDER' };
-            profile.documentSettings = profile.documentSettings || { showContact: true, dateFormat: 'DD/MM/YYYY' };
-            setData(profile); setLoading(false);
-        });
-    }, []);
+        const loadCompany = async () => {
+            try {
+                const res = await fetch('/api/data?entity=company');
+                const payload = await res.json();
+                if (!res.ok) {
+                    throw new Error(payload.error || 'Gagal memuat pengaturan perusahaan');
+                }
+
+                const profile = payload.data || {};
+                profile.numberingSettings = profile.numberingSettings || { resiPrefix: 'R-', resiCounter: 0, doPrefix: 'DO-', doCounter: 0, invoicePrefix: 'INV-', invoiceCounter: 0, notaPrefix: 'NOTA-', notaCounter: 0, notaSeriesCode: '3', boronganPrefix: 'BRG-', boronganCounter: 0, bonPrefix: 'BON-', bonCounter: 0, incidentPrefix: 'INC-', incidentCounter: 0 };
+                profile.numberingSettings.notaSeriesCode = profile.numberingSettings.notaSeriesCode || '3';
+                profile.invoiceSettings = profile.invoiceSettings || { defaultTermDays: 30, dueDateDays: 14, footerNote: '', invoiceMode: 'ORDER' };
+                profile.documentSettings = profile.documentSettings || { showContact: true, dateFormat: 'DD/MM/YYYY' };
+                setData(profile);
+            } catch (error) {
+                addToast('error', error instanceof Error ? error.message : 'Gagal memuat pengaturan perusahaan');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        void loadCompany();
+    }, [addToast]);
 
     const handleSave = async () => {
         if (!data) return;
         setSaving(true);
         try {
-            await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'company', data }) });
+            const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'company', data }) });
+            const payload = await res.json();
+            if (!res.ok) {
+                throw new Error(payload.error || 'Gagal menyimpan pengaturan perusahaan');
+            }
             addToast('success', 'Pengaturan perusahaan disimpan');
-        } catch { addToast('error', 'Gagal menyimpan'); }
-        setSaving(false);
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal menyimpan');
+        } finally {
+            setSaving(false);
+        }
     };
 
     const u = (field: string, value: unknown) => setData(prev => prev ? { ...prev, [field]: value } : prev);

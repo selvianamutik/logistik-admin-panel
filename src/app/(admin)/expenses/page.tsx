@@ -30,17 +30,29 @@ export default function ExpensesPage() {
     });
 
     useEffect(() => {
+        const fetchEntity = async <T,>(url: string) => {
+            const res = await fetch(url);
+            const payload = await res.json();
+            if (!res.ok) {
+                throw new Error(payload.error || 'Gagal memuat data pengeluaran');
+            }
+            return payload.data as T;
+        };
+
         Promise.all([
-            fetch('/api/data?entity=expenses').then(r => r.json()),
-            fetch('/api/data?entity=expense-categories').then(r => r.json()),
-            fetch('/api/data?entity=bank-accounts').then(r => r.json()),
-        ]).then(([e, c, b]) => {
-            setItems(e.data || []);
-            setCategories(c.data || []);
-            setBankAccounts((b.data || []).filter((account: BankAccount) => account.active !== false));
+            fetchEntity<Expense[]>('/api/data?entity=expenses'),
+            fetchEntity<ExpenseCategory[]>('/api/data?entity=expense-categories'),
+            fetchEntity<BankAccount[]>('/api/data?entity=bank-accounts'),
+        ]).then(([expenseRows, categoryRows, accountRows]) => {
+            setItems(expenseRows || []);
+            setCategories(categoryRows || []);
+            setBankAccounts((accountRows || []).filter(account => account.active !== false));
+        }).catch(error => {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat data pengeluaran');
+        }).finally(() => {
             setLoading(false);
         });
-    }, []);
+    }, [addToast]);
 
     const isOwner = user?.role === 'OWNER';
     const filtered = items.filter(e => !search || e.note?.toLowerCase().includes(search.toLowerCase()) || e.categoryName?.toLowerCase().includes(search.toLowerCase()));
@@ -82,6 +94,7 @@ export default function ExpensesPage() {
     }, {});
     const grandTotal = filtered.reduce((s, e) => s + e.amount, 0);
     const avgAmount = filtered.length > 0 ? grandTotal / filtered.length : 0;
+    const accountMap = new Map(bankAccounts.map(account => [account._id, account]));
 
     return (
         <div>
@@ -153,7 +166,22 @@ export default function ExpensesPage() {
                                         <tr key={e._id}>
                                             <td className="text-muted">{formatDate(e.date)}</td>
                                             <td><span className="badge badge-gray">{e.categoryName}</span></td>
-                                            <td>{e.note || e.description}</td>
+                                            <td>
+                                                <div>{e.note || e.description}</div>
+                                                {(() => {
+                                                    const matchedAccount = e.bankAccountRef ? accountMap.get(e.bankAccountRef) : undefined;
+                                                    const accountLabel = e.bankAccountName
+                                                        ? `${e.bankAccountName}${e.bankAccountNumber || matchedAccount?.accountNumber ? ` - ${e.bankAccountNumber || matchedAccount?.accountNumber}` : ''}`
+                                                        : matchedAccount
+                                                            ? `${matchedAccount.bankName} - ${matchedAccount.accountNumber}`
+                                                            : '';
+                                                    return accountLabel ? (
+                                                        <div style={{ fontSize: '0.72rem', color: 'var(--color-text-secondary)', marginTop: '0.2rem' }}>
+                                                            via {accountLabel}
+                                                        </div>
+                                                    ) : null;
+                                                })()}
+                                            </td>
                                             <td className="font-medium">{formatCurrency(e.amount)}</td>
                                             {isOwner && <td><span className={`badge ${e.privacyLevel === 'ownerOnly' ? 'badge-purple' : 'badge-info'}`}>{e.privacyLevel === 'ownerOnly' ? 'Owner Only' : 'Internal'}</span></td>}
                                         </tr>

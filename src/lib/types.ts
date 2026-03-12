@@ -299,6 +299,8 @@ export interface DriverBorongan {
   paidDate?: string;
   paidMethod?: PaymentMethod;
   paidBankRef?: string;
+  paidBankName?: string;
+  paidBankNumber?: string;
 }
 
 export interface DriverBoronganItem {
@@ -393,6 +395,7 @@ export interface Expense {
   privacyLevel: PrivacyLevel;
   bankAccountRef?: string;
   bankAccountName?: string;
+  bankAccountNumber?: string;
   relatedVehicleRef?: string;
   relatedIncidentRef?: string;
   relatedMaintenanceRef?: string;

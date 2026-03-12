@@ -12,6 +12,11 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
     UNPAID: { label: 'Belum Dibayar', color: 'danger' },
     PAID: { label: 'Sudah Dibayar', color: 'success' },
 };
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+    TRANSFER: 'Transfer',
+    CASH: 'Tunai',
+    OTHER: 'Lainnya',
+};
 
 export default function BoronganDetailPage() {
     const params = useParams();
@@ -165,6 +170,15 @@ export default function BoronganDetailPage() {
     }
 
     const statusConf = STATUS_MAP[borong.status] || { label: borong.status, color: 'secondary' };
+    const accountMap = new Map(bankAccounts.map(account => [account._id, account]));
+    const matchedPaidAccount = borong.paidBankRef ? accountMap.get(borong.paidBankRef) : undefined;
+    const paidAccountLabel = borong.paidBankName
+        ? `${borong.paidBankName}${borong.paidBankNumber || matchedPaidAccount?.accountNumber ? ` - ${borong.paidBankNumber || matchedPaidAccount?.accountNumber}` : ''}`
+        : matchedPaidAccount
+            ? `${matchedPaidAccount.bankName} - ${matchedPaidAccount.accountNumber}`
+            : borong.paidMethod === 'CASH'
+                ? 'Kas / rekening tidak tercatat'
+                : '';
 
     return (
         <div>
@@ -244,8 +258,17 @@ export default function BoronganDetailPage() {
                                     </div>
                                     <div className="detail-item">
                                         <div className="detail-label">Metode</div>
-                                        <div className="detail-value">{(borong as unknown as Record<string, string>).paidMethod || '-'}</div>
+                                        <div className="detail-value">{PAYMENT_METHOD_LABELS[borong.paidMethod || ''] || borong.paidMethod || '-'}</div>
                                     </div>
+                                </div>
+                            )}
+                            {borong.paidDate && (
+                                <div className="detail-row">
+                                    <div className="detail-item">
+                                        <div className="detail-label">Rekening / Kas</div>
+                                        <div className="detail-value">{paidAccountLabel || '-'}</div>
+                                    </div>
+                                    <div className="detail-item" />
                                 </div>
                             )}
                         </div>
@@ -337,6 +360,7 @@ export default function BoronganDetailPage() {
                                     }}
                                 >
                                     Sudah Dibayar {borong.paidDate ? `(${formatDate(borong.paidDate)})` : ''}
+                                    {paidAccountLabel ? <div style={{ fontSize: '0.78rem', color: 'var(--color-gray-500)', marginTop: '0.25rem' }}>via {paidAccountLabel}</div> : null}
                                 </div>
                             )}
                         </div>

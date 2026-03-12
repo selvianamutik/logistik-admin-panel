@@ -23,12 +23,20 @@ export default function OrderEditPage() {
 
     useEffect(() => {
         const id = params.id as string;
+        const fetchEntity = async <T,>(url: string) => {
+            const res = await fetch(url);
+            const payload = await res.json();
+            if (!res.ok) {
+                throw new Error(payload.error || 'Gagal memuat form edit order');
+            }
+            return payload.data as T;
+        };
+
         Promise.all([
-            fetch(`/api/data?entity=orders&id=${id}`).then(r => r.json()),
-            fetch('/api/data?entity=customers').then(r => r.json()),
-            fetch('/api/data?entity=services').then(r => r.json()),
-        ]).then(([orderRes, custRes, svcRes]) => {
-            const order = orderRes.data as Order;
+            fetchEntity<Order | null>(`/api/data?entity=orders&id=${id}`),
+            fetchEntity<Customer[]>('/api/data?entity=customers'),
+            fetchEntity<Service[]>('/api/data?entity=services'),
+        ]).then(([order, customerRows, serviceRows]) => {
             if (order) {
                 setForm({
                     customerRef: order.customerRef, customerName: order.customerName || '',
@@ -38,11 +46,14 @@ export default function OrderEditPage() {
                     notes: order.notes || ''
                 });
             }
-            setCustomers(custRes.data || []);
-            setServices(svcRes.data || []);
+            setCustomers(customerRows || []);
+            setServices(serviceRows || []);
+        }).catch(error => {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat form edit order');
+        }).finally(() => {
             setLoading(false);
-        }).catch(() => setLoading(false));
-    }, [params.id]);
+        });
+    }, [addToast, params.id]);
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -52,17 +63,24 @@ export default function OrderEditPage() {
         }
         setSaving(true);
         try {
-            await fetch('/api/data', {
+            const res = await fetch('/api/data', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     entity: 'orders', action: 'update',
                     data: { id: params.id, updates: form }
                 }),
             });
+            const payload = await res.json();
+            if (!res.ok) {
+                throw new Error(payload.error || 'Gagal menyimpan perubahan order');
+            }
             addToast('success', 'Order berhasil diperbarui');
             router.push(`/orders/${params.id}`);
-        } catch { addToast('error', 'Gagal menyimpan'); }
-        setSaving(false);
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal menyimpan');
+        } finally {
+            setSaving(false);
+        }
     };
 
     if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 300 }} /></div>;
