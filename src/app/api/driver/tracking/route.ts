@@ -80,6 +80,19 @@ async function clearDriverTrackingLock(driver: Driver, now: string) {
     return true;
 }
 
+async function releaseDriverTrackingLockIfOwned(driverId: string, deliveryOrderRef: string, now: string) {
+    const driverState = await refreshDriverTrackingState(driverId);
+    if (!driverState) {
+        return false;
+    }
+
+    if (extractRefId(driverState.activeTrackingDeliveryOrderRef) !== deliveryOrderRef) {
+        return false;
+    }
+
+    return clearDriverTrackingLock(driverState, now);
+}
+
 export async function POST(request: Request) {
     const auth = await requireDriverSessionContext();
     if ('error' in auth) {
@@ -176,6 +189,10 @@ export async function POST(request: Request) {
                 );
             }
 
+            if (deliveryOrder.status !== 'CREATED' && deliveryOrder.status !== 'ON_DELIVERY') {
+                return NextResponse.json({ error: 'Hanya DO aktif yang bisa mulai tracking' }, { status: 409 });
+            }
+
             let driverState = await refreshDriverTrackingState(auth.driver._id);
             if (!driverState || driverState.active === false) {
                 return NextResponse.json({ error: 'Data supir tidak aktif atau tidak ditemukan' }, { status: 403 });
@@ -231,56 +248,62 @@ export async function POST(request: Request) {
                 );
             }
 
-            if (deliveryOrder.status !== 'CREATED' && deliveryOrder.status !== 'ON_DELIVERY') {
-                return NextResponse.json({ error: 'Hanya DO aktif yang bisa mulai tracking' }, { status: 409 });
-            }
-
-            if (deliveryOrder.status === 'CREATED') {
-                const statusResponse = await handleDeliveryOrderStatusUpdate(
-                    auth.session,
-                    { id: deliveryOrderRef, status: 'ON_DELIVERY', note: 'Tracking live dimulai via driver app' },
-                    addAuditLog
-                );
-                if (!statusResponse.ok) {
-                    return statusResponse;
+            try {
+                if (deliveryOrder.status === 'CREATED') {
+                    const statusResponse = await handleDeliveryOrderStatusUpdate(
+                        auth.session,
+                        { id: deliveryOrderRef, status: 'ON_DELIVERY', note: 'Tracking live dimulai via driver app' },
+                        addAuditLog
+                    );
+                    if (!statusResponse.ok) {
+                        await releaseDriverTrackingLockIfOwned(auth.driver._id, deliveryOrderRef, now);
+                        return statusResponse;
+                    }
+                } else if (action === 'start') {
+                    await createTrackingLog({
+                        deliveryOrderRef,
+                        status: deliveryOrder.status,
+                        note: 'Tracking live dimulai via driver app',
+                        userRef: auth.session._id,
+                        userName: auth.session.name,
+                        latitude: latitude ?? undefined,
+                        longitude: longitude ?? undefined,
+                        accuracyM: accuracyM ?? undefined,
+                        speedKph,
+                    });
+                } else {
+                    await createTrackingLog({
+                        deliveryOrderRef,
+                        status: deliveryOrder.status,
+                        note: 'Tracking live dilanjutkan via driver app',
+                        userRef: auth.session._id,
+                        userName: auth.session.name,
+                        latitude: latitude ?? undefined,
+                        longitude: longitude ?? undefined,
+                        accuracyM: accuracyM ?? undefined,
+                        speedKph,
+                    });
                 }
-            } else if (action === 'start') {
-                await createTrackingLog({
-                    deliveryOrderRef,
-                    status: deliveryOrder.status,
-                    note: 'Tracking live dimulai via driver app',
-                    userRef: auth.session._id,
-                    userName: auth.session.name,
-                    latitude: latitude ?? undefined,
-                    longitude: longitude ?? undefined,
-                    accuracyM: accuracyM ?? undefined,
-                    speedKph,
-                });
-            } else {
-                await createTrackingLog({
-                    deliveryOrderRef,
-                    status: deliveryOrder.status,
-                    note: 'Tracking live dilanjutkan via driver app',
-                    userRef: auth.session._id,
-                    userName: auth.session.name,
-                    latitude: latitude ?? undefined,
-                    longitude: longitude ?? undefined,
-                    accuracyM: accuracyM ?? undefined,
-                    speedKph,
-                });
+
+                const trackingPatch = getSanityClient()
+                    .patch(deliveryOrderRef)
+                    .set({
+                        trackingState: 'ACTIVE',
+                        trackingStartedAt: deliveryOrder.trackingStartedAt || now,
+                        ...locationPatch,
+                    })
+                    .unset(['trackingStoppedAt']);
+                const updated = await trackingPatch.commit() as DeliveryOrder;
+
+                return NextResponse.json({ data: updated });
+            } catch (error) {
+                try {
+                    await releaseDriverTrackingLockIfOwned(auth.driver._id, deliveryOrderRef, now);
+                } catch (releaseError) {
+                    console.warn('Failed to release driver tracking lock after start/resume error', releaseError);
+                }
+                throw error;
             }
-
-            const trackingPatch = getSanityClient()
-                .patch(deliveryOrderRef)
-                .set({
-                    trackingState: 'ACTIVE',
-                    trackingStartedAt: deliveryOrder.trackingStartedAt || now,
-                    ...locationPatch,
-                })
-                .unset(['trackingStoppedAt']);
-            const updated = await trackingPatch.commit() as DeliveryOrder;
-
-            return NextResponse.json({ data: updated });
         }
 
         if (action === 'heartbeat') {
