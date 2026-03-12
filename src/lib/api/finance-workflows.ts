@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-import { getSanityClient, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
+import { getSanityClient, sanityCreate, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
 import type { Payment } from '@/lib/types';
 
 import {
@@ -263,6 +263,194 @@ export async function handlePaymentCreate(
 
     return NextResponse.json(
         { error: 'Pembayaran berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+        { status: 409 }
+    );
+}
+
+export async function handleBankTransfer(data: Record<string, unknown>) {
+    const amount = typeof data.amount === 'number' ? data.amount : Number(data.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+        return NextResponse.json({ error: 'Nominal transfer tidak valid' }, { status: 400 });
+    }
+
+    const fromAccountRef = typeof data.fromAccountRef === 'string' ? data.fromAccountRef : '';
+    const toAccountRef = typeof data.toAccountRef === 'string' ? data.toAccountRef : '';
+    if (!fromAccountRef || !toAccountRef || fromAccountRef === toAccountRef) {
+        return NextResponse.json({ error: 'Rekening transfer tidak valid' }, { status: 400 });
+    }
+
+    const transferDate =
+        typeof data.date === 'string' && data.date
+            ? data.date
+            : new Date().toISOString().slice(0, 10);
+    assertIsoDate(transferDate, 'Tanggal transfer');
+
+    const transferId = `transfer-${Date.now()}`;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        const fromAcc = await getLedgerAccount(fromAccountRef);
+        const toAcc = await getLedgerAccount(toAccountRef);
+        if (!fromAcc || !toAcc) {
+            return NextResponse.json({ error: 'Akun sumber atau tujuan tidak ditemukan' }, { status: 404 });
+        }
+        if (!fromAcc._rev || !toAcc._rev) {
+            return NextResponse.json({ error: 'Revisi rekening tidak tersedia' }, { status: 409 });
+        }
+
+        const fromBalance = (fromAcc.currentBalance || 0) - amount;
+        const toBalance = (toAcc.currentBalance || 0) + amount;
+        const transaction = getSanityClient()
+            .transaction()
+            .create({
+                _id: `${transferId}-out`,
+                _type: 'bankTransaction',
+                bankAccountRef: fromAccountRef,
+                bankAccountName: fromAcc.bankName,
+                bankAccountNumber: fromAcc.accountNumber,
+                type: 'TRANSFER_OUT',
+                amount,
+                date: transferDate,
+                description: `Transfer ke ${toAcc.bankName}`,
+                balanceAfter: fromBalance,
+                relatedTransferRef: transferId,
+            })
+            .create({
+                _id: `${transferId}-in`,
+                _type: 'bankTransaction',
+                bankAccountRef: toAccountRef,
+                bankAccountName: toAcc.bankName,
+                bankAccountNumber: toAcc.accountNumber,
+                type: 'TRANSFER_IN',
+                amount,
+                date: transferDate,
+                description: `Transfer dari ${fromAcc.bankName}`,
+                balanceAfter: toBalance,
+                relatedTransferRef: transferId,
+            })
+            .patch(fromAccountRef, {
+                ifRevisionID: fromAcc._rev,
+                set: { currentBalance: fromBalance },
+            })
+            .patch(toAccountRef, {
+                ifRevisionID: toAcc._rev,
+                set: { currentBalance: toBalance },
+            });
+
+        try {
+            await transaction.commit();
+            return NextResponse.json({ success: true, transferId });
+        } catch (err) {
+            if (!isMutationConflictError(err)) {
+                throw err;
+            }
+
+            if (attempt === 2) {
+                return NextResponse.json(
+                    { error: 'Transfer berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+        }
+    }
+
+    return NextResponse.json(
+        { error: 'Transfer berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+        { status: 409 }
+    );
+}
+
+export async function handleExpenseCreate(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const amount = typeof data.amount === 'number' ? data.amount : Number(data.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+        return NextResponse.json({ error: 'Nominal pengeluaran tidak valid' }, { status: 400 });
+    }
+
+    const expenseDate =
+        typeof data.date === 'string' && data.date ? data.date : new Date().toISOString().slice(0, 10);
+    assertIsoDate(expenseDate, 'Tanggal pengeluaran');
+
+    const expenseDocBase: { _type: 'expense'; [key: string]: unknown } = {
+        _type: 'expense',
+        ...data,
+        date: expenseDate,
+        amount,
+    };
+    const selectedAccountRef =
+        typeof data.bankAccountRef === 'string' && data.bankAccountRef ? data.bankAccountRef : undefined;
+
+    if (!selectedAccountRef) {
+        const created = await sanityCreate(expenseDocBase);
+        const expenseId = (created as Record<string, unknown>)._id as string;
+        void addAuditLog(session, 'CREATE', 'expenses', expenseId, `Created expenses: ${expenseId}`);
+        return NextResponse.json({ data: created, id: expenseId });
+    }
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        const bankAcc = await getLedgerAccount(selectedAccountRef);
+        if (!bankAcc) {
+            return NextResponse.json({ error: 'Rekening bank tidak ditemukan' }, { status: 404 });
+        }
+        if (!bankAcc._rev) {
+            return NextResponse.json({ error: 'Revisi rekening tidak tersedia' }, { status: 409 });
+        }
+
+        const expenseId = crypto.randomUUID();
+        const newBalance = (bankAcc.currentBalance || 0) - amount;
+        const expenseDoc = {
+            _id: expenseId,
+            ...expenseDocBase,
+            bankAccountRef: selectedAccountRef,
+            bankAccountName: bankAcc.bankName,
+            bankAccountNumber: bankAcc.accountNumber,
+        };
+
+        const transaction = getSanityClient()
+            .transaction()
+            .create(expenseDoc)
+            .create({
+                _id: crypto.randomUUID(),
+                _type: 'bankTransaction',
+                bankAccountRef: selectedAccountRef,
+                bankAccountName: bankAcc.bankName,
+                bankAccountNumber: bankAcc.accountNumber,
+                type: 'DEBIT',
+                amount,
+                date: expenseDate,
+                description:
+                    (typeof data.description === 'string' && data.description) ||
+                    (typeof data.note === 'string' && data.note) ||
+                    'Pengeluaran',
+                balanceAfter: newBalance,
+                relatedExpenseRef: expenseId,
+            })
+            .patch(selectedAccountRef, {
+                ifRevisionID: bankAcc._rev,
+                set: { currentBalance: newBalance },
+            });
+
+        try {
+            await transaction.commit();
+            void addAuditLog(session, 'CREATE', 'expenses', expenseId, `Created expenses: ${expenseId}`);
+            return NextResponse.json({ data: expenseDoc, id: expenseId });
+        } catch (err) {
+            if (!isMutationConflictError(err)) {
+                throw err;
+            }
+
+            if (attempt === 2) {
+                return NextResponse.json(
+                    { error: 'Pengeluaran berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+        }
+    }
+
+    return NextResponse.json(
+        { error: 'Pengeluaran berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
         { status: 409 }
     );
 }
