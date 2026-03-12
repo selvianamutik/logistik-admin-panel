@@ -23,6 +23,14 @@ type DriverSessionResponse = {
     company: { _id: string; name: string; phone?: string; themeColor?: string } | null;
 };
 
+type DriverPortalError = Error & { status?: number };
+
+function createDriverPortalError(status: number, message: string) {
+    const error = new Error(message) as DriverPortalError;
+    error.status = status;
+    return error;
+}
+
 function formatTrackingState(state?: DeliveryOrder['trackingState']) {
     switch (state) {
         case 'ACTIVE':
@@ -50,6 +58,11 @@ export default function DriverPortalPage() {
     const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
     const [feedback, setFeedback] = useState<{ type: 'error' | 'success' | 'info'; message: string } | null>(null);
 
+    const handleDriverAuthFailure = useCallback((message = 'Sesi driver berakhir. Silakan login ulang.') => {
+        setFeedback({ type: 'error', message });
+        router.replace('/driver/login');
+    }, [router]);
+
     const activeTrackingDo = useMemo(
         () => orders.find(item => item.trackingState === 'ACTIVE') || null,
         [orders]
@@ -68,10 +81,14 @@ export default function DriverPortalPage() {
             const res = await fetch('/api/driver/delivery-orders');
             const payload = await res.json();
             if (!res.ok) {
-                throw new Error(payload.error || 'Gagal memuat surat jalan driver');
+                throw createDriverPortalError(res.status, payload.error || 'Gagal memuat surat jalan driver');
             }
             setOrders(payload.data || []);
         } catch (error) {
+            if (error instanceof Error && 'status' in error && (error.status === 401 || error.status === 403)) {
+                handleDriverAuthFailure();
+                return;
+            }
             setFeedback({
                 type: 'error',
                 message: error instanceof Error ? error.message : 'Gagal memuat surat jalan driver',
@@ -81,7 +98,7 @@ export default function DriverPortalPage() {
                 setRefreshing(false);
             }
         }
-    }, []);
+    }, [handleDriverAuthFailure]);
 
     useEffect(() => {
         const loadDriverPortal = async () => {
@@ -90,7 +107,7 @@ export default function DriverPortalPage() {
                 const sessionRes = await fetch('/api/driver/session');
                 const sessionPayload = await sessionRes.json() as DriverSessionResponse & { error?: string };
                 if (!sessionRes.ok || !sessionPayload.user || !sessionPayload.driver) {
-                    throw new Error(sessionPayload.error || 'Akun driver tidak valid');
+                    throw createDriverPortalError(sessionRes.status, sessionPayload.error || 'Akun driver tidak valid');
                 }
 
                 setUser(sessionPayload.user);
@@ -98,18 +115,22 @@ export default function DriverPortalPage() {
                 setCompanyName(sessionPayload.company?.name || 'LOGISTIK');
                 await loadOrders('initial');
             } catch (error) {
+                if (error instanceof Error && 'status' in error && (error.status === 401 || error.status === 403)) {
+                    handleDriverAuthFailure(error.message);
+                    return;
+                }
                 setFeedback({
                     type: 'error',
                     message: error instanceof Error ? error.message : 'Gagal memuat aplikasi driver',
                 });
-                router.push('/driver/login');
+                router.replace('/driver/login');
             } finally {
                 setLoading(false);
             }
         };
 
         void loadDriverPortal();
-    }, [loadOrders, router]);
+    }, [handleDriverAuthFailure, loadOrders, router]);
 
     const postTrackingAction = useCallback(
         async (
@@ -132,7 +153,7 @@ export default function DriverPortalPage() {
 
             const payload = await res.json();
             if (!res.ok) {
-                throw new Error(payload.error || 'Gagal mengirim tracking');
+                throw createDriverPortalError(res.status, payload.error || 'Gagal mengirim tracking');
             }
 
             if (payload.data) {
@@ -148,6 +169,7 @@ export default function DriverPortalPage() {
         (onSuccess: (coords: GeolocationCoordinates) => Promise<void>) => {
             if (!navigator.geolocation) {
                 setFeedback({ type: 'error', message: 'Browser HP ini tidak mendukung lokasi GPS.' });
+                setActionLoadingId(null);
                 return;
             }
 
@@ -237,6 +259,17 @@ export default function DriverPortalPage() {
                     try {
                         await postTrackingAction('heartbeat', activeTrackingDo._id, position.coords);
                     } catch (error) {
+                        if (error instanceof Error && 'status' in error) {
+                            if (error.status === 401 || error.status === 403) {
+                                handleDriverAuthFailure();
+                                return;
+                            }
+                            if (error.status === 409) {
+                                setFeedback({ type: 'info', message: error.message });
+                                await loadOrders();
+                                return;
+                            }
+                        }
                         setFeedback({
                             type: 'error',
                             message: error instanceof Error ? error.message : 'Gagal mengirim lokasi live',
@@ -264,7 +297,7 @@ export default function DriverPortalPage() {
                 intervalRef.current = null;
             }
         };
-    }, [activeTrackingDo, postTrackingAction]);
+    }, [activeTrackingDo, handleDriverAuthFailure, loadOrders, postTrackingAction]);
 
     const handleLogout = async () => {
         await fetch('/api/auth/logout', { method: 'POST' });

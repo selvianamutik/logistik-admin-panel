@@ -92,6 +92,9 @@ export async function POST(request: Request) {
         if (!driver) {
             return NextResponse.json({ error: 'Supir tidak ditemukan' }, { status: 404 });
         }
+        if (driver.active === false) {
+            return NextResponse.json({ error: 'Supir tidak aktif dan tidak bisa diberi akun mobile' }, { status: 409 });
+        }
 
         if (action === 'create') {
             if (password.length < 8) {

@@ -23,6 +23,9 @@ async function validateDriverAccountLink(driverRef: unknown, excludeUserId?: str
     if (!driver) {
         throw new Error('Data supir untuk akun mobile tidak ditemukan');
     }
+    if (driver.active === false) {
+        throw new Error('Supir tidak aktif dan tidak bisa diberi akun mobile');
+    }
 
     const duplicateDriverAccount = await getSanityClient().fetch<{ _id: string } | null>(
         `*[_type == "user" && role == "DRIVER" && driverRef == $driverRef && _id != $excludeId][0]{ _id }`,
