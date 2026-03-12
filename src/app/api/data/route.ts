@@ -1550,6 +1550,17 @@ async function handleFreightNotaCreate(session: Session, data: Record<string, un
         }
     }
 
+    let finalCustomerName = customerName;
+    if (resolvedCustomerRef) {
+        const customerDoc = await getSanityClient().fetch<{ name?: string } | null>(
+            `*[_type == "customer" && _id == $id][0]{ name }`,
+            { id: resolvedCustomerRef }
+        );
+        if (customerDoc?.name) {
+            finalCustomerName = customerDoc.name;
+        }
+    }
+
     const totalAmount = rows.reduce((sum, row) => sum + row.uangRp, 0);
     const totalCollie = rows.reduce((sum, row) => sum + (row.collie || 0), 0);
     const totalWeightKg = rows.reduce((sum, row) => sum + row.beratKg, 0);
@@ -1564,7 +1575,7 @@ async function handleFreightNotaCreate(session: Session, data: Record<string, un
         _id: notaId,
         _type: 'freightNota',
         customerRef: resolvedCustomerRef,
-        customerName,
+        customerName: finalCustomerName,
         issueDate,
         dueDate: normalizeOptionalText(data.dueDate),
         status: 'UNPAID',

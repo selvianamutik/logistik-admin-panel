@@ -171,12 +171,12 @@ export default function NewNotaPage() {
 
         const nextRow = buildNotaRowFromDO(deliveryOrder);
         if (!customerRef && relatedOrder?.customerRef) {
-            setCustomerRef(relatedOrder.customerRef);
-            setCustomerName(
+            const resolvedCustomerName =
                 relatedOrder.customerName ||
                 customers.find(customer => customer._id === relatedOrder.customerRef)?.name ||
-                ''
-            );
+                '';
+            setCustomerRef(relatedOrder.customerRef);
+            setCustomerName(resolvedCustomerName);
         } else if (!customerName && relatedOrder?.customerName) {
             setCustomerName(relatedOrder.customerName);
         }
