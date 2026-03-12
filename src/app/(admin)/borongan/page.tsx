@@ -102,7 +102,7 @@ export default function BoronganListPage() {
                         </tbody>
                     </table>
                 </div>
-                {filtered.length > 0 && <div className="pagination"><div className="pagination-info">Menampilkan {filtered.length} slip · Total upah: <strong style={{ color: 'var(--color-danger)' }}>{formatCurrency(totalUpah)}</strong></div></div>}
+                {filtered.length > 0 && <div className="pagination"><div className="pagination-info">Menampilkan {filtered.length} slip | Total upah: <strong style={{ color: 'var(--color-danger)' }}>{formatCurrency(totalUpah)}</strong></div></div>}
             </div>
         </div>
     );

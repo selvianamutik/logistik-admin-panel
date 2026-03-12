@@ -213,7 +213,7 @@ export default function TiresPage() {
                 </div>
                 {filtered.length > 0 && (
                     <div className="pagination">
-                        <div className="pagination-info">{activeBans.length} terpasang · {replacedBans.length} sudah diganti · {filtered.length} total</div>
+                        <div className="pagination-info">{activeBans.length} terpasang | {replacedBans.length} sudah diganti | {filtered.length} total</div>
                     </div>
                 )}
             </div>

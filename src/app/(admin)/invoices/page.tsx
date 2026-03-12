@@ -180,7 +180,7 @@ export default function NotaListPage() {
                         </tbody>
                     </table>
                 </div>
-                {filtered.length > 0 && <div className="pagination"><div className="pagination-info">Menampilkan {filtered.length} nota · Total: <strong style={{ color: 'var(--color-danger)' }}>{formatCurrency(grandTotal)}</strong></div></div>}
+                {filtered.length > 0 && <div className="pagination"><div className="pagination-info">Menampilkan {filtered.length} nota | Total: <strong style={{ color: 'var(--color-danger)' }}>{formatCurrency(grandTotal)}</strong></div></div>}
             </div>
         </div>
     );

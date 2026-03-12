@@ -261,7 +261,7 @@ export default function NotaDetailPage() {
                                     <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.72rem', color: 'var(--color-gray-400)' }}>
                                         <span className={`badge badge-${p.method === 'CASH' ? 'warning' : 'info'}`} style={{ fontSize: '0.62rem' }}>{p.method}</span>
                                         {p.bankAccountName && <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Landmark size={10} /> {p.bankAccountName}</span>}
-                                        {p.note && <span>· {p.note}</span>}
+                                        {p.note && <span>| {p.note}</span>}
                                     </div>
                                 </div>
                             ))}
