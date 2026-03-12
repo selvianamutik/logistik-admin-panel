@@ -67,6 +67,7 @@ export default function DriverPortalPage() {
         () => orders.find(item => item.trackingState === 'ACTIVE') || null,
         [orders]
     );
+    const isActionInFlight = Boolean(actionLoadingId);
 
     const applyOrderUpdate = useCallback((updated: DeliveryOrder) => {
         setOrders(prev => prev.map(item => (item._id === updated._id ? { ...item, ...updated } : item)));
@@ -398,24 +399,24 @@ export default function DriverPortalPage() {
                                     <div className="driver-action-row">
                                         {item.trackingState === 'ACTIVE' ? (
                                             <>
-                                                <button className="btn btn-warning btn-sm" onClick={() => void runSimpleTrackingAction('pause', item._id)} disabled={isBusy}>
+                                                <button className="btn btn-warning btn-sm" onClick={() => void runSimpleTrackingAction('pause', item._id)} disabled={isActionInFlight}>
                                                     <PauseCircle size={15} /> {isBusy ? 'Memproses...' : 'Jeda'}
                                                 </button>
-                                                <button className="btn btn-secondary btn-sm" onClick={() => void runSimpleTrackingAction('stop', item._id)} disabled={isBusy}>
+                                                <button className="btn btn-secondary btn-sm" onClick={() => void runSimpleTrackingAction('stop', item._id)} disabled={isActionInFlight}>
                                                     <Navigation size={15} /> {isBusy ? 'Memproses...' : 'Stop'}
                                                 </button>
                                             </>
                                         ) : item.trackingState === 'PAUSED' ? (
                                             <>
-                                                <button className="btn btn-primary btn-sm" onClick={() => startTracking(item._id, true)} disabled={isBusy}>
+                                                <button className="btn btn-primary btn-sm" onClick={() => startTracking(item._id, true)} disabled={isActionInFlight}>
                                                     <PlayCircle size={15} /> {isBusy ? 'Memproses...' : 'Lanjut'}
                                                 </button>
-                                                <button className="btn btn-secondary btn-sm" onClick={() => void runSimpleTrackingAction('stop', item._id)} disabled={isBusy}>
+                                                <button className="btn btn-secondary btn-sm" onClick={() => void runSimpleTrackingAction('stop', item._id)} disabled={isActionInFlight}>
                                                     <Navigation size={15} /> {isBusy ? 'Memproses...' : 'Stop'}
                                                 </button>
                                             </>
                                         ) : (
-                                            <button className="btn btn-primary btn-sm" onClick={() => startTracking(item._id)} disabled={isBusy || !canStart || Boolean(activeTrackingDo && activeTrackingDo._id !== item._id)}>
+                                            <button className="btn btn-primary btn-sm" onClick={() => startTracking(item._id)} disabled={isActionInFlight || !canStart || Boolean(activeTrackingDo && activeTrackingDo._id !== item._id)}>
                                                 <PlayCircle size={15} /> {isBusy ? 'Memproses...' : 'Mulai Tracking'}
                                             </button>
                                         )}

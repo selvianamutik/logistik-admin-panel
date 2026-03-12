@@ -8,7 +8,7 @@
     "build:turbopack": "node -e \"require('fs').rmSync('.next', { recursive: true, force: true })\" && next build",
     "start": "next start",
     "lint": "eslint",
-    "typecheck": "npx next typegen && tsc --noEmit",
+    "typecheck": "node scripts/typecheck.mjs",
     "audit:finance": "node scripts/audit-finance.mjs",
     "reset:sanity": "npx tsx scripts/reset-sanity.ts",
     "seed:sanity": "npx tsx scripts/seed-sanity.ts",

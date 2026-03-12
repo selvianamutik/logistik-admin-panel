@@ -113,16 +113,19 @@ export interface ExpenseCategory {
 
 // ── Driver ──
 export interface Driver {
-  _id: string;
-  _type: 'driver';
-  name: string;
-  phone: string;
-  licenseNumber: string;
-  ktpNumber?: string;
-  simExpiry?: string;
-  address?: string;
-  active: boolean;
-}
+    _id: string;
+    _type: 'driver';
+    _rev?: string;
+    name: string;
+    phone: string;
+    licenseNumber: string;
+    ktpNumber?: string;
+    simExpiry?: string;
+    address?: string;
+    active: boolean;
+    activeTrackingDeliveryOrderRef?: string;
+    activeTrackingUpdatedAt?: string;
+  }
 
 // ── Driver Voucher (Bon Supir) ──
 export type DriverVoucherStatus = 'DRAFT' | 'ISSUED' | 'SETTLED';

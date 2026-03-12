@@ -9,7 +9,7 @@ import {
 import { extractRefId } from '@/lib/api/data-helpers';
 import { handleDeliveryOrderStatusUpdate } from '@/lib/api/order-workflows';
 import { getSanityClient, sanityCreate, sanityGetById, sanityUpdate } from '@/lib/sanity';
-import type { DeliveryOrder } from '@/lib/types';
+import type { DeliveryOrder, Driver } from '@/lib/types';
 
 async function addAuditLog(actor: { _id: string; name: string }, action: string, entityRef: string, summary: string) {
     try {
@@ -59,6 +59,25 @@ async function createTrackingLog(input: {
         userRef: input.userRef,
         userName: input.userName,
     });
+}
+
+async function refreshDriverTrackingState(driverId: string) {
+    return sanityGetById<Driver>(driverId);
+}
+
+async function clearDriverTrackingLock(driver: Driver, now: string) {
+    if (!driver._rev) {
+        return false;
+    }
+
+    await getSanityClient()
+        .patch(driver._id)
+        .ifRevisionId(driver._rev)
+        .unset(['activeTrackingDeliveryOrderRef'])
+        .set({ activeTrackingUpdatedAt: now })
+        .commit();
+
+    return true;
 }
 
 export async function POST(request: Request) {
@@ -153,6 +172,61 @@ export async function POST(request: Request) {
             if (otherActiveDo) {
                 return NextResponse.json(
                     { error: `Masih ada tracking aktif pada ${otherActiveDo.doNumber || otherActiveDo._id}. Hentikan dulu sebelum mulai yang baru.` },
+                    { status: 409 }
+                );
+            }
+
+            let driverState = await refreshDriverTrackingState(auth.driver._id);
+            if (!driverState || driverState.active === false) {
+                return NextResponse.json({ error: 'Data supir tidak aktif atau tidak ditemukan' }, { status: 403 });
+            }
+
+            const lockedDoRef = extractRefId(driverState.activeTrackingDeliveryOrderRef);
+            if (lockedDoRef && lockedDoRef !== deliveryOrderRef) {
+                const lockedDo = await sanityGetById<DeliveryOrder>(lockedDoRef);
+                if (lockedDo && ['ACTIVE', 'PAUSED'].includes(lockedDo.trackingState || '')) {
+                    return NextResponse.json(
+                        { error: `Tracking supir ini masih terkunci pada ${lockedDo.doNumber || lockedDo._id}. Hentikan dulu sebelum mulai yang baru.` },
+                        { status: 409 }
+                    );
+                }
+
+                try {
+                    await clearDriverTrackingLock(driverState, now);
+                } catch (error) {
+                    console.warn('Failed to clear stale driver tracking lock', error);
+                    return NextResponse.json(
+                        { error: 'Status tracking supir sedang berubah. Refresh lalu coba lagi.' },
+                        { status: 409 }
+                    );
+                }
+
+                driverState = await refreshDriverTrackingState(auth.driver._id);
+                if (!driverState || driverState.active === false) {
+                    return NextResponse.json({ error: 'Data supir tidak aktif atau tidak ditemukan' }, { status: 403 });
+                }
+            }
+
+            if (!driverState._rev) {
+                return NextResponse.json(
+                    { error: 'Kunci tracking supir tidak tersedia. Refresh lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+
+            try {
+                await getSanityClient()
+                    .patch(driverState._id)
+                    .ifRevisionId(driverState._rev)
+                    .set({
+                        activeTrackingDeliveryOrderRef: deliveryOrderRef,
+                        activeTrackingUpdatedAt: now,
+                    })
+                    .commit();
+            } catch (error) {
+                console.warn('Failed to acquire driver tracking lock', error);
+                return NextResponse.json(
+                    { error: 'Tracking supir sedang dipakai sesi lain. Refresh lalu coba lagi.' },
                     { status: 409 }
                 );
             }
@@ -267,6 +341,23 @@ export async function POST(request: Request) {
                 trackingStoppedAt: now,
                 ...locationPatch,
             });
+
+            try {
+                let driverState = await refreshDriverTrackingState(auth.driver._id);
+                if (driverState && extractRefId(driverState.activeTrackingDeliveryOrderRef) === deliveryOrderRef) {
+                    try {
+                        await clearDriverTrackingLock(driverState, now);
+                    } catch {
+                        driverState = await refreshDriverTrackingState(auth.driver._id);
+                        if (driverState && extractRefId(driverState.activeTrackingDeliveryOrderRef) === deliveryOrderRef) {
+                            await clearDriverTrackingLock(driverState, now);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.warn('Failed to release driver tracking lock', error);
+            }
+
             return NextResponse.json({ data: updated });
         }
 
