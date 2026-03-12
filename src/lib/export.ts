@@ -291,10 +291,21 @@ export async function exportOrders(orders: Record<string, unknown>[]) {
 }
 
 export async function exportInvoices(invoices: Record<string, unknown>[]) {
+    const company = await fetchCompanyProfile();
     await exportToExcel(
-        invoices,
+        invoices.map((invoice) => ({
+            ...invoice,
+            notaDisplayNumber: formatFreightNotaDisplayNumber(
+                {
+                    notaNumber: String(invoice.notaNumber || ''),
+                    issueDate: String(invoice.issueDate || ''),
+                },
+                company,
+            ),
+        })),
         [
-            { header: 'No. Nota', key: 'notaNumber', width: 22 },
+            { header: 'No. Cetak Nota', key: 'notaDisplayNumber', width: 22 },
+            { header: 'No. Sistem', key: 'notaNumber', width: 22 },
             { header: 'Customer', key: 'customerName', width: 28 },
             { header: 'Tanggal', key: 'issueDate', width: 18, formatter: (value) => fmtDate(String(value || '')) },
             { header: 'Jatuh Tempo', key: 'dueDate', width: 18, formatter: (value) => value ? fmtDate(String(value)) : '-' },
@@ -307,6 +318,7 @@ export async function exportInvoices(invoices: Record<string, unknown>[]) {
         'Nota Ongkos',
         {
             title: 'Daftar Nota Ongkos Angkut',
+            company,
             totalRow: {
                 label: 'TOTAL',
                 values: {

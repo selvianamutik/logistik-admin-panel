@@ -101,7 +101,7 @@ export default function NotaListPage() {
                         openBrandedPrint({
                             title: 'Daftar Nota Ongkos Angkut', company: co, bodyHtml: `
                             <table><thead><tr><th>No. Nota</th><th>Customer</th><th>Tanggal</th><th>Total Collie</th><th>Total Berat</th><th class="r">Total Ongkos</th><th>Status</th></tr></thead>
-                            <tbody>${filtered.map(n => `<tr><td class="b">${n.notaNumber}</td><td>${n.customerName}</td><td>${formatDate(n.issueDate)}</td><td>${n.totalCollie || 0}</td><td>${n.totalWeightKg || 0} kg</td><td class="r b">${formatCurrency(n.totalAmount)}</td><td>${STATUS_MAP[n.status]?.label || n.status}</td></tr>`).join('')}
+                            <tbody>${filtered.map(n => `<tr><td><div class="b">${formatFreightNotaDisplayNumber(n, co)}</div><div style="font-size:11px;color:#64748b">${n.notaNumber}</div></td><td>${n.customerName}</td><td>${formatDate(n.issueDate)}</td><td>${n.totalCollie || 0}</td><td>${n.totalWeightKg || 0} kg</td><td class="r b">${formatCurrency(n.totalAmount)}</td><td>${STATUS_MAP[n.status]?.label || n.status}</td></tr>`).join('')}
                             <tr style="border-top:2px solid #1e293b"><td colspan="5" class="r b">TOTAL</td><td class="r b">${formatCurrency(grandTotal)}</td><td></td></tr></tbody></table>`
                         });
                     }}><Printer size={15} /> Print</button>

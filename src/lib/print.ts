@@ -44,7 +44,9 @@ export function openBrandedPrint(opts: {
         year: 'numeric',
     });
 
-    w.document.write(`<!DOCTYPE html><html><head><title>${title} - ${companyName}</title><style>
+    const browserTitle = `${title}${subtitle ? ` - ${subtitle}` : ''} - ${companyName}`;
+
+    w.document.write(`<!DOCTYPE html><html><head><title>${browserTitle}</title><style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Segoe UI', -apple-system, sans-serif; padding: 2rem; color: #1e293b; max-width: 900px; margin: 0 auto; font-size: 14px; }
         .print-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 2px solid #1e293b; }

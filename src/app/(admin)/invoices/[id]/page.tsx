@@ -172,7 +172,7 @@ export default function NotaDetailPage() {
                         <div className="card-header"><span className="card-header-title">Detail Nota</span></div>
                         <div className="card-body">
                             <div className="detail-row">
-                                <div className="detail-item"><div className="detail-label">No. Nota</div><div className="detail-value font-mono">{nota.notaNumber}</div></div>
+                                <div className="detail-item"><div className="detail-label">No. Cetak Nota</div><div className="detail-value font-mono">{displayNotaNumber}</div></div>
                                 <div className="detail-item"><div className="detail-label">Tanggal</div><div className="detail-value">{formatDate(nota.issueDate)}</div></div>
                             </div>
                             <div className="detail-row">
@@ -180,8 +180,12 @@ export default function NotaDetailPage() {
                                 <div className="detail-item"><div className="detail-label">Jatuh Tempo</div><div className="detail-value">{nota.dueDate ? formatDate(nota.dueDate) : '-'}</div></div>
                             </div>
                             <div className="detail-row">
+                                <div className="detail-item"><div className="detail-label">No. Sistem</div><div className="detail-value font-mono">{nota.notaNumber}</div></div>
                                 <div className="detail-item"><div className="detail-label">Total Collie</div><div className="detail-value">{nota.totalCollie || 0}</div></div>
+                            </div>
+                            <div className="detail-row">
                                 <div className="detail-item"><div className="detail-label">Total Berat</div><div className="detail-value">{(nota.totalWeightKg || 0).toLocaleString('id')} kg</div></div>
+                                <div className="detail-item" />
                             </div>
                         </div>
                     </div>
