@@ -175,7 +175,7 @@ export function getSidebarMenu(role: UserRole): SidebarMenuGroup[] {
                 { label: 'Bon Supir', href: '/driver-vouchers', icon: 'Wallet', module: 'driverVouchers' },
                 { label: 'Pengeluaran', href: '/expenses', icon: 'Wallet', module: 'expenses' },
                 { label: 'Kategori Biaya', href: '/expense-categories', icon: 'Tags', module: 'expenseCategories' },
-                { label: 'Rekening Bank', href: '/bank-accounts', icon: 'Landmark', module: 'bankAccounts' },
+                { label: 'Rekening & Kas', href: '/bank-accounts', icon: 'Landmark', module: 'bankAccounts' },
                 ...(role === 'OWNER' ? [{ label: 'Laporan', href: '/reports', icon: 'BarChart3', module: 'reports' }] : []),
             ],
         },

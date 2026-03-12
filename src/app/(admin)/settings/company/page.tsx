@@ -167,12 +167,15 @@ export default function CompanyPage() {
                                 <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--color-primary)' }} />
                             </div>
                         </div>
-                        <div className="form-section-title">Rekening Bank</div>
+                        <div className="form-section-title">Rekening Penerimaan Utama</div>
                         <div className="form-row">
                             <div className="form-group"><label className="form-label">Bank</label><input className="form-input" value={data.bankName || ''} onChange={e => u('bankName', e.target.value)} /></div>
                             <div className="form-group"><label className="form-label">No. Rekening</label><input className="form-input" value={data.bankAccount || ''} onChange={e => u('bankAccount', e.target.value)} /></div>
                         </div>
                         <div className="form-group"><label className="form-label">Atas Nama</label><input className="form-input" value={data.bankHolder || ''} onChange={e => u('bankHolder', e.target.value)} /></div>
+                        <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                            Dipakai sebagai rekening penerimaan default pada dokumen cetak dan export. Ini berbeda dari modul <strong>Rekening &amp; Kas</strong> yang melacak saldo operasional.
+                        </p>
                     </div>
                 </div>
 
