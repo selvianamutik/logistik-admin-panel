@@ -367,22 +367,27 @@ export async function exportFreightNotaDetail(
     company?: CompanyProfile | null,
 ) {
     const resolvedCompany = company ?? await fetchCompanyProfile();
-    const transferLine = resolvedCompany?.bankName && resolvedCompany?.bankAccount
-        ? `NOTE: Ongkos angkutan harap ditransfer ke: ${resolvedCompany.bankName} A/C ${resolvedCompany.bankAccount}${resolvedCompany.bankHolder ? ` a/n ${resolvedCompany.bankHolder}` : ''}`
-        : nota.notes
-            ? `NOTE: ${nota.notes}`
-            : '';
+    const transferLineParts = [
+        resolvedCompany?.bankName && resolvedCompany?.bankAccount
+            ? `NOTE: ONGKOS ANGKUTAN HARAP DITRANSFER KE: ${resolvedCompany.bankName} A/C ${resolvedCompany.bankAccount}${resolvedCompany.bankHolder ? ` A/N ${resolvedCompany.bankHolder}` : ''}`
+            : '',
+        resolvedCompany?.invoiceSettings?.footerNote || '',
+        nota.notes ? `CATATAN: ${nota.notes}` : '',
+    ].filter(Boolean);
+    const transferLine = transferLineParts.join(' ');
 
     const companyLines = [
         resolvedCompany?.name,
         resolvedCompany?.address,
+        `TGL: ${fmtDate(nota.issueDate)}`,
         [resolvedCompany?.phone ? `Telp. ${resolvedCompany.phone}` : '', resolvedCompany?.email ? `Email: ${resolvedCompany.email}` : '']
             .filter(Boolean)
             .join(' | '),
     ].filter(Boolean) as string[];
 
     await exportToExcel(
-        items.map((item) => ({
+        items.map((item, index) => ({
+            no: index + 1,
             vehiclePlate: item.vehiclePlate || '-',
             date: item.date,
             noSJ: item.noSJ,
@@ -396,6 +401,7 @@ export async function exportFreightNotaDetail(
             ket: item.ket || '-',
         })),
         [
+            { header: 'NO', key: 'no', width: 8 },
             { header: 'NO.TRUCK', key: 'vehiclePlate', width: 14 },
             { header: 'TANGGAL', key: 'date', width: 16, formatter: (value) => fmtDate(String(value || '')) },
             { header: 'NO. SJ', key: 'noSJ', width: 22 },

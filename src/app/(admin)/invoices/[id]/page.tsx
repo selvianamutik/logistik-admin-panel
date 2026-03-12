@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useToast } from '../../layout';
 import { ArrowLeft, Printer, DollarSign, Landmark, Trash2, FileDown } from 'lucide-react';
-import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
+import { buildFreightNotaPrintDocument, fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
 import { exportFreightNotaDetail } from '@/lib/export';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import type { FreightNota, FreightNotaItem, Payment, BankAccount } from '@/lib/types';
@@ -94,23 +94,18 @@ export default function NotaDetailPage() {
     };
 
     const handlePrint = async () => {
-        const printContent = document.getElementById('nota-print-area')?.innerHTML;
-        if (!printContent) return;
+        if (!nota) return;
         try {
             const company = await fetchCompanyProfile();
+            const doc = buildFreightNotaPrintDocument({ nota, items, company });
             openBrandedPrint({
-                title: 'Nota Ongkos Angkut',
-                subtitle: nota?.notaNumber,
+                title: doc.title,
+                subtitle: doc.subtitle,
                 company,
-                bodyHtml: printContent,
-                extraStyles: `
-                    .header-grid { display: flex; justify-content: space-between; margin-bottom: 0.75rem; gap: 1rem; }
-                    .sub { font-size: 0.78rem; margin: 0.1rem 0; color: #475569; }
-                    .right { text-align: right; }
-                    .bold { font-weight: 700; }
-                    .note { margin-top: 0.9rem; font-size: 0.78rem; color: #475569; }
-                    .total-row { background: #f8fafc !important; font-weight: 700; }
-                `,
+                bodyHtml: doc.bodyHtml,
+                extraStyles: doc.extraStyles,
+                showCompanyHeader: doc.showCompanyHeader,
+                showFooter: doc.showFooter,
             });
         } catch {
             addToast('error', 'Gagal menyiapkan dokumen cetak');
@@ -266,51 +261,6 @@ export default function NotaDetailPage() {
                     </div>
                 </div>
             </div>
-
-            {/* Hidden print area */}
-            <div id="nota-print-area" style={{ display: 'none' }}>
-                <div className="header-grid">
-                    <div>
-                        <h2>NOTA ONGKOS ANGKUT</h2>
-                        <div className="sub bold">No: {nota.notaNumber}</div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                        <div className="sub">TGL: {formatDate(nota.issueDate)}</div>
-                        <div className="sub bold">KEPADA YANG TERHORMAT:</div>
-                        <div className="sub bold">{nota.customerName}</div>
-                    </div>
-                </div>
-                <table>
-                    <thead><tr><th>NO.TRUCK</th><th>TANGGAL</th><th>NO. SJ</th><th>DARI</th><th>TUJUAN</th><th>BARANG</th><th>COLLIE</th><th>BERAT KG</th><th>TARIP</th><th>UANG RP.</th><th>KET</th></tr></thead>
-                    <tbody>
-                        {items.map((it, idx) => (
-                            <tr key={idx}>
-                                <td className="bold">{it.vehiclePlate || '-'}</td>
-                                <td>{formatDate(it.date)}</td>
-                                <td>{it.noSJ}</td>
-                                <td>{it.dari}</td>
-                                <td>{it.tujuan}</td>
-                                <td>{it.barang || '-'}</td>
-                                <td>{it.collie || '-'}</td>
-                                <td>{(it.beratKg || 0).toLocaleString('id')}</td>
-                                <td>{(it.tarip || 0).toLocaleString('id')}</td>
-                                <td className="right">{it.uangRp.toLocaleString('id')}</td>
-                                <td>{it.ket || '-'}</td>
-                            </tr>
-                        ))}
-                        <tr className="total-row">
-                            <td colSpan={6} className="right bold">Jumlah</td>
-                            <td className="bold">{nota.totalCollie || 0}</td>
-                            <td className="bold">{(nota.totalWeightKg || 0).toLocaleString('id')}</td>
-                            <td></td>
-                            <td className="right bold">{nota.totalAmount.toLocaleString('id')}</td>
-                            <td></td>
-                        </tr>
-                    </tbody>
-                </table>
-                {nota.notes && <div className="note">Catatan: {nota.notes}</div>}
-            </div>
-
             {/* Pay Modal */}
             {showPayModal && (
                 <div className="modal-overlay" onClick={() => setShowPayModal(false)}>

@@ -4,9 +4,11 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Search, Plus, FileText, Printer, FileDown } from 'lucide-react';
 import { formatDate, formatCurrency } from '@/lib/utils';
-import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
-import { exportInvoices } from '@/lib/export';
-import type { FreightNota } from '@/lib/types';
+import { buildFreightNotaPrintDocument, openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
+import { exportFreightNotaDetail, exportInvoices } from '@/lib/export';
+import type { FreightNota, FreightNotaItem } from '@/lib/types';
+
+import { useToast } from '../layout';
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
     UNPAID: { label: 'Belum Lunas', color: 'danger' },
@@ -16,6 +18,7 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
 
 export default function NotaListPage() {
     const router = useRouter();
+    const { addToast } = useToast();
     const [items, setItems] = useState<FreightNota[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
@@ -36,12 +39,55 @@ export default function NotaListPage() {
 
     const grandTotal = filtered.reduce((s, n) => s + n.totalAmount, 0);
 
+    const fetchNotaItems = async (notaId: string) => {
+        const response = await fetch(`/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ notaRef: notaId }))}`);
+        const payload = await response.json();
+        if (!response.ok) {
+            throw new Error(payload.error || 'Gagal memuat item nota');
+        }
+        return (payload.data || []) as FreightNotaItem[];
+    };
+
+    const handlePrintNota = async (nota: FreightNota) => {
+        try {
+            const [company, notaItems] = await Promise.all([
+                fetchCompanyProfile(),
+                fetchNotaItems(nota._id),
+            ]);
+            const doc = buildFreightNotaPrintDocument({ nota, items: notaItems, company });
+            openBrandedPrint({
+                title: doc.title,
+                subtitle: doc.subtitle,
+                company,
+                bodyHtml: doc.bodyHtml,
+                extraStyles: doc.extraStyles,
+                showCompanyHeader: doc.showCompanyHeader,
+                showFooter: doc.showFooter,
+            });
+        } catch {
+            addToast('error', 'Gagal menyiapkan cetak nota');
+        }
+    };
+
+    const handleExportNota = async (nota: FreightNota) => {
+        try {
+            const [company, notaItems] = await Promise.all([
+                fetchCompanyProfile(),
+                fetchNotaItems(nota._id),
+            ]);
+            await exportFreightNotaDetail(nota, notaItems, company);
+            addToast('success', 'Excel nota berhasil di-download');
+        } catch {
+            addToast('error', 'Gagal menyiapkan Excel nota');
+        }
+    };
+
     return (
         <div>
             <div className="page-header">
                 <div className="page-header-left">
                     <h1 className="page-title">Nota Ongkos Angkut</h1>
-                    <p className="page-subtitle">Tagihan ongkos angkut ke customer</p>
+                    <p className="page-subtitle">Tagihan ongkos angkut ke customer. Satu nota dapat memuat beberapa SJ/DO untuk customer yang sama.</p>
                 </div>
                 <div className="page-actions">
                     <button
@@ -114,7 +160,13 @@ export default function NotaListPage() {
                                         <td>{(n.totalWeightKg || 0).toLocaleString('id')} kg</td>
                                         <td className="font-semibold">{formatCurrency(n.totalAmount)}</td>
                                         <td><span className={`badge badge-${STATUS_MAP[n.status]?.color}`}><span className="badge-dot" /> {STATUS_MAP[n.status]?.label}</span></td>
-                                        <td><button className="table-action-btn" onClick={() => router.push(`/invoices/${n._id}`)}>Lihat</button></td>
+                                        <td>
+                                            <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                                                <button className="table-action-btn" onClick={() => router.push(`/invoices/${n._id}`)}>Lihat</button>
+                                                <button className="table-action-btn" onClick={() => void handleExportNota(n)}><FileDown size={13} /> Excel</button>
+                                                <button className="table-action-btn" onClick={() => void handlePrintNota(n)}><Printer size={13} /> Cetak</button>
+                                            </div>
+                                        </td>
                                     </tr>
                                 ))}
                         </tbody>

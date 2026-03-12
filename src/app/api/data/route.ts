@@ -1382,7 +1382,7 @@ async function handleDeliveryOrderCreate(session: Session, data: Record<string, 
 }
 
 async function handleFreightNotaCreate(session: Session, data: Record<string, unknown>) {
-    const customerRef = normalizeOptionalText(data.customerRef);
+    let resolvedCustomerRef = normalizeOptionalText(data.customerRef);
     const customerName = normalizeText(data.customerName);
     if (!customerName) {
         return NextResponse.json({ error: 'Nama customer nota wajib diisi' }, { status: 400 });
@@ -1497,23 +1497,51 @@ async function handleFreightNotaCreate(session: Session, data: Record<string, un
         }
     }
 
-    if (customerRef && deliveryOrders.length > 0) {
-        const orderRefs = [...new Set(
-            deliveryOrders
-                .map(item => extractRefId(item.orderRef))
-                .filter((ref): ref is string => Boolean(ref))
-        )];
-        const sourceOrders = await getSanityClient().fetch<Array<{ _id: string; customerRef?: unknown }>>(
+    const orderRefs = [...new Set(
+        deliveryOrders
+            .map(item => extractRefId(item.orderRef))
+            .filter((ref): ref is string => Boolean(ref))
+    )];
+    const sourceOrders = orderRefs.length > 0
+        ? await getSanityClient().fetch<Array<{ _id: string; customerRef?: unknown }>>(
             `*[_type == "order" && _id in $ids]{ _id, customerRef }`,
             { ids: orderRefs }
-        );
-        const orderCustomerMap = new Map(
-            sourceOrders.map(order => [order._id, extractRefId(order.customerRef)])
-        );
+        )
+        : [];
+    const orderCustomerMap = new Map(
+        sourceOrders.map(order => [order._id, extractRefId(order.customerRef)])
+    );
+    const inferredCustomerRefs = [...new Set(
+        deliveryOrders
+            .map(deliveryOrder => {
+                const orderRef = extractRefId(deliveryOrder.orderRef);
+                return orderRef ? orderCustomerMap.get(orderRef) : undefined;
+            })
+            .filter((ref): ref is string => Boolean(ref))
+    )];
 
+    if (inferredCustomerRefs.length > 1) {
+        return NextResponse.json(
+            { error: 'DO yang dipilih berasal dari customer berbeda. Pisahkan per nota.' },
+            { status: 409 }
+        );
+    }
+
+    const inferredCustomerRef = inferredCustomerRefs[0];
+    if (resolvedCustomerRef && inferredCustomerRef && resolvedCustomerRef !== inferredCustomerRef) {
+        return NextResponse.json(
+            { error: 'Customer nota tidak cocok dengan customer pada DO yang dipilih' },
+            { status: 409 }
+        );
+    }
+    if (!resolvedCustomerRef && inferredCustomerRef) {
+        resolvedCustomerRef = inferredCustomerRef;
+    }
+
+    if (resolvedCustomerRef && deliveryOrders.length > 0) {
         for (const deliveryOrder of deliveryOrders) {
             const orderRef = extractRefId(deliveryOrder.orderRef);
-            if (orderRef && orderCustomerMap.get(orderRef) !== customerRef) {
+            if (orderRef && orderCustomerMap.get(orderRef) !== resolvedCustomerRef) {
                 return NextResponse.json(
                     { error: `DO ${deliveryOrder.doNumber || deliveryOrder._id} bukan milik customer yang dipilih` },
                     { status: 409 }
@@ -1535,7 +1563,7 @@ async function handleFreightNotaCreate(session: Session, data: Record<string, un
     const notaDoc = {
         _id: notaId,
         _type: 'freightNota',
-        customerRef,
+        customerRef: resolvedCustomerRef,
         customerName,
         issueDate,
         dueDate: normalizeOptionalText(data.dueDate),
@@ -1623,7 +1651,7 @@ async function handleInvoiceCreate(session: Session, data: Record<string, unknow
 }
 
 async function handleDriverBoronganCreate(session: Session, data: Record<string, unknown>) {
-    const driverRef = normalizeOptionalText(data.driverRef);
+    let resolvedDriverRef = normalizeOptionalText(data.driverRef);
     const driverName = normalizeText(data.driverName);
     if (!driverName) {
         return NextResponse.json({ error: 'Nama supir borongan wajib diisi' }, { status: 400 });
@@ -1721,9 +1749,9 @@ async function handleDriverBoronganCreate(session: Session, data: Record<string,
         if (deliveryOrder.status !== 'DELIVERED') {
             return NextResponse.json({ error: `DO ${deliveryOrder.doNumber || row.doRef} belum selesai dikirim` }, { status: 409 });
         }
-        if (driverRef) {
+        if (resolvedDriverRef) {
             const deliveryOrderDriverRef = extractRefId(deliveryOrder.driverRef);
-            if (deliveryOrderDriverRef && deliveryOrderDriverRef !== driverRef) {
+            if (deliveryOrderDriverRef && deliveryOrderDriverRef !== resolvedDriverRef) {
                 return NextResponse.json(
                     { error: `DO ${deliveryOrder.doNumber || deliveryOrder._id} bukan milik supir yang dipilih` },
                     { status: 409 }
@@ -1748,6 +1776,29 @@ async function handleDriverBoronganCreate(session: Session, data: Record<string,
         }
     }
 
+    const inferredDriverRefs = [...new Set(
+        deliveryOrders
+            .map(deliveryOrder => extractRefId(deliveryOrder.driverRef))
+            .filter((ref): ref is string => Boolean(ref))
+    )];
+    if (inferredDriverRefs.length > 1) {
+        return NextResponse.json(
+            { error: 'DO yang dipilih berasal dari supir berbeda. Pisahkan per slip borongan.' },
+            { status: 409 }
+        );
+    }
+
+    const inferredDriverRef = inferredDriverRefs[0];
+    if (resolvedDriverRef && inferredDriverRef && resolvedDriverRef !== inferredDriverRef) {
+        return NextResponse.json(
+            { error: 'Supir borongan tidak cocok dengan DO yang dipilih' },
+            { status: 409 }
+        );
+    }
+    if (!resolvedDriverRef && inferredDriverRef) {
+        resolvedDriverRef = inferredDriverRef;
+    }
+
     const totalAmount = rows.reduce((sum, row) => sum + row.uangRp, 0);
     const totalCollie = rows.reduce((sum, row) => sum + (row.collie || 0), 0);
     const totalWeightKg = rows.reduce((sum, row) => sum + row.beratKg, 0);
@@ -1760,7 +1811,7 @@ async function handleDriverBoronganCreate(session: Session, data: Record<string,
     const boronganDoc = {
         _id: boronganId,
         _type: 'driverBorongan',
-        driverRef,
+        driverRef: resolvedDriverRef,
         driverName,
         periodStart,
         periodEnd,

@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useToast } from '../../layout';
-import { ArrowLeft, Plus, Trash2, Save } from 'lucide-react';
+import { ArrowLeft, Plus, Save, Trash2 } from 'lucide-react';
+
+import type { Customer, DeliveryOrder, DeliveryOrderItem, Order } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
-import type { Customer, DeliveryOrder, Order } from '@/lib/types';
+
+import { useToast } from '../../layout';
 
 interface NotaItemRow {
     id: string;
@@ -24,12 +26,50 @@ interface NotaItemRow {
     ket: string;
 }
 
+function createEmptyRow(): NotaItemRow {
+    return {
+        id: Math.random().toString(36).slice(2),
+        doRef: '',
+        doNumber: '',
+        vehiclePlate: '',
+        date: new Date().toISOString().split('T')[0],
+        noSJ: '',
+        dari: '',
+        tujuan: '',
+        barang: '',
+        collie: 0,
+        beratKg: 0,
+        tarip: 0,
+        uangRp: 0,
+        ket: '',
+    };
+}
+
+function isEmptyRow(row: NotaItemRow) {
+    return (
+        !row.doRef &&
+        !row.doNumber &&
+        !row.vehiclePlate &&
+        !row.noSJ &&
+        !row.dari &&
+        !row.tujuan &&
+        !row.barang &&
+        !row.ket &&
+        (row.collie || 0) === 0 &&
+        (row.beratKg || 0) === 0 &&
+        (row.tarip || 0) === 0 &&
+        (row.uangRp || 0) === 0
+    );
+}
+
 export default function NewNotaPage() {
     const router = useRouter();
     const { addToast } = useToast();
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([]);
+    const [deliveryOrderItems, setDeliveryOrderItems] = useState<DeliveryOrderItem[]>([]);
     const [orders, setOrders] = useState<Order[]>([]);
+    const [usedNotaDoRefs, setUsedNotaDoRefs] = useState<string[]>([]);
     const [saving, setSaving] = useState(false);
 
     const [customerRef, setCustomerRef] = useState('');
@@ -37,69 +77,150 @@ export default function NewNotaPage() {
     const [issueDate, setIssueDate] = useState(new Date().toISOString().split('T')[0]);
     const [dueDate, setDueDate] = useState('');
     const [notes, setNotes] = useState('');
-    const [rows, setRows] = useState<NotaItemRow[]>([newRow()]);
+    const [rows, setRows] = useState<NotaItemRow[]>([createEmptyRow()]);
 
-    function newRow(doData?: DeliveryOrder): NotaItemRow {
+    useEffect(() => {
+        async function loadData() {
+            try {
+                const [cust, dos, ords, doItems, notaItems] = await Promise.all([
+                    fetch('/api/data?entity=customers').then(response => response.json()),
+                    fetch('/api/data?entity=delivery-orders').then(response => response.json()),
+                    fetch('/api/data?entity=orders').then(response => response.json()),
+                    fetch('/api/data?entity=delivery-order-items').then(response => response.json()),
+                    fetch('/api/data?entity=freight-nota-items').then(response => response.json()),
+                ]);
+                setCustomers(cust.data || []);
+                setDeliveryOrders((dos.data || []).filter((item: DeliveryOrder) => item.status === 'DELIVERED'));
+                setOrders(ords.data || []);
+                setDeliveryOrderItems(doItems.data || []);
+                setUsedNotaDoRefs(
+                    (notaItems.data || [])
+                        .map((item: { doRef?: string }) => item.doRef)
+                        .filter((value: string | undefined): value is string => Boolean(value))
+                );
+            } catch {
+                addToast('error', 'Gagal memuat data nota');
+            }
+        }
+
+        void loadData();
+    }, [addToast]);
+
+    const buildNotaRowFromDO = (deliveryOrder: DeliveryOrder): NotaItemRow => {
+        const relatedOrder = orders.find(order => order._id === deliveryOrder.orderRef);
+        const relatedItems = deliveryOrderItems.filter(item => item.deliveryOrderRef === deliveryOrder._id);
+        const descriptions = [...new Set(
+            relatedItems
+                .map(item => item.orderItemDescription?.trim())
+                .filter((value): value is string => Boolean(value))
+        )];
+        const collie = relatedItems.reduce((sum, item) => sum + Number(item.orderItemQtyKoli || 0), 0);
+        const beratKg = relatedItems.reduce((sum, item) => sum + Number(item.orderItemWeight || 0), 0);
+
         return {
             id: Math.random().toString(36).slice(2),
-            doRef: doData?._id || '',
-            doNumber: doData?.doNumber || '',
-            vehiclePlate: doData?.vehiclePlate || '',
-            date: doData?.date || new Date().toISOString().split('T')[0],
-            noSJ: doData?.doNumber || '',
-            dari: '',
-            tujuan: doData?.receiverAddress || '',
-            barang: '',
-            collie: 0,
-            beratKg: 0,
+            doRef: deliveryOrder._id,
+            doNumber: deliveryOrder.doNumber || '',
+            vehiclePlate: deliveryOrder.vehiclePlate || '',
+            date: deliveryOrder.date || new Date().toISOString().split('T')[0],
+            noSJ: deliveryOrder.doNumber || '',
+            dari: relatedOrder?.pickupAddress || '',
+            tujuan: deliveryOrder.receiverAddress || relatedOrder?.receiverAddress || '',
+            barang: descriptions.join(', '),
+            collie,
+            beratKg,
             tarip: 0,
             uangRp: 0,
             ket: '',
         };
-    }
-
-    useEffect(() => {
-        Promise.all([
-            fetch('/api/data?entity=customers').then(r => r.json()),
-            fetch('/api/data?entity=delivery-orders').then(r => r.json()),
-            fetch('/api/data?entity=orders').then(r => r.json()),
-        ]).then(([cust, dos, ords]) => {
-            setCustomers(cust.data || []);
-            setDeliveryOrders((dos.data || []).filter((d: DeliveryOrder) => d.status === 'DELIVERED'));
-            setOrders(ords.data || []);
-        });
-    }, []);
+    };
 
     const updateRow = (id: string, field: keyof NotaItemRow, value: string | number) => {
-        setRows(prev => prev.map(r => {
-            if (r.id !== id) return r;
-            const updated = { ...r, [field]: value };
-            // Auto-calc uangRp
-            if (field === 'beratKg' || field === 'tarip') {
-                updated.uangRp = updated.beratKg * updated.tarip;
-            }
-            return updated;
-        }));
+        setRows(previous =>
+            previous.map(row => {
+                if (row.id !== id) return row;
+                const updated = { ...row, [field]: value };
+                if (field === 'beratKg' || field === 'tarip') {
+                    updated.uangRp = updated.beratKg * updated.tarip;
+                }
+                return updated;
+            })
+        );
     };
 
     const addDORow = (doId: string) => {
-        const doData = deliveryOrders.find(d => d._id === doId);
-        if (doData) setRows(prev => [...prev, newRow(doData)]);
+        const deliveryOrder = deliveryOrders.find(item => item._id === doId);
+        if (!deliveryOrder) {
+            addToast('error', 'DO tidak ditemukan');
+            return;
+        }
+        if (rows.some(row => row.doRef === doId)) {
+            addToast('error', 'DO ini sudah ada di nota');
+            return;
+        }
+        if (usedNotaDoRefs.includes(doId)) {
+            addToast('error', 'DO ini sudah tercantum di nota lain');
+            return;
+        }
+
+        const relatedOrder = orders.find(order => order._id === deliveryOrder.orderRef);
+        if (customerRef && relatedOrder?.customerRef && relatedOrder.customerRef !== customerRef) {
+            addToast('error', 'DO ini milik customer lain');
+            return;
+        }
+
+        const nextRow = buildNotaRowFromDO(deliveryOrder);
+        if (!customerRef && relatedOrder?.customerRef) {
+            setCustomerRef(relatedOrder.customerRef);
+            setCustomerName(
+                relatedOrder.customerName ||
+                customers.find(customer => customer._id === relatedOrder.customerRef)?.name ||
+                ''
+            );
+        } else if (!customerName && relatedOrder?.customerName) {
+            setCustomerName(relatedOrder.customerName);
+        }
+
+        setRows(previous => {
+            const emptyIndex = previous.findIndex(isEmptyRow);
+            if (emptyIndex === -1) {
+                return [...previous, nextRow];
+            }
+
+            const next = [...previous];
+            next[emptyIndex] = { ...nextRow, id: previous[emptyIndex].id };
+            return next;
+        });
     };
 
-    const removeRow = (id: string) => setRows(prev => prev.filter(r => r.id !== id));
+    const removeRow = (id: string) => {
+        setRows(previous => {
+            const next = previous.filter(row => row.id !== id);
+            return next.length > 0 ? next : [createEmptyRow()];
+        });
+    };
 
-    const totalCollie = rows.reduce((s, r) => s + (r.collie || 0), 0);
-    const totalBerat = rows.reduce((s, r) => s + (r.beratKg || 0), 0);
-    const totalAmount = rows.reduce((s, r) => s + (r.uangRp || 0), 0);
+    const totalCollie = rows.reduce((sum, row) => sum + (row.collie || 0), 0);
+    const totalBerat = rows.reduce((sum, row) => sum + (row.beratKg || 0), 0);
+    const totalAmount = rows.reduce((sum, row) => sum + (row.uangRp || 0), 0);
+    const hasSelectedRows = rows.some(row => Boolean(row.doRef));
 
     const handleSave = async () => {
-        if (!customerName) { addToast('error', 'Nama customer wajib diisi'); return; }
-        if (rows.length === 0) { addToast('error', 'Minimal 1 baris perjalanan'); return; }
+        if (!customerName) {
+            addToast('error', 'Nama customer wajib diisi');
+            return;
+        }
+        const filledRows = rows.filter(row => !isEmptyRow(row));
+        if (filledRows.length === 0) {
+            addToast('error', 'Minimal 1 baris perjalanan');
+            return;
+        }
+
         setSaving(true);
         try {
-            const notaRes = await fetch('/api/data', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
+            const notaResponse = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     entity: 'freight-notas',
                     action: 'create-with-items',
@@ -109,122 +230,232 @@ export default function NewNotaPage() {
                         issueDate,
                         dueDate: dueDate || undefined,
                         notes: notes || undefined,
-                        items: rows,
-                    }
-                })
+                        items: filledRows,
+                    },
+                }),
             });
-            const notaData = await notaRes.json();
-            if (!notaRes.ok) {
-                addToast('error', notaData.error || 'Gagal membuat nota');
+            const notaPayload = await notaResponse.json();
+            if (!notaResponse.ok) {
+                addToast('error', notaPayload.error || 'Gagal membuat nota');
                 return;
             }
-            const notaId = notaData.data._id;
 
             addToast('success', 'Nota berhasil dibuat');
-            router.push(`/invoices/${notaId}`);
+            router.push(`/invoices/${notaPayload.data._id}`);
         } catch {
             addToast('error', 'Gagal membuat nota');
+        } finally {
+            setSaving(false);
         }
-        setSaving(false);
     };
 
-    // Filter DOs: jika ada customer dipilih, cari order milik customer tsb,
-    // lalu filter DO berdasarkan orderRef. Lebih reliable dari string customerName.
     const customerOrderIds = customerRef
-        ? new Set(orders.filter(o => o.customerRef === customerRef).map(o => o._id))
+        ? new Set(orders.filter(order => order.customerRef === customerRef).map(order => order._id))
         : null;
 
     const customerDOs = customerOrderIds
-        ? deliveryOrders.filter(d => customerOrderIds.has(d.orderRef || ''))
+        ? deliveryOrders.filter(deliveryOrder => customerOrderIds.has(deliveryOrder.orderRef || ''))
         : deliveryOrders;
 
-    // DOs yang tidak cocok customer masih bisa ditambah manual (tampilkan semua di dropdown, tapi pisahkan)
-    const otherDOs = customerOrderIds
-        ? deliveryOrders.filter(d => !customerOrderIds.has(d.orderRef || ''))
+    const otherDOs = customerRef
+        ? []
+        : customerOrderIds
+        ? deliveryOrders.filter(deliveryOrder => !customerOrderIds.has(deliveryOrder.orderRef || ''))
         : [];
+
+    const selectedDoRefs = new Set(rows.map(row => row.doRef).filter(Boolean));
+    const blockedDoRefs = new Set(usedNotaDoRefs);
+    const availableCustomerDOs = customerDOs.filter(
+        deliveryOrder => !selectedDoRefs.has(deliveryOrder._id) && !blockedDoRefs.has(deliveryOrder._id)
+    );
+    const availableOtherDOs = otherDOs.filter(
+        deliveryOrder => !selectedDoRefs.has(deliveryOrder._id) && !blockedDoRefs.has(deliveryOrder._id)
+    );
 
     return (
         <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
-                <button className="btn-back" onClick={() => router.push('/invoices')}><ArrowLeft size={16} /></button>
+                <button className="btn-back" onClick={() => router.push('/invoices')}>
+                    <ArrowLeft size={16} />
+                </button>
                 <h1 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>Buat Nota Ongkos Angkut</h1>
             </div>
 
             <div className="detail-grid">
-                {/* Left: Form */}
                 <div>
                     <div className="card">
-                        <div className="card-header"><span className="card-header-title">Info Nota</span></div>
+                        <div className="card-header">
+                            <span className="card-header-title">Info Nota</span>
+                        </div>
                         <div className="card-body">
                             <div className="form-group">
-                                <label className="form-label">Customer <span className="required">*</span></label>
-                                <select className="form-select" value={customerRef} onChange={e => {
-                                    const selId = e.target.value;
-                                    setCustomerRef(selId);
-                                    const cust = customers.find(c => c._id === selId);
-                                    setCustomerName(cust?.name || '');
-                                }}>
+                                <label className="form-label">
+                                    Customer <span className="required">*</span>
+                                </label>
+                                <select
+                                    className="form-select"
+                                    disabled={hasSelectedRows}
+                                    value={customerRef}
+                                    onChange={event => {
+                                        const selectedId = event.target.value;
+                                        setCustomerRef(selectedId);
+                                        const customer = customers.find(item => item._id === selectedId);
+                                        setCustomerName(customer?.name || '');
+                                    }}
+                                >
                                     <option value="">-- Pilih Customer --</option>
-                                    {customers.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
+                                    {customers.map(customer => (
+                                        <option key={customer._id} value={customer._id}>
+                                            {customer.name}
+                                        </option>
+                                    ))}
                                 </select>
+                                {hasSelectedRows && (
+                                    <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                        Customer terkunci selama masih ada baris DO. Hapus dulu baris terkait jika ingin mengganti customer.
+                                    </p>
+                                )}
                             </div>
+
                             {!customerRef && (
                                 <div className="form-group">
                                     <label className="form-label">Atau ketik nama customer</label>
-                                    <input className="form-input" value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Nama perusahaan..." />
+                                    <input
+                                        className="form-input"
+                                        value={customerName}
+                                        onChange={event => setCustomerName(event.target.value)}
+                                        placeholder="Nama perusahaan..."
+                                    />
                                 </div>
                             )}
+
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Tanggal Nota</label>
-                                    <input type="date" className="form-input" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
+                                    <input
+                                        type="date"
+                                        className="form-input"
+                                        value={issueDate}
+                                        onChange={event => setIssueDate(event.target.value)}
+                                    />
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Jatuh Tempo</label>
-                                    <input type="date" className="form-input" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+                                    <input
+                                        type="date"
+                                        className="form-input"
+                                        value={dueDate}
+                                        onChange={event => setDueDate(event.target.value)}
+                                    />
                                 </div>
                             </div>
+
                             <div className="form-group">
                                 <label className="form-label">Catatan</label>
-                                <textarea className="form-textarea" rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Opsional..." />
+                                <textarea
+                                    className="form-textarea"
+                                    rows={2}
+                                    value={notes}
+                                    onChange={event => setNotes(event.target.value)}
+                                    placeholder="Opsional..."
+                                />
                             </div>
                         </div>
                     </div>
 
-                    {/* Add from DO */}
                     <div className="card" style={{ marginTop: '1rem' }}>
-                        <div className="card-header"><span className="card-header-title">Tambah dari Surat Jalan</span></div>
+                        <div className="card-header">
+                            <span className="card-header-title">Tambah dari Surat Jalan</span>
+                        </div>
                         <div className="card-body">
-                            <select className="form-select" onChange={e => { if (e.target.value) { addDORow(e.target.value); e.target.value = ''; } }}>
+                            <select
+                                className="form-select"
+                                onChange={event => {
+                                    if (event.target.value) {
+                                        addDORow(event.target.value);
+                                        event.target.value = '';
+                                    }
+                                }}
+                            >
                                 <option value="">-- Pilih DO yang selesai --</option>
-                                {customerDOs.length > 0 && (
-                                    <optgroup label={customerRef ? `✓ DO milik ${customerName} (${customerDOs.length})` : `Semua DO Selesai`}>
-                                        {customerDOs.map(d => <option key={d._id} value={d._id}>{d.doNumber} — {d.vehiclePlate || '-'} — {d.receiverAddress || '-'}</option>)}
+                                {availableCustomerDOs.length > 0 && (
+                                    <optgroup
+                                        label={
+                                            customerRef
+                                                ? `DO milik ${customerName} (${availableCustomerDOs.length})`
+                                                : `Semua DO Selesai (${availableCustomerDOs.length})`
+                                        }
+                                    >
+                                        {availableCustomerDOs.map(deliveryOrder => (
+                                            <option key={deliveryOrder._id} value={deliveryOrder._id}>
+                                                {deliveryOrder.doNumber} - {deliveryOrder.vehiclePlate || '-'} - {deliveryOrder.receiverAddress || '-'}
+                                            </option>
+                                        ))}
                                     </optgroup>
                                 )}
-                                {otherDOs.length > 0 && (
-                                    <optgroup label={`DO Customer Lain (${otherDOs.length})`}>
-                                        {otherDOs.map(d => <option key={d._id} value={d._id}>{d.doNumber} — {d.vehiclePlate || '-'} — {d.receiverAddress || '-'}</option>)}
+                                {availableOtherDOs.length > 0 && (
+                                    <optgroup label={`DO Customer Lain (${availableOtherDOs.length})`}>
+                                        {availableOtherDOs.map(deliveryOrder => (
+                                            <option key={deliveryOrder._id} value={deliveryOrder._id}>
+                                                {deliveryOrder.doNumber} - {deliveryOrder.vehiclePlate || '-'} - {deliveryOrder.receiverAddress || '-'}
+                                            </option>
+                                        ))}
                                     </optgroup>
                                 )}
                             </select>
+                            <p style={{ margin: '0.65rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                DO yang sudah dipakai di nota lain atau sudah kamu pilih di tabel otomatis disembunyikan.
+                            </p>
+                            <p style={{ margin: '0.4rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                Satu nota bisa memuat beberapa SJ/DO selesai, selama semuanya milik customer yang sama.
+                            </p>
                         </div>
                     </div>
                 </div>
 
-                {/* Right: Summary */}
                 <div>
                     <div className="card" style={{ overflow: 'hidden' }}>
-                        <div style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, #7c3aed 100%)', color: '#fff', padding: '1.25rem' }}>
-                            <div style={{ fontSize: '0.72rem', opacity: 0.8, textTransform: 'uppercase', marginBottom: '0.25rem' }}>Total Ongkos Angkut</div>
+                        <div
+                            style={{
+                                background: 'linear-gradient(135deg, var(--color-primary) 0%, #7c3aed 100%)',
+                                color: '#fff',
+                                padding: '1.25rem',
+                            }}
+                        >
+                            <div
+                                style={{
+                                    fontSize: '0.72rem',
+                                    opacity: 0.8,
+                                    textTransform: 'uppercase',
+                                    marginBottom: '0.25rem',
+                                }}
+                            >
+                                Total Ongkos Angkut
+                            </div>
                             <div style={{ fontSize: '1.75rem', fontWeight: 700 }}>{formatCurrency(totalAmount)}</div>
                         </div>
                         <div className="card-body">
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
-                                <span className="text-muted">Total Collie</span><strong>{totalCollie}</strong>
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    marginBottom: '0.5rem',
+                                    fontSize: '0.85rem',
+                                }}
+                            >
+                                <span className="text-muted">Total Collie</span>
+                                <strong>{totalCollie}</strong>
                             </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem', fontSize: '0.85rem' }}>
-                                <span className="text-muted">Total Berat</span><strong>{totalBerat.toLocaleString('id')} kg</strong>
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    marginBottom: '1rem',
+                                    fontSize: '0.85rem',
+                                }}
+                            >
+                                <span className="text-muted">Total Berat</span>
+                                <strong>{totalBerat.toLocaleString('id')} kg</strong>
                             </div>
                             <button className="btn btn-primary" style={{ width: '100%' }} onClick={handleSave} disabled={saving}>
                                 <Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan Nota'}
@@ -234,11 +465,10 @@ export default function NewNotaPage() {
                 </div>
             </div>
 
-            {/* Items Table */}
             <div className="card" style={{ marginTop: '1.5rem' }}>
                 <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span className="card-header-title">Perincian Perjalanan</span>
-                    <button className="btn btn-secondary btn-sm" onClick={() => setRows(prev => [...prev, newRow()])}>
+                    <button className="btn btn-secondary btn-sm" onClick={() => setRows(previous => [...previous, createEmptyRow()])}>
                         <Plus size={14} /> Tambah Baris
                     </button>
                 </div>
@@ -257,34 +487,115 @@ export default function NewNotaPage() {
                                 <th style={{ minWidth: 90 }}>TARIP</th>
                                 <th style={{ minWidth: 110 }}>UANG RP</th>
                                 <th style={{ minWidth: 80 }}>KET</th>
-                                <th style={{ width: 36 }}></th>
+                                <th style={{ width: 36 }} />
                             </tr>
                         </thead>
                         <tbody>
-                            {rows.map(r => (
-                                <tr key={r.id}>
-                                    <td><input className="form-input" style={{ minWidth: 75 }} value={r.vehiclePlate} onChange={e => updateRow(r.id, 'vehiclePlate', e.target.value)} placeholder="Plat..." /></td>
-                                    <td><input type="date" className="form-input" value={r.date} onChange={e => updateRow(r.id, 'date', e.target.value)} /></td>
-                                    <td><input className="form-input" value={r.noSJ} onChange={e => updateRow(r.id, 'noSJ', e.target.value)} placeholder="No. SJ..." /></td>
-                                    <td><input className="form-input" value={r.dari} onChange={e => updateRow(r.id, 'dari', e.target.value)} placeholder="Dari..." /></td>
-                                    <td><input className="form-input" value={r.tujuan} onChange={e => updateRow(r.id, 'tujuan', e.target.value)} placeholder="Tujuan..." /></td>
-                                    <td><input className="form-input" value={r.barang} onChange={e => updateRow(r.id, 'barang', e.target.value)} placeholder="Barang..." /></td>
-                                    <td><input type="number" className="form-input" value={r.collie || ''} onChange={e => updateRow(r.id, 'collie', Number(e.target.value))} /></td>
-                                    <td><input type="number" className="form-input" value={r.beratKg || ''} onChange={e => updateRow(r.id, 'beratKg', Number(e.target.value))} /></td>
-                                    <td><input type="number" className="form-input" value={r.tarip || ''} onChange={e => updateRow(r.id, 'tarip', Number(e.target.value))} /></td>
-                                    <td style={{ fontWeight: 600, color: 'var(--color-primary)' }}>{formatCurrency(r.uangRp)}</td>
-                                    <td><input className="form-input" value={r.ket} onChange={e => updateRow(r.id, 'ket', e.target.value)} /></td>
-                                    <td><button className="table-action-btn danger" onClick={() => removeRow(r.id)}><Trash2 size={13} /></button></td>
+                            {rows.map(row => (
+                                <tr key={row.id}>
+                                    <td>
+                                        <input
+                                            className="form-input"
+                                            style={{ minWidth: 75 }}
+                                            value={row.vehiclePlate}
+                                            onChange={event => updateRow(row.id, 'vehiclePlate', event.target.value)}
+                                            placeholder="Plat..."
+                                        />
+                                    </td>
+                                    <td>
+                                        <input
+                                            type="date"
+                                            className="form-input"
+                                            value={row.date}
+                                            onChange={event => updateRow(row.id, 'date', event.target.value)}
+                                        />
+                                    </td>
+                                    <td>
+                                        <input
+                                            className="form-input"
+                                            value={row.noSJ}
+                                            onChange={event => updateRow(row.id, 'noSJ', event.target.value)}
+                                            placeholder="No. SJ..."
+                                        />
+                                    </td>
+                                    <td>
+                                        <input
+                                            className="form-input"
+                                            value={row.dari}
+                                            onChange={event => updateRow(row.id, 'dari', event.target.value)}
+                                            placeholder="Dari..."
+                                        />
+                                    </td>
+                                    <td>
+                                        <input
+                                            className="form-input"
+                                            value={row.tujuan}
+                                            onChange={event => updateRow(row.id, 'tujuan', event.target.value)}
+                                            placeholder="Tujuan..."
+                                        />
+                                    </td>
+                                    <td>
+                                        <input
+                                            className="form-input"
+                                            value={row.barang}
+                                            onChange={event => updateRow(row.id, 'barang', event.target.value)}
+                                            placeholder="Barang..."
+                                        />
+                                    </td>
+                                    <td>
+                                        <input
+                                            type="number"
+                                            className="form-input"
+                                            value={row.collie || ''}
+                                            onChange={event => updateRow(row.id, 'collie', Number(event.target.value))}
+                                        />
+                                    </td>
+                                    <td>
+                                        <input
+                                            type="number"
+                                            className="form-input"
+                                            value={row.beratKg || ''}
+                                            onChange={event => updateRow(row.id, 'beratKg', Number(event.target.value))}
+                                        />
+                                    </td>
+                                    <td>
+                                        <input
+                                            type="number"
+                                            className="form-input"
+                                            value={row.tarip || ''}
+                                            onChange={event => updateRow(row.id, 'tarip', Number(event.target.value))}
+                                        />
+                                    </td>
+                                    <td style={{ fontWeight: 600, color: 'var(--color-primary)' }}>{formatCurrency(row.uangRp)}</td>
+                                    <td>
+                                        <input
+                                            className="form-input"
+                                            value={row.ket}
+                                            onChange={event => updateRow(row.id, 'ket', event.target.value)}
+                                        />
+                                    </td>
+                                    <td>
+                                        <button className="table-action-btn danger" onClick={() => removeRow(row.id)}>
+                                            <Trash2 size={13} />
+                                        </button>
+                                    </td>
                                 </tr>
                             ))}
-                            {/* Totals row */}
-                            <tr style={{ background: 'var(--color-bg-secondary)', fontWeight: 700, borderTop: '2px solid var(--color-border)' }}>
-                                <td colSpan={6} style={{ textAlign: 'right', paddingRight: '0.75rem' }}>Jumlah</td>
+                            <tr
+                                style={{
+                                    background: 'var(--color-bg-secondary)',
+                                    fontWeight: 700,
+                                    borderTop: '2px solid var(--color-border)',
+                                }}
+                            >
+                                <td colSpan={6} style={{ textAlign: 'right', paddingRight: '0.75rem' }}>
+                                    Jumlah
+                                </td>
                                 <td>{totalCollie}</td>
                                 <td>{totalBerat.toLocaleString('id')}</td>
-                                <td></td>
+                                <td />
                                 <td style={{ color: 'var(--color-danger)' }}>{formatCurrency(totalAmount)}</td>
-                                <td colSpan={2}></td>
+                                <td colSpan={2} />
                             </tr>
                         </tbody>
                     </table>
