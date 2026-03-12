@@ -6,6 +6,21 @@
 import { NextResponse } from 'next/server';
 
 import { createSession, getSession, hashPassword, setSessionCookie, verifyPassword } from '@/lib/auth';
+import {
+    CASH_ACCOUNT_SYSTEM_KEY,
+    assertIsoDate,
+    ensureCashAccount,
+    extractRefId,
+    getLedgerAccount,
+    isMutationConflictError,
+    isPlainObject,
+    normalizeNumber,
+    normalizeOptionalText,
+    normalizeText,
+    type ApiSession as Session,
+    type BankAccountSummary,
+} from '@/lib/api/data-helpers';
+import { handleFreightNotaCreate, handleFreightNotaDelete, handlePaymentCreate } from '@/lib/api/finance-workflows';
 import { filterExpensesByRole, sanitizeVehicleForRole } from '@/lib/rbac';
 import {
     getSanityClient,
@@ -19,20 +34,7 @@ import {
     sanityGetNextNumber,
     sanityUpdate,
 } from '@/lib/sanity';
-import type { Expense, Payment, User, Vehicle } from '@/lib/types';
-
-type Session = { _id: string; name: string; role: User['role'] };
-type BankAccountSummary = {
-    _id: string;
-    _rev?: string;
-    currentBalance: number;
-    bankName: string;
-    accountNumber?: string;
-    accountType?: 'BANK' | 'CASH';
-    systemKey?: string;
-    accountHolder?: string;
-    active?: boolean;
-};
+import type { Expense, User, Vehicle } from '@/lib/types';
 type OrderItemStatusSummary = { status?: string };
 type MaintenanceCreatePayload = {
     vehicleRef: string;
@@ -49,21 +51,6 @@ type NormalizedOrderItemInput = {
     weight: number;
     volume?: number;
     value?: number;
-};
-type NormalizedFreightNotaRow = {
-    doRef?: string;
-    doNumber?: string;
-    vehiclePlate?: string;
-    date: string;
-    noSJ: string;
-    dari: string;
-    tujuan: string;
-    barang?: string;
-    collie?: number;
-    beratKg: number;
-    tarip: number;
-    uangRp: number;
-    ket?: string;
 };
 type NormalizedDriverBoronganRow = {
     doRef?: string;
@@ -118,29 +105,10 @@ const DO_STATUS_TRANSITIONS: Record<string, string[]> = {
 const OWNER_ONLY_READ_ENTITIES = new Set(['audit-logs']);
 const OWNER_ONLY_MUTATION_ENTITIES = new Set(['company', 'audit-logs', 'bank-accounts', 'bank-transactions', 'services', 'expense-categories']);
 const LEGACY_READ_ONLY_ENTITIES = new Set(['invoices', 'invoice-items']);
-const CASH_ACCOUNT_SYSTEM_KEY = 'cash-on-hand';
-const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const VEHICLE_STATUS_VALUES = new Set(['ACTIVE', 'IN_SERVICE', 'OUT_OF_SERVICE', 'SOLD']);
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function normalizeText(value: unknown) {
-    return typeof value === 'string' ? value.trim() : '';
-}
-
-function normalizeOptionalText(value: unknown) {
-    const normalized = normalizeText(value);
-    return normalized || undefined;
-}
 
 function hasOwnKey(value: Record<string, unknown>, key: string) {
     return Object.prototype.hasOwnProperty.call(value, key);
-}
-
-function normalizeNumber(value: unknown) {
-    return typeof value === 'number' ? value : Number(value);
 }
 
 function normalizeOptionalNonNegativeNumber(value: unknown, label: string) {
@@ -156,26 +124,8 @@ function normalizeOptionalNonNegativeNumber(value: unknown, label: string) {
     return normalized;
 }
 
-function assertIsoDate(value: string, label: string) {
-    if (!ISO_DATE_RE.test(value)) {
-        throw new Error(`${label} tidak valid`);
-    }
-}
-
 function normalizeTirePositionKey(posisi: string) {
     return posisi.trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-function isFreightNotaRowEmpty(row: Record<string, unknown>) {
-    return (
-        !normalizeOptionalText(row.doRef) &&
-        !normalizeText(row.noSJ) &&
-        !normalizeText(row.tujuan) &&
-        !normalizeText(row.barang) &&
-        normalizeNumber(row.collie || 0) === 0 &&
-        normalizeNumber(row.beratKg || 0) === 0 &&
-        normalizeNumber(row.tarip || 0) === 0
-    );
 }
 
 function isDriverBoronganRowEmpty(row: Record<string, unknown>) {
@@ -190,66 +140,8 @@ function isDriverBoronganRowEmpty(row: Record<string, unknown>) {
     );
 }
 
-function extractRefId(value: unknown) {
-    if (typeof value === 'string' && value) {
-        return value;
-    }
-
-    if (isPlainObject(value) && typeof value._ref === 'string' && value._ref) {
-        return value._ref;
-    }
-
-    return null;
-}
-
 function validateEntity(entity: string | null): entity is keyof typeof SANITY_TYPE_MAP {
     return Boolean(entity && SANITY_TYPE_MAP[entity]);
-}
-
-async function ensureCashAccount() {
-    const existing = await getSanityClient().fetch<BankAccountSummary | null>(
-        `*[_type == "bankAccount" && systemKey == $key][0]{
-            _id,
-            _rev,
-            currentBalance,
-            bankName,
-            accountNumber,
-            accountType,
-            systemKey,
-            accountHolder,
-            active
-        }`,
-        { key: CASH_ACCOUNT_SYSTEM_KEY }
-    );
-    if (existing) {
-        if (existing.active === false) {
-            return sanityUpdate<BankAccountSummary>(existing._id, { active: true });
-        }
-        return existing;
-    }
-
-    const company = await sanityGetCompanyProfile() as { name?: string } | null;
-    return sanityCreate<BankAccountSummary>({
-        _id: 'bank-cash-on-hand',
-        _type: 'bankAccount',
-        bankName: 'Kas Tunai',
-        accountNumber: 'CASH',
-        accountHolder: company?.name || 'Perusahaan',
-        accountType: 'CASH',
-        systemKey: CASH_ACCOUNT_SYSTEM_KEY,
-        initialBalance: 0,
-        currentBalance: 0,
-        active: true,
-        notes: 'Akun sistem untuk mencatat kas tunai operasional.',
-    });
-}
-
-async function getLedgerAccount(accountRef: string) {
-    const account = await sanityGetById<BankAccountSummary>(accountRef);
-    if (!account || account.active === false) {
-        return null;
-    }
-    return account;
 }
 
 function forbidOwnerOnlyEntity(session: Session, entity: string) {
@@ -873,233 +765,6 @@ async function handleBankTransfer(data: Record<string, unknown>) {
     );
 }
 
-async function loadPaymentTarget(invoiceRef: string) {
-    const doc = await sanityGetById<
-        Record<string, unknown> & {
-            _id: string;
-            _rev?: string;
-            _type: 'freightNota' | 'invoice';
-            totalAmount?: number;
-        }
-    >(invoiceRef);
-    if (!doc) {
-        return { error: NextResponse.json({ error: 'Dokumen tagihan tidak ditemukan' }, { status: 404 }) };
-    }
-    if (doc._type !== 'freightNota' && doc._type !== 'invoice') {
-        return {
-            error: NextResponse.json(
-                { error: 'Pembayaran hanya boleh dicatat untuk nota ongkos atau invoice legacy' },
-                { status: 409 }
-            ),
-        };
-    }
-
-    const totalAmount = typeof doc.totalAmount === 'number' ? doc.totalAmount : Number(doc.totalAmount || 0);
-    if (!Number.isFinite(totalAmount) || totalAmount <= 0) {
-        return { error: NextResponse.json({ error: 'Total tagihan tidak valid' }, { status: 400 }) };
-    }
-
-    const allPayments = await getSanityClient().fetch<Payment[]>(
-        `*[_type == "payment" && invoiceRef == $ref]`,
-        { ref: invoiceRef }
-    );
-    const totalPaid = allPayments.reduce((sum, item) => sum + item.amount, 0);
-
-    return { doc, totalAmount, totalPaid };
-}
-
-function deriveBillingStatus(totalAmount: number, totalPaid: number) {
-    if (totalPaid >= totalAmount) return 'PAID';
-    if (totalPaid > 0) return 'PARTIAL';
-    return 'UNPAID';
-}
-
-function isMutationConflictError(err: unknown) {
-    const statusCode =
-        isPlainObject(err) && typeof err.statusCode === 'number'
-            ? err.statusCode
-            : isPlainObject(err) && typeof err.status === 'number'
-                ? err.status
-                : undefined;
-    const message =
-        err instanceof Error
-            ? err.message
-            : isPlainObject(err) && typeof err.message === 'string'
-                ? err.message
-                : '';
-
-    return statusCode === 409 || /revision/i.test(message) || /conflict/i.test(message);
-}
-
-async function handlePaymentCreate(session: Session, data: Record<string, unknown>) {
-    const amount = typeof data.amount === 'number' ? data.amount : Number(data.amount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-        return NextResponse.json({ error: 'Nominal pembayaran tidak valid' }, { status: 400 });
-    }
-
-    const invoiceRef = typeof data.invoiceRef === 'string' ? data.invoiceRef : '';
-    if (!invoiceRef) {
-        return NextResponse.json({ error: 'Referensi tagihan wajib diisi' }, { status: 400 });
-    }
-
-    const paymentMethod = typeof data.method === 'string' ? data.method : 'CASH';
-    const selectedAccountRef =
-        typeof data.bankAccountRef === 'string' && data.bankAccountRef ? data.bankAccountRef : undefined;
-    if (paymentMethod === 'TRANSFER' && !selectedAccountRef) {
-        return NextResponse.json({ error: 'Rekening bank wajib dipilih untuk transfer' }, { status: 400 });
-    }
-
-    const paymentDate =
-        typeof data.date === 'string' && data.date ? data.date : new Date().toISOString().slice(0, 10);
-    assertIsoDate(paymentDate, 'Tanggal pembayaran');
-
-    const paymentId = crypto.randomUUID();
-    const incomeId = crypto.randomUUID();
-    const bankTransactionId = crypto.randomUUID();
-
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-        const loaded = await loadPaymentTarget(invoiceRef);
-        if ('error' in loaded) return loaded.error;
-        if (!loaded.doc._rev) {
-            return NextResponse.json({ error: 'Revisi dokumen tagihan tidak tersedia' }, { status: 409 });
-        }
-
-        const remaining = Math.max(loaded.totalAmount - loaded.totalPaid, 0);
-        if (amount > remaining) {
-            return NextResponse.json(
-                { error: `Pembayaran melebihi sisa tagihan (${remaining})` },
-                { status: 400 }
-            );
-        }
-
-        let bankAcc: BankAccountSummary | null = null;
-        if (selectedAccountRef) {
-            bankAcc = await getLedgerAccount(selectedAccountRef);
-            if (!bankAcc) {
-                return NextResponse.json({ error: 'Rekening bank tidak ditemukan' }, { status: 404 });
-            }
-        } else if (paymentMethod === 'CASH') {
-            bankAcc = await ensureCashAccount();
-        }
-        if (paymentMethod === 'TRANSFER' && bankAcc?.accountType === 'CASH') {
-            return NextResponse.json(
-                { error: 'Metode transfer harus memakai rekening bank, bukan akun Kas Tunai' },
-                { status: 400 }
-            );
-        }
-        if (bankAcc && !bankAcc._rev) {
-            return NextResponse.json({ error: 'Revisi rekening tidak tersedia' }, { status: 409 });
-        }
-
-        const nextTotalPaid = loaded.totalPaid + amount;
-        const nextStatus = deriveBillingStatus(loaded.totalAmount, nextTotalPaid);
-        const paymentDoc: { _id: string; _type: 'payment'; [key: string]: unknown } = {
-            _id: paymentId,
-            _type: 'payment',
-            ...data,
-            invoiceRef,
-            date: paymentDate,
-            amount,
-            method: paymentMethod,
-        };
-        if (bankAcc) {
-            paymentDoc.bankAccountRef = bankAcc._id;
-            paymentDoc.bankAccountName = bankAcc.bankName;
-            paymentDoc.bankAccountNumber = bankAcc.accountNumber;
-        } else {
-            delete paymentDoc.bankAccountRef;
-            delete paymentDoc.bankAccountName;
-            delete paymentDoc.bankAccountNumber;
-        }
-
-        const transaction = getSanityClient()
-            .transaction()
-            .create(paymentDoc)
-            .create({
-                _id: incomeId,
-                _type: 'income',
-                sourceType: 'INVOICE_PAYMENT',
-                paymentRef: paymentId,
-                date: paymentDate,
-                amount,
-                note: loaded.doc._type === 'freightNota' ? 'Pembayaran nota ongkos' : 'Pembayaran invoice',
-            })
-            .patch(invoiceRef, {
-                ifRevisionID: loaded.doc._rev,
-                set: { status: nextStatus },
-            });
-
-        if (bankAcc) {
-            const nextBankBalance = (bankAcc.currentBalance || 0) + amount;
-            transaction
-                .create({
-                    _id: bankTransactionId,
-                    _type: 'bankTransaction',
-                    bankAccountRef: bankAcc._id,
-                    bankAccountName: bankAcc.bankName,
-                    bankAccountNumber: bankAcc.accountNumber,
-                    type: 'CREDIT',
-                    amount,
-                    date: paymentDate,
-                    description:
-                        bankAcc.accountType === 'CASH'
-                            ? 'Pembayaran tunai masuk'
-                            : loaded.doc._type === 'freightNota'
-                                ? 'Pembayaran nota masuk'
-                                : 'Pembayaran invoice masuk',
-                    balanceAfter: nextBankBalance,
-                    relatedPaymentRef: paymentId,
-                })
-                .patch(bankAcc._id, {
-                    ifRevisionID: bankAcc._rev,
-                    set: { currentBalance: nextBankBalance },
-                });
-        }
-
-        try {
-            await transaction.commit();
-            void addAuditLog(
-                session,
-                'CREATE',
-                'payments',
-                paymentId,
-                `Pembayaran dicatat untuk ${loaded.doc._type === 'freightNota' ? 'nota' : 'invoice'} ${invoiceRef}`
-            );
-            return NextResponse.json({ data: paymentDoc, id: paymentId });
-        } catch (err) {
-            if (!isMutationConflictError(err)) {
-                throw err;
-            }
-
-            if (attempt === 2) {
-                const latest = await loadPaymentTarget(invoiceRef);
-                if (!('error' in latest)) {
-                    const latestRemaining = Math.max(latest.totalAmount - latest.totalPaid, 0);
-                    return NextResponse.json(
-                        {
-                            error:
-                                latestRemaining === 0 || amount > latestRemaining
-                                    ? `Pembayaran berubah karena ada transaksi lain. Sisa tagihan sekarang ${latestRemaining}. Muat ulang lalu coba lagi.`
-                                    : 'Pembayaran berubah karena ada transaksi lain. Muat ulang lalu coba lagi.',
-                        },
-                        { status: 409 }
-                    );
-                }
-
-                return NextResponse.json(
-                    { error: 'Pembayaran berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
-                    { status: 409 }
-                );
-            }
-        }
-    }
-
-    return NextResponse.json(
-        { error: 'Pembayaran berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
-        { status: 409 }
-    );
-}
-
 async function handleExpenseCreate(session: Session, data: Record<string, unknown>) {
     const amount = typeof data.amount === 'number' ? data.amount : Number(data.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -1704,269 +1369,6 @@ async function handleDeliveryOrderCreate(session: Session, data: Record<string, 
     return NextResponse.json({ data: doDoc, id: doId });
 }
 
-async function handleFreightNotaCreate(session: Session, data: Record<string, unknown>) {
-    let resolvedCustomerRef = normalizeOptionalText(data.customerRef);
-    const customerName = normalizeText(data.customerName);
-    if (!customerName) {
-        return NextResponse.json({ error: 'Nama customer nota wajib diisi' }, { status: 400 });
-    }
-
-    const rawRows = Array.isArray(data.items) ? data.items : Array.isArray(data.rows) ? data.rows : [];
-    const rows = rawRows
-        .filter(isPlainObject)
-        .filter(row => !isFreightNotaRowEmpty(row))
-        .map<NormalizedFreightNotaRow>(row => {
-            const date = normalizeText(row.date);
-            const doRef = normalizeOptionalText(row.doRef);
-            const doNumber = normalizeOptionalText(row.doNumber);
-            const noSJ = normalizeText(row.noSJ) || doNumber || '';
-            const tujuan = normalizeText(row.tujuan);
-            const dari = normalizeText(row.dari);
-            const beratKg = normalizeNumber(row.beratKg);
-            const tarip = normalizeNumber(row.tarip);
-            const collie = normalizeNumber(row.collie ?? 0);
-
-            if (!date || !noSJ || !tujuan) {
-                throw new Error('Baris nota wajib punya tanggal, nomor SJ, dan tujuan');
-            }
-            if (!Number.isFinite(beratKg) || beratKg <= 0) {
-                throw new Error('Berat pada baris nota harus lebih besar dari 0');
-            }
-            if (!Number.isFinite(tarip) || tarip <= 0) {
-                throw new Error('Tarip pada baris nota harus lebih besar dari 0');
-            }
-            if (!Number.isFinite(collie) || collie < 0) {
-                throw new Error('Collie pada baris nota tidak valid');
-            }
-
-            return {
-                doRef,
-                doNumber,
-                vehiclePlate: normalizeOptionalText(row.vehiclePlate),
-                date,
-                noSJ,
-                dari,
-                tujuan,
-                barang: normalizeOptionalText(row.barang),
-                collie: collie > 0 ? collie : undefined,
-                beratKg,
-                tarip,
-                uangRp: beratKg * tarip,
-                ket: normalizeOptionalText(row.ket),
-            };
-        });
-
-    if (rows.length === 0) {
-        return NextResponse.json({ error: 'Minimal 1 baris nota wajib diisi' }, { status: 400 });
-    }
-
-    const doRefs = rows.flatMap(row => (row.doRef ? [row.doRef] : []));
-    const uniqueDoRefs = [...new Set(doRefs)];
-    if (uniqueDoRefs.length !== doRefs.length) {
-        return NextResponse.json({ error: 'DO yang sama tidak boleh dimasukkan dua kali dalam nota' }, { status: 400 });
-    }
-
-    const deliveryOrders = uniqueDoRefs.length > 0
-        ? await getSanityClient().fetch<Array<{
-            _id: string;
-            status?: string;
-            orderRef?: unknown;
-            doNumber?: string;
-            vehiclePlate?: string;
-            receiverAddress?: string;
-        }>>(
-            `*[_type == "deliveryOrder" && _id in $ids]{
-                _id,
-                status,
-                orderRef,
-                doNumber,
-                vehiclePlate,
-                receiverAddress
-            }`,
-            { ids: uniqueDoRefs }
-        )
-        : [];
-
-    if (deliveryOrders.length !== uniqueDoRefs.length) {
-        return NextResponse.json({ error: 'Sebagian DO nota tidak ditemukan' }, { status: 404 });
-    }
-
-    const deliveryOrderMap = new Map(deliveryOrders.map(item => [item._id, item]));
-    for (const row of rows) {
-        if (!row.doRef) continue;
-        const deliveryOrder = deliveryOrderMap.get(row.doRef);
-        if (!deliveryOrder) {
-            return NextResponse.json({ error: 'DO nota tidak ditemukan' }, { status: 404 });
-        }
-        if (deliveryOrder.status !== 'DELIVERED') {
-            return NextResponse.json({ error: `DO ${deliveryOrder.doNumber || row.doRef} belum selesai dikirim` }, { status: 409 });
-        }
-        row.doNumber = row.doNumber || deliveryOrder.doNumber;
-        row.vehiclePlate = row.vehiclePlate || deliveryOrder.vehiclePlate;
-        row.tujuan = row.tujuan || deliveryOrder.receiverAddress || row.tujuan;
-    }
-
-    if (uniqueDoRefs.length > 0) {
-        const existingNotaItems = await getSanityClient().fetch<Array<{ doRef?: string; doNumber?: string }>>(
-            `*[_type == "freightNotaItem" && doRef in $ids]{ doRef, doNumber }`,
-            { ids: uniqueDoRefs }
-        );
-        if (existingNotaItems.length > 0) {
-            const duplicate = existingNotaItems[0];
-            return NextResponse.json(
-                { error: `DO ${duplicate.doNumber || duplicate.doRef || ''} sudah tercantum di nota lain` },
-                { status: 409 }
-            );
-        }
-    }
-
-    const orderRefs = [...new Set(
-        deliveryOrders
-            .map(item => extractRefId(item.orderRef))
-            .filter((ref): ref is string => Boolean(ref))
-    )];
-    const sourceOrders = orderRefs.length > 0
-        ? await getSanityClient().fetch<Array<{ _id: string; customerRef?: unknown }>>(
-            `*[_type == "order" && _id in $ids]{ _id, customerRef }`,
-            { ids: orderRefs }
-        )
-        : [];
-    const orderCustomerMap = new Map(
-        sourceOrders.map(order => [order._id, extractRefId(order.customerRef)])
-    );
-    const inferredCustomerRefs = [...new Set(
-        deliveryOrders
-            .map(deliveryOrder => {
-                const orderRef = extractRefId(deliveryOrder.orderRef);
-                return orderRef ? orderCustomerMap.get(orderRef) : undefined;
-            })
-            .filter((ref): ref is string => Boolean(ref))
-    )];
-
-    if (inferredCustomerRefs.length > 1) {
-        return NextResponse.json(
-            { error: 'DO yang dipilih berasal dari customer berbeda. Pisahkan per nota.' },
-            { status: 409 }
-        );
-    }
-
-    const inferredCustomerRef = inferredCustomerRefs[0];
-    if (resolvedCustomerRef && inferredCustomerRef && resolvedCustomerRef !== inferredCustomerRef) {
-        return NextResponse.json(
-            { error: 'Customer nota tidak cocok dengan customer pada DO yang dipilih' },
-            { status: 409 }
-        );
-    }
-    if (!resolvedCustomerRef && inferredCustomerRef) {
-        resolvedCustomerRef = inferredCustomerRef;
-    }
-
-    if (resolvedCustomerRef && deliveryOrders.length > 0) {
-        for (const deliveryOrder of deliveryOrders) {
-            const orderRef = extractRefId(deliveryOrder.orderRef);
-            if (orderRef && orderCustomerMap.get(orderRef) !== resolvedCustomerRef) {
-                return NextResponse.json(
-                    { error: `DO ${deliveryOrder.doNumber || deliveryOrder._id} bukan milik customer yang dipilih` },
-                    { status: 409 }
-                );
-            }
-        }
-    }
-
-    const issueDate = normalizeText(data.issueDate) || new Date().toISOString().slice(0, 10);
-    let finalCustomerName = customerName;
-    let customerTermDays: number | null = null;
-    if (resolvedCustomerRef) {
-        const customerDoc = await getSanityClient().fetch<{ name?: string; defaultPaymentTerm?: number } | null>(
-            `*[_type == "customer" && _id == $id][0]{ name, defaultPaymentTerm }`,
-            { id: resolvedCustomerRef }
-        );
-        if (customerDoc?.name) {
-            finalCustomerName = customerDoc.name;
-        }
-        if (typeof customerDoc?.defaultPaymentTerm === 'number' && Number.isFinite(customerDoc.defaultPaymentTerm) && customerDoc.defaultPaymentTerm >= 0) {
-            customerTermDays = customerDoc.defaultPaymentTerm;
-        }
-    }
-
-    const totalAmount = rows.reduce((sum, row) => sum + row.uangRp, 0);
-    const totalCollie = rows.reduce((sum, row) => sum + (row.collie || 0), 0);
-    const totalWeightKg = rows.reduce((sum, row) => sum + row.beratKg, 0);
-    if (totalAmount <= 0) {
-        return NextResponse.json({ error: 'Total nota harus lebih besar dari 0' }, { status: 400 });
-    }
-
-    const notaId = crypto.randomUUID();
-    const notaNumber = await sanityGetNextNumber('nota');
-    let resolvedDueDate = normalizeOptionalText(data.dueDate);
-    if (!resolvedDueDate) {
-        let termDays = customerTermDays;
-        if (termDays === null) {
-            const companyDoc = await getSanityClient().fetch<{
-                invoiceSettings?: {
-                    dueDateDays?: number;
-                    defaultTermDays?: number;
-                };
-            } | null>(
-                `*[_type == "companyProfile"][0]{ invoiceSettings }`
-            );
-            const companyTerm = companyDoc?.invoiceSettings?.dueDateDays ?? companyDoc?.invoiceSettings?.defaultTermDays;
-            if (typeof companyTerm === 'number' && Number.isFinite(companyTerm) && companyTerm >= 0) {
-                termDays = companyTerm;
-            }
-        }
-
-        if (termDays !== null) {
-            const dueDate = new Date(issueDate);
-            if (!Number.isNaN(dueDate.getTime())) {
-                dueDate.setDate(dueDate.getDate() + termDays);
-                resolvedDueDate = dueDate.toISOString().slice(0, 10);
-            }
-        }
-    }
-
-    const notaDoc = {
-        _id: notaId,
-        _type: 'freightNota',
-        customerRef: resolvedCustomerRef,
-        customerName: finalCustomerName,
-        issueDate,
-        dueDate: resolvedDueDate,
-        status: 'UNPAID',
-        totalAmount,
-        totalCollie,
-        totalWeightKg,
-        notes: normalizeOptionalText(data.notes),
-        notaNumber,
-    };
-
-    const transaction = getSanityClient().transaction().create(notaDoc);
-    for (const row of rows) {
-        transaction.create({
-            _id: crypto.randomUUID(),
-            _type: 'freightNotaItem',
-            notaRef: notaId,
-            doRef: row.doRef,
-            doNumber: row.doNumber,
-            vehiclePlate: row.vehiclePlate,
-            date: row.date,
-            noSJ: row.noSJ,
-            dari: row.dari,
-            tujuan: row.tujuan,
-            barang: row.barang,
-            collie: row.collie,
-            beratKg: row.beratKg,
-            tarip: row.tarip,
-            uangRp: row.uangRp,
-            ket: row.ket,
-        });
-    }
-
-    await transaction.commit();
-    void addAuditLog(session, 'CREATE', 'freight-notas', notaId, `Created freight-notas: ${notaNumber}`);
-    return NextResponse.json({ data: notaDoc, id: notaId });
-}
-
 async function handleInvoiceCreate(session: Session, data: Record<string, unknown>) {
     const rawItems = Array.isArray(data.items) ? data.items : [];
     const items = rawItems.filter(isPlainObject);
@@ -2212,40 +1614,6 @@ async function handleDriverBoronganCreate(session: Session, data: Record<string,
     await transaction.commit();
     void addAuditLog(session, 'CREATE', 'driver-borongans', boronganId, `Created driver-borongans: ${boronganNumber}`);
     return NextResponse.json({ data: boronganDoc, id: boronganId });
-}
-
-async function handleFreightNotaDelete(session: Session, data: Record<string, unknown>) {
-    const id = typeof data.id === 'string' ? data.id : '';
-    if (!id) {
-        return NextResponse.json({ error: 'Nota tidak valid' }, { status: 400 });
-    }
-
-    const nota = await sanityGetById<{ _id: string; notaNumber?: string }>(id);
-    if (!nota) {
-        return NextResponse.json({ error: 'Nota tidak ditemukan' }, { status: 404 });
-    }
-
-    const existingPayments = await getSanityClient().fetch<Array<{ _id: string }>>(
-        `*[_type == "payment" && invoiceRef == $ref]{ _id }`,
-        { ref: id }
-    );
-    if (existingPayments.length > 0) {
-        return NextResponse.json({ error: 'Nota yang sudah punya pembayaran tidak boleh dihapus' }, { status: 409 });
-    }
-
-    const itemIds = await getSanityClient().fetch<string[]>(
-        `*[_type == "freightNotaItem" && notaRef == $ref]._id`,
-        { ref: id }
-    );
-    const transaction = getSanityClient().transaction();
-    for (const itemId of itemIds) {
-        transaction.delete(itemId);
-    }
-    transaction.delete(id);
-    await transaction.commit();
-
-    void addAuditLog(session, 'DELETE', 'freight-notas', id, `Deleted freight-notas ${nota.notaNumber || id}`);
-    return NextResponse.json({ success: true });
 }
 
 async function handleDriverBoronganDelete(session: Session, data: Record<string, unknown>) {
@@ -3546,7 +2914,7 @@ export async function POST(request: Request) {
             }
 
             if (entity === 'freight-notas') {
-                return handleFreightNotaDelete(session, data);
+                return handleFreightNotaDelete(session, data, addAuditLog);
             }
 
             if (entity === 'driver-borongans') {
@@ -3580,7 +2948,7 @@ export async function POST(request: Request) {
         }
 
         if (entity === 'freight-notas' && action === 'create-with-items') {
-            return handleFreightNotaCreate(session, data);
+            return handleFreightNotaCreate(session, data, addAuditLog);
         }
 
         if (entity === 'invoices' && action === 'create-with-items') {
@@ -3620,7 +2988,7 @@ export async function POST(request: Request) {
         }
 
         if (entity === 'payments') {
-            return handlePaymentCreate(session, data);
+            return handlePaymentCreate(session, data, addAuditLog);
         }
 
         if (entity === 'expenses') {
