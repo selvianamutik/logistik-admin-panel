@@ -153,41 +153,90 @@ export function buildFreightNotaPrintDocument(opts: {
 }) {
     const { nota, items, company } = opts;
     const displayNumber = formatFreightNotaDisplayNumber(nota, company);
-    const minPrintableRows = Math.max(items.length, 13);
-    const rows = Array.from({ length: minPrintableRows }, (_, index) => {
-        const item = items[index];
-        if (!item) {
-            return {
-                no: '',
-                vehiclePlate: '',
-                date: '',
-                noSJ: '',
-                dari: '',
-                tujuan: '',
-                barang: '',
-                collie: '',
-                beratKg: '',
-                tarip: '',
-                uangRp: '',
-                ket: '',
-            };
-        }
-
-        return {
-            no: index + 1,
-            vehiclePlate: item.vehiclePlate || '-',
-            date: fmtPrintDate(item.date),
-            noSJ: item.noSJ || item.doNumber || '-',
-            dari: item.dari || '-',
-            tujuan: item.tujuan || '-',
-            barang: item.barang || '-',
-            collie: item.collie || 0,
-            beratKg: fmtNumber(item.beratKg || 0),
-            tarip: fmtNumber(item.tarip || 0),
-            uangRp: fmtNumber(item.uangRp || 0),
+    const groupedRows = items.reduce<Array<{
+        no: number;
+        vehiclePlate: string;
+        date: string;
+        entries: Array<{
+            noSJ: string;
+            dari: string;
+            tujuan: string;
+            barang: string;
+            collie: string | number;
+            beratKg: string;
+            tarip: string;
+            uangRp: string;
+            ket: string;
+        }>;
+    }>>((groups, item) => {
+        const vehiclePlate = item.vehiclePlate || '';
+        const date = fmtPrintDate(item.date);
+        const key = `${vehiclePlate}__${date}`;
+        const current = groups.find(group => `${group.vehiclePlate}__${group.date}` === key);
+        const entry = {
+            noSJ: item.noSJ || item.doNumber || '',
+            dari: item.dari || '',
+            tujuan: item.tujuan || '',
+            barang: item.barang || '',
+            collie: item.collie || '',
+            beratKg: item.beratKg ? fmtNumber(item.beratKg) : '',
+            tarip: item.tarip ? fmtNumber(item.tarip) : '',
+            uangRp: item.uangRp ? fmtNumber(item.uangRp) : '',
             ket: item.ket || '',
         };
-    });
+
+        if (current) {
+            current.entries.push(entry);
+            return groups;
+        }
+
+        groups.push({
+            no: groups.length + 1,
+            vehiclePlate,
+            date,
+            entries: [entry],
+        });
+        return groups;
+    }, []);
+    const minPrintableRows = Math.max(items.length, 13);
+    const fillerCount = Math.max(minPrintableRows - items.length, 0);
+    const groupedRowsHtml = groupedRows.map(group => {
+        const span = Math.max(group.entries.length, 1);
+        return group.entries.map((entry, entryIndex) => `
+            <tr>
+                ${entryIndex === 0 ? `
+                    <td class="c group-cell" rowspan="${span}">${group.no}</td>
+                    <td class="group-cell" rowspan="${span}">${escapeHtml(group.vehiclePlate)}</td>
+                    <td class="c group-cell" rowspan="${span}">${escapeHtml(group.date)}</td>
+                ` : ''}
+                <td>${escapeHtml(entry.noSJ)}</td>
+                <td>${escapeHtml(entry.dari)}</td>
+                <td>${escapeHtml(entry.tujuan)}</td>
+                <td>${escapeHtml(entry.barang)}</td>
+                <td class="r">${escapeHtml(entry.collie)}</td>
+                <td class="r">${escapeHtml(entry.beratKg)}</td>
+                <td class="r">${escapeHtml(entry.tarip)}</td>
+                <td class="r">${escapeHtml(entry.uangRp)}</td>
+                <td>${escapeHtml(entry.ket)}</td>
+            </tr>
+        `).join('');
+    }).join('');
+    const fillerRowsHtml = Array.from({ length: fillerCount }, () => `
+        <tr class="nota-filler-row">
+            <td class="c">&nbsp;</td>
+            <td>&nbsp;</td>
+            <td class="c">&nbsp;</td>
+            <td>&nbsp;</td>
+            <td>&nbsp;</td>
+            <td>&nbsp;</td>
+            <td>&nbsp;</td>
+            <td class="r">&nbsp;</td>
+            <td class="r">&nbsp;</td>
+            <td class="r">&nbsp;</td>
+            <td class="r">&nbsp;</td>
+            <td>&nbsp;</td>
+        </tr>
+    `).join('');
 
     const bankTransferLine = company?.bankName && company?.bankAccount
         ? `${company.bankName} A/C ${company.bankAccount}${company.bankHolder ? ` A/N ${company.bankHolder}` : ''}`
@@ -249,22 +298,8 @@ export function buildFreightNotaPrintDocument(opts: {
                     </tr>
                 </thead>
                 <tbody>
-                    ${rows.map((row) => `
-                        <tr>
-                            <td class="c">${row.no}</td>
-                            <td>${escapeHtml(row.vehiclePlate)}</td>
-                            <td>${escapeHtml(row.date)}</td>
-                            <td>${escapeHtml(row.noSJ)}</td>
-                            <td>${escapeHtml(row.dari)}</td>
-                            <td>${escapeHtml(row.tujuan)}</td>
-                            <td>${escapeHtml(row.barang)}</td>
-                            <td class="r">${escapeHtml(row.collie)}</td>
-                            <td class="r">${escapeHtml(row.beratKg)}</td>
-                            <td class="r">${escapeHtml(row.tarip)}</td>
-                            <td class="r">${escapeHtml(row.uangRp)}</td>
-                            <td>${escapeHtml(row.ket)}</td>
-                        </tr>
-                    `).join('')}
+                    ${groupedRowsHtml}
+                    ${fillerRowsHtml}
                     <tr class="nota-total-row">
                         <td colspan="7" class="r b">Jumlah</td>
                         <td class="r b">${escapeHtml(nota.totalCollie || 0)}</td>
@@ -301,6 +336,8 @@ export function buildFreightNotaPrintDocument(opts: {
         .nota-table th, .nota-table td { padding: 0.12rem 0.18rem; border: 1px solid #1f2937; font-size: 8.8px; vertical-align: top; min-height: 18px; }
         .nota-table td { height: 18px; }
         .nota-table th { background: #fff; color: #111827; text-align: center; font-weight: 700; }
+        .group-cell { vertical-align: top; font-weight: 700; }
+        .nota-filler-row td { color: transparent; }
         .nota-note-row { margin-top: 0.35rem; }
         .nota-note { font-size: 9px; }
         .nota-bank-line { margin-top: 0.12rem; padding-left: 1.6rem; font-weight: 700; }
