@@ -111,7 +111,7 @@ function fmtPrintDate(value?: string) {
 
     const day = String(date.getDate()).padStart(2, '0');
     const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = String(date.getFullYear()).slice(-2);
+    const year = String(date.getFullYear());
     return `${day}-${month}-${year}`;
 }
 
@@ -124,14 +124,6 @@ function fmtLongPrintDate(value?: string) {
         month: 'long',
         year: 'numeric',
     });
-}
-
-function buildTransferNote(company: CompanyProfile | null, notes?: string) {
-    const transferLine = company?.bankName && company?.bankAccount
-        ? `ONGKOS ANGKUTAN HARAP DITRANSFER KE : ${company.bankName} A/C ${company.bankAccount}${company.bankHolder ? ` A/N ${company.bankHolder}` : ''}`
-        : '';
-    const additional = [company?.invoiceSettings?.footerNote, notes].filter(Boolean).join(' ');
-    return [transferLine, additional].filter(Boolean).join(' ');
 }
 
 const ROMAN_MONTHS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
@@ -161,18 +153,18 @@ export function buildFreightNotaPrintDocument(opts: {
 }) {
     const { nota, items, company } = opts;
     const displayNumber = formatFreightNotaDisplayNumber(nota, company);
-    const minPrintableRows = Math.max(items.length, 12);
+    const minPrintableRows = Math.max(items.length, 13);
     const rows = Array.from({ length: minPrintableRows }, (_, index) => {
         const item = items[index];
         if (!item) {
             return {
-                no: index + 1,
-                vehiclePlate: '-',
+                no: '',
+                vehiclePlate: '',
                 date: '',
-                noSJ: '-',
-                dari: '-',
-                tujuan: '-',
-                barang: '-',
+                noSJ: '',
+                dari: '',
+                tujuan: '',
+                barang: '',
                 collie: '',
                 beratKg: '',
                 tarip: '',
@@ -197,7 +189,10 @@ export function buildFreightNotaPrintDocument(opts: {
         };
     });
 
-    const transferNote = buildTransferNote(company, nota.notes);
+    const bankTransferLine = company?.bankName && company?.bankAccount
+        ? `${company.bankName} A/C ${company.bankAccount}${company.bankHolder ? ` A/N ${company.bankHolder}` : ''}`
+        : '';
+    const extraNote = [company?.invoiceSettings?.footerNote, nota.notes].filter(Boolean).join(' ');
     const companyLines = [
         company?.name,
         company?.address,
@@ -208,11 +203,35 @@ export function buildFreightNotaPrintDocument(opts: {
 
     const bodyHtml = `
         <div class="nota-sheet">
-            <div class="nota-title">PERINCIAN ONGKOS ANGKUT NO. ${escapeHtml(displayNumber)}</div>
-            <div class="nota-recipient-label">KEPADA YANG TERHORMAT :</div>
-            <div class="nota-recipient-value">${escapeHtml(nota.customerName)}</div>
+            <div class="nota-header">
+                <div class="nota-company">
+                    ${companyLines.map((line, index) => `<div class="${index === 0 ? 'nota-company-name' : 'nota-company-line'}">${escapeHtml(line)}</div>`).join('')}
+                </div>
+                <div class="nota-heading">
+                    <div class="nota-heading-top">
+                        <div class="nota-title">PERINCIAN ONGKOS ANGKUT NO.${escapeHtml(displayNumber)}</div>
+                        <div class="nota-issued"><span class="b">TGL. :</span> ${escapeHtml(fmtLongPrintDate(nota.issueDate))}</div>
+                    </div>
+                    <div class="nota-recipient-label">KEPADA YANG TERHORMAT :</div>
+                    <div class="nota-recipient-value">${escapeHtml(nota.customerName)}</div>
+                </div>
+            </div>
 
             <table class="nota-table">
+                <colgroup>
+                    <col style="width: 4.5%" />
+                    <col style="width: 11%" />
+                    <col style="width: 11%" />
+                    <col style="width: 16%" />
+                    <col style="width: 12%" />
+                    <col style="width: 12%" />
+                    <col style="width: 11%" />
+                    <col style="width: 5.5%" />
+                    <col style="width: 7.5%" />
+                    <col style="width: 6.5%" />
+                    <col style="width: 12%" />
+                    <col style="width: 8%" />
+                </colgroup>
                 <thead>
                     <tr>
                         <th class="c">NO</th>
@@ -258,33 +277,40 @@ export function buildFreightNotaPrintDocument(opts: {
             </table>
 
             <div class="nota-note-row">
-                <div class="nota-note"><span class="b">NOTE :</span> ${escapeHtml(transferNote || '-')}</div>
-                <div class="nota-issued"><span class="b">TGL :</span> ${escapeHtml(fmtLongPrintDate(nota.issueDate))}</div>
-            </div>
-
-            <div class="nota-footer-company">
-                ${companyLines.map((line) => `<div>${escapeHtml(line)}</div>`).join('')}
+                <div class="nota-note">
+                    <div><span class="b">NOTE :</span> ONGKOS ANGKUTAN HARAP DITRANSFER KE :</div>
+                    ${bankTransferLine ? `<div class="nota-bank-line">${escapeHtml(bankTransferLine)}</div>` : ''}
+                    ${extraNote ? `<div class="nota-extra-note">${escapeHtml(extraNote)}</div>` : ''}
+                </div>
             </div>
         </div>
     `;
 
     const extraStyles = `
-        body { font-family: Arial, Helvetica, sans-serif; padding: 1rem 1.25rem; color: #111827; max-width: 1200px; }
-        .nota-sheet { font-size: 11px; line-height: 1.35; }
-        .nota-title { text-align: center; font-weight: 700; font-size: 16px; margin-bottom: 0.75rem; }
-        .nota-recipient-label { font-weight: 700; margin-bottom: 0.15rem; }
-        .nota-recipient-value { font-weight: 700; margin-bottom: 0.6rem; }
-        .nota-table { margin-top: 0.5rem; }
-        .nota-table th, .nota-table td { padding: 0.28rem 0.32rem; border: 1px solid #1f2937; font-size: 10px; vertical-align: top; }
-        .nota-table th { background: #fff; color: #111827; text-align: center; }
-        .nota-note-row { display: flex; justify-content: space-between; gap: 1rem; margin-top: 0.6rem; align-items: flex-start; }
-        .nota-note { flex: 1; }
-        .nota-issued { white-space: nowrap; }
-        .nota-footer-company { margin-top: 0.75rem; font-size: 10px; }
+        body { font-family: Arial, Helvetica, sans-serif; padding: 0.6rem 0.8rem; color: #111827; max-width: 1120px; }
+        .nota-sheet { font-size: 9px; line-height: 1.15; }
+        .nota-header { display: grid; grid-template-columns: 36% 64%; gap: 0.6rem; align-items: start; }
+        .nota-company-name { font-weight: 700; font-size: 11px; text-transform: uppercase; margin-bottom: 0.1rem; }
+        .nota-company-line { font-size: 9px; text-transform: uppercase; margin-bottom: 0.08rem; }
+        .nota-heading-top { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+        .nota-title { font-weight: 700; font-size: 11px; text-transform: uppercase; }
+        .nota-issued { white-space: nowrap; font-size: 9px; }
+        .nota-recipient-label { font-weight: 700; margin-top: 0.25rem; margin-bottom: 0.08rem; }
+        .nota-recipient-value { font-weight: 700; text-transform: uppercase; margin-bottom: 0.4rem; }
+        .nota-table { margin-top: 0.25rem; table-layout: fixed; }
+        .nota-table th, .nota-table td { padding: 0.12rem 0.18rem; border: 1px solid #1f2937; font-size: 8.8px; vertical-align: top; min-height: 18px; }
+        .nota-table td { height: 18px; }
+        .nota-table th { background: #fff; color: #111827; text-align: center; font-weight: 700; }
+        .nota-note-row { margin-top: 0.35rem; }
+        .nota-note { font-size: 9px; }
+        .nota-bank-line { margin-top: 0.12rem; padding-left: 1.6rem; font-weight: 700; }
+        .nota-extra-note { margin-top: 0.12rem; }
         .nota-total-row td { font-weight: 700; }
         .c { text-align: center; }
         .r { text-align: right; }
         .b { font-weight: 700; }
+        @page { size: A4 portrait; margin: 8mm; }
+        @media print { body { padding: 0; } }
     `;
 
     return {

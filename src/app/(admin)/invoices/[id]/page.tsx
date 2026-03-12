@@ -7,7 +7,7 @@ import { ArrowLeft, Printer, DollarSign, Landmark, Trash2, FileDown } from 'luci
 import { buildFreightNotaPrintDocument, fetchCompanyProfile, formatFreightNotaDisplayNumber, openBrandedPrint } from '@/lib/print';
 import { exportFreightNotaDetail } from '@/lib/export';
 import { formatDate, formatCurrency } from '@/lib/utils';
-import type { FreightNota, FreightNotaItem, Payment, BankAccount } from '@/lib/types';
+import type { FreightNota, FreightNotaItem, Payment, BankAccount, CompanyProfile } from '@/lib/types';
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
     UNPAID: { label: 'Belum Lunas', color: 'danger' },
@@ -24,6 +24,7 @@ export default function NotaDetailPage() {
     const [items, setItems] = useState<FreightNotaItem[]>([]);
     const [payments, setPayments] = useState<Payment[]>([]);
     const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+    const [company, setCompany] = useState<CompanyProfile | null>(null);
     const [loading, setLoading] = useState(true);
     const [showPayModal, setShowPayModal] = useState(false);
     const [payAmount, setPayAmount] = useState(0);
@@ -45,17 +46,19 @@ export default function NotaDetailPage() {
         const loadNotaDetail = async () => {
             setLoading(true);
             try {
-                const [notaData, notaItems, paymentRows, accounts] = await Promise.all([
+                const [notaData, notaItems, paymentRows, accounts, companyData] = await Promise.all([
                     fetchEntity<FreightNota | null>(`/api/data?entity=freight-notas&id=${notaId}`),
                     fetchEntity<FreightNotaItem[]>(`/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ notaRef: notaId }))}`),
                     fetchEntity<Payment[]>(`/api/data?entity=payments&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: notaId }))}`),
                     fetchEntity<BankAccount[]>('/api/data?entity=bank-accounts'),
+                    fetchCompanyProfile(),
                 ]);
 
                 setNota(notaData);
                 setItems(notaItems || []);
                 setPayments(paymentRows || []);
                 setBankAccounts((accounts || []).filter(account => account.active !== false));
+                setCompany(companyData);
             } catch (error) {
                 addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail nota');
             } finally {
@@ -96,12 +99,13 @@ export default function NotaDetailPage() {
     const handlePrint = async () => {
         if (!nota) return;
         try {
-            const company = await fetchCompanyProfile();
-            const doc = buildFreightNotaPrintDocument({ nota, items, company });
+            const resolvedCompany = company ?? await fetchCompanyProfile();
+            setCompany(resolvedCompany);
+            const doc = buildFreightNotaPrintDocument({ nota, items, company: resolvedCompany });
             openBrandedPrint({
                 title: doc.title,
                 subtitle: doc.subtitle,
-                company,
+                company: resolvedCompany,
                 bodyHtml: doc.bodyHtml,
                 extraStyles: doc.extraStyles,
                 showCompanyHeader: doc.showCompanyHeader,
@@ -130,8 +134,9 @@ export default function NotaDetailPage() {
     const handleExportExcel = async () => {
         if (!nota) return;
         try {
-            const company = await fetchCompanyProfile();
-            await exportFreightNotaDetail(nota, items, company);
+            const resolvedCompany = company ?? await fetchCompanyProfile();
+            setCompany(resolvedCompany);
+            await exportFreightNotaDetail(nota, items, resolvedCompany);
             addToast('success', 'Excel nota berhasil di-download');
         } catch {
             addToast('error', 'Gagal menyiapkan Excel nota');
@@ -142,7 +147,7 @@ export default function NotaDetailPage() {
     if (!nota) return <div className="empty-state"><div className="empty-state-title">Nota tidak ditemukan</div></div>;
 
     const statusConf = STATUS_MAP[nota.status] || { label: nota.status, color: 'secondary' };
-    const displayNotaNumber = formatFreightNotaDisplayNumber(nota);
+    const displayNotaNumber = formatFreightNotaDisplayNumber(nota, company);
 
     return (
         <div>

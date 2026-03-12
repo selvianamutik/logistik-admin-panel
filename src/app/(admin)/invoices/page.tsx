@@ -6,7 +6,7 @@ import { Search, Plus, FileText, Printer, FileDown } from 'lucide-react';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { buildFreightNotaPrintDocument, openBrandedPrint, fetchCompanyProfile, formatFreightNotaDisplayNumber } from '@/lib/print';
 import { exportFreightNotaDetail, exportInvoices } from '@/lib/export';
-import type { FreightNota, FreightNotaItem } from '@/lib/types';
+import type { CompanyProfile, FreightNota, FreightNotaItem } from '@/lib/types';
 
 import { useToast } from '../layout';
 
@@ -20,19 +20,31 @@ export default function NotaListPage() {
     const router = useRouter();
     const { addToast } = useToast();
     const [items, setItems] = useState<FreightNota[]>([]);
+    const [company, setCompany] = useState<CompanyProfile | null>(null);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
 
     useEffect(() => {
-        fetch('/api/data?entity=freight-notas').then(r => r.json()).then(d => {
-            setItems(d.data || []);
+        Promise.all([
+            fetch('/api/data?entity=freight-notas').then(r => r.json()),
+            fetchCompanyProfile(),
+        ]).then(([notaPayload, companyPayload]) => {
+            setItems(notaPayload.data || []);
+            setCompany(companyPayload);
+            setLoading(false);
+        }).catch(() => {
             setLoading(false);
         });
     }, []);
 
     const filtered = items.filter(n => {
-        const m = !search || n.notaNumber?.toLowerCase().includes(search.toLowerCase()) || n.customerName?.toLowerCase().includes(search.toLowerCase());
+        const query = search.toLowerCase();
+        const displayNumber = formatFreightNotaDisplayNumber(n, company).toLowerCase();
+        const m = !search ||
+            n.notaNumber?.toLowerCase().includes(query) ||
+            n.customerName?.toLowerCase().includes(query) ||
+            displayNumber.includes(query);
         const s = !statusFilter || n.status === statusFilter;
         return m && s;
     });
@@ -50,15 +62,16 @@ export default function NotaListPage() {
 
     const handlePrintNota = async (nota: FreightNota) => {
         try {
-            const [company, notaItems] = await Promise.all([
-                fetchCompanyProfile(),
+            const [resolvedCompany, notaItems] = await Promise.all([
+                company ? Promise.resolve(company) : fetchCompanyProfile(),
                 fetchNotaItems(nota._id),
             ]);
-            const doc = buildFreightNotaPrintDocument({ nota, items: notaItems, company });
+            setCompany(resolvedCompany);
+            const doc = buildFreightNotaPrintDocument({ nota, items: notaItems, company: resolvedCompany });
             openBrandedPrint({
                 title: doc.title,
                 subtitle: doc.subtitle,
-                company,
+                company: resolvedCompany,
                 bodyHtml: doc.bodyHtml,
                 extraStyles: doc.extraStyles,
                 showCompanyHeader: doc.showCompanyHeader,
@@ -71,11 +84,12 @@ export default function NotaListPage() {
 
     const handleExportNota = async (nota: FreightNota) => {
         try {
-            const [company, notaItems] = await Promise.all([
-                fetchCompanyProfile(),
+            const [resolvedCompany, notaItems] = await Promise.all([
+                company ? Promise.resolve(company) : fetchCompanyProfile(),
                 fetchNotaItems(nota._id),
             ]);
-            await exportFreightNotaDetail(nota, notaItems, company);
+            setCompany(resolvedCompany);
+            await exportFreightNotaDetail(nota, notaItems, resolvedCompany);
             addToast('success', 'Excel nota berhasil di-download');
         } catch {
             addToast('error', 'Gagal menyiapkan Excel nota');
@@ -97,7 +111,8 @@ export default function NotaListPage() {
                         <FileDown size={15} /> Excel
                     </button>
                     <button className="btn btn-secondary btn-sm" onClick={async () => {
-                        const co = await fetchCompanyProfile();
+                        const co = company ?? await fetchCompanyProfile();
+                        setCompany(co);
                         openBrandedPrint({
                             title: 'Daftar Nota Ongkos Angkut', company: co, bodyHtml: `
                             <table><thead><tr><th>No. Nota</th><th>Customer</th><th>Tanggal</th><th>Total Collie</th><th>Total Berat</th><th class="r">Total Ongkos</th><th>Status</th></tr></thead>
@@ -158,7 +173,7 @@ export default function NotaListPage() {
                                                 style={{ color: 'var(--color-primary)', cursor: 'pointer' }}
                                                 onClick={() => router.push(`/invoices/${n._id}`)}
                                             >
-                                                <div className="font-semibold">{formatFreightNotaDisplayNumber(n)}</div>
+                                                <div className="font-semibold">{formatFreightNotaDisplayNumber(n, company)}</div>
                                                 <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{n.notaNumber}</div>
                                             </div>
                                         </td>
