@@ -25,6 +25,8 @@ const client = createClient({
 
 const OWNER_PASSWORD_HASH = '$2b$10$gmQQXBYsr6av5en3FKDsRuW/ZiOXB6hOqzD2EXmGWICdq2EADL2YW';
 const ADMIN_PASSWORD_HASH = '$2b$10$RTJAvsAXXjPgBPdE/rXYqeQM6mn7lJG7qK8u/wML.qZZ2Bg7SB4Be';
+const DRIVER_ONE_PASSWORD_HASH = '$2b$10$D4kimoQ66Hcb8hBAlx0sxOdwDzd8FyMuR/63Liu6.kUUbXEKFag0e';
+const DRIVER_TWO_PASSWORD_HASH = '$2b$10$jRoY/qk5DRivnljBs34Q5OdUWBsEBy4jkqQHc0HSSYZXJjSj3BSRy';
 
 const documents: SeedDoc[] = [];
 
@@ -111,6 +113,30 @@ function buildSeedDocuments() {
             passwordHash: ADMIN_PASSWORD_HASH,
             active: true,
             createdAt: '2026-01-10T08:00:00Z',
+        },
+        {
+            _id: 'user-driver-001',
+            _type: 'user',
+            name: 'Driver Andi',
+            email: 'driver.andi@company.local',
+            role: 'DRIVER',
+            driverRef: 'drv-001',
+            driverName: 'Andi Saputra',
+            passwordHash: DRIVER_ONE_PASSWORD_HASH,
+            active: true,
+            createdAt: '2026-01-12T08:00:00Z',
+        },
+        {
+            _id: 'user-driver-002',
+            _type: 'user',
+            name: 'Driver Bayu',
+            email: 'driver.bayu@company.local',
+            role: 'DRIVER',
+            driverRef: 'drv-002',
+            driverName: 'Bayu Pratama',
+            passwordHash: DRIVER_TWO_PASSWORD_HASH,
+            active: true,
+            createdAt: '2026-01-12T08:30:00Z',
         },
         {
             _id: 'company-001',

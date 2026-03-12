@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Search, Eye, Truck, FileDown, Printer } from 'lucide-react';
-import { formatDate, DO_STATUS_MAP } from '@/lib/utils';
+import { formatDate, formatDateTime, DO_STATUS_MAP } from '@/lib/utils';
 import { exportToExcel } from '@/lib/export';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
 import type { DeliveryOrder } from '@/lib/types';
@@ -87,11 +87,11 @@ export default function DeliveryOrdersPage() {
                 </div>
                 <div className="table-wrapper">
                     <table>
-                        <thead><tr><th>No. DO</th><th>Resi</th><th>Customer</th><th>Kendaraan</th><th>Tanggal</th><th>Status</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>No. DO</th><th>Resi</th><th>Customer</th><th>Kendaraan</th><th>Tanggal</th><th>Status</th><th>Tracking</th><th>Aksi</th></tr></thead>
                         <tbody>
-                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
+                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 filtered.length === 0 ? (
-                                    <tr><td colSpan={7}><div className="empty-state"><Truck size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada surat jalan</div><div className="empty-state-text">Buat surat jalan dari halaman detail order</div></div></td></tr>
+                                    <tr><td colSpan={8}><div className="empty-state"><Truck size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada surat jalan</div><div className="empty-state-text">Buat surat jalan dari halaman detail order</div></div></td></tr>
                                 ) : filtered.map(d => (
                                     <tr key={d._id}>
                                         <td><Link href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{d.doNumber}</Link></td>
@@ -100,6 +100,16 @@ export default function DeliveryOrdersPage() {
                                         <td>{d.vehiclePlate || '-'}</td>
                                         <td className="text-muted">{formatDate(d.date)}</td>
                                         <td><span className={`badge badge-${DO_STATUS_MAP[d.status]?.color}`}><span className="badge-dot" /> {DO_STATUS_MAP[d.status]?.label}</span></td>
+                                        <td>
+                                            {d.trackingState === 'ACTIVE' || d.trackingState === 'PAUSED' ? (
+                                                <div>
+                                                    <span className={`badge ${d.trackingState === 'ACTIVE' ? 'badge-info' : 'badge-warning'}`}>{d.trackingState}</span>
+                                                    <div className="text-muted text-sm">{d.trackingLastSeenAt ? formatDateTime(d.trackingLastSeenAt) : 'Belum ada update'}</div>
+                                                </div>
+                                            ) : (
+                                                <span className="text-muted text-sm">Belum aktif</span>
+                                            )}
+                                        </td>
                                         <td><button className="table-action-btn" onClick={() => router.push(`/delivery-orders/${d._id}`)}><Eye size={14} /> Lihat</button></td>
                                     </tr>
                                 ))}

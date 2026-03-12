@@ -3,9 +3,9 @@
    ============================================================ */
 
 import { NextResponse } from 'next/server';
-import { getSanityClient } from '@/lib/sanity';
+import { getSanityClient, sanityGetById, sanityUpdate } from '@/lib/sanity';
 import { verifyPassword, createSession, setSessionCookie } from '@/lib/auth';
-import type { User } from '@/lib/types';
+import type { Driver, User } from '@/lib/types';
 
 export async function GET() {
     return NextResponse.json({ error: 'Use POST method', methods: ['POST'] }, { status: 405 });
@@ -13,7 +13,8 @@ export async function GET() {
 
 export async function POST(request: Request) {
     try {
-        const { email, password } = await request.json();
+        const { email, password, scope } = await request.json();
+        const loginScope = scope === 'DRIVER' ? 'DRIVER' : 'ADMIN';
 
         if (!email || !password) {
             return NextResponse.json(
@@ -44,6 +45,41 @@ export async function POST(request: Request) {
             );
         }
 
+        if (loginScope === 'DRIVER' && user.role !== 'DRIVER') {
+            return NextResponse.json(
+                { error: 'Akun ini bukan akun mobile driver' },
+                { status: 403 }
+            );
+        }
+
+        if (loginScope === 'ADMIN' && user.role === 'DRIVER') {
+            return NextResponse.json(
+                { error: 'Akun driver harus login dari aplikasi driver' },
+                { status: 403 }
+            );
+        }
+
+        if (user.role === 'DRIVER') {
+            if (!user.driverRef) {
+                return NextResponse.json(
+                    { error: 'Akun driver belum terhubung ke data supir' },
+                    { status: 409 }
+                );
+            }
+
+            const driver = await sanityGetById<Driver>(user.driverRef);
+            if (!driver || driver.active === false) {
+                return NextResponse.json(
+                    { error: 'Akun driver tidak aktif atau data supir tidak tersedia' },
+                    { status: 409 }
+                );
+            }
+        }
+
+        const lastLoginAt = new Date().toISOString();
+        await sanityUpdate(user._id, { lastLoginAt });
+        user.lastLoginAt = lastLoginAt;
+
         // Create session
         const token = await createSession(user);
         await setSessionCookie(token);
@@ -55,6 +91,7 @@ export async function POST(request: Request) {
                 name: user.name,
                 email: user.email,
                 role: user.role,
+                driverRef: user.driverRef,
             },
         });
     } catch (err) {

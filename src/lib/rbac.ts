@@ -15,7 +15,7 @@ export interface ModulePermissions {
     print: boolean;
 }
 
-const permissionMatrix: Record<string, Record<UserRole, ModulePermissions>> = {
+const permissionMatrix: Record<string, Partial<Record<UserRole, ModulePermissions>>> = {
     dashboard: {
         OWNER: { view: true, create: false, update: false, delete: false, export: false, print: false },
         ADMIN: { view: true, create: false, update: false, delete: false, export: false, print: false },
@@ -151,6 +151,10 @@ export interface SidebarMenuGroup {
 }
 
 export function getSidebarMenu(role: UserRole): SidebarMenuGroup[] {
+    if (role === 'DRIVER') {
+        return [];
+    }
+
     const groups: SidebarMenuGroup[] = [
         {
             label: 'Utama',

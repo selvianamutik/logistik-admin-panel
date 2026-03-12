@@ -345,3 +345,91 @@ Itu sudah cukup untuk operasional dasar, tapi belum cocok kalau nanti perusahaan
   Dokumen tagihan ongkos aktif yang sekarang dipakai di modul `/invoices`.
 
 Kalau ada data lama dengan prefix `INV-...`, itu adalah histori domain lama, bukan tagihan aktif baru.
+
+## 14. Workflow Tracking Driver Live
+
+Fitur ini sekarang dipisah dari admin panel biasa.
+Owner atau admin membuat akun mobile driver dari menu `Supir`, bukan dari `User Management`.
+
+### 14.1 Siapa yang membuat akun driver
+
+- owner/admin membuka modul `Supir`
+- pilih satu supir
+- klik `Akses Mobile`
+- isi:
+  - nama akun
+  - email login
+  - password awal
+  - status aktif
+
+Satu supir hanya boleh punya satu akun mobile driver aktif.
+
+### 14.2 Driver login dari mana
+
+- driver login dari halaman `/driver/login`
+- akun driver tidak bisa dipakai di `/login`
+- akun admin/owner juga tidak bisa dipakai di `/driver/login`
+
+Ini sengaja dipisah supaya tidak campur dengan panel internal.
+
+### 14.3 DO mana yang muncul di HP driver
+
+Driver hanya melihat DO yang:
+
+- memang direlasikan ke `driverRef` driver tersebut
+- statusnya masih operasional:
+  - `CREATED`
+  - `ON_DELIVERY`
+  - `DELIVERED`
+
+### 14.4 Cara tracking live berjalan
+
+Di HP driver:
+
+1. driver buka DO
+2. tekan `Mulai Tracking`
+3. browser meminta izin lokasi GPS
+4. sistem mengirim lokasi awal lalu heartbeat berkala
+5. owner/admin bisa melihat posisi terakhir di detail DO
+
+Action yang tersedia:
+
+- `Mulai Tracking`
+- `Jeda`
+- `Lanjut`
+- `Stop`
+
+### 14.5 Dampaknya ke status DO
+
+Kalau tracking dimulai saat status DO masih `CREATED`:
+
+- sistem otomatis menaikkan status DO ke `ON_DELIVERY`
+- sistem menambah log tracking
+
+Kalau tracking dijalankan saat DO sudah `ON_DELIVERY`:
+
+- sistem hanya menambah log tracking dan update posisi
+
+### 14.6 Apa yang tampil di admin web
+
+Di list dan detail DO sekarang owner/admin bisa melihat:
+
+- status tracking
+- waktu `last seen`
+- koordinat terakhir
+- akurasi GPS
+- kecepatan terakhir
+- link Google Maps
+
+### 14.7 Keterbatasan v1 yang harus dipahami
+
+Ini tracking live berbasis browser HP, bukan native app.
+
+Artinya:
+
+- tracking hanya akurat selama halaman driver tetap terbuka
+- izin GPS harus tetap aktif
+- internet harus tetap aktif
+- kalau browser/app ditutup penuh, tracking tidak jalan di background
+
+Jadi v1 ini cocok untuk operasional internal sederhana, tapi belum setara aplikasi native background tracking.

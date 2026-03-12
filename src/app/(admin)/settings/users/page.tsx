@@ -5,13 +5,16 @@ import { useToast } from '../../layout';
 import { Plus, Edit, Save, X, RefreshCw } from 'lucide-react';
 import type { User } from '@/lib/types';
 
+type InternalUserRole = Exclude<User['role'], 'DRIVER'>;
+type InternalUser = User & { role: InternalUserRole };
+
 export default function UsersPage() {
     const { addToast } = useToast();
-    const [users, setUsers] = useState<User[]>([]);
+    const [users, setUsers] = useState<InternalUser[]>([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
-    const [editUser, setEditUser] = useState<User | null>(null);
-    const [form, setForm] = useState({ name: '', email: '', role: 'ADMIN' as 'OWNER' | 'ADMIN', password: '' });
+    const [editUser, setEditUser] = useState<InternalUser | null>(null);
+    const [form, setForm] = useState({ name: '', email: '', role: 'ADMIN' as InternalUserRole, password: '' });
 
     useEffect(() => {
         const loadUsers = async () => {
@@ -21,7 +24,7 @@ export default function UsersPage() {
                 if (!res.ok) {
                     throw new Error(payload.error || 'Gagal memuat data user');
                 }
-                setUsers(payload.data || []);
+                setUsers((payload.data || []).filter((item: User): item is InternalUser => item.role !== 'DRIVER'));
             } catch (error) {
                 addToast('error', error instanceof Error ? error.message : 'Gagal memuat data user');
             } finally {
@@ -33,7 +36,7 @@ export default function UsersPage() {
     }, [addToast]);
 
     const openNew = () => { setEditUser(null); setForm({ name: '', email: '', role: 'ADMIN', password: '' }); setShowModal(true); };
-    const openEdit = (u: User) => { setEditUser(u); setForm({ name: u.name, email: u.email, role: u.role, password: '' }); setShowModal(true); };
+    const openEdit = (u: InternalUser) => { setEditUser(u); setForm({ name: u.name, email: u.email, role: u.role, password: '' }); setShowModal(true); };
 
     const handleSave = async () => {
         if (!form.name || !form.email) { addToast('error', 'Nama dan email wajib'); return; }
@@ -53,7 +56,7 @@ export default function UsersPage() {
                     addToast('error', payload.error || 'Gagal memperbarui user');
                     return;
                 }
-                setUsers(prev => prev.map(u => u._id === editUser._id ? payload.data as User : u));
+                setUsers(prev => prev.map(u => u._id === editUser._id ? payload.data as InternalUser : u));
                 addToast('success', 'User diperbarui');
             } else {
                 const res = await fetch('/api/data', {
@@ -66,7 +69,7 @@ export default function UsersPage() {
                     addToast('error', payload.error || 'Gagal menambah user');
                     return;
                 }
-                setUsers(prev => [...prev, payload.data as User]);
+                setUsers(prev => [...prev, payload.data as InternalUser]);
                 addToast('success', 'User ditambahkan');
             }
             setShowModal(false);
@@ -87,7 +90,7 @@ export default function UsersPage() {
                 addToast('error', payload.error || 'Gagal memperbarui status user');
                 return;
             }
-            setUsers(prev => prev.map(x => x._id === u._id ? payload.data as User : x));
+            setUsers(prev => prev.map(x => x._id === u._id ? payload.data as InternalUser : x));
             addToast('success', `User ${!u.active ? 'diaktifkan' : 'dinonaktifkan'}`);
         } catch {
             addToast('error', 'Gagal memperbarui status user');
@@ -128,7 +131,7 @@ export default function UsersPage() {
                             <div className="form-group"><label className="form-label">Nama <span className="required">*</span></label><input className="form-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
                             <div className="form-group"><label className="form-label">Email <span className="required">*</span></label><input className="form-input" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
                             <div className="form-group"><label className="form-label">Role</label>
-                                <select className="form-select" value={form.role} onChange={e => setForm({ ...form, role: e.target.value as 'OWNER' | 'ADMIN' })}>
+                                <select className="form-select" value={form.role} onChange={e => setForm({ ...form, role: e.target.value as InternalUserRole })}>
                                     <option value="ADMIN">ADMIN</option><option value="OWNER">OWNER</option>
                                 </select>
                             </div>

@@ -35,6 +35,7 @@ export async function createSession(user: User): Promise<string> {
         name: user.name,
         email: user.email,
         role: user.role,
+        driverRef: user.driverRef,
     };
 
     return createSessionToken(payload);

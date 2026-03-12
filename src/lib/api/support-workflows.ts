@@ -13,11 +13,39 @@ type AuditLogFn = (
     summary: string
 ) => void | Promise<void>;
 
+async function validateDriverAccountLink(driverRef: unknown, excludeUserId?: string) {
+    const normalizedDriverRef = normalizeText(driverRef);
+    if (!normalizedDriverRef) {
+        throw new Error('Supir untuk akun mobile wajib dipilih');
+    }
+
+    const driver = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(normalizedDriverRef);
+    if (!driver) {
+        throw new Error('Data supir untuk akun mobile tidak ditemukan');
+    }
+
+    const duplicateDriverAccount = await getSanityClient().fetch<{ _id: string } | null>(
+        `*[_type == "user" && role == "DRIVER" && driverRef == $driverRef && _id != $excludeId][0]{ _id }`,
+        { driverRef: normalizedDriverRef, excludeId: excludeUserId || '' }
+    );
+    if (duplicateDriverAccount) {
+        throw new Error('Supir ini sudah memiliki akun mobile');
+    }
+
+    return {
+        driverRef: normalizedDriverRef,
+        driverName: driver.name || undefined,
+    };
+}
+
 export async function normalizeUserCreatePayload(data: Record<string, unknown>) {
     const name = normalizeText(data.name);
     const email = normalizeText(data.email).toLowerCase();
     const password = typeof data.password === 'string' ? data.password.trim() : '';
-    const role = data.role === 'OWNER' || data.role === 'ADMIN' ? data.role : null;
+    const role =
+        data.role === 'OWNER' || data.role === 'ADMIN' || data.role === 'DRIVER'
+            ? data.role
+            : null;
     if (!name || !email) {
         throw new Error('Nama dan email wajib diisi');
     }
@@ -36,11 +64,17 @@ export async function normalizeUserCreatePayload(data: Record<string, unknown>) 
         throw new Error('Email user sudah digunakan');
     }
 
+    const driverLink = role === 'DRIVER'
+        ? await validateDriverAccountLink(data.driverRef)
+        : { driverRef: undefined, driverName: undefined };
+
     return {
         ...data,
         name,
         email,
         role,
+        driverRef: driverLink.driverRef,
+        driverName: driverLink.driverName,
         passwordHash: await hashPassword(password),
         active: true,
         createdAt: new Date().toISOString(),
@@ -54,7 +88,7 @@ export async function normalizeUserUpdates(
     currentPassword: unknown
 ) {
     const nextUpdates = { ...updates };
-    const existingUser = await sanityGetById<{ _id: string; email: string; role: string; active: boolean; passwordHash: string }>(targetUserId);
+    const existingUser = await sanityGetById<{ _id: string; email: string; role: string; active: boolean; passwordHash: string; driverRef?: string }>(targetUserId);
     if (!existingUser) {
         throw new Error('User tidak ditemukan');
     }
@@ -94,7 +128,7 @@ export async function normalizeUserUpdates(
         nextUpdates.email = normalizedEmail;
     }
 
-    if (typeof nextUpdates.role === 'string' && !['OWNER', 'ADMIN'].includes(nextUpdates.role)) {
+    if (typeof nextUpdates.role === 'string' && !['OWNER', 'ADMIN', 'DRIVER'].includes(nextUpdates.role)) {
         throw new Error('Role user tidak valid');
     }
 
@@ -118,6 +152,20 @@ export async function normalizeUserUpdates(
         );
         if (otherActiveOwners === 0) {
             throw new Error('Minimal harus ada satu OWNER aktif');
+        }
+    }
+
+    if (nextRole === 'DRIVER' || existingUser.role === 'DRIVER' || Object.prototype.hasOwnProperty.call(nextUpdates, 'driverRef')) {
+        if (nextRole === 'DRIVER') {
+            const driverLink = await validateDriverAccountLink(
+                Object.prototype.hasOwnProperty.call(nextUpdates, 'driverRef') ? nextUpdates.driverRef : existingUser.driverRef,
+                targetUserId
+            );
+            nextUpdates.driverRef = driverLink.driverRef;
+            nextUpdates.driverName = driverLink.driverName;
+        } else {
+            nextUpdates.driverRef = undefined;
+            nextUpdates.driverName = undefined;
         }
     }
 

@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '../../layout';
-import { ArrowLeft, Printer, FileDown, Truck, Upload, Save } from 'lucide-react';
+import { ArrowLeft, Printer, FileDown, Truck, Upload, Save, MapPin, Radio } from 'lucide-react';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
 import { formatDate, formatDateTime, DO_STATUS_MAP } from '@/lib/utils';
 import { generateDOPdf } from '@/lib/pdf/doTemplate';
@@ -31,39 +31,52 @@ export default function DODetailPage() {
     const [keteranganBorongan, setKeteranganBorongan] = useState('');
     const [savingTarip, setSavingTarip] = useState(false);
 
-    useEffect(() => {
-        const fetchEntity = async <T,>(url: string) => {
-            const res = await fetch(url);
-            const result = await res.json();
-            if (!res.ok) {
-                throw new Error(result.error || 'Gagal memuat detail surat jalan');
-            }
-            return result.data as T;
-        };
+    const fetchEntity = useCallback(async <T,>(url: string) => {
+        const res = await fetch(url);
+        const result = await res.json();
+        if (!res.ok) {
+            throw new Error(result.error || 'Gagal memuat detail surat jalan');
+        }
+        return result.data as T;
+    }, []);
 
-        const loadDO = async () => {
+    const loadDO = useCallback(async (mode: 'initial' | 'refresh' = 'refresh') => {
+        if (mode === 'initial') {
             setLoading(true);
-            try {
-                const [deliveryOrder, itemRows, logRows] = await Promise.all([
-                    fetchEntity<DeliveryOrder | null>(`/api/data?entity=delivery-orders&id=${doId}`),
-                    fetchEntity<DeliveryOrderItem[]>(`/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: doId }))}`),
-                    fetchEntity<TrackingLog[]>(`/api/data?entity=tracking-logs&filter=${encodeURIComponent(JSON.stringify({ refRef: doId, refType: 'DO' }))}`),
-                ]);
+        }
 
-                setDoData(deliveryOrder);
-                setTaripBorongan(deliveryOrder?.taripBorongan || 0);
-                setKeteranganBorongan(deliveryOrder?.keteranganBorongan || '');
-                setDoItems(itemRows || []);
-                setTrackingLogs((logRows || []).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()));
-            } catch (error) {
-                addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail surat jalan');
-            } finally {
+        try {
+            const [deliveryOrder, itemRows, logRows] = await Promise.all([
+                fetchEntity<DeliveryOrder | null>(`/api/data?entity=delivery-orders&id=${doId}`),
+                fetchEntity<DeliveryOrderItem[]>(`/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: doId }))}`),
+                fetchEntity<TrackingLog[]>(`/api/data?entity=tracking-logs&filter=${encodeURIComponent(JSON.stringify({ refRef: doId, refType: 'DO' }))}`),
+            ]);
+
+            setDoData(deliveryOrder);
+            setTaripBorongan(deliveryOrder?.taripBorongan || 0);
+            setKeteranganBorongan(deliveryOrder?.keteranganBorongan || '');
+            setDoItems(itemRows || []);
+            setTrackingLogs((logRows || []).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()));
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail surat jalan');
+        } finally {
+            if (mode === 'initial') {
                 setLoading(false);
             }
-        };
+        }
+    }, [addToast, doId, fetchEntity]);
 
-        void loadDO();
-    }, [addToast, doId]);
+    useEffect(() => {
+        void loadDO('initial');
+    }, [loadDO]);
+
+    useEffect(() => {
+        const intervalId = window.setInterval(() => {
+            void loadDO();
+        }, 15000);
+
+        return () => window.clearInterval(intervalId);
+    }, [loadDO]);
 
     const updateDOStatus = async () => {
         if (!newStatus) return;
@@ -242,6 +255,13 @@ export default function DODetailPage() {
     if (!doData) return <div className="empty-state"><div className="empty-state-title">Surat Jalan tidak ditemukan</div></div>;
 
     const nextStatuses = getNextStatuses(doData.status);
+    const hasLiveCoordinates = typeof doData.trackingLastLat === 'number' && typeof doData.trackingLastLng === 'number';
+    const trackingMapUrl = hasLiveCoordinates ? `https://www.google.com/maps?q=${doData.trackingLastLat},${doData.trackingLastLng}` : null;
+    const trackingLat = hasLiveCoordinates ? doData.trackingLastLat as number : null;
+    const trackingLng = hasLiveCoordinates ? doData.trackingLastLng as number : null;
+    const mapEmbedUrl = hasLiveCoordinates
+        ? `https://www.openstreetmap.org/export/embed.html?bbox=${trackingLng! - 0.01},${trackingLat! - 0.01},${trackingLng! + 0.01},${trackingLat! + 0.01}&layer=mapnik&marker=${trackingLat!},${trackingLng!}`
+        : null;
 
     return (
         <div>
@@ -313,6 +333,54 @@ export default function DODetailPage() {
                                 <div className="detail-item"><div className="detail-label">Tanggal Terima</div><div className="detail-value">{formatDate(doData.podReceivedDate)}</div></div>
                             </div>
                             {doData.podNote && <div className="mt-2"><div className="detail-label">Catatan</div><div className="detail-value">{doData.podNote}</div></div>}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            <div className="card" style={{ marginTop: '1rem' }}>
+                <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span className="card-header-title">Live Tracking Driver</span>
+                    <span className={`badge ${doData.trackingState === 'ACTIVE' ? 'badge-info' : doData.trackingState === 'PAUSED' ? 'badge-warning' : 'badge-gray'}`}>
+                        <Radio size={12} /> {doData.trackingState || 'IDLE'}
+                    </span>
+                </div>
+                <div className="card-body">
+                    <div className="detail-row">
+                        <div className="detail-item">
+                            <div className="detail-label">Posisi terakhir</div>
+                            <div className="detail-value">{doData.trackingLastSeenAt ? formatDateTime(doData.trackingLastSeenAt) : 'Belum ada update dari driver app'}</div>
+                        </div>
+                        <div className="detail-item">
+                            <div className="detail-label">Akurasi GPS</div>
+                            <div className="detail-value">{typeof doData.trackingLastAccuracyM === 'number' ? `${Math.round(doData.trackingLastAccuracyM)} meter` : '-'}</div>
+                        </div>
+                    </div>
+                    <div className="detail-row">
+                        <div className="detail-item">
+                            <div className="detail-label">Koordinat</div>
+                            <div className="detail-value">
+                                {hasLiveCoordinates ? `${doData.trackingLastLat?.toFixed(6)}, ${doData.trackingLastLng?.toFixed(6)}` : '-'}
+                            </div>
+                        </div>
+                        <div className="detail-item">
+                            <div className="detail-label">Kecepatan terakhir</div>
+                            <div className="detail-value">{typeof doData.trackingLastSpeedKph === 'number' ? `${doData.trackingLastSpeedKph} km/jam` : '-'}</div>
+                        </div>
+                    </div>
+                    {trackingMapUrl && (
+                        <div style={{ marginTop: '1rem', display: 'grid', gap: '0.75rem' }}>
+                            <a href={trackingMapUrl} target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm" style={{ width: 'fit-content' }}>
+                                <MapPin size={14} /> Buka di Google Maps
+                            </a>
+                            {mapEmbedUrl && (
+                                <iframe
+                                    title="Peta posisi driver"
+                                    src={mapEmbedUrl}
+                                    style={{ width: '100%', minHeight: 260, border: '1px solid var(--color-gray-200)', borderRadius: '12px' }}
+                                    loading="lazy"
+                                />
+                            )}
                         </div>
                     )}
                 </div>

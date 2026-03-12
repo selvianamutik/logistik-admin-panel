@@ -2,9 +2,9 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Eye, EyeOff, AlertCircle, Loader2 } from 'lucide-react';
+import { AlertCircle, Eye, EyeOff, Loader2, Smartphone } from 'lucide-react';
 
-export default function LoginPage() {
+export default function DriverLoginPage() {
     const router = useRouter();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -21,7 +21,7 @@ export default function LoginPage() {
             const res = await fetch('/api/auth/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, password, scope: 'ADMIN' }),
+                body: JSON.stringify({ email, password, scope: 'DRIVER' }),
             });
 
             const raw = await res.text();
@@ -30,7 +30,6 @@ export default function LoginPage() {
                 try {
                     data = JSON.parse(raw) as { error?: string; user?: { role?: string } };
                 } catch {
-                    // Keep a fallback message for non-JSON server responses.
                     data = {};
                 }
             }
@@ -41,7 +40,13 @@ export default function LoginPage() {
                 return;
             }
 
-            router.push(data.user?.role === 'DRIVER' ? '/driver' : '/dashboard');
+            if (data.user?.role !== 'DRIVER') {
+                setError('Akun ini bukan akun mobile driver');
+                setLoading(false);
+                return;
+            }
+
+            router.push('/driver');
             router.refresh();
         } catch {
             setError('Tidak dapat terhubung ke server');
@@ -50,12 +55,14 @@ export default function LoginPage() {
     };
 
     return (
-        <main className="login-page">
+        <main className="login-page driver-login-page">
             <div className="login-card">
                 <div className="login-header">
-                    <div className="login-logo">L</div>
-                    <h1 className="login-title">LOGISTIK</h1>
-                    <p className="login-subtitle">Panel Administrasi Internal</p>
+                    <div className="login-logo" style={{ display: 'grid', placeItems: 'center' }}>
+                        <Smartphone size={22} />
+                    </div>
+                    <h1 className="login-title">Aplikasi Driver</h1>
+                    <p className="login-subtitle">Masuk dari HP untuk update pengiriman dan kirim lokasi live</p>
                 </div>
 
                 <div className="login-body">
@@ -69,13 +76,13 @@ export default function LoginPage() {
                     <form onSubmit={handleSubmit}>
                         <div className="form-group">
                             <label className="form-label" htmlFor="email">
-                                Email
+                                Email Driver
                             </label>
                             <input
                                 id="email"
                                 type="email"
                                 className="form-input"
-                                placeholder="Masukkan email"
+                                placeholder="Masukkan email akun driver"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
                                 required
@@ -111,18 +118,14 @@ export default function LoginPage() {
                             </div>
                         </div>
 
-                        <button
-                            type="submit"
-                            className="btn btn-primary login-btn"
-                            disabled={loading}
-                        >
+                        <button type="submit" className="btn btn-primary login-btn" disabled={loading}>
                             {loading ? (
                                 <>
                                     <Loader2 size={18} className="spinner" />
                                     Masuk...
                                 </>
                             ) : (
-                                'Masuk'
+                                'Masuk ke Aplikasi Driver'
                             )}
                         </button>
                     </form>

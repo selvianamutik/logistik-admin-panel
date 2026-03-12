@@ -119,3 +119,16 @@ angka yang benar, pengingat yang jelas, dan alur yang tidak menipu.
 2. Putuskan apakah histori `invoice` legacy akan dimigrasikan penuh ke `freightNota` atau cukup dibiarkan read-only.
 3. Tambahkan smoke test browser untuk flow owner yang paling penting.
 4. Pertimbangkan pagination/report optimization kalau volume data mulai besar.
+
+## 6. Catatan baru: tracking driver live
+
+Fitur tracking live driver sekarang sudah masuk, tetapi owner harus paham batasnya:
+
+- ini v1 berbasis browser HP, bukan native app
+- paling cocok untuk pemantauan internal admin/owner
+- belum cocok kalau targetnya background tracking yang sangat stabil saat layar mati atau browser ditutup
+
+Jadi secara produk:
+
+- untuk kebutuhan "tahu posisi terakhir driver per DO", fitur ini sudah layak
+- untuk kebutuhan "live real-time tanpa gangguan seperti aplikasi kurir native", masih butuh fase produk berikutnya

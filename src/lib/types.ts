@@ -3,7 +3,7 @@
    ============================================================ */
 
 // ── Roles & Auth ──
-export type UserRole = 'OWNER' | 'ADMIN';
+export type UserRole = 'OWNER' | 'ADMIN' | 'DRIVER';
 
 export interface User {
   _id: string;
@@ -11,9 +11,12 @@ export interface User {
   name: string;
   email: string;
   role: UserRole;
+  driverRef?: string;
+  driverName?: string;
   passwordHash: string;
   active: boolean;
   createdAt: string;
+  lastLoginAt?: string;
 }
 
 export interface SessionUser {
@@ -21,6 +24,8 @@ export interface SessionUser {
   name: string;
   email: string;
   role: UserRole;
+  driverRef?: string;
+  driverName?: string;
 }
 
 // ── Company Profile ──
@@ -216,6 +221,15 @@ export interface DeliveryOrder {
   receiverAddress?: string;
   taripBorongan?: number;       // Tarif upah supir per kg, diinput SEBELUM berangkat
   keteranganBorongan?: string;  // Keterangan tarip borongan
+  trackingState?: 'IDLE' | 'ACTIVE' | 'PAUSED' | 'STOPPED';
+  trackingStartedAt?: string;
+  trackingStoppedAt?: string;
+  trackingLastSeenAt?: string;
+  trackingLastLat?: number;
+  trackingLastLng?: number;
+  trackingLastAccuracyM?: number;
+  trackingLastSpeedKph?: number;
+  trackingLastSource?: 'DRIVER_APP';
 }
 
 export interface DeliveryOrderItem {
@@ -240,6 +254,11 @@ export interface TrackingLog {
   timestamp: string;
   userRef?: string;
   userName?: string;
+  latitude?: number;
+  longitude?: number;
+  accuracyM?: number;
+  speedKph?: number;
+  source?: 'ADMIN_PANEL' | 'DRIVER_APP';
 }
 
 // ── Freight Nota (Nota Ongkos Angkut) ──

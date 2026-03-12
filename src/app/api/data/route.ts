@@ -184,6 +184,9 @@ async function getDashboardSummary(session: Session): Promise<DashboardSummary> 
 export async function GET(request: Request) {
     const session = await getSession();
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (session.role === 'DRIVER') {
+        return NextResponse.json({ error: 'Driver tidak diizinkan mengakses API admin' }, { status: 403 });
+    }
 
     const { searchParams } = new URL(request.url);
     const entity = searchParams.get('entity');
@@ -268,6 +271,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
     const session = await getSession();
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (session.role === 'DRIVER') {
+        return NextResponse.json({ error: 'Driver tidak diizinkan mengakses API admin' }, { status: 403 });
+    }
 
     try {
         const body = await request.json();
