@@ -358,6 +358,7 @@ export interface Payment {
   invoiceRef: string;
   bankAccountRef?: string;
   bankAccountName?: string;
+  bankAccountNumber?: string;
   date: string;
   amount: number;
   method: PaymentMethod;
@@ -537,6 +538,7 @@ export interface BankTransaction {
   _type: 'bankTransaction';
   bankAccountRef: string;
   bankAccountName?: string;
+  bankAccountNumber?: string;
   type: BankTransactionType;
   amount: number;
   date: string;

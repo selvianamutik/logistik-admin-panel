@@ -34,14 +34,22 @@ export default function ExpenseNewPage() {
         }
         setSaving(true);
         try {
-            await fetch('/api/data', {
+            const res = await fetch('/api/data', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ entity: 'expenses', data: form }),
             });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menyimpan');
+                return;
+            }
             addToast('success', 'Pengeluaran berhasil dicatat');
             router.push('/expenses');
-        } catch { addToast('error', 'Gagal menyimpan'); }
-        setSaving(false);
+        } catch {
+            addToast('error', 'Gagal menyimpan');
+        } finally {
+            setSaving(false);
+        }
     };
 
     return (

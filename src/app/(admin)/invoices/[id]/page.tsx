@@ -73,6 +73,7 @@ export default function NotaDetailPage() {
     const totalPaid = payments.reduce((s, p) => s + p.amount, 0);
     const remaining = (nota?.totalAmount || 0) - totalPaid;
     const paidPercent = Math.min(100, (totalPaid / (nota?.totalAmount || 1)) * 100);
+    const accountMap = new Map(bankAccounts.map(account => [account._id, account]));
 
     const handleAddPayment = async () => {
         if (payAmount <= 0) { addToast('error', 'Nominal harus lebih dari 0'); return; }
@@ -277,6 +278,14 @@ export default function NotaDetailPage() {
                                     <div style={{ fontSize: '0.82rem' }}>Belum ada pembayaran</div>
                                 </div>
                             ) : payments.map((p, i) => (
+                                (() => {
+                                    const matchedAccount = p.bankAccountRef ? accountMap.get(p.bankAccountRef) : undefined;
+                                    const accountLabel = p.bankAccountName
+                                        ? `${p.bankAccountName}${p.bankAccountNumber || matchedAccount?.accountNumber ? ` - ${p.bankAccountNumber || matchedAccount?.accountNumber}` : ''}`
+                                        : matchedAccount
+                                            ? `${matchedAccount.bankName} - ${matchedAccount.accountNumber}`
+                                            : '';
+                                    return (
                                 <div key={p._id} style={{ padding: '0.75rem 1rem', borderBottom: i < payments.length - 1 ? '1px solid var(--color-gray-100)' : 'none' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
                                         <div style={{ fontSize: '0.82rem', fontWeight: 600 }}>{formatDate(p.date)}</div>
@@ -284,10 +293,12 @@ export default function NotaDetailPage() {
                                     </div>
                                     <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.72rem', color: 'var(--color-gray-400)' }}>
                                         <span className={`badge badge-${p.method === 'CASH' ? 'warning' : 'info'}`} style={{ fontSize: '0.62rem' }}>{p.method}</span>
-                                        {p.bankAccountName && <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Landmark size={10} /> {p.bankAccountName}</span>}
+                                        {accountLabel && <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Landmark size={10} /> {accountLabel}</span>}
                                         {p.note && <span>| {p.note}</span>}
                                     </div>
                                 </div>
+                                    );
+                                })()
                             ))}
                         </div>
                     </div>

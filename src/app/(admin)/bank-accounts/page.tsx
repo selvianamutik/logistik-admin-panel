@@ -129,6 +129,7 @@ export default function BankAccountsPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [showTransfer, setShowTransfer] = useState(false);
+  const [transferring, setTransferring] = useState(false);
   const [editAccount, setEditAccount] = useState<BankAccount | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -318,30 +319,35 @@ export default function BankAccountsPage() {
       return;
     }
 
-    const res = await fetch("/api/data", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        entity: "bank-transactions",
-        action: "transfer",
-        data: transferForm,
-      }),
-    });
-    const result = await res.json();
-    if (!res.ok) {
-      addToast("error", result.error || "Transfer gagal");
-      return;
-    }
+    setTransferring(true);
+    try {
+      const res = await fetch("/api/data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entity: "bank-transactions",
+          action: "transfer",
+          data: transferForm,
+        }),
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        addToast("error", result.error || "Transfer gagal");
+        return;
+      }
 
-    setShowTransfer(false);
-    setTransferForm({
-      fromAccountRef: "",
-      toAccountRef: "",
-      amount: 0,
-      date: new Date().toISOString().slice(0, 10),
-    });
-    addToast("success", "Transfer berhasil");
-    await refreshAccounts();
+      setShowTransfer(false);
+      setTransferForm({
+        fromAccountRef: "",
+        toAccountRef: "",
+        amount: 0,
+        date: new Date().toISOString().slice(0, 10),
+      });
+      addToast("success", "Transfer berhasil");
+      await refreshAccounts();
+    } finally {
+      setTransferring(false);
+    }
   };
 
   const handleExportExcel = () => {
@@ -838,6 +844,7 @@ export default function BankAccountsPage() {
               <button
                 className="modal-close"
                 onClick={() => setShowTransfer(false)}
+                disabled={transferring}
               >
                 x
               </button>
@@ -850,6 +857,7 @@ export default function BankAccountsPage() {
                 <select
                   className="form-select"
                   value={transferForm.fromAccountRef}
+                  disabled={transferring}
                   onChange={(event) =>
                     setTransferForm({
                       ...transferForm,
@@ -873,6 +881,7 @@ export default function BankAccountsPage() {
                 <select
                   className="form-select"
                   value={transferForm.toAccountRef}
+                  disabled={transferring}
                   onChange={(event) =>
                     setTransferForm({
                       ...transferForm,
@@ -902,6 +911,7 @@ export default function BankAccountsPage() {
                     className="form-input"
                     type="number"
                     value={transferForm.amount || ""}
+                    disabled={transferring}
                     onChange={(event) =>
                       setTransferForm({
                         ...transferForm,
@@ -916,6 +926,7 @@ export default function BankAccountsPage() {
                     className="form-input"
                     type="date"
                     value={transferForm.date}
+                    disabled={transferring}
                     onChange={(event) =>
                       setTransferForm({
                         ...transferForm,
@@ -930,11 +941,12 @@ export default function BankAccountsPage() {
               <button
                 className="btn btn-secondary"
                 onClick={() => setShowTransfer(false)}
+                disabled={transferring}
               >
                 Batal
               </button>
-              <button className="btn btn-primary" onClick={handleTransfer}>
-                <ArrowRightLeft size={16} /> Transfer
+              <button className="btn btn-primary" onClick={handleTransfer} disabled={transferring}>
+                <ArrowRightLeft size={16} /> {transferring ? "Memproses..." : "Transfer"}
               </button>
             </div>
           </div>

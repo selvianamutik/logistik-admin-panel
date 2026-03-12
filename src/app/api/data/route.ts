@@ -794,48 +794,83 @@ async function handleBankTransfer(data: Record<string, unknown>) {
         return NextResponse.json({ error: 'Rekening transfer tidak valid' }, { status: 400 });
     }
 
-    const fromAcc = await getLedgerAccount(fromAccountRef);
-    const toAcc = await getLedgerAccount(toAccountRef);
-    if (!fromAcc || !toAcc) {
-        return NextResponse.json({ error: 'Akun sumber atau tujuan tidak ditemukan' }, { status: 404 });
-    }
-
-    const transferId = `transfer-${Date.now()}`;
     const transferDate =
         typeof data.date === 'string' && data.date
             ? data.date
             : new Date().toISOString().slice(0, 10);
-    const fromBalance = (fromAcc.currentBalance || 0) - amount;
-    const toBalance = (toAcc.currentBalance || 0) + amount;
+    assertIsoDate(transferDate, 'Tanggal transfer');
 
-    await sanityCreate({
-        _type: 'bankTransaction',
-        bankAccountRef: fromAccountRef,
-        bankAccountName: fromAcc.bankName,
-        type: 'TRANSFER_OUT',
-        amount,
-        date: transferDate,
-        description: `Transfer ke ${toAcc.bankName}`,
-        balanceAfter: fromBalance,
-        relatedTransferRef: transferId,
-    });
+    const transferId = `transfer-${Date.now()}`;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        const fromAcc = await getLedgerAccount(fromAccountRef);
+        const toAcc = await getLedgerAccount(toAccountRef);
+        if (!fromAcc || !toAcc) {
+            return NextResponse.json({ error: 'Akun sumber atau tujuan tidak ditemukan' }, { status: 404 });
+        }
+        if (!fromAcc._rev || !toAcc._rev) {
+            return NextResponse.json({ error: 'Revisi rekening tidak tersedia' }, { status: 409 });
+        }
 
-    await sanityCreate({
-        _type: 'bankTransaction',
-        bankAccountRef: toAccountRef,
-        bankAccountName: toAcc.bankName,
-        type: 'TRANSFER_IN',
-        amount,
-        date: transferDate,
-        description: `Transfer dari ${fromAcc.bankName}`,
-        balanceAfter: toBalance,
-        relatedTransferRef: transferId,
-    });
+        const fromBalance = (fromAcc.currentBalance || 0) - amount;
+        const toBalance = (toAcc.currentBalance || 0) + amount;
+        const transaction = getSanityClient()
+            .transaction()
+            .create({
+                _id: `${transferId}-out`,
+                _type: 'bankTransaction',
+                bankAccountRef: fromAccountRef,
+                bankAccountName: fromAcc.bankName,
+                bankAccountNumber: fromAcc.accountNumber,
+                type: 'TRANSFER_OUT',
+                amount,
+                date: transferDate,
+                description: `Transfer ke ${toAcc.bankName}`,
+                balanceAfter: fromBalance,
+                relatedTransferRef: transferId,
+            })
+            .create({
+                _id: `${transferId}-in`,
+                _type: 'bankTransaction',
+                bankAccountRef: toAccountRef,
+                bankAccountName: toAcc.bankName,
+                bankAccountNumber: toAcc.accountNumber,
+                type: 'TRANSFER_IN',
+                amount,
+                date: transferDate,
+                description: `Transfer dari ${fromAcc.bankName}`,
+                balanceAfter: toBalance,
+                relatedTransferRef: transferId,
+            })
+            .patch(fromAccountRef, {
+                ifRevisionID: fromAcc._rev,
+                set: { currentBalance: fromBalance },
+            })
+            .patch(toAccountRef, {
+                ifRevisionID: toAcc._rev,
+                set: { currentBalance: toBalance },
+            });
 
-    await sanityUpdate(fromAccountRef, { currentBalance: fromBalance });
-    await sanityUpdate(toAccountRef, { currentBalance: toBalance });
+        try {
+            await transaction.commit();
+            return NextResponse.json({ success: true, transferId });
+        } catch (err) {
+            if (!isMutationConflictError(err)) {
+                throw err;
+            }
 
-    return NextResponse.json({ success: true, transferId });
+            if (attempt === 2) {
+                return NextResponse.json(
+                    { error: 'Transfer berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+        }
+    }
+
+    return NextResponse.json(
+        { error: 'Transfer berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+        { status: 409 }
+    );
 }
 
 async function loadPaymentTarget(invoiceRef: string) {
@@ -970,9 +1005,11 @@ async function handlePaymentCreate(session: Session, data: Record<string, unknow
         if (bankAcc) {
             paymentDoc.bankAccountRef = bankAcc._id;
             paymentDoc.bankAccountName = bankAcc.bankName;
+            paymentDoc.bankAccountNumber = bankAcc.accountNumber;
         } else {
             delete paymentDoc.bankAccountRef;
             delete paymentDoc.bankAccountName;
+            delete paymentDoc.bankAccountNumber;
         }
 
         const transaction = getSanityClient()
@@ -1000,6 +1037,7 @@ async function handlePaymentCreate(session: Session, data: Record<string, unknow
                     _type: 'bankTransaction',
                     bankAccountRef: bankAcc._id,
                     bankAccountName: bankAcc.bankName,
+                    bankAccountNumber: bankAcc.accountNumber,
                     type: 'CREDIT',
                     amount,
                     date: paymentDate,
@@ -1058,6 +1096,98 @@ async function handlePaymentCreate(session: Session, data: Record<string, unknow
 
     return NextResponse.json(
         { error: 'Pembayaran berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+        { status: 409 }
+    );
+}
+
+async function handleExpenseCreate(session: Session, data: Record<string, unknown>) {
+    const amount = typeof data.amount === 'number' ? data.amount : Number(data.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+        return NextResponse.json({ error: 'Nominal pengeluaran tidak valid' }, { status: 400 });
+    }
+
+    const expenseDate =
+        typeof data.date === 'string' && data.date ? data.date : new Date().toISOString().slice(0, 10);
+    assertIsoDate(expenseDate, 'Tanggal pengeluaran');
+
+    const expenseDocBase: { _type: 'expense'; [key: string]: unknown } = {
+        _type: 'expense',
+        ...data,
+        date: expenseDate,
+        amount,
+    };
+    const selectedAccountRef =
+        typeof data.bankAccountRef === 'string' && data.bankAccountRef ? data.bankAccountRef : undefined;
+
+    if (!selectedAccountRef) {
+        const created = await sanityCreate(expenseDocBase);
+        const expenseId = (created as Record<string, unknown>)._id as string;
+        void addAuditLog(session, 'CREATE', 'expenses', expenseId, `Created expenses: ${expenseId}`);
+        return NextResponse.json({ data: created, id: expenseId });
+    }
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        const bankAcc = await getLedgerAccount(selectedAccountRef);
+        if (!bankAcc) {
+            return NextResponse.json({ error: 'Rekening bank tidak ditemukan' }, { status: 404 });
+        }
+        if (!bankAcc._rev) {
+            return NextResponse.json({ error: 'Revisi rekening tidak tersedia' }, { status: 409 });
+        }
+
+        const expenseId = crypto.randomUUID();
+        const newBalance = (bankAcc.currentBalance || 0) - amount;
+        const expenseDoc = {
+            _id: expenseId,
+            ...expenseDocBase,
+            bankAccountRef: selectedAccountRef,
+            bankAccountName: bankAcc.bankName,
+        };
+
+        const transaction = getSanityClient()
+            .transaction()
+            .create(expenseDoc)
+            .create({
+                _id: crypto.randomUUID(),
+                _type: 'bankTransaction',
+                bankAccountRef: selectedAccountRef,
+                bankAccountName: bankAcc.bankName,
+                bankAccountNumber: bankAcc.accountNumber,
+                type: 'DEBIT',
+                amount,
+                date: expenseDate,
+                description:
+                    (typeof data.description === 'string' && data.description) ||
+                    (typeof data.note === 'string' && data.note) ||
+                    'Pengeluaran',
+                balanceAfter: newBalance,
+                relatedExpenseRef: expenseId,
+            })
+            .patch(selectedAccountRef, {
+                ifRevisionID: bankAcc._rev,
+                set: { currentBalance: newBalance },
+            });
+
+        try {
+            await transaction.commit();
+            void addAuditLog(session, 'CREATE', 'expenses', expenseId, `Created expenses: ${expenseId}`);
+            return NextResponse.json({ data: expenseDoc, id: expenseId });
+        } catch (err) {
+            if (!isMutationConflictError(err)) {
+                throw err;
+            }
+
+            if (attempt === 2) {
+                return NextResponse.json(
+                    { error: 'Pengeluaran berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+        }
+    }
+
+    return NextResponse.json(
+        { error: 'Pengeluaran berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
         { status: 409 }
     );
 }
@@ -2532,6 +2662,7 @@ async function handleBoronganPayment(session: Session, data: Record<string, unkn
                     _type: 'bankTransaction',
                     bankAccountRef,
                     bankAccountName: bankAccount.bankName,
+                    bankAccountNumber: bankAccount.accountNumber,
                     type: 'DEBIT',
                     amount,
                     date: paidDate,
@@ -2595,6 +2726,7 @@ function toCategoryRef(categoryName: string) {
 async function getDriverVoucherState(voucherId: string) {
     const voucher = await sanityGetById<{
         _id: string;
+        _rev?: string;
         bonNumber: string;
         status: string;
         cashGiven: number;
@@ -2635,53 +2767,81 @@ async function handleDriverVoucherCreate(
         return NextResponse.json({ error: 'Rekening sumber bon wajib dipilih' }, { status: 400 });
     }
 
-    const issueBank = await sanityGetById<BankAccountSummary>(issueBankRef);
-    if (!issueBank) {
-        return NextResponse.json({ error: 'Rekening sumber bon tidak ditemukan' }, { status: 404 });
-    }
-
     const issueDate =
         typeof data.issuedDate === 'string' && data.issuedDate
             ? data.issuedDate
             : new Date().toISOString().slice(0, 10);
+    assertIsoDate(issueDate, 'Tanggal bon');
     const bonNumber = await sanityGetNextNumber('bon');
     const voucherId = crypto.randomUUID();
-    const newBalance = (issueBank.currentBalance || 0) - cashGiven;
 
-    const voucherDoc = {
-        _id: voucherId,
-        _type: 'driverVoucher',
-        ...data,
-        bonNumber,
-        issuedDate: issueDate,
-        cashGiven,
-        issueBankRef,
-        issueBankName: issueBank.bankName,
-        totalSpent: 0,
-        balance: cashGiven,
-        status: 'ISSUED',
-    };
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        const issueBank = await getLedgerAccount(issueBankRef);
+        if (!issueBank) {
+            return NextResponse.json({ error: 'Rekening sumber bon tidak ditemukan' }, { status: 404 });
+        }
+        if (!issueBank._rev) {
+            return NextResponse.json({ error: 'Revisi rekening sumber tidak tersedia' }, { status: 409 });
+        }
 
-    const transaction = getSanityClient()
-        .transaction()
-        .create(voucherDoc)
-        .create({
-            _type: 'bankTransaction',
-            bankAccountRef: issueBankRef,
-            bankAccountName: issueBank.bankName,
-            type: 'DEBIT',
-            amount: cashGiven,
-            date: issueDate,
-            description: `Pencairan bon supir ${bonNumber}`,
-            balanceAfter: newBalance,
-            relatedVoucherRef: voucherId,
-        })
-        .patch(issueBankRef, { set: { currentBalance: newBalance } });
+        const newBalance = (issueBank.currentBalance || 0) - cashGiven;
+        const voucherDoc = {
+            _id: voucherId,
+            _type: 'driverVoucher',
+            ...data,
+            bonNumber,
+            issuedDate: issueDate,
+            cashGiven,
+            issueBankRef,
+            issueBankName: issueBank.bankName,
+            totalSpent: 0,
+            balance: cashGiven,
+            status: 'ISSUED',
+        };
 
-    await transaction.commit();
+        const transaction = getSanityClient()
+            .transaction()
+            .create(voucherDoc)
+            .create({
+                _id: crypto.randomUUID(),
+                _type: 'bankTransaction',
+                bankAccountRef: issueBankRef,
+                bankAccountName: issueBank.bankName,
+                bankAccountNumber: issueBank.accountNumber,
+                type: 'DEBIT',
+                amount: cashGiven,
+                date: issueDate,
+                description: `Pencairan bon supir ${bonNumber}`,
+                balanceAfter: newBalance,
+                relatedVoucherRef: voucherId,
+            })
+            .patch(issueBankRef, {
+                ifRevisionID: issueBank._rev,
+                set: { currentBalance: newBalance },
+            });
 
-    void addAuditLog(session, 'CREATE', 'driver-vouchers', voucherId, `Bon supir diterbitkan: ${bonNumber}`);
-    return NextResponse.json({ data: voucherDoc, id: voucherId });
+        try {
+            await transaction.commit();
+            void addAuditLog(session, 'CREATE', 'driver-vouchers', voucherId, `Bon supir diterbitkan: ${bonNumber}`);
+            return NextResponse.json({ data: voucherDoc, id: voucherId });
+        } catch (err) {
+            if (!isMutationConflictError(err)) {
+                throw err;
+            }
+
+            if (attempt === 2) {
+                return NextResponse.json(
+                    { error: 'Pencairan bon berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+        }
+    }
+
+    return NextResponse.json(
+        { error: 'Pencairan bon berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+        { status: 409 }
+    );
 }
 
 async function handleDriverVoucherItemCreate(data: Record<string, unknown>) {
@@ -2695,43 +2855,67 @@ async function handleDriverVoucherItemCreate(data: Record<string, unknown>) {
         return NextResponse.json({ error: 'Nominal item tidak valid' }, { status: 400 });
     }
 
-    const state = await getDriverVoucherState(voucherRef);
-    if ('error' in state) return state.error;
-    if (state.voucher.status === 'SETTLED') {
-        return NextResponse.json({ error: 'Bon yang sudah settle tidak bisa diubah' }, { status: 409 });
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        const state = await getDriverVoucherState(voucherRef);
+        if ('error' in state) return state.error;
+        if (state.voucher.status === 'SETTLED') {
+            return NextResponse.json({ error: 'Bon yang sudah settle tidak bisa diubah' }, { status: 409 });
+        }
+        if (!state.voucher._rev) {
+            return NextResponse.json({ error: 'Revisi bon tidak tersedia' }, { status: 409 });
+        }
+
+        const itemId = crypto.randomUUID();
+        const nextTotal = state.items.reduce((sum, item) => sum + item.amount, 0) + amount;
+        const nextBalance = (state.voucher.cashGiven || 0) - nextTotal;
+        const itemDoc = {
+            _id: itemId,
+            _type: 'driverVoucherItem',
+            voucherRef,
+            category: typeof data.category === 'string' && data.category.trim() ? data.category.trim() : 'Lain-lain',
+            description: typeof data.description === 'string' ? data.description.trim() : '',
+            amount,
+        };
+
+        try {
+            await getSanityClient()
+                .transaction()
+                .create(itemDoc)
+                .patch(voucherRef, {
+                    ifRevisionID: state.voucher._rev,
+                    set: {
+                        totalSpent: nextTotal,
+                        balance: nextBalance,
+                    },
+                })
+                .commit();
+
+            return NextResponse.json({
+                data: itemDoc,
+                voucher: {
+                    ...state.voucher,
+                    totalSpent: nextTotal,
+                    balance: nextBalance,
+                },
+            });
+        } catch (err) {
+            if (!isMutationConflictError(err)) {
+                throw err;
+            }
+
+            if (attempt === 2) {
+                return NextResponse.json(
+                    { error: 'Bon berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+        }
     }
 
-    const itemId = crypto.randomUUID();
-    const nextTotal = state.items.reduce((sum, item) => sum + item.amount, 0) + amount;
-    const nextBalance = (state.voucher.cashGiven || 0) - nextTotal;
-    const itemDoc = {
-        _id: itemId,
-        _type: 'driverVoucherItem',
-        voucherRef,
-        category: typeof data.category === 'string' && data.category.trim() ? data.category.trim() : 'Lain-lain',
-        description: typeof data.description === 'string' ? data.description.trim() : '',
-        amount,
-    };
-
-    await getSanityClient()
-        .transaction()
-        .create(itemDoc)
-        .patch(voucherRef, {
-            set: {
-                totalSpent: nextTotal,
-                balance: nextBalance,
-            },
-        })
-        .commit();
-
-    return NextResponse.json({
-        data: itemDoc,
-        voucher: {
-            ...state.voucher,
-            totalSpent: nextTotal,
-            balance: nextBalance,
-        },
-    });
+    return NextResponse.json(
+        { error: 'Bon berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+        { status: 409 }
+    );
 }
 
 async function handleDriverVoucherItemDelete(data: Record<string, unknown>) {
@@ -2745,36 +2929,60 @@ async function handleDriverVoucherItemDelete(data: Record<string, unknown>) {
         return NextResponse.json({ error: 'Item bon tidak ditemukan' }, { status: 404 });
     }
 
-    const state = await getDriverVoucherState(item.voucherRef);
-    if ('error' in state) return state.error;
-    if (state.voucher.status === 'SETTLED') {
-        return NextResponse.json({ error: 'Bon yang sudah settle tidak bisa diubah' }, { status: 409 });
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        const state = await getDriverVoucherState(item.voucherRef);
+        if ('error' in state) return state.error;
+        if (state.voucher.status === 'SETTLED') {
+            return NextResponse.json({ error: 'Bon yang sudah settle tidak bisa diubah' }, { status: 409 });
+        }
+        if (!state.voucher._rev) {
+            return NextResponse.json({ error: 'Revisi bon tidak tersedia' }, { status: 409 });
+        }
+
+        const nextTotal = state.items
+            .filter(existing => existing._id !== itemId)
+            .reduce((sum, existing) => sum + existing.amount, 0);
+        const nextBalance = (state.voucher.cashGiven || 0) - nextTotal;
+
+        try {
+            await getSanityClient()
+                .transaction()
+                .delete(itemId)
+                .patch(item.voucherRef, {
+                    ifRevisionID: state.voucher._rev,
+                    set: {
+                        totalSpent: nextTotal,
+                        balance: nextBalance,
+                    },
+                })
+                .commit();
+
+            return NextResponse.json({
+                success: true,
+                voucher: {
+                    ...state.voucher,
+                    totalSpent: nextTotal,
+                    balance: nextBalance,
+                },
+            });
+        } catch (err) {
+            if (!isMutationConflictError(err)) {
+                throw err;
+            }
+
+            if (attempt === 2) {
+                return NextResponse.json(
+                    { error: 'Bon berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+        }
     }
 
-    const nextTotal = state.items
-        .filter(existing => existing._id !== itemId)
-        .reduce((sum, existing) => sum + existing.amount, 0);
-    const nextBalance = (state.voucher.cashGiven || 0) - nextTotal;
-
-    await getSanityClient()
-        .transaction()
-        .delete(itemId)
-        .patch(item.voucherRef, {
-            set: {
-                totalSpent: nextTotal,
-                balance: nextBalance,
-            },
-        })
-        .commit();
-
-    return NextResponse.json({
-        success: true,
-        voucher: {
-            ...state.voucher,
-            totalSpent: nextTotal,
-            balance: nextBalance,
-        },
-    });
+    return NextResponse.json(
+        { error: 'Bon berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+        { status: 409 }
+    );
 }
 
 async function handleDriverVoucherSettlement(
@@ -2786,119 +2994,149 @@ async function handleDriverVoucherSettlement(
         return NextResponse.json({ error: 'Bon supir tidak valid' }, { status: 400 });
     }
 
-    const state = await getDriverVoucherState(voucherId);
-    if ('error' in state) return state.error;
-
-    if (state.voucher.status === 'SETTLED') {
-        return NextResponse.json({ error: 'Bon supir ini sudah settle' }, { status: 409 });
-    }
-    if (state.items.length === 0) {
-        return NextResponse.json({ error: 'Tambahkan minimal satu item pengeluaran sebelum settle' }, { status: 400 });
-    }
-
-    const existingExpense = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "expense" && voucherRef == $ref][0]{ _id }`,
-        { ref: voucherId }
-    );
-    if (existingExpense) {
-        return NextResponse.json({ error: 'Bon supir ini sudah pernah diposting ke pengeluaran' }, { status: 409 });
-    }
-
     const settledDate =
         typeof data.date === 'string' && data.date
             ? data.date
             : new Date().toISOString().slice(0, 10);
-    const totalSpent = state.items.reduce((sum, item) => sum + item.amount, 0);
-    const balance = (state.voucher.cashGiven || 0) - totalSpent;
+    assertIsoDate(settledDate, 'Tanggal settlement');
 
-    const settlementBankRef =
-        typeof data.settlementBankRef === 'string' && data.settlementBankRef
-            ? data.settlementBankRef
-            : state.voucher.issueBankRef || '';
-    let settlementBank: BankAccountSummary | null = null;
-
-    if (balance !== 0) {
-        if (!settlementBankRef) {
-            return NextResponse.json({ error: 'Rekening settlement wajib dipilih untuk selisih bon' }, { status: 400 });
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        const state = await getDriverVoucherState(voucherId);
+        if ('error' in state) return state.error;
+        if (!state.voucher._rev) {
+            return NextResponse.json({ error: 'Revisi bon tidak tersedia' }, { status: 409 });
         }
 
-        settlementBank = await sanityGetById<BankAccountSummary>(settlementBankRef);
-        if (!settlementBank) {
-            return NextResponse.json({ error: 'Rekening settlement tidak ditemukan' }, { status: 404 });
+        if (state.voucher.status === 'SETTLED') {
+            return NextResponse.json({ error: 'Bon supir ini sudah settle' }, { status: 409 });
         }
-    }
+        if (state.items.length === 0) {
+            return NextResponse.json({ error: 'Tambahkan minimal satu item pengeluaran sebelum settle' }, { status: 400 });
+        }
 
-    const transaction = getSanityClient().transaction();
-    for (const item of state.items) {
-        transaction.create({
-            _id: crypto.randomUUID(),
-            _type: 'expense',
-            categoryRef: toCategoryRef(item.category),
-            categoryName: item.category,
-            date: settledDate,
-            amount: item.amount,
-            description: item.description || `Pengeluaran bon supir ${state.voucher.bonNumber}`,
-            note: `Bon supir ${state.voucher.bonNumber}`,
-            privacyLevel: 'internal',
-            relatedVehicleRef: state.voucher.vehicleRef,
-            voucherRef: voucherId,
-        });
-    }
+        const existingExpense = await getSanityClient().fetch<{ _id: string } | null>(
+            `*[_type == "expense" && voucherRef == $ref][0]{ _id }`,
+            { ref: voucherId }
+        );
+        if (existingExpense) {
+            return NextResponse.json({ error: 'Bon supir ini sudah pernah diposting ke pengeluaran' }, { status: 409 });
+        }
 
-    if (settlementBank && settlementBankRef) {
-        const adjustmentAmount = Math.abs(balance);
-        const nextBankBalance =
-            balance > 0
-                ? (settlementBank.currentBalance || 0) + adjustmentAmount
-                : (settlementBank.currentBalance || 0) - adjustmentAmount;
-        transaction
-            .create({
+        const totalSpent = state.items.reduce((sum, item) => sum + item.amount, 0);
+        const balance = (state.voucher.cashGiven || 0) - totalSpent;
+        const settlementBankRef =
+            typeof data.settlementBankRef === 'string' && data.settlementBankRef
+                ? data.settlementBankRef
+                : state.voucher.issueBankRef || '';
+        let settlementBank: BankAccountSummary | null = null;
+
+        if (balance !== 0) {
+            if (!settlementBankRef) {
+                return NextResponse.json({ error: 'Rekening settlement wajib dipilih untuk selisih bon' }, { status: 400 });
+            }
+
+            settlementBank = await getLedgerAccount(settlementBankRef);
+            if (!settlementBank) {
+                return NextResponse.json({ error: 'Rekening settlement tidak ditemukan' }, { status: 404 });
+            }
+            if (!settlementBank._rev) {
+                return NextResponse.json({ error: 'Revisi rekening settlement tidak tersedia' }, { status: 409 });
+            }
+        }
+
+        const transaction = getSanityClient().transaction();
+        for (const item of state.items) {
+            transaction.create({
                 _id: crypto.randomUUID(),
-                _type: 'bankTransaction',
-                bankAccountRef: settlementBankRef,
-                bankAccountName: settlementBank.bankName,
-                type: balance > 0 ? 'CREDIT' : 'DEBIT',
-                amount: adjustmentAmount,
+                _type: 'expense',
+                categoryRef: toCategoryRef(item.category),
+                categoryName: item.category,
                 date: settledDate,
-                description:
-                    balance > 0
-                        ? `Pengembalian sisa bon ${state.voucher.bonNumber}`
-                        : `Kekurangan bon ${state.voucher.bonNumber}`,
-                balanceAfter: nextBankBalance,
-                relatedVoucherRef: voucherId,
-            })
-            .patch(settlementBankRef, {
-                set: { currentBalance: nextBankBalance },
+                amount: item.amount,
+                description: item.description || `Pengeluaran bon supir ${state.voucher.bonNumber}`,
+                note: `Bon supir ${state.voucher.bonNumber}`,
+                privacyLevel: 'internal',
+                relatedVehicleRef: state.voucher.vehicleRef,
+                voucherRef: voucherId,
             });
+        }
+
+        if (settlementBank && settlementBankRef) {
+            const adjustmentAmount = Math.abs(balance);
+            const nextBankBalance =
+                balance > 0
+                    ? (settlementBank.currentBalance || 0) + adjustmentAmount
+                    : (settlementBank.currentBalance || 0) - adjustmentAmount;
+            transaction
+                .create({
+                    _id: crypto.randomUUID(),
+                    _type: 'bankTransaction',
+                    bankAccountRef: settlementBankRef,
+                    bankAccountName: settlementBank.bankName,
+                    bankAccountNumber: settlementBank.accountNumber,
+                    type: balance > 0 ? 'CREDIT' : 'DEBIT',
+                    amount: adjustmentAmount,
+                    date: settledDate,
+                    description:
+                        balance > 0
+                            ? `Pengembalian sisa bon ${state.voucher.bonNumber}`
+                            : `Kekurangan bon ${state.voucher.bonNumber}`,
+                    balanceAfter: nextBankBalance,
+                    relatedVoucherRef: voucherId,
+                })
+                .patch(settlementBankRef, {
+                    ifRevisionID: settlementBank._rev,
+                    set: { currentBalance: nextBankBalance },
+                });
+        }
+
+        transaction.patch(voucherId, {
+            ifRevisionID: state.voucher._rev,
+            set: {
+                status: 'SETTLED',
+                settledDate,
+                settledBy: session.name,
+                totalSpent,
+                balance,
+                settlementBankRef: settlementBankRef || undefined,
+                settlementBankName: settlementBank?.bankName,
+            },
+        });
+
+        try {
+            await transaction.commit();
+
+            const updatedVoucher = {
+                ...state.voucher,
+                status: 'SETTLED',
+                settledDate,
+                settledBy: session.name,
+                totalSpent,
+                balance,
+                settlementBankRef: settlementBankRef || undefined,
+                settlementBankName: settlementBank?.bankName,
+            };
+
+            void addAuditLog(session, 'UPDATE', 'driver-vouchers', voucherId, `Bon supir settle: ${state.voucher.bonNumber}`);
+            return NextResponse.json({ data: updatedVoucher });
+        } catch (err) {
+            if (!isMutationConflictError(err)) {
+                throw err;
+            }
+
+            if (attempt === 2) {
+                return NextResponse.json(
+                    { error: 'Settlement bon berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+        }
     }
 
-    transaction.patch(voucherId, {
-        set: {
-            status: 'SETTLED',
-            settledDate,
-            settledBy: session.name,
-            totalSpent,
-            balance,
-            settlementBankRef: settlementBankRef || undefined,
-            settlementBankName: settlementBank?.bankName,
-        },
-    });
-
-    await transaction.commit();
-
-    const updatedVoucher = {
-        ...state.voucher,
-        status: 'SETTLED',
-        settledDate,
-        settledBy: session.name,
-        totalSpent,
-        balance,
-        settlementBankRef: settlementBankRef || undefined,
-        settlementBankName: settlementBank?.bankName,
-    };
-
-    void addAuditLog(session, 'UPDATE', 'driver-vouchers', voucherId, `Bon supir settle: ${state.voucher.bonNumber}`);
-    return NextResponse.json({ data: updatedVoucher });
+    return NextResponse.json(
+        { error: 'Settlement bon berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+        { status: 409 }
+    );
 }
 
 async function handleDriverVoucherIssueRepair(
@@ -2911,67 +3149,97 @@ async function handleDriverVoucherIssueRepair(
         return NextResponse.json({ error: 'Data rekonsiliasi bon tidak lengkap' }, { status: 400 });
     }
 
-    const voucher = await sanityGetById<{
-        _id: string;
-        bonNumber: string;
-        issuedDate: string;
-        cashGiven: number;
-        issueBankRef?: string;
-    }>(voucherId);
-    if (!voucher) {
-        return NextResponse.json({ error: 'Bon supir tidak ditemukan' }, { status: 404 });
-    }
-    if (voucher.issueBankRef) {
-        return NextResponse.json({ error: 'Bon ini sudah punya rekening sumber' }, { status: 409 });
-    }
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        const voucher = await sanityGetById<{
+            _id: string;
+            _rev?: string;
+            bonNumber: string;
+            issuedDate: string;
+            cashGiven: number;
+            issueBankRef?: string;
+        }>(voucherId);
+        if (!voucher) {
+            return NextResponse.json({ error: 'Bon supir tidak ditemukan' }, { status: 404 });
+        }
+        if (!voucher._rev) {
+            return NextResponse.json({ error: 'Revisi bon tidak tersedia' }, { status: 409 });
+        }
+        if (voucher.issueBankRef) {
+            return NextResponse.json({ error: 'Bon ini sudah punya rekening sumber' }, { status: 409 });
+        }
 
-    const existingTx = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "bankTransaction" && relatedVoucherRef == $ref][0]{ _id }`,
-        { ref: voucherId }
-    );
-    if (existingTx) {
-        return NextResponse.json({ error: 'Bon ini sudah punya mutasi bank terkait' }, { status: 409 });
-    }
+        const existingTx = await getSanityClient().fetch<{ _id: string } | null>(
+            `*[_type == "bankTransaction" && relatedVoucherRef == $ref][0]{ _id }`,
+            { ref: voucherId }
+        );
+        if (existingTx) {
+            return NextResponse.json({ error: 'Bon ini sudah punya mutasi bank terkait' }, { status: 409 });
+        }
 
-    const bank = await sanityGetById<BankAccountSummary>(issueBankRef);
-    if (!bank) {
-        return NextResponse.json({ error: 'Rekening sumber tidak ditemukan' }, { status: 404 });
-    }
+        const bank = await getLedgerAccount(issueBankRef);
+        if (!bank) {
+            return NextResponse.json({ error: 'Rekening sumber tidak ditemukan' }, { status: 404 });
+        }
+        if (!bank._rev) {
+            return NextResponse.json({ error: 'Revisi rekening sumber tidak tersedia' }, { status: 409 });
+        }
 
-    const newBalance = (bank.currentBalance || 0) - (voucher.cashGiven || 0);
-    await getSanityClient()
-        .transaction()
-        .create({
-            _id: crypto.randomUUID(),
-            _type: 'bankTransaction',
-            bankAccountRef: issueBankRef,
-            bankAccountName: bank.bankName,
-            type: 'DEBIT',
-            amount: voucher.cashGiven || 0,
-            date: voucher.issuedDate,
-            description: `Rekonsiliasi pencairan bon ${voucher.bonNumber}`,
-            balanceAfter: newBalance,
-            relatedVoucherRef: voucherId,
-        })
-        .patch(issueBankRef, {
-            set: { currentBalance: newBalance },
-        })
-        .patch(voucherId, {
-            set: {
+        const newBalance = (bank.currentBalance || 0) - (voucher.cashGiven || 0);
+        try {
+            await getSanityClient()
+                .transaction()
+                .create({
+                    _id: crypto.randomUUID(),
+                    _type: 'bankTransaction',
+                    bankAccountRef: issueBankRef,
+                    bankAccountName: bank.bankName,
+                    bankAccountNumber: bank.accountNumber,
+                    type: 'DEBIT',
+                    amount: voucher.cashGiven || 0,
+                    date: voucher.issuedDate,
+                    description: `Rekonsiliasi pencairan bon ${voucher.bonNumber}`,
+                    balanceAfter: newBalance,
+                    relatedVoucherRef: voucherId,
+                })
+                .patch(issueBankRef, {
+                    ifRevisionID: bank._rev,
+                    set: { currentBalance: newBalance },
+                })
+                .patch(voucherId, {
+                    ifRevisionID: voucher._rev,
+                    set: {
+                        issueBankRef,
+                        issueBankName: bank.bankName,
+                    },
+                })
+                .commit();
+
+            const updatedVoucher = {
+                ...voucher,
                 issueBankRef,
                 issueBankName: bank.bankName,
-            },
-        })
-        .commit();
+            };
 
-    const updatedVoucher = {
-        ...voucher,
-        issueBankRef,
-        issueBankName: bank.bankName,
-    };
+            void addAuditLog(session, 'UPDATE', 'driver-vouchers', voucherId, `Rekonsiliasi pencairan bon: ${voucher.bonNumber}`);
+            return NextResponse.json({ data: updatedVoucher });
+        } catch (err) {
+            if (!isMutationConflictError(err)) {
+                throw err;
+            }
 
-    void addAuditLog(session, 'UPDATE', 'driver-vouchers', voucherId, `Rekonsiliasi pencairan bon: ${voucher.bonNumber}`);
-    return NextResponse.json({ data: updatedVoucher });
+            if (attempt === 2) {
+                return NextResponse.json(
+                    { error: 'Rekonsiliasi bon berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+        }
+    }
+
+    return NextResponse.json(
+        { error: 'Rekonsiliasi bon berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+        { status: 409 }
+    );
 }
 
 export async function GET(request: Request) {
@@ -3349,6 +3617,10 @@ export async function POST(request: Request) {
             return handlePaymentCreate(session, data);
         }
 
+        if (entity === 'expenses') {
+            return handleExpenseCreate(session, data);
+        }
+
         if (entity === 'driver-vouchers') {
             return handleDriverVoucherCreate(session, data);
         }
@@ -3475,30 +3747,6 @@ export async function POST(request: Request) {
 
         const created = await sanityCreate(newDoc);
         const newId = (created as Record<string, unknown>)._id as string;
-
-        if (entity === 'expenses' && typeof data.bankAccountRef === 'string' && data.bankAccountRef) {
-            const amount = typeof data.amount === 'number' ? data.amount : Number(data.amount);
-            if (!Number.isFinite(amount) || amount <= 0) {
-                return NextResponse.json({ error: 'Nominal pengeluaran tidak valid' }, { status: 400 });
-            }
-
-            const bankAcc = await sanityGetById<{ _id: string; currentBalance: number; bankName: string }>(data.bankAccountRef);
-            if (bankAcc) {
-                const newBalance = (bankAcc.currentBalance || 0) - amount;
-                await sanityCreate({
-                    _type: 'bankTransaction',
-                    bankAccountRef: data.bankAccountRef,
-                    bankAccountName: bankAcc.bankName,
-                    type: 'DEBIT',
-                    amount,
-                    date: data.date,
-                    description: data.description || data.note || 'Pengeluaran',
-                    balanceAfter: newBalance,
-                    relatedExpenseRef: newId,
-                });
-                await sanityUpdate(data.bankAccountRef, { currentBalance: newBalance });
-            }
-        }
 
         if (entity === 'bank-accounts') {
             const initialBalance =
