@@ -101,7 +101,7 @@ export default function CompanyPage() {
                                     <div style={{ position: 'relative', width: 64, height: 64, borderRadius: '0.5rem', border: '2px solid var(--border-color)', overflow: 'hidden', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                         {/* eslint-disable-next-line @next/next/no-img-element */}
                                         <img src={data.logoUrl} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 4 }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                                        <button type="button" onClick={() => u('logoUrl', '')} style={{ position: 'absolute', top: 2, right: 2, width: 18, height: 18, borderRadius: '50%', border: 'none', background: '#ef4444', color: '#fff', fontSize: '0.65rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>✕</button>
+                                        <button type="button" onClick={() => u('logoUrl', '')} style={{ position: 'absolute', top: 2, right: 2, width: 18, height: 18, borderRadius: '50%', border: 'none', background: '#ef4444', color: '#fff', fontSize: '0.65rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>x</button>
                                     </div>
                                 ) : (
                                     <div style={{ width: 64, height: 64, borderRadius: '0.5rem', border: '2px dashed var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.7rem', flexShrink: 0, background: 'var(--bg-secondary)' }}>
@@ -112,7 +112,7 @@ export default function CompanyPage() {
                                     <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 0.85rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-primary)', color: 'var(--color-primary)', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s', background: 'transparent' }}
                                         onMouseOver={e => { (e.currentTarget as HTMLElement).style.background = 'var(--color-primary)'; (e.currentTarget as HTMLElement).style.color = '#fff'; }}
                                         onMouseOut={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'var(--color-primary)'; }}>
-                                        📁 Pilih File
+                                        Pilih File
                                         <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => {
                                             const file = e.target.files?.[0];
                                             if (!file) return;
@@ -122,7 +122,7 @@ export default function CompanyPage() {
                                             reader.readAsDataURL(file);
                                         }} />
                                     </label>
-                                    <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>PNG, JPG, SVG • Max 500KB</p>
+                                    <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>PNG, JPG, SVG | Max 500KB</p>
                                 </div>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -131,7 +131,7 @@ export default function CompanyPage() {
                             </div>
                             <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Logo tampil di sidebar, cetak, dan export dokumen aktif (PDF, Excel).</p>
                         </div>
-                        <div className="form-section-title">🎨 Tema Warna Aplikasi</div>
+                        <div className="form-section-title">Tema Warna Aplikasi</div>
                         <div className="form-group">
                             <label className="form-label">Pilih Warna Tema</label>
                             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>

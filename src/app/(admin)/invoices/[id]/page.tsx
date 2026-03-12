@@ -256,7 +256,20 @@ export default function NotaDetailPage() {
                         <div className="card-header"><span className="card-header-title">Riwayat Pembayaran</span></div>
                         <div className="card-body" style={{ padding: payments.length === 0 ? '2rem 1.5rem' : 0 }}>
                             {payments.length === 0 ? (
-                                <div style={{ textAlign: 'center', color: 'var(--color-gray-400)' }}><div style={{ fontSize: '1.5rem', opacity: 0.3, marginBottom: '0.25rem' }}>💰</div><div style={{ fontSize: '0.82rem' }}>Belum ada pembayaran</div></div>
+                                <div style={{ textAlign: 'center', color: 'var(--color-gray-400)' }}>
+                                    <div
+                                        style={{
+                                            fontSize: '1.5rem',
+                                            opacity: 0.3,
+                                            marginBottom: '0.25rem',
+                                            display: 'flex',
+                                            justifyContent: 'center',
+                                        }}
+                                    >
+                                        <DollarSign size={22} />
+                                    </div>
+                                    <div style={{ fontSize: '0.82rem' }}>Belum ada pembayaran</div>
+                                </div>
                             ) : payments.map((p, i) => (
                                 <div key={p._id} style={{ padding: '0.75rem 1rem', borderBottom: i < payments.length - 1 ? '1px solid var(--color-gray-100)' : 'none' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem' }}>

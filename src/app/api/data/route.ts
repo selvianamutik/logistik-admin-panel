@@ -842,6 +842,14 @@ async function loadPaymentTarget(invoiceRef: string) {
     if (!doc) {
         return { error: NextResponse.json({ error: 'Dokumen tagihan tidak ditemukan' }, { status: 404 }) };
     }
+    if (doc._type !== 'freightNota' && doc._type !== 'invoice') {
+        return {
+            error: NextResponse.json(
+                { error: 'Pembayaran hanya boleh dicatat untuk nota ongkos atau invoice legacy' },
+                { status: 409 }
+            ),
+        };
+    }
 
     const totalAmount = typeof doc.totalAmount === 'number' ? doc.totalAmount : Number(doc.totalAmount || 0);
     if (!Number.isFinite(totalAmount) || totalAmount <= 0) {
