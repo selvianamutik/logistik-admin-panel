@@ -83,27 +83,36 @@ export default function NewNotaPage() {
 
     useEffect(() => {
         async function loadData() {
+            const fetchEntity = async <T,>(url: string, fallbackMessage: string) => {
+                const res = await fetch(url);
+                const payload = await res.json();
+                if (!res.ok) {
+                    throw new Error(payload.error || fallbackMessage);
+                }
+                return payload.data as T;
+            };
+
             try {
                 const [cust, comp, dos, ords, doItems, notaItems] = await Promise.all([
-                    fetch('/api/data?entity=customers').then(response => response.json()),
-                    fetch('/api/data?entity=company').then(response => response.json()),
-                    fetch('/api/data?entity=delivery-orders').then(response => response.json()),
-                    fetch('/api/data?entity=orders').then(response => response.json()),
-                    fetch('/api/data?entity=delivery-order-items').then(response => response.json()),
-                    fetch('/api/data?entity=freight-nota-items').then(response => response.json()),
+                    fetchEntity<Customer[]>('/api/data?entity=customers', 'Gagal memuat customer'),
+                    fetchEntity<CompanyProfile | null>('/api/data?entity=company', 'Gagal memuat profil perusahaan'),
+                    fetchEntity<DeliveryOrder[]>('/api/data?entity=delivery-orders', 'Gagal memuat surat jalan'),
+                    fetchEntity<Order[]>('/api/data?entity=orders', 'Gagal memuat order'),
+                    fetchEntity<DeliveryOrderItem[]>('/api/data?entity=delivery-order-items', 'Gagal memuat item DO'),
+                    fetchEntity<Array<{ doRef?: string }>>('/api/data?entity=freight-nota-items', 'Gagal memuat pemakaian DO nota'),
                 ]);
-                setCustomers(cust.data || []);
-                setCompany(comp.data || null);
-                setDeliveryOrders((dos.data || []).filter((item: DeliveryOrder) => item.status === 'DELIVERED'));
-                setOrders(ords.data || []);
-                setDeliveryOrderItems(doItems.data || []);
+                setCustomers(cust || []);
+                setCompany(comp || null);
+                setDeliveryOrders((dos || []).filter((item: DeliveryOrder) => item.status === 'DELIVERED'));
+                setOrders(ords || []);
+                setDeliveryOrderItems(doItems || []);
                 setUsedNotaDoRefs(
-                    (notaItems.data || [])
+                    (notaItems || [])
                         .map((item: { doRef?: string }) => item.doRef)
                         .filter((value: string | undefined): value is string => Boolean(value))
                 );
-            } catch {
-                addToast('error', 'Gagal memuat data nota');
+            } catch (error) {
+                addToast('error', error instanceof Error ? error.message : 'Gagal memuat data nota');
             }
         }
 

@@ -77,23 +77,32 @@ export default function NewBoronganPage() {
 
     useEffect(() => {
         async function loadData() {
+            const fetchEntity = async <T,>(url: string, fallbackMessage: string) => {
+                const res = await fetch(url);
+                const payload = await res.json();
+                if (!res.ok) {
+                    throw new Error(payload.error || fallbackMessage);
+                }
+                return payload.data as T;
+            };
+
             try {
                 const [driverResponse, deliveryOrderResponse, doItemResponse, boronganItemResponse] = await Promise.all([
-                    fetch('/api/data?entity=drivers').then(response => response.json()),
-                    fetch('/api/data?entity=delivery-orders').then(response => response.json()),
-                    fetch('/api/data?entity=delivery-order-items').then(response => response.json()),
-                    fetch('/api/data?entity=driver-borogan-items').then(response => response.json()),
+                    fetchEntity<Driver[]>('/api/data?entity=drivers', 'Gagal memuat supir'),
+                    fetchEntity<DeliveryOrder[]>('/api/data?entity=delivery-orders', 'Gagal memuat surat jalan'),
+                    fetchEntity<DeliveryOrderItem[]>('/api/data?entity=delivery-order-items', 'Gagal memuat item DO'),
+                    fetchEntity<Array<{ doRef?: string }>>('/api/data?entity=driver-borogan-items', 'Gagal memuat pemakaian DO borongan'),
                 ]);
-                setDrivers(driverResponse.data || []);
-                setDeliveryOrders((deliveryOrderResponse.data || []).filter((item: DeliveryOrder) => item.status === 'DELIVERED'));
-                setDeliveryOrderItems(doItemResponse.data || []);
+                setDrivers(driverResponse || []);
+                setDeliveryOrders((deliveryOrderResponse || []).filter((item: DeliveryOrder) => item.status === 'DELIVERED'));
+                setDeliveryOrderItems(doItemResponse || []);
                 setUsedBoronganDoRefs(
-                    (boronganItemResponse.data || [])
+                    (boronganItemResponse || [])
                         .map((item: { doRef?: string }) => item.doRef)
                         .filter((value: string | undefined): value is string => Boolean(value))
                 );
-            } catch {
-                addToast('error', 'Gagal memuat data borongan');
+            } catch (error) {
+                addToast('error', error instanceof Error ? error.message : 'Gagal memuat data borongan');
             }
         }
 

@@ -40,25 +40,29 @@ export default function ExpenseCategoriesPage() {
     const handleSave = async () => {
         if (!isOwner) { addToast('error', 'Hanya OWNER yang dapat mengubah kategori biaya'); return; }
         if (!name) { addToast('error', 'Nama wajib'); return; }
-        if (editItem) {
-            const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'expense-categories', action: 'update', data: { id: editItem._id, updates: { name } } }) });
-            const payload = await res.json();
-            if (!res.ok) {
-                addToast('error', payload.error || 'Gagal memperbarui kategori biaya');
-                return;
+        try {
+            if (editItem) {
+                const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'expense-categories', action: 'update', data: { id: editItem._id, updates: { name } } }) });
+                const payload = await res.json();
+                if (!res.ok) {
+                    addToast('error', payload.error || 'Gagal memperbarui kategori biaya');
+                    return;
+                }
+                setItems(prev => prev.map(c => c._id === editItem._id ? payload.data as ExpenseCategory : c));
+                addToast('success', 'Kategori diperbarui');
+            } else {
+                const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'expense-categories', data: { name, active: true } }) });
+                const payload = await res.json();
+                if (!res.ok) {
+                    addToast('error', payload.error || 'Gagal menambah kategori biaya');
+                    return;
+                }
+                setItems(prev => [...prev, payload.data as ExpenseCategory]); addToast('success', 'Kategori ditambahkan');
             }
-            setItems(prev => prev.map(c => c._id === editItem._id ? payload.data as ExpenseCategory : c));
-            addToast('success', 'Kategori diperbarui');
-        } else {
-            const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'expense-categories', data: { name, active: true } }) });
-            const payload = await res.json();
-            if (!res.ok) {
-                addToast('error', payload.error || 'Gagal menambah kategori biaya');
-                return;
-            }
-            setItems(prev => [...prev, payload.data as ExpenseCategory]); addToast('success', 'Kategori ditambahkan');
+            setShowModal(false);
+        } catch {
+            addToast('error', editItem ? 'Gagal memperbarui kategori biaya' : 'Gagal menambah kategori biaya');
         }
-        setShowModal(false);
     };
 
     return (

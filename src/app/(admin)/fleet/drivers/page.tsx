@@ -37,36 +37,44 @@ export default function DriversPage() {
 
     const handleSave = async () => {
         if (!form.name || !form.phone) { addToast('error', 'Nama dan no. HP wajib diisi'); return; }
-        const res = await fetch('/api/data', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(editId
-                ? { entity: 'drivers', action: 'update', data: { id: editId, updates: form } }
-                : { entity: 'drivers', data: form })
-        });
-        const d = await res.json();
-        if (!res.ok) {
-            addToast('error', d.error || 'Gagal menyimpan data supir');
-            return;
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(editId
+                    ? { entity: 'drivers', action: 'update', data: { id: editId, updates: form } }
+                    : { entity: 'drivers', data: form })
+            });
+            const d = await res.json();
+            if (!res.ok) {
+                addToast('error', d.error || 'Gagal menyimpan data supir');
+                return;
+            }
+            if (editId) {
+                setItems(prev => prev.map(i => i._id === editId ? d.data : i));
+                addToast('success', 'Supir diperbarui');
+            } else {
+                setItems(prev => [...prev, d.data]);
+                addToast('success', 'Supir ditambahkan');
+            }
+            closeModal();
+        } catch {
+            addToast('error', 'Gagal menyimpan data supir');
         }
-        if (editId) {
-            setItems(prev => prev.map(i => i._id === editId ? d.data : i));
-            addToast('success', 'Supir diperbarui');
-        } else {
-            setItems(prev => [...prev, d.data]);
-            addToast('success', 'Supir ditambahkan');
-        }
-        closeModal();
     };
 
     const toggleActive = async (driver: Driver) => {
-        const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'drivers', action: 'update', data: { id: driver._id, updates: { active: !driver.active } } }) });
-        const d = await res.json();
-        if (!res.ok) {
-            addToast('error', d.error || 'Gagal memperbarui status supir');
-            return;
+        try {
+            const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'drivers', action: 'update', data: { id: driver._id, updates: { active: !driver.active } } }) });
+            const d = await res.json();
+            if (!res.ok) {
+                addToast('error', d.error || 'Gagal memperbarui status supir');
+                return;
+            }
+            setItems(prev => prev.map(i => i._id === driver._id ? d.data : i));
+            addToast('success', driver.active ? 'Supir dinon-aktifkan' : 'Supir diaktifkan');
+        } catch {
+            addToast('error', 'Gagal memperbarui status supir');
         }
-        setItems(prev => prev.map(i => i._id === driver._id ? d.data : i));
-        addToast('success', driver.active ? 'Supir dinon-aktifkan' : 'Supir diaktifkan');
     };
 
     const openEdit = (d: Driver) => {

@@ -40,25 +40,29 @@ export default function ServicesPage() {
     const handleSave = async () => {
         if (!isOwner) { addToast('error', 'Hanya OWNER yang dapat mengubah layanan'); return; }
         if (!form.name) { addToast('error', 'Nama wajib'); return; }
-        if (editItem) {
-            const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'services', action: 'update', data: { id: editItem._id, updates: form } }) });
-            const payload = await res.json();
-            if (!res.ok) {
-                addToast('error', payload.error || 'Gagal memperbarui layanan');
-                return;
+        try {
+            if (editItem) {
+                const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'services', action: 'update', data: { id: editItem._id, updates: form } }) });
+                const payload = await res.json();
+                if (!res.ok) {
+                    addToast('error', payload.error || 'Gagal memperbarui layanan');
+                    return;
+                }
+                setItems(prev => prev.map(s => s._id === editItem._id ? payload.data as Service : s));
+                addToast('success', 'Layanan diperbarui');
+            } else {
+                const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'services', data: form }) });
+                const payload = await res.json();
+                if (!res.ok) {
+                    addToast('error', payload.error || 'Gagal menambah layanan');
+                    return;
+                }
+                setItems(prev => [...prev, payload.data as Service]); addToast('success', 'Layanan ditambahkan');
             }
-            setItems(prev => prev.map(s => s._id === editItem._id ? payload.data as Service : s));
-            addToast('success', 'Layanan diperbarui');
-        } else {
-            const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'services', data: form }) });
-            const payload = await res.json();
-            if (!res.ok) {
-                addToast('error', payload.error || 'Gagal menambah layanan');
-                return;
-            }
-            setItems(prev => [...prev, payload.data as Service]); addToast('success', 'Layanan ditambahkan');
+            setShowModal(false);
+        } catch {
+            addToast('error', editItem ? 'Gagal memperbarui layanan' : 'Gagal menambah layanan');
         }
-        setShowModal(false);
     };
 
     return (

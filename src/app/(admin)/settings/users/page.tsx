@@ -39,51 +39,59 @@ export default function UsersPage() {
         if (!form.name || !form.email) { addToast('error', 'Nama dan email wajib'); return; }
         if (!editUser && !form.password) { addToast('error', 'Password wajib untuk user baru'); return; }
         if (form.password && form.password.length < 8) { addToast('error', 'Password minimal 8 karakter'); return; }
-        if (editUser) {
-            const updates: Record<string, unknown> = { name: form.name, email: form.email, role: form.role };
-            if (form.password) updates.password = form.password;
-            const res = await fetch('/api/data', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ entity: 'users', action: 'update', data: { id: editUser._id, updates } }),
-            });
-            const payload = await res.json();
-            if (!res.ok) {
-                addToast('error', payload.error || 'Gagal memperbarui user');
-                return;
+        try {
+            if (editUser) {
+                const updates: Record<string, unknown> = { name: form.name, email: form.email, role: form.role };
+                if (form.password) updates.password = form.password;
+                const res = await fetch('/api/data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ entity: 'users', action: 'update', data: { id: editUser._id, updates } }),
+                });
+                const payload = await res.json();
+                if (!res.ok) {
+                    addToast('error', payload.error || 'Gagal memperbarui user');
+                    return;
+                }
+                setUsers(prev => prev.map(u => u._id === editUser._id ? payload.data as User : u));
+                addToast('success', 'User diperbarui');
+            } else {
+                const res = await fetch('/api/data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ entity: 'users', data: { name: form.name, email: form.email, role: form.role, password: form.password } }),
+                });
+                const payload = await res.json();
+                if (!res.ok) {
+                    addToast('error', payload.error || 'Gagal menambah user');
+                    return;
+                }
+                setUsers(prev => [...prev, payload.data as User]);
+                addToast('success', 'User ditambahkan');
             }
-            setUsers(prev => prev.map(u => u._id === editUser._id ? payload.data as User : u));
-            addToast('success', 'User diperbarui');
-        } else {
-            const res = await fetch('/api/data', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ entity: 'users', data: { name: form.name, email: form.email, role: form.role, password: form.password } }),
-            });
-            const payload = await res.json();
-            if (!res.ok) {
-                addToast('error', payload.error || 'Gagal menambah user');
-                return;
-            }
-            setUsers(prev => [...prev, payload.data as User]);
-            addToast('success', 'User ditambahkan');
+            setShowModal(false);
+        } catch {
+            addToast('error', editUser ? 'Gagal memperbarui user' : 'Gagal menambah user');
         }
-        setShowModal(false);
     };
 
     const toggleActive = async (u: User) => {
-        const res = await fetch('/api/data', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ entity: 'users', action: 'update', data: { id: u._id, updates: { active: !u.active } } }),
-        });
-        const payload = await res.json();
-        if (!res.ok) {
-            addToast('error', payload.error || 'Gagal memperbarui status user');
-            return;
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entity: 'users', action: 'update', data: { id: u._id, updates: { active: !u.active } } }),
+            });
+            const payload = await res.json();
+            if (!res.ok) {
+                addToast('error', payload.error || 'Gagal memperbarui status user');
+                return;
+            }
+            setUsers(prev => prev.map(x => x._id === u._id ? payload.data as User : x));
+            addToast('success', `User ${!u.active ? 'diaktifkan' : 'dinonaktifkan'}`);
+        } catch {
+            addToast('error', 'Gagal memperbarui status user');
         }
-        setUsers(prev => prev.map(x => x._id === u._id ? payload.data as User : x));
-        addToast('success', `User ${!u.active ? 'diaktifkan' : 'dinonaktifkan'}`);
     };
 
     return (

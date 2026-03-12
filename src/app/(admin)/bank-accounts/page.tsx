@@ -175,17 +175,19 @@ export default function BankAccountsPage() {
   useEffect(() => {
     async function load() {
       try {
+        const loadCompany = async () => {
+          const res = await fetch("/api/data?entity=company");
+          const payload = await res.json();
+          if (!res.ok) {
+            throw new Error(
+              payload.error || "Gagal memuat profil perusahaan",
+            );
+          }
+          return payload.data || null;
+        };
         const [accountsRes, companyRes] = await Promise.all([
           loadAccounts(),
-          fetch("/api/data?entity=company").then(async (res) => {
-            const payload = await res.json();
-            if (!res.ok) {
-              throw new Error(
-                payload.error || "Gagal memuat profil perusahaan",
-              );
-            }
-            return payload.data || null;
-          }),
+          loadCompany(),
         ]);
         void accountsRes;
         setCompany(companyRes);
@@ -259,50 +261,61 @@ export default function BankAccountsPage() {
         }
       : { entity: "bank-accounts", data: { ...form, active: true } };
 
-    const res = await fetch("/api/data", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const result = await res.json();
-    if (!res.ok) {
+    try {
+      const res = await fetch("/api/data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        addToast(
+          "error",
+          result.error ||
+            (editAccount
+              ? "Gagal memperbarui rekening"
+              : "Gagal menambahkan rekening"),
+        );
+        return;
+      }
+
+      setShowModal(false);
+      addToast(
+        "success",
+        editAccount ? "Rekening diperbarui" : "Rekening ditambahkan",
+      );
+      await refreshAccounts();
+    } catch {
       addToast(
         "error",
-        result.error ||
-          (editAccount
-            ? "Gagal memperbarui rekening"
-            : "Gagal menambahkan rekening"),
+        editAccount ? "Gagal memperbarui rekening" : "Gagal menambahkan rekening",
       );
-      return;
     }
-
-    setShowModal(false);
-    addToast(
-      "success",
-      editAccount ? "Rekening diperbarui" : "Rekening ditambahkan",
-    );
-    await refreshAccounts();
   };
 
   const handleDelete = async (id: string) => {
-    const res = await fetch("/api/data", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        entity: "bank-accounts",
-        action: "update",
-        data: { id, updates: { active: false } },
-      }),
-    });
-    const result = await res.json();
-    if (!res.ok) {
-      addToast("error", result.error || "Gagal menonaktifkan rekening");
-      return;
-    }
+    try {
+      const res = await fetch("/api/data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entity: "bank-accounts",
+          action: "update",
+          data: { id, updates: { active: false } },
+        }),
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        addToast("error", result.error || "Gagal menonaktifkan rekening");
+        return;
+      }
 
-    setDeleteConfirm(null);
-    addToast("success", "Rekening dihapus");
-    await refreshAccounts();
+      setDeleteConfirm(null);
+      addToast("success", "Rekening dihapus");
+      await refreshAccounts();
+    } catch {
+      addToast("error", "Gagal menonaktifkan rekening");
+    }
   };
 
   const handleTransfer = async () => {
@@ -345,6 +358,8 @@ export default function BankAccountsPage() {
       });
       addToast("success", "Transfer berhasil");
       await refreshAccounts();
+    } catch {
+      addToast("error", "Transfer gagal");
     } finally {
       setTransferring(false);
     }
