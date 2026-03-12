@@ -27,6 +27,7 @@ export default function NotaDetailPage() {
     const [company, setCompany] = useState<CompanyProfile | null>(null);
     const [loading, setLoading] = useState(true);
     const [showPayModal, setShowPayModal] = useState(false);
+    const [paying, setPaying] = useState(false);
     const [payAmount, setPayAmount] = useState(0);
     const [payMethod, setPayMethod] = useState('TRANSFER');
     const [payDate, setPayDate] = useState(new Date().toISOString().split('T')[0]);
@@ -77,6 +78,7 @@ export default function NotaDetailPage() {
         if (payAmount <= 0) { addToast('error', 'Nominal harus lebih dari 0'); return; }
         if (payAmount > remaining) { addToast('error', 'Nominal melebihi sisa tagihan'); return; }
         if (payMethod === 'TRANSFER' && !payBankRef) { addToast('error', 'Pilih rekening bank untuk transfer'); return; }
+        setPaying(true);
         try {
             const res = await fetch('/api/data', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -93,7 +95,11 @@ export default function NotaDetailPage() {
             addToast('success', 'Pembayaran dicatat');
             setShowPayModal(false);
             window.location.reload();
-        } catch { addToast('error', 'Gagal'); }
+        } catch {
+            addToast('error', 'Gagal');
+        } finally {
+            setPaying(false);
+        }
     };
 
     const handlePrint = async () => {
@@ -291,22 +297,22 @@ export default function NotaDetailPage() {
             {showPayModal && (
                 <div className="modal-overlay" onClick={() => setShowPayModal(false)}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header"><h3 className="modal-title">Tambah Pembayaran</h3><button className="modal-close" onClick={() => setShowPayModal(false)}>&times;</button></div>
+                        <div className="modal-header"><h3 className="modal-title">Tambah Pembayaran</h3><button className="modal-close" onClick={() => setShowPayModal(false)} disabled={paying}>&times;</button></div>
                         <div className="modal-body">
                             <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <div><div style={{ fontSize: '0.68rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Sisa Tagihan</div><div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-danger)' }}>{formatCurrency(remaining)}</div></div>
-                                <button className="btn btn-sm btn-ghost" onClick={() => setPayAmount(remaining)} style={{ fontSize: '0.72rem' }}>Bayar penuh</button>
+                                <button className="btn btn-sm btn-ghost" onClick={() => setPayAmount(remaining)} style={{ fontSize: '0.72rem' }} disabled={paying}>Bayar penuh</button>
                             </div>
-                            <div className="form-group"><label className="form-label">Tanggal</label><input type="date" className="form-input" value={payDate} onChange={e => setPayDate(e.target.value)} /></div>
-                            <div className="form-group"><label className="form-label">Nominal (Rp)</label><input type="number" className="form-input" value={payAmount || ''} onChange={e => setPayAmount(Number(e.target.value))} /></div>
+                            <div className="form-group"><label className="form-label">Tanggal</label><input type="date" className="form-input" value={payDate} onChange={e => setPayDate(e.target.value)} disabled={paying} /></div>
+                            <div className="form-group"><label className="form-label">Nominal (Rp)</label><input type="number" className="form-input" value={payAmount || ''} onChange={e => setPayAmount(Number(e.target.value))} disabled={paying} /></div>
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Metode</label>
-                                    <select className="form-select" value={payMethod} onChange={e => setPayMethod(e.target.value)}>
+                                    <select className="form-select" value={payMethod} onChange={e => setPayMethod(e.target.value)} disabled={paying}>
                                         <option value="TRANSFER">Transfer</option><option value="CASH">Tunai</option><option value="OTHER">Lainnya</option>
                                     </select>
                                 </div>
                                 <div className="form-group"><label className="form-label">Rekening</label>
-                                    <select className="form-select" value={payBankRef} onChange={e => setPayBankRef(e.target.value)}>
+                                    <select className="form-select" value={payBankRef} onChange={e => setPayBankRef(e.target.value)} disabled={paying}>
                                         <option value="">{payMethod === 'CASH' ? '-- Otomatis ke Kas Tunai --' : '-- Pilih --'}</option>
                                         {bankAccounts.map(a => <option key={a._id} value={a._id}>{a.bankName} - {a.accountNumber}{a.accountType === 'CASH' ? ' (Kas Tunai)' : ''}</option>)}
                                     </select>
@@ -319,11 +325,11 @@ export default function NotaDetailPage() {
                                         ? 'Tunai tetap mengurangi sisa tagihan dan mencatat pendapatan. Jika rekening dibiarkan kosong, sistem otomatis mem-posting ke akun Kas Tunai.'
                                         : 'Metode lain tetap mengurangi sisa tagihan dan mencatat pendapatan. Mutasi bank hanya dibuat jika rekening dipilih.'}
                             </div>
-                            <div className="form-group"><label className="form-label">Catatan</label><textarea className="form-textarea" rows={2} value={payNote} onChange={e => setPayNote(e.target.value)} /></div>
+                            <div className="form-group"><label className="form-label">Catatan</label><textarea className="form-textarea" rows={2} value={payNote} onChange={e => setPayNote(e.target.value)} disabled={paying} /></div>
                         </div>
                         <div className="modal-footer">
-                            <button className="btn btn-secondary" onClick={() => setShowPayModal(false)}>Batal</button>
-                            <button className="btn btn-success" onClick={handleAddPayment}><DollarSign size={16} /> Simpan Pembayaran</button>
+                            <button className="btn btn-secondary" onClick={() => setShowPayModal(false)} disabled={paying}>Batal</button>
+                            <button className="btn btn-success" onClick={handleAddPayment} disabled={paying}><DollarSign size={16} /> {paying ? 'Memproses...' : 'Simpan Pembayaran'}</button>
                         </div>
                     </div>
                 </div>

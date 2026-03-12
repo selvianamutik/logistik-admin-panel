@@ -24,6 +24,7 @@ import type { Expense, Payment, User, Vehicle } from '@/lib/types';
 type Session = { _id: string; name: string; role: User['role'] };
 type BankAccountSummary = {
     _id: string;
+    _rev?: string;
     currentBalance: number;
     bankName: string;
     accountNumber?: string;
@@ -209,6 +210,7 @@ async function ensureCashAccount() {
     const existing = await getSanityClient().fetch<BankAccountSummary | null>(
         `*[_type == "bankAccount" && systemKey == $key][0]{
             _id,
+            _rev,
             currentBalance,
             bankName,
             accountNumber,
@@ -221,8 +223,7 @@ async function ensureCashAccount() {
     );
     if (existing) {
         if (existing.active === false) {
-            await sanityUpdate(existing._id, { active: true });
-            return { ...existing, active: true };
+            return sanityUpdate<BankAccountSummary>(existing._id, { active: true });
         }
         return existing;
     }
@@ -838,7 +839,14 @@ async function handleBankTransfer(data: Record<string, unknown>) {
 }
 
 async function loadPaymentTarget(invoiceRef: string) {
-    const doc = await sanityGetById<Record<string, unknown>>(invoiceRef);
+    const doc = await sanityGetById<
+        Record<string, unknown> & {
+            _id: string;
+            _rev?: string;
+            _type: 'freightNota' | 'invoice';
+            totalAmount?: number;
+        }
+    >(invoiceRef);
     if (!doc) {
         return { error: NextResponse.json({ error: 'Dokumen tagihan tidak ditemukan' }, { status: 404 }) };
     }
@@ -865,17 +873,193 @@ async function loadPaymentTarget(invoiceRef: string) {
     return { doc, totalAmount, totalPaid };
 }
 
-async function syncPaymentStatus(invoiceRef: string) {
-    const loaded = await loadPaymentTarget(invoiceRef);
-    if ('error' in loaded) return loaded.error;
+function deriveBillingStatus(totalAmount: number, totalPaid: number) {
+    if (totalPaid >= totalAmount) return 'PAID';
+    if (totalPaid > 0) return 'PARTIAL';
+    return 'UNPAID';
+}
 
-    const { doc, totalAmount, totalPaid } = loaded;
-    const nextStatus =
-        doc._type === 'driverBorongan'
-            ? totalPaid >= totalAmount ? 'PAID' : 'UNPAID'
-            : totalPaid >= totalAmount ? 'PAID' : totalPaid > 0 ? 'PARTIAL' : 'UNPAID';
-    await sanityUpdate(invoiceRef, { status: nextStatus });
-    return null;
+function isMutationConflictError(err: unknown) {
+    const statusCode =
+        isPlainObject(err) && typeof err.statusCode === 'number'
+            ? err.statusCode
+            : isPlainObject(err) && typeof err.status === 'number'
+                ? err.status
+                : undefined;
+    const message =
+        err instanceof Error
+            ? err.message
+            : isPlainObject(err) && typeof err.message === 'string'
+                ? err.message
+                : '';
+
+    return statusCode === 409 || /revision/i.test(message) || /conflict/i.test(message);
+}
+
+async function handlePaymentCreate(session: Session, data: Record<string, unknown>) {
+    const amount = typeof data.amount === 'number' ? data.amount : Number(data.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+        return NextResponse.json({ error: 'Nominal pembayaran tidak valid' }, { status: 400 });
+    }
+
+    const invoiceRef = typeof data.invoiceRef === 'string' ? data.invoiceRef : '';
+    if (!invoiceRef) {
+        return NextResponse.json({ error: 'Referensi tagihan wajib diisi' }, { status: 400 });
+    }
+
+    const paymentMethod = typeof data.method === 'string' ? data.method : 'CASH';
+    const selectedAccountRef =
+        typeof data.bankAccountRef === 'string' && data.bankAccountRef ? data.bankAccountRef : undefined;
+    if (paymentMethod === 'TRANSFER' && !selectedAccountRef) {
+        return NextResponse.json({ error: 'Rekening bank wajib dipilih untuk transfer' }, { status: 400 });
+    }
+
+    const paymentDate =
+        typeof data.date === 'string' && data.date ? data.date : new Date().toISOString().slice(0, 10);
+    assertIsoDate(paymentDate, 'Tanggal pembayaran');
+
+    const paymentId = crypto.randomUUID();
+    const incomeId = crypto.randomUUID();
+    const bankTransactionId = crypto.randomUUID();
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        const loaded = await loadPaymentTarget(invoiceRef);
+        if ('error' in loaded) return loaded.error;
+        if (!loaded.doc._rev) {
+            return NextResponse.json({ error: 'Revisi dokumen tagihan tidak tersedia' }, { status: 409 });
+        }
+
+        const remaining = Math.max(loaded.totalAmount - loaded.totalPaid, 0);
+        if (amount > remaining) {
+            return NextResponse.json(
+                { error: `Pembayaran melebihi sisa tagihan (${remaining})` },
+                { status: 400 }
+            );
+        }
+
+        let bankAcc: BankAccountSummary | null = null;
+        if (selectedAccountRef) {
+            bankAcc = await getLedgerAccount(selectedAccountRef);
+            if (!bankAcc) {
+                return NextResponse.json({ error: 'Rekening bank tidak ditemukan' }, { status: 404 });
+            }
+        } else if (paymentMethod === 'CASH') {
+            bankAcc = await ensureCashAccount();
+        }
+        if (paymentMethod === 'TRANSFER' && bankAcc?.accountType === 'CASH') {
+            return NextResponse.json(
+                { error: 'Metode transfer harus memakai rekening bank, bukan akun Kas Tunai' },
+                { status: 400 }
+            );
+        }
+        if (bankAcc && !bankAcc._rev) {
+            return NextResponse.json({ error: 'Revisi rekening tidak tersedia' }, { status: 409 });
+        }
+
+        const nextTotalPaid = loaded.totalPaid + amount;
+        const nextStatus = deriveBillingStatus(loaded.totalAmount, nextTotalPaid);
+        const paymentDoc: { _id: string; _type: 'payment'; [key: string]: unknown } = {
+            _id: paymentId,
+            _type: 'payment',
+            ...data,
+            invoiceRef,
+            date: paymentDate,
+            amount,
+            method: paymentMethod,
+        };
+        if (bankAcc) {
+            paymentDoc.bankAccountRef = bankAcc._id;
+            paymentDoc.bankAccountName = bankAcc.bankName;
+        } else {
+            delete paymentDoc.bankAccountRef;
+            delete paymentDoc.bankAccountName;
+        }
+
+        const transaction = getSanityClient()
+            .transaction()
+            .create(paymentDoc)
+            .create({
+                _id: incomeId,
+                _type: 'income',
+                sourceType: 'INVOICE_PAYMENT',
+                paymentRef: paymentId,
+                date: paymentDate,
+                amount,
+                note: loaded.doc._type === 'freightNota' ? 'Pembayaran nota ongkos' : 'Pembayaran invoice',
+            })
+            .patch(invoiceRef, {
+                ifRevisionID: loaded.doc._rev,
+                set: { status: nextStatus },
+            });
+
+        if (bankAcc) {
+            const nextBankBalance = (bankAcc.currentBalance || 0) + amount;
+            transaction
+                .create({
+                    _id: bankTransactionId,
+                    _type: 'bankTransaction',
+                    bankAccountRef: bankAcc._id,
+                    bankAccountName: bankAcc.bankName,
+                    type: 'CREDIT',
+                    amount,
+                    date: paymentDate,
+                    description:
+                        bankAcc.accountType === 'CASH'
+                            ? 'Pembayaran tunai masuk'
+                            : loaded.doc._type === 'freightNota'
+                                ? 'Pembayaran nota masuk'
+                                : 'Pembayaran invoice masuk',
+                    balanceAfter: nextBankBalance,
+                    relatedPaymentRef: paymentId,
+                })
+                .patch(bankAcc._id, {
+                    ifRevisionID: bankAcc._rev,
+                    set: { currentBalance: nextBankBalance },
+                });
+        }
+
+        try {
+            await transaction.commit();
+            void addAuditLog(
+                session,
+                'CREATE',
+                'payments',
+                paymentId,
+                `Pembayaran dicatat untuk ${loaded.doc._type === 'freightNota' ? 'nota' : 'invoice'} ${invoiceRef}`
+            );
+            return NextResponse.json({ data: paymentDoc, id: paymentId });
+        } catch (err) {
+            if (!isMutationConflictError(err)) {
+                throw err;
+            }
+
+            if (attempt === 2) {
+                const latest = await loadPaymentTarget(invoiceRef);
+                if (!('error' in latest)) {
+                    const latestRemaining = Math.max(latest.totalAmount - latest.totalPaid, 0);
+                    return NextResponse.json(
+                        {
+                            error:
+                                latestRemaining === 0 || amount > latestRemaining
+                                    ? `Pembayaran berubah karena ada transaksi lain. Sisa tagihan sekarang ${latestRemaining}. Muat ulang lalu coba lagi.`
+                                    : 'Pembayaran berubah karena ada transaksi lain. Muat ulang lalu coba lagi.',
+                        },
+                        { status: 409 }
+                    );
+                }
+
+                return NextResponse.json(
+                    { error: 'Pembayaran berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+        }
+    }
+
+    return NextResponse.json(
+        { error: 'Pembayaran berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+        { status: 409 }
+    );
 }
 
 function deriveOrderStatusFromItems(items: OrderItemStatusSummary[]) {
@@ -2236,107 +2420,168 @@ function isWorkflowManagedDeleteEntity(entity: string) {
     );
 }
 
-async function handleBoronganPayment(data: Record<string, unknown>) {
+async function handleBoronganPayment(session: Session, data: Record<string, unknown>) {
     const boronganId = typeof data.id === 'string' ? data.id : '';
     if (!boronganId) {
         return NextResponse.json({ error: 'Borongan tidak valid' }, { status: 400 });
     }
 
-    const borongan = await sanityGetById<{
-        _id: string;
-        boronganNumber: string;
-        driverName: string;
-        totalAmount: number;
-        status: string;
-    }>(boronganId);
-    if (!borongan) {
-        return NextResponse.json({ error: 'Borongan tidak ditemukan' }, { status: 404 });
-    }
-    if (borongan.status === 'PAID') {
-        return NextResponse.json({ error: 'Borongan ini sudah dibayar' }, { status: 409 });
-    }
-
-    const existingExpense = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "expense" && boronganRef == $ref][0]{ _id }`,
-        { ref: boronganId }
-    );
-    if (existingExpense) {
-        return NextResponse.json({ error: 'Pengeluaran borongan sudah pernah dicatat' }, { status: 409 });
-    }
-
-    const amount = typeof data.amount === 'number' ? data.amount : Number(data.amount ?? borongan.totalAmount);
+    const amount = typeof data.amount === 'number' ? data.amount : Number(data.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
         return NextResponse.json({ error: 'Nominal pembayaran borongan tidak valid' }, { status: 400 });
     }
-    if (amount !== borongan.totalAmount) {
-        return NextResponse.json({ error: 'Pembayaran borongan harus sama dengan total borongan' }, { status: 400 });
-    }
 
     const paymentMethod = typeof data.paymentMethod === 'string' ? data.paymentMethod : 'CASH';
-    const selectedAccountRef = typeof data.bankAccountRef === 'string' && data.bankAccountRef ? data.bankAccountRef : undefined;
+    const selectedAccountRef =
+        typeof data.bankAccountRef === 'string' && data.bankAccountRef ? data.bankAccountRef : undefined;
     if (paymentMethod === 'TRANSFER' && !selectedAccountRef) {
         return NextResponse.json({ error: 'Rekening bank wajib dipilih untuk transfer' }, { status: 400 });
     }
-
-    let bankAccount: BankAccountSummary | null = null;
-    if (selectedAccountRef) {
-        bankAccount = await getLedgerAccount(selectedAccountRef);
-        if (!bankAccount) {
-            return NextResponse.json({ error: 'Rekening bank tidak ditemukan' }, { status: 404 });
-        }
-    } else if (paymentMethod === 'CASH') {
-        bankAccount = await ensureCashAccount();
-    }
-    if (paymentMethod === 'TRANSFER' && bankAccount?.accountType === 'CASH') {
-        return NextResponse.json({ error: 'Metode transfer harus memakai rekening bank, bukan akun Kas Tunai' }, { status: 400 });
-    }
-    const bankAccountRef = bankAccount?._id;
 
     const paidDate =
         typeof data.date === 'string' && data.date
             ? data.date
             : new Date().toISOString().slice(0, 10);
+    assertIsoDate(paidDate, 'Tanggal pembayaran');
     const note = typeof data.note === 'string' && data.note.trim() ? data.note.trim() : undefined;
+    const expenseId = crypto.randomUUID();
+    const bankTransactionId = crypto.randomUUID();
 
-    const expense = await sanityCreate({
-        _type: 'expense',
-        categoryRef: 'driver-borongan',
-        categoryName: 'Borongan Supir',
-        date: paidDate,
-        amount,
-        description: `Upah borongan supir ${borongan.driverName} - ${borongan.boronganNumber}`,
-        note,
-        privacyLevel: 'internal',
-        paymentMethod,
-        bankAccountRef,
-        bankAccountName: bankAccount?.bankName,
-        boronganRef: boronganId,
-    });
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        const borongan = await sanityGetById<{
+            _id: string;
+            _rev?: string;
+            boronganNumber: string;
+            driverName: string;
+            totalAmount: number;
+            status: string;
+        }>(boronganId);
+        if (!borongan) {
+            return NextResponse.json({ error: 'Borongan tidak ditemukan' }, { status: 404 });
+        }
+        if (!borongan._rev) {
+            return NextResponse.json({ error: 'Revisi borongan tidak tersedia' }, { status: 409 });
+        }
+        if (borongan.status === 'PAID') {
+            return NextResponse.json({ error: 'Borongan ini sudah dibayar' }, { status: 409 });
+        }
+        if (amount !== borongan.totalAmount) {
+            return NextResponse.json({ error: 'Pembayaran borongan harus sama dengan total borongan' }, { status: 400 });
+        }
 
-    if (bankAccount && bankAccountRef) {
-        const newBalance = (bankAccount.currentBalance || 0) - amount;
-        await sanityCreate({
-            _type: 'bankTransaction',
-            bankAccountRef,
-            bankAccountName: bankAccount.bankName,
-            type: 'DEBIT',
-            amount,
-            date: paidDate,
-            description: `Pembayaran borongan ${borongan.boronganNumber}`,
-            balanceAfter: newBalance,
-            relatedExpenseRef: expense._id,
-        });
-        await sanityUpdate(bankAccountRef, { currentBalance: newBalance });
+        const existingExpense = await getSanityClient().fetch<{ _id: string } | null>(
+            `*[_type == "expense" && boronganRef == $ref][0]{ _id }`,
+            { ref: boronganId }
+        );
+        if (existingExpense) {
+            return NextResponse.json({ error: 'Pengeluaran borongan sudah pernah dicatat' }, { status: 409 });
+        }
+
+        let bankAccount: BankAccountSummary | null = null;
+        if (selectedAccountRef) {
+            bankAccount = await getLedgerAccount(selectedAccountRef);
+            if (!bankAccount) {
+                return NextResponse.json({ error: 'Rekening bank tidak ditemukan' }, { status: 404 });
+            }
+        } else if (paymentMethod === 'CASH') {
+            bankAccount = await ensureCashAccount();
+        }
+        if (paymentMethod === 'TRANSFER' && bankAccount?.accountType === 'CASH') {
+            return NextResponse.json(
+                { error: 'Metode transfer harus memakai rekening bank, bukan akun Kas Tunai' },
+                { status: 400 }
+            );
+        }
+        if (bankAccount && !bankAccount._rev) {
+            return NextResponse.json({ error: 'Revisi rekening tidak tersedia' }, { status: 409 });
+        }
+
+        const bankAccountRef = bankAccount?._id;
+        const transaction = getSanityClient()
+            .transaction()
+            .create({
+                _id: expenseId,
+                _type: 'expense',
+                categoryRef: 'driver-borongan',
+                categoryName: 'Borongan Supir',
+                date: paidDate,
+                amount,
+                description: `Upah borongan supir ${borongan.driverName} - ${borongan.boronganNumber}`,
+                note,
+                privacyLevel: 'internal',
+                paymentMethod,
+                bankAccountRef,
+                bankAccountName: bankAccount?.bankName,
+                boronganRef: boronganId,
+            })
+            .patch(boronganId, {
+                ifRevisionID: borongan._rev,
+                set: {
+                    status: 'PAID',
+                    paidDate,
+                    paidMethod: paymentMethod,
+                    paidBankRef: bankAccountRef,
+                },
+            });
+
+        if (bankAccount && bankAccountRef) {
+            const newBalance = (bankAccount.currentBalance || 0) - amount;
+            transaction
+                .create({
+                    _id: bankTransactionId,
+                    _type: 'bankTransaction',
+                    bankAccountRef,
+                    bankAccountName: bankAccount.bankName,
+                    type: 'DEBIT',
+                    amount,
+                    date: paidDate,
+                    description: `Pembayaran borongan ${borongan.boronganNumber}`,
+                    balanceAfter: newBalance,
+                    relatedExpenseRef: expenseId,
+                })
+                .patch(bankAccountRef, {
+                    ifRevisionID: bankAccount._rev,
+                    set: { currentBalance: newBalance },
+                });
+        }
+
+        try {
+            await transaction.commit();
+            void addAuditLog(
+                session,
+                'CREATE',
+                'driver-borongans',
+                boronganId,
+                `Pembayaran borongan dicatat: ${borongan.boronganNumber}`
+            );
+            return NextResponse.json({
+                data: {
+                    ...borongan,
+                    status: 'PAID',
+                    paidDate,
+                    paidMethod: paymentMethod,
+                    paidBankRef: bankAccountRef,
+                },
+                expenseId,
+            });
+        } catch (err) {
+            if (!isMutationConflictError(err)) {
+                throw err;
+            }
+
+            if (attempt === 2) {
+                return NextResponse.json(
+                    { error: 'Pembayaran borongan berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+        }
     }
 
-    const updated = await sanityUpdate(boronganId, {
-        status: 'PAID',
-        paidDate,
-        paidMethod: paymentMethod,
-        paidBankRef: bankAccountRef,
-    });
-
-    return NextResponse.json({ data: updated, expenseId: expense._id });
+    return NextResponse.json(
+        { error: 'Pembayaran borongan berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+        { status: 409 }
+    );
 }
 
 function toCategoryRef(categoryName: string) {
@@ -3045,7 +3290,7 @@ export async function POST(request: Request) {
         }
 
         if (entity === 'driver-borongans' && action === 'mark-paid') {
-            return handleBoronganPayment(data);
+            return handleBoronganPayment(session, data);
         }
 
         if (entity === 'incidents' && action === 'set-status') {
@@ -3098,6 +3343,10 @@ export async function POST(request: Request) {
 
         if (entity === 'bank-transactions' && action === 'transfer') {
             return handleBankTransfer(data);
+        }
+
+        if (entity === 'payments') {
+            return handlePaymentCreate(session, data);
         }
 
         if (entity === 'driver-vouchers') {
@@ -3224,97 +3473,8 @@ export async function POST(request: Request) {
             newDoc.accountType = 'BANK';
         }
 
-        if (entity === 'payments') {
-            const amount = typeof data.amount === 'number' ? data.amount : Number(data.amount);
-            if (!Number.isFinite(amount) || amount <= 0) {
-                return NextResponse.json({ error: 'Nominal pembayaran tidak valid' }, { status: 400 });
-            }
-
-            const invoiceRef = typeof data.invoiceRef === 'string' ? data.invoiceRef : '';
-            if (!invoiceRef) {
-                return NextResponse.json({ error: 'Referensi tagihan wajib diisi' }, { status: 400 });
-            }
-
-            const paymentMethod = typeof data.method === 'string' ? data.method : 'CASH';
-            const selectedAccountRef = typeof data.bankAccountRef === 'string' && data.bankAccountRef ? data.bankAccountRef : undefined;
-            if (paymentMethod === 'TRANSFER' && !selectedAccountRef) {
-                return NextResponse.json({ error: 'Rekening bank wajib dipilih untuk transfer' }, { status: 400 });
-            }
-
-            const loaded = await loadPaymentTarget(invoiceRef);
-            if ('error' in loaded) return loaded.error;
-
-            const remaining = loaded.totalAmount - loaded.totalPaid;
-            if (amount > remaining) {
-                return NextResponse.json({ error: `Pembayaran melebihi sisa tagihan (${remaining})` }, { status: 400 });
-            }
-
-            let bankAcc: BankAccountSummary | null = null;
-            if (selectedAccountRef) {
-                bankAcc = await getLedgerAccount(selectedAccountRef);
-                if (!bankAcc) {
-                    return NextResponse.json({ error: 'Rekening bank tidak ditemukan' }, { status: 404 });
-                }
-            } else if (paymentMethod === 'CASH') {
-                bankAcc = await ensureCashAccount();
-            }
-            if (paymentMethod === 'TRANSFER' && bankAcc?.accountType === 'CASH') {
-                return NextResponse.json({ error: 'Metode transfer harus memakai rekening bank, bukan akun Kas Tunai' }, { status: 400 });
-            }
-            if (bankAcc) {
-                newDoc.bankAccountRef = bankAcc._id;
-                newDoc.bankAccountName = bankAcc.bankName;
-            }
-        }
-
         const created = await sanityCreate(newDoc);
         const newId = (created as Record<string, unknown>)._id as string;
-
-        if (entity === 'payments') {
-            const amount = typeof data.amount === 'number' ? data.amount : Number(data.amount);
-            const invoiceRef = typeof data.invoiceRef === 'string' ? data.invoiceRef : '';
-            const loaded = await loadPaymentTarget(invoiceRef);
-            if ('error' in loaded) return loaded.error;
-
-            await sanityCreate({
-                _type: 'income',
-                sourceType: 'INVOICE_PAYMENT',
-                paymentRef: newId,
-                date: data.date,
-                amount,
-                note: loaded.doc._type === 'freightNota' ? 'Pembayaran nota ongkos' : 'Pembayaran invoice',
-            });
-
-            const postedPayment = created as Record<string, unknown>;
-            const bankAccountRef = typeof postedPayment.bankAccountRef === 'string' ? postedPayment.bankAccountRef : '';
-            if (bankAccountRef) {
-                const bankAcc = await getLedgerAccount(bankAccountRef);
-                if (bankAcc) {
-                    const newBalance = (bankAcc.currentBalance || 0) + amount;
-                    await sanityCreate({
-                        _type: 'bankTransaction',
-                        bankAccountRef,
-                        bankAccountName: bankAcc.bankName,
-                        type: 'CREDIT',
-                        amount,
-                        date: data.date,
-                        description:
-                            bankAcc.accountType === 'CASH'
-                                ? 'Pembayaran tunai masuk'
-                                : loaded.doc._type === 'freightNota'
-                                    ? 'Pembayaran nota masuk'
-                                    : 'Pembayaran invoice masuk',
-                        balanceAfter: newBalance,
-                        relatedPaymentRef: newId,
-                    });
-                    await sanityUpdate(bankAccountRef, { currentBalance: newBalance });
-                }
-            }
-
-            if (invoiceRef) {
-                await syncPaymentStatus(invoiceRef);
-            }
-        }
 
         if (entity === 'expenses' && typeof data.bankAccountRef === 'string' && data.bankAccountRef) {
             const amount = typeof data.amount === 'number' ? data.amount : Number(data.amount);
