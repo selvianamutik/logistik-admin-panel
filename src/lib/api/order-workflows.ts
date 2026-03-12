@@ -36,6 +36,29 @@ const DO_STATUS_TRANSITIONS: Record<string, string[]> = {
     CANCELLED: [],
 };
 
+async function releaseDriverTrackingLockIfOwned(driverRef: unknown, deliveryOrderRef: string, timestamp: string) {
+    const driverId = extractRefId(driverRef);
+    if (!driverId) {
+        return;
+    }
+
+    const driver = await sanityGetById<{ _id: string; _rev?: string; activeTrackingDeliveryOrderRef?: unknown }>(driverId);
+    if (!driver?._rev) {
+        return;
+    }
+
+    if (extractRefId(driver.activeTrackingDeliveryOrderRef) !== deliveryOrderRef) {
+        return;
+    }
+
+    await getSanityClient()
+        .patch(driverId)
+        .ifRevisionId(driver._rev)
+        .unset(['activeTrackingDeliveryOrderRef'])
+        .set({ activeTrackingUpdatedAt: timestamp })
+        .commit();
+}
+
 function deriveOrderStatusFromItems(items: OrderItemStatusSummary[]) {
     const allDelivered = items.length > 0 && items.every(item => item.status === 'DELIVERED');
     const anyInProgress = items.some(
@@ -175,7 +198,14 @@ export async function handleDeliveryOrderStatusUpdate(
         return NextResponse.json({ error: 'Status DO tidak valid' }, { status: 400 });
     }
 
-    const deliveryOrder = await sanityGetById<{ _id: string; doNumber?: string; status?: string; orderRef?: unknown }>(id);
+    const deliveryOrder = await sanityGetById<{
+        _id: string;
+        doNumber?: string;
+        status?: string;
+        orderRef?: unknown;
+        driverRef?: unknown;
+        trackingState?: string;
+    }>(id);
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
     }
@@ -197,9 +227,21 @@ export async function handleDeliveryOrderStatusUpdate(
                 ? 'DELIVERED'
                 : 'PENDING';
 
+    const timestamp = new Date().toISOString();
+    const shouldStopTracking = status === 'DELIVERED' || status === 'CANCELLED';
     const transaction = getSanityClient()
         .transaction()
-        .patch(id, { set: { status } })
+        .patch(id, {
+            set: {
+                status,
+                ...(shouldStopTracking
+                    ? {
+                        trackingState: 'STOPPED',
+                        trackingStoppedAt: timestamp,
+                    }
+                    : {}),
+            },
+        })
         .create({
             _id: crypto.randomUUID(),
             _type: 'trackingLog',
@@ -207,7 +249,7 @@ export async function handleDeliveryOrderStatusUpdate(
             refRef: id,
             status,
             note: note || undefined,
-            timestamp: new Date().toISOString(),
+            timestamp,
             userRef: session._id,
             userName: session.name,
         });
@@ -220,6 +262,14 @@ export async function handleDeliveryOrderStatusUpdate(
     }
 
     await transaction.commit();
+
+    if (shouldStopTracking) {
+        try {
+            await releaseDriverTrackingLockIfOwned(deliveryOrder.driverRef, id, timestamp);
+        } catch (error) {
+            console.warn('Failed to release driver tracking lock from DO status update', error);
+        }
+    }
 
     const orderRef = extractRefId(deliveryOrder.orderRef);
     if (orderRef) {
@@ -238,6 +288,8 @@ export async function handleDeliveryOrderStatusUpdate(
         data: {
             ...deliveryOrder,
             status,
+            trackingState: shouldStopTracking ? 'STOPPED' : deliveryOrder.trackingState,
+            trackingStoppedAt: shouldStopTracking ? timestamp : undefined,
         },
     });
 }

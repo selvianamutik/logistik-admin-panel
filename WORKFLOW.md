@@ -410,6 +410,12 @@ Kalau tracking dijalankan saat DO sudah `ON_DELIVERY`:
 
 - sistem hanya menambah log tracking dan update posisi
 
+Kalau admin atau owner menutup DO menjadi `DELIVERED` atau `CANCELLED`:
+
+- tracking DO otomatis ditandai `STOPPED`
+- lock tracking aktif pada data supir ikut dilepas
+- jadi supir tidak nyangkut di sesi tracking lama saat menerima DO berikutnya
+
 ### 14.6 Apa yang tampil di admin web
 
 Di list dan detail DO sekarang owner/admin bisa melihat:
