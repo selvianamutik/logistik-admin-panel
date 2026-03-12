@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Plus, Save, Trash2 } from 'lucide-react';
 
-import type { Customer, DeliveryOrder, DeliveryOrderItem, Order } from '@/lib/types';
+import type { CompanyProfile, Customer, DeliveryOrder, DeliveryOrderItem, Order } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
 
 import { useToast } from '../../layout';
@@ -66,6 +66,7 @@ export default function NewNotaPage() {
     const router = useRouter();
     const { addToast } = useToast();
     const [customers, setCustomers] = useState<Customer[]>([]);
+    const [company, setCompany] = useState<CompanyProfile | null>(null);
     const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([]);
     const [deliveryOrderItems, setDeliveryOrderItems] = useState<DeliveryOrderItem[]>([]);
     const [orders, setOrders] = useState<Order[]>([]);
@@ -76,20 +77,23 @@ export default function NewNotaPage() {
     const [customerName, setCustomerName] = useState('');
     const [issueDate, setIssueDate] = useState(new Date().toISOString().split('T')[0]);
     const [dueDate, setDueDate] = useState('');
+    const [dueDateTouched, setDueDateTouched] = useState(false);
     const [notes, setNotes] = useState('');
     const [rows, setRows] = useState<NotaItemRow[]>([createEmptyRow()]);
 
     useEffect(() => {
         async function loadData() {
             try {
-                const [cust, dos, ords, doItems, notaItems] = await Promise.all([
+                const [cust, comp, dos, ords, doItems, notaItems] = await Promise.all([
                     fetch('/api/data?entity=customers').then(response => response.json()),
+                    fetch('/api/data?entity=company').then(response => response.json()),
                     fetch('/api/data?entity=delivery-orders').then(response => response.json()),
                     fetch('/api/data?entity=orders').then(response => response.json()),
                     fetch('/api/data?entity=delivery-order-items').then(response => response.json()),
                     fetch('/api/data?entity=freight-nota-items').then(response => response.json()),
                 ]);
                 setCustomers(cust.data || []);
+                setCompany(comp.data || null);
                 setDeliveryOrders((dos.data || []).filter((item: DeliveryOrder) => item.status === 'DELIVERED'));
                 setOrders(ords.data || []);
                 setDeliveryOrderItems(doItems.data || []);
@@ -105,6 +109,33 @@ export default function NewNotaPage() {
 
         void loadData();
     }, [addToast]);
+
+    const calculateDueDate = (baseDate: string, termDays: number) => {
+        const parsed = new Date(baseDate);
+        if (Number.isNaN(parsed.getTime())) {
+            return '';
+        }
+        parsed.setDate(parsed.getDate() + termDays);
+        return parsed.toISOString().slice(0, 10);
+    };
+
+    useEffect(() => {
+        if (dueDateTouched) return;
+        const customer = customerRef
+            ? customers.find(item => item._id === customerRef)
+            : null;
+        const customerTerm = customer && Number.isFinite(customer.defaultPaymentTerm) && customer.defaultPaymentTerm >= 0
+            ? customer.defaultPaymentTerm
+            : null;
+        const companyTerm = company?.invoiceSettings?.dueDateDays ?? company?.invoiceSettings?.defaultTermDays;
+        const termDays = customerTerm ?? (
+            typeof companyTerm === 'number' && Number.isFinite(companyTerm) && companyTerm >= 0
+                ? companyTerm
+                : null
+        );
+        if (termDays === null) return;
+        setDueDate(calculateDueDate(issueDate, termDays));
+    }, [company, customerRef, customers, dueDateTouched, issueDate]);
 
     const buildNotaRowFromDO = (deliveryOrder: DeliveryOrder): NotaItemRow => {
         const relatedOrder = orders.find(order => order._id === deliveryOrder.orderRef);
@@ -345,8 +376,14 @@ export default function NewNotaPage() {
                                         type="date"
                                         className="form-input"
                                         value={dueDate}
-                                        onChange={event => setDueDate(event.target.value)}
+                                        onChange={event => {
+                                            setDueDateTouched(true);
+                                            setDueDate(event.target.value);
+                                        }}
                                     />
+                                    <p style={{ margin: '0.35rem 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                                        Otomatis mengikuti termin customer atau default perusahaan, tapi masih bisa kamu ubah manual.
+                                    </p>
                                 </div>
                             </div>
 

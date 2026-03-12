@@ -1550,14 +1550,19 @@ async function handleFreightNotaCreate(session: Session, data: Record<string, un
         }
     }
 
+    const issueDate = normalizeText(data.issueDate) || new Date().toISOString().slice(0, 10);
     let finalCustomerName = customerName;
+    let customerTermDays: number | null = null;
     if (resolvedCustomerRef) {
-        const customerDoc = await getSanityClient().fetch<{ name?: string } | null>(
-            `*[_type == "customer" && _id == $id][0]{ name }`,
+        const customerDoc = await getSanityClient().fetch<{ name?: string; defaultPaymentTerm?: number } | null>(
+            `*[_type == "customer" && _id == $id][0]{ name, defaultPaymentTerm }`,
             { id: resolvedCustomerRef }
         );
         if (customerDoc?.name) {
             finalCustomerName = customerDoc.name;
+        }
+        if (typeof customerDoc?.defaultPaymentTerm === 'number' && Number.isFinite(customerDoc.defaultPaymentTerm) && customerDoc.defaultPaymentTerm >= 0) {
+            customerTermDays = customerDoc.defaultPaymentTerm;
         }
     }
 
@@ -1570,14 +1575,40 @@ async function handleFreightNotaCreate(session: Session, data: Record<string, un
 
     const notaId = crypto.randomUUID();
     const notaNumber = await sanityGetNextNumber('nota');
-    const issueDate = normalizeText(data.issueDate) || new Date().toISOString().slice(0, 10);
+    let resolvedDueDate = normalizeOptionalText(data.dueDate);
+    if (!resolvedDueDate) {
+        let termDays = customerTermDays;
+        if (termDays === null) {
+            const companyDoc = await getSanityClient().fetch<{
+                invoiceSettings?: {
+                    dueDateDays?: number;
+                    defaultTermDays?: number;
+                };
+            } | null>(
+                `*[_type == "companyProfile"][0]{ invoiceSettings }`
+            );
+            const companyTerm = companyDoc?.invoiceSettings?.dueDateDays ?? companyDoc?.invoiceSettings?.defaultTermDays;
+            if (typeof companyTerm === 'number' && Number.isFinite(companyTerm) && companyTerm >= 0) {
+                termDays = companyTerm;
+            }
+        }
+
+        if (termDays !== null) {
+            const dueDate = new Date(issueDate);
+            if (!Number.isNaN(dueDate.getTime())) {
+                dueDate.setDate(dueDate.getDate() + termDays);
+                resolvedDueDate = dueDate.toISOString().slice(0, 10);
+            }
+        }
+    }
+
     const notaDoc = {
         _id: notaId,
         _type: 'freightNota',
         customerRef: resolvedCustomerRef,
         customerName: finalCustomerName,
         issueDate,
-        dueDate: normalizeOptionalText(data.dueDate),
+        dueDate: resolvedDueDate,
         status: 'UNPAID',
         totalAmount,
         totalCollie,
