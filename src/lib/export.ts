@@ -4,7 +4,7 @@
    ============================================================ */
 
 import * as XLSX from 'xlsx';
-import { fetchCompanyProfile, fmtDate, fmtNumber } from './print';
+import { fetchCompanyProfile, fmtDate, fmtNumber, formatFreightNotaDisplayNumber } from './print';
 import type { CompanyProfile, FreightNota, FreightNotaItem } from './types';
 
 type ExportValue = string | number | boolean | Date | null | undefined;
@@ -367,6 +367,7 @@ export async function exportFreightNotaDetail(
     company?: CompanyProfile | null,
 ) {
     const resolvedCompany = company ?? await fetchCompanyProfile();
+    const displayNumber = formatFreightNotaDisplayNumber(nota, resolvedCompany);
     const transferLineParts = [
         resolvedCompany?.bankName && resolvedCompany?.bankAccount
             ? `NOTE: ONGKOS ANGKUTAN HARAP DITRANSFER KE: ${resolvedCompany.bankName} A/C ${resolvedCompany.bankAccount}${resolvedCompany.bankHolder ? ` A/N ${resolvedCompany.bankHolder}` : ''}`
@@ -414,13 +415,14 @@ export async function exportFreightNotaDetail(
             { header: 'UANG RP.', key: 'uangRp', width: 16 },
             { header: 'KET', key: 'ket', width: 18 },
         ],
-        `nota-${nota.notaNumber}`,
+        `nota-${displayNumber}`,
         'Nota Detail',
         {
-            title: `PERINCIAN ONGKOS ANGKUT NO. ${nota.notaNumber}`,
+            title: `PERINCIAN ONGKOS ANGKUT NO. ${displayNumber}`,
             company: resolvedCompany,
             metadata: [
                 { label: 'KEPADA YANG TERHORMAT :', value: nota.customerName },
+                { label: 'NO. SISTEM :', value: nota.notaNumber },
             ],
             totalRow: {
                 label: 'Jumlah',

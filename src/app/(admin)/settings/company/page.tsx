@@ -15,7 +15,8 @@ export default function CompanyPage() {
         fetch('/api/data?entity=company').then(r => r.json()).then(d => {
             const profile = d.data || {};
             // Ensure nested settings objects exist with defaults
-            profile.numberingSettings = profile.numberingSettings || { resiPrefix: 'R-', resiCounter: 0, doPrefix: 'DO-', doCounter: 0, invoicePrefix: 'INV-', invoiceCounter: 0, notaPrefix: 'NOTA-', notaCounter: 0, boronganPrefix: 'BRG-', boronganCounter: 0, bonPrefix: 'BON-', bonCounter: 0, incidentPrefix: 'INC-', incidentCounter: 0 };
+            profile.numberingSettings = profile.numberingSettings || { resiPrefix: 'R-', resiCounter: 0, doPrefix: 'DO-', doCounter: 0, invoicePrefix: 'INV-', invoiceCounter: 0, notaPrefix: 'NOTA-', notaCounter: 0, notaSeriesCode: '3', boronganPrefix: 'BRG-', boronganCounter: 0, bonPrefix: 'BON-', bonCounter: 0, incidentPrefix: 'INC-', incidentCounter: 0 };
+            profile.numberingSettings.notaSeriesCode = profile.numberingSettings.notaSeriesCode || '3';
             profile.invoiceSettings = profile.invoiceSettings || { defaultTermDays: 30, dueDateDays: 14, footerNote: '', invoiceMode: 'ORDER' };
             profile.documentSettings = profile.documentSettings || { showContact: true, dateFormat: 'DD/MM/YYYY' };
             setData(profile); setLoading(false);
@@ -200,6 +201,14 @@ export default function CompanyPage() {
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Prefix Nota</label><input className="form-input" value={data.numberingSettings.notaPrefix || 'NOTA-'} onChange={e => uNum('notaPrefix', e.target.value)} /></div>
                                 <div className="form-group"><label className="form-label">Prefix Borongan</label><input className="form-input" value={data.numberingSettings.boronganPrefix || 'BRG-'} onChange={e => uNum('boronganPrefix', e.target.value)} /></div>
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group"><label className="form-label">Kode Seri Cetak Nota</label><input className="form-input" value={data.numberingSettings.notaSeriesCode || '3'} onChange={e => uNum('notaSeriesCode', e.target.value)} /></div>
+                                <div className="form-group" style={{ alignSelf: 'end' }}>
+                                    <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                                        Dipakai untuk nomor cetak nota model client, misalnya <strong>26/II/3/001</strong>. Nomor sistem internal tetap memakai format aplikasi.
+                                    </p>
+                                </div>
                             </div>
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Prefix Bon</label><input className="form-input" value={data.numberingSettings.bonPrefix || 'BON-'} onChange={e => uNum('bonPrefix', e.target.value)} /></div>

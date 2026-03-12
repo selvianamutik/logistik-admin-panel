@@ -132,12 +132,33 @@ function buildTransferNote(company: CompanyProfile | null, notes?: string) {
     return [transferLine, additional].filter(Boolean).join(' ');
 }
 
+const ROMAN_MONTHS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+
+export function formatFreightNotaDisplayNumber(
+    nota: Pick<FreightNota, 'notaNumber' | 'issueDate'>,
+    company?: CompanyProfile | null,
+) {
+    const date = new Date(nota.issueDate);
+    if (Number.isNaN(date.getTime())) {
+        return nota.notaNumber;
+    }
+
+    const year = String(date.getFullYear()).slice(-2);
+    const romanMonth = ROMAN_MONTHS[date.getMonth()] || String(date.getMonth() + 1);
+    const sequenceMatch = nota.notaNumber.match(/(\d+)(?!.*\d)/);
+    const sequence = sequenceMatch ? String(Number(sequenceMatch[1])).padStart(3, '0') : nota.notaNumber;
+    const seriesCode = company?.numberingSettings?.notaSeriesCode?.trim() || '3';
+
+    return `${year}/${romanMonth}/${seriesCode}/${sequence}`;
+}
+
 export function buildFreightNotaPrintDocument(opts: {
     nota: FreightNota;
     items: FreightNotaItem[];
     company: CompanyProfile | null;
 }) {
     const { nota, items, company } = opts;
+    const displayNumber = formatFreightNotaDisplayNumber(nota, company);
     const minPrintableRows = Math.max(items.length, 12);
     const rows = Array.from({ length: minPrintableRows }, (_, index) => {
         const item = items[index];
@@ -185,7 +206,7 @@ export function buildFreightNotaPrintDocument(opts: {
 
     const bodyHtml = `
         <div class="nota-sheet">
-            <div class="nota-title">PERINCIAN ONGKOS ANGKUT NO. ${escapeHtml(nota.notaNumber)}</div>
+            <div class="nota-title">PERINCIAN ONGKOS ANGKUT NO. ${escapeHtml(displayNumber)}</div>
             <div class="nota-recipient-label">KEPADA YANG TERHORMAT :</div>
             <div class="nota-recipient-value">${escapeHtml(nota.customerName)}</div>
 
@@ -266,7 +287,7 @@ export function buildFreightNotaPrintDocument(opts: {
 
     return {
         title: 'Perincian Ongkos Angkut',
-        subtitle: nota.notaNumber,
+        subtitle: displayNumber,
         bodyHtml,
         extraStyles,
         showCompanyHeader: false,

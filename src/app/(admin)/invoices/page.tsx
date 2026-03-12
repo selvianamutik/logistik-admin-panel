@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Search, Plus, FileText, Printer, FileDown } from 'lucide-react';
 import { formatDate, formatCurrency } from '@/lib/utils';
-import { buildFreightNotaPrintDocument, openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
+import { buildFreightNotaPrintDocument, openBrandedPrint, fetchCompanyProfile, formatFreightNotaDisplayNumber } from '@/lib/print';
 import { exportFreightNotaDetail, exportInvoices } from '@/lib/export';
 import type { FreightNota, FreightNotaItem } from '@/lib/types';
 
@@ -153,7 +153,15 @@ export default function NotaListPage() {
                                     <tr><td colSpan={8}><div className="empty-state"><FileText size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada nota</div><div className="empty-state-text">Klik tombol &quot;Buat Nota&quot; untuk membuat nota baru</div></div></td></tr>
                                 ) : filtered.map(n => (
                                     <tr key={n._id}>
-                                        <td><span className="font-semibold" style={{ color: 'var(--color-primary)', cursor: 'pointer' }} onClick={() => router.push(`/invoices/${n._id}`)}>{n.notaNumber}</span></td>
+                                        <td>
+                                            <div
+                                                style={{ color: 'var(--color-primary)', cursor: 'pointer' }}
+                                                onClick={() => router.push(`/invoices/${n._id}`)}
+                                            >
+                                                <div className="font-semibold">{formatFreightNotaDisplayNumber(n)}</div>
+                                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{n.notaNumber}</div>
+                                            </div>
+                                        </td>
                                         <td>{n.customerName}</td>
                                         <td className="text-muted">{formatDate(n.issueDate)}</td>
                                         <td>{n.totalCollie || 0}</td>

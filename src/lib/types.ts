@@ -52,6 +52,7 @@ export interface CompanyProfile {
     notaPrefix?: string;
     notaCounter?: number;
     notaPeriod?: string;
+    notaSeriesCode?: string;
     boronganPrefix?: string;
     boronganCounter?: number;
     boronganPeriod?: string;

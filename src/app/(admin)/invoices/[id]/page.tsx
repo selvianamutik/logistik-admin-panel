@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useToast } from '../../layout';
 import { ArrowLeft, Printer, DollarSign, Landmark, Trash2, FileDown } from 'lucide-react';
-import { buildFreightNotaPrintDocument, fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
+import { buildFreightNotaPrintDocument, fetchCompanyProfile, formatFreightNotaDisplayNumber, openBrandedPrint } from '@/lib/print';
 import { exportFreightNotaDetail } from '@/lib/export';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import type { FreightNota, FreightNotaItem, Payment, BankAccount } from '@/lib/types';
@@ -142,6 +142,7 @@ export default function NotaDetailPage() {
     if (!nota) return <div className="empty-state"><div className="empty-state-title">Nota tidak ditemukan</div></div>;
 
     const statusConf = STATUS_MAP[nota.status] || { label: nota.status, color: 'secondary' };
+    const displayNotaNumber = formatFreightNotaDisplayNumber(nota);
 
     return (
         <div>
@@ -149,8 +150,11 @@ export default function NotaDetailPage() {
                 <button className="btn-back" onClick={() => router.push('/invoices')}><ArrowLeft size={16} /></button>
                 <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-                        <h1 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>{nota.notaNumber}</h1>
+                        <h1 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>{displayNotaNumber}</h1>
                         <span className={`badge badge-${statusConf.color}`}><span className="badge-dot" /> {statusConf.label}</span>
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                        Nomor sistem: {nota.notaNumber}
                     </div>
                 </div>
                 <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
