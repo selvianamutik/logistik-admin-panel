@@ -42,10 +42,31 @@ function normalizeText(value: unknown) {
     return typeof value === 'string' ? value.trim() : '';
 }
 
-async function stopDriverTrackingForAccountDeactivation(session: { _id: string; name: string }, driverRef: string, driverName: string) {
+function buildPatchPayload(updates: Record<string, unknown>) {
+    const set: Record<string, unknown> = {};
+    const unset: string[] = [];
+
+    for (const [key, value] of Object.entries(updates)) {
+        if (value === undefined) {
+            unset.push(key);
+        } else {
+            set[key] = value;
+        }
+    }
+
+    return { set, unset };
+}
+
+async function deactivateDriverAccountAtomically(input: {
+    session: { _id: string; name: string };
+    accountId: string;
+    accountUpdates: Record<string, unknown>;
+    driverRef: string;
+    driverName: string;
+}) {
     const now = new Date().toISOString();
     const [driver, trackedDeliveryOrders] = await Promise.all([
-        sanityGetById<Driver>(driverRef),
+        sanityGetById<Driver>(input.driverRef),
         getSanityClient().fetch<Array<{ _id: string; doNumber?: string; status?: string }>>(
             `*[
                 _type == "deliveryOrder" &&
@@ -56,18 +77,22 @@ async function stopDriverTrackingForAccountDeactivation(session: { _id: string; 
                 doNumber,
                 status
             }`,
-            { ref: driverRef }
+            { ref: input.driverRef }
         ),
     ]);
 
-    if (!driver && trackedDeliveryOrders.length === 0) {
-        return { stoppedTrackingCount: 0 };
+    const transaction = getSanityClient().transaction();
+    const accountPatch = buildPatchPayload(input.accountUpdates);
+
+    if (Object.keys(accountPatch.set).length > 0 || accountPatch.unset.length > 0) {
+        transaction.patch(input.accountId, {
+            ...(Object.keys(accountPatch.set).length > 0 ? { set: accountPatch.set } : {}),
+            ...(accountPatch.unset.length > 0 ? { unset: accountPatch.unset } : {}),
+        });
     }
 
-    const transaction = getSanityClient().transaction();
-
     if (driver) {
-        transaction.patch(driverRef, {
+        transaction.patch(input.driverRef, {
             set: { activeTrackingUpdatedAt: now },
             unset: ['activeTrackingDeliveryOrderRef'],
         });
@@ -87,11 +112,11 @@ async function stopDriverTrackingForAccountDeactivation(session: { _id: string; 
             refType: 'DO',
             refRef: deliveryOrder._id,
             status: deliveryOrder.status || 'ON_DELIVERY',
-            note: `Tracking dihentikan otomatis karena akun mobile driver ${driverName} dinonaktifkan`,
+            note: `Tracking dihentikan otomatis karena akun mobile driver ${input.driverName} dinonaktifkan`,
             source: 'DRIVER_APP',
             timestamp: now,
-            userRef: session._id,
-            userName: session.name,
+            userRef: input.session._id,
+            userName: input.session.name,
         });
     }
 
@@ -232,10 +257,23 @@ export async function POST(request: Request) {
         const isDeactivatingAccount = existing.active !== false && updates.active === false;
         let stoppedTrackingCount = 0;
 
-        const updated = await sanityUpdate<User>(id, updates);
+        let updated: User;
         if (isDeactivatingAccount) {
-            const trackingResult = await stopDriverTrackingForAccountDeactivation(auth.session, driverRef, driver.name);
+            const trackingResult = await deactivateDriverAccountAtomically({
+                session: auth.session,
+                accountId: id,
+                accountUpdates: updates,
+                driverRef,
+                driverName: driver.name,
+            });
             stoppedTrackingCount = trackingResult.stoppedTrackingCount;
+            const refreshed = await sanityGetById<User>(id);
+            if (!refreshed) {
+                return NextResponse.json({ error: 'Akun driver tidak ditemukan' }, { status: 404 });
+            }
+            updated = refreshed;
+        } else {
+            updated = await sanityUpdate<User>(id, updates);
         }
 
         void addAuditLog(auth.session, 'UPDATE', id, `Memperbarui akun driver mobile untuk ${driver.name}`);
