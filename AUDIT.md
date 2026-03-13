@@ -127,6 +127,9 @@ Fitur tracking live driver sekarang sudah masuk, tetapi owner harus paham batasn
 - ini v1 berbasis browser HP, bukan native app
 - paling cocok untuk pemantauan internal admin/owner
 - belum cocok kalau targetnya background tracking yang sangat stabil saat layar mati atau browser ditutup
+- lifecycle supir sekarang sudah lebih aman:
+  - supir yang punya akun mobile tidak bisa dihapus
+  - menonaktifkan supir akan ikut menonaktifkan akun mobile driver dan menghentikan tracking aktifnya
 
 Jadi secara produk:
 

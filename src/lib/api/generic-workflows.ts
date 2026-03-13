@@ -25,6 +25,7 @@ import {
 } from './driver-workflows';
 import { handleFreightNotaDelete } from './finance-workflows';
 import {
+    handleDriverUpdate,
     handleDriverDelete,
     handleExpenseCategoryDelete,
     handleServiceDelete,
@@ -171,6 +172,10 @@ export async function handleGenericUpdate(
         return NextResponse.json({ data: updated });
     }
 
+    if (entity === 'drivers') {
+        return handleDriverUpdate(session, id, updates, addAuditLog);
+    }
+
     if (entity === 'bank-accounts') {
         if ('currentBalance' in updates || 'initialBalance' in updates) {
             return NextResponse.json({ error: 'Saldo rekening tidak boleh diubah manual lewat API umum' }, { status: 409 });
@@ -197,9 +202,7 @@ export async function handleGenericUpdate(
                 ? await normalizeServicePayload(updates, { partial: true, excludeId: id })
                 : entity === 'expense-categories'
                     ? await normalizeExpenseCategoryPayload(updates, { partial: true, excludeId: id })
-                    : entity === 'drivers'
-                        ? await normalizeDriverPayload(updates, { partial: true, excludeId: id })
-                        : entity === 'vehicles'
+                    : entity === 'vehicles'
                             ? await normalizeVehiclePayload(session, updates, { partial: true, excludeId: id })
                             : updates;
 

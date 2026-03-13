@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
-import { getSanityClient, sanityDelete, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
+import { getSanityClient, sanityDelete, sanityGetById, sanityGetNextNumber, sanityUpdate } from '@/lib/sanity';
+import type { Driver, User } from '@/lib/types';
 
 import {
     assertIsoDate,
@@ -691,9 +692,163 @@ export async function handleDriverDelete(
         return NextResponse.json({ error: 'Supir yang sudah dipakai pada bon supir tidak boleh dihapus' }, { status: 409 });
     }
 
+    const relatedDriverUser = await getSanityClient().fetch<{ _id: string } | null>(
+        `*[_type == "user" && role == "DRIVER" && driverRef == $ref][0]{ _id }`,
+        { ref: id }
+    );
+    if (relatedDriverUser) {
+        return NextResponse.json({ error: 'Supir yang masih punya akun mobile tidak boleh dihapus' }, { status: 409 });
+    }
+
     await sanityDelete(id);
     void addAuditLog(session, 'DELETE', 'drivers', id, `Deleted drivers ${driver.name || id}`);
     return NextResponse.json({ success: true });
+}
+
+export async function handleDriverUpdate(
+    session: ApiSession,
+    id: string,
+    updates: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const existingDriver = await sanityGetById<Driver>(id);
+    if (!existingDriver) {
+        return NextResponse.json({ error: 'Supir tidak ditemukan' }, { status: 404 });
+    }
+
+    const normalizedUpdates = await normalizeDriverPayload(updates, { partial: true, excludeId: id });
+    const nextDriverName =
+        typeof normalizedUpdates.name === 'string' && normalizedUpdates.name.trim()
+            ? normalizedUpdates.name.trim()
+            : existingDriver.name;
+    const isDeactivatingDriver = existingDriver.active !== false && normalizedUpdates.active === false;
+
+    const linkedDriverUsers = await getSanityClient().fetch<Array<Pick<User, '_id' | 'active' | 'driverName'>>>(
+        `*[_type == "user" && role == "DRIVER" && driverRef == $ref]{
+            _id,
+            active,
+            driverName
+        }`,
+        { ref: id }
+    );
+
+    const shouldSyncDriverName = nextDriverName !== existingDriver.name;
+    const activeLinkedUsers = linkedDriverUsers.filter(user => user.active !== false);
+
+    if (!isDeactivatingDriver) {
+        const updated = await sanityUpdate<Driver>(id, normalizedUpdates);
+
+        if (shouldSyncDriverName) {
+            await Promise.all(
+                linkedDriverUsers
+                    .filter(user => user.driverName !== nextDriverName)
+                    .map(user => getSanityClient().patch(user._id).set({ driverName: nextDriverName }).commit())
+            );
+        }
+
+        void addAuditLog(session, 'UPDATE', 'drivers', id, `Updated drivers: ${JSON.stringify(normalizedUpdates).slice(0, 200)}`);
+        return NextResponse.json({
+            data: updated,
+            meta: {
+                syncedDriverAccountIds: shouldSyncDriverName ? linkedDriverUsers.map(user => user._id) : [],
+                disabledDriverAccountIds: [],
+                stoppedTrackingCount: 0,
+            },
+        });
+    }
+
+    const now = new Date().toISOString();
+    const trackedDeliveryOrders = await getSanityClient().fetch<Array<{ _id: string; doNumber?: string; status?: string }>>(
+        `*[
+            _type == "deliveryOrder" &&
+            (driverRef == $ref || driverRef._ref == $ref) &&
+            trackingState in ["ACTIVE", "PAUSED"]
+        ]{
+            _id,
+            doNumber,
+            status
+        }`,
+        { ref: id }
+    );
+
+    const transaction = getSanityClient().transaction().patch(id, {
+        set: {
+            ...normalizedUpdates,
+            activeTrackingUpdatedAt: now,
+        },
+        unset: ['activeTrackingDeliveryOrderRef'],
+    });
+
+    for (const deliveryOrder of trackedDeliveryOrders) {
+        transaction.patch(deliveryOrder._id, {
+            set: {
+                trackingState: 'STOPPED',
+                trackingStoppedAt: now,
+                trackingLastSeenAt: now,
+            },
+        });
+        transaction.create({
+            _id: crypto.randomUUID(),
+            _type: 'trackingLog',
+            refType: 'DO',
+            refRef: deliveryOrder._id,
+            status: deliveryOrder.status || 'ON_DELIVERY',
+            note: `Tracking dihentikan otomatis karena supir ${existingDriver.name} dinonaktifkan`,
+            source: 'DRIVER_APP',
+            timestamp: now,
+            userRef: session._id,
+            userName: session.name,
+        });
+    }
+
+    for (const user of linkedDriverUsers) {
+        const nextUserPatch: Record<string, unknown> = {};
+        if (user.active !== false) {
+            nextUserPatch.active = false;
+        }
+        if (user.driverName !== nextDriverName) {
+            nextUserPatch.driverName = nextDriverName;
+        }
+        if (Object.keys(nextUserPatch).length > 0) {
+            transaction.patch(user._id, { set: nextUserPatch });
+        }
+    }
+
+    await transaction.commit();
+
+    const updated = await sanityGetById<Driver>(id);
+    if (!updated) {
+        return NextResponse.json({ error: 'Supir tidak ditemukan' }, { status: 404 });
+    }
+
+    void addAuditLog(session, 'UPDATE', 'drivers', id, `Updated drivers: ${JSON.stringify(normalizedUpdates).slice(0, 200)}`);
+    for (const deliveryOrder of trackedDeliveryOrders) {
+        void addAuditLog(
+            session,
+            'UPDATE',
+            'delivery-orders',
+            deliveryOrder._id,
+            `Tracking dihentikan otomatis karena supir ${existingDriver.name || id} dinonaktifkan`
+        );
+    }
+    for (const user of activeLinkedUsers) {
+        void addAuditLog(
+            session,
+            'UPDATE',
+            'users',
+            user._id,
+            `Akun mobile driver dinonaktifkan otomatis karena supir ${existingDriver.name || id} dinonaktifkan`
+        );
+    }
+
+    return NextResponse.json({
+        data: updated,
+        meta: {
+            syncedDriverAccountIds: shouldSyncDriverName ? linkedDriverUsers.map(user => user._id) : [],
+            disabledDriverAccountIds: activeLinkedUsers.map(user => user._id),
+            stoppedTrackingCount: trackedDeliveryOrders.length,
+        },
+    });
 }
 
 export async function handleVehicleDelete(

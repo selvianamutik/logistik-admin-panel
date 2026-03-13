@@ -364,6 +364,15 @@ Owner atau admin membuat akun mobile driver dari menu `Supir`, bukan dari `User 
 
 Satu supir hanya boleh punya satu akun mobile driver aktif.
 
+Kalau supir dinonaktifkan dari admin panel:
+
+- akun mobile driver yang terhubung ikut dinonaktifkan otomatis
+- tracking aktif milik supir itu ikut dihentikan otomatis
+- lock tracking pada data supir ikut dibersihkan
+
+Kalau supir diaktifkan lagi, akun mobile tidak otomatis aktif kembali.
+Owner/admin perlu membuka `Akses Mobile` lalu mengaktifkannya lagi bila memang ingin dipakai.
+
 ### 14.2 Driver login dari mana
 
 - driver login dari halaman `/driver/login`
@@ -415,6 +424,12 @@ Kalau admin atau owner menutup DO menjadi `DELIVERED` atau `CANCELLED`:
 - tracking DO otomatis ditandai `STOPPED`
 - lock tracking aktif pada data supir ikut dilepas
 - jadi supir tidak nyangkut di sesi tracking lama saat menerima DO berikutnya
+
+Kalau supir dinonaktifkan saat masih ada tracking aktif:
+
+- tracking DO aktif/paused miliknya otomatis ditandai `STOPPED`
+- sistem menambah log bahwa tracking dihentikan otomatis karena supir dinonaktifkan
+- akun mobile driver ikut dinonaktifkan agar tidak ada sesi lapangan yang menggantung
 
 ### 14.6 Apa yang tampil di admin web
 

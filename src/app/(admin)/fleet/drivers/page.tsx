@@ -90,13 +90,49 @@ export default function DriversPage() {
                 return;
             }
             setItems(prev => prev.map(i => i._id === driver._id ? d.data : i));
-            addToast('success', driver.active ? 'Supir dinon-aktifkan' : 'Supir diaktifkan');
+            if (driver.active) {
+                const disabledAccountIds = Array.isArray(d.meta?.disabledDriverAccountIds)
+                    ? d.meta.disabledDriverAccountIds.filter((value: unknown): value is string => typeof value === 'string')
+                    : [];
+                const syncedAccountIds = Array.isArray(d.meta?.syncedDriverAccountIds)
+                    ? d.meta.syncedDriverAccountIds.filter((value: unknown): value is string => typeof value === 'string')
+                    : [];
+                const nextDriverName = typeof d.data?.name === 'string' ? d.data.name : driver.name;
+                const accountIdsToSync = new Set([...disabledAccountIds, ...syncedAccountIds]);
+                if (accountIdsToSync.size > 0) {
+                    setAccounts(prev => prev.map(account => (
+                        accountIdsToSync.has(account._id)
+                            ? {
+                                ...account,
+                                driverName: nextDriverName,
+                                active: disabledAccountIds.includes(account._id) ? false : account.active,
+                            }
+                            : account
+                    )));
+                }
+
+                const stoppedTrackingCount = typeof d.meta?.stoppedTrackingCount === 'number' ? d.meta.stoppedTrackingCount : 0;
+                const messageParts = ['Supir dinon-aktifkan'];
+                if (disabledAccountIds.length > 0) {
+                    messageParts.push(`${disabledAccountIds.length} akun mobile ikut dinonaktifkan`);
+                }
+                if (stoppedTrackingCount > 0) {
+                    messageParts.push(`${stoppedTrackingCount} tracking aktif dihentikan`);
+                }
+                addToast('success', messageParts.join(' | '));
+            } else {
+                addToast('success', 'Supir diaktifkan');
+            }
         } catch {
             addToast('error', 'Gagal memperbarui status supir');
         }
     };
 
     const openAccessModal = (driver: Driver) => {
+        if (!driver.active) {
+            addToast('error', 'Aktifkan supir dulu sebelum mengatur akses mobile');
+            return;
+        }
         const existingAccount = accountByDriverRef.get(driver._id);
         setAccessDriver(driver);
         setAccountForm({
@@ -213,7 +249,12 @@ export default function DriversPage() {
                                             <td>
                                                 <div style={{ display: 'flex', gap: '0.25rem' }}>
                                                     <button className="btn btn-ghost btn-sm" onClick={() => openEdit(d)} title="Edit"><Edit2 size={14} /></button>
-                                                    <button className="btn btn-ghost btn-sm" onClick={() => openAccessModal(d)} title="Atur akses mobile">
+                                                    <button
+                                                        className="btn btn-ghost btn-sm"
+                                                        onClick={() => openAccessModal(d)}
+                                                        title={d.active ? 'Atur akses mobile' : 'Aktifkan supir dulu untuk mengatur akses mobile'}
+                                                        disabled={!d.active}
+                                                    >
                                                         <Smartphone size={14} />
                                                     </button>
                                                     <button className="btn btn-ghost btn-sm" onClick={() => toggleActive(d)} title={d.active ? 'Nonaktifkan' : 'Aktifkan'}>
