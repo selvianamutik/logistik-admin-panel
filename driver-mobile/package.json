@@ -8,8 +8,11 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "prebuild": "expo prebuild",
+    "doctor": "npx expo-doctor",
     "build:android:local": "node ./scripts/build-android-local.mjs",
+    "build:android:preview": "npx eas-cli build --platform android --profile preview",
     "build:android": "npx eas-cli build --platform android --profile production",
+    "build:ios:preview": "npx eas-cli build --platform ios --profile preview",
     "build:ios": "npx eas-cli build --platform ios --profile production",
     "typecheck": "tsc --noEmit"
   },

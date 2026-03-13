@@ -57,6 +57,7 @@ Output APK:
 Project ini sudah disiapkan untuk EAS build cloud.
 
 ```bash
+npx eas login
 npm run build:android
 npm run build:ios
 ```
@@ -64,8 +65,9 @@ npm run build:ios
 Untuk internal testing:
 
 ```bash
-npx eas build --platform android --profile preview
-npx eas build --platform ios --profile preview
+npx eas login
+npm run build:android:preview
+npm run build:ios:preview
 ```
 
 Catatan iOS:
@@ -73,6 +75,19 @@ Catatan iOS:
 - file `.ipa` tidak bisa dibuild lokal dari Windows
 - jalur yang didukung dari environment ini adalah `EAS Build` atau `Xcode` di macOS
 - sebelum build iOS, login dulu ke Expo/EAS dan siapkan Apple Developer provisioning
+
+## Release readiness quick check
+
+```bash
+npm run doctor
+npm run typecheck
+```
+
+Yang sudah tervalidasi di repo ini:
+
+- Android debug APK berhasil dibuild lokal
+- bundle Android dan iOS berhasil diexport
+- config Expo/EAS valid untuk Android dan iOS
 
 ## Catatan penting
 
