@@ -59,6 +59,26 @@ Output APK:
 
 - `build/app/outputs/flutter-apk/app-debug.apk`
 
+Build release APK:
+
+```bash
+C:\flutter\bin\flutter.bat build apk --release
+```
+
+Output release APK:
+
+- `build/app/outputs/flutter-apk/app-release.apk`
+
+Build Android App Bundle:
+
+```bash
+C:\flutter\bin\flutter.bat build appbundle --release
+```
+
+Output AAB:
+
+- `build/app/outputs/bundle/release/app-release.aab`
+
 ## Build iOS
 
 Project iOS sudah siap dibuild, tetapi file `.ipa` final tetap butuh:
@@ -83,3 +103,4 @@ Catatan:
 - iOS bisa diinstall, tetapi background location di iPhone tetap lebih ketat.
 - tracking tetap bergantung pada izin lokasi, GPS aktif, dan internet aktif.
 - token driver disimpan lokal agar runtime tracking bisa melanjutkan heartbeat.
+- pada toolchain Windows lokal ini, `build appbundle` masih bisa mengeluarkan warning strip symbol dari Android toolchain, tetapi file `.aab` tetap berhasil dibuat
