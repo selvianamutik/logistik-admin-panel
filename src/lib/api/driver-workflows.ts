@@ -39,6 +39,47 @@ type NormalizedDriverBoronganRow = {
     ket?: string;
 };
 
+type DriverBoronganDeliveryOrderSource = {
+    _id: string;
+    status?: string;
+    orderRef?: unknown;
+    doNumber?: string;
+    vehiclePlate?: string;
+    driverRef?: unknown;
+    receiverAddress?: string;
+    date?: string;
+    taripBorongan?: number;
+    keteranganBorongan?: string;
+};
+
+type DriverBoronganOrderSource = {
+    _id: string;
+    receiverAddress?: string;
+};
+
+type DriverBoronganDeliveryOrderItemSource = {
+    deliveryOrderRef?: string;
+    orderItemDescription?: string;
+    orderItemQtyKoli?: number;
+    orderItemWeight?: number;
+};
+
+function summarizeBoronganDeliveryOrderItems(items: DriverBoronganDeliveryOrderItemSource[]) {
+    const descriptions = [...new Set(
+        items
+            .map(item => normalizeOptionalText(item.orderItemDescription))
+            .filter((value): value is string => Boolean(value))
+    )];
+    const collie = items.reduce((sum, item) => sum + normalizeNumber(item.orderItemQtyKoli || 0), 0);
+    const beratKg = items.reduce((sum, item) => sum + normalizeNumber(item.orderItemWeight || 0), 0);
+
+    return {
+        barang: descriptions.join(', '),
+        collie,
+        beratKg,
+    };
+}
+
 function isDriverBoronganRowEmpty(row: Record<string, unknown>) {
     return (
         !normalizeOptionalText(row.doRef) &&
@@ -58,9 +99,6 @@ export async function handleDriverBoronganCreate(
 ) {
     let resolvedDriverRef = normalizeOptionalText(data.driverRef);
     const driverName = normalizeText(data.driverName);
-    if (!driverName) {
-        return NextResponse.json({ error: 'Nama supir borongan wajib diisi' }, { status: 400 });
-    }
 
     const periodStart = normalizeText(data.periodStart) || new Date().toISOString().slice(0, 10);
     const periodEnd = normalizeText(data.periodEnd) || periodStart;
@@ -82,13 +120,13 @@ export async function handleDriverBoronganCreate(
             const tarip = normalizeNumber(row.tarip);
             const collie = normalizeNumber(row.collie ?? 0);
 
-            if (!date || !noSJ || !tujuan) {
+            if ((!date || !noSJ || !tujuan) && !doRef) {
                 throw new Error('Baris borongan wajib punya tanggal, nomor SJ, dan tujuan');
             }
-            if (!Number.isFinite(beratKg) || beratKg <= 0) {
+            if ((!Number.isFinite(beratKg) || beratKg <= 0) && !doRef) {
                 throw new Error('Berat pada baris borongan harus lebih besar dari 0');
             }
-            if (!Number.isFinite(tarip) || tarip <= 0) {
+            if ((!Number.isFinite(tarip) || tarip <= 0) && !doRef) {
                 throw new Error('Tarip pada baris borongan harus lebih besar dari 0');
             }
             if (!Number.isFinite(collie) || collie < 0) {
@@ -122,19 +160,18 @@ export async function handleDriverBoronganCreate(
     }
 
     const deliveryOrders = uniqueDoRefs.length > 0
-        ? await getSanityClient().fetch<Array<{
-            _id: string;
-            status?: string;
-            doNumber?: string;
-            vehiclePlate?: string;
-            driverRef?: unknown;
-        }>>(
+        ? await getSanityClient().fetch<DriverBoronganDeliveryOrderSource[]>(
             `*[_type == "deliveryOrder" && _id in $ids]{
                 _id,
                 status,
+                orderRef,
                 doNumber,
                 vehiclePlate,
-                driverRef
+                driverRef,
+                receiverAddress,
+                date,
+                taripBorongan,
+                keteranganBorongan
             }`,
             { ids: uniqueDoRefs }
         )
@@ -144,7 +181,43 @@ export async function handleDriverBoronganCreate(
         return NextResponse.json({ error: 'Sebagian DO borongan tidak ditemukan' }, { status: 404 });
     }
 
+    const orderRefs = [...new Set(
+        deliveryOrders
+            .map(item => extractRefId(item.orderRef))
+            .filter((ref): ref is string => Boolean(ref))
+    )];
+    const sourceOrders = orderRefs.length > 0
+        ? await getSanityClient().fetch<DriverBoronganOrderSource[]>(
+            `*[_type == "order" && _id in $ids]{
+                _id,
+                receiverAddress
+            }`,
+            { ids: orderRefs }
+        )
+        : [];
+    const deliveryOrderItems = uniqueDoRefs.length > 0
+        ? await getSanityClient().fetch<DriverBoronganDeliveryOrderItemSource[]>(
+            `*[_type == "deliveryOrderItem" && deliveryOrderRef in $ids]{
+                deliveryOrderRef,
+                orderItemDescription,
+                orderItemQtyKoli,
+                orderItemWeight
+            }`,
+            { ids: uniqueDoRefs }
+        )
+        : [];
+
     const deliveryOrderMap = new Map(deliveryOrders.map(item => [item._id, item]));
+    const orderMap = new Map(sourceOrders.map(order => [order._id, order]));
+    const doItemMap = new Map<string, DriverBoronganDeliveryOrderItemSource[]>();
+    for (const item of deliveryOrderItems) {
+        const deliveryOrderRef = normalizeOptionalText(item.deliveryOrderRef);
+        if (!deliveryOrderRef) continue;
+        const current = doItemMap.get(deliveryOrderRef) || [];
+        current.push(item);
+        doItemMap.set(deliveryOrderRef, current);
+    }
+
     for (const row of rows) {
         if (!row.doRef) continue;
         const deliveryOrder = deliveryOrderMap.get(row.doRef);
@@ -163,8 +236,53 @@ export async function handleDriverBoronganCreate(
                 );
             }
         }
+        const orderRef = extractRefId(deliveryOrder.orderRef);
+        const sourceOrder = orderRef ? orderMap.get(orderRef) : undefined;
+        const itemSummary = summarizeBoronganDeliveryOrderItems(doItemMap.get(row.doRef) || []);
+
         row.doNumber = row.doNumber || deliveryOrder.doNumber;
+        row.noSJ = row.noSJ || row.doNumber || deliveryOrder.doNumber || '';
         row.vehiclePlate = row.vehiclePlate || deliveryOrder.vehiclePlate;
+        row.date = row.date || normalizeOptionalText(deliveryOrder.date) || '';
+        row.tujuan =
+            row.tujuan ||
+            normalizeOptionalText(deliveryOrder.receiverAddress) ||
+            normalizeOptionalText(sourceOrder?.receiverAddress) ||
+            '';
+        row.barang = row.barang || itemSummary.barang || undefined;
+        if (!row.collie || row.collie <= 0) {
+            row.collie = itemSummary.collie > 0 ? itemSummary.collie : undefined;
+        }
+        if (!Number.isFinite(row.beratKg) || row.beratKg <= 0) {
+            row.beratKg = itemSummary.beratKg;
+        }
+        if (!Number.isFinite(row.tarip) || row.tarip <= 0) {
+            row.tarip = normalizeNumber(deliveryOrder.taripBorongan || 0);
+        }
+        row.ket = row.ket || normalizeOptionalText(deliveryOrder.keteranganBorongan);
+        row.uangRp = row.beratKg * row.tarip;
+    }
+
+    for (const row of rows) {
+        if (!row.date || !row.noSJ || !row.tujuan) {
+            return NextResponse.json(
+                { error: `Baris borongan ${row.doNumber || row.noSJ || row.doRef || ''} masih kurang tanggal, nomor SJ, atau tujuan` },
+                { status: 400 }
+            );
+        }
+        if (!Number.isFinite(row.beratKg) || row.beratKg <= 0) {
+            return NextResponse.json(
+                { error: `Berat pada baris borongan ${row.doNumber || row.noSJ || row.doRef || ''} tidak valid` },
+                { status: 400 }
+            );
+        }
+        if (!Number.isFinite(row.tarip) || row.tarip <= 0) {
+            return NextResponse.json(
+                { error: `Tarip pada baris borongan ${row.doNumber || row.noSJ || row.doRef || ''} tidak valid` },
+                { status: 400 }
+            );
+        }
+        row.uangRp = row.beratKg * row.tarip;
     }
 
     if (uniqueDoRefs.length > 0) {
@@ -204,6 +322,20 @@ export async function handleDriverBoronganCreate(
         resolvedDriverRef = inferredDriverRef;
     }
 
+    let finalDriverName = driverName;
+    if (resolvedDriverRef) {
+        const driverDoc = await getSanityClient().fetch<{ name?: string } | null>(
+            `*[_type == "driver" && _id == $id][0]{ name }`,
+            { id: resolvedDriverRef }
+        );
+        if (driverDoc?.name) {
+            finalDriverName = driverDoc.name;
+        }
+    }
+    if (!finalDriverName) {
+        return NextResponse.json({ error: 'Nama supir borongan wajib diisi' }, { status: 400 });
+    }
+
     const totalAmount = rows.reduce((sum, row) => sum + row.uangRp, 0);
     const totalCollie = rows.reduce((sum, row) => sum + (row.collie || 0), 0);
     const totalWeightKg = rows.reduce((sum, row) => sum + row.beratKg, 0);
@@ -217,7 +349,7 @@ export async function handleDriverBoronganCreate(
         _id: boronganId,
         _type: 'driverBorongan',
         driverRef: resolvedDriverRef,
-        driverName,
+        driverName: finalDriverName,
         periodStart,
         periodEnd,
         status: 'UNPAID',

@@ -41,6 +41,46 @@ type NormalizedFreightNotaRow = {
     ket?: string;
 };
 
+type FreightNotaDeliveryOrderSource = {
+    _id: string;
+    status?: string;
+    orderRef?: unknown;
+    doNumber?: string;
+    vehiclePlate?: string;
+    receiverAddress?: string;
+    date?: string;
+};
+
+type FreightNotaOrderSource = {
+    _id: string;
+    customerRef?: unknown;
+    pickupAddress?: string;
+    receiverAddress?: string;
+};
+
+type FreightNotaDeliveryOrderItemSource = {
+    deliveryOrderRef?: string;
+    orderItemDescription?: string;
+    orderItemQtyKoli?: number;
+    orderItemWeight?: number;
+};
+
+function summarizeDeliveryOrderItems(items: FreightNotaDeliveryOrderItemSource[]) {
+    const descriptions = [...new Set(
+        items
+            .map(item => normalizeOptionalText(item.orderItemDescription))
+            .filter((value): value is string => Boolean(value))
+    )];
+    const collie = items.reduce((sum, item) => sum + normalizeNumber(item.orderItemQtyKoli || 0), 0);
+    const beratKg = items.reduce((sum, item) => sum + normalizeNumber(item.orderItemWeight || 0), 0);
+
+    return {
+        barang: descriptions.join(', '),
+        collie,
+        beratKg,
+    };
+}
+
 function isFreightNotaRowEmpty(row: Record<string, unknown>) {
     return (
         !normalizeOptionalText(row.doRef) &&
@@ -462,9 +502,6 @@ export async function handleFreightNotaCreate(
 ) {
     let resolvedCustomerRef = normalizeOptionalText(data.customerRef);
     const customerName = normalizeText(data.customerName);
-    if (!customerName) {
-        return NextResponse.json({ error: 'Nama customer nota wajib diisi' }, { status: 400 });
-    }
 
     const rawRows = Array.isArray(data.items) ? data.items : Array.isArray(data.rows) ? data.rows : [];
     const rows = rawRows
@@ -481,10 +518,10 @@ export async function handleFreightNotaCreate(
             const tarip = normalizeNumber(row.tarip);
             const collie = normalizeNumber(row.collie ?? 0);
 
-            if (!date || !noSJ || !tujuan) {
+            if ((!date || !noSJ || !tujuan) && !doRef) {
                 throw new Error('Baris nota wajib punya tanggal, nomor SJ, dan tujuan');
             }
-            if (!Number.isFinite(beratKg) || beratKg <= 0) {
+            if ((!Number.isFinite(beratKg) || beratKg <= 0) && !doRef) {
                 throw new Error('Berat pada baris nota harus lebih besar dari 0');
             }
             if (!Number.isFinite(tarip) || tarip <= 0) {
@@ -529,6 +566,7 @@ export async function handleFreightNotaCreate(
             doNumber?: string;
             vehiclePlate?: string;
             receiverAddress?: string;
+            date?: string;
         }>>(
             `*[_type == "deliveryOrder" && _id in $ids]{
                 _id,
@@ -536,7 +574,8 @@ export async function handleFreightNotaCreate(
                 orderRef,
                 doNumber,
                 vehiclePlate,
-                receiverAddress
+                receiverAddress,
+                date
             }`,
             { ids: uniqueDoRefs }
         )
@@ -546,7 +585,45 @@ export async function handleFreightNotaCreate(
         return NextResponse.json({ error: 'Sebagian DO nota tidak ditemukan' }, { status: 404 });
     }
 
+    const orderRefs = [...new Set(
+        deliveryOrders
+            .map(item => extractRefId(item.orderRef))
+            .filter((ref): ref is string => Boolean(ref))
+    )];
+    const sourceOrders = orderRefs.length > 0
+        ? await getSanityClient().fetch<FreightNotaOrderSource[]>(
+            `*[_type == "order" && _id in $ids]{
+                _id,
+                customerRef,
+                pickupAddress,
+                receiverAddress
+            }`,
+            { ids: orderRefs }
+        )
+        : [];
+    const deliveryOrderItems = uniqueDoRefs.length > 0
+        ? await getSanityClient().fetch<FreightNotaDeliveryOrderItemSource[]>(
+            `*[_type == "deliveryOrderItem" && deliveryOrderRef in $ids]{
+                deliveryOrderRef,
+                orderItemDescription,
+                orderItemQtyKoli,
+                orderItemWeight
+            }`,
+            { ids: uniqueDoRefs }
+        )
+        : [];
+
     const deliveryOrderMap = new Map(deliveryOrders.map(item => [item._id, item]));
+    const orderMap = new Map(sourceOrders.map(order => [order._id, order]));
+    const doItemMap = new Map<string, FreightNotaDeliveryOrderItemSource[]>();
+    for (const item of deliveryOrderItems) {
+        const deliveryOrderRef = normalizeOptionalText(item.deliveryOrderRef);
+        if (!deliveryOrderRef) continue;
+        const current = doItemMap.get(deliveryOrderRef) || [];
+        current.push(item);
+        doItemMap.set(deliveryOrderRef, current);
+    }
+
     for (const row of rows) {
         if (!row.doRef) continue;
         const deliveryOrder = deliveryOrderMap.get(row.doRef);
@@ -556,9 +633,50 @@ export async function handleFreightNotaCreate(
         if (deliveryOrder.status !== 'DELIVERED') {
             return NextResponse.json({ error: `DO ${deliveryOrder.doNumber || row.doRef} belum selesai dikirim` }, { status: 409 });
         }
+        const orderRef = extractRefId(deliveryOrder.orderRef);
+        const sourceOrder = orderRef ? orderMap.get(orderRef) : undefined;
+        const itemSummary = summarizeDeliveryOrderItems(doItemMap.get(row.doRef) || []);
+
         row.doNumber = row.doNumber || deliveryOrder.doNumber;
+        row.noSJ = row.noSJ || row.doNumber || deliveryOrder.doNumber || '';
         row.vehiclePlate = row.vehiclePlate || deliveryOrder.vehiclePlate;
-        row.tujuan = row.tujuan || deliveryOrder.receiverAddress || row.tujuan;
+        row.date = row.date || normalizeOptionalText(deliveryOrder.date) || '';
+        row.dari = row.dari || normalizeOptionalText(sourceOrder?.pickupAddress) || '';
+        row.tujuan =
+            row.tujuan ||
+            normalizeOptionalText(deliveryOrder.receiverAddress) ||
+            normalizeOptionalText(sourceOrder?.receiverAddress) ||
+            '';
+        row.barang = row.barang || itemSummary.barang || undefined;
+        if (!row.collie || row.collie <= 0) {
+            row.collie = itemSummary.collie > 0 ? itemSummary.collie : undefined;
+        }
+        if (!Number.isFinite(row.beratKg) || row.beratKg <= 0) {
+            row.beratKg = itemSummary.beratKg;
+        }
+        row.uangRp = row.beratKg * row.tarip;
+    }
+
+    for (const row of rows) {
+        if (!row.date || !row.noSJ || !row.tujuan) {
+            return NextResponse.json(
+                { error: `Baris nota ${row.doNumber || row.noSJ || row.doRef || ''} masih kurang tanggal, nomor SJ, atau tujuan` },
+                { status: 400 }
+            );
+        }
+        if (!Number.isFinite(row.beratKg) || row.beratKg <= 0) {
+            return NextResponse.json(
+                { error: `Berat pada baris nota ${row.doNumber || row.noSJ || row.doRef || ''} tidak valid` },
+                { status: 400 }
+            );
+        }
+        if (!Number.isFinite(row.tarip) || row.tarip <= 0) {
+            return NextResponse.json(
+                { error: `Tarip pada baris nota ${row.doNumber || row.noSJ || row.doRef || ''} tidak valid` },
+                { status: 400 }
+            );
+        }
+        row.uangRp = row.beratKg * row.tarip;
     }
 
     if (uniqueDoRefs.length > 0) {
@@ -575,17 +693,6 @@ export async function handleFreightNotaCreate(
         }
     }
 
-    const orderRefs = [...new Set(
-        deliveryOrders
-            .map(item => extractRefId(item.orderRef))
-            .filter((ref): ref is string => Boolean(ref))
-    )];
-    const sourceOrders = orderRefs.length > 0
-        ? await getSanityClient().fetch<Array<{ _id: string; customerRef?: unknown }>>(
-            `*[_type == "order" && _id in $ids]{ _id, customerRef }`,
-            { ids: orderRefs }
-        )
-        : [];
     const orderCustomerMap = new Map(
         sourceOrders.map(order => [order._id, extractRefId(order.customerRef)])
     );
@@ -642,6 +749,9 @@ export async function handleFreightNotaCreate(
         if (typeof customerDoc?.defaultPaymentTerm === 'number' && Number.isFinite(customerDoc.defaultPaymentTerm) && customerDoc.defaultPaymentTerm >= 0) {
             customerTermDays = customerDoc.defaultPaymentTerm;
         }
+    }
+    if (!finalCustomerName) {
+        return NextResponse.json({ error: 'Nama customer nota wajib diisi' }, { status: 400 });
     }
 
     const totalAmount = rows.reduce((sum, row) => sum + row.uangRp, 0);
