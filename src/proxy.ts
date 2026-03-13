@@ -10,6 +10,10 @@ import { SESSION_COOKIE, verifySessionToken } from '@/lib/session';
 const PUBLIC_PATHS = ['/login', '/driver/login'];
 const OWNER_ONLY_PATHS = ['/settings/company', '/settings/users', '/settings/audit-logs', '/reports'];
 
+function isDriverPortalPath(pathname: string) {
+    return pathname === '/driver' || pathname.startsWith('/driver/');
+}
+
 export async function proxy(request: NextRequest) {
     const { pathname } = request.nextUrl;
     const isPublicPath = PUBLIC_PATHS.some(path => pathname.startsWith(path));
@@ -28,7 +32,7 @@ export async function proxy(request: NextRequest) {
         if (isPublicPath) {
             return NextResponse.next();
         }
-        const loginPath = pathname.startsWith('/driver') ? '/driver/login' : '/login';
+        const loginPath = isDriverPortalPath(pathname) ? '/driver/login' : '/login';
         return NextResponse.redirect(new URL(loginPath, request.url));
     }
 
@@ -41,13 +45,13 @@ export async function proxy(request: NextRequest) {
         }
 
         if (user.role === 'DRIVER') {
-            if (pathname === '/' || pathname === '/dashboard' || !pathname.startsWith('/driver')) {
+            if (pathname === '/' || pathname === '/dashboard' || !isDriverPortalPath(pathname)) {
                 return NextResponse.redirect(new URL('/driver', request.url));
             }
             return NextResponse.next();
         }
 
-        if (pathname.startsWith('/driver')) {
+        if (isDriverPortalPath(pathname)) {
             return NextResponse.redirect(new URL('/dashboard', request.url));
         }
 
@@ -61,7 +65,7 @@ export async function proxy(request: NextRequest) {
 
         return NextResponse.next();
     } catch {
-        const loginPath = pathname.startsWith('/driver') ? '/driver/login' : '/login';
+        const loginPath = isDriverPortalPath(pathname) ? '/driver/login' : '/login';
         return NextResponse.redirect(new URL(loginPath, request.url));
     }
 }
