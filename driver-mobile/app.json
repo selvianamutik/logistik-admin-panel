@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "Logistik Driver",
+    "slug": "logistik-driver",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Aplikasi membutuhkan lokasi untuk mengirim posisi pengiriman secara live.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Aplikasi membutuhkan lokasi background untuk tracking pengiriman saat perjalanan berlangsung."
+      }
+    },
+    "android": {
+      "package": "com.logistik.driver",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Aplikasi membutuhkan lokasi background untuk tracking pengiriman saat perjalanan berlangsung.",
+          "locationWhenInUsePermission": "Aplikasi membutuhkan lokasi untuk mengirim posisi pengiriman secara live.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isIosBackgroundLocationEnabled": true
+        }
+      ]
+    ],
+    "extra": {
+      "apiBaseUrl": "https://app-ten-gamma-49.vercel.app"
+    }
+  }
+}

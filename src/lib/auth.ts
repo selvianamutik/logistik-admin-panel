@@ -46,27 +46,44 @@ export async function createSession(user: User): Promise<string> {
     return createSessionToken(payload);
 }
 
+function buildSessionUser(user: User): SessionUser {
+    return {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        driverRef: user.driverRef,
+        driverName: user.driverName,
+    };
+}
+
+export async function getSessionFromToken(token: string): Promise<SessionUser | null> {
+    try {
+        const session = await verifySessionToken(token);
+        const user = await sanityGetById<User>(session._id);
+        if (!user || user.active === false) {
+            return null;
+        }
+
+        return buildSessionUser(user);
+    } catch {
+        return null;
+    }
+}
+
 export async function getSession(): Promise<SessionUser | null> {
     try {
         const cookieStore = await cookies();
         const token = cookieStore.get(SESSION_COOKIE)?.value;
         if (!token) return null;
 
-        const session = await verifySessionToken(token);
-        const user = await sanityGetById<User>(session._id);
-        if (!user || user.active === false) {
+        const session = await getSessionFromToken(token);
+        if (!session) {
             cookieStore.delete(SESSION_COOKIE);
             return null;
         }
 
-        return {
-            _id: user._id,
-            name: user.name,
-            email: user.email,
-            role: user.role,
-            driverRef: user.driverRef,
-            driverName: user.driverName,
-        };
+        return session;
     } catch {
         return null;
     }

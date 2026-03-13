@@ -122,16 +122,26 @@ angka yang benar, pengingat yang jelas, dan alur yang tidak menipu.
 
 ## 6. Catatan baru: tracking driver live
 
-Fitur tracking live driver sekarang sudah masuk, tetapi owner harus paham batasnya:
+Tracking driver sekarang sudah naik satu level:
 
-- ini v1 berbasis browser HP, bukan native app
-- paling cocok untuk pemantauan internal admin/owner
-- belum cocok kalau targetnya background tracking yang sangat stabil saat layar mati atau browser ditutup
-- lifecycle supir sekarang sudah lebih aman:
-  - supir yang punya akun mobile tidak bisa dihapus
-  - menonaktifkan supir akan ikut menonaktifkan akun mobile driver dan menghentikan tracking aktifnya
+- backend auth mobile driver sudah dipisah dari login web biasa
+- ada jalur bearer token untuk app native driver
+- ada project APK Android terpisah di `driver-mobile/`
+- tracking background Android sekarang memakai foreground service + background location task
+
+Lifecycle supir juga tetap dijaga:
+
+- supir yang punya akun mobile tidak bisa dihapus
+- menonaktifkan supir akan ikut menonaktifkan akun mobile driver dan menghentikan tracking aktifnya
+
+Brutal truth-nya:
+
+- ini sudah jauh lebih layak untuk operasional lapangan dibanding browser HP
+- tapi belum berarti semua risiko device-level hilang
+- iOS belum jadi fokus utama
+- token driver mobile saat ini masih disimpan lokal di aplikasi agar task background bisa membacanya
 
 Jadi secara produk:
 
-- untuk kebutuhan "tahu posisi terakhir driver per DO", fitur ini sudah layak
-- untuk kebutuhan "live real-time tanpa gangguan seperti aplikasi kurir native", masih butuh fase produk berikutnya
+- untuk kebutuhan internal owner/admin memantau posisi driver per DO, ini sudah layak dipakai
+- untuk kebutuhan tracking lintas platform yang sangat ketat seperti aplikasi kurir besar, masih ada fase hardening berikutnya

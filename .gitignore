@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+/driver-mobile/node_modules
 /.pnp
 .pnp.*
 .yarn/*
@@ -19,6 +20,9 @@
 # next.js
 /.next/
 /out/
+/driver-mobile/.expo/
+/driver-mobile/android/
+/driver-mobile/dist/
 
 # production
 /build

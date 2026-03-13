@@ -375,11 +375,20 @@ Owner/admin perlu membuka `Akses Mobile` lalu mengaktifkannya lagi bila memang i
 
 ### 14.2 Driver login dari mana
 
-- driver login dari halaman `/driver/login`
-- akun driver tidak bisa dipakai di `/login`
-- akun admin/owner juga tidak bisa dipakai di `/driver/login`
+Sekarang ada 2 jalur driver:
 
-Ini sengaja dipisah supaya tidak campur dengan panel internal.
+- `Portal web driver`
+  Dipakai untuk fallback / akses cepat dari browser di `/driver/login`
+- `APK Android driver`
+  Dipakai untuk operasional tracking background native
+
+Rule auth-nya:
+
+- akun driver tidak bisa dipakai di `/login`
+- akun admin/owner tidak bisa dipakai di jalur driver
+- APK driver login lewat endpoint mobile khusus dan menerima bearer token driver
+
+Jadi auth driver sekarang memang dipisah dari panel internal.
 
 ### 14.3 DO mana yang muncul di HP driver
 
@@ -393,13 +402,16 @@ Driver hanya melihat DO yang:
 
 ### 14.4 Cara tracking live berjalan
 
-Di HP driver:
+Di APK Android driver:
 
-1. driver buka DO
+1. driver buka daftar DO
 2. tekan `Mulai Tracking`
-3. browser meminta izin lokasi GPS
-4. sistem mengirim lokasi awal lalu heartbeat berkala
-5. owner/admin bisa melihat posisi terakhir di detail DO
+3. aplikasi meminta izin lokasi foreground dan background
+4. aplikasi mengambil posisi awal
+5. backend memvalidasi DO dan lock tracking supir
+6. aplikasi menyalakan foreground service Android
+7. background task mengirim heartbeat lokasi berkala
+8. owner/admin melihat posisi terakhir di detail DO
 
 Action yang tersedia:
 
@@ -444,16 +456,17 @@ Di list dan detail DO sekarang owner/admin bisa melihat:
 
 ### 14.7 Keterbatasan v1 yang harus dipahami
 
-Ini tracking live berbasis browser HP, bukan native app.
+Tracking sekarang sudah punya jalur native Android, jadi lebih kuat daripada browser HP biasa.
 
-Artinya:
+Tetap ada batasannya:
 
-- tracking hanya akurat selama halaman driver tetap terbuka
-- izin GPS harus tetap aktif
-- internet harus tetap aktif
-- kalau browser/app ditutup penuh, tracking tidak jalan di background
+- fokus operasional utama masih Android, bukan iOS
+- izin lokasi foreground/background harus aktif
+- GPS dan internet harus aktif
+- kalau user force stop aplikasi atau mencabut izin lokasi, tracking background berhenti
+- token driver mobile saat ini disimpan lokal di app supaya background task bisa membacanya
 
-Jadi v1 ini cocok untuk operasional internal sederhana, tapi belum setara aplikasi native background tracking.
+Jadi v1 APK ini sudah cocok untuk background tracking Android operasional, tetapi belum berarti semua edge-case device policy sudah sempurna.
 
 ## 15. Guard penting pada Surat Jalan
 

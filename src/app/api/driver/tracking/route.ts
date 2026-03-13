@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import {
     formatTrackingLocationText,
+    hasBearerDriverAuth,
     normalizeTrackingNumber,
     requireDriverSessionContext,
     toSpeedKph,
@@ -95,12 +96,14 @@ async function releaseDriverTrackingLockIfOwned(driverId: string, deliveryOrderR
 }
 
 export async function POST(request: Request) {
-    const originError = ensureSameOriginRequest(request);
-    if (originError) {
-        return originError;
+    if (!hasBearerDriverAuth(request)) {
+        const originError = ensureSameOriginRequest(request);
+        if (originError) {
+            return originError;
+        }
     }
 
-    const auth = await requireDriverSessionContext();
+    const auth = await requireDriverSessionContext(request);
     if ('error' in auth) {
         return NextResponse.json({ error: auth.error }, { status: auth.status });
     }

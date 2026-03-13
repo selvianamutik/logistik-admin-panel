@@ -1,4 +1,4 @@
-import { getSession } from '@/lib/auth';
+import { getSession, getSessionFromToken } from '@/lib/auth';
 import { getSanityClient, sanityGetById, sanityGetCompanyProfile } from '@/lib/sanity';
 import type { CompanyProfile, DeliveryOrder, Driver, SessionUser, User } from '@/lib/types';
 
@@ -19,8 +19,23 @@ export async function requireAdminOrOwnerSession() {
     return { session } as const;
 }
 
-export async function requireDriverSessionContext(): Promise<DriverSessionContext | { error: string; status: number }> {
-    const session = await getSession();
+function getBearerToken(request?: Request) {
+    if (!request) return null;
+    const authorization = request.headers.get('authorization') || '';
+    const [scheme, token] = authorization.split(' ');
+    if (scheme?.toLowerCase() !== 'bearer' || !token) {
+        return null;
+    }
+    return token.trim() || null;
+}
+
+export function hasBearerDriverAuth(request?: Request) {
+    return Boolean(getBearerToken(request));
+}
+
+export async function requireDriverSessionContext(request?: Request): Promise<DriverSessionContext | { error: string; status: number }> {
+    const bearerToken = getBearerToken(request);
+    const session = bearerToken ? await getSessionFromToken(bearerToken) : await getSession();
     if (!session) {
         return { error: 'Unauthorized', status: 401 };
     }

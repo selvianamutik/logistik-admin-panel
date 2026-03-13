@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 
 import { getDriverAssignedDeliveryOrders, requireDriverSessionContext } from '@/lib/api/driver-portal';
 
-export async function GET() {
-    const result = await requireDriverSessionContext();
+export async function GET(request: Request) {
+    const result = await requireDriverSessionContext(request);
     if ('error' in result) {
         return NextResponse.json({ error: result.error }, { status: result.status });
     }
