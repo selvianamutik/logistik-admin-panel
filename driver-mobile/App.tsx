@@ -15,8 +15,14 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { fetchDriverDeliveryOrders, fetchDriverSession, loginDriver, postTrackingAction } from './src/api';
-import { clearAuthToken, getAuthToken, setAuthToken } from './src/storage';
-import { getCurrentLocation, requestTrackingPermissions, startBackgroundTracking, stopBackgroundTracking } from './src/tracking';
+import { clearActiveTrackingContext, clearAuthToken, getActiveTrackingContext, getAuthToken, setAuthToken } from './src/storage';
+import {
+  getCurrentLocation,
+  isBackgroundTrackingRunning,
+  requestTrackingPermissions,
+  startBackgroundTracking,
+  stopBackgroundTracking,
+} from './src/tracking';
 import type { CompanySummary, DeliveryOrder, Driver, DriverUser } from './src/types';
 
 function formatDateTime(value?: string) {
@@ -75,11 +81,33 @@ export default function App() {
   const [company, setCompany] = useState<CompanySummary>(null);
   const [orders, setOrders] = useState<DeliveryOrder[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [trackingRuntimeHealthy, setTrackingRuntimeHealthy] = useState(true);
 
   const activeOrder = useMemo(
     () => orders.find((item) => item.trackingState === 'ACTIVE') || null,
     [orders],
   );
+
+  const syncLocalTrackingState = useCallback(async (deliveryOrders: DeliveryOrder[]) => {
+    const activeTrackedOrder = deliveryOrders.find((item) => item.trackingState === 'ACTIVE') || null;
+    const [localTrackingRunning, localTrackingContext] = await Promise.all([
+      isBackgroundTrackingRunning(),
+      getActiveTrackingContext(),
+    ]);
+
+    if (!activeTrackedOrder) {
+      if (localTrackingRunning) {
+        await stopBackgroundTracking();
+      } else if (localTrackingContext) {
+        await clearActiveTrackingContext();
+      }
+      setTrackingRuntimeHealthy(true);
+      return;
+    }
+
+    const trackingMatchesOrder = localTrackingContext?.deliveryOrderRef === activeTrackedOrder._id;
+    setTrackingRuntimeHealthy(localTrackingRunning && trackingMatchesOrder);
+  }, []);
 
   const hydrateDriverApp = useCallback(async (sessionToken: string, mode: 'boot' | 'refresh' = 'refresh') => {
     if (mode === 'refresh') {
@@ -97,6 +125,7 @@ export default function App() {
       setDriver(sessionPayload.driver);
       setCompany(sessionPayload.company);
       setOrders(deliveryOrders);
+      await syncLocalTrackingState(deliveryOrders);
       setError(null);
     } catch (requestError) {
       const nextError = requestError instanceof Error ? requestError : new Error('Gagal memuat aplikasi driver');
@@ -106,6 +135,7 @@ export default function App() {
         setUser(null);
         setDriver(null);
         setOrders([]);
+        setTrackingRuntimeHealthy(true);
       }
       setError(nextError.message);
     } finally {
@@ -116,7 +146,7 @@ export default function App() {
         setBooting(false);
       }
     }
-  }, []);
+  }, [syncLocalTrackingState]);
 
   useEffect(() => {
     void (async () => {
@@ -179,7 +209,13 @@ export default function App() {
           accuracyM: currentPosition.coords.accuracy,
           speedMps: currentPosition.coords.speed,
         });
-        await startBackgroundTracking(order._id);
+
+        try {
+          await startBackgroundTracking(order._id);
+        } catch (trackingError) {
+          await postTrackingAction(token, order._id, 'stop');
+          throw trackingError;
+        }
       } else {
         await postTrackingAction(token, order._id, action);
         await stopBackgroundTracking();
@@ -289,6 +325,11 @@ export default function App() {
             <Text style={styles.infoKey}>Tracking aktif</Text>
             <Text style={styles.infoValue}>{activeOrder ? activeOrder.doNumber : 'Belum ada'}</Text>
           </View>
+          {!trackingRuntimeHealthy && activeOrder ? (
+            <Text style={styles.runtimeWarning}>
+              Server mencatat tracking aktif untuk {activeOrder.doNumber}, tetapi service lokasi di perangkat tidak sedang berjalan. Tekan Stop lalu Mulai lagi.
+            </Text>
+          ) : null}
         </View>
 
         <View style={styles.toolbar}>
@@ -462,6 +503,13 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 13,
     fontWeight: '700',
+  },
+  runtimeWarning: {
+    marginTop: 6,
+    color: '#fef3c7',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600',
   },
   toolbar: {
     flexDirection: 'row',

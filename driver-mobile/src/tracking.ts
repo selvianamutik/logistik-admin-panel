@@ -68,6 +68,10 @@ export async function getCurrentLocation() {
   });
 }
 
+export async function isBackgroundTrackingRunning() {
+  return Location.hasStartedLocationUpdatesAsync(TRACKING_TASK_NAME);
+}
+
 export async function startBackgroundTracking(deliveryOrderRef: string) {
   await setActiveTrackingContext({ deliveryOrderRef });
 
