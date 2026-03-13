@@ -7,6 +7,7 @@ import { compare, hash } from 'bcryptjs';
 import { cookies, headers } from 'next/headers';
 
 import type { SessionUser, User } from './types';
+import { sanityGetById } from './sanity';
 import {
     createSessionToken,
     SESSION_COOKIE,
@@ -16,9 +17,13 @@ import {
 
 const BCRYPT_PREFIX = /^\$2[aby]\$/;
 
+export function isPasswordHashMigrated(passwordHash: string) {
+    return BCRYPT_PREFIX.test(passwordHash);
+}
+
 export async function verifyPassword(plainPassword: string, storedHash: string): Promise<boolean> {
     if (!storedHash) return false;
-    if (BCRYPT_PREFIX.test(storedHash)) {
+    if (isPasswordHashMigrated(storedHash)) {
         return compare(plainPassword, storedHash);
     }
     // Transitional support for legacy plaintext rows already stored in Sanity.
@@ -47,7 +52,21 @@ export async function getSession(): Promise<SessionUser | null> {
         const token = cookieStore.get(SESSION_COOKIE)?.value;
         if (!token) return null;
 
-        return await verifySessionToken(token);
+        const session = await verifySessionToken(token);
+        const user = await sanityGetById<User>(session._id);
+        if (!user || user.active === false) {
+            cookieStore.delete(SESSION_COOKIE);
+            return null;
+        }
+
+        return {
+            _id: user._id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            driverRef: user.driverRef,
+            driverName: user.driverName,
+        };
     } catch {
         return null;
     }

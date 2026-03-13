@@ -12,6 +12,16 @@ type SanityConfig = {
     token?: string;
 };
 
+const FILTER_KEY_RE = /^[_a-zA-Z][_a-zA-Z0-9]*(?:\.[_a-zA-Z][_a-zA-Z0-9]*)*$/;
+
+function isScalarFilterValue(value: unknown) {
+    return (
+        typeof value === 'string' ||
+        typeof value === 'number' ||
+        typeof value === 'boolean'
+    );
+}
+
 function cleanEnv(value: string | undefined): string | undefined {
     if (!value) return undefined;
     const trimmed = value.trim();
@@ -19,9 +29,17 @@ function cleanEnv(value: string | undefined): string | undefined {
     return trimmed.replace(/^['"]+|['"]+$/g, '');
 }
 
+function requireSanityEnv(name: 'NEXT_PUBLIC_SANITY_PROJECT_ID' | 'NEXT_PUBLIC_SANITY_DATASET') {
+    const value = cleanEnv(process.env[name]);
+    if (!value) {
+        throw new Error(`Missing required env: ${name}`);
+    }
+    return value;
+}
+
 function getSanityConfig(): SanityConfig {
-    const projectId = cleanEnv(process.env.NEXT_PUBLIC_SANITY_PROJECT_ID) || 'p6do50hl';
-    const dataset = cleanEnv(process.env.NEXT_PUBLIC_SANITY_DATASET) || 'production';
+    const projectId = requireSanityEnv('NEXT_PUBLIC_SANITY_PROJECT_ID');
+    const dataset = requireSanityEnv('NEXT_PUBLIC_SANITY_DATASET');
     const apiVersion = cleanEnv(process.env.SANITY_API_VERSION) || '2024-01-01';
     const token = cleanEnv(process.env.SANITY_API_TOKEN);
 
@@ -127,6 +145,26 @@ export async function sanityGetByFilter<T = Record<string, unknown>>(
     docType: string,
     filterObj: Record<string, unknown>
 ): Promise<T[]> {
+    for (const [key, value] of Object.entries(filterObj)) {
+        if (!FILTER_KEY_RE.test(key)) {
+            throw new Error(`Invalid filter field: ${key}`);
+        }
+
+        if (Array.isArray(value)) {
+            if (value.length === 0) {
+                continue;
+            }
+            if (!value.every(isScalarFilterValue)) {
+                throw new Error(`Invalid filter value for: ${key}`);
+            }
+            continue;
+        }
+
+        if (value !== '' && value !== null && value !== undefined && !isScalarFilterValue(value)) {
+            throw new Error(`Invalid filter value for: ${key}`);
+        }
+    }
+
     // Build dynamic GROQ filter conditions
     const conditions = Object.entries(filterObj)
         .filter(([, value]) => {

@@ -8,6 +8,7 @@ import {
 import type { User } from '@/lib/types';
 
 export type ApiSession = { _id: string; name: string; role: User['role'] };
+export type PublicUser = Omit<User, 'passwordHash'>;
 
 export type BankAccountSummary = {
     _id: string;
@@ -57,6 +58,12 @@ export function extractRefId(value: unknown) {
     }
 
     return null;
+}
+
+export function sanitizeUserForClient(user: User): PublicUser {
+    const { passwordHash, ...safeUser } = user;
+    void passwordHash;
+    return safeUser;
 }
 
 export async function ensureCashAccount() {

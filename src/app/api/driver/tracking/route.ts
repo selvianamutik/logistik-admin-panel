@@ -7,6 +7,7 @@ import {
     toSpeedKph,
 } from '@/lib/api/driver-portal';
 import { extractRefId } from '@/lib/api/data-helpers';
+import { ensureSameOriginRequest } from '@/lib/api/request-security';
 import { handleDeliveryOrderStatusUpdate } from '@/lib/api/order-workflows';
 import { getSanityClient, sanityCreate, sanityGetById, sanityUpdate } from '@/lib/sanity';
 import type { DeliveryOrder, Driver } from '@/lib/types';
@@ -94,6 +95,11 @@ async function releaseDriverTrackingLockIfOwned(driverId: string, deliveryOrderR
 }
 
 export async function POST(request: Request) {
+    const originError = ensureSameOriginRequest(request);
+    if (originError) {
+        return originError;
+    }
+
     const auth = await requireDriverSessionContext();
     if ('error' in auth) {
         return NextResponse.json({ error: auth.error }, { status: auth.status });

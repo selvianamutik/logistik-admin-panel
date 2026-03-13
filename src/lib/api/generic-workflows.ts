@@ -19,6 +19,7 @@ import {
     isPlainObject,
     normalizeNumber,
     normalizeOptionalText,
+    sanitizeUserForClient,
     type ApiSession,
     type BankAccountSummary,
 } from './data-helpers';
@@ -339,7 +340,11 @@ export async function handleGenericUpdate(
         }
     }
 
-    return NextResponse.json({ data: updated });
+    return NextResponse.json({
+        data: entity === 'users'
+            ? sanitizeUserForClient(updated as unknown as User)
+            : updated,
+    });
 }
 
 export async function handleGenericDelete(
@@ -552,5 +557,10 @@ export async function handleGenericCreate(
         `Created ${entity}: ${buildCreateSummary(newDoc, newId)}`
     );
 
-    return NextResponse.json({ data: created, id: newId });
+    return NextResponse.json({
+        data: entity === 'users'
+            ? sanitizeUserForClient(created as unknown as User)
+            : created,
+        id: newId,
+    });
 }

@@ -9,8 +9,10 @@ import { getSession } from '@/lib/auth';
 import {
     ensureCashAccount,
     isPlainObject,
+    sanitizeUserForClient,
     type ApiSession as Session,
 } from '@/lib/api/data-helpers';
+import { ensureSameOriginRequest } from '@/lib/api/request-security';
 import {
     handleBoronganPayment,
     handleDriverBoronganCreate,
@@ -50,7 +52,7 @@ import {
     sanityGetById,
     sanityGetCompanyProfile,
 } from '@/lib/sanity';
-import type { Expense, Vehicle } from '@/lib/types';
+import type { Expense, User, Vehicle } from '@/lib/types';
 type DashboardSummary = {
     orderStats: { total: number; open: number; partial: number; complete: number; onHold: number };
     doStats: { total: number; onDelivery: number };
@@ -234,6 +236,10 @@ export async function GET(request: Request) {
                 return NextResponse.json({ error: 'Not found' }, { status: 404 });
             }
 
+            if (entity === 'users') {
+                item = sanitizeUserForClient(item as unknown as User) as unknown as Record<string, unknown>;
+            }
+
             if (entity === 'vehicles' && session.role !== 'OWNER') {
                 item = sanitizeVehicleForRole(item as unknown as Vehicle, session.role) as unknown as Record<string, unknown>;
             }
@@ -246,11 +252,18 @@ export async function GET(request: Request) {
             try {
                 const filterObj = JSON.parse(filter) as Record<string, unknown>;
                 items = await sanityGetByFilter(docType, filterObj);
-            } catch {
-                items = await sanityGetAll(docType);
+            } catch (error) {
+                return NextResponse.json(
+                    { error: error instanceof Error ? error.message : 'Filter query tidak valid' },
+                    { status: 400 }
+                );
             }
         } else {
             items = await sanityGetAll(docType);
+        }
+
+        if (entity === 'users') {
+            items = items.map(item => sanitizeUserForClient(item as unknown as User) as unknown as Record<string, unknown>);
         }
 
         if (entity === 'expenses') {
@@ -269,6 +282,11 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+    const originError = ensureSameOriginRequest(request);
+    if (originError) {
+        return originError;
+    }
+
     const session = await getSession();
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     if (session.role === 'DRIVER') {

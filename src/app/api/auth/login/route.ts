@@ -4,19 +4,47 @@
 
 import { NextResponse } from 'next/server';
 import { getSanityClient, sanityGetById, sanityUpdate } from '@/lib/sanity';
-import { verifyPassword, createSession, setSessionCookie } from '@/lib/auth';
+import { verifyPassword, createSession, hashPassword, isPasswordHashMigrated, setSessionCookie } from '@/lib/auth';
+import { clearFailedAttempts, getRequestIp, recordFailedAttempt } from '@/lib/api/rate-limit';
+import { ensureSameOriginRequest } from '@/lib/api/request-security';
 import type { Driver, User } from '@/lib/types';
+
+const LOGIN_ATTEMPT_LIMIT = 10;
+const LOGIN_WINDOW_MS = 10 * 60 * 1000;
+
+function buildLoginRateLimitKey(request: Request, email: string, scope: 'ADMIN' | 'DRIVER') {
+    return `login:${scope}:${email.toLowerCase()}:${getRequestIp(request)}`;
+}
+
+function tooManyAttemptsResponse(retryAfterSeconds: number) {
+    return NextResponse.json(
+        { error: 'Terlalu banyak percobaan login. Coba lagi beberapa saat lagi.' },
+        {
+            status: 429,
+            headers: {
+                'Retry-After': String(retryAfterSeconds),
+            },
+        }
+    );
+}
 
 export async function GET() {
     return NextResponse.json({ error: 'Use POST method', methods: ['POST'] }, { status: 405 });
 }
 
 export async function POST(request: Request) {
+    const originError = ensureSameOriginRequest(request);
+    if (originError) {
+        return originError;
+    }
+
     try {
         const { email, password, scope } = await request.json();
         const loginScope = scope === 'DRIVER' ? 'DRIVER' : 'ADMIN';
+        const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+        const rateLimitKey = buildLoginRateLimitKey(request, normalizedEmail || 'unknown', loginScope);
 
-        if (!email || !password) {
+        if (!normalizedEmail || !password) {
             return NextResponse.json(
                 { error: 'Email dan password wajib diisi' },
                 { status: 400 }
@@ -26,10 +54,14 @@ export async function POST(request: Request) {
         // Find user from Sanity
         const user = await getSanityClient().fetch<User | null>(
             `*[_type == "user" && email == $email && active == true][0]`,
-            { email }
+            { email: normalizedEmail }
         );
 
         if (!user) {
+            const attempt = recordFailedAttempt(rateLimitKey, LOGIN_ATTEMPT_LIMIT, LOGIN_WINDOW_MS);
+            if (attempt.limited) {
+                return tooManyAttemptsResponse(attempt.retryAfterSeconds);
+            }
             return NextResponse.json(
                 { error: 'Email atau password salah' },
                 { status: 401 }
@@ -39,10 +71,19 @@ export async function POST(request: Request) {
         // Verify password
         const isValid = await verifyPassword(password, user.passwordHash);
         if (!isValid) {
+            const attempt = recordFailedAttempt(rateLimitKey, LOGIN_ATTEMPT_LIMIT, LOGIN_WINDOW_MS);
+            if (attempt.limited) {
+                return tooManyAttemptsResponse(attempt.retryAfterSeconds);
+            }
             return NextResponse.json(
                 { error: 'Email atau password salah' },
                 { status: 401 }
             );
+        }
+
+        let nextPasswordHash: string | undefined;
+        if (!isPasswordHashMigrated(user.passwordHash)) {
+            nextPasswordHash = await hashPassword(password);
         }
 
         if (loginScope === 'DRIVER' && user.role !== 'DRIVER') {
@@ -76,9 +117,17 @@ export async function POST(request: Request) {
             }
         }
 
+        clearFailedAttempts(rateLimitKey);
+
         const lastLoginAt = new Date().toISOString();
-        await sanityUpdate(user._id, { lastLoginAt });
+        await sanityUpdate(user._id, {
+            lastLoginAt,
+            ...(nextPasswordHash ? { passwordHash: nextPasswordHash } : {}),
+        });
         user.lastLoginAt = lastLoginAt;
+        if (nextPasswordHash) {
+            user.passwordHash = nextPasswordHash;
+        }
 
         // Create session
         const token = await createSession(user);

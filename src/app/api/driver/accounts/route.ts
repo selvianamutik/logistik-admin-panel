@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 
 import { hashPassword } from '@/lib/auth';
+import { sanitizeUserForClient } from '@/lib/api/data-helpers';
 import { requireAdminOrOwnerSession } from '@/lib/api/driver-portal';
+import { ensureSameOriginRequest } from '@/lib/api/request-security';
 import { getSanityClient, sanityCreate, sanityGetById, sanityUpdate } from '@/lib/sanity';
 import type { Driver, User } from '@/lib/types';
 
@@ -62,6 +64,11 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+    const originError = ensureSameOriginRequest(request);
+    if (originError) {
+        return originError;
+    }
+
     const auth = await requireAdminOrOwnerSession();
     if ('error' in auth) {
         return NextResponse.json({ error: auth.error }, { status: auth.status });
@@ -124,7 +131,7 @@ export async function POST(request: Request) {
             });
 
             void addAuditLog(auth.session, 'CREATE', created._id, `Membuat akun driver mobile untuk ${driver.name}`);
-            return NextResponse.json({ data: created });
+            return NextResponse.json({ data: sanitizeUserForClient(created) });
         }
 
         const id = normalizeText(body.id);
@@ -167,7 +174,7 @@ export async function POST(request: Request) {
 
         const updated = await sanityUpdate<User>(id, updates);
         void addAuditLog(auth.session, 'UPDATE', id, `Memperbarui akun driver mobile untuk ${driver.name}`);
-        return NextResponse.json({ data: updated });
+        return NextResponse.json({ data: sanitizeUserForClient(updated) });
     } catch (error) {
         console.error('Driver account route error:', error);
         return NextResponse.json({ error: 'Terjadi kesalahan server' }, { status: 500 });

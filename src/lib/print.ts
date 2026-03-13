@@ -2,6 +2,7 @@
    LOGISTIK - Print Utility
    ============================================================ */
 
+import DOMPurify from 'dompurify';
 import type { CompanyProfile, FreightNota, FreightNotaItem } from './types';
 
 export async function fetchCompanyProfile(): Promise<CompanyProfile | null> {
@@ -45,8 +46,17 @@ export function openBrandedPrint(opts: {
     });
 
     const browserTitle = `${title}${subtitle ? ` - ${subtitle}` : ''} - ${companyName}`;
+    const safeBrowserTitle = escapePrintHtml(browserTitle);
+    const safeCompanyName = escapePrintHtml(companyName);
+    const safeSubtitle = subtitle ? escapePrintHtml(subtitle) : '';
+    const safeTitle = escapePrintHtml(title);
+    const safePrintDate = escapePrintHtml(printDate);
+    const safeCompanyLogo = companyLogo ? escapePrintAttribute(companyLogo) : '';
+    const safeBodyHtml = DOMPurify.sanitize(bodyHtml, {
+        USE_PROFILES: { html: true },
+    });
 
-    w.document.write(`<!DOCTYPE html><html><head><title>${browserTitle}</title><style>
+    w.document.write(`<!DOCTYPE html><html><head><title>${safeBrowserTitle}</title><style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Segoe UI', -apple-system, sans-serif; padding: 2rem; color: #1e293b; max-width: 900px; margin: 0 auto; font-size: 14px; }
         .print-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 2px solid #1e293b; }
@@ -75,19 +85,19 @@ export function openBrandedPrint(opts: {
     </style></head><body>
         ${showCompanyHeader ? `
             <div class="print-header">
-                ${companyLogo ? `<img src="${companyLogo}" />` : ''}
+                ${safeCompanyLogo ? `<img src="${safeCompanyLogo}" />` : ''}
                 <div>
-                    <div class="co-name">${companyName}</div>
-                    <div class="co-sub">${title}${subtitle ? ` - ${subtitle}` : ''}</div>
+                    <div class="co-name">${safeCompanyName}</div>
+                    <div class="co-sub">${safeTitle}${safeSubtitle ? ` - ${safeSubtitle}` : ''}</div>
                 </div>
-                <div class="print-date">Dicetak:<br/>${printDate}</div>
+                <div class="print-date">Dicetak:<br/>${safePrintDate}</div>
             </div>
         ` : ''}
-        ${bodyHtml}
+        ${safeBodyHtml}
         ${showFooter ? `
             <div class="print-footer">
-                <span>${companyName}</span>
-                <span>Dicetak: ${printDate}</span>
+                <span>${safeCompanyName}</span>
+                <span>Dicetak: ${safePrintDate}</span>
             </div>
         ` : ''}
     </body></html>`);
@@ -95,13 +105,21 @@ export function openBrandedPrint(opts: {
     setTimeout(() => w.print(), 300);
 }
 
-function escapeHtml(value: unknown) {
+export function escapePrintHtml(value: unknown) {
     return String(value ?? '')
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+}
+
+function escapePrintAttribute(value: unknown) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
 }
 
 function fmtPrintDate(value?: string) {
@@ -206,18 +224,18 @@ export function buildFreightNotaPrintDocument(opts: {
             <tr>
                 ${entryIndex === 0 ? `
                     <td class="c group-cell" rowspan="${span}">${group.no}</td>
-                    <td class="group-cell" rowspan="${span}">${escapeHtml(group.vehiclePlate)}</td>
-                    <td class="c group-cell" rowspan="${span}">${escapeHtml(group.date)}</td>
+                    <td class="group-cell" rowspan="${span}">${escapePrintHtml(group.vehiclePlate)}</td>
+                    <td class="c group-cell" rowspan="${span}">${escapePrintHtml(group.date)}</td>
                 ` : ''}
-                <td>${escapeHtml(entry.noSJ)}</td>
-                <td>${escapeHtml(entry.dari)}</td>
-                <td>${escapeHtml(entry.tujuan)}</td>
-                <td>${escapeHtml(entry.barang)}</td>
-                <td class="r">${escapeHtml(entry.collie)}</td>
-                <td class="r">${escapeHtml(entry.beratKg)}</td>
-                <td class="r">${escapeHtml(entry.tarip)}</td>
-                <td class="r">${escapeHtml(entry.uangRp)}</td>
-                <td>${escapeHtml(entry.ket)}</td>
+                <td>${escapePrintHtml(entry.noSJ)}</td>
+                <td>${escapePrintHtml(entry.dari)}</td>
+                <td>${escapePrintHtml(entry.tujuan)}</td>
+                <td>${escapePrintHtml(entry.barang)}</td>
+                <td class="r">${escapePrintHtml(entry.collie)}</td>
+                <td class="r">${escapePrintHtml(entry.beratKg)}</td>
+                <td class="r">${escapePrintHtml(entry.tarip)}</td>
+                <td class="r">${escapePrintHtml(entry.uangRp)}</td>
+                <td>${escapePrintHtml(entry.ket)}</td>
             </tr>
         `).join('');
     }).join('');
@@ -254,15 +272,15 @@ export function buildFreightNotaPrintDocument(opts: {
         <div class="nota-sheet">
             <div class="nota-header">
                 <div class="nota-company">
-                    ${companyLines.map((line, index) => `<div class="${index === 0 ? 'nota-company-name' : 'nota-company-line'}">${escapeHtml(line)}</div>`).join('')}
+                    ${companyLines.map((line, index) => `<div class="${index === 0 ? 'nota-company-name' : 'nota-company-line'}">${escapePrintHtml(line)}</div>`).join('')}
                 </div>
                 <div class="nota-heading">
                     <div class="nota-heading-top">
-                        <div class="nota-title">PERINCIAN ONGKOS ANGKUT NO.${escapeHtml(displayNumber)}</div>
-                        <div class="nota-issued"><span class="b">TGL. :</span> ${escapeHtml(fmtLongPrintDate(nota.issueDate))}</div>
+                        <div class="nota-title">PERINCIAN ONGKOS ANGKUT NO.${escapePrintHtml(displayNumber)}</div>
+                        <div class="nota-issued"><span class="b">TGL. :</span> ${escapePrintHtml(fmtLongPrintDate(nota.issueDate))}</div>
                     </div>
                     <div class="nota-recipient-label">KEPADA YANG TERHORMAT :</div>
-                    <div class="nota-recipient-value">${escapeHtml(nota.customerName)}</div>
+                    <div class="nota-recipient-value">${escapePrintHtml(nota.customerName)}</div>
                 </div>
             </div>
 
@@ -302,10 +320,10 @@ export function buildFreightNotaPrintDocument(opts: {
                     ${fillerRowsHtml}
                     <tr class="nota-total-row">
                         <td colspan="7" class="r b">Jumlah</td>
-                        <td class="r b">${escapeHtml(nota.totalCollie || 0)}</td>
-                        <td class="r b">${escapeHtml(fmtNumber(nota.totalWeightKg || 0))}</td>
+                        <td class="r b">${escapePrintHtml(nota.totalCollie || 0)}</td>
+                        <td class="r b">${escapePrintHtml(fmtNumber(nota.totalWeightKg || 0))}</td>
                         <td></td>
-                        <td class="r b">${escapeHtml(fmtNumber(nota.totalAmount || 0))}</td>
+                        <td class="r b">${escapePrintHtml(fmtNumber(nota.totalAmount || 0))}</td>
                         <td></td>
                     </tr>
                 </tbody>
@@ -314,8 +332,8 @@ export function buildFreightNotaPrintDocument(opts: {
             <div class="nota-note-row">
                 <div class="nota-note">
                     <div><span class="b">NOTE :</span> ONGKOS ANGKUTAN HARAP DITRANSFER KE :</div>
-                    ${bankTransferLine ? `<div class="nota-bank-line">${escapeHtml(bankTransferLine)}</div>` : ''}
-                    ${extraNote ? `<div class="nota-extra-note">${escapeHtml(extraNote)}</div>` : ''}
+                    ${bankTransferLine ? `<div class="nota-bank-line">${escapePrintHtml(bankTransferLine)}</div>` : ''}
+                    ${extraNote ? `<div class="nota-extra-note">${escapePrintHtml(extraNote)}</div>` : ''}
                 </div>
             </div>
         </div>
