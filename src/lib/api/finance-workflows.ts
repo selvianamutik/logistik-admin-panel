@@ -41,16 +41,6 @@ type NormalizedFreightNotaRow = {
     ket?: string;
 };
 
-type FreightNotaDeliveryOrderSource = {
-    _id: string;
-    status?: string;
-    orderRef?: unknown;
-    doNumber?: string;
-    vehiclePlate?: string;
-    receiverAddress?: string;
-    date?: string;
-};
-
 type FreightNotaOrderSource = {
     _id: string;
     customerRef?: unknown;

@@ -416,9 +416,13 @@ Di APK Android driver:
 Action yang tersedia:
 
 - `Mulai Tracking`
-- `Jeda`
 - `Lanjut`
-- `Stop`
+
+Catatan penting:
+
+- driver tidak boleh menjeda atau menghentikan tracking sendiri selama DO masih `CREATED` atau `ON_DELIVERY`
+- tracking hanya berhenti otomatis saat admin/owner menutup DO menjadi `DELIVERED` atau `CANCELLED`
+- ada satu pengecualian internal: bila app gagal menyalakan service lokasi tepat setelah `Mulai Tracking`, sistem boleh melakukan rollback otomatis agar DO tidak terlihat aktif palsu
 
 ### 14.5 Dampaknya ke status DO
 
@@ -442,6 +446,12 @@ Kalau supir dinonaktifkan saat masih ada tracking aktif:
 - tracking DO aktif/paused miliknya otomatis ditandai `STOPPED`
 - sistem menambah log bahwa tracking dihentikan otomatis karena supir dinonaktifkan
 - akun mobile driver ikut dinonaktifkan agar tidak ada sesi lapangan yang menggantung
+
+Kalau driver mencoba keluar dari portal / APK saat masih ada DO yang mengunci tracking:
+
+- sistem menolak logout
+- driver harus menunggu admin benar-benar menutup DO
+- ini sengaja agar posisi DO tidak hilang di tengah perjalanan
 
 ### 14.6 Apa yang tampil di admin web
 

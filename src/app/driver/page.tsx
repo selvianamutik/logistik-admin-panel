@@ -6,8 +6,6 @@ import {
     Loader2,
     LogOut,
     MapPin,
-    Navigation,
-    PauseCircle,
     PlayCircle,
     RefreshCw,
     Smartphone,
@@ -65,6 +63,10 @@ export default function DriverPortalPage() {
 
     const activeTrackingDo = useMemo(
         () => orders.find(item => item.trackingState === 'ACTIVE') || null,
+        [orders]
+    );
+    const lockedTrackingDo = useMemo(
+        () => orders.find(item => item.trackingState === 'ACTIVE' || item.trackingState === 'PAUSED') || null,
         [orders]
     );
     const isActionInFlight = Boolean(actionLoadingId);
@@ -135,7 +137,7 @@ export default function DriverPortalPage() {
 
     const postTrackingAction = useCallback(
         async (
-            action: 'start' | 'heartbeat' | 'pause' | 'resume' | 'stop',
+            action: 'start' | 'heartbeat' | 'resume' | 'stop' | 'rollback-start',
             deliveryOrderRef: string,
             coords?: GeolocationCoordinates
         ) => {
@@ -200,7 +202,9 @@ export default function DriverPortalPage() {
                     await postTrackingAction(resume ? 'resume' : 'start', deliveryOrderRef, coords);
                     setFeedback({
                         type: 'success',
-                        message: resume ? 'Tracking dilanjutkan.' : 'Tracking live dimulai. Biar akurat, biarkan halaman ini tetap terbuka di HP.',
+                        message: resume
+                            ? 'Tracking dipulihkan lagi. Biarkan GPS menyala sampai admin menyelesaikan DO.'
+                            : 'Tracking live dimulai. Driver tidak bisa menghentikannya sendiri sebelum admin menyelesaikan DO.',
                     });
                     await loadOrders();
                 } catch (error) {
@@ -218,32 +222,6 @@ export default function DriverPortalPage() {
             });
         },
         [handleDriverAuthFailure, loadOrders, postTrackingAction, withCurrentPosition]
-    );
-
-    const runSimpleTrackingAction = useCallback(
-        async (action: 'pause' | 'stop', deliveryOrderRef: string) => {
-            setActionLoadingId(deliveryOrderRef);
-            try {
-                await postTrackingAction(action, deliveryOrderRef);
-                setFeedback({
-                    type: 'success',
-                    message: action === 'pause' ? 'Tracking dijeda.' : 'Tracking dihentikan.',
-                });
-                await loadOrders();
-            } catch (error) {
-                if (error instanceof Error && 'status' in error && (error.status === 401 || error.status === 403)) {
-                    handleDriverAuthFailure(error.message);
-                    return;
-                }
-                setFeedback({
-                    type: 'error',
-                    message: error instanceof Error ? error.message : 'Gagal memperbarui tracking',
-                });
-            } finally {
-                setActionLoadingId(null);
-            }
-        },
-        [handleDriverAuthFailure, loadOrders, postTrackingAction]
     );
 
     useEffect(() => {
@@ -309,6 +287,13 @@ export default function DriverPortalPage() {
     }, [activeTrackingDo, handleDriverAuthFailure, loadOrders, postTrackingAction]);
 
     const handleLogout = async () => {
+        if (lockedTrackingDo) {
+            setFeedback({
+                type: 'info',
+                message: `Kamu masih terikat ke ${lockedTrackingDo.doNumber}. Driver tidak boleh keluar sebelum admin menyelesaikan DO ini.`,
+            });
+            return;
+        }
         await fetch('/api/auth/logout', { method: 'POST' });
         router.push('/driver/login');
         router.refresh();
@@ -333,7 +318,7 @@ export default function DriverPortalPage() {
                     <h1>{companyName}</h1>
                     <p>{driver?.name || user?.name} | {driver?.phone || '-'}</p>
                 </div>
-                <button className="btn btn-secondary btn-sm" onClick={handleLogout}>
+                <button className="btn btn-secondary btn-sm" onClick={handleLogout} disabled={Boolean(lockedTrackingDo)}>
                     <LogOut size={15} /> Keluar
                 </button>
             </section>
@@ -345,17 +330,18 @@ export default function DriverPortalPage() {
                 </div>
                 <p>
                     Lokasi akan terkirim selama halaman ini tetap terbuka di HP, internet aktif, dan izin lokasi GPS menyala.
-                    Kalau aplikasi/browser ditutup total, tracking live tidak akan terus berjalan di background.
+                    Kalau aplikasi/browser ditutup total, tracking live tidak akan terus berjalan di background. Driver juga tidak bisa
+                    menghentikan tracking sendiri sebelum admin menutup DO.
                 </p>
                 {feedback && <div className={`driver-feedback ${feedback.type}`}>{feedback.message}</div>}
             </section>
 
             <section className="driver-toolbar">
                 <div className="driver-toolbar-text">
-                    {activeTrackingDo ? (
-                        <>Tracking aktif di <strong>{activeTrackingDo.doNumber}</strong></>
+                    {lockedTrackingDo ? (
+                        <>DO terkunci di <strong>{lockedTrackingDo.doNumber}</strong></>
                     ) : (
-                        <>Belum ada tracking aktif</>
+                        <>Belum ada DO yang mengunci tracking</>
                     )}
                 </div>
                 <button className="btn btn-secondary btn-sm" onClick={() => void loadOrders()} disabled={refreshing}>
@@ -406,25 +392,21 @@ export default function DriverPortalPage() {
 
                                     <div className="driver-action-row">
                                         {item.trackingState === 'ACTIVE' ? (
-                                            <>
-                                                <button className="btn btn-warning btn-sm" onClick={() => void runSimpleTrackingAction('pause', item._id)} disabled={isActionInFlight}>
-                                                    <PauseCircle size={15} /> {isBusy ? 'Memproses...' : 'Jeda'}
-                                                </button>
-                                                <button className="btn btn-secondary btn-sm" onClick={() => void runSimpleTrackingAction('stop', item._id)} disabled={isActionInFlight}>
-                                                    <Navigation size={15} /> {isBusy ? 'Memproses...' : 'Stop'}
-                                                </button>
-                                            </>
+                                            <div className="text-muted text-sm" style={{ flex: 1, lineHeight: 1.5 }}>
+                                                Tracking harus tetap aktif sampai admin menyelesaikan DO ini. Driver tidak bisa menjeda
+                                                atau menghentikannya sendiri.
+                                            </div>
                                         ) : item.trackingState === 'PAUSED' ? (
                                             <>
-                                                <button className="btn btn-primary btn-sm" onClick={() => startTracking(item._id, true)} disabled={isActionInFlight}>
+                                                <button className="btn btn-primary btn-sm" onClick={() => startTracking(item._id, true)} disabled={isActionInFlight || !canStart}>
                                                     <PlayCircle size={15} /> {isBusy ? 'Memproses...' : 'Lanjut'}
                                                 </button>
-                                                <button className="btn btn-secondary btn-sm" onClick={() => void runSimpleTrackingAction('stop', item._id)} disabled={isActionInFlight}>
-                                                    <Navigation size={15} /> {isBusy ? 'Memproses...' : 'Stop'}
-                                                </button>
+                                                <div className="text-muted text-sm" style={{ flex: 1, lineHeight: 1.5 }}>
+                                                    Status jeda ini hanya untuk data lama. Tracking harus dipulihkan sampai admin menutup DO.
+                                                </div>
                                             </>
                                         ) : (
-                                            <button className="btn btn-primary btn-sm" onClick={() => startTracking(item._id)} disabled={isActionInFlight || !canStart || Boolean(activeTrackingDo && activeTrackingDo._id !== item._id)}>
+                                            <button className="btn btn-primary btn-sm" onClick={() => startTracking(item._id)} disabled={isActionInFlight || !canStart || Boolean(lockedTrackingDo && lockedTrackingDo._id !== item._id)}>
                                                 <PlayCircle size={15} /> {isBusy ? 'Memproses...' : 'Mulai Tracking'}
                                             </button>
                                         )}

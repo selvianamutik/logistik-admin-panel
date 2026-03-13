@@ -16,6 +16,7 @@
 /.playwright-cli/
 /output/playwright/
 /output/*.log
+/output/*.pid
 
 # next.js
 /.next/

@@ -95,6 +95,30 @@ async function releaseDriverTrackingLockIfOwned(driverId: string, deliveryOrderR
     return clearDriverTrackingLock(driverState, now);
 }
 
+const TRACKING_ROLLBACK_GRACE_MS = 2 * 60 * 1000;
+
+function isClosedDeliveryOrder(status?: DeliveryOrder['status']) {
+    return status === 'DELIVERED' || status === 'CANCELLED';
+}
+
+function canRollbackFreshTrackingStart(deliveryOrder: DeliveryOrder, now: string) {
+    const nowMs = Date.parse(now);
+    if (Number.isNaN(nowMs)) {
+        return false;
+    }
+
+    const candidates = [deliveryOrder.trackingLastSeenAt, deliveryOrder.trackingStartedAt]
+        .map(value => (value ? Date.parse(value) : Number.NaN))
+        .filter(value => Number.isFinite(value));
+
+    if (candidates.length === 0) {
+        return false;
+    }
+
+    const latestTrackingMs = Math.max(...candidates);
+    return nowMs - latestTrackingMs <= TRACKING_ROLLBACK_GRACE_MS;
+}
+
 export async function POST(request: Request) {
     if (!hasBearerDriverAuth(request)) {
         const originError = ensureSameOriginRequest(request);
@@ -110,7 +134,7 @@ export async function POST(request: Request) {
 
     try {
         const body = await request.json() as {
-            action?: 'start' | 'heartbeat' | 'pause' | 'resume' | 'stop';
+            action?: 'start' | 'heartbeat' | 'pause' | 'resume' | 'stop' | 'rollback-start';
             deliveryOrderRef?: string;
             latitude?: number;
             longitude?: number;
@@ -328,6 +352,12 @@ export async function POST(request: Request) {
         }
 
         if (action === 'pause') {
+            if (!isClosedDeliveryOrder(deliveryOrder.status)) {
+                return NextResponse.json(
+                    { error: 'Driver tidak boleh mematikan tracking sebelum DO benar-benar selesai. Tracking akan berhenti otomatis saat admin menutup DO.' },
+                    { status: 409 }
+                );
+            }
             if (deliveryOrder.trackingState !== 'ACTIVE') {
                 return NextResponse.json({ error: 'Tracking tidak sedang aktif' }, { status: 409 });
             }
@@ -351,7 +381,52 @@ export async function POST(request: Request) {
             return NextResponse.json({ data: updated });
         }
 
+        if (action === 'rollback-start') {
+            if (deliveryOrder.trackingState !== 'ACTIVE') {
+                return NextResponse.json({ error: 'Tracking tidak sedang aktif' }, { status: 409 });
+            }
+
+            if (!canRollbackFreshTrackingStart(deliveryOrder, now)) {
+                return NextResponse.json(
+                    { error: 'Tracking ini sudah berjalan terlalu lama untuk dibatalkan otomatis. Hubungi admin bila DO perlu diselesaikan.' },
+                    { status: 409 }
+                );
+            }
+
+            await createTrackingLog({
+                deliveryOrderRef,
+                status: deliveryOrder.status,
+                note: 'Tracking dibatalkan otomatis karena service perangkat gagal aktif',
+                userRef: auth.session._id,
+                userName: auth.session.name,
+                latitude: latitude ?? undefined,
+                longitude: longitude ?? undefined,
+                accuracyM: accuracyM ?? undefined,
+                speedKph,
+            });
+
+            const updated = await sanityUpdate<DeliveryOrder>(deliveryOrderRef, {
+                trackingState: 'STOPPED',
+                trackingStoppedAt: now,
+                ...locationPatch,
+            });
+
+            try {
+                await releaseDriverTrackingLockIfOwned(auth.driver._id, deliveryOrderRef, now);
+            } catch (error) {
+                console.warn('Failed to release driver tracking lock after rollback-start', error);
+            }
+
+            return NextResponse.json({ data: updated });
+        }
+
         if (action === 'stop') {
+            if (!isClosedDeliveryOrder(deliveryOrder.status)) {
+                return NextResponse.json(
+                    { error: 'Driver tidak boleh mematikan tracking sebelum DO benar-benar selesai. Tracking akan berhenti otomatis saat admin menutup DO.' },
+                    { status: 409 }
+                );
+            }
             if (!['ACTIVE', 'PAUSED'].includes(deliveryOrder.trackingState || '')) {
                 return NextResponse.json({ error: 'Tracking tidak sedang berjalan' }, { status: 409 });
             }

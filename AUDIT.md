@@ -136,6 +136,15 @@ Lifecycle supir juga tetap dijaga:
 
 - supir yang punya akun mobile tidak bisa dihapus
 - menonaktifkan supir akan ikut menonaktifkan akun mobile driver dan menghentikan tracking aktifnya
+- driver tidak boleh menghentikan tracking sendiri sebelum DO benar-benar ditutup admin
+- logout dari portal / APK juga ditolak selama masih ada DO yang mengunci tracking
+
+Brutal truth terbaru:
+
+- tracking yang paling berbahaya justru bukan "GPS meleset", tetapi status palsu: server merasa tracking aktif padahal driver sudah keluar atau service perangkat gagal hidup
+- guard ini sekarang ditutup dengan dua aturan:
+  - driver tidak punya tombol stop manual untuk DO yang masih berjalan
+  - rollback otomatis hanya boleh dipakai sesaat setelah start gagal, bukan untuk menghentikan perjalanan di tengah jalan
 
 Brutal truth-nya:
 

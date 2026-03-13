@@ -87,6 +87,10 @@ export default function App() {
     () => orders.find((item) => item.trackingState === 'ACTIVE') || null,
     [orders],
   );
+  const lockedTrackingOrder = useMemo(
+    () => orders.find((item) => item.trackingState === 'ACTIVE' || item.trackingState === 'PAUSED') || null,
+    [orders],
+  );
 
   const syncLocalTrackingState = useCallback(async (deliveryOrders: DeliveryOrder[]) => {
     const activeTrackedOrder = deliveryOrders.find((item) => item.trackingState === 'ACTIVE') || null;
@@ -194,39 +198,35 @@ export default function App() {
     await hydrateDriverApp(token);
   }, [hydrateDriverApp, token]);
 
-  const handleTrackingAction = useCallback(async (order: DeliveryOrder, action: 'start' | 'resume' | 'pause' | 'stop') => {
+  const handleTrackingAction = useCallback(async (order: DeliveryOrder, action: 'start' | 'resume') => {
     if (!token) return;
 
     setActionOrderId(order._id);
     try {
-      if (action === 'start' || action === 'resume') {
-        await requestTrackingPermissions();
-        const currentPosition = await getCurrentLocation();
+      await requestTrackingPermissions();
+      const currentPosition = await getCurrentLocation();
 
-        await postTrackingAction(token, order._id, action, {
-          latitude: currentPosition.coords.latitude,
-          longitude: currentPosition.coords.longitude,
-          accuracyM: currentPosition.coords.accuracy,
-          speedMps: currentPosition.coords.speed,
-        });
+      await postTrackingAction(token, order._id, action, {
+        latitude: currentPosition.coords.latitude,
+        longitude: currentPosition.coords.longitude,
+        accuracyM: currentPosition.coords.accuracy,
+        speedMps: currentPosition.coords.speed,
+      });
 
-        try {
-          await startBackgroundTracking(order._id);
-        } catch (trackingError) {
-          await postTrackingAction(token, order._id, 'stop');
-          throw trackingError;
-        }
-      } else {
-        await postTrackingAction(token, order._id, action);
-        await stopBackgroundTracking();
+      try {
+        await startBackgroundTracking(order._id);
+      } catch (trackingError) {
+        await postTrackingAction(token, order._id, 'rollback-start');
+        throw trackingError;
       }
 
       await refreshOrders();
-      Alert.alert('Berhasil', action === 'pause'
-        ? 'Tracking dijeda.'
-        : action === 'stop'
-          ? 'Tracking dihentikan.'
-          : 'Tracking background aktif. Biarkan GPS dan internet menyala.');
+      Alert.alert(
+        'Berhasil',
+        action === 'resume'
+          ? 'Tracking dipulihkan lagi. Biarkan GPS dan internet tetap menyala sampai admin menyelesaikan DO.'
+          : 'Tracking background aktif. Driver tidak bisa menghentikannya sendiri sebelum admin menyelesaikan DO.',
+      );
     } catch (requestError) {
       Alert.alert('Tracking gagal', requestError instanceof Error ? requestError.message : 'Terjadi kesalahan tracking.');
     } finally {
@@ -235,8 +235,11 @@ export default function App() {
   }, [refreshOrders, token]);
 
   const handleLogout = useCallback(async () => {
-    if (activeOrder) {
-      Alert.alert('Tracking masih aktif', 'Hentikan tracking aktif sebelum logout agar pengiriman tidak terlihat macet.');
+    if (lockedTrackingOrder) {
+      Alert.alert(
+        'DO masih berjalan',
+        `Kamu masih terikat ke ${lockedTrackingOrder.doNumber}. Driver tidak boleh logout sebelum admin benar-benar menyelesaikan DO ini.`,
+      );
       return;
     }
 
@@ -247,7 +250,7 @@ export default function App() {
     setDriver(null);
     setOrders([]);
     setError(null);
-  }, [activeOrder]);
+  }, [lockedTrackingOrder]);
 
   if (booting) {
     return (
@@ -310,7 +313,11 @@ export default function App() {
             <Text style={styles.title}>{driver.name}</Text>
             <Text style={styles.subtitle}>{driver.phone || user.email}</Text>
           </View>
-          <Pressable style={[styles.ghostButton, activeOrder && styles.buttonDisabled]} disabled={Boolean(activeOrder)} onPress={() => void handleLogout()}>
+          <Pressable
+            style={[styles.ghostButton, lockedTrackingOrder && styles.buttonDisabled]}
+            disabled={Boolean(lockedTrackingOrder)}
+            onPress={() => void handleLogout()}
+          >
             <Text style={styles.ghostButtonText}>Keluar</Text>
           </Pressable>
         </View>
@@ -319,15 +326,17 @@ export default function App() {
           <Text style={styles.infoTitle}>Tracking background Android</Text>
           <Text style={styles.infoText}>
             Saat tracking aktif, aplikasi akan menjalankan foreground service Android dan mengirim heartbeat lokasi ke web admin.
-            Jangan matikan izin lokasi atau data seluler saat perjalanan berlangsung.
+            Jangan matikan izin lokasi atau data seluler saat perjalanan berlangsung. Driver tidak bisa menghentikan tracking sendiri
+            sebelum admin menutup DO.
           </Text>
           <View style={styles.infoRow}>
-            <Text style={styles.infoKey}>Tracking aktif</Text>
-            <Text style={styles.infoValue}>{activeOrder ? activeOrder.doNumber : 'Belum ada'}</Text>
+            <Text style={styles.infoKey}>DO terkunci</Text>
+            <Text style={styles.infoValue}>{lockedTrackingOrder ? lockedTrackingOrder.doNumber : 'Belum ada'}</Text>
           </View>
           {!trackingRuntimeHealthy && activeOrder ? (
             <Text style={styles.runtimeWarning}>
-              Server mencatat tracking aktif untuk {activeOrder.doNumber}, tetapi service lokasi di perangkat tidak sedang berjalan. Tekan Stop lalu Mulai lagi.
+              Server mencatat tracking aktif untuk {activeOrder.doNumber}, tetapi service lokasi di perangkat tidak sedang berjalan.
+              Tekan Pulihkan Tracking agar foreground service aktif lagi.
             </Text>
           ) : null}
         </View>
@@ -392,32 +401,39 @@ export default function App() {
 
                 <View style={styles.actionRow}>
                   {order.trackingState === 'ACTIVE' ? (
-                    <>
-                      <Pressable style={[styles.warningButton, styles.flexButton, busy && styles.buttonDisabled]} onPress={() => void handleTrackingAction(order, 'pause')} disabled={busy}>
-                        {busy ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.primaryButtonText}>Jeda</Text>}
+                    !trackingRuntimeHealthy && activeOrder?._id === order._id ? (
+                      <Pressable
+                        style={[styles.primaryButton, styles.fullButton, busy && styles.buttonDisabled]}
+                        onPress={() => void handleTrackingAction(order, 'resume')}
+                        disabled={busy}
+                      >
+                        {busy ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.primaryButtonText}>Pulihkan Tracking</Text>}
                       </Pressable>
-                      <Pressable style={[styles.dangerButton, styles.flexButton, busy && styles.buttonDisabled]} onPress={() => void handleTrackingAction(order, 'stop')} disabled={busy}>
-                        {busy ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.primaryButtonText}>Stop</Text>}
-                      </Pressable>
-                    </>
+                    ) : (
+                      <View style={styles.noticeCard}>
+                        <Text style={styles.noticeText}>
+                          Tracking harus tetap aktif sampai admin menyelesaikan DO ini. Driver tidak bisa menjeda atau menghentikannya sendiri.
+                        </Text>
+                      </View>
+                    )
                   ) : order.trackingState === 'PAUSED' ? (
-                    <>
-                      <Pressable style={[styles.primaryButton, styles.flexButton, busy && styles.buttonDisabled]} onPress={() => void handleTrackingAction(order, 'resume')} disabled={busy}>
+                    <View style={styles.pausedActionGroup}>
+                      <Pressable style={[styles.primaryButton, styles.flexButton, busy && styles.buttonDisabled]} onPress={() => void handleTrackingAction(order, 'resume')} disabled={busy || order.status === 'DELIVERED' || order.status === 'CANCELLED'}>
                         {busy ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.primaryButtonText}>Lanjut</Text>}
                       </Pressable>
-                      <Pressable style={[styles.dangerButton, styles.flexButton, busy && styles.buttonDisabled]} onPress={() => void handleTrackingAction(order, 'stop')} disabled={busy}>
-                        {busy ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.primaryButtonText}>Stop</Text>}
-                      </Pressable>
-                    </>
+                      <Text style={styles.noticeText}>
+                        Status jeda ini hanya untuk data lama. Tracking harus dipulihkan sampai admin benar-benar menutup DO.
+                      </Text>
+                    </View>
                   ) : (
                     <Pressable
                       style={[
                         styles.primaryButton,
                         styles.fullButton,
-                        (busy || order.status === 'DELIVERED' || order.status === 'CANCELLED') && styles.buttonDisabled,
+                        (busy || order.status === 'DELIVERED' || order.status === 'CANCELLED' || Boolean(lockedTrackingOrder && lockedTrackingOrder._id !== order._id)) && styles.buttonDisabled,
                       ]}
                       onPress={() => void handleTrackingAction(order, 'start')}
-                      disabled={busy || order.status === 'DELIVERED' || order.status === 'CANCELLED'}
+                      disabled={busy || order.status === 'DELIVERED' || order.status === 'CANCELLED' || Boolean(lockedTrackingOrder && lockedTrackingOrder._id !== order._id)}
                     >
                       {busy ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.primaryButtonText}>Mulai Tracking</Text>}
                     </Pressable>
@@ -656,6 +672,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
   },
+  pausedActionGroup: {
+    flex: 1,
+    gap: 8,
+  },
   flexButton: {
     flex: 1,
   },
@@ -668,5 +688,18 @@ const styles = StyleSheet.create({
   linkButtonText: {
     color: '#0f4c81',
     fontWeight: '700',
+  },
+  noticeCard: {
+    flex: 1,
+    borderRadius: 14,
+    backgroundColor: '#eff6ff',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  noticeText: {
+    color: '#1e3a8a',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600',
   },
 });

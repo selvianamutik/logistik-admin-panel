@@ -53,7 +53,7 @@ export type DriverLoginPayload = DriverSessionPayload & {
   expiresIn: number;
 };
 
-export type TrackingAction = 'start' | 'heartbeat' | 'pause' | 'resume' | 'stop';
+export type TrackingAction = 'start' | 'heartbeat' | 'pause' | 'resume' | 'stop' | 'rollback-start';
 
 export type ActiveTrackingContext = {
   deliveryOrderRef: string;
