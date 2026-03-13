@@ -59,7 +59,7 @@ Output APK:
 
 - `build/app/outputs/flutter-apk/app-debug.apk`
 
-Build release APK:
+Build release APK universal:
 
 ```bash
 C:\flutter\bin\flutter.bat build apk --release
@@ -68,6 +68,18 @@ C:\flutter\bin\flutter.bat build apk --release
 Output release APK:
 
 - `build/app/outputs/flutter-apk/app-release.apk`
+
+Untuk distribusi manual yang lebih masuk akal, pakai split per ABI:
+
+```bash
+C:\flutter\bin\flutter.bat build apk --release --split-per-abi
+```
+
+Output split APK:
+
+- `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`
+- `build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk`
+- `build/app/outputs/flutter-apk/app-x86_64-release.apk`
 
 Build Android App Bundle:
 
@@ -78,6 +90,26 @@ C:\flutter\bin\flutter.bat build appbundle --release
 Output AAB:
 
 - `build/app/outputs/bundle/release/app-release.aab`
+
+## Signing release Android
+
+Secara default, kalau `android/key.properties` belum ada, build release lokal akan
+fallback ke debug signing supaya build tidak buntu. Untuk release yang benar
+benar siap dibagikan, isi dulu:
+
+- `android/key.properties`
+- file keystore `.jks`
+
+Template ada di:
+
+- `android/key.properties.example`
+
+Setelah itu jalankan lagi:
+
+```bash
+C:\flutter\bin\flutter.bat build apk --release
+C:\flutter\bin\flutter.bat build appbundle --release
+```
 
 ## Build iOS
 
@@ -104,3 +136,4 @@ Catatan:
 - tracking tetap bergantung pada izin lokasi, GPS aktif, dan internet aktif.
 - token driver disimpan lokal agar runtime tracking bisa melanjutkan heartbeat.
 - pada toolchain Windows lokal ini, `build appbundle` masih bisa mengeluarkan warning strip symbol dari Android toolchain, tetapi file `.aab` tetap berhasil dibuat
+- untuk distribusi langsung ke device, lebih aman pakai APK split-per-ABI daripada APK universal release

@@ -25,6 +25,9 @@
 /driver_mobile/build/
 /driver_mobile/.flutter-plugins
 /driver_mobile/.flutter-plugins-dependencies
+/driver_mobile/android/key.properties
+*.jks
+*.keystore
 
 # production
 /build

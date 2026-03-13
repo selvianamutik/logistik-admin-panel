@@ -1,0 +1,4 @@
+storeFile=../keystore/logistik-driver-upload.jks
+storePassword=change-me
+keyAlias=upload
+keyPassword=change-me
