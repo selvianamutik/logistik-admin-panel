@@ -10,7 +10,7 @@ const LOGIN_ATTEMPT_LIMIT = 10;
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
 
 function buildLoginRateLimitKey(request: Request, email: string) {
-    return `driver-mobile-login:${email.toLowerCase()}:${getRequestIp(request)}`;
+    return `driver-app-login:${email.toLowerCase()}:${getRequestIp(request)}`;
 }
 
 function tooManyAttemptsResponse(retryAfterSeconds: number) {

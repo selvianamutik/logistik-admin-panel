@@ -2,7 +2,7 @@
 
 # dependencies
 /node_modules
-/driver-mobile/node_modules
+/driver-mobile/
 /.pnp
 .pnp.*
 .yarn/*
@@ -21,12 +21,6 @@
 # next.js
 /.next/
 /out/
-/driver-mobile/.expo/
-/driver-mobile/android/
-/driver-mobile/ios/
-/driver-mobile/dist/
-/driver-mobile/dist-android/
-/driver-mobile/dist-ios/
 /driver_mobile/.dart_tool/
 /driver_mobile/build/
 /driver_mobile/.flutter-plugins

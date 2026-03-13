@@ -7,8 +7,9 @@ App driver native resmi untuk Android dan iOS. App ini dipakai driver untuk:
 - memulai / memulihkan tracking live
 - mengirim heartbeat lokasi ke dashboard admin
 
-Project ini menggantikan implementasi React/Expo lama. Folder `driver-mobile/`
-sekarang hanya disimpan sebagai referensi legacy dan bukan jalur build resmi.
+Project ini menggantikan implementasi React/Expo lama. Jalur React lama sudah
+dikeluarkan dari repo agar tim hanya punya satu sumber kebenaran untuk build
+mobile.
 
 ## Scope v1
 
