@@ -374,11 +374,25 @@ export async function exportInvoices(invoices: Record<string, unknown>[]) {
 
 export async function exportExpenses(expenses: Record<string, unknown>[]) {
     await exportToExcel(
-        expenses,
+        expenses.map((expense) => {
+            const accountLabel = expense.bankAccountName
+                ? `${String(expense.bankAccountName)}${expense.bankAccountNumber ? ` - ${String(expense.bankAccountNumber)}` : ''}`
+                : '';
+            const vehicleLabel = expense.relatedVehiclePlate ? String(expense.relatedVehiclePlate) : '';
+
+            return {
+                ...expense,
+                descriptionLabel: expense.note || expense.description || '',
+                accountLabel,
+                vehicleLabel,
+            };
+        }),
         [
             { header: 'Tanggal', key: 'date', width: 18, formatter: (value) => fmtDate(String(value || '')) },
             { header: 'Kategori', key: 'categoryName', width: 22 },
-            { header: 'Deskripsi', key: 'note', width: 35 },
+            { header: 'Deskripsi', key: 'descriptionLabel', width: 35 },
+            { header: 'Kendaraan', key: 'vehicleLabel', width: 18 },
+            { header: 'Rekening / Kas', key: 'accountLabel', width: 28 },
             { header: 'Jumlah', key: 'amount', width: 18 },
             { header: 'Privasi', key: 'privacyLevel', width: 14 },
         ],

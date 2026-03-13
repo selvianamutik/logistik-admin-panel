@@ -123,10 +123,30 @@ export default function ExpensesPage() {
                     <button className="btn btn-secondary btn-sm" onClick={() => exportExpenses(filtered as unknown as Record<string, unknown>[])}><FileDown size={15} /> Excel</button>
                     <button className="btn btn-secondary btn-sm" onClick={async () => {
                         const co = await fetchCompanyProfile();
+                        const describeExpense = (expense: Expense) => {
+                            const vehicleLabel =
+                                expense.relatedVehiclePlate ||
+                                (expense.relatedVehicleRef ? vehicleMap.get(expense.relatedVehicleRef)?.plateNumber : '') ||
+                                '';
+                            const accountLabel = expense.bankAccountName
+                                ? `${expense.bankAccountName}${expense.bankAccountNumber || accountMap.get(expense.bankAccountRef || '')?.accountNumber ? ` - ${expense.bankAccountNumber || accountMap.get(expense.bankAccountRef || '')?.accountNumber}` : ''}`
+                                : expense.bankAccountRef
+                                    ? (() => {
+                                        const account = accountMap.get(expense.bankAccountRef);
+                                        return account ? `${account.bankName} - ${account.accountNumber}` : '';
+                                    })()
+                                    : '';
+                            const detailLines = [
+                                expense.note || expense.description || '-',
+                                vehicleLabel ? `Kendaraan: ${vehicleLabel}` : '',
+                                accountLabel ? `Via: ${accountLabel}` : '',
+                            ].filter(Boolean);
+                            return detailLines.join('<br/>');
+                        };
                         openBrandedPrint({
                             title: 'Daftar Pengeluaran', company: co, bodyHtml: `
                             <table><thead><tr><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th class="r">Jumlah</th></tr></thead>
-                            <tbody>${filtered.map(e => `<tr><td>${formatDate(e.date)}</td><td class="b">${e.categoryName || '-'}</td><td>${e.note || e.description || '-'}</td><td class="r b">${formatCurrency(e.amount)}</td></tr>`).join('')}
+                            <tbody>${filtered.map(e => `<tr><td>${formatDate(e.date)}</td><td class="b">${e.categoryName || '-'}</td><td>${describeExpense(e)}</td><td class="r b">${formatCurrency(e.amount)}</td></tr>`).join('')}
                             <tr style="border-top:2px solid #1e293b"><td colspan="3" class="r b">TOTAL</td><td class="r b">${formatCurrency(filtered.reduce((s, e) => s + e.amount, 0))}</td></tr></tbody></table>`
                         });
                     }}><Printer size={15} /> Print</button>
