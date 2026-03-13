@@ -39,6 +39,19 @@ npm run android
 npm run ios
 ```
 
+## Build Android installable lokal
+
+Untuk menghasilkan APK debug yang bisa langsung diinstal ke Android:
+
+```bash
+npx expo prebuild --clean --platform android
+npm run build:android:local
+```
+
+Output APK:
+
+- `android/app/build/outputs/apk/debug/app-debug.apk`
+
 ## Build installable package
 
 Project ini sudah disiapkan untuk EAS build cloud.
@@ -54,6 +67,12 @@ Untuk internal testing:
 npx eas build --platform android --profile preview
 npx eas build --platform ios --profile preview
 ```
+
+Catatan iOS:
+
+- file `.ipa` tidak bisa dibuild lokal dari Windows
+- jalur yang didukung dari environment ini adalah `EAS Build` atau `Xcode` di macOS
+- sebelum build iOS, login dulu ke Expo/EAS dan siapkan Apple Developer provisioning
 
 ## Catatan penting
 

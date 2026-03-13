@@ -461,7 +461,9 @@ Tracking sekarang sudah punya jalur native mobile, jadi lebih kuat daripada brow
 Tetap ada batasannya:
 
 - Android tetap platform operasional utama
+- APK debug Android sudah tervalidasi bisa dibuild lokal dari project `driver-mobile`
 - iOS juga bisa dibuild/install, tetapi background policy iPhone lebih ketat
+- build `.ipa` iOS tetap butuh EAS Build / Xcode di macOS dan Apple provisioning
 - izin lokasi foreground/background harus aktif
 - GPS dan internet harus aktif
 - kalau user force stop aplikasi atau mencabut izin lokasi, tracking background berhenti

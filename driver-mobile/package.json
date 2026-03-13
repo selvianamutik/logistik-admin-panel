@@ -8,22 +8,23 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "prebuild": "expo prebuild",
+    "build:android:local": "node ./scripts/build-android-local.mjs",
     "build:android": "npx eas-cli build --platform android --profile production",
     "build:ios": "npx eas-cli build --platform ios --profile production",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@react-native-async-storage/async-storage": "^2.2.0",
+    "@react-native-async-storage/async-storage": "2.1.2",
     "expo": "^53.0.0",
-    "expo-constants": "^55.0.7",
+    "expo-constants": "~17.1.8",
     "expo-location": "^18.1.6",
     "expo-status-bar": "~2.2.3",
     "expo-task-manager": "^13.1.6",
     "react": "19.0.0",
-    "react-native": "0.79.5"
+    "react-native": "0.79.6"
   },
   "devDependencies": {
-    "@types/react": "^19.0.10",
-    "typescript": "^5.8.2"
+    "@types/react": "~19.0.10",
+    "typescript": "~5.8.3"
   }
 }
