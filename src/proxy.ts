@@ -5,18 +5,19 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
+import { matchesPathSegment } from '@/lib/pathname';
 import { SESSION_COOKIE, verifySessionToken } from '@/lib/session';
 
 const PUBLIC_PATHS = ['/login', '/driver/login'];
 const OWNER_ONLY_PATHS = ['/settings/company', '/settings/users', '/settings/audit-logs', '/reports'];
 
 function isDriverPortalPath(pathname: string) {
-    return pathname === '/driver' || pathname.startsWith('/driver/');
+    return matchesPathSegment(pathname, '/driver');
 }
 
 export async function proxy(request: NextRequest) {
     const { pathname } = request.nextUrl;
-    const isPublicPath = PUBLIC_PATHS.some(path => pathname.startsWith(path));
+    const isPublicPath = PUBLIC_PATHS.some(path => matchesPathSegment(pathname, path));
 
     if (
         pathname.startsWith('/api/') ||
@@ -55,7 +56,7 @@ export async function proxy(request: NextRequest) {
             return NextResponse.redirect(new URL('/dashboard', request.url));
         }
 
-        if (user.role !== 'OWNER' && OWNER_ONLY_PATHS.some(path => pathname.startsWith(path))) {
+        if (user.role !== 'OWNER' && OWNER_ONLY_PATHS.some(path => matchesPathSegment(pathname, path))) {
             return NextResponse.redirect(new URL('/dashboard', request.url));
         }
 

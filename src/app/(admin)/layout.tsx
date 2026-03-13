@@ -9,6 +9,7 @@ import {
     ScrollText, ChevronLeft, Menu, LogOut, X, CheckCircle, XCircle, Info, AlertCircle, Landmark,
     UserCircle, Receipt
 } from 'lucide-react';
+import { matchesPathSegment } from '@/lib/pathname';
 import { getSidebarMenu } from '@/lib/rbac';
 import type { SessionUser, ToastMessage, CompanyProfile } from '@/lib/types';
 
@@ -247,7 +248,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                                 <div key={group.label} className="sidebar-group">
                                     <div className="sidebar-group-label">{group.label}</div>
                                     {group.items.map(item => {
-                                        const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
+                                        const isActive = item.href === '/dashboard'
+                                            ? pathname === item.href
+                                            : matchesPathSegment(pathname, item.href);
                                         return (
                                             <Link
                                                 key={item.href}
