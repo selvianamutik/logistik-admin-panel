@@ -13,9 +13,12 @@ import {
 import type { User } from '@/lib/types';
 
 import {
+    assertIsoDate,
     CASH_ACCOUNT_SYSTEM_KEY,
     extractRefId,
     isPlainObject,
+    normalizeNumber,
+    normalizeOptionalText,
     type ApiSession,
     type BankAccountSummary,
 } from './data-helpers';
@@ -140,6 +143,77 @@ export async function handleGenericUpdate(
 
     if (entity === 'delivery-orders' && typeof updates.status === 'string') {
         return NextResponse.json({ error: 'Status surat jalan harus lewat workflow server' }, { status: 400 });
+    }
+
+    if (entity === 'delivery-orders') {
+        const allowedDeliveryOrderFields = new Set([
+            'podReceiverName',
+            'podReceivedDate',
+            'podNote',
+            'taripBorongan',
+            'keteranganBorongan',
+        ]);
+        const updateKeys = Object.keys(updates);
+        if (updateKeys.some(key => !allowedDeliveryOrderFields.has(key))) {
+            return NextResponse.json({ error: 'Field surat jalan ini tidak boleh diubah lewat API umum' }, { status: 400 });
+        }
+
+        const existingDeliveryOrder = await sanityGetById<{
+            status?: string;
+            podReceiverName?: string;
+            podReceivedDate?: string;
+        }>(id);
+        if (!existingDeliveryOrder) {
+            return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
+        }
+
+        const updatesPod = updateKeys.some(key => key === 'podReceiverName' || key === 'podReceivedDate' || key === 'podNote');
+        const updatesBoronganTariff = updateKeys.some(key => key === 'taripBorongan' || key === 'keteranganBorongan');
+
+        if (updatesPod) {
+            if (existingDeliveryOrder.status !== 'DELIVERED') {
+                return NextResponse.json({ error: 'POD hanya boleh disimpan untuk surat jalan yang sudah delivered' }, { status: 409 });
+            }
+            if (existingDeliveryOrder.podReceiverName || existingDeliveryOrder.podReceivedDate) {
+                return NextResponse.json({ error: 'POD yang sudah tersimpan tidak boleh diubah lewat API umum' }, { status: 409 });
+            }
+
+            const podReceiverName = normalizeOptionalText(updates.podReceiverName);
+            const podReceivedDate = normalizeOptionalText(updates.podReceivedDate);
+            if (!podReceiverName || !podReceivedDate) {
+                return NextResponse.json({ error: 'Nama penerima dan tanggal terima POD wajib diisi' }, { status: 400 });
+            }
+            assertIsoDate(podReceivedDate, 'Tanggal terima POD');
+
+            updates.podReceiverName = podReceiverName;
+            updates.podReceivedDate = podReceivedDate;
+            updates.podNote = normalizeOptionalText(updates.podNote);
+        }
+
+        if (updatesBoronganTariff) {
+            if (existingDeliveryOrder.status === 'CANCELLED') {
+                return NextResponse.json({ error: 'Tarip borongan tidak bisa diubah untuk surat jalan yang dibatalkan' }, { status: 409 });
+            }
+
+            const relatedBoronganItem = await getSanityClient().fetch<{ _id: string } | null>(
+                `*[_type == "driverBoronganItem" && doRef == $ref][0]{ _id }`,
+                { ref: id }
+            );
+            if (relatedBoronganItem) {
+                return NextResponse.json({ error: 'Tarip borongan DO yang sudah masuk slip borongan tidak boleh diubah' }, { status: 409 });
+            }
+
+            if (Object.prototype.hasOwnProperty.call(updates, 'taripBorongan')) {
+                const taripBorongan = normalizeNumber(updates.taripBorongan);
+                if (!Number.isFinite(taripBorongan) || taripBorongan <= 0) {
+                    return NextResponse.json({ error: 'Tarip borongan harus lebih besar dari 0' }, { status: 400 });
+                }
+                updates.taripBorongan = taripBorongan;
+            }
+            if (Object.prototype.hasOwnProperty.call(updates, 'keteranganBorongan')) {
+                updates.keteranganBorongan = normalizeOptionalText(updates.keteranganBorongan);
+            }
+        }
     }
 
     if (entity === 'maintenances' && typeof updates.status === 'string') {

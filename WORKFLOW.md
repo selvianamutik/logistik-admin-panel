@@ -454,3 +454,27 @@ Artinya:
 - kalau browser/app ditutup penuh, tracking tidak jalan di background
 
 Jadi v1 ini cocok untuk operasional internal sederhana, tapi belum setara aplikasi native background tracking.
+
+## 15. Guard penting pada Surat Jalan
+
+### 15.1 POD
+
+POD hanya boleh disimpan untuk DO yang statusnya sudah `DELIVERED`.
+
+Setelah POD tersimpan:
+
+- POD dianggap final
+- tidak boleh diubah lagi lewat update umum
+
+Kalau ada salah input, perbaikannya harus lewat workflow/admin patch yang disengaja, bukan edit bebas dari form biasa.
+
+### 15.2 Tarip Borongan DO
+
+Tarip borongan pada DO boleh diisi untuk kebutuhan pembuatan slip borongan.
+
+Tetapi:
+
+- DO yang `CANCELLED` tidak boleh diubah taripnya
+- kalau DO sudah masuk ke slip borongan, tarip dan keterangannya tidak boleh diubah lagi
+
+Ini supaya data DO tidak drift dengan slip borongan yang sudah terbentuk.
