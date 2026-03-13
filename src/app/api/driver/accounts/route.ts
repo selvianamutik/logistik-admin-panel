@@ -42,6 +42,63 @@ function normalizeText(value: unknown) {
     return typeof value === 'string' ? value.trim() : '';
 }
 
+async function stopDriverTrackingForAccountDeactivation(session: { _id: string; name: string }, driverRef: string, driverName: string) {
+    const now = new Date().toISOString();
+    const [driver, trackedDeliveryOrders] = await Promise.all([
+        sanityGetById<Driver>(driverRef),
+        getSanityClient().fetch<Array<{ _id: string; doNumber?: string; status?: string }>>(
+            `*[
+                _type == "deliveryOrder" &&
+                (driverRef == $ref || driverRef._ref == $ref) &&
+                trackingState in ["ACTIVE", "PAUSED"]
+            ]{
+                _id,
+                doNumber,
+                status
+            }`,
+            { ref: driverRef }
+        ),
+    ]);
+
+    if (!driver && trackedDeliveryOrders.length === 0) {
+        return { stoppedTrackingCount: 0 };
+    }
+
+    const transaction = getSanityClient().transaction();
+
+    if (driver) {
+        transaction.patch(driverRef, {
+            set: { activeTrackingUpdatedAt: now },
+            unset: ['activeTrackingDeliveryOrderRef'],
+        });
+    }
+
+    for (const deliveryOrder of trackedDeliveryOrders) {
+        transaction.patch(deliveryOrder._id, {
+            set: {
+                trackingState: 'STOPPED',
+                trackingStoppedAt: now,
+                trackingLastSeenAt: now,
+            },
+        });
+        transaction.create({
+            _id: crypto.randomUUID(),
+            _type: 'trackingLog',
+            refType: 'DO',
+            refRef: deliveryOrder._id,
+            status: deliveryOrder.status || 'ON_DELIVERY',
+            note: `Tracking dihentikan otomatis karena akun mobile driver ${driverName} dinonaktifkan`,
+            source: 'DRIVER_APP',
+            timestamp: now,
+            userRef: session._id,
+            userName: session.name,
+        });
+    }
+
+    await transaction.commit();
+    return { stoppedTrackingCount: trackedDeliveryOrders.length };
+}
+
 export async function GET() {
     const auth = await requireAdminOrOwnerSession();
     if ('error' in auth) {
@@ -172,9 +229,22 @@ export async function POST(request: Request) {
             updates.passwordHash = await hashPassword(password);
         }
 
+        const isDeactivatingAccount = existing.active !== false && updates.active === false;
+        let stoppedTrackingCount = 0;
+
         const updated = await sanityUpdate<User>(id, updates);
+        if (isDeactivatingAccount) {
+            const trackingResult = await stopDriverTrackingForAccountDeactivation(auth.session, driverRef, driver.name);
+            stoppedTrackingCount = trackingResult.stoppedTrackingCount;
+        }
+
         void addAuditLog(auth.session, 'UPDATE', id, `Memperbarui akun driver mobile untuk ${driver.name}`);
-        return NextResponse.json({ data: sanitizeUserForClient(updated) });
+        return NextResponse.json({
+            data: sanitizeUserForClient(updated),
+            meta: {
+                stoppedTrackingCount,
+            },
+        });
     } catch (error) {
         console.error('Driver account route error:', error);
         return NextResponse.json({ error: 'Terjadi kesalahan server' }, { status: 500 });

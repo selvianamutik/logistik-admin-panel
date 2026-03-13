@@ -193,7 +193,13 @@ export default function DriversPage() {
                 const next = prev.filter(item => item._id !== payload.data._id);
                 return [...next, payload.data as DriverMobileAccount].sort((a, b) => a.name.localeCompare(b.name));
             });
-            addToast('success', accountForm.accountId ? 'Akses mobile driver diperbarui' : 'Akun mobile driver dibuat');
+            const stoppedTrackingCount = typeof payload.meta?.stoppedTrackingCount === 'number' ? payload.meta.stoppedTrackingCount : 0;
+            const successMessage = accountForm.accountId
+                ? stoppedTrackingCount > 0
+                    ? `Akses mobile driver diperbarui | ${stoppedTrackingCount} tracking aktif dihentikan`
+                    : 'Akses mobile driver diperbarui'
+                : 'Akun mobile driver dibuat';
+            addToast('success', successMessage);
             closeAccessModal();
         } catch {
             addToast('error', 'Gagal menyimpan akses mobile driver');

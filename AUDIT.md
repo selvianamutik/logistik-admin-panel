@@ -138,6 +138,7 @@ Lifecycle supir juga tetap dijaga:
 - menonaktifkan supir akan ikut menonaktifkan akun mobile driver dan menghentikan tracking aktifnya
 - driver tidak boleh menghentikan tracking sendiri sebelum DO benar-benar ditutup admin
 - logout dari portal / APK juga ditolak selama masih ada DO yang mengunci tracking
+- menonaktifkan akun mobile driver langsung dari `Akses Mobile` juga sekarang ikut menghentikan tracking aktifnya, jadi tidak ada status `ACTIVE` palsu setelah akun mati
 
 Brutal truth terbaru:
 

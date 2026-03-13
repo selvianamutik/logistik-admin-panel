@@ -373,6 +373,14 @@ Kalau supir dinonaktifkan dari admin panel:
 Kalau supir diaktifkan lagi, akun mobile tidak otomatis aktif kembali.
 Owner/admin perlu membuka `Akses Mobile` lalu mengaktifkannya lagi bila memang ingin dipakai.
 
+Kalau owner/admin menonaktifkan akun mobile driver langsung dari modal `Akses Mobile`:
+
+- akun driver langsung nonaktif
+- semua tracking `ACTIVE/PAUSED` milik supir itu ikut ditandai `STOPPED`
+- lock tracking pada data supir ikut dibersihkan
+
+Ini sengaja supaya akun yang dimatikan tidak meninggalkan tracking aktif palsu di dashboard admin.
+
 ### 14.2 Driver login dari mana
 
 Sekarang ada 2 jalur driver:
