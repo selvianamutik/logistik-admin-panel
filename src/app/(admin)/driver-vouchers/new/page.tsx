@@ -4,13 +4,14 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '../../layout';
 import { ArrowLeft, Save } from 'lucide-react';
-import type { BankAccount, Driver, DeliveryOrder, Vehicle } from '@/lib/types';
+import type { BankAccount, Driver, DeliveryOrder, Order, Vehicle } from '@/lib/types';
 
 export default function NewDriverVoucherPage() {
     const router = useRouter();
     const { addToast } = useToast();
     const [drivers, setDrivers] = useState<Driver[]>([]);
     const [dos, setDos] = useState<DeliveryOrder[]>([]);
+    const [orders, setOrders] = useState<Order[]>([]);
     const [vehicles, setVehicles] = useState<Vehicle[]>([]);
     const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
     const [loading, setLoading] = useState(true);
@@ -39,11 +40,13 @@ export default function NewDriverVoucherPage() {
         Promise.all([
             fetchEntity<Driver[]>('/api/data?entity=drivers'),
             fetchEntity<DeliveryOrder[]>('/api/data?entity=delivery-orders'),
+            fetchEntity<Order[]>('/api/data?entity=orders'),
             fetchEntity<Vehicle[]>('/api/data?entity=vehicles'),
             fetchEntity<BankAccount[]>('/api/data?entity=bank-accounts'),
-        ]).then(([driverRows, deliveryOrders, vehicleRows, accountRows]) => {
+        ]).then(([driverRows, deliveryOrders, orderRows, vehicleRows, accountRows]) => {
             setDrivers((driverRows || []).filter((driver) => driver.active));
             setDos(deliveryOrders || []);
+            setOrders(orderRows || []);
             setVehicles((vehicleRows || []).filter((vehicle) => vehicle.status === 'ACTIVE'));
             setBankAccounts((accountRows || []).filter((account) => account.active !== false));
         }).catch(error => {
@@ -55,13 +58,43 @@ export default function NewDriverVoucherPage() {
 
     const handleDOChange = (doId: string) => {
         const doItem = dos.find((deliveryOrder) => deliveryOrder._id === doId);
+        const sourceOrder = orders.find((order) => order._id === doItem?.orderRef);
+        const inferredRoute = [
+            doItem?.pickupAddress || sourceOrder?.pickupAddress,
+            doItem?.receiverAddress || sourceOrder?.receiverAddress,
+        ].filter(Boolean).join(' -> ');
         setForm(prev => ({
             ...prev,
             deliveryOrderRef: doId,
-            vehicleRef: doItem?.vehicleRef || prev.vehicleRef,
+            vehicleRef: doId ? (doItem?.vehicleRef || '') : '',
             driverRef: doItem?.driverRef || prev.driverRef,
+            route: doId ? inferredRoute : '',
         }));
     };
+
+    const handleDriverChange = (driverRef: string) => {
+        setForm(prev => {
+            const selectedDo = dos.find((deliveryOrder) => deliveryOrder._id === prev.deliveryOrderRef);
+            if (selectedDo?.driverRef && selectedDo.driverRef !== driverRef) {
+                return {
+                    ...prev,
+                    driverRef,
+                    deliveryOrderRef: '',
+                    vehicleRef: '',
+                    route: '',
+                };
+            }
+
+            return {
+                ...prev,
+                driverRef,
+            };
+        });
+    };
+
+    const filteredDos = form.driverRef
+        ? dos.filter((deliveryOrder) => !deliveryOrder.driverRef || deliveryOrder.driverRef === form.driverRef)
+        : dos;
 
     const handleSave = async () => {
         if (!form.driverRef) {
@@ -143,7 +176,7 @@ export default function NewDriverVoucherPage() {
                     <div className="form-row">
                         <div className="form-group">
                             <label className="form-label">Supir <span className="required">*</span></label>
-                            <select className="form-select" value={form.driverRef} onChange={e => setForm({ ...form, driverRef: e.target.value })}>
+                            <select className="form-select" value={form.driverRef} onChange={e => handleDriverChange(e.target.value)}>
                                 <option value="">Pilih supir</option>
                                 {drivers.map(driver => <option key={driver._id} value={driver._id}>{driver.name} - {driver.phone}</option>)}
                             </select>
@@ -158,7 +191,7 @@ export default function NewDriverVoucherPage() {
                             <label className="form-label">Surat Jalan (DO)</label>
                             <select className="form-select" value={form.deliveryOrderRef} onChange={e => handleDOChange(e.target.value)}>
                                 <option value="">-- Opsional --</option>
-                                {dos.map(deliveryOrder => <option key={deliveryOrder._id} value={deliveryOrder._id}>{deliveryOrder.doNumber} {deliveryOrder.driverName ? `(${deliveryOrder.driverName})` : ''}</option>)}
+                                {filteredDos.map(deliveryOrder => <option key={deliveryOrder._id} value={deliveryOrder._id}>{deliveryOrder.doNumber} {deliveryOrder.driverName ? `(${deliveryOrder.driverName})` : ''}</option>)}
                             </select>
                         </div>
                         <div className="form-group">

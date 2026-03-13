@@ -393,6 +393,11 @@ export async function handleExpenseCreate(
     data: Record<string, unknown>,
     addAuditLog: AuditLogFn
 ) {
+    const categoryRef = typeof data.categoryRef === 'string' ? data.categoryRef : '';
+    if (!categoryRef) {
+        return NextResponse.json({ error: 'Kategori pengeluaran wajib dipilih' }, { status: 400 });
+    }
+
     const amount = typeof data.amount === 'number' ? data.amount : Number(data.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
         return NextResponse.json({ error: 'Nominal pengeluaran tidak valid' }, { status: 400 });
@@ -402,11 +407,37 @@ export async function handleExpenseCreate(
         typeof data.date === 'string' && data.date ? data.date : new Date().toISOString().slice(0, 10);
     assertIsoDate(expenseDate, 'Tanggal pengeluaran');
 
+    const category = await sanityGetById<{ _id: string; name?: string }>(categoryRef);
+    if (!category) {
+        return NextResponse.json({ error: 'Kategori pengeluaran tidak ditemukan' }, { status: 404 });
+    }
+
+    const relatedVehicleRef =
+        typeof data.relatedVehicleRef === 'string' && data.relatedVehicleRef ? data.relatedVehicleRef : undefined;
+    if (relatedVehicleRef) {
+        const vehicle = await sanityGetById<{ _id: string }>(relatedVehicleRef);
+        if (!vehicle) {
+            return NextResponse.json({ error: 'Kendaraan terkait pengeluaran tidak ditemukan' }, { status: 404 });
+        }
+    }
+
+    const privacyLevel = data.privacyLevel === 'ownerOnly' ? 'ownerOnly' : 'internal';
+
     const expenseDocBase: { _type: 'expense'; [key: string]: unknown } = {
         _type: 'expense',
-        ...data,
+        categoryRef,
+        categoryName: category.name,
         date: expenseDate,
         amount,
+        note: normalizeOptionalText(data.note),
+        description: normalizeOptionalText(data.description),
+        receiptUrl: normalizeOptionalText(data.receiptUrl),
+        privacyLevel,
+        relatedVehicleRef,
+        relatedIncidentRef: typeof data.relatedIncidentRef === 'string' ? data.relatedIncidentRef : undefined,
+        relatedMaintenanceRef: typeof data.relatedMaintenanceRef === 'string' ? data.relatedMaintenanceRef : undefined,
+        boronganRef: typeof data.boronganRef === 'string' ? data.boronganRef : undefined,
+        voucherRef: typeof data.voucherRef === 'string' ? data.voucherRef : undefined,
     };
     const selectedAccountRef =
         typeof data.bankAccountRef === 'string' && data.bankAccountRef ? data.bankAccountRef : undefined;
@@ -555,6 +586,7 @@ export async function handleFreightNotaCreate(
             orderRef?: unknown;
             doNumber?: string;
             vehiclePlate?: string;
+            pickupAddress?: string;
             receiverAddress?: string;
             date?: string;
         }>>(
@@ -564,6 +596,7 @@ export async function handleFreightNotaCreate(
                 orderRef,
                 doNumber,
                 vehiclePlate,
+                pickupAddress,
                 receiverAddress,
                 date
             }`,
@@ -627,21 +660,29 @@ export async function handleFreightNotaCreate(
         const sourceOrder = orderRef ? orderMap.get(orderRef) : undefined;
         const itemSummary = summarizeDeliveryOrderItems(doItemMap.get(row.doRef) || []);
 
-        row.doNumber = row.doNumber || deliveryOrder.doNumber;
-        row.noSJ = row.noSJ || row.doNumber || deliveryOrder.doNumber || '';
-        row.vehiclePlate = row.vehiclePlate || deliveryOrder.vehiclePlate;
-        row.date = row.date || normalizeOptionalText(deliveryOrder.date) || '';
-        row.dari = row.dari || normalizeOptionalText(sourceOrder?.pickupAddress) || '';
+        row.doNumber = normalizeOptionalText(deliveryOrder.doNumber) || row.doNumber;
+        row.noSJ = normalizeOptionalText(deliveryOrder.doNumber) || row.doNumber || row.noSJ || '';
+        row.vehiclePlate = normalizeOptionalText(deliveryOrder.vehiclePlate) || row.vehiclePlate;
+        row.date = normalizeOptionalText(deliveryOrder.date) || row.date || '';
+        row.dari =
+            normalizeOptionalText(deliveryOrder.pickupAddress) ||
+            normalizeOptionalText(sourceOrder?.pickupAddress) ||
+            row.dari ||
+            '';
         row.tujuan =
-            row.tujuan ||
             normalizeOptionalText(deliveryOrder.receiverAddress) ||
             normalizeOptionalText(sourceOrder?.receiverAddress) ||
+            row.tujuan ||
             '';
-        row.barang = row.barang || itemSummary.barang || undefined;
-        if (!row.collie || row.collie <= 0) {
-            row.collie = itemSummary.collie > 0 ? itemSummary.collie : undefined;
+        row.barang = itemSummary.barang || row.barang || undefined;
+        if (itemSummary.collie > 0) {
+            row.collie = itemSummary.collie;
+        } else if (!row.collie || row.collie <= 0) {
+            row.collie = undefined;
         }
-        if (!Number.isFinite(row.beratKg) || row.beratKg <= 0) {
+        if (itemSummary.beratKg > 0) {
+            row.beratKg = itemSummary.beratKg;
+        } else if (!Number.isFinite(row.beratKg) || row.beratKg <= 0) {
             row.beratKg = itemSummary.beratKg;
         }
         row.uangRp = row.beratKg * row.tarip;

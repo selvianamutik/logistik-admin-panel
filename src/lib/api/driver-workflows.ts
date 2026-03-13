@@ -24,6 +24,15 @@ type AuditLogFn = (
     summary: string
 ) => void | Promise<void>;
 
+function buildRouteLabel(origin?: string, destination?: string) {
+    const from = normalizeOptionalText(origin);
+    const to = normalizeOptionalText(destination);
+    if (from && to) {
+        return `${from} -> ${to}`;
+    }
+    return from || to || undefined;
+}
+
 type NormalizedDriverBoronganRow = {
     doRef?: string;
     doNumber?: string;
@@ -240,20 +249,24 @@ export async function handleDriverBoronganCreate(
         const sourceOrder = orderRef ? orderMap.get(orderRef) : undefined;
         const itemSummary = summarizeBoronganDeliveryOrderItems(doItemMap.get(row.doRef) || []);
 
-        row.doNumber = row.doNumber || deliveryOrder.doNumber;
-        row.noSJ = row.noSJ || row.doNumber || deliveryOrder.doNumber || '';
-        row.vehiclePlate = row.vehiclePlate || deliveryOrder.vehiclePlate;
-        row.date = row.date || normalizeOptionalText(deliveryOrder.date) || '';
+        row.doNumber = normalizeOptionalText(deliveryOrder.doNumber) || row.doNumber;
+        row.noSJ = normalizeOptionalText(deliveryOrder.doNumber) || row.doNumber || row.noSJ || '';
+        row.vehiclePlate = normalizeOptionalText(deliveryOrder.vehiclePlate) || row.vehiclePlate;
+        row.date = normalizeOptionalText(deliveryOrder.date) || row.date || '';
         row.tujuan =
-            row.tujuan ||
             normalizeOptionalText(deliveryOrder.receiverAddress) ||
             normalizeOptionalText(sourceOrder?.receiverAddress) ||
+            row.tujuan ||
             '';
-        row.barang = row.barang || itemSummary.barang || undefined;
-        if (!row.collie || row.collie <= 0) {
-            row.collie = itemSummary.collie > 0 ? itemSummary.collie : undefined;
+        row.barang = itemSummary.barang || row.barang || undefined;
+        if (itemSummary.collie > 0) {
+            row.collie = itemSummary.collie;
+        } else if (!row.collie || row.collie <= 0) {
+            row.collie = undefined;
         }
-        if (!Number.isFinite(row.beratKg) || row.beratKg <= 0) {
+        if (itemSummary.beratKg > 0) {
+            row.beratKg = itemSummary.beratKg;
+        } else if (!Number.isFinite(row.beratKg) || row.beratKg <= 0) {
             row.beratKg = itemSummary.beratKg;
         }
         if (!Number.isFinite(row.tarip) || row.tarip <= 0) {
@@ -659,6 +672,87 @@ export async function handleDriverVoucherCreate(
             ? data.issuedDate
             : new Date().toISOString().slice(0, 10);
     assertIsoDate(issueDate, 'Tanggal bon');
+
+    const driver = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(driverRef);
+    if (!driver) {
+        return NextResponse.json({ error: 'Supir bon tidak ditemukan' }, { status: 404 });
+    }
+    if (driver.active === false) {
+        return NextResponse.json({ error: 'Supir bon tidak aktif' }, { status: 409 });
+    }
+
+    const deliveryOrderRef = typeof data.deliveryOrderRef === 'string' ? data.deliveryOrderRef : '';
+    const canonicalDriverName = driver.name || (typeof data.driverName === 'string' ? data.driverName : '');
+    let canonicalDoNumber =
+        typeof data.doNumber === 'string' && data.doNumber.trim()
+            ? data.doNumber.trim()
+            : undefined;
+    let canonicalVehicleRef =
+        typeof data.vehicleRef === 'string' && data.vehicleRef.trim()
+            ? data.vehicleRef.trim()
+            : undefined;
+    let canonicalVehiclePlate =
+        typeof data.vehiclePlate === 'string' && data.vehiclePlate.trim()
+            ? data.vehiclePlate.trim()
+            : undefined;
+    let canonicalRoute =
+        typeof data.route === 'string' && data.route.trim()
+            ? data.route.trim()
+            : undefined;
+
+    if (deliveryOrderRef) {
+        const deliveryOrder = await sanityGetById<{
+            _id: string;
+            doNumber?: string;
+            driverRef?: unknown;
+            vehicleRef?: string;
+            vehiclePlate?: string;
+            receiverAddress?: string;
+            pickupAddress?: string;
+            orderRef?: unknown;
+        }>(deliveryOrderRef);
+        if (!deliveryOrder) {
+            return NextResponse.json({ error: 'Surat jalan bon tidak ditemukan' }, { status: 404 });
+        }
+
+        const deliveryOrderDriverRef = extractRefId(deliveryOrder.driverRef);
+        if (deliveryOrderDriverRef && deliveryOrderDriverRef !== driverRef) {
+            return NextResponse.json({ error: 'DO yang dipilih bukan milik supir bon ini' }, { status: 409 });
+        }
+
+        if (
+            canonicalVehicleRef &&
+            deliveryOrder.vehicleRef &&
+            canonicalVehicleRef !== deliveryOrder.vehicleRef
+        ) {
+            return NextResponse.json(
+                { error: 'Kendaraan bon tidak cocok dengan kendaraan pada surat jalan' },
+                { status: 409 }
+            );
+        }
+
+        canonicalDoNumber = deliveryOrder.doNumber || canonicalDoNumber;
+        canonicalVehicleRef = deliveryOrder.vehicleRef || canonicalVehicleRef || undefined;
+        canonicalVehiclePlate = deliveryOrder.vehiclePlate || canonicalVehiclePlate || undefined;
+
+        const orderRef = extractRefId(deliveryOrder.orderRef);
+        const order = orderRef
+            ? await sanityGetById<{ _id: string; pickupAddress?: string; receiverAddress?: string }>(orderRef)
+            : null;
+        canonicalRoute = canonicalRoute || buildRouteLabel(
+            deliveryOrder.pickupAddress || order?.pickupAddress,
+            deliveryOrder.receiverAddress || order?.receiverAddress,
+        );
+    }
+
+    if (canonicalVehicleRef && !canonicalVehiclePlate) {
+        const vehicle = await sanityGetById<{ _id: string; plateNumber?: string }>(canonicalVehicleRef);
+        if (!vehicle) {
+            return NextResponse.json({ error: 'Kendaraan bon tidak ditemukan' }, { status: 404 });
+        }
+        canonicalVehiclePlate = vehicle.plateNumber;
+    }
+
     const bonNumber = await sanityGetNextNumber('bon');
     const voucherId = crypto.randomUUID();
 
@@ -675,7 +769,13 @@ export async function handleDriverVoucherCreate(
         const voucherDoc = {
             _id: voucherId,
             _type: 'driverVoucher',
-            ...data,
+            driverRef,
+            driverName: canonicalDriverName,
+            deliveryOrderRef: deliveryOrderRef || undefined,
+            doNumber: canonicalDoNumber,
+            vehicleRef: canonicalVehicleRef,
+            vehiclePlate: canonicalVehiclePlate,
+            route: canonicalRoute,
             bonNumber,
             issuedDate: issueDate,
             cashGiven,
@@ -684,6 +784,7 @@ export async function handleDriverVoucherCreate(
             totalSpent: 0,
             balance: cashGiven,
             status: 'ISSUED',
+            notes: normalizeOptionalText(data.notes),
         };
 
         const transaction = getSanityClient()

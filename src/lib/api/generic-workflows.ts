@@ -494,7 +494,7 @@ export async function handleGenericCreate(
     }
 
     if (entity === 'maintenances') {
-        const normalizedMaintenance = normalizeMaintenanceCreatePayload(data);
+        const normalizedMaintenance = await normalizeMaintenanceCreatePayload(data);
         Object.assign(newDoc, normalizedMaintenance);
         newDoc.status = 'SCHEDULED';
     }

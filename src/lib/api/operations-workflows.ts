@@ -353,7 +353,7 @@ export async function normalizeVehiclePayload(
     return next;
 }
 
-export function normalizeMaintenanceCreatePayload(data: Record<string, unknown>): MaintenanceCreatePayload {
+export async function normalizeMaintenanceCreatePayload(data: Record<string, unknown>): Promise<MaintenanceCreatePayload> {
     const vehicleRef = typeof data.vehicleRef === 'string' ? data.vehicleRef : '';
     const type = typeof data.type === 'string' ? data.type.trim() : '';
     if (!vehicleRef || !type) {
@@ -362,7 +362,14 @@ export function normalizeMaintenanceCreatePayload(data: Record<string, unknown>)
 
     const scheduleType = data.scheduleType === 'ODOMETER' ? 'ODOMETER' : 'DATE';
     const notes = typeof data.notes === 'string' && data.notes.trim() ? data.notes.trim() : undefined;
-    const vehiclePlate = typeof data.vehiclePlate === 'string' && data.vehiclePlate.trim() ? data.vehiclePlate.trim() : undefined;
+    const vehicle = await sanityGetById<{ _id: string; plateNumber?: string; status?: string }>(vehicleRef);
+    if (!vehicle) {
+        throw new Error('Kendaraan maintenance tidak ditemukan');
+    }
+    if (vehicle.status === 'SOLD') {
+        throw new Error('Kendaraan yang sudah dijual tidak bisa dijadwalkan maintenance');
+    }
+    const vehiclePlate = vehicle.plateNumber;
 
     if (scheduleType === 'DATE') {
         const plannedDate = typeof data.plannedDate === 'string' ? data.plannedDate : '';
@@ -474,32 +481,46 @@ export async function handleIncidentCreate(
     data: Record<string, unknown>,
     addAuditLog: AuditLogFn
 ) {
-    const vehicleRef = typeof data.vehicleRef === 'string' ? data.vehicleRef : '';
     const description = typeof data.description === 'string' ? data.description.trim() : '';
-    if (!vehicleRef || !description) {
-        return NextResponse.json({ error: 'Kendaraan dan deskripsi insiden wajib diisi' }, { status: 400 });
+    const relatedDeliveryOrderRef =
+        typeof data.relatedDeliveryOrderRef === 'string' && data.relatedDeliveryOrderRef
+            ? data.relatedDeliveryOrderRef
+            : undefined;
+    let vehicleRef = typeof data.vehicleRef === 'string' ? data.vehicleRef : '';
+    let vehiclePlate =
+        typeof data.vehiclePlate === 'string' && data.vehiclePlate.trim()
+            ? data.vehiclePlate.trim()
+            : undefined;
+    let relatedDONumber =
+        typeof data.relatedDONumber === 'string' && data.relatedDONumber.trim()
+            ? data.relatedDONumber.trim()
+            : undefined;
+    if (!description) {
+        return NextResponse.json({ error: 'Deskripsi insiden wajib diisi' }, { status: 400 });
+    }
+    if (relatedDeliveryOrderRef) {
+        const deliveryOrder = await sanityGetById<{ _id: string; doNumber?: string; vehicleRef?: string; vehiclePlate?: string }>(relatedDeliveryOrderRef);
+        if (!deliveryOrder) {
+            return NextResponse.json({ error: 'DO terkait tidak ditemukan' }, { status: 404 });
+        }
+        relatedDONumber = relatedDONumber || deliveryOrder.doNumber;
+        if (!vehicleRef && deliveryOrder.vehicleRef) {
+            vehicleRef = deliveryOrder.vehicleRef;
+        } else if (vehicleRef && deliveryOrder.vehicleRef && vehicleRef !== deliveryOrder.vehicleRef) {
+            return NextResponse.json({ error: 'Kendaraan insiden tidak cocok dengan DO terkait' }, { status: 409 });
+        }
+        vehiclePlate = vehiclePlate || deliveryOrder.vehiclePlate;
+    }
+
+    if (!vehicleRef) {
+        return NextResponse.json({ error: 'Kendaraan insiden wajib dipilih atau diturunkan dari DO terkait' }, { status: 400 });
     }
 
     const vehicle = await sanityGetById<{ _id: string; plateNumber?: string }>(vehicleRef);
     if (!vehicle) {
         return NextResponse.json({ error: 'Kendaraan insiden tidak ditemukan' }, { status: 404 });
     }
-
-    const relatedDeliveryOrderRef =
-        typeof data.relatedDeliveryOrderRef === 'string' && data.relatedDeliveryOrderRef
-            ? data.relatedDeliveryOrderRef
-            : undefined;
-    let relatedDONumber =
-        typeof data.relatedDONumber === 'string' && data.relatedDONumber.trim()
-            ? data.relatedDONumber.trim()
-            : undefined;
-    if (relatedDeliveryOrderRef && !relatedDONumber) {
-        const deliveryOrder = await sanityGetById<{ _id: string; doNumber?: string }>(relatedDeliveryOrderRef);
-        if (!deliveryOrder) {
-            return NextResponse.json({ error: 'DO terkait tidak ditemukan' }, { status: 404 });
-        }
-        relatedDONumber = deliveryOrder.doNumber;
-    }
+    vehiclePlate = vehiclePlate || vehicle.plateNumber;
 
     const incidentId = crypto.randomUUID();
     const incidentNumber = await sanityGetNextNumber('incident');
@@ -513,7 +534,7 @@ export async function handleIncidentCreate(
         _type: 'incident',
         ...data,
         vehicleRef,
-        vehiclePlate: vehicle.plateNumber,
+        vehiclePlate,
         relatedDeliveryOrderRef,
         relatedDONumber,
         description,

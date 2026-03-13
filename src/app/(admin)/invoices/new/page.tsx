@@ -164,7 +164,7 @@ export default function NewNotaPage() {
             vehiclePlate: deliveryOrder.vehiclePlate || '',
             date: deliveryOrder.date || new Date().toISOString().split('T')[0],
             noSJ: deliveryOrder.doNumber || '',
-            dari: relatedOrder?.pickupAddress || '',
+            dari: deliveryOrder.pickupAddress || relatedOrder?.pickupAddress || '',
             tujuan: deliveryOrder.receiverAddress || relatedOrder?.receiverAddress || '',
             barang: descriptions.join(', '),
             collie,

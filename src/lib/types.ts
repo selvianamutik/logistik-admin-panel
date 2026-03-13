@@ -208,6 +208,7 @@ export interface DeliveryOrder {
   doNumber: string;
   orderRef: string;
   masterResi?: string;
+  customerRef?: string;
   vehicleRef?: string;
   vehiclePlate?: string;
   driverRef?: string;
@@ -221,7 +222,12 @@ export interface DeliveryOrder {
   podImageUrl?: string;
   customerName?: string;
   receiverName?: string;
+  receiverPhone?: string;
   receiverAddress?: string;
+  receiverCompany?: string;
+  pickupAddress?: string;
+  serviceRef?: string;
+  serviceName?: string;
   taripBorongan?: number;       // Tarif upah supir per kg, diinput SEBELUM berangkat
   keteranganBorongan?: string;  // Keterangan tarip borongan
   trackingState?: 'IDLE' | 'ACTIVE' | 'PAUSED' | 'STOPPED';

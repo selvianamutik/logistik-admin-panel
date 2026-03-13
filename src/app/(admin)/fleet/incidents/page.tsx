@@ -46,8 +46,21 @@ export default function IncidentsPage() {
 
     const filtered = items.filter(i => !search || i.incidentNumber?.toLowerCase().includes(search.toLowerCase()) || i.vehiclePlate?.toLowerCase().includes(search.toLowerCase()) || i.locationText?.toLowerCase().includes(search.toLowerCase()));
 
+    const handleRelatedDOChange = (deliveryOrderRef: string) => {
+        const deliveryOrder = dos.find(item => item._id === deliveryOrderRef);
+        setForm(prev => ({
+            ...prev,
+            relatedDeliveryOrderRef: deliveryOrderRef,
+            vehicleRef: deliveryOrderRef ? (deliveryOrder?.vehicleRef || '') : prev.vehicleRef,
+        }));
+    };
+
+    const filteredDos = form.vehicleRef
+        ? dos.filter(deliveryOrder => !deliveryOrder.vehicleRef || deliveryOrder.vehicleRef === form.vehicleRef)
+        : dos;
+
     const handleSave = async () => {
-        if (!form.vehicleRef || !form.description) { addToast('error', 'Kendaraan dan deskripsi wajib'); return; }
+        if ((!form.vehicleRef && !form.relatedDeliveryOrderRef) || !form.description) { addToast('error', 'Kendaraan atau DO terkait serta deskripsi wajib'); return; }
         const veh = vehicles.find(v => v._id === form.vehicleRef);
         const doData = dos.find(d => d._id === form.relatedDeliveryOrderRef);
         const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'incidents', data: { ...form, vehiclePlate: veh?.plateNumber, relatedDONumber: doData?.doNumber } }) });
@@ -115,7 +128,7 @@ export default function IncidentsPage() {
                                 <div className="form-group"><label className="form-label">Odometer</label><input type="number" className="form-input" value={form.odometer || ''} onChange={e => setForm({ ...form, odometer: Number(e.target.value) })} /></div>
                             </div>
                             <div className="form-group"><label className="form-label">DO Terkait (Opsional)</label>
-                                <select className="form-select" value={form.relatedDeliveryOrderRef} onChange={e => setForm({ ...form, relatedDeliveryOrderRef: e.target.value })}><option value="">- Tidak ada -</option>{dos.map(d => <option key={d._id} value={d._id}>{d.doNumber}</option>)}</select></div>
+                                <select className="form-select" value={form.relatedDeliveryOrderRef} onChange={e => handleRelatedDOChange(e.target.value)}><option value="">- Tidak ada -</option>{filteredDos.map(d => <option key={d._id} value={d._id}>{d.doNumber}</option>)}</select></div>
                             <div className="form-group"><label className="form-label">Kronologi / Deskripsi <span className="required">*</span></label><textarea className="form-textarea" rows={4} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Jelaskan kronologi insiden secara detail..." /></div>
                         </div>
                         <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowModal(false)}>Batal</button><button className="btn btn-danger" onClick={handleSave}><AlertTriangle size={16} /> Laporkan Insiden</button></div>

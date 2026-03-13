@@ -309,13 +309,53 @@ export async function handleDeliveryOrderCreate(
     const order = await sanityGetById<{
         _id: string;
         masterResi?: string;
+        customerRef?: string;
         customerName?: string;
         receiverName?: string;
+        receiverPhone?: string;
         receiverAddress?: string;
+        receiverCompany?: string;
+        pickupAddress?: string;
+        serviceRef?: string;
+        serviceName?: string;
     }>(orderRef);
     if (!order) {
         return NextResponse.json({ error: 'Order tidak ditemukan' }, { status: 404 });
     }
+
+    const vehicleRef = typeof data.vehicleRef === 'string' ? data.vehicleRef : '';
+    let vehiclePlate =
+        typeof data.vehiclePlate === 'string' && data.vehiclePlate.trim()
+            ? data.vehiclePlate.trim()
+            : '';
+    const driverRef = typeof data.driverRef === 'string' ? data.driverRef : '';
+    let driverName =
+        typeof data.driverName === 'string' && data.driverName.trim()
+            ? data.driverName.trim()
+            : '';
+
+    if (vehicleRef) {
+        const vehicle = await sanityGetById<{ _id: string; plateNumber?: string }>(vehicleRef);
+        if (!vehicle) {
+            return NextResponse.json({ error: 'Kendaraan DO tidak ditemukan' }, { status: 404 });
+        }
+        vehiclePlate = vehicle.plateNumber || vehiclePlate;
+    }
+    if (driverRef) {
+        const driver = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(driverRef);
+        if (!driver) {
+            return NextResponse.json({ error: 'Supir DO tidak ditemukan' }, { status: 404 });
+        }
+        if (driver.active === false) {
+            return NextResponse.json({ error: 'Supir DO tidak aktif' }, { status: 409 });
+        }
+        driverName = driver.name || driverName;
+    }
+
+    const doDate =
+        typeof data.date === 'string' && data.date
+            ? data.date
+            : new Date().toISOString().slice(0, 10);
 
     const selectedItems = await getSanityClient().fetch<Array<{
         _id: string;
@@ -351,12 +391,23 @@ export async function handleDeliveryOrderCreate(
     const doDoc = {
         _id: doId,
         _type: 'deliveryOrder',
-        ...data,
         orderRef,
-        masterResi: typeof data.masterResi === 'string' && data.masterResi ? data.masterResi : order.masterResi,
-        customerName: typeof data.customerName === 'string' && data.customerName ? data.customerName : order.customerName,
-        receiverName: typeof data.receiverName === 'string' && data.receiverName ? data.receiverName : order.receiverName,
-        receiverAddress: typeof data.receiverAddress === 'string' && data.receiverAddress ? data.receiverAddress : order.receiverAddress,
+        masterResi: order.masterResi,
+        customerRef: extractRefId(order.customerRef) || undefined,
+        customerName: order.customerName,
+        receiverName: order.receiverName,
+        receiverPhone: order.receiverPhone,
+        receiverAddress: order.receiverAddress,
+        receiverCompany: order.receiverCompany,
+        pickupAddress: order.pickupAddress,
+        serviceRef: order.serviceRef,
+        serviceName: order.serviceName,
+        vehicleRef: vehicleRef || undefined,
+        vehiclePlate: vehiclePlate || undefined,
+        driverRef: driverRef || undefined,
+        driverName: driverName || undefined,
+        date: doDate,
+        notes: normalizeOptionalText(data.notes),
         doNumber,
         status: 'CREATED',
     };
