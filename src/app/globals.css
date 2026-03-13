@@ -123,6 +123,8 @@ html {
   font-size: 16px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  min-height: 100%;
+  scroll-padding-top: calc(var(--topbar-height) + var(--space-4));
 }
 
 body {
@@ -132,6 +134,8 @@ body {
   color: var(--color-gray-800);
   background: var(--color-gray-50);
   overflow-x: hidden;
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 a {
@@ -147,12 +151,15 @@ a:hover {
 .admin-layout {
   display: flex;
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .admin-content {
   flex: 1;
   margin-left: var(--sidebar-width);
   padding-top: var(--topbar-height);
+  min-height: 100vh;
+  min-height: 100dvh;
   min-width: 0;
   transition: margin-left var(--transition-slow);
 }
@@ -164,6 +171,7 @@ a:hover {
 .page-container {
   width: 100%;
   padding: var(--space-6) var(--space-8);
+  padding-bottom: calc(var(--space-10) + env(safe-area-inset-bottom, 0px));
   max-width: 1440px;
   margin: 0 auto;
   min-width: 0;
@@ -184,6 +192,7 @@ a:hover {
   transition: width var(--transition-slow);
   overflow-y: auto;
   overflow-x: hidden;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 .sidebar.collapsed {
@@ -1137,6 +1146,9 @@ tbody td {
   justify-content: center;
   z-index: var(--z-modal);
   padding: var(--space-4);
+  padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   animation: fadeIn var(--transition-fast);
 }
 
@@ -1147,7 +1159,9 @@ tbody td {
   width: 100%;
   max-width: 520px;
   max-height: 90vh;
+  max-height: calc(100dvh - (var(--space-4) * 2) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
   overflow-y: auto;
+  overscroll-behavior: contain;
   animation: slideUp var(--transition-base);
 }
 
@@ -1466,11 +1480,12 @@ tbody td {
 /* ── Login Page ── */
 .login-page {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
   background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
-  padding: var(--space-4);
+  padding: calc(var(--space-4) + env(safe-area-inset-top, 0px)) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
 }
 
 .login-card {
@@ -1977,14 +1992,16 @@ tbody td {
 
 .driver-app-shell {
   min-height: 100vh;
+  min-height: 100dvh;
   background:
     radial-gradient(circle at top right, rgba(15, 118, 110, 0.14), transparent 28%),
     linear-gradient(180deg, #f8fafc 0%, #ecfeff 100%);
-  padding: 1rem;
+  padding: 1rem 1rem calc(1.5rem + env(safe-area-inset-bottom, 0px));
 }
 
 .driver-loading {
   min-height: 80vh;
+  min-height: 80dvh;
   display: grid;
   place-items: center;
   gap: 0.75rem;
@@ -2207,6 +2224,7 @@ tbody td {
 
   .page-container {
     padding: var(--space-3) var(--space-3);
+    padding-bottom: calc(var(--space-8) + env(safe-area-inset-bottom, 0px));
   }
 
   .page-header {
