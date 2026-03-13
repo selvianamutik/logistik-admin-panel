@@ -156,6 +156,17 @@ export default function DODetailPage() {
                                 <td style="border:none;padding:2px 8px">${doData?.receiverName || '-'}</td>
                             </tr>
                             <tr>
+                                <td style="border:none;padding:2px 8px;font-weight:600">Telepon Penerima</td>
+                                <td style="border:none;padding:2px 8px">${doData?.receiverPhone || '-'}</td>
+                                <td style="border:none;padding:2px 8px;font-weight:600">Layanan</td>
+                                <td style="border:none;padding:2px 8px">${doData?.serviceName || '-'}</td>
+                            </tr>
+                            ${doData?.receiverCompany ? `<tr><td style="border:none;padding:2px 8px;font-weight:600">Perusahaan Penerima</td><td colspan="3" style="border:none;padding:2px 8px">${doData.receiverCompany}</td></tr>` : ''}
+                            <tr>
+                                <td style="border:none;padding:2px 8px;font-weight:600">Alamat Pickup</td>
+                                <td colspan="3" style="border:none;padding:2px 8px">${doData?.pickupAddress || '-'}</td>
+                            </tr>
+                            <tr>
                                 <td style="border:none;padding:2px 8px;font-weight:600">Alamat Penerima</td>
                                 <td colspan="3" style="border:none;padding:2px 8px">${doData?.receiverAddress || '-'}</td>
                             </tr>

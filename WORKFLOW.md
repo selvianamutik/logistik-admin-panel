@@ -387,7 +387,7 @@ Sekarang ada 2 jalur driver:
 
 - `Portal web driver`
   Dipakai untuk fallback / akses cepat dari browser di `/driver/login`
-- `App native driver`
+- `App native driver Flutter`
   Dipakai untuk operasional tracking background native di Android, dan bisa dibuild/install ke iOS juga
 
 Rule auth-nya:
@@ -479,7 +479,7 @@ Tracking sekarang sudah punya jalur native mobile, jadi lebih kuat daripada brow
 Tetap ada batasannya:
 
 - Android tetap platform operasional utama
-- APK debug Android sudah tervalidasi bisa dibuild lokal dari project `driver-mobile`
+- APK debug Android sudah tervalidasi bisa dibuild lokal dari project `driver_mobile`
 - iOS juga bisa dibuild/install, tetapi background policy iPhone lebih ketat
 - build `.ipa` iOS tetap butuh EAS Build / Xcode di macOS dan Apple provisioning
 - izin lokasi foreground/background harus aktif

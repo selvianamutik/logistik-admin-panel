@@ -44,7 +44,14 @@ export default function IncidentsPage() {
         });
     }, [addToast]);
 
-    const filtered = items.filter(i => !search || i.incidentNumber?.toLowerCase().includes(search.toLowerCase()) || i.vehiclePlate?.toLowerCase().includes(search.toLowerCase()) || i.locationText?.toLowerCase().includes(search.toLowerCase()));
+    const filtered = items.filter(i =>
+        !search ||
+        i.incidentNumber?.toLowerCase().includes(search.toLowerCase()) ||
+        i.vehiclePlate?.toLowerCase().includes(search.toLowerCase()) ||
+        i.driverName?.toLowerCase().includes(search.toLowerCase()) ||
+        i.relatedDONumber?.toLowerCase().includes(search.toLowerCase()) ||
+        i.locationText?.toLowerCase().includes(search.toLowerCase())
+    );
 
     const handleRelatedDOChange = (deliveryOrderRef: string) => {
         const deliveryOrder = dos.find(item => item._id === deliveryOrderRef);
@@ -83,15 +90,17 @@ export default function IncidentsPage() {
                 <div className="table-toolbar"><div className="table-toolbar-left"><div className="table-search"><Search size={16} className="table-search-icon" /><input placeholder="Cari..." value={search} onChange={e => setSearch(e.target.value)} /></div></div></div>
                 <div className="table-wrapper">
                     <table>
-                        <thead><tr><th>No.</th><th>Waktu</th><th>Kendaraan</th><th>Tipe</th><th>Lokasi</th><th>Urgency</th><th>Status</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>No.</th><th>Waktu</th><th>Kendaraan</th><th>Supir</th><th>DO</th><th>Tipe</th><th>Lokasi</th><th>Urgency</th><th>Status</th><th>Aksi</th></tr></thead>
                         <tbody>
-                            {loading ? [1, 2].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                filtered.length === 0 ? <tr><td colSpan={8}><div className="empty-state"><AlertTriangle size={48} className="empty-state-icon" /><div className="empty-state-title">Tidak ada insiden</div></div></td></tr> :
+                            {loading ? [1, 2].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
+                                filtered.length === 0 ? <tr><td colSpan={10}><div className="empty-state"><AlertTriangle size={48} className="empty-state-icon" /><div className="empty-state-title">Tidak ada insiden</div></div></td></tr> :
                                     filtered.map(i => (
                                         <tr key={i._id}>
                                             <td><Link href={`/fleet/incidents/${i._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{i.incidentNumber}</Link></td>
                                             <td className="text-muted" style={{ whiteSpace: 'nowrap' }}>{formatDateTime(i.dateTime)}</td>
-                                            <td className="font-medium">{i.vehiclePlate}</td>
+                                            <td className="font-medium">{i.vehiclePlate || '-'}</td>
+                                            <td>{i.driverName || '-'}</td>
+                                            <td>{i.relatedDONumber || '-'}</td>
                                             <td>{INCIDENT_TYPE_MAP[i.incidentType] || i.incidentType}</td>
                                             <td>{i.locationText}</td>
                                             <td><span className={`badge badge-${URGENCY_MAP[i.urgency]?.color}`}>{URGENCY_MAP[i.urgency]?.label}</span></td>

@@ -27,6 +27,10 @@
 /driver-mobile/dist/
 /driver-mobile/dist-android/
 /driver-mobile/dist-ios/
+/driver_mobile/.dart_tool/
+/driver_mobile/build/
+/driver_mobile/.flutter-plugins
+/driver_mobile/.flutter-plugins-dependencies
 
 # production
 /build

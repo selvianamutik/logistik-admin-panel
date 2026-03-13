@@ -126,11 +126,11 @@ Tracking driver sekarang sudah naik satu level:
 
 - backend auth mobile driver sudah dipisah dari login web biasa
 - ada jalur bearer token untuk app native driver
-- ada project app native terpisah di `driver-mobile/` untuk Android dan iOS
+- ada project app native Flutter terpisah di `driver_mobile/` untuk Android dan iOS
 - tracking background Android sekarang memakai foreground service + background location task
 - APK debug Android sudah terbukti bisa dibuild lokal dari project ini
 - iOS juga sudah disiapkan untuk dibuild/install, tetapi karakter background location iPhone tetap lebih ketat
-- build `.ipa` iOS final masih butuh login Expo/EAS dan Apple provisioning
+- build `.ipa` iOS final masih butuh macOS/Xcode atau jalur CI yang punya Apple provisioning
 
 Lifecycle supir juga tetap dijaga:
 

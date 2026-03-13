@@ -491,6 +491,14 @@ export async function handleIncidentCreate(
         typeof data.vehiclePlate === 'string' && data.vehiclePlate.trim()
             ? data.vehiclePlate.trim()
             : undefined;
+    let driverRef =
+        typeof data.driverRef === 'string' && data.driverRef.trim()
+            ? data.driverRef.trim()
+            : undefined;
+    let driverName =
+        typeof data.driverName === 'string' && data.driverName.trim()
+            ? data.driverName.trim()
+            : undefined;
     let relatedDONumber =
         typeof data.relatedDONumber === 'string' && data.relatedDONumber.trim()
             ? data.relatedDONumber.trim()
@@ -499,17 +507,26 @@ export async function handleIncidentCreate(
         return NextResponse.json({ error: 'Deskripsi insiden wajib diisi' }, { status: 400 });
     }
     if (relatedDeliveryOrderRef) {
-        const deliveryOrder = await sanityGetById<{ _id: string; doNumber?: string; vehicleRef?: string; vehiclePlate?: string }>(relatedDeliveryOrderRef);
+        const deliveryOrder = await sanityGetById<{
+            _id: string;
+            doNumber?: string;
+            vehicleRef?: string;
+            vehiclePlate?: string;
+            driverRef?: string;
+            driverName?: string;
+        }>(relatedDeliveryOrderRef);
         if (!deliveryOrder) {
             return NextResponse.json({ error: 'DO terkait tidak ditemukan' }, { status: 404 });
         }
-        relatedDONumber = relatedDONumber || deliveryOrder.doNumber;
+        relatedDONumber = deliveryOrder.doNumber || relatedDONumber;
         if (!vehicleRef && deliveryOrder.vehicleRef) {
             vehicleRef = deliveryOrder.vehicleRef;
         } else if (vehicleRef && deliveryOrder.vehicleRef && vehicleRef !== deliveryOrder.vehicleRef) {
             return NextResponse.json({ error: 'Kendaraan insiden tidak cocok dengan DO terkait' }, { status: 409 });
         }
-        vehiclePlate = vehiclePlate || deliveryOrder.vehiclePlate;
+        vehiclePlate = deliveryOrder.vehiclePlate || vehiclePlate;
+        driverRef = deliveryOrder.driverRef || driverRef;
+        driverName = deliveryOrder.driverName || driverName;
     }
 
     if (!vehicleRef) {
@@ -535,6 +552,8 @@ export async function handleIncidentCreate(
         ...data,
         vehicleRef,
         vehiclePlate,
+        driverRef,
+        driverName,
         relatedDeliveryOrderRef,
         relatedDONumber,
         description,
