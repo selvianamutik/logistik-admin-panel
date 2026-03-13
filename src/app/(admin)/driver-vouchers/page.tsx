@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Search, Receipt, Printer } from 'lucide-react';
+import { Eye, Plus, Search, Receipt, Printer } from 'lucide-react';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
 import type { DriverVoucher } from '@/lib/types';
@@ -79,15 +79,27 @@ export default function DriverVouchersPage() {
                 </div>
                 <div className="table-wrapper">
                     <table>
-                        <thead><tr><th>No. Bon</th><th>Supir</th><th>Tanggal</th><th>DO</th><th>Rute</th><th>Uang Diberikan</th><th>Terpakai</th><th>Sisa</th><th>Status</th></tr></thead>
+                        <thead><tr><th>No. Bon</th><th>Supir</th><th>Tanggal</th><th>DO</th><th>Rute</th><th>Uang Diberikan</th><th>Terpakai</th><th>Sisa</th><th>Status</th><th>Aksi</th></tr></thead>
                         <tbody>
-                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                filtered.length === 0 ? <tr><td colSpan={9}><div className="empty-state"><Receipt size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada bon supir</div><div className="empty-state-text">Buat bon supir untuk mencatat uang operasional supir</div></div></td></tr> :
+                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
+                                filtered.length === 0 ? <tr><td colSpan={10}><div className="empty-state"><Receipt size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada bon supir</div><div className="empty-state-text">Buat bon supir untuk mencatat uang operasional supir</div></div></td></tr> :
                                     filtered.map(v => {
                                         const st = STATUS_MAP[v.status] || { label: v.status, cls: 'badge-gray' };
                                         return (
                                             <tr key={v._id} className="table-row-link" onClick={() => router.push(`/driver-vouchers/${v._id}`)} style={{ cursor: 'pointer' }}>
-                                                <td className="font-medium" style={{ color: 'var(--color-primary)' }}>{v.bonNumber}</td>
+                                                <td>
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-ghost btn-sm"
+                                                        style={{ padding: 0, color: 'var(--color-primary)', fontWeight: 600 }}
+                                                        onClick={(event) => {
+                                                            event.stopPropagation();
+                                                            router.push(`/driver-vouchers/${v._id}`);
+                                                        }}
+                                                    >
+                                                        {v.bonNumber}
+                                                    </button>
+                                                </td>
                                                 <td className="font-medium">{v.driverName || '-'}</td>
                                                 <td className="text-muted">{formatDate(v.issuedDate)}</td>
                                                 <td>{v.doNumber || '-'}</td>
@@ -100,6 +112,18 @@ export default function DriverVouchersPage() {
                                                         <span className={`badge ${st.cls}`}>{st.label}</span>
                                                         {!v.issueBankRef && <span className="badge badge-warning">Perlu Rekonsiliasi</span>}
                                                     </div>
+                                                </td>
+                                                <td>
+                                                    <button
+                                                        type="button"
+                                                        className="table-action-btn"
+                                                        onClick={(event) => {
+                                                            event.stopPropagation();
+                                                            router.push(`/driver-vouchers/${v._id}`);
+                                                        }}
+                                                    >
+                                                        <Eye size={14} /> Lihat
+                                                    </button>
                                                 </td>
                                             </tr>
                                         );

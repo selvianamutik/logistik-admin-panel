@@ -16,8 +16,14 @@ export default function NewDriverVoucherPage() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [form, setForm] = useState({
-        driverRef: '', deliveryOrderRef: '', vehicleRef: '', route: '', issueBankRef: '',
-        issuedDate: new Date().toISOString().split('T')[0], cashGiven: 0, notes: ''
+        driverRef: '',
+        deliveryOrderRef: '',
+        vehicleRef: '',
+        route: '',
+        issueBankRef: '',
+        issuedDate: new Date().toISOString().split('T')[0],
+        cashGiven: 0,
+        notes: '',
     });
 
     useEffect(() => {
@@ -36,10 +42,10 @@ export default function NewDriverVoucherPage() {
             fetchEntity<Vehicle[]>('/api/data?entity=vehicles'),
             fetchEntity<BankAccount[]>('/api/data?entity=bank-accounts'),
         ]).then(([driverRows, deliveryOrders, vehicleRows, accountRows]) => {
-            setDrivers((driverRows || []).filter((x) => x.active));
+            setDrivers((driverRows || []).filter((driver) => driver.active));
             setDos(deliveryOrders || []);
-            setVehicles((vehicleRows || []).filter((x) => x.status === 'ACTIVE'));
-            setBankAccounts((accountRows || []).filter((x) => x.active !== false));
+            setVehicles((vehicleRows || []).filter((vehicle) => vehicle.status === 'ACTIVE'));
+            setBankAccounts((accountRows || []).filter((account) => account.active !== false));
         }).catch(error => {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat form bon supir');
         }).finally(() => {
@@ -47,9 +53,8 @@ export default function NewDriverVoucherPage() {
         });
     }, [addToast]);
 
-    // Auto-fill vehicle/driver when DO selected
     const handleDOChange = (doId: string) => {
-        const doItem = dos.find(d => d._id === doId);
+        const doItem = dos.find((deliveryOrder) => deliveryOrder._id === doId);
         setForm(prev => ({
             ...prev,
             deliveryOrderRef: doId,
@@ -59,15 +64,25 @@ export default function NewDriverVoucherPage() {
     };
 
     const handleSave = async () => {
-        if (!form.driverRef) { addToast('error', 'Pilih supir terlebih dahulu'); return; }
-        if (!form.cashGiven || form.cashGiven <= 0) { addToast('error', 'Nominal uang harus diisi'); return; }
-        if (!form.issueBankRef) { addToast('error', 'Pilih rekening sumber bon'); return; }
+        if (!form.driverRef) {
+            addToast('error', 'Pilih supir terlebih dahulu');
+            return;
+        }
+        if (!form.cashGiven || form.cashGiven <= 0) {
+            addToast('error', 'Nominal uang harus diisi');
+            return;
+        }
+        if (!form.issueBankRef) {
+            addToast('error', 'Pilih rekening sumber bon');
+            return;
+        }
+
         setSaving(true);
 
-        const driver = drivers.find(d => d._id === form.driverRef);
-        const doItem = dos.find(d => d._id === form.deliveryOrderRef);
-        const vehicle = vehicles.find(v => v._id === form.vehicleRef);
-        const issueBank = bankAccounts.find(b => b._id === form.issueBankRef);
+        const driver = drivers.find((item) => item._id === form.driverRef);
+        const doItem = dos.find((item) => item._id === form.deliveryOrderRef);
+        const vehicle = vehicles.find((item) => item._id === form.vehicleRef);
+        const issueBank = bankAccounts.find((item) => item._id === form.issueBankRef);
 
         const voucherData = {
             driverRef: form.driverRef,
@@ -89,8 +104,9 @@ export default function NewDriverVoucherPage() {
 
         try {
             const res = await fetch('/api/data', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ entity: 'driver-vouchers', data: voucherData })
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entity: 'driver-vouchers', data: voucherData }),
             });
             const result = await res.json();
             if (!res.ok) {
@@ -108,13 +124,15 @@ export default function NewDriverVoucherPage() {
         }
     };
 
-    if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 300 }} /></div>;
+    if (loading) {
+        return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 300 }} /></div>;
+    }
 
     return (
         <div>
             <div className="page-header">
                 <div className="page-header-left">
-                    <button className="btn-back" onClick={() => router.push('/driver-vouchers')}><ArrowLeft size={16} /></button>
+                    <button type="button" className="btn-back" onClick={() => router.push('/driver-vouchers')}><ArrowLeft size={16} /></button>
                     <h1 className="page-title">Buat Bon Supir Baru</h1>
                 </div>
             </div>
@@ -127,7 +145,7 @@ export default function NewDriverVoucherPage() {
                             <label className="form-label">Supir <span className="required">*</span></label>
                             <select className="form-select" value={form.driverRef} onChange={e => setForm({ ...form, driverRef: e.target.value })}>
                                 <option value="">Pilih supir</option>
-                                {drivers.map(d => <option key={d._id} value={d._id}>{d.name} - {d.phone}</option>)}
+                                {drivers.map(driver => <option key={driver._id} value={driver._id}>{driver.name} - {driver.phone}</option>)}
                             </select>
                         </div>
                         <div className="form-group">
@@ -140,27 +158,27 @@ export default function NewDriverVoucherPage() {
                             <label className="form-label">Surat Jalan (DO)</label>
                             <select className="form-select" value={form.deliveryOrderRef} onChange={e => handleDOChange(e.target.value)}>
                                 <option value="">-- Opsional --</option>
-                                {dos.map(d => <option key={d._id} value={d._id}>{d.doNumber} {d.driverName ? `(${d.driverName})` : ''}</option>)}
+                                {dos.map(deliveryOrder => <option key={deliveryOrder._id} value={deliveryOrder._id}>{deliveryOrder.doNumber} {deliveryOrder.driverName ? `(${deliveryOrder.driverName})` : ''}</option>)}
                             </select>
                         </div>
                         <div className="form-group">
                             <label className="form-label">Kendaraan</label>
                             <select className="form-select" value={form.vehicleRef} onChange={e => setForm({ ...form, vehicleRef: e.target.value })}>
                                 <option value="">-- Opsional --</option>
-                                {vehicles.map(v => <option key={v._id} value={v._id}>{v.plateNumber} - {v.brandModel}</option>)}
+                                {vehicles.map(vehicle => <option key={vehicle._id} value={vehicle._id}>{vehicle.plateNumber} - {vehicle.brandModel}</option>)}
                             </select>
                         </div>
                     </div>
                     <div className="form-row">
                         <div className="form-group">
                             <label className="form-label">Rute</label>
-                            <input className="form-input" placeholder="Contoh: Jakarta → Surabaya" value={form.route} onChange={e => setForm({ ...form, route: e.target.value })} />
+                            <input className="form-input" placeholder="Contoh: Jakarta -> Surabaya" value={form.route} onChange={e => setForm({ ...form, route: e.target.value })} />
                         </div>
                         <div className="form-group">
                             <label className="form-label">Rekening / Kas Sumber <span className="required">*</span></label>
                             <select className="form-select" value={form.issueBankRef} onChange={e => setForm({ ...form, issueBankRef: e.target.value })}>
                                 <option value="">Pilih rekening atau kas</option>
-                                {bankAccounts.map(b => <option key={b._id} value={b._id}>{b.bankName} - {b.accountNumber}{b.accountType === 'CASH' ? ' (Kas Tunai)' : ''}</option>)}
+                                {bankAccounts.map(account => <option key={account._id} value={account._id}>{account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''}</option>)}
                             </select>
                         </div>
                     </div>
@@ -176,8 +194,8 @@ export default function NewDriverVoucherPage() {
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: 'var(--space-4)' }}>
-                        <button className="btn btn-secondary" onClick={() => router.push('/driver-vouchers')}>Batal</button>
-                        <button className="btn btn-primary" onClick={handleSave} disabled={saving}><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan & Terbitkan'}</button>
+                        <button type="button" className="btn btn-secondary" onClick={() => router.push('/driver-vouchers')}>Batal</button>
+                        <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saving}><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan & Terbitkan'}</button>
                     </div>
                 </div>
             </div>
