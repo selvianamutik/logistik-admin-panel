@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '../../layout';
 import { ArrowLeft, Save } from 'lucide-react';
-import type { ExpenseCategory, BankAccount } from '@/lib/types';
+import type { ExpenseCategory, BankAccount, Vehicle } from '@/lib/types';
 
 export default function ExpenseNewPage() {
     const router = useRouter();
@@ -12,6 +12,7 @@ export default function ExpenseNewPage() {
     const [saving, setSaving] = useState(false);
     const [categories, setCategories] = useState<ExpenseCategory[]>([]);
     const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+    const [vehicles, setVehicles] = useState<Vehicle[]>([]);
     const [form, setForm] = useState({
         categoryRef: '', categoryName: '',
         date: new Date().toISOString().split('T')[0],
@@ -34,9 +35,11 @@ export default function ExpenseNewPage() {
         Promise.all([
             fetchEntity<ExpenseCategory[]>('/api/data?entity=expense-categories'),
             fetchEntity<BankAccount[]>('/api/data?entity=bank-accounts'),
-        ]).then(([categoryRows, accountRows]) => {
+            fetchEntity<Vehicle[]>('/api/data?entity=vehicles'),
+        ]).then(([categoryRows, accountRows, vehicleRows]) => {
             setCategories(categoryRows || []);
             setBankAccounts((accountRows || []).filter((a) => a.active !== false));
+            setVehicles((vehicleRows || []).filter((vehicle) => vehicle.status !== 'SOLD'));
         }).catch(error => {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat form pengeluaran');
         });
@@ -112,6 +115,24 @@ export default function ExpenseNewPage() {
                         <div className="form-group">
                             <label className="form-label">Catatan / Deskripsi</label>
                             <textarea className="form-textarea" rows={3} value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} placeholder="Keterangan pengeluaran..." />
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label">Kendaraan Terkait</label>
+                            <select
+                                className="form-select"
+                                value={form.relatedVehicleRef}
+                                onChange={e => setForm({ ...form, relatedVehicleRef: e.target.value })}
+                            >
+                                <option value="">-- Tidak terkait kendaraan tertentu --</option>
+                                {vehicles.map(vehicle => (
+                                    <option key={vehicle._id} value={vehicle._id}>
+                                        {vehicle.plateNumber} - {vehicle.brandModel}
+                                    </option>
+                                ))}
+                            </select>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                Isi kalau pengeluaran ini terkait kendaraan tertentu, misalnya servis, ban, atau perbaikan.
+                            </div>
                         </div>
                         <div className="form-group">
                             <label className="form-label">Bayar dari Rekening / Kas</label>

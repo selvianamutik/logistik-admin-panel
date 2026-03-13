@@ -425,6 +425,7 @@ export interface Expense {
   bankAccountName?: string;
   bankAccountNumber?: string;
   relatedVehicleRef?: string;
+  relatedVehiclePlate?: string;
   relatedIncidentRef?: string;
   relatedMaintenanceRef?: string;
   boronganRef?: string;

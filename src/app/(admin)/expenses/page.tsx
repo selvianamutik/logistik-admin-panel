@@ -6,7 +6,7 @@ import { Plus, Search, Wallet, Save, X, FileDown, Printer } from 'lucide-react';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { exportExpenses } from '@/lib/export';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
-import type { BankAccount, Expense, ExpenseCategory } from '@/lib/types';
+import type { BankAccount, Expense, ExpenseCategory, Vehicle } from '@/lib/types';
 
 export default function ExpensesPage() {
     const { addToast } = useToast();
@@ -14,6 +14,7 @@ export default function ExpensesPage() {
     const [items, setItems] = useState<Expense[]>([]);
     const [categories, setCategories] = useState<ExpenseCategory[]>([]);
     const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+    const [vehicles, setVehicles] = useState<Vehicle[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [showModal, setShowModal] = useState(false);
@@ -25,6 +26,7 @@ export default function ExpensesPage() {
         note: '',
         description: '',
         privacyLevel: 'internal' as 'internal' | 'ownerOnly',
+        relatedVehicleRef: '',
         bankAccountRef: '',
         bankAccountName: '',
     });
@@ -43,10 +45,12 @@ export default function ExpensesPage() {
             fetchEntity<Expense[]>('/api/data?entity=expenses'),
             fetchEntity<ExpenseCategory[]>('/api/data?entity=expense-categories'),
             fetchEntity<BankAccount[]>('/api/data?entity=bank-accounts'),
-        ]).then(([expenseRows, categoryRows, accountRows]) => {
+            fetchEntity<Vehicle[]>('/api/data?entity=vehicles'),
+        ]).then(([expenseRows, categoryRows, accountRows, vehicleRows]) => {
             setItems(expenseRows || []);
             setCategories(categoryRows || []);
             setBankAccounts((accountRows || []).filter(account => account.active !== false));
+            setVehicles((vehicleRows || []).filter(vehicle => vehicle.status !== 'SOLD'));
         }).catch(error => {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat data pengeluaran');
         }).finally(() => {
@@ -55,7 +59,20 @@ export default function ExpensesPage() {
     }, [addToast]);
 
     const isOwner = user?.role === 'OWNER';
-    const filtered = items.filter(e => !search || e.note?.toLowerCase().includes(search.toLowerCase()) || e.categoryName?.toLowerCase().includes(search.toLowerCase()));
+    const vehicleMap = new Map(vehicles.map(vehicle => [vehicle._id, vehicle]));
+    const filtered = items.filter(e => {
+        const query = search.toLowerCase();
+        const vehicleLabel =
+            e.relatedVehiclePlate ||
+            (e.relatedVehicleRef ? vehicleMap.get(e.relatedVehicleRef)?.plateNumber : '') ||
+            '';
+
+        return !search ||
+            e.note?.toLowerCase().includes(query) ||
+            e.description?.toLowerCase().includes(query) ||
+            e.categoryName?.toLowerCase().includes(query) ||
+            vehicleLabel.toLowerCase().includes(query);
+    });
 
     const handleSave = async () => {
         if (!form.categoryRef || !form.amount) { addToast('error', 'Kategori dan nominal wajib'); return; }
@@ -78,9 +95,12 @@ export default function ExpensesPage() {
                 note: '',
                 description: '',
                 privacyLevel: 'internal',
+                relatedVehicleRef: '',
                 bankAccountRef: '',
                 bankAccountName: '',
             });
+        } catch {
+            addToast('error', 'Gagal mencatat pengeluaran');
         } finally {
             setSaving(false);
         }
@@ -169,6 +189,17 @@ export default function ExpensesPage() {
                                             <td>
                                                 <div>{e.note || e.description}</div>
                                                 {(() => {
+                                                    const vehicleLabel =
+                                                        e.relatedVehiclePlate ||
+                                                        (e.relatedVehicleRef ? vehicleMap.get(e.relatedVehicleRef)?.plateNumber : '') ||
+                                                        '';
+                                                    return vehicleLabel ? (
+                                                        <div style={{ fontSize: '0.72rem', color: 'var(--color-text-secondary)', marginTop: '0.2rem' }}>
+                                                            kendaraan {vehicleLabel}
+                                                        </div>
+                                                    ) : null;
+                                                })()}
+                                                {(() => {
                                                     const matchedAccount = e.bankAccountRef ? accountMap.get(e.bankAccountRef) : undefined;
                                                     const accountLabel = e.bankAccountName
                                                         ? `${e.bankAccountName}${e.bankAccountNumber || matchedAccount?.accountNumber ? ` - ${e.bankAccountNumber || matchedAccount?.accountNumber}` : ''}`
@@ -216,6 +247,12 @@ export default function ExpensesPage() {
                                 <div className="form-group"><label className="form-label">Nominal <span className="required">*</span></label><input type="number" className="form-input" value={form.amount || ''} onChange={e => setForm({ ...form, amount: Number(e.target.value) })} /></div>
                             </div>
                             <div className="form-group"><label className="form-label">Catatan/Deskripsi</label><textarea className="form-textarea" rows={2} value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} /></div>
+                            <div className="form-group"><label className="form-label">Kendaraan Terkait</label>
+                                <select className="form-select" value={form.relatedVehicleRef} onChange={e => setForm({ ...form, relatedVehicleRef: e.target.value })}>
+                                    <option value="">-- Tidak terkait kendaraan tertentu --</option>
+                                    {vehicles.map(vehicle => <option key={vehicle._id} value={vehicle._id}>{vehicle.plateNumber} - {vehicle.brandModel}</option>)}
+                                </select>
+                            </div>
                             <div className="form-group"><label className="form-label">Bayar dari Rekening / Kas</label>
                                 <select className="form-select" value={form.bankAccountRef} onChange={e => {
                                     const acc = bankAccounts.find(account => account._id === e.target.value);

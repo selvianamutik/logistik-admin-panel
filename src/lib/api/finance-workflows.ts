@@ -414,11 +414,13 @@ export async function handleExpenseCreate(
 
     const relatedVehicleRef =
         typeof data.relatedVehicleRef === 'string' && data.relatedVehicleRef ? data.relatedVehicleRef : undefined;
+    let relatedVehiclePlate: string | undefined;
     if (relatedVehicleRef) {
-        const vehicle = await sanityGetById<{ _id: string }>(relatedVehicleRef);
+        const vehicle = await sanityGetById<{ _id: string; plateNumber?: string }>(relatedVehicleRef);
         if (!vehicle) {
             return NextResponse.json({ error: 'Kendaraan terkait pengeluaran tidak ditemukan' }, { status: 404 });
         }
+        relatedVehiclePlate = vehicle.plateNumber;
     }
 
     const privacyLevel = data.privacyLevel === 'ownerOnly' ? 'ownerOnly' : 'internal';
@@ -434,6 +436,7 @@ export async function handleExpenseCreate(
         receiptUrl: normalizeOptionalText(data.receiptUrl),
         privacyLevel,
         relatedVehicleRef,
+        relatedVehiclePlate,
         relatedIncidentRef: typeof data.relatedIncidentRef === 'string' ? data.relatedIncidentRef : undefined,
         relatedMaintenanceRef: typeof data.relatedMaintenanceRef === 'string' ? data.relatedMaintenanceRef : undefined,
         boronganRef: typeof data.boronganRef === 'string' ? data.boronganRef : undefined,

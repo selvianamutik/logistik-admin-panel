@@ -62,6 +62,24 @@ export default function IncidentsPage() {
         }));
     };
 
+    const handleVehicleChange = (vehicleRef: string) => {
+        setForm(prev => {
+            const relatedDeliveryOrder = prev.relatedDeliveryOrderRef
+                ? dos.find(item => item._id === prev.relatedDeliveryOrderRef)
+                : undefined;
+            const nextRelatedDeliveryOrderRef =
+                relatedDeliveryOrder && relatedDeliveryOrder.vehicleRef && relatedDeliveryOrder.vehicleRef !== vehicleRef
+                    ? ''
+                    : prev.relatedDeliveryOrderRef;
+
+            return {
+                ...prev,
+                vehicleRef,
+                relatedDeliveryOrderRef: nextRelatedDeliveryOrderRef,
+            };
+        });
+    };
+
     const filteredDos = form.vehicleRef
         ? dos.filter(deliveryOrder => !deliveryOrder.vehicleRef || deliveryOrder.vehicleRef === form.vehicleRef)
         : dos;
@@ -70,16 +88,20 @@ export default function IncidentsPage() {
         if ((!form.vehicleRef && !form.relatedDeliveryOrderRef) || !form.description) { addToast('error', 'Kendaraan atau DO terkait serta deskripsi wajib'); return; }
         const veh = vehicles.find(v => v._id === form.vehicleRef);
         const doData = dos.find(d => d._id === form.relatedDeliveryOrderRef);
-        const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'incidents', data: { ...form, vehiclePlate: veh?.plateNumber, relatedDONumber: doData?.doNumber } }) });
-        const d = await res.json();
-        if (!res.ok) {
-            addToast('error', d.error || 'Gagal membuat insiden');
-            return;
+        try {
+            const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'incidents', data: { ...form, vehiclePlate: veh?.plateNumber, relatedDONumber: doData?.doNumber } }) });
+            const d = await res.json();
+            if (!res.ok) {
+                addToast('error', d.error || 'Gagal membuat insiden');
+                return;
+            }
+            setItems(prev => [...prev, d.data]);
+            setForm({ vehicleRef: '', incidentType: 'OTHER', urgency: 'MEDIUM', locationText: '', odometer: 0, description: '', dateTime: new Date().toISOString().slice(0, 16), relatedDeliveryOrderRef: '' });
+            addToast('success', `Insiden dilaporkan: ${d.data?.incidentNumber || ''}`);
+            setShowModal(false);
+        } catch {
+            addToast('error', 'Gagal membuat insiden');
         }
-        setItems(prev => [...prev, d.data]);
-        setForm({ vehicleRef: '', incidentType: 'OTHER', urgency: 'MEDIUM', locationText: '', odometer: 0, description: '', dateTime: new Date().toISOString().slice(0, 16), relatedDeliveryOrderRef: '' });
-        addToast('success', `Insiden dilaporkan: ${d.data?.incidentNumber || ''}`);
-        setShowModal(false);
     };
 
     return (
@@ -119,7 +141,13 @@ export default function IncidentsPage() {
                         <div className="modal-body">
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Kendaraan <span className="required">*</span></label>
-                                    <select className="form-select" value={form.vehicleRef} onChange={e => setForm({ ...form, vehicleRef: e.target.value })}><option value="">Pilih</option>{vehicles.map(v => <option key={v._id} value={v._id}>{v.plateNumber}</option>)}</select></div>
+                                    <select className="form-select" value={form.vehicleRef} onChange={e => handleVehicleChange(e.target.value)} disabled={Boolean(form.relatedDeliveryOrderRef)}><option value="">Pilih</option>{vehicles.map(v => <option key={v._id} value={v._id}>{v.plateNumber}</option>)}</select>
+                                    {form.relatedDeliveryOrderRef && (
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                            Kendaraan mengikuti DO terkait. Hapus pilihan DO dulu jika ingin mengganti kendaraan.
+                                        </div>
+                                    )}
+                                </div>
                                 <div className="form-group"><label className="form-label">Waktu Insiden</label><input type="datetime-local" className="form-input" value={form.dateTime} onChange={e => setForm({ ...form, dateTime: e.target.value })} /></div>
                             </div>
                             <div className="form-row">

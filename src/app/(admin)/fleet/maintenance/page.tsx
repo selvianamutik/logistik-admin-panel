@@ -43,27 +43,35 @@ export default function MaintenancePage() {
     const handleSave = async () => {
         if (!form.vehicleRef || !form.type) { addToast('error', 'Kendaraan dan tipe wajib'); return; }
         const veh = vehicles.find(v => v._id === form.vehicleRef);
-        const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'maintenances', data: { ...form, vehiclePlate: veh?.plateNumber, status: 'SCHEDULED' } }) });
-        const d = await res.json();
-        if (!res.ok) {
-            addToast('error', d.error || 'Gagal menjadwalkan maintenance');
-            return;
+        try {
+            const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'maintenances', data: { ...form, vehiclePlate: veh?.plateNumber, status: 'SCHEDULED' } }) });
+            const d = await res.json();
+            if (!res.ok) {
+                addToast('error', d.error || 'Gagal menjadwalkan maintenance');
+                return;
+            }
+            setItems(prev => [...prev, d.data]);
+            setForm({ vehicleRef: '', type: '', scheduleType: 'DATE', plannedDate: '', plannedOdometer: 0, notes: '' });
+            addToast('success', 'Maintenance dijadwalkan');
+            setShowModal(false);
+        } catch {
+            addToast('error', 'Gagal menjadwalkan maintenance');
         }
-        setItems(prev => [...prev, d.data]);
-        setForm({ vehicleRef: '', type: '', scheduleType: 'DATE', plannedDate: '', plannedOdometer: 0, notes: '' });
-        addToast('success', 'Maintenance dijadwalkan');
-        setShowModal(false);
     };
 
     const updateStatus = async (id: string, status: string) => {
-        const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'maintenances', action: 'update', data: { id, updates: { status, completedDate: new Date().toISOString().split('T')[0] } } }) });
-        const d = await res.json();
-        if (!res.ok) {
-            addToast('error', d.error || 'Gagal memperbarui maintenance');
-            return;
+        try {
+            const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'maintenances', action: 'update', data: { id, updates: { status, completedDate: new Date().toISOString().split('T')[0] } } }) });
+            const d = await res.json();
+            if (!res.ok) {
+                addToast('error', d.error || 'Gagal memperbarui maintenance');
+                return;
+            }
+            setItems(prev => prev.map(m => m._id === id ? { ...m, status: status as Maintenance['status'] } : m));
+            addToast('success', `Status maintenance diubah ke ${MAINTENANCE_STATUS_MAP[status]?.label}`);
+        } catch {
+            addToast('error', 'Gagal memperbarui maintenance');
         }
-        setItems(prev => prev.map(m => m._id === id ? { ...m, status: status as Maintenance['status'] } : m));
-        addToast('success', `Status maintenance diubah ke ${MAINTENANCE_STATUS_MAP[status]?.label}`);
     };
 
     return (
