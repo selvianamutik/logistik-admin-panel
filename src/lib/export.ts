@@ -1,9 +1,9 @@
 /* ============================================================
    LOGISTIK - Excel Export Utility
-   Uses SheetJS (xlsx) for spreadsheet generation
+   Uses ExcelJS for spreadsheet generation
    ============================================================ */
 
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { fetchCompanyProfile, fmtDate, fmtNumber, formatFreightNotaDisplayNumber } from './print';
 import type { CompanyProfile, FreightNota, FreightNotaItem } from './types';
 
@@ -38,6 +38,13 @@ interface ExportOptions {
     includeRowCount?: boolean;
 }
 
+interface MergeRange {
+    startRow: number;
+    startCol: number;
+    endRow: number;
+    endCol: number;
+}
+
 function sanitizeSheetName(name: string) {
     const normalized = name.replace(/[\\/?*[\]:]/g, ' ').trim();
     return normalized.slice(0, 31) || 'Data';
@@ -66,35 +73,39 @@ function resolveCellValue(column: ExportColumn, row: Record<string, unknown>) {
     return rawValue as ExportValue;
 }
 
-function setCellFormat(
-    ws: XLSX.WorkSheet,
+function assignCellValue(
+    worksheet: ExcelJS.Worksheet,
     rowIndex: number,
     colIndex: number,
     value: ExportValue,
     column?: ExportColumn,
 ) {
-    const ref = XLSX.utils.encode_cell({ r: rowIndex, c: colIndex });
-    const cell = ws[ref];
-    if (!cell) return;
+    const cell = worksheet.getRow(rowIndex).getCell(colIndex + 1);
 
-    if (value instanceof Date) {
-        cell.t = 'd';
-        cell.z = 'dd-mmm-yy';
+    if (value === undefined || value === null || value === '') {
+        cell.value = '';
         return;
     }
 
+    if (value instanceof Date) {
+        cell.value = value;
+        cell.numFmt = 'dd-mmm-yy';
+        return;
+    }
+
+    cell.value = value as ExcelJS.CellValue;
+
     if (typeof value === 'number' && !column?.formatter) {
-        cell.t = 'n';
         if (/jumlah|saldo|total|uang|ongkos|tarip|biaya|nominal/i.test(column?.header || '')) {
-            cell.z = '#,##0';
+            cell.numFmt = '#,##0';
         }
     }
 }
 
-function downloadWorkbook(wb: XLSX.WorkBook, filename: string) {
-    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+async function downloadWorkbook(workbook: ExcelJS.Workbook, filename: string) {
+    const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob(
-        [wbout],
+        [buffer],
         { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
     );
 
@@ -125,6 +136,26 @@ function downloadWorkbook(wb: XLSX.WorkBook, filename: string) {
     }, 0);
 }
 
+function applyMerges(worksheet: ExcelJS.Worksheet, merges: MergeRange[]) {
+    merges.forEach((merge) => {
+        if (merge.endCol > merge.startCol || merge.endRow > merge.startRow) {
+            worksheet.mergeCells(merge.startRow, merge.startCol, merge.endRow, merge.endCol);
+        }
+    });
+}
+
+function setColumnWidths(worksheet: ExcelJS.Worksheet, columns: ExportColumn[]) {
+    columns.forEach((column, index) => {
+        worksheet.getColumn(index + 1).width = column.width || 20;
+    });
+}
+
+function addRows(worksheet: ExcelJS.Worksheet, rows: ExportValue[][]) {
+    rows.forEach((row) => {
+        worksheet.addRow(row);
+    });
+}
+
 export async function exportToExcel(
     data: Record<string, unknown>[],
     columns: ExportColumn[],
@@ -135,14 +166,18 @@ export async function exportToExcel(
     const company = options.company ?? await fetchCompanyProfile();
     const totalColumns = Math.max(columns.length, 1);
     const rows: ExportValue[][] = [];
-    const merges: XLSX.Range[] = [];
-    const mergeAcross = totalColumns - 1;
+    const merges: MergeRange[] = [];
 
     const addMergedRow = (value: ExportValue) => {
-        const rowIndex = rows.length;
+        const rowNumber = rows.length + 1;
         rows.push([value]);
-        if (mergeAcross > 0) {
-            merges.push({ s: { r: rowIndex, c: 0 }, e: { r: rowIndex, c: mergeAcross } });
+        if (totalColumns > 1) {
+            merges.push({
+                startRow: rowNumber,
+                startCol: 1,
+                endRow: rowNumber,
+                endCol: totalColumns,
+            });
         }
     };
 
@@ -165,14 +200,19 @@ export async function exportToExcel(
     }
 
     rows.push([]);
-    const headerRowIndex = rows.length;
+    const headerRowIndex = rows.length + 1;
     rows.push(columns.map((column) => column.header));
 
     if (data.length === 0) {
-        const emptyRowIndex = rows.length;
+        const rowNumber = rows.length + 1;
         rows.push([options.emptyMessage || 'Tidak ada data untuk diekspor']);
-        if (mergeAcross > 0) {
-            merges.push({ s: { r: emptyRowIndex, c: 0 }, e: { r: emptyRowIndex, c: mergeAcross } });
+        if (totalColumns > 1) {
+            merges.push({
+                startRow: rowNumber,
+                startCol: 1,
+                endRow: rowNumber,
+                endCol: totalColumns,
+            });
         }
     } else {
         data.forEach((item) => {
@@ -192,34 +232,45 @@ export async function exportToExcel(
     if (options.footnotes && options.footnotes.length > 0) {
         rows.push([]);
         options.footnotes.forEach((note) => {
-            const rowIndex = rows.length;
+            const rowNumber = rows.length + 1;
             rows.push([note]);
-            if (mergeAcross > 0) {
-                merges.push({ s: { r: rowIndex, c: 0 }, e: { r: rowIndex, c: mergeAcross } });
+            if (totalColumns > 1) {
+                merges.push({
+                    startRow: rowNumber,
+                    startCol: 1,
+                    endRow: rowNumber,
+                    endCol: totalColumns,
+                });
             }
         });
     }
 
-    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = company?.name || 'LOGISTIK';
+    workbook.company = company?.name || 'LOGISTIK';
+    workbook.created = new Date();
+    workbook.modified = new Date();
+    workbook.subject = options.subtitle || sheetName;
+    workbook.title = title;
 
-    ws['!cols'] = columns.map((column) => ({ wch: column.width || 20 }));
-    ws['!merges'] = merges;
+    const worksheet = workbook.addWorksheet(sanitizeSheetName(sheetName));
+    addRows(worksheet, rows);
+    setColumnWidths(worksheet, columns);
+    applyMerges(worksheet, merges);
 
-    const dataStartRowIndex = headerRowIndex + 1;
     if (columns.length > 0) {
-        const filterEndRow = Math.max(dataStartRowIndex, rows.length - 1);
-        ws['!autofilter'] = {
-            ref: XLSX.utils.encode_range({
-                s: { r: headerRowIndex, c: 0 },
-                e: { r: filterEndRow, c: columns.length - 1 },
-            }),
+        const dataRowCount = Math.max(data.length, 1);
+        worksheet.autoFilter = {
+            from: { row: headerRowIndex, column: 1 },
+            to: { row: headerRowIndex + dataRowCount - 1, column: columns.length },
         };
     }
 
+    const dataStartRowIndex = headerRowIndex + 1;
     data.forEach((item, itemIndex) => {
         columns.forEach((column, colIndex) => {
             const value = resolveCellValue(column, item);
-            setCellFormat(ws, dataStartRowIndex + itemIndex, colIndex, value, column);
+            assignCellValue(worksheet, dataStartRowIndex + itemIndex, colIndex, value, column);
         });
     });
 
@@ -229,21 +280,11 @@ export async function exportToExcel(
             const value = colIndex === 0
                 ? options.totalRow?.label
                 : options.totalRow?.values?.[column.key];
-            setCellFormat(ws, totalRowIndex, colIndex, value, column);
+            assignCellValue(worksheet, totalRowIndex, colIndex, value, column);
         });
     }
 
-    const wb = XLSX.utils.book_new();
-    wb.Props = {
-        Title: title,
-        Subject: options.subtitle || sheetName,
-        Author: company?.name || 'LOGISTIK',
-        Company: company?.name || 'LOGISTIK',
-        CreatedDate: new Date(),
-    };
-    XLSX.utils.book_append_sheet(wb, ws, sanitizeSheetName(sheetName));
-
-    downloadWorkbook(wb, filename);
+    await downloadWorkbook(workbook, filename);
 }
 
 export async function exportToCSV(
@@ -399,7 +440,7 @@ export async function exportFreightNotaDetail(
         const vehiclePlate = item.vehiclePlate || '';
         const date = fmtDate(item.date || '');
         const key = `${vehiclePlate}__${date}`;
-        const existing = groups.find(group => `${group.vehiclePlate}__${group.date}` === key);
+        const existing = groups.find((group) => `${group.vehiclePlate}__${group.date}` === key);
         const entry = {
             noSJ: item.noSJ || item.doNumber || '',
             dari: item.dari || '',
@@ -427,15 +468,8 @@ export async function exportFreightNotaDetail(
     }, []);
 
     const rows: ExportValue[][] = [];
-    const merges: XLSX.Range[] = [];
+    const merges: MergeRange[] = [];
     const totalColumns = 12;
-    const lastColumn = totalColumns - 1;
-    const addMerge = (rowIndex: number, startCol: number, endCol: number) => {
-        if (endCol > startCol) {
-            merges.push({ s: { r: rowIndex, c: startCol }, e: { r: rowIndex, c: endCol } });
-        }
-    };
-
     const companyLine = [resolvedCompany?.phone ? `TELP. ${resolvedCompany.phone}` : '', resolvedCompany?.email ? `EMAIL : ${resolvedCompany.email}` : '']
         .filter(Boolean)
         .join('  ');
@@ -444,31 +478,25 @@ export async function exportFreightNotaDetail(
         : '';
     const extraNote = [resolvedCompany?.invoiceSettings?.footerNote, nota.notes].filter(Boolean).join(' ');
 
-    rows.push([resolvedCompany?.name || 'LOGISTIK']);
-    addMerge(0, 0, 4);
-    rows[0][5] = `PERINCIAN ONGKOS ANGKUT NO.${displayNumber}`;
-    addMerge(0, 5, 9);
-    rows[0][10] = 'TGL.';
-    rows[0][11] = fmtDate(nota.issueDate);
+    rows.push([resolvedCompany?.name || 'LOGISTIK', '', '', '', '', `PERINCIAN ONGKOS ANGKUT NO.${displayNumber}`, '', '', '', '', 'TGL.', fmtDate(nota.issueDate)]);
+    merges.push({ startRow: 1, startCol: 1, endRow: 1, endCol: 5 });
+    merges.push({ startRow: 1, startCol: 6, endRow: 1, endCol: 10 });
 
-    rows.push([resolvedCompany?.address || '']);
-    addMerge(1, 0, 4);
-    rows[1][5] = 'KEPADA YANG TERHORMAT :';
-    addMerge(1, 5, lastColumn);
+    rows.push([resolvedCompany?.address || '', '', '', '', '', 'KEPADA YANG TERHORMAT :']);
+    merges.push({ startRow: 2, startCol: 1, endRow: 2, endCol: 5 });
+    merges.push({ startRow: 2, startCol: 6, endRow: 2, endCol: 12 });
 
-    rows.push([companyLine]);
-    addMerge(2, 0, 4);
-    rows[2][5] = nota.customerName;
-    addMerge(2, 5, lastColumn);
+    rows.push([companyLine, '', '', '', '', nota.customerName]);
+    merges.push({ startRow: 3, startCol: 1, endRow: 3, endCol: 5 });
+    merges.push({ startRow: 3, startCol: 6, endRow: 3, endCol: 12 });
 
     rows.push([]);
-    addMerge(3, 0, lastColumn);
 
-    const headerRowIndex = rows.length;
+    const headerRowIndex = rows.length + 1;
     rows.push(['NO', 'NO.TRUCK', 'TANGGAL', 'NO. SJ', 'DARI', 'TUJUAN', 'BARANG', 'COLLIE', 'BERAT KG', 'TARIP', 'UANG RP.', 'KET']);
 
-    groupedRows.forEach(group => {
-        const groupStart = rows.length;
+    groupedRows.forEach((group) => {
+        const groupStartRow = rows.length + 1;
         group.entries.forEach((entry, index) => {
             rows.push([
                 index === 0 ? group.no : '',
@@ -486,11 +514,11 @@ export async function exportFreightNotaDetail(
             ]);
         });
 
-        const groupEnd = rows.length - 1;
-        if (groupEnd > groupStart) {
-            merges.push({ s: { r: groupStart, c: 0 }, e: { r: groupEnd, c: 0 } });
-            merges.push({ s: { r: groupStart, c: 1 }, e: { r: groupEnd, c: 1 } });
-            merges.push({ s: { r: groupStart, c: 2 }, e: { r: groupEnd, c: 2 } });
+        const groupEndRow = rows.length;
+        if (groupEndRow > groupStartRow) {
+            merges.push({ startRow: groupStartRow, startCol: 1, endRow: groupEndRow, endCol: 1 });
+            merges.push({ startRow: groupStartRow, startCol: 2, endRow: groupEndRow, endCol: 2 });
+            merges.push({ startRow: groupStartRow, startCol: 3, endRow: groupEndRow, endCol: 3 });
         }
     });
 
@@ -499,70 +527,59 @@ export async function exportFreightNotaDetail(
         rows.push(Array.from({ length: totalColumns }, () => ''));
     }
 
-    const totalRowIndex = rows.length;
-    rows.push(['Jumlah']);
-    addMerge(totalRowIndex, 0, 6);
-    rows[totalRowIndex][7] = nota.totalCollie || 0;
-    rows[totalRowIndex][8] = nota.totalWeightKg ? fmtNumber(nota.totalWeightKg) : 0;
-    rows[totalRowIndex][10] = nota.totalAmount ? fmtNumber(nota.totalAmount) : 0;
+    const totalRowIndex = rows.length + 1;
+    rows.push(['Jumlah', '', '', '', '', '', '', nota.totalCollie || 0, nota.totalWeightKg ? fmtNumber(nota.totalWeightKg) : 0, '', nota.totalAmount ? fmtNumber(nota.totalAmount) : 0, '']);
+    merges.push({ startRow: totalRowIndex, startCol: 1, endRow: totalRowIndex, endCol: 7 });
 
     rows.push([]);
-    addMerge(rows.length - 1, 0, lastColumn);
     rows.push(['NOTE : ONGKOS ANGKUTAN HARAP DITRANSFER KE :']);
-    addMerge(rows.length - 1, 0, lastColumn);
+    merges.push({ startRow: rows.length, startCol: 1, endRow: rows.length, endCol: totalColumns });
+
     if (noteLine) {
         rows.push([noteLine]);
-        addMerge(rows.length - 1, 0, lastColumn);
+        merges.push({ startRow: rows.length, startCol: 1, endRow: rows.length, endCol: totalColumns });
     }
+
     if (extraNote) {
         rows.push([extraNote]);
-        addMerge(rows.length - 1, 0, lastColumn);
+        merges.push({ startRow: rows.length, startCol: 1, endRow: rows.length, endCol: totalColumns });
     }
-    rows.push([`NO. SISTEM : ${nota.notaNumber}`]);
-    addMerge(rows.length - 1, 0, lastColumn);
 
-    const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [
-        { wch: 6 },
-        { wch: 14 },
-        { wch: 12 },
-        { wch: 20 },
-        { wch: 16 },
-        { wch: 16 },
-        { wch: 14 },
-        { wch: 8 },
-        { wch: 10 },
-        { wch: 10 },
-        { wch: 14 },
-        { wch: 12 },
-    ];
-    ws['!merges'] = merges;
-    ws['!autofilter'] = {
-        ref: XLSX.utils.encode_range({
-            s: { r: headerRowIndex, c: 0 },
-            e: { r: Math.max(headerRowIndex, totalRowIndex - 1), c: lastColumn },
-        }),
+    rows.push([`NO. SISTEM : ${nota.notaNumber}`]);
+    merges.push({ startRow: rows.length, startCol: 1, endRow: rows.length, endCol: totalColumns });
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = resolvedCompany?.name || 'LOGISTIK';
+    workbook.company = resolvedCompany?.name || 'LOGISTIK';
+    workbook.created = new Date();
+    workbook.modified = new Date();
+    workbook.subject = `Nota ${displayNumber}`;
+    workbook.title = `Perincian Ongkos Angkut ${displayNumber}`;
+
+    const worksheet = workbook.addWorksheet(sanitizeSheetName('Nota Detail'));
+    addRows(worksheet, rows);
+    applyMerges(worksheet, merges);
+
+    const columnWidths = [6, 14, 12, 20, 16, 16, 14, 8, 10, 10, 14, 12];
+    columnWidths.forEach((width, index) => {
+        worksheet.getColumn(index + 1).width = width;
+    });
+
+    worksheet.autoFilter = {
+        from: { row: headerRowIndex, column: 1 },
+        to: { row: Math.max(headerRowIndex + Math.max(items.length, 1) - 1, headerRowIndex), column: totalColumns },
     };
 
-    for (let colIndex = 0; colIndex < totalColumns; colIndex += 1) {
-        setCellFormat(ws, headerRowIndex, colIndex, rows[headerRowIndex][colIndex]);
-    }
-
-    const numberColumns = new Set([7, 8, 9, 10]);
-    for (let rowIndex = headerRowIndex + 1; rowIndex < totalRowIndex; rowIndex += 1) {
-        for (let colIndex = 0; colIndex < totalColumns; colIndex += 1) {
-            const value = rows[rowIndex][colIndex];
-            const ref = XLSX.utils.encode_cell({ r: rowIndex, c: colIndex });
-            const cell = ws[ref];
-            if (!cell) continue;
-            if (numberColumns.has(colIndex) && typeof value === 'number') {
-                cell.t = 'n';
-                cell.z = '#,##0';
+    const numberColumns = new Set([8, 9, 10, 11]);
+    rows.forEach((row, rowIndex) => {
+        row.forEach((value, colIndex) => {
+            assignCellValue(worksheet, rowIndex + 1, colIndex, value);
+            const cell = worksheet.getRow(rowIndex + 1).getCell(colIndex + 1);
+            if (numberColumns.has(colIndex + 1) && typeof value === 'number') {
+                cell.numFmt = '#,##0';
             }
-        }
-    }
+        });
+    });
 
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, sanitizeSheetName('Nota Detail'));
-    downloadWorkbook(wb, `nota-${displayNumber}`);
+    await downloadWorkbook(workbook, `nota-${displayNumber}`);
 }

@@ -12,39 +12,11 @@ Core workflow saat ini tidak menunjukkan blocker authz atau data-integrity yang 
 - sanitasi HTML untuk print path
 - guard concurrency pada pembayaran utama
 
-Brutal truth-nya: model data tetap bergantung pada **app-layer authorization**, bukan RLS database native. Karena backend memakai token Sanity server-side, kesalahan route auth di masa depan akan berdampak luas. Jadi risiko terbesar yang masih tersisa sekarang bukan bug kasat mata harian, tapi kombinasi **supply-chain** dan **arsitektur akses data**.
+Brutal truth-nya: model data tetap bergantung pada **app-layer authorization**, bukan RLS database native. Karena backend memakai token Sanity server-side, kesalahan route auth di masa depan akan berdampak luas. Jadi risiko terbesar yang masih tersisa sekarang bukan bug kasat mata harian, tapi **arsitektur akses data** dan disiplin menjaga regression authz.
 
 ## Open Findings
 
-### 1. High: `xlsx` dependency masih punya advisory tanpa patch tersedia di registry saat ini
-
-Lokasi:
-
-- [package.json](/c:/LOGISTIK/app/package.json)
-- [export.ts](/c:/LOGISTIK/app/src/lib/export.ts)
-
-Temuan:
-
-- `npm audit` masih melaporkan advisory `xlsx` severity `high`
-- versi yang tersedia di registry saat ini berhenti di `0.18.5`
-- advisory yang dilaporkan meminta versi di atas garis yang belum tersedia dari registry saat audit ini dijalankan
-
-Catatan penting:
-
-- penggunaan `xlsx` di codebase ini hanya untuk **menulis/export workbook**
-- saya tidak menemukan jalur parse workbook dari user seperti `XLSX.read(...)` atau `XLSX.readFile(...)`
-
-Impact:
-
-- risiko saat ini lebih rendah dibanding aplikasi yang menerima upload Excel dari user
-- tetap ada supply-chain exposure yang sebaiknya tidak dibiarkan permanen
-
-Rekomendasi:
-
-- migrasikan export Excel ke library yang lebih aktif dan tidak kena advisory, misalnya `exceljs`
-- atau ganti begitu versi patched benar-benar tersedia di registry produksi
-
-### 2. Medium: Tidak ada native RLS, semua kontrol akses ada di layer aplikasi
+### 1. Medium: Tidak ada native RLS, semua kontrol akses ada di layer aplikasi
 
 Lokasi:
 
@@ -74,7 +46,7 @@ Rekomendasi:
 - tambah test authz regression untuk entity sensitif
 - jangan pernah expose Sanity token ke client
 
-### 3. Low: Proxy page guard masih berbasis JWT claim, bukan live user lookup
+### 2. Low: Proxy page guard masih berbasis JWT claim, bukan live user lookup
 
 Lokasi:
 
@@ -96,6 +68,20 @@ Rekomendasi:
 - kalau ingin menutup gap ini total, redesign page guard agar memakai lightweight revocation/session-version strategy
 
 ## Remediated In This Audit
+
+### Fixed: export Excel sudah dimigrasikan dari `xlsx` ke `exceljs`
+
+Perbaikan:
+
+- dependency `xlsx` dihapus dari runtime
+- export workbook sekarang memakai `exceljs`
+- `npm audit --omit=dev` sekarang bersih
+
+Lokasi:
+
+- [package.json](/c:/LOGISTIK/app/package.json)
+- [package-lock.json](/c:/LOGISTIK/app/package-lock.json)
+- [export.ts](/c:/LOGISTIK/app/src/lib/export.ts)
 
 ### Fixed: password hash bocor ke browser lewat endpoint user
 
@@ -158,6 +144,5 @@ Berhasil:
 
 Catatan:
 
-- `npm audit` masih menandai `xlsx` sebagai temuan supply-chain terbuka
+- `npm audit --omit=dev` sekarang `found 0 vulnerabilities`
 - background HTTP smoke server lokal dibatasi policy tool pada sesi ini, jadi verifikasi response untuk patch security ini saya dasarkan pada code-path audit + gate teknis yang lolos
-
