@@ -18,6 +18,7 @@ export default function OrderEditPage() {
     const [form, setForm] = useState({
         customerRef: '', customerName: '',
         receiverName: '', receiverPhone: '', receiverAddress: '', receiverCompany: '',
+        pickupAddress: '',
         serviceRef: '', serviceName: '',
         notes: ''
     });
@@ -44,6 +45,7 @@ export default function OrderEditPage() {
                     customerRef: order.customerRef, customerName: order.customerName || '',
                     receiverName: order.receiverName, receiverPhone: order.receiverPhone,
                     receiverAddress: order.receiverAddress, receiverCompany: order.receiverCompany || '',
+                    pickupAddress: order.pickupAddress || '',
                     serviceRef: order.serviceRef, serviceName: order.serviceName || '',
                     notes: order.notes || ''
                 });
@@ -126,6 +128,10 @@ export default function OrderEditPage() {
                                     <option value="">Pilih Layanan</option>
                                     {services.map(s => <option key={s._id} value={s._id}>{s.name}</option>)}
                                 </select>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Alamat Pickup</label>
+                                <textarea className="form-textarea" rows={2} value={form.pickupAddress} onChange={e => setForm({ ...form, pickupAddress: e.target.value })} disabled={hasDeliveryOrders} />
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Catatan</label>

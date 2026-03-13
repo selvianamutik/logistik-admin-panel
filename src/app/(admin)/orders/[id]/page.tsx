@@ -230,8 +230,9 @@ export default function OrderDetailPage() {
                         </div>
                         <div className="detail-row">
                             <div className="detail-item"><div className="detail-label">Customer</div><div className="detail-value">{order.customerName}</div></div>
-                            <div className="detail-item"><div className="detail-label">Layanan</div><div className="detail-value">{order.serviceName}</div></div>
+                            <div className="detail-item"><div className="detail-label">Layanan</div><div className="detail-value">{order.serviceName || '-'}</div></div>
                         </div>
+                        <div className="mt-2"><div className="detail-label">Alamat Pickup</div><div className="detail-value">{order.pickupAddress || '-'}</div></div>
                         {order.notes && <div className="mt-2"><div className="detail-label">Catatan</div><div className="detail-value">{order.notes}</div></div>}
                     </div>
                 </div>

@@ -315,6 +315,11 @@ export default function DODetailPage() {
                             <div className="detail-item"><div className="detail-label">Driver</div><div className="detail-value">{doData.driverName || '-'}</div></div>
                             <div className="detail-item"><div className="detail-label">Customer</div><div className="detail-value">{doData.customerName || '-'}</div></div>
                         </div>
+                        <div className="detail-row">
+                            <div className="detail-item"><div className="detail-label">Layanan</div><div className="detail-value">{doData.serviceName || '-'}</div></div>
+                            <div className="detail-item"><div className="detail-label">Telepon Penerima</div><div className="detail-value">{doData.receiverPhone || '-'}</div></div>
+                        </div>
+                        <div className="mt-2"><div className="detail-label">Alamat Pickup</div><div className="detail-value">{doData.pickupAddress || '-'}</div></div>
                         {doData.notes && <div className="mt-2"><div className="detail-label">Catatan</div><div className="detail-value">{doData.notes}</div></div>}
                     </div>
                 </div>
@@ -324,6 +329,7 @@ export default function DODetailPage() {
                     <div className="card-body">
                         <div className="detail-item"><div className="detail-label">Nama</div><div className="detail-value">{doData.receiverName || '-'}</div></div>
                         <div className="detail-item mt-2"><div className="detail-label">Alamat</div><div className="detail-value">{doData.receiverAddress || '-'}</div></div>
+                        {doData.receiverCompany && <div className="detail-item mt-2"><div className="detail-label">Perusahaan</div><div className="detail-value">{doData.receiverCompany}</div></div>}
                     </div>
                     {doData.podReceiverName && (
                         <div className="card-body" style={{ borderTop: '1px solid var(--color-gray-100)', background: 'var(--color-success-light)' }}>

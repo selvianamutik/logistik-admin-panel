@@ -50,6 +50,11 @@ export default function NewOrderPage() {
     const updateItem = (idx: number, field: string, value: string | number) => {
         setItems(prev => prev.map((item, i) => i === idx ? { ...item, [field]: value } : item));
     };
+    const handleCustomerChange = (nextCustomerRef: string) => {
+        const selectedCustomer = customers.find(customer => customer._id === nextCustomerRef);
+        setCustomerRef(nextCustomerRef);
+        setPickupAddress(previous => previous.trim() ? previous : (selectedCustomer?.address || ''));
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -119,7 +124,7 @@ export default function NewOrderPage() {
                         <div className="card-body">
                             <div className="form-group">
                                 <label className="form-label">Customer Pengirim <span className="required">*</span></label>
-                                <select className="form-select" value={customerRef} onChange={e => setCustomerRef(e.target.value)} required>
+                                <select className="form-select" value={customerRef} onChange={e => handleCustomerChange(e.target.value)} required>
                                     <option value="">Pilih customer</option>
                                     {customers.filter(c => c.active).map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
                                 </select>
@@ -134,6 +139,9 @@ export default function NewOrderPage() {
                             <div className="form-group">
                                 <label className="form-label">Alamat Pickup (Opsional)</label>
                                 <input className="form-input" value={pickupAddress} onChange={e => setPickupAddress(e.target.value)} placeholder="Alamat pengambilan barang" />
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                    Otomatis diisi dari alamat customer saat customer dipilih, tapi masih bisa kamu ubah bila titik pickup berbeda.
+                                </div>
                             </div>
                         </div>
                     </div>

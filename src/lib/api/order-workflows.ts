@@ -104,10 +104,31 @@ export async function handleOrderCreate(
     addAuditLog: AuditLogFn
 ) {
     const customerRef = normalizeText(data.customerRef);
+    const serviceRef = normalizeOptionalText(data.serviceRef);
     const receiverName = normalizeText(data.receiverName);
     const receiverAddress = normalizeText(data.receiverAddress);
     if (!customerRef || !receiverName || !receiverAddress) {
         return NextResponse.json({ error: 'Customer, penerima, dan alamat tujuan wajib diisi' }, { status: 400 });
+    }
+
+    const customer = await sanityGetById<{ _id: string; name?: string; address?: string; active?: boolean }>(customerRef);
+    if (!customer) {
+        return NextResponse.json({ error: 'Customer order tidak ditemukan' }, { status: 404 });
+    }
+    if (customer.active === false) {
+        return NextResponse.json({ error: 'Customer order tidak aktif' }, { status: 409 });
+    }
+
+    let serviceName: string | undefined;
+    if (serviceRef) {
+        const service = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(serviceRef);
+        if (!service) {
+            return NextResponse.json({ error: 'Layanan order tidak ditemukan' }, { status: 404 });
+        }
+        if (service.active === false) {
+            return NextResponse.json({ error: 'Layanan order tidak aktif' }, { status: 409 });
+        }
+        serviceName = service.name || undefined;
     }
 
     const rawItems = Array.isArray(data.items) ? data.items : [];
@@ -151,14 +172,14 @@ export async function handleOrderCreate(
         _id: orderId,
         _type: 'order',
         customerRef,
-        customerName: normalizeOptionalText(data.customerName),
+        customerName: customer.name,
         receiverName,
         receiverPhone: normalizeText(data.receiverPhone),
         receiverAddress,
         receiverCompany: normalizeOptionalText(data.receiverCompany),
-        pickupAddress: normalizeOptionalText(data.pickupAddress),
-        serviceRef: typeof data.serviceRef === 'string' ? data.serviceRef : '',
-        serviceName: normalizeOptionalText(data.serviceName),
+        pickupAddress: normalizeOptionalText(data.pickupAddress) || customer.address || undefined,
+        serviceRef: serviceRef || '',
+        serviceName,
         notes: normalizeOptionalText(data.notes),
         masterResi,
         status: 'OPEN',

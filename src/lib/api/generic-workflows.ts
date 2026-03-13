@@ -243,6 +243,40 @@ export async function handleGenericUpdate(
             }
         }
 
+        if (Object.prototype.hasOwnProperty.call(updates, 'customerRef')) {
+            const customerRef = normalizeOptionalText(updates.customerRef);
+            if (!customerRef) {
+                return NextResponse.json({ error: 'Customer order wajib dipilih' }, { status: 400 });
+            }
+            const customer = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(customerRef);
+            if (!customer) {
+                return NextResponse.json({ error: 'Customer order tidak ditemukan' }, { status: 404 });
+            }
+            if (customer.active === false) {
+                return NextResponse.json({ error: 'Customer order tidak aktif' }, { status: 409 });
+            }
+            updates.customerRef = customerRef;
+            updates.customerName = customer.name || '';
+        }
+
+        if (Object.prototype.hasOwnProperty.call(updates, 'serviceRef')) {
+            const serviceRef = normalizeOptionalText(updates.serviceRef);
+            if (!serviceRef) {
+                updates.serviceRef = '';
+                updates.serviceName = undefined;
+            } else {
+                const service = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(serviceRef);
+                if (!service) {
+                    return NextResponse.json({ error: 'Layanan order tidak ditemukan' }, { status: 404 });
+                }
+                if (service.active === false) {
+                    return NextResponse.json({ error: 'Layanan order tidak aktif' }, { status: 409 });
+                }
+                updates.serviceRef = serviceRef;
+                updates.serviceName = service.name || '';
+            }
+        }
+
         if (Object.prototype.hasOwnProperty.call(updates, 'notes')) {
             updates.notes = normalizeOptionalText(updates.notes);
         }
