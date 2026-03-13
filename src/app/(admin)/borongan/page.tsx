@@ -39,13 +39,16 @@ export default function BoronganListPage() {
         void loadBorongan();
     }, [addToast]);
 
-    const filtered = items.filter(b => {
-        const m = !search || b.boronganNumber?.toLowerCase().includes(search.toLowerCase()) || b.driverName?.toLowerCase().includes(search.toLowerCase());
-        const s = !statusFilter || b.status === statusFilter;
-        return m && s;
+    const filtered = items.filter(borongan => {
+        const query = search.toLowerCase();
+        const matchesSearch = !search ||
+            borongan.boronganNumber?.toLowerCase().includes(query) ||
+            borongan.driverName?.toLowerCase().includes(query);
+        const matchesStatus = !statusFilter || borongan.status === statusFilter;
+        return matchesSearch && matchesStatus;
     });
 
-    const totalUpah = filtered.reduce((s, b) => s + b.totalAmount, 0);
+    const totalUpah = filtered.reduce((sum, borongan) => sum + borongan.totalAmount, 0);
 
     return (
         <div>
@@ -55,31 +58,34 @@ export default function BoronganListPage() {
                     <p className="page-subtitle">Kelola slip upah borongan supir</p>
                 </div>
                 <div className="page-actions">
-                    <button className="btn btn-primary" onClick={() => router.push('/borongan/new')}><Plus size={18} /> Buat Slip Borongan</button>
+                    <button type="button" className="btn btn-primary" onClick={() => router.push('/borongan/new')}>
+                        <Plus size={18} /> Buat Slip Borongan
+                    </button>
                 </div>
             </div>
 
-            {/* KPI */}
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card">
                     <div className="kpi-icon danger"><Receipt size={20} /></div>
                     <div className="kpi-content">
                         <div className="kpi-label">Total Upah (filter)</div>
-                        <div className="kpi-value" style={{ fontSize: '1.05rem', color: 'var(--color-danger)' }}>{formatCurrency(totalUpah)}</div>
+                        <div className="kpi-value" style={{ fontSize: '1.05rem', color: 'var(--color-danger)' }}>
+                            {formatCurrency(totalUpah)}
+                        </div>
                     </div>
                 </div>
                 <div className="kpi-card">
                     <div className="kpi-icon warning"><Receipt size={20} /></div>
                     <div className="kpi-content">
                         <div className="kpi-label">Belum Dibayar</div>
-                        <div className="kpi-value">{filtered.filter(b => b.status === 'UNPAID').length}</div>
+                        <div className="kpi-value">{filtered.filter(borongan => borongan.status === 'UNPAID').length}</div>
                     </div>
                 </div>
                 <div className="kpi-card">
                     <div className="kpi-icon success"><Receipt size={20} /></div>
                     <div className="kpi-content">
                         <div className="kpi-label">Sudah Dibayar</div>
-                        <div className="kpi-value">{filtered.filter(b => b.status === 'PAID').length}</div>
+                        <div className="kpi-value">{filtered.filter(borongan => borongan.status === 'PAID').length}</div>
                     </div>
                 </div>
             </div>
@@ -87,36 +93,83 @@ export default function BoronganListPage() {
             <div className="table-container">
                 <div className="table-toolbar">
                     <div className="table-toolbar-left">
-                        <div className="table-search"><Search size={16} className="table-search-icon" /><input placeholder="Cari slip, supir..." value={search} onChange={e => setSearch(e.target.value)} /></div>
-                        <select className="form-select" style={{ width: 'auto', minWidth: 140 }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+                        <div className="table-search">
+                            <Search size={16} className="table-search-icon" />
+                            <input placeholder="Cari slip, supir..." value={search} onChange={event => setSearch(event.target.value)} />
+                        </div>
+                        <select className="form-select" style={{ width: 'auto', minWidth: 140 }} value={statusFilter} onChange={event => setStatusFilter(event.target.value)}>
                             <option value="">Semua Status</option>
-                            {Object.entries(STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                            {Object.entries(STATUS_MAP).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}
                         </select>
                     </div>
                 </div>
                 <div className="table-wrapper">
                     <table>
-                        <thead><tr><th>No. Slip</th><th>Supir</th><th>Periode</th><th>Total Collie</th><th>Total Berat</th><th>Total Upah</th><th>Status</th><th>Aksi</th></tr></thead>
+                        <thead>
+                            <tr>
+                                <th>No. Slip</th>
+                                <th>Supir</th>
+                                <th>Periode</th>
+                                <th>Total Collie</th>
+                                <th>Total Berat</th>
+                                <th>Total Upah</th>
+                                <th>Status</th>
+                                <th>Aksi</th>
+                            </tr>
+                        </thead>
                         <tbody>
-                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                filtered.length === 0 ? (
-                                    <tr><td colSpan={8}><div className="empty-state"><Receipt size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada slip borongan</div></div></td></tr>
-                                ) : filtered.map(b => (
-                                    <tr key={b._id}>
-                                        <td><span className="font-semibold" style={{ color: 'var(--color-primary)', cursor: 'pointer' }} onClick={() => router.push(`/borongan/${b._id}`)}>{b.boronganNumber}</span></td>
-                                        <td className="font-semibold">{b.driverName}</td>
-                                        <td className="text-muted">{formatDate(b.periodStart)} — {formatDate(b.periodEnd)}</td>
-                                        <td>{b.totalCollie || 0}</td>
-                                        <td>{(b.totalWeightKg || 0).toLocaleString('id')} kg</td>
-                                        <td className="font-semibold">{formatCurrency(b.totalAmount)}</td>
-                                        <td><span className={`badge badge-${STATUS_MAP[b.status]?.color}`}><span className="badge-dot" /> {STATUS_MAP[b.status]?.label}</span></td>
-                                        <td><button className="table-action-btn" onClick={() => router.push(`/borongan/${b._id}`)}>Lihat</button></td>
-                                    </tr>
-                                ))}
+                            {loading ? [1, 2, 3].map(index => (
+                                <tr key={index}>
+                                    {[1, 2, 3, 4, 5, 6, 7, 8].map(cell => <td key={cell}><div className="skeleton skeleton-text" /></td>)}
+                                </tr>
+                            )) : filtered.length === 0 ? (
+                                <tr>
+                                    <td colSpan={8}>
+                                        <div className="empty-state">
+                                            <Receipt size={48} className="empty-state-icon" />
+                                            <div className="empty-state-title">Belum ada slip borongan</div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ) : filtered.map(borongan => (
+                                <tr key={borongan._id}>
+                                    <td>
+                                        <button
+                                            type="button"
+                                            className="btn btn-ghost btn-sm"
+                                            style={{ padding: 0, color: 'var(--color-primary)', fontWeight: 600 }}
+                                            onClick={() => router.push(`/borongan/${borongan._id}`)}
+                                        >
+                                            {borongan.boronganNumber}
+                                        </button>
+                                    </td>
+                                    <td className="font-semibold">{borongan.driverName}</td>
+                                    <td className="text-muted">{formatDate(borongan.periodStart)} - {formatDate(borongan.periodEnd)}</td>
+                                    <td>{borongan.totalCollie || 0}</td>
+                                    <td>{(borongan.totalWeightKg || 0).toLocaleString('id')} kg</td>
+                                    <td className="font-semibold">{formatCurrency(borongan.totalAmount)}</td>
+                                    <td>
+                                        <span className={`badge badge-${STATUS_MAP[borongan.status]?.color}`}>
+                                            <span className="badge-dot" /> {STATUS_MAP[borongan.status]?.label}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <button type="button" className="table-action-btn" onClick={() => router.push(`/borongan/${borongan._id}`)}>
+                                            Lihat
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
                         </tbody>
                     </table>
                 </div>
-                {filtered.length > 0 && <div className="pagination"><div className="pagination-info">Menampilkan {filtered.length} slip | Total upah: <strong style={{ color: 'var(--color-danger)' }}>{formatCurrency(totalUpah)}</strong></div></div>}
+                {filtered.length > 0 && (
+                    <div className="pagination">
+                        <div className="pagination-info">
+                            Menampilkan {filtered.length} slip | Total upah: <strong style={{ color: 'var(--color-danger)' }}>{formatCurrency(totalUpah)}</strong>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

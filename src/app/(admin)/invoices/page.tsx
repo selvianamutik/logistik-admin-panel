@@ -179,13 +179,15 @@ export default function NotaListPage() {
                                 ) : filtered.map(n => (
                                     <tr key={n._id}>
                                         <td>
-                                            <div
-                                                style={{ color: 'var(--color-primary)', cursor: 'pointer' }}
+                                            <button
+                                                type="button"
+                                                className="btn btn-ghost btn-sm"
+                                                style={{ padding: 0, textAlign: 'left', color: 'var(--color-primary)' }}
                                                 onClick={() => router.push(`/invoices/${n._id}`)}
                                             >
                                                 <div className="font-semibold">{formatFreightNotaDisplayNumber(n, company)}</div>
                                                 <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{n.notaNumber}</div>
-                                            </div>
+                                            </button>
                                         </td>
                                         <td>{n.customerName}</td>
                                         <td className="text-muted">{formatDate(n.issueDate)}</td>
