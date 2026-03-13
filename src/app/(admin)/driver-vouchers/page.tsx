@@ -86,7 +86,7 @@ export default function DriverVouchersPage() {
                                     filtered.map(v => {
                                         const st = STATUS_MAP[v.status] || { label: v.status, cls: 'badge-gray' };
                                         return (
-                                            <tr key={v._id} className="table-row-link" onClick={() => router.push(`/driver-vouchers/${v._id}`)} style={{ cursor: 'pointer' }}>
+                                            <tr key={v._id}>
                                                 <td>
                                                     <button
                                                         type="button"
