@@ -22,7 +22,10 @@
 /out/
 /driver-mobile/.expo/
 /driver-mobile/android/
+/driver-mobile/ios/
 /driver-mobile/dist/
+/driver-mobile/dist-android/
+/driver-mobile/dist-ios/
 
 # production
 /build

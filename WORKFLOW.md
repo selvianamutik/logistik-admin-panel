@@ -379,8 +379,8 @@ Sekarang ada 2 jalur driver:
 
 - `Portal web driver`
   Dipakai untuk fallback / akses cepat dari browser di `/driver/login`
-- `APK Android driver`
-  Dipakai untuk operasional tracking background native
+- `App native driver`
+  Dipakai untuk operasional tracking background native di Android, dan bisa dibuild/install ke iOS juga
 
 Rule auth-nya:
 
@@ -456,11 +456,12 @@ Di list dan detail DO sekarang owner/admin bisa melihat:
 
 ### 14.7 Keterbatasan v1 yang harus dipahami
 
-Tracking sekarang sudah punya jalur native Android, jadi lebih kuat daripada browser HP biasa.
+Tracking sekarang sudah punya jalur native mobile, jadi lebih kuat daripada browser HP biasa.
 
 Tetap ada batasannya:
 
-- fokus operasional utama masih Android, bukan iOS
+- Android tetap platform operasional utama
+- iOS juga bisa dibuild/install, tetapi background policy iPhone lebih ketat
 - izin lokasi foreground/background harus aktif
 - GPS dan internet harus aktif
 - kalau user force stop aplikasi atau mencabut izin lokasi, tracking background berhenti

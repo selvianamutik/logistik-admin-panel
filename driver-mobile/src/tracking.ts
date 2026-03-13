@@ -1,5 +1,6 @@
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
+import { Platform } from 'react-native';
 
 import { postTrackingAction } from './api';
 import { TRACKING_TASK_NAME } from './config';
@@ -75,20 +76,26 @@ export async function startBackgroundTracking(deliveryOrderRef: string) {
     await Location.stopLocationUpdatesAsync(TRACKING_TASK_NAME);
   }
 
-  await Location.startLocationUpdatesAsync(TRACKING_TASK_NAME, {
+  const trackingOptions: Location.LocationTaskOptions = {
     accuracy: Location.Accuracy.BestForNavigation,
     timeInterval: 15000,
     distanceInterval: 25,
     pausesUpdatesAutomatically: false,
-    showsBackgroundLocationIndicator: true,
-    activityType: Location.ActivityType.AutomotiveNavigation,
-    foregroundService: {
+  };
+
+  if (Platform.OS === 'ios') {
+    trackingOptions.showsBackgroundLocationIndicator = true;
+    trackingOptions.activityType = Location.ActivityType.AutomotiveNavigation;
+  } else {
+    trackingOptions.foregroundService = {
       notificationTitle: 'Tracking pengiriman aktif',
       notificationBody: 'Lokasi supir sedang dikirim ke dashboard logistik.',
       notificationColor: '#0f4c81',
       killServiceOnDestroy: false,
-    },
-  });
+    };
+  }
+
+  await Location.startLocationUpdatesAsync(TRACKING_TASK_NAME, trackingOptions);
 }
 
 export async function stopBackgroundTracking() {

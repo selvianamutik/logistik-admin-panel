@@ -126,8 +126,9 @@ Tracking driver sekarang sudah naik satu level:
 
 - backend auth mobile driver sudah dipisah dari login web biasa
 - ada jalur bearer token untuk app native driver
-- ada project APK Android terpisah di `driver-mobile/`
+- ada project app native terpisah di `driver-mobile/` untuk Android dan iOS
 - tracking background Android sekarang memakai foreground service + background location task
+- iOS juga sudah disiapkan untuk dibuild/install, tetapi karakter background location iPhone tetap lebih ketat
 
 Lifecycle supir juga tetap dijaga:
 

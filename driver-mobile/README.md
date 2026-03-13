@@ -1,6 +1,6 @@
 # Driver Mobile
 
-APK driver Android untuk login, melihat DO aktif, dan mengirim tracking background native ke web admin.
+App driver native untuk Android dan iOS untuk login, melihat DO aktif, dan mengirim tracking ke web admin.
 
 ## Scope v1
 
@@ -8,7 +8,7 @@ APK driver Android untuk login, melihat DO aktif, dan mengirim tracking backgrou
 - restore sesi lokal
 - daftar DO driver
 - start / pause / stop tracking
-- heartbeat lokasi background via Android foreground service
+- heartbeat lokasi background via native background location
 
 ## Environment
 
@@ -27,16 +27,37 @@ npm install
 npm run start
 ```
 
-## Build Android lokal
+## Build lokal
 
-Butuh Android SDK dan emulator/perangkat Android.
+Butuh toolchain native sesuai platform:
+
+- Android SDK untuk Android
+- Xcode untuk iOS
 
 ```bash
 npm run android
+npm run ios
+```
+
+## Build installable package
+
+Project ini sudah disiapkan untuk EAS build cloud.
+
+```bash
+npm run build:android
+npm run build:ios
+```
+
+Untuk internal testing:
+
+```bash
+npx eas build --platform android --profile preview
+npx eas build --platform ios --profile preview
 ```
 
 ## Catatan penting
 
-- v1 ini fokus Android. iOS belum jadi target operasional utama.
+- Android tetap target operasional utama untuk tracking background paling stabil.
+- iOS sudah disiapkan agar bisa dibuild dan diinstall, tetapi perilaku background location di iPhone tetap lebih ketat daripada Android.
 - tracking background tetap bergantung pada izin lokasi, GPS aktif, dan data seluler.
 - token driver mobile saat ini disimpan di `AsyncStorage` agar background task bisa membacanya saat aplikasi berjalan di background Android.
