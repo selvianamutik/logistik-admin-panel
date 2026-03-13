@@ -157,7 +157,7 @@ a:hover {
 .admin-content {
   flex: 1;
   margin-left: var(--sidebar-width);
-  padding-top: var(--topbar-height);
+  padding-top: calc(var(--topbar-height) + env(safe-area-inset-top, 0px));
   min-height: 100vh;
   min-height: 100dvh;
   min-width: 0;
@@ -192,6 +192,7 @@ a:hover {
   transition: width var(--transition-slow);
   overflow-y: auto;
   overflow-x: hidden;
+  padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
@@ -345,13 +346,13 @@ a:hover {
   top: 0;
   right: 0;
   left: var(--sidebar-width);
-  height: var(--topbar-height);
+  height: calc(var(--topbar-height) + env(safe-area-inset-top, 0px));
   background: var(--topbar-bg);
   border-bottom: 1px solid var(--topbar-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 var(--space-6);
+  padding: env(safe-area-inset-top, 0px) var(--space-6) 0;
   z-index: var(--z-topbar);
   transition: left var(--transition-slow);
 }
@@ -1145,7 +1146,7 @@ tbody td {
   align-items: center;
   justify-content: center;
   z-index: var(--z-modal);
-  padding: var(--space-4);
+  padding: calc(var(--space-4) + env(safe-area-inset-top, 0px)) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
   padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
@@ -1996,7 +1997,7 @@ tbody td {
   background:
     radial-gradient(circle at top right, rgba(15, 118, 110, 0.14), transparent 28%),
     linear-gradient(180deg, #f8fafc 0%, #ecfeff 100%);
-  padding: 1rem 1rem calc(1.5rem + env(safe-area-inset-bottom, 0px));
+  padding: calc(1rem + env(safe-area-inset-top, 0px)) 1rem calc(1.5rem + env(safe-area-inset-bottom, 0px));
 }
 
 .driver-loading {
