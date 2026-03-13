@@ -478,3 +478,27 @@ Tetapi:
 - kalau DO sudah masuk ke slip borongan, tarip dan keterangannya tidak boleh diubah lagi
 
 Ini supaya data DO tidak drift dengan slip borongan yang sudah terbentuk.
+
+## 16. Guard penting pada Order
+
+Kalau order belum punya surat jalan:
+
+- field utama order masih boleh diedit
+- misalnya customer, layanan, penerima, dan catatan
+
+Kalau order sudah punya minimal satu surat jalan:
+
+- field utama order dikunci
+- yang masih boleh diubah hanya `catatan`
+
+Field yang dikunci setelah ada surat jalan:
+
+- customer
+- layanan
+- nama penerima
+- telepon penerima
+- alamat penerima
+- perusahaan penerima
+- pickup address
+
+Tujuannya supaya order tidak drift dengan DO, nota, dan dokumen turunan yang sudah terbentuk.

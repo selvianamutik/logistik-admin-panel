@@ -191,7 +191,11 @@ export default function OrderDetailPage() {
                     <button className="btn btn-secondary" onClick={() => router.push('/invoices/new')}>
                         <FileText size={16} /> Buat Nota
                     </button>
-                    <button className="btn btn-ghost" onClick={() => router.push(`/orders/${order._id}/edit`)}>
+                    <button
+                        className="btn btn-ghost"
+                        onClick={() => router.push(`/orders/${order._id}/edit`)}
+                        title={dos.length > 0 ? 'Order ini sudah punya surat jalan. Hanya catatan yang bisa diubah.' : 'Edit order'}
+                    >
                         <Edit size={16} /> Edit
                     </button>
                 </div>

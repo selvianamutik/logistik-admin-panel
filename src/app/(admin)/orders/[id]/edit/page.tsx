@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useToast } from '../../../layout';
 import { ArrowLeft, Save } from 'lucide-react';
-import type { Order, Customer, Service } from '@/lib/types';
+import type { Order, Customer, Service, DeliveryOrder } from '@/lib/types';
 
 export default function OrderEditPage() {
     const params = useParams();
@@ -14,6 +14,7 @@ export default function OrderEditPage() {
     const [saving, setSaving] = useState(false);
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [services, setServices] = useState<Service[]>([]);
+    const [hasDeliveryOrders, setHasDeliveryOrders] = useState(false);
     const [form, setForm] = useState({
         customerRef: '', customerName: '',
         receiverName: '', receiverPhone: '', receiverAddress: '', receiverCompany: '',
@@ -36,7 +37,8 @@ export default function OrderEditPage() {
             fetchEntity<Order | null>(`/api/data?entity=orders&id=${id}`),
             fetchEntity<Customer[]>('/api/data?entity=customers'),
             fetchEntity<Service[]>('/api/data?entity=services'),
-        ]).then(([order, customerRows, serviceRows]) => {
+            fetchEntity<DeliveryOrder[]>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ orderRef: id }))}`),
+        ]).then(([order, customerRows, serviceRows, deliveryOrders]) => {
             if (order) {
                 setForm({
                     customerRef: order.customerRef, customerName: order.customerName || '',
@@ -48,6 +50,7 @@ export default function OrderEditPage() {
             }
             setCustomers(customerRows || []);
             setServices(serviceRows || []);
+            setHasDeliveryOrders((deliveryOrders || []).length > 0);
         }).catch(error => {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat form edit order');
         }).finally(() => {
@@ -99,12 +102,17 @@ export default function OrderEditPage() {
                     <div className="card">
                         <div className="card-header"><span className="card-header-title">Informasi Order</span></div>
                         <div className="card-body">
+                            {hasDeliveryOrders && (
+                                <div className="alert alert-warning" style={{ marginBottom: '1rem' }}>
+                                    Order ini sudah punya surat jalan. Field utama dikunci agar customer, layanan, dan penerima tetap konsisten dengan dokumen turunannya. Hanya catatan yang masih bisa diubah.
+                                </div>
+                            )}
                             <div className="form-group">
                                 <label className="form-label">Customer</label>
                                 <select className="form-select" value={form.customerRef} onChange={e => {
                                     const cust = customers.find(c => c._id === e.target.value);
                                     setForm({ ...form, customerRef: e.target.value, customerName: cust?.name || '' });
-                                }}>
+                                }} disabled={hasDeliveryOrders}>
                                     <option value="">Pilih Customer</option>
                                     {customers.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
                                 </select>
@@ -114,7 +122,7 @@ export default function OrderEditPage() {
                                 <select className="form-select" value={form.serviceRef} onChange={e => {
                                     const svc = services.find(s => s._id === e.target.value);
                                     setForm({ ...form, serviceRef: e.target.value, serviceName: svc?.name || '' });
-                                }}>
+                                }} disabled={hasDeliveryOrders}>
                                     <option value="">Pilih Layanan</option>
                                     {services.map(s => <option key={s._id} value={s._id}>{s.name}</option>)}
                                 </select>
@@ -131,17 +139,17 @@ export default function OrderEditPage() {
                         <div className="card-body">
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Nama Penerima <span className="required">*</span></label>
-                                    <input className="form-input" value={form.receiverName} onChange={e => setForm({ ...form, receiverName: e.target.value })} />
+                                    <input className="form-input" value={form.receiverName} onChange={e => setForm({ ...form, receiverName: e.target.value })} disabled={hasDeliveryOrders} />
                                 </div>
                                 <div className="form-group"><label className="form-label">Telepon</label>
-                                    <input className="form-input" value={form.receiverPhone} onChange={e => setForm({ ...form, receiverPhone: e.target.value })} />
+                                    <input className="form-input" value={form.receiverPhone} onChange={e => setForm({ ...form, receiverPhone: e.target.value })} disabled={hasDeliveryOrders} />
                                 </div>
                             </div>
                             <div className="form-group"><label className="form-label">Perusahaan Penerima</label>
-                                <input className="form-input" value={form.receiverCompany} onChange={e => setForm({ ...form, receiverCompany: e.target.value })} />
+                                <input className="form-input" value={form.receiverCompany} onChange={e => setForm({ ...form, receiverCompany: e.target.value })} disabled={hasDeliveryOrders} />
                             </div>
                             <div className="form-group"><label className="form-label">Alamat Penerima <span className="required">*</span></label>
-                                <textarea className="form-textarea" rows={3} value={form.receiverAddress} onChange={e => setForm({ ...form, receiverAddress: e.target.value })} />
+                                <textarea className="form-textarea" rows={3} value={form.receiverAddress} onChange={e => setForm({ ...form, receiverAddress: e.target.value })} disabled={hasDeliveryOrders} />
                             </div>
                         </div>
                     </div>

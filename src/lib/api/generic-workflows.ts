@@ -216,6 +216,37 @@ export async function handleGenericUpdate(
         }
     }
 
+    if (entity === 'orders') {
+        const structuralOrderFields = new Set([
+            'customerRef',
+            'customerName',
+            'receiverName',
+            'receiverPhone',
+            'receiverAddress',
+            'receiverCompany',
+            'pickupAddress',
+            'serviceRef',
+            'serviceName',
+        ]);
+        const touchesStructuralFields = Object.keys(updates).some(key => structuralOrderFields.has(key));
+        if (touchesStructuralFields) {
+            const relatedDeliveryOrder = await getSanityClient().fetch<{ _id: string } | null>(
+                `*[_type == "deliveryOrder" && orderRef == $ref][0]{ _id }`,
+                { ref: id }
+            );
+            if (relatedDeliveryOrder) {
+                return NextResponse.json(
+                    { error: 'Order yang sudah punya surat jalan hanya boleh mengubah catatan. Field utama dikunci agar dokumen turunan tetap konsisten.' },
+                    { status: 409 }
+                );
+            }
+        }
+
+        if (Object.prototype.hasOwnProperty.call(updates, 'notes')) {
+            updates.notes = normalizeOptionalText(updates.notes);
+        }
+    }
+
     if (entity === 'maintenances' && typeof updates.status === 'string') {
         const existingMaintenance = await sanityGetById<{ status?: string }>(id);
         if (!existingMaintenance) {
