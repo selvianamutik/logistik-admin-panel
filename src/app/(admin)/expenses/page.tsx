@@ -259,7 +259,7 @@ export default function ExpensesPage() {
                         <div className="modal-body">
                             <div className="form-group"><label className="form-label">Kategori <span className="required">*</span></label>
                                 <select className="form-select" value={form.categoryRef} onChange={e => setForm({ ...form, categoryRef: e.target.value })}>
-                                    <option value="">Pilih kategori</option>{categories.filter(c => c.active).map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
+                                    <option value="">Pilih kategori</option>{categories.filter(c => c.active !== false).map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
                                 </select>
                             </div>
                             <div className="form-row">

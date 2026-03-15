@@ -76,7 +76,7 @@ export default function ExpenseCategoriesPage() {
                         items.length === 0 ? <tr><td colSpan={3}><div className="empty-state"><Tags size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada kategori</div></div></td></tr> :
                             items.map(c => (
                                 <tr key={c._id}><td className="font-semibold">{c.name}</td>
-                                    <td><span className={`badge ${c.active ? 'badge-success' : 'badge-gray'}`}>{c.active ? 'Aktif' : 'Non-Aktif'}</span></td>
+                                    <td><span className={`badge ${c.active !== false ? 'badge-success' : 'badge-gray'}`}>{c.active !== false ? 'Aktif' : 'Non-Aktif'}</span></td>
                                     <td>{isOwner ? <button className="table-action-btn" onClick={() => openEdit(c)}><Edit size={14} /> Edit</button> : <span className="text-muted">Read only</span>}</td></tr>
                             ))}
                 </tbody>

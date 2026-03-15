@@ -44,7 +44,7 @@ export default function NewDriverVoucherPage() {
             fetchEntity<Vehicle[]>('/api/data?entity=vehicles'),
             fetchEntity<BankAccount[]>('/api/data?entity=bank-accounts'),
         ]).then(([driverRows, deliveryOrders, orderRows, vehicleRows, accountRows]) => {
-            setDrivers((driverRows || []).filter((driver) => driver.active));
+            setDrivers((driverRows || []).filter((driver) => driver.active !== false));
             setDos((deliveryOrders || []).filter((deliveryOrder) => ['CREATED', 'ON_DELIVERY'].includes(deliveryOrder.status)));
             setOrders(orderRows || []);
             setVehicles((vehicleRows || []).filter((vehicle) => vehicle.status !== 'SOLD' && vehicle.status !== 'OUT_OF_SERVICE'));

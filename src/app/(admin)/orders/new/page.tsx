@@ -135,14 +135,14 @@ export default function NewOrderPage() {
                                 <label className="form-label">Customer Pengirim <span className="required">*</span></label>
                                 <select className="form-select" value={customerRef} onChange={e => handleCustomerChange(e.target.value)} required>
                                     <option value="">Pilih customer</option>
-                                    {customers.filter(c => c.active).map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
+                                    {customers.filter(c => c.active !== false).map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
                                 </select>
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Layanan</label>
                                 <select className="form-select" value={serviceRef} onChange={e => setServiceRef(e.target.value)}>
                                     <option value="">Pilih layanan</option>
-                                    {services.filter(s => s.active).map(s => <option key={s._id} value={s._id}>{s.name}</option>)}
+                                    {services.filter(s => s.active !== false).map(s => <option key={s._id} value={s._id}>{s.name}</option>)}
                                 </select>
                             </div>
                             <div className="form-group">

@@ -79,11 +79,12 @@ export default function UsersPage() {
     };
 
     const toggleActive = async (u: User) => {
+        const currentlyActive = u.active !== false;
         try {
             const res = await fetch('/api/data', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ entity: 'users', action: 'update', data: { id: u._id, updates: { active: !u.active } } }),
+                body: JSON.stringify({ entity: 'users', action: 'update', data: { id: u._id, updates: { active: !currentlyActive } } }),
             });
             const payload = await res.json();
             if (!res.ok) {
@@ -91,7 +92,7 @@ export default function UsersPage() {
                 return;
             }
             setUsers(prev => prev.map(x => x._id === u._id ? payload.data as InternalUser : x));
-            addToast('success', `User ${!u.active ? 'diaktifkan' : 'dinonaktifkan'}`);
+            addToast('success', `User ${currentlyActive ? 'dinonaktifkan' : 'diaktifkan'}`);
         } catch {
             addToast('error', 'Gagal memperbarui status user');
         }
@@ -111,10 +112,10 @@ export default function UsersPage() {
                                     <tr key={u._id}>
                                         <td className="font-semibold">{u.name}</td><td>{u.email}</td>
                                         <td><span className={`badge ${u.role === 'OWNER' ? 'badge-purple' : 'badge-info'}`}>{u.role}</span></td>
-                                        <td><span className={`badge ${u.active ? 'badge-success' : 'badge-gray'}`}>{u.active ? 'Aktif' : 'Non-Aktif'}</span></td>
+                                        <td><span className={`badge ${u.active !== false ? 'badge-success' : 'badge-gray'}`}>{u.active !== false ? 'Aktif' : 'Non-Aktif'}</span></td>
                                         <td><div className="table-actions">
                                             <button className="table-action-btn" onClick={() => openEdit(u)}><Edit size={14} /> Edit</button>
-                                            <button className="table-action-btn" onClick={() => toggleActive(u)}><RefreshCw size={14} /> {u.active ? 'Nonaktifkan' : 'Aktifkan'}</button>
+                                            <button className="table-action-btn" onClick={() => toggleActive(u)}><RefreshCw size={14} /> {u.active !== false ? 'Nonaktifkan' : 'Aktifkan'}</button>
                                         </div></td>
                                     </tr>
                                 ))}

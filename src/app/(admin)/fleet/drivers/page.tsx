@@ -53,6 +53,8 @@ export default function DriversPage() {
 
     const filtered = items.filter(d => !search || d.name.toLowerCase().includes(search.toLowerCase()) || d.phone.includes(search) || d.licenseNumber.toLowerCase().includes(search.toLowerCase()));
     const accountByDriverRef = new Map(accounts.filter(account => account.driverRef).map(account => [account.driverRef as string, account]));
+    const isDriverActive = (driver: Pick<Driver, 'active'>) => driver.active !== false;
+    const isAccountActive = (account: Pick<DriverMobileAccount, 'active'>) => account.active !== false;
 
     const handleSave = async () => {
         if (!form.name || !form.phone) { addToast('error', 'Nama dan no. HP wajib diisi'); return; }
@@ -82,15 +84,16 @@ export default function DriversPage() {
     };
 
     const toggleActive = async (driver: Driver) => {
+        const currentlyActive = isDriverActive(driver);
         try {
-            const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'drivers', action: 'update', data: { id: driver._id, updates: { active: !driver.active } } }) });
+            const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'drivers', action: 'update', data: { id: driver._id, updates: { active: !currentlyActive } } }) });
             const d = await res.json();
             if (!res.ok) {
                 addToast('error', d.error || 'Gagal memperbarui status supir');
                 return;
             }
             setItems(prev => prev.map(i => i._id === driver._id ? d.data : i));
-            if (driver.active) {
+            if (currentlyActive) {
                 const disabledAccountIds = Array.isArray(d.meta?.disabledDriverAccountIds)
                     ? d.meta.disabledDriverAccountIds.filter((value: unknown): value is string => typeof value === 'string')
                     : [];
@@ -129,7 +132,7 @@ export default function DriversPage() {
     };
 
     const openAccessModal = (driver: Driver) => {
-        if (!driver.active) {
+        if (!isDriverActive(driver)) {
             addToast('error', 'Aktifkan supir dulu sebelum mengatur akses mobile');
             return;
         }
@@ -208,7 +211,7 @@ export default function DriversPage() {
 
     const openEdit = (d: Driver) => {
         setEditId(d._id);
-        setForm({ name: d.name, phone: d.phone, licenseNumber: d.licenseNumber, ktpNumber: d.ktpNumber || '', simExpiry: d.simExpiry || '', address: d.address || '', active: d.active });
+        setForm({ name: d.name, phone: d.phone, licenseNumber: d.licenseNumber, ktpNumber: d.ktpNumber || '', simExpiry: d.simExpiry || '', address: d.address || '', active: d.active !== false });
         setShowModal(true);
     };
     const closeModal = () => { setShowModal(false); setEditId(null); setForm({ name: '', phone: '', licenseNumber: '', ktpNumber: '', simExpiry: '', address: '', active: true }); };
@@ -243,7 +246,7 @@ export default function DriversPage() {
                                                             <Smartphone size={14} /> {account.email}
                                                         </div>
                                                         <div className="text-muted text-sm">
-                                                            {account.active ? 'Aktif' : 'Non-aktif'}
+                                                            {isAccountActive(account) ? 'Aktif' : 'Non-aktif'}
                                                             {account.lastLoginAt ? ` | Login terakhir ${formatDateTime(account.lastLoginAt)}` : ' | Belum pernah login'}
                                                         </div>
                                                     </div>
@@ -251,20 +254,20 @@ export default function DriversPage() {
                                                     <span className="text-muted">Belum ada akun mobile</span>
                                                 )}
                                             </td>
-                                            <td><span className={`badge ${d.active ? 'badge-green' : 'badge-gray'}`}>{d.active ? 'Aktif' : 'Non-aktif'}</span></td>
+                                            <td><span className={`badge ${isDriverActive(d) ? 'badge-green' : 'badge-gray'}`}>{isDriverActive(d) ? 'Aktif' : 'Non-aktif'}</span></td>
                                             <td>
                                                 <div style={{ display: 'flex', gap: '0.25rem' }}>
                                                     <button className="btn btn-ghost btn-sm" onClick={() => openEdit(d)} title="Edit"><Edit2 size={14} /></button>
                                                     <button
                                                         className="btn btn-ghost btn-sm"
                                                         onClick={() => openAccessModal(d)}
-                                                        title={d.active ? 'Atur akses mobile' : 'Aktifkan supir dulu untuk mengatur akses mobile'}
-                                                        disabled={!d.active}
+                                                        title={isDriverActive(d) ? 'Atur akses mobile' : 'Aktifkan supir dulu untuk mengatur akses mobile'}
+                                                        disabled={!isDriverActive(d)}
                                                     >
                                                         <Smartphone size={14} />
                                                     </button>
-                                                    <button className="btn btn-ghost btn-sm" onClick={() => toggleActive(d)} title={d.active ? 'Nonaktifkan' : 'Aktifkan'}>
-                                                        {d.active ? <ToggleRight size={14} className="text-green" /> : <ToggleLeft size={14} />}
+                                                    <button className="btn btn-ghost btn-sm" onClick={() => toggleActive(d)} title={isDriverActive(d) ? 'Nonaktifkan' : 'Aktifkan'}>
+                                                        {isDriverActive(d) ? <ToggleRight size={14} className="text-green" /> : <ToggleLeft size={14} />}
                                                     </button>
                                                 </div>
                                             </td>

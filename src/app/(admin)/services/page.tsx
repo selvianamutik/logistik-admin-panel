@@ -35,7 +35,7 @@ export default function ServicesPage() {
     }, [addToast]);
 
     const openNew = () => { setEditItem(null); setForm({ name: '', description: '', active: true }); setShowModal(true); };
-    const openEdit = (s: Service) => { setEditItem(s); setForm({ name: s.name, description: s.description, active: s.active }); setShowModal(true); };
+    const openEdit = (s: Service) => { setEditItem(s); setForm({ name: s.name, description: s.description, active: s.active !== false }); setShowModal(true); };
 
     const handleSave = async () => {
         if (!isOwner) { addToast('error', 'Hanya OWNER yang dapat mengubah layanan'); return; }
@@ -76,7 +76,7 @@ export default function ServicesPage() {
                         items.length === 0 ? <tr><td colSpan={4}><div className="empty-state"><Layers size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada layanan</div></div></td></tr> :
                             items.map(s => (
                                 <tr key={s._id}><td className="font-semibold">{s.name}</td><td className="text-muted">{s.description}</td>
-                                    <td><span className={`badge ${s.active ? 'badge-success' : 'badge-gray'}`}>{s.active ? 'Aktif' : 'Non-Aktif'}</span></td>
+                                    <td><span className={`badge ${s.active !== false ? 'badge-success' : 'badge-gray'}`}>{s.active !== false ? 'Aktif' : 'Non-Aktif'}</span></td>
                                     <td>{isOwner ? <button className="table-action-btn" onClick={() => openEdit(s)}><Edit size={14} /> Edit</button> : <span className="text-muted">Read only</span>}</td></tr>
                             ))}
                 </tbody>
