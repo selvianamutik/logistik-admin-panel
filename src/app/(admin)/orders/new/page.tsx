@@ -38,8 +38,8 @@ export default function NewOrderPage() {
             fetchEntity<Customer[]>('/api/data?entity=customers'),
             fetchEntity<Service[]>('/api/data?entity=services'),
         ]).then(([customerRows, serviceRows]) => {
-            setCustomers(customerRows || []);
-            setServices(serviceRows || []);
+            setCustomers((customerRows || []).filter(customer => customer.active !== false));
+            setServices((serviceRows || []).filter(service => service.active !== false));
         }).catch(error => {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat form order');
         });

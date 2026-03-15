@@ -63,8 +63,8 @@ export default function OrderEditPage() {
                     notes: order.notes || ''
                 });
             }
-            setCustomers(customerRows || []);
-            setServices(serviceRows || []);
+            setCustomers((customerRows || []).filter(customer => customer.active !== false || customer._id === order?.customerRef));
+            setServices((serviceRows || []).filter(service => service.active !== false || service._id === order?.serviceRef));
             setHasDeliveryOrders((deliveryOrders || []).length > 0);
         }).catch(error => {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat form edit order');
