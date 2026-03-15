@@ -110,6 +110,7 @@ class DriverAppSession {
     required this.email,
     required this.role,
     this.driverRef,
+    this.token,      
   });
 
   final String driverId;
@@ -117,6 +118,7 @@ class DriverAppSession {
   final String email;
   final String role;
   final String? driverRef;
+  final String? token; 
 }
 
 class _StartupLocationPage extends StatelessWidget {

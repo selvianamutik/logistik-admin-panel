@@ -200,7 +200,13 @@ export interface OrderItem {
 }
 
 // ── Delivery Order ──
-export type DOStatus = 'CREATED' | 'ON_DELIVERY' | 'DELIVERED' | 'CANCELLED';
+export type DOStatus =
+    | 'CREATED'
+    | 'HEADING_TO_PICKUP'
+    | 'ON_DELIVERY'
+    | 'ARRIVED'
+    | 'DELIVERED'
+    | 'CANCELLED';
 
 export interface DeliveryOrder {
   _id: string;

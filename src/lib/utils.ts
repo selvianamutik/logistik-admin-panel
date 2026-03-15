@@ -59,7 +59,9 @@ export const ITEM_STATUS_MAP: Record<string, { label: string; color: string }> =
 
 export const DO_STATUS_MAP: Record<string, { label: string; color: string }> = {
     CREATED: { label: 'Dibuat', color: 'gray' },
+    HEADING_TO_PICKUP: { label: 'Menuju Pickup', color: 'warning' },
     ON_DELIVERY: { label: 'Dalam Pengiriman', color: 'info' },
+    ARRIVED: { label: 'Tiba di Tujuan', color: 'primary' },
     DELIVERED: { label: 'Terkirim', color: 'success' },
     CANCELLED: { label: 'Dibatalkan', color: 'danger' },
 };

@@ -222,7 +222,7 @@ export async function POST(request: Request) {
                 );
             }
 
-            if (deliveryOrder.status !== 'CREATED' && deliveryOrder.status !== 'ON_DELIVERY') {
+            if (!['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status)) {
                 return NextResponse.json({ error: 'Hanya DO aktif yang bisa mulai tracking' }, { status: 409 });
             }
 
@@ -285,7 +285,7 @@ export async function POST(request: Request) {
                 if (deliveryOrder.status === 'CREATED') {
                     const statusResponse = await handleDeliveryOrderStatusUpdate(
                         auth.session,
-                        { id: deliveryOrderRef, status: 'ON_DELIVERY', note: 'Tracking live dimulai via driver app' },
+                        { id: deliveryOrderRef, status: 'HEADING_TO_PICKUP', note: 'Tracking live dimulai via driver app' },
                         addAuditLog
                     );
                     if (!statusResponse.ok) {

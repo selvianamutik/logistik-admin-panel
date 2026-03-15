@@ -8,14 +8,18 @@ import '../domain/models.dart';
 class DeliveryOrderService {
   Future<List<DeliveryTrip>> fetchDriverTrips({
     required String driverRef,
-    int limit = 5,
+    int limit = 1,
   }) async {
     final query =
         '''
 *[
   _type == "deliveryOrder" &&
   status != "CANCELLED" &&
-  driverRef == \$driverRef
+  status != "DELIVERED" &&
+  (
+    driverRef == \$driverRef ||
+    driverRef._ref == \$driverRef
+  )
 ] | order(date desc, _createdAt desc)[0...$limit]{
   _id,
   doNumber,
@@ -25,7 +29,8 @@ class DeliveryOrderService {
   receiverAddress,
   date,
   notes,
-  status
+  status,
+  trackingState
 }
 ''';
 
@@ -67,11 +72,48 @@ class DeliveryOrderService {
         .toList(growable: false);
   }
 
+  Future<DeliveryTrip> updateTripStatus({
+    required String sessionToken,
+    required String deliveryOrderId,
+    required TripStatus status,
+    String? note,
+  }) async {
+    final response = await http.post(
+      Uri.parse('${AppConfig.apiBaseUrl}/api/driver/delivery-orders/status'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'x-client-type': 'driver-app',
+        'Authorization': 'Bearer $sessionToken',
+      },
+      body: jsonEncode({
+        'id': deliveryOrderId,
+        'status': _mapStatusToApi(status),
+        if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+      }),
+    );
+
+    final decoded = jsonDecode(response.body);
+    if (response.statusCode >= 400) {
+      final message = decoded is Map<String, dynamic>
+          ? decoded['error'] as String? ?? 'Gagal memperbarui status DO'
+          : 'Gagal memperbarui status DO';
+      throw DeliveryOrderException(message, response.statusCode);
+    }
+
+    if (decoded is! Map<String, dynamic> || decoded['data'] is! Map<String, dynamic>) {
+      throw const DeliveryOrderException('Respons update status tidak valid', 500);
+    }
+
+    return _mapTrip(decoded['data'] as Map<String, dynamic>);
+  }
+
   DeliveryTrip _mapTrip(Map<String, dynamic> json) {
     final status = (json['status'] as String?) ?? 'CREATED';
     final mappedStatus = switch (status) {
+      'HEADING_TO_PICKUP' => TripStatus.headingToPickup,
       'ON_DELIVERY' => TripStatus.onDelivery,
-      'DELIVERED' => TripStatus.delivered,
+      'ARRIVED' => TripStatus.arrived,
       _ => TripStatus.assigned,
     };
 
@@ -92,6 +134,7 @@ class DeliveryOrderService {
           : 'Tanpa customer',
       receiverName: receiverName?.isNotEmpty == true ? receiverName : null,
       itemSummary: (json['notes'] as String?)?.trim(),
+      trackingState: (json['trackingState'] as String?)?.trim(),
       status: mappedStatus,
       etdLabel: date?.isNotEmpty == true ? 'Tanggal DO $date' : 'Tanggal DO -',
       statusNote: _statusNote(status),
@@ -99,15 +142,22 @@ class DeliveryOrderService {
   }
 
   String _statusNote(String status) {
-    switch (status) {
-      case 'ON_DELIVERY':
-        return 'Pengiriman sedang berjalan';
-      case 'DELIVERED':
-        return 'Pengiriman sudah selesai';
-      case 'CREATED':
-      default:
-        return 'DO sudah ditugaskan ke driver';
-    }
+    return switch (status) {
+      'HEADING_TO_PICKUP' => 'Driver menuju pickup',
+      'ON_DELIVERY' => 'Pengiriman sedang berjalan',
+      'ARRIVED' => 'Driver sudah tiba',
+      _ => 'DO sudah ditugaskan ke driver',
+    };
+  }
+
+  String _mapStatusToApi(TripStatus status) {
+    return switch (status) {
+      TripStatus.assigned => 'CREATED',
+      TripStatus.headingToPickup => 'HEADING_TO_PICKUP',
+      TripStatus.onDelivery => 'ON_DELIVERY',
+      TripStatus.arrived => 'ARRIVED',
+      TripStatus.delivered => 'DELIVERED',
+    };
   }
 }
 

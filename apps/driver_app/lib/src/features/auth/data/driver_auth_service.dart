@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../../../app.dart';
@@ -11,20 +12,26 @@ class DriverAuthService {
     required String password,
   }) async {
     final uri = Uri.parse('${AppConfig.apiBaseUrl}/api/auth/login');
+    final headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'x-client-type': 'driver-app',
+    };
+debugPrint('=== LOGIN HEADERS ===');
+headers.forEach((key, value) => debugPrint('  $key: $value'));
     final response = await http.post(
       uri,
-      headers: const {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Origin': 'https://app-ten-gamma-49.vercel.app',
-      },
+      headers: headers,
       body: jsonEncode({
         'email': email.trim().toLowerCase(),
         'password': password,
         'scope': 'DRIVER',
       }),
     );
-
+debugPrint('=== LOGIN ===');
+debugPrint('URL: $uri');
+debugPrint('STATUS: ${response.statusCode}');
+debugPrint('BODY: ${response.body}');
     final decoded = _decodeJson(response.body);
 
     if (response.statusCode >= 400) {
@@ -54,6 +61,7 @@ class DriverAuthService {
       email: user['email'] as String? ?? email,
       role: user['role'] as String? ?? 'DRIVER',
       driverRef: driverRef,
+      token: decoded['token'] as String?,
     );
   }
 

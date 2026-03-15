@@ -30,8 +30,10 @@ type NormalizedOrderItemInput = {
 };
 
 const DO_STATUS_TRANSITIONS: Record<string, string[]> = {
-    CREATED: ['ON_DELIVERY', 'CANCELLED'],
-    ON_DELIVERY: ['DELIVERED', 'CANCELLED'],
+    CREATED: ['HEADING_TO_PICKUP', 'ON_DELIVERY', 'CANCELLED'],
+    HEADING_TO_PICKUP: ['ON_DELIVERY', 'CANCELLED'],
+    ON_DELIVERY: ['ARRIVED', 'DELIVERED', 'CANCELLED'],
+    ARRIVED: ['DELIVERED', 'CANCELLED'],
     DELIVERED: [],
     CANCELLED: [],
 };
@@ -242,7 +244,7 @@ export async function handleDeliveryOrderStatusUpdate(
     );
 
     const nextOrderItemStatus =
-        status === 'ON_DELIVERY'
+        status === 'ON_DELIVERY' || status === 'ARRIVED'
             ? 'ON_DELIVERY'
             : status === 'DELIVERED'
                 ? 'DELIVERED'

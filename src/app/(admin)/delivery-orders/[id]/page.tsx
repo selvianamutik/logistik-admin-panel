@@ -271,8 +271,10 @@ export default function DODetailPage() {
 
     const getNextStatuses = (current: string): string[] => {
         const transitions: Record<string, string[]> = {
-            CREATED: ['ON_DELIVERY', 'CANCELLED'],
-            ON_DELIVERY: ['DELIVERED', 'CANCELLED'],
+            CREATED: ['HEADING_TO_PICKUP', 'ON_DELIVERY', 'CANCELLED'],
+            HEADING_TO_PICKUP: ['ON_DELIVERY', 'CANCELLED'],
+            ON_DELIVERY: ['ARRIVED', 'DELIVERED', 'CANCELLED'],
+            ARRIVED: ['DELIVERED', 'CANCELLED'],
         };
         return transitions[current] || [];
     };
@@ -492,7 +494,7 @@ export default function DODetailPage() {
                         <div className="timeline">
                             {trackingLogs.map((log, idx) => (
                                 <div key={log._id || idx} className="timeline-item">
-                                    <div className={`timeline-dot ${log.status === 'DELIVERED' ? 'success' : log.status === 'ON_DELIVERY' ? 'active' : ''}`} />
+                                    <div className={`timeline-dot ${log.status === 'DELIVERED' ? 'success' : ['HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(log.status) ? 'active' : ''}`} />
                                     <div className="timeline-content">
                                         <div className="timeline-title">{DO_STATUS_MAP[log.status]?.label || log.status}</div>
                                         <div className="timeline-meta">{formatDateTime(log.timestamp)} {log.locationText ? `- ${log.locationText}` : ''}</div>

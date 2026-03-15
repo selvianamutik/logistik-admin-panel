@@ -11,6 +11,7 @@ class DeliveryTrip {
     required this.status,
     required this.etdLabel,
     required this.statusNote,
+    this.trackingState,
     this.receiverName,
     this.itemSummary,
   });
@@ -24,10 +25,11 @@ class DeliveryTrip {
   final TripStatus status;
   final String etdLabel;
   final String statusNote;
+  final String? trackingState;
   final String? receiverName;
   final String? itemSummary;
 
-  DeliveryTrip copyWith({TripStatus? status}) {
+  DeliveryTrip copyWith({TripStatus? status, String? trackingState}) {
     return DeliveryTrip(
       deliveryOrderId: deliveryOrderId,
       doNumber: doNumber,
@@ -38,6 +40,7 @@ class DeliveryTrip {
       status: status ?? this.status,
       etdLabel: etdLabel,
       statusNote: statusNote,
+      trackingState: trackingState ?? this.trackingState,
       receiverName: receiverName,
       itemSummary: itemSummary,
     );
