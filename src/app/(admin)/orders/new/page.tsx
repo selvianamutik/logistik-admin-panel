@@ -52,8 +52,17 @@ export default function NewOrderPage() {
     };
     const handleCustomerChange = (nextCustomerRef: string) => {
         const selectedCustomer = customers.find(customer => customer._id === nextCustomerRef);
+        const previousCustomer = customers.find(customer => customer._id === customerRef);
+        const previousCustomerAddress = previousCustomer?.address?.trim() || '';
+
         setCustomerRef(nextCustomerRef);
-        setPickupAddress(previous => previous.trim() ? previous : (selectedCustomer?.address || ''));
+        setPickupAddress(previous => {
+            const currentPickup = previous.trim();
+            if (!currentPickup || (previousCustomerAddress && currentPickup === previousCustomerAddress)) {
+                return selectedCustomer?.address || '';
+            }
+            return previous;
+        });
     };
 
     const handleSubmit = async (e: React.FormEvent) => {

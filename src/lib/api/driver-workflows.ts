@@ -704,6 +704,7 @@ export async function handleDriverVoucherCreate(
         const deliveryOrder = await sanityGetById<{
             _id: string;
             doNumber?: string;
+            status?: string;
             driverRef?: unknown;
             vehicleRef?: string;
             vehiclePlate?: string;
@@ -713,6 +714,12 @@ export async function handleDriverVoucherCreate(
         }>(deliveryOrderRef);
         if (!deliveryOrder) {
             return NextResponse.json({ error: 'Surat jalan bon tidak ditemukan' }, { status: 404 });
+        }
+        if (deliveryOrder.status && !['CREATED', 'ON_DELIVERY'].includes(deliveryOrder.status)) {
+            return NextResponse.json(
+                { error: `Bon supir hanya boleh dikaitkan ke DO yang masih operasional. Status DO ${deliveryOrder.doNumber || deliveryOrderRef} sekarang ${deliveryOrder.status}.` },
+                { status: 409 }
+            );
         }
 
         const deliveryOrderDriverRef = extractRefId(deliveryOrder.driverRef);

@@ -425,9 +425,17 @@ export async function normalizeTireEventPayload(
         throw new Error('Tanggal penggantian ban tidak boleh sebelum tanggal pasang');
     }
 
-    const vehicle = await sanityGetById<{ _id: string; plateNumber?: string }>(vehicleRef);
+    const vehicle = await sanityGetById<{ _id: string; plateNumber?: string; status?: string }>(vehicleRef);
     if (!vehicle) {
         throw new Error('Kendaraan ban tidak ditemukan');
+    }
+    let canUseSoldVehicle = false;
+    if (excludeId) {
+        const existingTireEvent = await sanityGetById<{ vehicleRef?: string }>(excludeId);
+        canUseSoldVehicle = existingTireEvent?.vehicleRef === vehicleRef;
+    }
+    if (vehicle.status === 'SOLD' && !canUseSoldVehicle) {
+        throw new Error('Kendaraan yang sudah dijual tidak bisa dicatat pada manajemen ban');
     }
 
     const positionKey = normalizeTirePositionKey(posisi);
@@ -533,9 +541,12 @@ export async function handleIncidentCreate(
         return NextResponse.json({ error: 'Kendaraan insiden wajib dipilih atau diturunkan dari DO terkait' }, { status: 400 });
     }
 
-    const vehicle = await sanityGetById<{ _id: string; plateNumber?: string }>(vehicleRef);
+    const vehicle = await sanityGetById<{ _id: string; plateNumber?: string; status?: string }>(vehicleRef);
     if (!vehicle) {
         return NextResponse.json({ error: 'Kendaraan insiden tidak ditemukan' }, { status: 404 });
+    }
+    if (vehicle.status === 'SOLD') {
+        return NextResponse.json({ error: 'Kendaraan yang sudah dijual tidak bisa dilaporkan sebagai insiden baru' }, { status: 409 });
     }
     vehiclePlate = vehiclePlate || vehicle.plateNumber;
 

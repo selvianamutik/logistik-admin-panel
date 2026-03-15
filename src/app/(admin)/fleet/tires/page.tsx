@@ -141,6 +141,7 @@ export default function TiresPage() {
 
     const activeBans = filtered.filter(e => !e.replaceDate);
     const replacedBans = filtered.filter(e => !!e.replaceDate);
+    const selectableVehicles = vehicles.filter(vehicle => vehicle.status !== 'SOLD' || vehicle._id === editTarget?.vehicleRef);
 
     return (
         <div>
@@ -247,7 +248,7 @@ export default function TiresPage() {
                                 <label className="form-label">Kendaraan</label>
                                 <select className="form-select" value={form.vehicleRef} onChange={e => setForm({ ...form, vehicleRef: e.target.value })} disabled={!!editTarget}>
                                     <option value="">Pilih kendaraan</option>
-                                    {vehicles.map(v => <option key={v._id} value={v._id}>{v.plateNumber} - {v.brandModel}</option>)}
+                                    {selectableVehicles.map(v => <option key={v._id} value={v._id}>{v.plateNumber} - {v.brandModel}</option>)}
                                 </select>
                             </div>
                             <div className="form-row">

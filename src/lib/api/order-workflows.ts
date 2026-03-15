@@ -356,9 +356,15 @@ export async function handleDeliveryOrderCreate(
             : '';
 
     if (vehicleRef) {
-        const vehicle = await sanityGetById<{ _id: string; plateNumber?: string }>(vehicleRef);
+        const vehicle = await sanityGetById<{ _id: string; plateNumber?: string; status?: string }>(vehicleRef);
         if (!vehicle) {
             return NextResponse.json({ error: 'Kendaraan DO tidak ditemukan' }, { status: 404 });
+        }
+        if (vehicle.status === 'SOLD') {
+            return NextResponse.json({ error: 'Kendaraan yang sudah dijual tidak bisa dipakai untuk surat jalan baru' }, { status: 409 });
+        }
+        if (vehicle.status === 'OUT_OF_SERVICE') {
+            return NextResponse.json({ error: 'Kendaraan yang sedang out of service tidak bisa dipakai untuk surat jalan baru' }, { status: 409 });
         }
         vehiclePlate = vehicle.plateNumber || vehiclePlate;
     }

@@ -23,6 +23,19 @@ export default function OrderEditPage() {
         notes: ''
     });
 
+    const syncPickupAddressForCustomer = (nextCustomerRef: string, previousForm: typeof form) => {
+        const nextCustomer = customers.find(customer => customer._id === nextCustomerRef);
+        const previousCustomer = customers.find(customer => customer._id === previousForm.customerRef);
+        const previousCustomerAddress = previousCustomer?.address?.trim() || '';
+        const currentPickup = previousForm.pickupAddress.trim();
+
+        if (!currentPickup || (previousCustomerAddress && currentPickup === previousCustomerAddress)) {
+            return nextCustomer?.address || '';
+        }
+
+        return previousForm.pickupAddress;
+    };
+
     useEffect(() => {
         const id = params.id as string;
         const fetchEntity = async <T,>(url: string) => {
@@ -113,7 +126,12 @@ export default function OrderEditPage() {
                                 <label className="form-label">Customer</label>
                                 <select className="form-select" value={form.customerRef} onChange={e => {
                                     const cust = customers.find(c => c._id === e.target.value);
-                                    setForm({ ...form, customerRef: e.target.value, customerName: cust?.name || '' });
+                                    setForm(prev => ({
+                                        ...prev,
+                                        customerRef: e.target.value,
+                                        customerName: cust?.name || '',
+                                        pickupAddress: syncPickupAddressForCustomer(e.target.value, prev),
+                                    }));
                                 }} disabled={hasDeliveryOrders}>
                                     <option value="">Pilih Customer</option>
                                     {customers.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}

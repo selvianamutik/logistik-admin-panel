@@ -45,7 +45,7 @@ export default function NewDriverVoucherPage() {
             fetchEntity<BankAccount[]>('/api/data?entity=bank-accounts'),
         ]).then(([driverRows, deliveryOrders, orderRows, vehicleRows, accountRows]) => {
             setDrivers((driverRows || []).filter((driver) => driver.active));
-            setDos((deliveryOrders || []).filter((deliveryOrder) => deliveryOrder.status !== 'CANCELLED'));
+            setDos((deliveryOrders || []).filter((deliveryOrder) => ['CREATED', 'ON_DELIVERY'].includes(deliveryOrder.status)));
             setOrders(orderRows || []);
             setVehicles((vehicleRows || []).filter((vehicle) => vehicle.status === 'ACTIVE'));
             setBankAccounts((accountRows || []).filter((account) => account.active !== false));
@@ -193,6 +193,9 @@ export default function NewDriverVoucherPage() {
                                 <option value="">-- Opsional --</option>
                                 {filteredDos.map(deliveryOrder => <option key={deliveryOrder._id} value={deliveryOrder._id}>{deliveryOrder.doNumber} {deliveryOrder.driverName ? `(${deliveryOrder.driverName})` : ''}</option>)}
                             </select>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                Hanya DO yang masih operasional yang bisa dipakai untuk bon supir.
+                            </div>
                         </div>
                         <div className="form-group">
                             <label className="form-label">Kendaraan</label>

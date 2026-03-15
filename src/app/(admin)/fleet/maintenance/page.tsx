@@ -30,7 +30,7 @@ export default function MaintenancePage() {
             fetchEntity<Vehicle[]>('/api/data?entity=vehicles'),
         ]).then(([maintenanceRows, vehicleRows]) => {
             setItems(maintenanceRows || []);
-            setVehicles(vehicleRows || []);
+            setVehicles((vehicleRows || []).filter(vehicle => vehicle.status !== 'SOLD'));
         }).catch(error => {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat maintenance');
         }).finally(() => {

@@ -35,7 +35,7 @@ export default function IncidentsPage() {
             fetchEntity<DeliveryOrder[]>('/api/data?entity=delivery-orders'),
         ]).then(([incidentRows, vehicleRows, deliveryOrders]) => {
             setItems(incidentRows || []);
-            setVehicles(vehicleRows || []);
+            setVehicles((vehicleRows || []).filter(vehicle => vehicle.status !== 'SOLD'));
             setDos(deliveryOrders || []);
         }).catch(error => {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat insiden');
@@ -80,9 +80,11 @@ export default function IncidentsPage() {
         });
     };
 
+    const selectableVehicleIds = new Set(vehicles.map(vehicle => vehicle._id));
+    const selectableDos = dos.filter(deliveryOrder => !deliveryOrder.vehicleRef || selectableVehicleIds.has(deliveryOrder.vehicleRef));
     const filteredDos = form.vehicleRef
-        ? dos.filter(deliveryOrder => !deliveryOrder.vehicleRef || deliveryOrder.vehicleRef === form.vehicleRef)
-        : dos;
+        ? selectableDos.filter(deliveryOrder => !deliveryOrder.vehicleRef || deliveryOrder.vehicleRef === form.vehicleRef)
+        : selectableDos;
 
     const handleSave = async () => {
         if ((!form.vehicleRef && !form.relatedDeliveryOrderRef) || !form.description) { addToast('error', 'Kendaraan atau DO terkait serta deskripsi wajib'); return; }
