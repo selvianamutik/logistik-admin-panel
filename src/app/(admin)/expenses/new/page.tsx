@@ -91,7 +91,7 @@ export default function ExpenseNewPage() {
                                     setForm({ ...form, categoryRef: e.target.value, categoryName: cat?.name || '' });
                                 }}>
                                     <option value="">Pilih Kategori</option>
-                                    {categories.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
+                                    {categories.filter(category => category.active).map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
                                 </select>
                             </div>
                             <div className="form-group">

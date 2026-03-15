@@ -8,7 +8,7 @@ import { ArrowLeft, Printer, FileDown, Truck, Upload, Save, MapPin, Radio } from
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
 import { formatDate, formatDateTime, DO_STATUS_MAP } from '@/lib/utils';
 import { generateDOPdf } from '@/lib/pdf/doTemplate';
-import type { DeliveryOrder, DeliveryOrderItem, TrackingLog, CompanyProfile } from '@/lib/types';
+import type { DeliveryOrder, DeliveryOrderItem, TrackingLog, CompanyProfile, Order } from '@/lib/types';
 
 export default function DODetailPage() {
     const params = useParams();
@@ -46,15 +46,30 @@ export default function DODetailPage() {
         }
 
         try {
-            const [deliveryOrder, itemRows, logRows] = await Promise.all([
-                fetchEntity<DeliveryOrder | null>(`/api/data?entity=delivery-orders&id=${doId}`),
+            const deliveryOrder = await fetchEntity<DeliveryOrder | null>(`/api/data?entity=delivery-orders&id=${doId}`);
+            const [itemRows, logRows, sourceOrder] = await Promise.all([
                 fetchEntity<DeliveryOrderItem[]>(`/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: doId }))}`),
                 fetchEntity<TrackingLog[]>(`/api/data?entity=tracking-logs&filter=${encodeURIComponent(JSON.stringify({ refRef: doId, refType: 'DO' }))}`),
+                deliveryOrder?.orderRef
+                    ? fetchEntity<Order | null>(`/api/data?entity=orders&id=${deliveryOrder.orderRef}`)
+                    : Promise.resolve(null),
             ]);
 
-            setDoData(deliveryOrder);
-            setTaripBorongan(deliveryOrder?.taripBorongan || 0);
-            setKeteranganBorongan(deliveryOrder?.keteranganBorongan || '');
+            const resolvedDeliveryOrder = deliveryOrder ? {
+                ...deliveryOrder,
+                customerName: deliveryOrder.customerName || sourceOrder?.customerName,
+                receiverName: deliveryOrder.receiverName || sourceOrder?.receiverName,
+                receiverPhone: deliveryOrder.receiverPhone || sourceOrder?.receiverPhone,
+                receiverAddress: deliveryOrder.receiverAddress || sourceOrder?.receiverAddress,
+                receiverCompany: deliveryOrder.receiverCompany || sourceOrder?.receiverCompany,
+                pickupAddress: deliveryOrder.pickupAddress || sourceOrder?.pickupAddress,
+                serviceRef: deliveryOrder.serviceRef || sourceOrder?.serviceRef,
+                serviceName: deliveryOrder.serviceName || sourceOrder?.serviceName,
+            } : null;
+
+            setDoData(resolvedDeliveryOrder);
+            setTaripBorongan(resolvedDeliveryOrder?.taripBorongan || 0);
+            setKeteranganBorongan(resolvedDeliveryOrder?.keteranganBorongan || '');
             setDoItems(itemRows || []);
             setTrackingLogs((logRows || []).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()));
         } catch (error) {
@@ -406,7 +421,7 @@ export default function DODetailPage() {
             {/* Borongan Tarip - Set Sebelum Berangkat */}
             <div className="card" style={{ marginTop: '1rem', border: '1.5px solid var(--color-warning-light)' }}>
                 <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--color-warning-light)' }}>
-                    <span className="card-header-title" style={{ color: 'var(--color-warning)' }}>🚛 Tarip Borongan Supir</span>
+                    <span className="card-header-title" style={{ color: 'var(--color-warning)' }}>Tarip Borongan Supir</span>
                     {!editingTarip && (
                         <button className="btn btn-sm btn-secondary" onClick={() => setEditingTarip(true)}>Edit Tarip</button>
                     )}
@@ -417,7 +432,7 @@ export default function DODetailPage() {
                             <div className="detail-item">
                                 <div className="detail-label">Tarip per kg</div>
                                 <div className="detail-value font-semibold" style={{ color: doData.taripBorongan ? 'var(--color-primary)' : 'var(--color-gray-400)' }}>
-                                    {doData.taripBorongan ? `Rp ${doData.taripBorongan.toLocaleString('id')}/kg` : '— Belum diisi —'}
+                                    {doData.taripBorongan ? `Rp ${doData.taripBorongan.toLocaleString('id')}/kg` : 'Belum diisi'}
                                 </div>
                             </div>
                             <div className="detail-item">
@@ -550,3 +565,4 @@ export default function DODetailPage() {
         </div>
     );
 }
+

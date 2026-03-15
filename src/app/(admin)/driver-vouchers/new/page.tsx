@@ -45,7 +45,7 @@ export default function NewDriverVoucherPage() {
             fetchEntity<BankAccount[]>('/api/data?entity=bank-accounts'),
         ]).then(([driverRows, deliveryOrders, orderRows, vehicleRows, accountRows]) => {
             setDrivers((driverRows || []).filter((driver) => driver.active));
-            setDos(deliveryOrders || []);
+            setDos((deliveryOrders || []).filter((deliveryOrder) => deliveryOrder.status !== 'CANCELLED'));
             setOrders(orderRows || []);
             setVehicles((vehicleRows || []).filter((vehicle) => vehicle.status === 'ACTIVE'));
             setBankAccounts((accountRows || []).filter((account) => account.active !== false));
