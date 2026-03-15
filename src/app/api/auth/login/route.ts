@@ -8,7 +8,6 @@ import { verifyPassword, createSession, hashPassword, isPasswordHashMigrated, se
 import { clearFailedAttempts, getRequestIp, recordFailedAttempt } from '@/lib/api/rate-limit';
 import { ensureSameOriginRequest } from '@/lib/api/request-security';
 import type { Driver, User } from '@/lib/types';
-import { debug } from 'console';
 
 const LOGIN_ATTEMPT_LIMIT = 10;
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
@@ -22,9 +21,7 @@ function tooManyAttemptsResponse(retryAfterSeconds: number) {
         { error: 'Terlalu banyak percobaan login. Coba lagi beberapa saat lagi.' },
         {
             status: 429,
-            headers: {
-                'Retry-After': String(retryAfterSeconds),
-            },
+            headers: { 'Retry-After': String(retryAfterSeconds) },
         }
     );
 }
@@ -40,27 +37,30 @@ export async function POST(request: Request) {
             password?: unknown;
             scope?: unknown;
         };
+
         const { email, password, scope } = body;
         const loginScope = scope === 'DRIVER' ? 'DRIVER' : 'ADMIN';
         const clientType = request.headers.get('x-client-type')?.trim().toLowerCase();
         const isDriverAppClient = clientType === 'driver-app';
 
-        if (!isDriverAppClient && loginScope !== 'DRIVER') {
+        // Skip origin check for Flutter driver app
+        if (!isDriverAppClient) {
             const originError = ensureSameOriginRequest(request);
-            if (originError) {
-                return originError;
-            }
+            if (originError) return originError;
         }
 
+        // Validate types early so TypeScript narrows correctly downstream
         const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
-        const rateLimitKey = buildLoginRateLimitKey(request, normalizedEmail || 'unknown', loginScope);
+        const normalizedPassword = typeof password === 'string' ? password : '';
 
-        if (!normalizedEmail || !password) {
+        if (!normalizedEmail || !normalizedPassword) {
             return NextResponse.json(
                 { error: 'Email dan password wajib diisi' },
                 { status: 400 }
             );
         }
+
+        const rateLimitKey = buildLoginRateLimitKey(request, normalizedEmail, loginScope);
 
         // Find user from Sanity
         const user = await getSanityClient().fetch<User | null>(
@@ -70,31 +70,21 @@ export async function POST(request: Request) {
 
         if (!user) {
             const attempt = recordFailedAttempt(rateLimitKey, LOGIN_ATTEMPT_LIMIT, LOGIN_WINDOW_MS);
-            if (attempt.limited) {
-                return tooManyAttemptsResponse(attempt.retryAfterSeconds);
-            }
-            return NextResponse.json(
-                { error: 'Email atau password salah' },
-                { status: 401 }
-            );
+            if (attempt.limited) return tooManyAttemptsResponse(attempt.retryAfterSeconds);
+            return NextResponse.json({ error: 'Email atau password salah' }, { status: 401 });
         }
 
-        // Verify password
-        const isValid = await verifyPassword(password, user.passwordHash);
+        // Verify password — normalizedPassword is string ✅
+        const isValid = await verifyPassword(normalizedPassword, user.passwordHash);
         if (!isValid) {
             const attempt = recordFailedAttempt(rateLimitKey, LOGIN_ATTEMPT_LIMIT, LOGIN_WINDOW_MS);
-            if (attempt.limited) {
-                return tooManyAttemptsResponse(attempt.retryAfterSeconds);
-            }
-            return NextResponse.json(
-                { error: 'Email atau password salah' },
-                { status: 401 }
-            );
+            if (attempt.limited) return tooManyAttemptsResponse(attempt.retryAfterSeconds);
+            return NextResponse.json({ error: 'Email atau password salah' }, { status: 401 });
         }
 
         let nextPasswordHash: string | undefined;
         if (!isPasswordHashMigrated(user.passwordHash)) {
-            nextPasswordHash = await hashPassword(password);
+            nextPasswordHash = await hashPassword(normalizedPassword);
         }
 
         if (loginScope === 'DRIVER' && user.role !== 'DRIVER') {
@@ -118,7 +108,6 @@ export async function POST(request: Request) {
                     { status: 409 }
                 );
             }
-
             const driver = await sanityGetById<Driver>(user.driverRef);
             if (!driver || driver.active === false) {
                 return NextResponse.json(
@@ -136,9 +125,7 @@ export async function POST(request: Request) {
             ...(nextPasswordHash ? { passwordHash: nextPasswordHash } : {}),
         });
         user.lastLoginAt = lastLoginAt;
-        if (nextPasswordHash) {
-            user.passwordHash = nextPasswordHash;
-        }
+        if (nextPasswordHash) user.passwordHash = nextPasswordHash;
 
         // Create session
         const token = await createSession(user);
@@ -157,9 +144,6 @@ export async function POST(request: Request) {
         });
     } catch (err) {
         console.error('Login error:', err);
-        return NextResponse.json(
-            { error: 'Terjadi kesalahan server' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'Terjadi kesalahan server' }, { status: 500 });
     }
 }
