@@ -8,6 +8,7 @@ import { verifyPassword, createSession, hashPassword, isPasswordHashMigrated, se
 import { clearFailedAttempts, getRequestIp, recordFailedAttempt } from '@/lib/api/rate-limit';
 import { ensureSameOriginRequest } from '@/lib/api/request-security';
 import type { Driver, User } from '@/lib/types';
+import { debug } from 'console';
 
 const LOGIN_ATTEMPT_LIMIT = 10;
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
@@ -33,14 +34,24 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-    const originError = ensureSameOriginRequest(request);
-    if (originError) {
-        return originError;
-    }
-
     try {
-        const { email, password, scope } = await request.json();
+        const body = await request.json() as {
+            email?: unknown;
+            password?: unknown;
+            scope?: unknown;
+        };
+        const { email, password, scope } = body;
         const loginScope = scope === 'DRIVER' ? 'DRIVER' : 'ADMIN';
+        const clientType = request.headers.get('x-client-type')?.trim().toLowerCase();
+        const isDriverAppClient = clientType === 'driver-app';
+
+        if (!isDriverAppClient && loginScope !== 'DRIVER') {
+            const originError = ensureSameOriginRequest(request);
+            if (originError) {
+                return originError;
+            }
+        }
+
         const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
         const rateLimitKey = buildLoginRateLimitKey(request, normalizedEmail || 'unknown', loginScope);
 
@@ -135,6 +146,7 @@ export async function POST(request: Request) {
 
         return NextResponse.json({
             success: true,
+            token,
             user: {
                 _id: user._id,
                 name: user.name,
