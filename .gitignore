@@ -43,6 +43,8 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 .next-start*.log
+local-start.log
+.tmp-owner-token.txt
 wmic_test.txt
 
 # env files (can opt-in for committing if needed)

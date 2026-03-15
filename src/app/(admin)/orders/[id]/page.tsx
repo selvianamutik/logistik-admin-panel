@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useToast } from '../../layout';
 import { ArrowLeft, Truck, FileText, Edit, Eye } from 'lucide-react';
 import { formatDate, formatCurrency, ORDER_STATUS_MAP, ITEM_STATUS_MAP, DO_STATUS_MAP, INVOICE_STATUS_MAP } from '@/lib/utils';
-import type { Order, OrderItem, DeliveryOrder, DeliveryOrderItem, FreightNota, FreightNotaItem, Vehicle } from '@/lib/types';
+import type { Order, OrderItem, DeliveryOrder, DeliveryOrderItem, Driver, FreightNota, FreightNotaItem, Vehicle } from '@/lib/types';
 
 export default function OrderDetailPage() {
     const params = useParams();
@@ -23,9 +23,11 @@ export default function OrderDetailPage() {
     // DO form
     const [doDate, setDoDate] = useState(new Date().toISOString().split('T')[0]);
     const [doVehicle, setDoVehicle] = useState('');
+    const [doDriver, setDoDriver] = useState('');
     const [doNotes, setDoNotes] = useState('');
     const [selectedItems, setSelectedItems] = useState<string[]>([]);
     const [vehicles, setVehicles] = useState<Array<Pick<Vehicle, '_id' | 'plateNumber'>>>([]);
+    const [drivers, setDrivers] = useState<Driver[]>([]);
 
     const loadOrderDetail = useCallback(async () => {
         const fetchEntity = async <T,>(url: string) => {
@@ -39,11 +41,12 @@ export default function OrderDetailPage() {
 
         setLoading(true);
         try {
-            const [orderData, itemData, deliveryOrders, vehicleData] = await Promise.all([
+            const [orderData, itemData, deliveryOrders, vehicleData, driverData] = await Promise.all([
                 fetchEntity<Order | null>(`/api/data?entity=orders&id=${orderId}`),
                 fetchEntity<OrderItem[]>(`/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`),
                 fetchEntity<DeliveryOrder[]>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`),
                 fetchEntity<Array<Pick<Vehicle, '_id' | 'plateNumber'>>>(`/api/data?entity=vehicles&filter=${encodeURIComponent(JSON.stringify({ status: ['ACTIVE', 'IN_SERVICE'] }))}`),
+                fetchEntity<Driver[]>('/api/data?entity=drivers'),
             ]);
             const deliveryOrderIds = (deliveryOrders || []).map(item => item._id);
             const [deliveryOrderItems, notaItems] = await Promise.all([
@@ -65,6 +68,7 @@ export default function OrderDetailPage() {
             setDoItems(deliveryOrderItems);
             setNotas(orderNotas || []);
             setVehicles(vehicleData || []);
+            setDrivers((driverData || []).filter(driver => driver.active !== false));
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail order');
         } finally {
@@ -95,6 +99,7 @@ export default function OrderDetailPage() {
         }
         try {
             const selVeh = vehicles.find(v => v._id === doVehicle);
+            const selDriver = drivers.find(driver => driver._id === doDriver);
             const doRes = await fetch('/api/data', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -107,6 +112,8 @@ export default function OrderDetailPage() {
                         masterResi: order?.masterResi,
                         vehicleRef: doVehicle || undefined,
                         vehiclePlate: selVeh?.plateNumber || '',
+                        driverRef: doDriver || undefined,
+                        driverName: selDriver?.name || '',
                         date: doDate,
                         notes: doNotes,
                         customerName: order?.customerName,
@@ -124,6 +131,10 @@ export default function OrderDetailPage() {
             addToast('success', `Surat Jalan dibuat: ${doData.data?.doNumber || ''}`);
             setShowDOModal(false);
             setSelectedItems([]);
+            setDoVehicle('');
+            setDoDriver('');
+            setDoNotes('');
+            setDoDate(new Date().toISOString().split('T')[0]);
             await loadOrderDetail();
         } catch {
             addToast('error', 'Gagal membuat surat jalan');
@@ -359,6 +370,16 @@ export default function OrderDetailPage() {
                                         <option value="">Pilih kendaraan</option>
                                         {vehicles.map(v => <option key={v._id} value={v._id}>{v.plateNumber}</option>)}
                                     </select>
+                                </div>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Supir</label>
+                                <select className="form-select" value={doDriver} onChange={e => setDoDriver(e.target.value)}>
+                                    <option value="">-- Opsional, pilih supir --</option>
+                                    {drivers.map(driver => <option key={driver._id} value={driver._id}>{driver.name}{driver.phone ? ` - ${driver.phone}` : ''}</option>)}
+                                </select>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                    Pilih supir kalau DO ini akan dipakai untuk tracking driver, borongan, atau bon operasional.
                                 </div>
                             </div>
                             <div className="form-group">

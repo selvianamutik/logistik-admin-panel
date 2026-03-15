@@ -47,7 +47,7 @@ export default function NewDriverVoucherPage() {
             setDrivers((driverRows || []).filter((driver) => driver.active));
             setDos((deliveryOrders || []).filter((deliveryOrder) => ['CREATED', 'ON_DELIVERY'].includes(deliveryOrder.status)));
             setOrders(orderRows || []);
-            setVehicles((vehicleRows || []).filter((vehicle) => vehicle.status === 'ACTIVE'));
+            setVehicles((vehicleRows || []).filter((vehicle) => vehicle.status !== 'SOLD' && vehicle.status !== 'OUT_OF_SERVICE'));
             setBankAccounts((accountRows || []).filter((account) => account.active !== false));
         }).catch(error => {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat form bon supir');
@@ -123,7 +123,7 @@ export default function NewDriverVoucherPage() {
             deliveryOrderRef: form.deliveryOrderRef || undefined,
             doNumber: doItem?.doNumber || undefined,
             vehicleRef: form.vehicleRef || undefined,
-            vehiclePlate: vehicle?.plateNumber || undefined,
+            vehiclePlate: vehicle?.plateNumber || doItem?.vehiclePlate || undefined,
             route: form.route || undefined,
             issuedDate: form.issuedDate,
             cashGiven: form.cashGiven,
