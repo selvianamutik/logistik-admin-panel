@@ -330,7 +330,7 @@ export default function NewNotaPage() {
                         <div className="card-body">
                             <div className="form-group">
                                 <label className="form-label">
-                                    Customer <span className="required">*</span>
+                                    Customer / Penagih <span className="required">*</span>
                                 </label>
                                 <select
                                     className="form-select"
@@ -350,6 +350,9 @@ export default function NewNotaPage() {
                                         </option>
                                     ))}
                                 </select>
+                                <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                    Ini adalah pihak pengirim atau perusahaan yang ditagih pada nota ongkos, bukan penerima barang.
+                                </p>
                                 {hasSelectedRows && (
                                     <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                                         Customer terkunci selama masih ada baris DO. Hapus dulu baris terkait jika ingin mengganti customer.
@@ -359,7 +362,7 @@ export default function NewNotaPage() {
 
                             {!customerRef && (
                                 <div className="form-group">
-                                    <label className="form-label">Atau ketik nama customer</label>
+                                    <label className="form-label">Atau ketik nama customer / penagih</label>
                                     <input
                                         className="form-input"
                                         value={customerName}

@@ -122,7 +122,7 @@ export default function NewOrderPage() {
                         <ArrowLeft size={16} />
                     </button>
                     <h1 className="page-title">Buat Order Baru</h1>
-                    <p className="page-subtitle">Isi data pengiriman dan item barang</p>
+                    <p className="page-subtitle">Isi data pengirim, penerima, dan item barang</p>
                 </div>
             </div>
 
@@ -133,11 +133,14 @@ export default function NewOrderPage() {
                         <div className="card-header"><span className="card-header-title">Data Pengirim</span></div>
                         <div className="card-body">
                             <div className="form-group">
-                                <label className="form-label">Customer Pengirim <span className="required">*</span></label>
+                                <label className="form-label">Customer / Pengirim / Penagih <span className="required">*</span></label>
                                 <select className="form-select" value={customerRef} onChange={e => handleCustomerChange(e.target.value)} required>
                                     <option value="">Pilih customer</option>
                                     {customers.filter(c => c.active !== false).map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
                                 </select>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                    Ini adalah pihak pengirim atau perusahaan yang order jasa dan nantinya ditagih pada nota.
+                                </div>
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Layanan</label>

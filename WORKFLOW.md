@@ -24,6 +24,12 @@ Fokusnya bukan teori bisnis umum, tetapi perilaku aplikasi yang sekarang benar-b
 - `Bank Transaction`
   Mutasi rekening bank dan kas.
 
+Catatan istilah penting:
+
+- `Customer` = pihak pengirim / perusahaan yang order jasa / pihak yang ditagih.
+- `Penerima` = pihak yang menerima barang di tujuan.
+- Jadi `customer` dan `receiver` memang dua pihak yang berbeda.
+
 ## 2. Prinsip akuntansi yang dipakai aplikasi
 
 Sistem saat ini memisahkan dua hal:

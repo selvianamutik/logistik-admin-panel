@@ -196,7 +196,7 @@ export default function OrderDetailPage() {
                                 <span className="badge-dot" /> {ORDER_STATUS_MAP[order.status]?.label}
                             </span>
                         </h1>
-                        <p className="page-subtitle">Detail order dan pengiriman</p>
+                        <p className="page-subtitle">Detail pengirim, penerima, dan pengiriman</p>
                     </div>
                 </div>
                 <div className="page-actions">
@@ -244,7 +244,7 @@ export default function OrderDetailPage() {
                             <div className="detail-item"><div className="detail-label">Tanggal</div><div className="detail-value">{formatDate(order.createdAt)}</div></div>
                         </div>
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">Customer</div><div className="detail-value">{order.customerName}</div></div>
+                            <div className="detail-item"><div className="detail-label">Customer / Pengirim / Penagih</div><div className="detail-value">{order.customerName}</div></div>
                             <div className="detail-item"><div className="detail-label">Layanan</div><div className="detail-value">{order.serviceName || '-'}</div></div>
                         </div>
                         <div className="mt-2"><div className="detail-label">Alamat Pickup</div><div className="detail-value">{order.pickupAddress || '-'}</div></div>

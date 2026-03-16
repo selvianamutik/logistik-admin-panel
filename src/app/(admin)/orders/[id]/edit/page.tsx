@@ -119,11 +119,11 @@ export default function OrderEditPage() {
                         <div className="card-body">
                             {hasDeliveryOrders && (
                                 <div className="alert alert-warning" style={{ marginBottom: '1rem' }}>
-                                    Order ini sudah punya surat jalan. Field utama dikunci agar customer, layanan, dan penerima tetap konsisten dengan dokumen turunannya. Hanya catatan yang masih bisa diubah.
+                                    Order ini sudah punya surat jalan. Field utama dikunci agar data pengirim/penagih, layanan, dan penerima tetap konsisten dengan dokumen turunannya. Hanya catatan yang masih bisa diubah.
                                 </div>
                             )}
                             <div className="form-group">
-                                <label className="form-label">Customer</label>
+                                <label className="form-label">Customer / Pengirim / Penagih</label>
                                 <select className="form-select" value={form.customerRef} onChange={e => {
                                     const cust = customers.find(c => c._id === e.target.value);
                                     setForm(prev => ({
@@ -136,6 +136,9 @@ export default function OrderEditPage() {
                                     <option value="">Pilih Customer</option>
                                     {customers.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
                                 </select>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                    Pihak ini adalah pengirim atau perusahaan yang order jasa dan akan muncul sebagai customer pada nota.
+                                </div>
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Layanan</label>
