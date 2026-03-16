@@ -19,6 +19,7 @@ export default function IncidentDetailPage() {
     const [showStatusModal, setShowStatusModal] = useState(false);
     const [newStatus, setNewStatus] = useState('');
     const [actionNote, setActionNote] = useState('');
+    const [savingStatus, setSavingStatus] = useState(false);
 
     const loadIncidentDetail = useCallback(async () => {
         const fetchEntity = async <T,>(url: string, fallbackMessage: string) => {
@@ -53,30 +54,37 @@ export default function IncidentDetailPage() {
 
     const updateStatus = async () => {
         if (!newStatus || !actionNote) { addToast('error', 'Status dan catatan wajib'); return; }
-        const res = await fetch('/api/data', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ entity: 'incidents', action: 'set-status', data: { id: incident?._id, status: newStatus, note: actionNote } }),
-        });
-        const d = await res.json();
-        if (!res.ok) {
-            addToast('error', d.error || 'Gagal memperbarui status insiden');
-            return;
-        }
+        setSavingStatus(true);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entity: 'incidents', action: 'set-status', data: { id: incident?._id, status: newStatus, note: actionNote } }),
+            });
+            const d = await res.json();
+            if (!res.ok) {
+                addToast('error', d.error || 'Gagal memperbarui status insiden');
+                return;
+            }
 
-        const timestamp = new Date().toISOString();
-        setIncident(prev => prev ? { ...prev, status: newStatus as Incident['status'] } : prev);
-        setLogs(prev => [...prev, {
-            _id: 'new-' + Date.now(),
-            _type: 'incidentActionLog',
-            incidentRef: incident?._id || '',
-            timestamp,
-            note: actionNote,
-        }]);
-        setShowStatusModal(false);
-        setActionNote('');
-        setNewStatus('');
-        addToast('success', 'Status insiden diperbarui');
+            const timestamp = new Date().toISOString();
+            setIncident(prev => prev ? { ...prev, status: newStatus as Incident['status'] } : prev);
+            setLogs(prev => [...prev, {
+                _id: 'new-' + Date.now(),
+                _type: 'incidentActionLog',
+                incidentRef: incident?._id || '',
+                timestamp,
+                note: actionNote,
+            }]);
+            setShowStatusModal(false);
+            setActionNote('');
+            setNewStatus('');
+            addToast('success', 'Status insiden diperbarui');
+        } catch {
+            addToast('error', 'Gagal memperbarui status insiden');
+        } finally {
+            setSavingStatus(false);
+        }
     };
 
     if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 200 }} /></div>;
@@ -201,7 +209,7 @@ export default function IncidentDetailPage() {
             </div>
 
             {showStatusModal && (
-                <div className="modal-overlay" onClick={() => setShowStatusModal(false)}>
+                <div className="modal-overlay" onClick={() => { if (!savingStatus) setShowStatusModal(false); }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header"><h3 className="modal-title">Ubah Status Insiden</h3></div>
                         <div className="modal-body">
@@ -209,7 +217,7 @@ export default function IncidentDetailPage() {
                                 <select className="form-select" value={newStatus} onChange={e => setNewStatus(e.target.value)}><option value="">Pilih</option>{available.map(s => <option key={s} value={s}>{INCIDENT_STATUS_MAP[s]?.label}</option>)}</select></div>
                             <div className="form-group"><label className="form-label">Catatan <span className="required">*</span></label><textarea className="form-textarea" rows={3} value={actionNote} onChange={e => setActionNote(e.target.value)} placeholder="Jelaskan tindakan yang dilakukan..." /></div>
                         </div>
-                        <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowStatusModal(false)}>Batal</button><button className="btn btn-primary" onClick={updateStatus}><Save size={16} /> Simpan</button></div>
+                        <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowStatusModal(false)} disabled={savingStatus}>Batal</button><button className="btn btn-primary" onClick={updateStatus} disabled={savingStatus}><Save size={16} /> {savingStatus ? 'Menyimpan...' : 'Simpan'}</button></div>
                     </div>
                 </div>
             )}

@@ -29,6 +29,8 @@ export default function DODetailPage() {
     const [editingTarip, setEditingTarip] = useState(false);
     const [taripBorongan, setTaripBorongan] = useState<number>(0);
     const [keteranganBorongan, setKeteranganBorongan] = useState('');
+    const [updatingStatus, setUpdatingStatus] = useState(false);
+    const [savingPOD, setSavingPOD] = useState(false);
     const [savingTarip, setSavingTarip] = useState(false);
 
     const fetchEntity = useCallback(async <T,>(url: string) => {
@@ -95,45 +97,59 @@ export default function DODetailPage() {
 
     const updateDOStatus = async () => {
         if (!newStatus) return;
-        const res = await fetch('/api/data', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ entity: 'delivery-orders', action: 'set-status', data: { id: doData?._id, status: newStatus, note: statusNote } }),
-        });
-        const d = await res.json();
-        if (!res.ok) {
-            addToast('error', d.error || 'Gagal memperbarui status surat jalan');
-            return;
-        }
+        setUpdatingStatus(true);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entity: 'delivery-orders', action: 'set-status', data: { id: doData?._id, status: newStatus, note: statusNote } }),
+            });
+            const d = await res.json();
+            if (!res.ok) {
+                addToast('error', d.error || 'Gagal memperbarui status surat jalan');
+                return;
+            }
 
-        setDoData(prev => prev ? { ...prev, status: newStatus as DeliveryOrder['status'] } : prev);
-        setTrackingLogs(prev => [...prev, {
-            _id: 'new-' + Date.now(),
-            _type: 'trackingLog',
-            refType: 'DO',
-            refRef: doData?._id || '',
-            status: newStatus,
-            note: statusNote || undefined,
-            timestamp: new Date().toISOString(),
-        }]);
-        setShowStatusModal(false);
-        setStatusNote('');
-        addToast('success', `Status DO diperbarui ke ${DO_STATUS_MAP[newStatus]?.label || newStatus}`);
+            setDoData(prev => prev ? { ...prev, status: newStatus as DeliveryOrder['status'] } : prev);
+            setTrackingLogs(prev => [...prev, {
+                _id: 'new-' + Date.now(),
+                _type: 'trackingLog',
+                refType: 'DO',
+                refRef: doData?._id || '',
+                status: newStatus,
+                note: statusNote || undefined,
+                timestamp: new Date().toISOString(),
+            }]);
+            setShowStatusModal(false);
+            setStatusNote('');
+            addToast('success', `Status DO diperbarui ke ${DO_STATUS_MAP[newStatus]?.label || newStatus}`);
+        } catch {
+            addToast('error', 'Gagal memperbarui status surat jalan');
+        } finally {
+            setUpdatingStatus(false);
+        }
     };
 
     const savePOD = async () => {
-        const res = await fetch('/api/data', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ entity: 'delivery-orders', action: 'update', data: { id: doData?._id, updates: { podReceiverName: podName, podReceivedDate: podDate, podNote } } }),
-        });
-        const result = await res.json();
-        if (!res.ok) {
-            addToast('error', result.error || 'Gagal menyimpan POD');
-            return;
+        setSavingPOD(true);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entity: 'delivery-orders', action: 'update', data: { id: doData?._id, updates: { podReceiverName: podName, podReceivedDate: podDate, podNote } } }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menyimpan POD');
+                return;
+            }
+            setDoData(prev => prev ? { ...prev, podReceiverName: podName, podReceivedDate: podDate, podNote } : prev);
+            setShowPODModal(false);
+            addToast('success', 'POD berhasil disimpan');
+        } catch {
+            addToast('error', 'Gagal menyimpan POD');
+        } finally {
+            setSavingPOD(false);
         }
-        setDoData(prev => prev ? { ...prev, podReceiverName: podName, podReceivedDate: podDate, podNote } : prev);
-        setShowPODModal(false);
-        addToast('success', 'POD berhasil disimpan');
     };
 
     const handlePrint = async () => {
@@ -253,20 +269,24 @@ export default function DODetailPage() {
 
     const saveTaripBorongan = async () => {
         setSavingTarip(true);
-        const res = await fetch('/api/data', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ entity: 'delivery-orders', action: 'update', data: { id: doData?._id, updates: { taripBorongan, keteranganBorongan } } }),
-        });
-        const result = await res.json();
-        if (!res.ok) {
-            addToast('error', result.error || 'Gagal menyimpan tarip borongan');
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entity: 'delivery-orders', action: 'update', data: { id: doData?._id, updates: { taripBorongan, keteranganBorongan } } }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menyimpan tarip borongan');
+                return;
+            }
+            setDoData(prev => prev ? { ...prev, taripBorongan, keteranganBorongan } : prev);
+            setEditingTarip(false);
+            addToast('success', 'Tarip borongan disimpan');
+        } catch {
+            addToast('error', 'Gagal menyimpan tarip borongan');
+        } finally {
             setSavingTarip(false);
-            return;
         }
-        setDoData(prev => prev ? { ...prev, taripBorongan, keteranganBorongan } : prev);
-        setEditingTarip(false);
-        setSavingTarip(false);
-        addToast('success', 'Tarip borongan disimpan');
     };
 
     const getNextStatuses = (current: string): string[] => {
@@ -509,11 +529,11 @@ export default function DODetailPage() {
 
             {/* Status Modal */}
             {showStatusModal && (
-                <div className="modal-overlay" onClick={() => setShowStatusModal(false)}>
+                <div className="modal-overlay" onClick={() => { if (!updatingStatus) setShowStatusModal(false); }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
                             <h3 className="modal-title">Ubah Status DO</h3>
-                            <button className="modal-close" onClick={() => setShowStatusModal(false)}>&times;</button>
+                            <button className="modal-close" onClick={() => setShowStatusModal(false)} disabled={updatingStatus}>&times;</button>
                         </div>
                         <div className="modal-body">
                             <div className="form-group">
@@ -529,9 +549,9 @@ export default function DODetailPage() {
                             </div>
                         </div>
                         <div className="modal-footer">
-                            <button className="btn btn-secondary" onClick={() => setShowStatusModal(false)}>Batal</button>
-                            <button className="btn btn-primary" onClick={updateDOStatus} disabled={!newStatus}>
-                                <Save size={16} /> Simpan
+                            <button className="btn btn-secondary" onClick={() => setShowStatusModal(false)} disabled={updatingStatus}>Batal</button>
+                            <button className="btn btn-primary" onClick={updateDOStatus} disabled={!newStatus || updatingStatus}>
+                                <Save size={16} /> {updatingStatus ? 'Menyimpan...' : 'Simpan'}
                             </button>
                         </div>
                     </div>
@@ -540,7 +560,7 @@ export default function DODetailPage() {
 
             {/* POD Modal */}
             {showPODModal && (
-                <div className="modal-overlay" onClick={() => setShowPODModal(false)}>
+                <div className="modal-overlay" onClick={() => { if (!savingPOD) setShowPODModal(false); }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header"><h3 className="modal-title">Upload Proof of Delivery</h3></div>
                         <div className="modal-body">
@@ -558,8 +578,8 @@ export default function DODetailPage() {
                             </div>
                         </div>
                         <div className="modal-footer">
-                            <button className="btn btn-secondary" onClick={() => setShowPODModal(false)}>Batal</button>
-                            <button className="btn btn-success" onClick={savePOD}><Upload size={16} /> Simpan POD</button>
+                            <button className="btn btn-secondary" onClick={() => setShowPODModal(false)} disabled={savingPOD}>Batal</button>
+                            <button className="btn btn-success" onClick={savePOD} disabled={savingPOD}><Upload size={16} /> {savingPOD ? 'Menyimpan...' : 'Simpan POD'}</button>
                         </div>
                     </div>
                 </div>

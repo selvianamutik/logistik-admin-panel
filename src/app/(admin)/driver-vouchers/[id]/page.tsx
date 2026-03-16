@@ -28,6 +28,8 @@ export default function DriverVoucherDetailPage() {
     const [showAddItem, setShowAddItem] = useState(false);
     const [showSettleModal, setShowSettleModal] = useState(false);
     const [settling, setSettling] = useState(false);
+    const [savingItem, setSavingItem] = useState(false);
+    const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
     const [repairingIssueLedger, setRepairingIssueLedger] = useState(false);
     const [itemForm, setItemForm] = useState({ category: 'Solar/BBM', description: '', amount: 0 });
     const [settlementDate, setSettlementDate] = useState(new Date().toISOString().slice(0, 10));
@@ -76,55 +78,69 @@ export default function DriverVoucherDetailPage() {
             return;
         }
 
-        const res = await fetch('/api/data', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                entity: 'driver-voucher-items',
-                data: {
-                    voucherRef: params.id,
-                    category: itemForm.category,
-                    description: itemForm.description,
-                    amount: itemForm.amount,
-                },
-            }),
-        });
-        const result = await res.json();
-        if (!res.ok) {
-            addToast('error', result.error || 'Gagal menambah item');
-            return;
-        }
+        setSavingItem(true);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'driver-voucher-items',
+                    data: {
+                        voucherRef: params.id,
+                        category: itemForm.category,
+                        description: itemForm.description,
+                        amount: itemForm.amount,
+                    },
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menambah item');
+                return;
+            }
 
-        setItems(prev => [...prev, result.data]);
-        if (result.voucher) {
-            setVoucher(result.voucher);
+            setItems(prev => [...prev, result.data]);
+            if (result.voucher) {
+                setVoucher(result.voucher);
+            }
+            addToast('success', 'Item pengeluaran ditambahkan');
+            setShowAddItem(false);
+            setItemForm({ category: 'Solar/BBM', description: '', amount: 0 });
+        } catch {
+            addToast('error', 'Gagal menambah item');
+        } finally {
+            setSavingItem(false);
         }
-        addToast('success', 'Item pengeluaran ditambahkan');
-        setShowAddItem(false);
-        setItemForm({ category: 'Solar/BBM', description: '', amount: 0 });
     };
 
     const handleDeleteItem = async (itemId: string) => {
-        const res = await fetch('/api/data', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                entity: 'driver-voucher-items',
-                action: 'delete',
-                data: { id: itemId },
-            }),
-        });
-        const result = await res.json();
-        if (!res.ok) {
-            addToast('error', result.error || 'Gagal menghapus item');
-            return;
-        }
+        setDeletingItemId(itemId);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'driver-voucher-items',
+                    action: 'delete',
+                    data: { id: itemId },
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menghapus item');
+                return;
+            }
 
-        setItems(prev => prev.filter(item => item._id !== itemId));
-        if (result.voucher) {
-            setVoucher(result.voucher);
+            setItems(prev => prev.filter(item => item._id !== itemId));
+            if (result.voucher) {
+                setVoucher(result.voucher);
+            }
+            addToast('success', 'Item dihapus');
+        } catch {
+            addToast('error', 'Gagal menghapus item');
+        } finally {
+            setDeletingItemId(current => current === itemId ? null : current);
         }
-        addToast('success', 'Item dihapus');
     };
 
     const handleRepairIssueLedger = async () => {
@@ -336,7 +352,7 @@ export default function DriverVoucherDetailPage() {
                                             <td><span className="badge badge-gray">{item.category}</span></td>
                                             <td>{item.description || '-'}</td>
                                             <td className="font-medium">{formatCurrency(item.amount)}</td>
-                                            {!isSettled && <td><button className="btn btn-ghost btn-sm" onClick={() => handleDeleteItem(item._id)}><Trash2 size={14} style={{ color: '#ef4444' }} /></button></td>}
+                                            {!isSettled && <td><button className="btn btn-ghost btn-sm" onClick={() => handleDeleteItem(item._id)} disabled={deletingItemId === item._id}><Trash2 size={14} style={{ color: '#ef4444' }} /></button></td>}
                                         </tr>
                                     ))
                                 )}
@@ -348,9 +364,9 @@ export default function DriverVoucherDetailPage() {
             </div>
 
             {showAddItem && (
-                <div className="modal-overlay" onClick={() => setShowAddItem(false)}>
+                <div className="modal-overlay" onClick={() => { if (!savingItem) setShowAddItem(false); }}>
                     <div className="modal" onClick={event => event.stopPropagation()}>
-                        <div className="modal-header"><h3 className="modal-title">Tambah Item Pengeluaran</h3><button className="modal-close" onClick={() => setShowAddItem(false)}><X size={20} /></button></div>
+                        <div className="modal-header"><h3 className="modal-title">Tambah Item Pengeluaran</h3><button className="modal-close" onClick={() => setShowAddItem(false)} disabled={savingItem}><X size={20} /></button></div>
                         <div className="modal-body">
                             <div className="form-group">
                                 <label className="form-label">Kategori</label>
@@ -367,7 +383,7 @@ export default function DriverVoucherDetailPage() {
                                 <input type="number" className="form-input" value={itemForm.amount || ''} onChange={event => setItemForm({ ...itemForm, amount: Number(event.target.value) })} placeholder="0" />
                             </div>
                         </div>
-                        <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowAddItem(false)}>Batal</button><button className="btn btn-primary" onClick={handleAddItem}><Save size={16} /> Simpan</button></div>
+                        <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowAddItem(false)} disabled={savingItem}>Batal</button><button className="btn btn-primary" onClick={handleAddItem} disabled={savingItem}><Save size={16} /> {savingItem ? 'Menyimpan...' : 'Simpan'}</button></div>
                     </div>
                 </div>
             )}

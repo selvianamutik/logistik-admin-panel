@@ -18,6 +18,7 @@ export default function CustomerDetailPage() {
     const [notas, setNotas] = useState<FreightNota[]>([]);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(false);
+    const [saving, setSaving] = useState(false);
     const [form, setForm] = useState({ name: '', address: '', contactPerson: '', phone: '', email: '', npwp: '' });
 
     useEffect(() => {
@@ -63,6 +64,7 @@ export default function CustomerDetailPage() {
     }, [addToast, customerId]);
 
     const handleSave = async () => {
+        setSaving(true);
         try {
             const res = await fetch('/api/data', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -77,6 +79,7 @@ export default function CustomerDetailPage() {
             setEditing(false);
             addToast('success', 'Customer berhasil diperbarui');
         } catch { addToast('error', 'Gagal menyimpan'); }
+        finally { setSaving(false); }
     };
 
     if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 200 }} /></div>;
@@ -111,8 +114,8 @@ export default function CustomerDetailPage() {
                                     <div className="form-group"><label className="form-label">NPWP</label><input className="form-input" value={form.npwp} onChange={e => setForm({ ...form, npwp: e.target.value })} /></div>
                                 </div>
                                 <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-                                    <button className="btn btn-secondary" onClick={() => setEditing(false)}>Batal</button>
-                                    <button className="btn btn-primary" onClick={handleSave}>Simpan</button>
+                                    <button className="btn btn-secondary" onClick={() => setEditing(false)} disabled={saving}>Batal</button>
+                                    <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'Menyimpan...' : 'Simpan'}</button>
                                 </div>
                             </>
                         ) : (
