@@ -76,9 +76,36 @@ export async function getDriverAssignedDeliveryOrders(driverRef: string) {
             _type == "deliveryOrder" &&
             (driverRef == $driverRef || driverRef._ref == $driverRef) &&
             status in ["CREATED", "HEADING_TO_PICKUP", "ON_DELIVERY", "ARRIVED", "DELIVERED"]
-        ] | order(date desc, _createdAt desc)`,
+        ] | order(date desc, _createdAt desc){
+            _id,
+            doNumber,
+            date,
+            status,
+            trackingState,
+            masterResi,
+            "customerName": coalesce(customerName, orderRef->customerName),
+            "receiverAddress": coalesce(receiverAddress, orderRef->receiverAddress),
+            vehiclePlate,
+            driverName,
+            trackingStartedAt,
+            trackingStoppedAt,
+            trackingLastSeenAt,
+            trackingLastLat,
+            trackingLastLng,
+            trackingLastAccuracyM,
+            trackingLastSpeedKph
+        }`,
         { driverRef }
     );
+}
+
+export function sanitizeDriverForMobile(driver: Driver) {
+    return {
+        _id: driver._id,
+        name: driver.name,
+        phone: driver.phone,
+        active: driver.active,
+    };
 }
 
 export function formatTrackingLocationText(latitude: number, longitude: number) {

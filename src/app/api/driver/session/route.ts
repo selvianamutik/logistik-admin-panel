@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-import { getDriverAppContext, requireDriverSessionContext } from '@/lib/api/driver-portal';
+import { getDriverAppContext, requireDriverSessionContext, sanitizeDriverForMobile } from '@/lib/api/driver-portal';
 
 export async function GET(request: Request) {
     const result = await requireDriverSessionContext(request);
@@ -12,7 +12,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
         user: result.session,
-        driver: result.driver,
+        driver: sanitizeDriverForMobile(result.driver),
         company: appContext.company,
     });
 }

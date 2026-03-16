@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { createSession, hashPassword, isPasswordHashMigrated, verifyPassword } from '@/lib/auth';
-import { getDriverAppContext } from '@/lib/api/driver-portal';
+import { getDriverAppContext, sanitizeDriverForMobile } from '@/lib/api/driver-portal';
 import { clearFailedAttempts, getRequestIp, recordFailedAttempt } from '@/lib/api/rate-limit';
 import { sanityGetById, sanityUpdate, getSanityClient } from '@/lib/sanity';
 import type { Driver, User } from '@/lib/types';
@@ -106,7 +106,7 @@ export async function POST(request: Request) {
                 driverRef: user.driverRef,
                 driverName: user.driverName,
             },
-            driver,
+            driver: sanitizeDriverForMobile(driver),
             company: appContext.company,
         });
     } catch (error) {
