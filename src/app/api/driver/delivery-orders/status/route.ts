@@ -7,6 +7,8 @@ import { ensureSameOriginRequest } from '@/lib/api/request-security';
 import { sanityCreate, sanityGetById } from '@/lib/sanity';
 import type { DeliveryOrder } from '@/lib/types';
 
+const DRIVER_ALLOWED_STATUS_UPDATES = new Set(['HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED']);
+
 async function addAuditLog(actor: { _id: string; name: string }, action: string, entityRef: string, summary: string) {
     try {
         await sanityCreate({
@@ -51,6 +53,13 @@ export async function POST(request: Request) {
 
         if (!id || !status) {
             return NextResponse.json({ error: 'Status DO tidak valid' }, { status: 400 });
+        }
+
+        if (!DRIVER_ALLOWED_STATUS_UPDATES.has(status)) {
+            return NextResponse.json(
+                { error: 'Driver hanya boleh mengirim progres perjalanan. Status selesai atau batal harus ditetapkan admin.' },
+                { status: 403 }
+            );
         }
 
         const deliveryOrder = await sanityGetById<DeliveryOrder>(id);

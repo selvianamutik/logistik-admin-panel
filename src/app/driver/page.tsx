@@ -42,6 +42,10 @@ function formatTrackingState(state?: DeliveryOrder['trackingState']) {
     }
 }
 
+function canDriverStartTracking(status: DeliveryOrder['status']) {
+    return ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(status);
+}
+
 export default function DriverPortalPage() {
     const router = useRouter();
     const intervalRef = useRef<number | null>(null);
@@ -364,7 +368,7 @@ export default function DriverPortalPage() {
                     orders.map(item => {
                         const trackingBadge = formatTrackingState(item.trackingState);
                         const isBusy = actionLoadingId === item._id;
-                        const canStart = item.status === 'CREATED' || item.status === 'ON_DELIVERY';
+                        const canStart = canDriverStartTracking(item.status);
                         const mapsUrl =
                             typeof item.trackingLastLat === 'number' && typeof item.trackingLastLng === 'number'
                                 ? `https://www.google.com/maps?q=${item.trackingLastLat},${item.trackingLastLng}`

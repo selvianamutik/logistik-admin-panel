@@ -32,6 +32,9 @@ export async function GET() {
 
 export async function POST(request: Request) {
     try {
+        const originError = ensureSameOriginRequest(request);
+        if (originError) return originError;
+
         const body = await request.json() as {
             email?: unknown;
             password?: unknown;
@@ -40,14 +43,6 @@ export async function POST(request: Request) {
 
         const { email, password, scope } = body;
         const loginScope = scope === 'DRIVER' ? 'DRIVER' : 'ADMIN';
-        const clientType = request.headers.get('x-client-type')?.trim().toLowerCase();
-        const isDriverAppClient = clientType === 'driver-app';
-
-        // Skip origin check for Flutter driver app
-        if (!isDriverAppClient) {
-            const originError = ensureSameOriginRequest(request);
-            if (originError) return originError;
-        }
 
         // Validate types early so TypeScript narrows correctly downstream
         const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
@@ -64,7 +59,7 @@ export async function POST(request: Request) {
 
         // Find user from Sanity
         const user = await getSanityClient().fetch<User | null>(
-            `*[_type == "user" && email == $email && active == true][0]`,
+            `*[_type == "user" && lower(email) == $email && active == true][0]`,
             { email: normalizedEmail }
         );
 
@@ -133,7 +128,6 @@ export async function POST(request: Request) {
 
         return NextResponse.json({
             success: true,
-            token,
             user: {
                 _id: user._id,
                 name: user.name,
