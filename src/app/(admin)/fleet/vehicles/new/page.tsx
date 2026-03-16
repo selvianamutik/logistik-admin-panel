@@ -49,8 +49,11 @@ export default function VehicleNewPage() {
             }
             addToast('success', 'Kendaraan berhasil ditambahkan');
             router.push(`/fleet/vehicles/${d.data?._id || d.id}`);
-        } catch (error) { addToast('error', error instanceof Error ? error.message : 'Gagal menyimpan'); }
-        setSaving(false);
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal menyimpan');
+        } finally {
+            setSaving(false);
+        }
     };
 
     return (

@@ -109,8 +109,9 @@ export default function NewOrderPage() {
             router.push(`/orders/${orderId}`);
         } catch {
             addToast('error', 'Gagal membuat order');
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     };
 
     return (
