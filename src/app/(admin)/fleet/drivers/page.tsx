@@ -158,6 +158,7 @@ export default function DriversPage() {
     };
 
     const closeAccessModal = () => {
+        if (savingAccess) return;
         setShowAccessModal(false);
         setAccessDriver(null);
         setAccountForm({ accountId: '', name: '', email: '', password: '', active: true });
@@ -226,7 +227,12 @@ export default function DriversPage() {
         setForm({ name: d.name, phone: d.phone, licenseNumber: d.licenseNumber, ktpNumber: d.ktpNumber || '', simExpiry: d.simExpiry || '', address: d.address || '', active: d.active !== false });
         setShowModal(true);
     };
-    const closeModal = () => { setShowModal(false); setEditId(null); setForm({ name: '', phone: '', licenseNumber: '', ktpNumber: '', simExpiry: '', address: '', active: true }); };
+    const closeModal = () => {
+        if (savingDriver) return;
+        setShowModal(false);
+        setEditId(null);
+        setForm({ name: '', phone: '', licenseNumber: '', ktpNumber: '', simExpiry: '', address: '', active: true });
+    };
 
     return (
         <div>
@@ -296,7 +302,7 @@ export default function DriversPage() {
             {showModal && (
                 <div className="modal-overlay" onClick={closeModal}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header"><h3 className="modal-title">{editId ? 'Edit Supir' : 'Tambah Supir'}</h3><button className="modal-close" onClick={closeModal}><X size={20} /></button></div>
+                        <div className="modal-header"><h3 className="modal-title">{editId ? 'Edit Supir' : 'Tambah Supir'}</h3><button className="modal-close" onClick={closeModal} disabled={savingDriver}><X size={20} /></button></div>
                         <div className="modal-body">
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Nama <span className="required">*</span></label><input className="form-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
@@ -321,7 +327,7 @@ export default function DriversPage() {
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
                             <h3 className="modal-title">Akses Mobile Driver</h3>
-                            <button className="modal-close" onClick={closeAccessModal}><X size={20} /></button>
+                            <button className="modal-close" onClick={closeAccessModal} disabled={savingAccess}><X size={20} /></button>
                         </div>
                         <div className="modal-body">
                             <div className="form-group">
