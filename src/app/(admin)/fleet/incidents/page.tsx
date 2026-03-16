@@ -17,6 +17,7 @@ export default function IncidentsPage() {
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [showModal, setShowModal] = useState(false);
+    const [saving, setSaving] = useState(false);
     const [form, setForm] = useState({ vehicleRef: '', incidentType: 'OTHER' as Incident['incidentType'], urgency: 'MEDIUM' as Incident['urgency'], locationText: '', odometer: 0, description: '', dateTime: new Date().toISOString().slice(0, 16), relatedDeliveryOrderRef: '' });
 
     useEffect(() => {
@@ -90,6 +91,7 @@ export default function IncidentsPage() {
         if ((!form.vehicleRef && !form.relatedDeliveryOrderRef) || !form.description) { addToast('error', 'Kendaraan atau DO terkait serta deskripsi wajib'); return; }
         const veh = vehicles.find(v => v._id === form.vehicleRef);
         const doData = dos.find(d => d._id === form.relatedDeliveryOrderRef);
+        setSaving(true);
         try {
             const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'incidents', data: { ...form, vehiclePlate: veh?.plateNumber, relatedDONumber: doData?.doNumber } }) });
             const d = await res.json();
@@ -103,6 +105,8 @@ export default function IncidentsPage() {
             setShowModal(false);
         } catch {
             addToast('error', 'Gagal membuat insiden');
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -139,7 +143,7 @@ export default function IncidentsPage() {
             {showModal && (
                 <div className="modal-overlay" onClick={() => setShowModal(false)}>
                     <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header"><h3 className="modal-title">Laporkan Insiden</h3><button className="modal-close" onClick={() => setShowModal(false)}><X size={20} /></button></div>
+                        <div className="modal-header"><h3 className="modal-title">Laporkan Insiden</h3><button className="modal-close" onClick={() => setShowModal(false)} disabled={saving}><X size={20} /></button></div>
                         <div className="modal-body">
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Kendaraan <span className="required">*</span></label>
@@ -170,7 +174,7 @@ export default function IncidentsPage() {
                                 <select className="form-select" value={form.relatedDeliveryOrderRef} onChange={e => handleRelatedDOChange(e.target.value)}><option value="">- Tidak ada -</option>{filteredDos.map(d => <option key={d._id} value={d._id}>{d.doNumber}</option>)}</select></div>
                             <div className="form-group"><label className="form-label">Kronologi / Deskripsi <span className="required">*</span></label><textarea className="form-textarea" rows={4} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Jelaskan kronologi insiden secara detail..." /></div>
                         </div>
-                        <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowModal(false)}>Batal</button><button className="btn btn-danger" onClick={handleSave}><AlertTriangle size={16} /> Laporkan Insiden</button></div>
+                        <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowModal(false)} disabled={saving}>Batal</button><button className="btn btn-danger" onClick={handleSave} disabled={saving}><AlertTriangle size={16} /> {saving ? 'Menyimpan...' : 'Laporkan Insiden'}</button></div>
                     </div>
                 </div>
             )}

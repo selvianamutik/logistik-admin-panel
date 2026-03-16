@@ -13,6 +13,8 @@ export default function MaintenancePage() {
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [showModal, setShowModal] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [updatingId, setUpdatingId] = useState<string | null>(null);
     const [form, setForm] = useState({ vehicleRef: '', type: '', scheduleType: 'DATE' as 'DATE' | 'ODOMETER', plannedDate: '', plannedOdometer: 0, notes: '' });
 
     useEffect(() => {
@@ -43,6 +45,7 @@ export default function MaintenancePage() {
     const handleSave = async () => {
         if (!form.vehicleRef || !form.type) { addToast('error', 'Kendaraan dan tipe wajib'); return; }
         const veh = vehicles.find(v => v._id === form.vehicleRef);
+        setSaving(true);
         try {
             const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'maintenances', data: { ...form, vehiclePlate: veh?.plateNumber, status: 'SCHEDULED' } }) });
             const d = await res.json();
@@ -56,10 +59,13 @@ export default function MaintenancePage() {
             setShowModal(false);
         } catch {
             addToast('error', 'Gagal menjadwalkan maintenance');
+        } finally {
+            setSaving(false);
         }
     };
 
     const updateStatus = async (id: string, status: string) => {
+        setUpdatingId(id);
         try {
             const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'maintenances', action: 'update', data: { id, updates: { status, completedDate: new Date().toISOString().split('T')[0] } } }) });
             const d = await res.json();
@@ -71,6 +77,8 @@ export default function MaintenancePage() {
             addToast('success', `Status maintenance diubah ke ${MAINTENANCE_STATUS_MAP[status]?.label}`);
         } catch {
             addToast('error', 'Gagal memperbarui maintenance');
+        } finally {
+            setUpdatingId(current => current === id ? null : current);
         }
     };
 
@@ -93,7 +101,7 @@ export default function MaintenancePage() {
                                             <td>{m.scheduleType === 'DATE' ? formatDate(m.plannedDate) : `${(m.plannedOdometer || 0).toLocaleString()} km`}</td>
                                             <td><span className={`badge badge-${MAINTENANCE_STATUS_MAP[m.status]?.color}`}><span className="badge-dot" /> {MAINTENANCE_STATUS_MAP[m.status]?.label}</span></td>
                                             <td><div className="table-actions">
-                                                {m.status === 'SCHEDULED' && <><button className="table-action-btn" onClick={() => updateStatus(m._id, 'DONE')}>Selesai</button><button className="table-action-btn" onClick={() => updateStatus(m._id, 'SKIPPED')}>Lewati</button></>}
+                                                {m.status === 'SCHEDULED' && <><button className="table-action-btn" onClick={() => updateStatus(m._id, 'DONE')} disabled={updatingId === m._id}>{updatingId === m._id ? 'Menyimpan...' : 'Selesai'}</button><button className="table-action-btn" onClick={() => updateStatus(m._id, 'SKIPPED')} disabled={updatingId === m._id}>{updatingId === m._id ? 'Menyimpan...' : 'Lewati'}</button></>}
                                             </div></td>
                                         </tr>
                                     ))}
@@ -104,7 +112,7 @@ export default function MaintenancePage() {
             {showModal && (
                 <div className="modal-overlay" onClick={() => setShowModal(false)}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header"><h3 className="modal-title">Jadwalkan Maintenance</h3><button className="modal-close" onClick={() => setShowModal(false)}><X size={20} /></button></div>
+                        <div className="modal-header"><h3 className="modal-title">Jadwalkan Maintenance</h3><button className="modal-close" onClick={() => setShowModal(false)} disabled={saving}><X size={20} /></button></div>
                         <div className="modal-body">
                             <div className="form-group"><label className="form-label">Kendaraan <span className="required">*</span></label>
                                 <select className="form-select" value={form.vehicleRef} onChange={e => setForm({ ...form, vehicleRef: e.target.value })}><option value="">Pilih</option>{vehicles.map(v => <option key={v._id} value={v._id}>{v.plateNumber} - {v.brandModel}</option>)}</select></div>
@@ -120,7 +128,7 @@ export default function MaintenancePage() {
                                 <div className="form-group"><label className="form-label">Odometer (km)</label><input type="number" className="form-input" value={form.plannedOdometer || ''} onChange={e => setForm({ ...form, plannedOdometer: Number(e.target.value) })} /></div>}
                             <div className="form-group"><label className="form-label">Catatan</label><textarea className="form-textarea" rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
                         </div>
-                        <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowModal(false)}>Batal</button><button className="btn btn-primary" onClick={handleSave}><Save size={16} /> Simpan</button></div>
+                        <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowModal(false)} disabled={saving}>Batal</button><button className="btn btn-primary" onClick={handleSave} disabled={saving}><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}</button></div>
                     </div>
                 </div>
             )}

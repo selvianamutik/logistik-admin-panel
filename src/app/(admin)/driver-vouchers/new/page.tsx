@@ -199,10 +199,15 @@ export default function NewDriverVoucherPage() {
                         </div>
                         <div className="form-group">
                             <label className="form-label">Kendaraan</label>
-                            <select className="form-select" value={form.vehicleRef} onChange={e => setForm({ ...form, vehicleRef: e.target.value })}>
+                            <select className="form-select" value={form.vehicleRef} onChange={e => setForm({ ...form, vehicleRef: e.target.value })} disabled={Boolean(form.deliveryOrderRef)}>
                                 <option value="">-- Opsional --</option>
                                 {vehicles.map(vehicle => <option key={vehicle._id} value={vehicle._id}>{vehicle.plateNumber} - {vehicle.brandModel}</option>)}
                             </select>
+                            {form.deliveryOrderRef && (
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                    Kendaraan mengikuti DO terpilih. Hapus pilihan DO dulu jika ingin mengganti kendaraan manual.
+                                </div>
+                            )}
                         </div>
                     </div>
                     <div className="form-row">

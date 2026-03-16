@@ -129,7 +129,11 @@ export default function BankAccountsPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [showTransfer, setShowTransfer] = useState(false);
+  const [savingAccount, setSavingAccount] = useState(false);
   const [transferring, setTransferring] = useState(false);
+  const [deletingAccountId, setDeletingAccountId] = useState<string | null>(
+    null,
+  );
   const [editAccount, setEditAccount] = useState<BankAccount | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -261,6 +265,7 @@ export default function BankAccountsPage() {
         }
       : { entity: "bank-accounts", data: { ...form, active: true } };
 
+    setSavingAccount(true);
     try {
       const res = await fetch("/api/data", {
         method: "POST",
@@ -290,10 +295,13 @@ export default function BankAccountsPage() {
         "error",
         editAccount ? "Gagal memperbarui rekening" : "Gagal menambahkan rekening",
       );
+    } finally {
+      setSavingAccount(false);
     }
   };
 
   const handleDelete = async (id: string) => {
+    setDeletingAccountId(id);
     try {
       const res = await fetch("/api/data", {
         method: "POST",
@@ -315,6 +323,8 @@ export default function BankAccountsPage() {
       await refreshAccounts();
     } catch {
       addToast("error", "Gagal menonaktifkan rekening");
+    } finally {
+      setDeletingAccountId((current) => (current === id ? null : current));
     }
   };
 
@@ -831,11 +841,16 @@ export default function BankAccountsPage() {
               <button
                 className="btn btn-secondary"
                 onClick={() => setShowModal(false)}
+                disabled={savingAccount}
               >
                 Batal
               </button>
-              <button className="btn btn-primary" onClick={handleSave}>
-                Simpan
+              <button
+                className="btn btn-primary"
+                onClick={handleSave}
+                disabled={savingAccount}
+              >
+                {savingAccount ? "Menyimpan..." : "Simpan"}
               </button>
             </div>
           </div>
@@ -953,11 +968,11 @@ export default function BankAccountsPage() {
               </div>
             </div>
             <div className="modal-footer">
-              <button
-                className="btn btn-secondary"
-                onClick={() => setShowTransfer(false)}
-                disabled={transferring}
-              >
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setShowTransfer(false)}
+                  disabled={transferring}
+                >
                 Batal
               </button>
               <button className="btn btn-primary" onClick={handleTransfer} disabled={transferring}>
@@ -984,20 +999,22 @@ export default function BankAccountsPage() {
               </p>
             </div>
             <div className="modal-footer">
-              <button
-                className="btn btn-secondary"
-                onClick={() => setDeleteConfirm(null)}
-              >
-                Batal
-              </button>
-              <button
-                className="btn btn-danger"
-                onClick={() => handleDelete(deleteConfirm)}
-              >
-                Hapus
-              </button>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setDeleteConfirm(null)}
+                  disabled={deletingAccountId === deleteConfirm}
+                >
+                  Batal
+                </button>
+                <button
+                  className="btn btn-danger"
+                  onClick={() => handleDelete(deleteConfirm)}
+                  disabled={deletingAccountId === deleteConfirm}
+                >
+                  {deletingAccountId === deleteConfirm ? "Menghapus..." : "Hapus"}
+                </button>
+              </div>
             </div>
-          </div>
         </div>
       )}
     </div>

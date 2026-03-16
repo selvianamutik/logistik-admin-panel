@@ -18,6 +18,9 @@ export default function DriversPage() {
     const [showAccessModal, setShowAccessModal] = useState(false);
     const [editId, setEditId] = useState<string | null>(null);
     const [accessDriver, setAccessDriver] = useState<Driver | null>(null);
+    const [savingDriver, setSavingDriver] = useState(false);
+    const [savingAccess, setSavingAccess] = useState(false);
+    const [togglingDriverId, setTogglingDriverId] = useState<string | null>(null);
     const [form, setForm] = useState({ name: '', phone: '', licenseNumber: '', ktpNumber: '', simExpiry: '', address: '', active: true });
     const [accountForm, setAccountForm] = useState({ accountId: '', name: '', email: '', password: '', active: true });
 
@@ -58,6 +61,7 @@ export default function DriversPage() {
 
     const handleSave = async () => {
         if (!form.name || !form.phone) { addToast('error', 'Nama dan no. HP wajib diisi'); return; }
+        setSavingDriver(true);
         try {
             const res = await fetch('/api/data', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -80,11 +84,14 @@ export default function DriversPage() {
             closeModal();
         } catch {
             addToast('error', 'Gagal menyimpan data supir');
+        } finally {
+            setSavingDriver(false);
         }
     };
 
     const toggleActive = async (driver: Driver) => {
         const currentlyActive = isDriverActive(driver);
+        setTogglingDriverId(driver._id);
         try {
             const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'drivers', action: 'update', data: { id: driver._id, updates: { active: !currentlyActive } } }) });
             const d = await res.json();
@@ -128,6 +135,8 @@ export default function DriversPage() {
             }
         } catch {
             addToast('error', 'Gagal memperbarui status supir');
+        } finally {
+            setTogglingDriverId(current => current === driver._id ? null : current);
         }
     };
 
@@ -172,6 +181,7 @@ export default function DriversPage() {
             return;
         }
 
+        setSavingAccess(true);
         try {
             const res = await fetch('/api/driver/accounts', {
                 method: 'POST',
@@ -206,6 +216,8 @@ export default function DriversPage() {
             closeAccessModal();
         } catch {
             addToast('error', 'Gagal menyimpan akses mobile driver');
+        } finally {
+            setSavingAccess(false);
         }
     };
 
@@ -262,11 +274,11 @@ export default function DriversPage() {
                                                         className="btn btn-ghost btn-sm"
                                                         onClick={() => openAccessModal(d)}
                                                         title={isDriverActive(d) ? 'Atur akses mobile' : 'Aktifkan supir dulu untuk mengatur akses mobile'}
-                                                        disabled={!isDriverActive(d)}
+                                                        disabled={!isDriverActive(d) || togglingDriverId === d._id}
                                                     >
                                                         <Smartphone size={14} />
                                                     </button>
-                                                    <button className="btn btn-ghost btn-sm" onClick={() => toggleActive(d)} title={isDriverActive(d) ? 'Nonaktifkan' : 'Aktifkan'}>
+                                                    <button className="btn btn-ghost btn-sm" onClick={() => toggleActive(d)} title={isDriverActive(d) ? 'Nonaktifkan' : 'Aktifkan'} disabled={togglingDriverId === d._id}>
                                                         {isDriverActive(d) ? <ToggleRight size={14} className="text-green" /> : <ToggleLeft size={14} />}
                                                     </button>
                                                 </div>
@@ -299,7 +311,7 @@ export default function DriversPage() {
                             </div>
                             <div className="form-group"><label className="form-label">Alamat</label><textarea className="form-textarea" rows={2} value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} /></div>
                         </div>
-                        <div className="modal-footer"><button className="btn btn-secondary" onClick={closeModal}>Batal</button><button className="btn btn-primary" onClick={handleSave}><Save size={16} /> Simpan</button></div>
+                        <div className="modal-footer"><button className="btn btn-secondary" onClick={closeModal} disabled={savingDriver}>Batal</button><button className="btn btn-primary" onClick={handleSave} disabled={savingDriver}><Save size={16} /> {savingDriver ? 'Menyimpan...' : 'Simpan'}</button></div>
                     </div>
                 </div>
             )}
@@ -335,8 +347,8 @@ export default function DriversPage() {
                             </label>
                         </div>
                         <div className="modal-footer">
-                            <button className="btn btn-secondary" onClick={closeAccessModal}>Batal</button>
-                            <button className="btn btn-primary" onClick={saveDriverAccess}><Save size={16} /> Simpan Akses</button>
+                            <button className="btn btn-secondary" onClick={closeAccessModal} disabled={savingAccess}>Batal</button>
+                            <button className="btn btn-primary" onClick={saveDriverAccess} disabled={savingAccess}><Save size={16} /> {savingAccess ? 'Menyimpan...' : 'Simpan Akses'}</button>
                         </div>
                     </div>
                 </div>
