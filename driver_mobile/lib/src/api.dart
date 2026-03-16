@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -8,6 +9,7 @@ const String apiBaseUrl = String.fromEnvironment(
   'API_BASE_URL',
   defaultValue: 'https://app-ten-gamma-49.vercel.app',
 );
+const Duration _requestTimeout = Duration(seconds: 20);
 
 class ApiException implements Exception {
   ApiException(this.message, {this.statusCode});
@@ -28,40 +30,55 @@ class DriverApi {
     String? token,
     Map<String, dynamic>? body,
   }) async {
-    final headers = <String, String>{
-      'Content-Type': 'application/json',
-    };
-    if (token != null && token.isNotEmpty) {
-      headers['Authorization'] = 'Bearer $token';
-    }
+    try {
+      final headers = <String, String>{
+        'Content-Type': 'application/json',
+      };
+      if (token != null && token.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $token';
+      }
 
-    final request = http.Request(method, _uri(path));
-    request.headers.addAll(headers);
-    if (body != null) {
-      request.body = jsonEncode(body);
-    }
+      final request = http.Request(method, _uri(path));
+      request.headers.addAll(headers);
+      if (body != null) {
+        request.body = jsonEncode(body);
+      }
 
-    final streamed = await request.send();
-    final response = await http.Response.fromStream(streamed);
-    final payload = _decodeJson(response.body);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final streamed = await request.send().timeout(_requestTimeout);
+      final response = await http.Response.fromStream(streamed);
+      final payload = _decodeJson(response.body);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw ApiException(
+          payload['error']?.toString() ??
+              'Request gagal (${response.statusCode})',
+          statusCode: response.statusCode,
+        );
+      }
+      return payload;
+    } on TimeoutException {
       throw ApiException(
-        payload['error']?.toString() ?? 'Request gagal (${response.statusCode})',
-        statusCode: response.statusCode,
+        'Koneksi ke server terlalu lama. Periksa internet lalu coba lagi.',
+      );
+    } on http.ClientException {
+      throw ApiException(
+        'Gagal terhubung ke server. Periksa internet lalu coba lagi.',
       );
     }
-    return payload;
   }
 
   static Map<String, dynamic> _decodeJson(String raw) {
     if (raw.trim().isEmpty) {
       return <String, dynamic>{};
     }
-    final dynamic decoded = jsonDecode(raw);
-    if (decoded is Map<String, dynamic>) {
-      return decoded;
+    try {
+      final dynamic decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) {
+        return decoded;
+      }
+      return <String, dynamic>{};
+    } on FormatException {
+      throw ApiException('Respons server tidak valid.');
     }
-    return <String, dynamic>{};
   }
 
   static Future<DriverLoginPayload> loginDriver(

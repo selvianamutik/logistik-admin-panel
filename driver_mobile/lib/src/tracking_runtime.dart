@@ -10,6 +10,7 @@ class DriverTrackingRuntime {
   DriverTrackingRuntime._();
 
   static final DriverTrackingRuntime instance = DriverTrackingRuntime._();
+  static const Duration _currentLocationTimeout = Duration(seconds: 20);
 
   StreamSubscription<Position>? _positionSubscription;
   String? _activeOrderId;
@@ -60,24 +61,31 @@ class DriverTrackingRuntime {
       permission = await Geolocator.requestPermission();
     }
 
-    final canTrackInBackground =
-        permission == LocationPermission.always ||
-        (defaultTargetPlatform != TargetPlatform.android &&
-            permission == LocationPermission.whileInUse);
+    final requiresAlwaysPermission =
+        defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
 
-    if (!canTrackInBackground) {
-      throw Exception(
-        'Izin lokasi background wajib diaktifkan agar tracking tetap berjalan saat layar mati.',
-      );
+    if (requiresAlwaysPermission && permission != LocationPermission.always) {
+      final message = defaultTargetPlatform == TargetPlatform.iOS
+          ? 'Di iPhone, ubah izin lokasi ke "Always" agar tracking bisa tetap berjalan saat aplikasi di-background.'
+          : 'Izin lokasi background wajib diaktifkan agar tracking tetap berjalan saat layar mati.';
+      throw Exception(message);
     }
   }
 
-  Future<Position> getCurrentLocation() {
-    return Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.bestForNavigation,
-      ),
-    );
+  Future<Position> getCurrentLocation() async {
+    try {
+      return await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.bestForNavigation,
+          timeLimit: _currentLocationTimeout,
+        ),
+      );
+    } on TimeoutException {
+      throw Exception(
+        'GPS terlalu lama merespons. Pindah ke area lebih terbuka lalu coba lagi.',
+      );
+    }
   }
 
   Future<void> startHeartbeatStream({
@@ -133,7 +141,9 @@ class DriverTrackingRuntime {
       },
       onError: (Object error, StackTrace stackTrace) {
         debugPrint('Tracking runtime error: $error');
+        unawaited(_markStreamInterrupted());
       },
+      onDone: () => unawaited(_markStreamInterrupted()),
       cancelOnError: false,
     );
   }
@@ -159,6 +169,12 @@ class DriverTrackingRuntime {
     _positionSubscription = null;
     _activeOrderId = null;
     await DriverStorage.clearActiveTrackingOrderRef();
+    _notify();
+  }
+
+  Future<void> _markStreamInterrupted() async {
+    await _positionSubscription?.cancel();
+    _positionSubscription = null;
     _notify();
   }
 

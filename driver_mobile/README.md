@@ -132,7 +132,7 @@ Catatan:
 ## Catatan penting
 
 - Android tetap platform operasional utama untuk tracking background paling stabil.
-- iOS bisa diinstall, tetapi background location di iPhone tetap lebih ketat.
+- iOS bisa diinstall, tetapi background location di iPhone tetap lebih ketat dan harus memakai izin lokasi `Always`.
 - tracking tetap bergantung pada izin lokasi, GPS aktif, dan internet aktif.
 - token driver disimpan lokal agar runtime tracking bisa melanjutkan heartbeat.
 - pada toolchain Windows lokal ini, `build appbundle` masih bisa mengeluarkan warning strip symbol dari Android toolchain, tetapi file `.aab` tetap berhasil dibuat

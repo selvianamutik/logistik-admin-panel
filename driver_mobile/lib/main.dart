@@ -105,18 +105,28 @@ class _DriverHomePageState extends State<DriverHomePage>
   }
 
   Future<void> _bootstrap() async {
-    final storedToken = await DriverStorage.getAuthToken();
-    if (storedToken == null || storedToken.isEmpty) {
+    try {
+      final storedToken = await DriverStorage.getAuthToken();
+      if (storedToken == null || storedToken.isEmpty) {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _booting = false;
+        });
+        return;
+      }
+
+      await _hydrateDriverApp(storedToken, boot: true);
+    } catch (_) {
       if (!mounted) {
         return;
       }
       setState(() {
         _booting = false;
+        _error = 'Gagal memuat sesi lokal. Silakan login ulang.';
       });
-      return;
     }
-
-    await _hydrateDriverApp(storedToken, boot: true);
   }
 
   Future<void> _hydrateDriverApp(String token, {bool boot = false}) async {
@@ -277,6 +287,10 @@ class _DriverHomePageState extends State<DriverHomePage>
             : 'Tracking background aktif. Driver tidak bisa menghentikannya sendiri sebelum admin menyelesaikan DO.',
       );
     } catch (error) {
+      if (error is ApiException &&
+          (error.statusCode == 401 || error.statusCode == 403)) {
+        await _forceLogoutWithMessage(error.message);
+      }
       _showSnackBar(error.toString());
     } finally {
       if (mounted) {
@@ -303,7 +317,7 @@ class _DriverHomePageState extends State<DriverHomePage>
   }
 
   Future<void> _handleLogout() async {
-    final lockedOrder = _lockedTrackingOrder;
+    final lockedOrder = _lockedTrackingOrder ?? _findOrderById(_trackingRuntime.activeOrderId);
     if (lockedOrder != null) {
       await showDialog<void>(
         context: context,
@@ -325,6 +339,13 @@ class _DriverHomePageState extends State<DriverHomePage>
       return;
     }
 
+    if (_trackingRuntime.isRunning) {
+      _showSnackBar(
+        'Runtime tracking lokal masih aktif. Refresh dulu dan pastikan admin sudah menutup DO sebelum logout.',
+      );
+      return;
+    }
+
     await _trackingRuntime.stopLocalOnly();
     await DriverStorage.clearAuthToken();
     if (!mounted) {
@@ -339,6 +360,23 @@ class _DriverHomePageState extends State<DriverHomePage>
       _orders = const <DeliveryOrder>[];
       _trackingRuntimeHealthy = true;
       _error = null;
+    });
+  }
+
+  Future<void> _forceLogoutWithMessage(String message) async {
+    await DriverStorage.clearAuthToken();
+    await _trackingRuntime.stopLocalOnly();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _token = null;
+      _user = null;
+      _driver = null;
+      _company = null;
+      _orders = const <DeliveryOrder>[];
+      _trackingRuntimeHealthy = true;
+      _error = message;
     });
   }
 
@@ -430,7 +468,7 @@ class _DriverHomePageState extends State<DriverHomePage>
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Login dengan akun mobile driver yang dibuat oleh admin. Aplikasi ini dipakai untuk tracking background Android dan iOS.',
+                        'Login dengan akun mobile driver yang dibuat oleh admin. Android paling stabil untuk tracking background; iOS tetap lebih ketat dan bisa berhenti bila izin atau sistem membatasi lokasi.',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                               color: const Color(0xFF475569),
                               height: 1.45,
@@ -638,7 +676,7 @@ class _DriverHomePageState extends State<DriverHomePage>
             ),
             const SizedBox(height: 10),
             const Text(
-              'Saat tracking aktif, aplikasi akan menjalankan service lokasi dan mengirim heartbeat ke dashboard admin. Driver tidak boleh mematikan tracking sendiri sebelum admin benar-benar menutup DO.',
+              'Saat tracking aktif, aplikasi akan menjalankan service lokasi dan mengirim heartbeat ke dashboard admin. Driver tidak boleh mematikan tracking sendiri sebelum admin benar-benar menutup DO. Android paling stabil; di iPhone pastikan izin lokasi Always aktif dan aplikasi tidak di-force close.',
               style: TextStyle(
                 color: Color(0xFFDBEAFE),
                 height: 1.45,
@@ -756,6 +794,7 @@ class _DriverHomePageState extends State<DriverHomePage>
             ),
             const SizedBox(height: 14),
             _buildMetaRow('Customer', order.customerName ?? '-'),
+            _buildMetaRow('Status DO', _formatDeliveryOrderStatus(order.status)),
             _buildMetaRow('Tujuan', order.receiverAddress ?? '-'),
             _buildMetaRow('Kendaraan', order.vehiclePlate ?? '-'),
             _buildMetaRow('Last seen', _formatDateTime(order.trackingLastSeenAt)),
@@ -936,6 +975,23 @@ class _DriverHomePageState extends State<DriverHomePage>
     }
   }
 
+  String _formatDeliveryOrderStatus(DeliveryOrderStatus status) {
+    switch (status) {
+      case DeliveryOrderStatus.headingToPickup:
+        return 'Menuju Pickup';
+      case DeliveryOrderStatus.onDelivery:
+        return 'Dalam Pengiriman';
+      case DeliveryOrderStatus.arrived:
+        return 'Sudah Tiba';
+      case DeliveryOrderStatus.delivered:
+        return 'Selesai';
+      case DeliveryOrderStatus.cancelled:
+        return 'Dibatalkan';
+      case DeliveryOrderStatus.created:
+        return 'Siap Berangkat';
+    }
+  }
+
   DeliveryOrder? _firstWhere(
     List<DeliveryOrder> orders,
     bool Function(DeliveryOrder) test,
@@ -946,5 +1002,12 @@ class _DriverHomePageState extends State<DriverHomePage>
       }
     }
     return null;
+  }
+
+  DeliveryOrder? _findOrderById(String? orderId) {
+    if (orderId == null || orderId.isEmpty) {
+      return null;
+    }
+    return _firstWhere(_orders, (order) => order.id == orderId);
   }
 }

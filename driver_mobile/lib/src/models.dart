@@ -98,7 +98,14 @@ class DriverLoginPayload extends DriverSessionPayload {
   final int expiresIn;
 }
 
-enum DeliveryOrderStatus { created, onDelivery, delivered, cancelled }
+enum DeliveryOrderStatus {
+  created,
+  headingToPickup,
+  onDelivery,
+  arrived,
+  delivered,
+  cancelled,
+}
 
 enum TrackingState { idle, active, paused, stopped }
 
@@ -169,8 +176,12 @@ class DeliveryOrder {
 
   static DeliveryOrderStatus _parseDoStatus(String? raw) {
     switch (raw) {
+      case 'HEADING_TO_PICKUP':
+        return DeliveryOrderStatus.headingToPickup;
       case 'ON_DELIVERY':
         return DeliveryOrderStatus.onDelivery;
+      case 'ARRIVED':
+        return DeliveryOrderStatus.arrived;
       case 'DELIVERED':
         return DeliveryOrderStatus.delivered;
       case 'CANCELLED':
