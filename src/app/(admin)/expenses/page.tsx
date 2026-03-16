@@ -253,22 +253,22 @@ export default function ExpensesPage() {
 
 
             {showModal && (
-                <div className="modal-overlay" onClick={() => setShowModal(false)}>
+                <div className="modal-overlay" onClick={() => { if (!saving) setShowModal(false); }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header"><h3 className="modal-title">Tambah Pengeluaran</h3><button className="modal-close" onClick={() => setShowModal(false)}><X size={20} /></button></div>
+                        <div className="modal-header"><h3 className="modal-title">Tambah Pengeluaran</h3><button className="modal-close" onClick={() => setShowModal(false)} disabled={saving}><X size={20} /></button></div>
                         <div className="modal-body">
                             <div className="form-group"><label className="form-label">Kategori <span className="required">*</span></label>
-                                <select className="form-select" value={form.categoryRef} onChange={e => setForm({ ...form, categoryRef: e.target.value })}>
+                                <select className="form-select" value={form.categoryRef} onChange={e => setForm({ ...form, categoryRef: e.target.value })} disabled={saving}>
                                     <option value="">Pilih kategori</option>{categories.filter(c => c.active !== false).map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
                                 </select>
                             </div>
                             <div className="form-row">
-                                <div className="form-group"><label className="form-label">Tanggal</label><input type="date" className="form-input" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
-                                <div className="form-group"><label className="form-label">Nominal <span className="required">*</span></label><input type="number" className="form-input" value={form.amount || ''} onChange={e => setForm({ ...form, amount: Number(e.target.value) })} /></div>
+                                <div className="form-group"><label className="form-label">Tanggal</label><input type="date" className="form-input" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} disabled={saving} /></div>
+                                <div className="form-group"><label className="form-label">Nominal <span className="required">*</span></label><input type="number" className="form-input" value={form.amount || ''} onChange={e => setForm({ ...form, amount: Number(e.target.value) })} disabled={saving} /></div>
                             </div>
-                            <div className="form-group"><label className="form-label">Catatan/Deskripsi</label><textarea className="form-textarea" rows={2} value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} /></div>
+                            <div className="form-group"><label className="form-label">Catatan/Deskripsi</label><textarea className="form-textarea" rows={2} value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} disabled={saving} /></div>
                             <div className="form-group"><label className="form-label">Kendaraan Terkait</label>
-                                <select className="form-select" value={form.relatedVehicleRef} onChange={e => setForm({ ...form, relatedVehicleRef: e.target.value })}>
+                                <select className="form-select" value={form.relatedVehicleRef} onChange={e => setForm({ ...form, relatedVehicleRef: e.target.value })} disabled={saving}>
                                     <option value="">-- Tidak terkait kendaraan tertentu --</option>
                                     {vehicles.map(vehicle => <option key={vehicle._id} value={vehicle._id}>{vehicle.plateNumber} - {vehicle.brandModel}</option>)}
                                 </select>
@@ -277,13 +277,13 @@ export default function ExpensesPage() {
                                 <select className="form-select" value={form.bankAccountRef} onChange={e => {
                                     const acc = bankAccounts.find(account => account._id === e.target.value);
                                     setForm({ ...form, bankAccountRef: e.target.value, bankAccountName: acc?.bankName || '' });
-                                }}>
+                                }} disabled={saving}>
                                     <option value="">-- Tidak dipilih --</option>
                                     {bankAccounts.map(account => <option key={account._id} value={account._id}>{account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''}</option>)}
                                 </select>
                             </div>
                             {isOwner && <div className="form-group"><label className="form-label">Privacy Level</label>
-                                <select className="form-select" value={form.privacyLevel} onChange={e => setForm({ ...form, privacyLevel: e.target.value as 'internal' | 'ownerOnly' })}>
+                                <select className="form-select" value={form.privacyLevel} onChange={e => setForm({ ...form, privacyLevel: e.target.value as 'internal' | 'ownerOnly' })} disabled={saving}>
                                     <option value="internal">Internal</option><option value="ownerOnly">Owner Only</option>
                                 </select>
                             </div>}

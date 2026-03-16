@@ -702,7 +702,7 @@ export default function BankAccountsPage() {
       </div>
 
       {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
+        <div className="modal-overlay" onClick={() => { if (!savingAccount) setShowModal(false); }}>
           <div
             className="modal"
             onClick={(event) => event.stopPropagation()}
@@ -715,6 +715,7 @@ export default function BankAccountsPage() {
               <button
                 className="modal-close"
                 onClick={() => setShowModal(false)}
+                disabled={savingAccount}
               >
                 x
               </button>
@@ -858,7 +859,7 @@ export default function BankAccountsPage() {
       )}
 
       {showTransfer && (
-        <div className="modal-overlay" onClick={() => setShowTransfer(false)}>
+        <div className="modal-overlay" onClick={() => { if (!transferring) setShowTransfer(false); }}>
           <div
             className="modal"
             onClick={(event) => event.stopPropagation()}

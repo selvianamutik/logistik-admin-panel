@@ -389,17 +389,17 @@ export default function DriverVoucherDetailPage() {
             )}
 
             {showSettleModal && (
-                <div className="modal-overlay" onClick={() => setShowSettleModal(false)}>
+                <div className="modal-overlay" onClick={() => { if (!settling) setShowSettleModal(false); }}>
                     <div className="modal" onClick={event => event.stopPropagation()}>
-                        <div className="modal-header"><h3 className="modal-title">Settlement Bon Supir</h3><button className="modal-close" onClick={() => setShowSettleModal(false)}><X size={20} /></button></div>
+                        <div className="modal-header"><h3 className="modal-title">Settlement Bon Supir</h3><button className="modal-close" onClick={() => setShowSettleModal(false)} disabled={settling}><X size={20} /></button></div>
                         <div className="modal-body">
                             <div className="form-group">
                                 <label className="form-label">Tanggal Settlement</label>
-                                <input type="date" className="form-input" value={settlementDate} onChange={event => setSettlementDate(event.target.value)} />
+                                <input type="date" className="form-input" value={settlementDate} onChange={event => setSettlementDate(event.target.value)} disabled={settling} />
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Rekening / Kas Settlement {balance !== 0 ? <span className="required">*</span> : null}</label>
-                                <select className="form-select" value={settlementBankRef} onChange={event => setSettlementBankRef(event.target.value)}>
+                                <select className="form-select" value={settlementBankRef} onChange={event => setSettlementBankRef(event.target.value)} disabled={settling}>
                                     <option value="">Pilih rekening atau kas</option>
                                     {bankAccounts.map(account => <option key={account._id} value={account._id}>{account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''}</option>)}
                                 </select>
@@ -411,7 +411,7 @@ export default function DriverVoucherDetailPage() {
                             </div>
                         </div>
                         <div className="modal-footer">
-                            <button className="btn btn-secondary" onClick={() => setShowSettleModal(false)}>Batal</button>
+                            <button className="btn btn-secondary" onClick={() => setShowSettleModal(false)} disabled={settling}>Batal</button>
                             <button className="btn btn-primary" onClick={handleSettle} disabled={settling}><CheckCircle size={16} /> {settling ? 'Memproses...' : 'Selesaikan Bon'}</button>
                         </div>
                     </div>

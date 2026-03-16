@@ -316,7 +316,7 @@ export default function NotaDetailPage() {
             </div>
             {/* Pay Modal */}
             {showPayModal && (
-                <div className="modal-overlay" onClick={() => setShowPayModal(false)}>
+                <div className="modal-overlay" onClick={() => { if (!paying) setShowPayModal(false); }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header"><h3 className="modal-title">Tambah Pembayaran</h3><button className="modal-close" onClick={() => setShowPayModal(false)} disabled={paying}>&times;</button></div>
                         <div className="modal-body">

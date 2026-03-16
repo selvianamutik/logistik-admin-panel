@@ -18,6 +18,7 @@ export default function OrdersPage() {
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [deleteId, setDeleteId] = useState<string | null>(null);
+    const [deletingId, setDeletingId] = useState<string | null>(null);
 
     useEffect(() => {
         const loadOrders = async () => {
@@ -48,6 +49,7 @@ export default function OrdersPage() {
     });
 
     const handleDelete = async (id: string) => {
+        setDeletingId(id);
         try {
             const res = await fetch('/api/data', {
                 method: 'POST',
@@ -66,6 +68,8 @@ export default function OrdersPage() {
         } catch {
             addToast('error', 'Gagal menghapus order');
             setDeleteId(null);
+        } finally {
+            setDeletingId(current => current === id ? null : current);
         }
     };
 
@@ -202,11 +206,11 @@ export default function OrdersPage() {
 
             {/* Delete Confirmation Dialog */}
             {deleteId && (
-                <div className="modal-overlay" onClick={() => setDeleteId(null)}>
+                <div className="modal-overlay" onClick={() => { if (deletingId !== deleteId) setDeleteId(null); }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
                             <h3 className="modal-title">Konfirmasi Hapus</h3>
-                            <button className="modal-close" onClick={() => setDeleteId(null)}>
+                            <button className="modal-close" onClick={() => setDeleteId(null)} disabled={deletingId === deleteId}>
                                 <span>&times;</span>
                             </button>
                         </div>
@@ -214,9 +218,9 @@ export default function OrdersPage() {
                             <p>Apakah Anda yakin ingin menghapus order ini? Tindakan ini tidak dapat dibatalkan.</p>
                         </div>
                         <div className="modal-footer">
-                            <button className="btn btn-secondary" onClick={() => setDeleteId(null)}>Batal</button>
-                            <button className="btn btn-danger" onClick={() => handleDelete(deleteId)}>
-                                <Trash2 size={16} /> Hapus
+                            <button className="btn btn-secondary" onClick={() => setDeleteId(null)} disabled={deletingId === deleteId}>Batal</button>
+                            <button className="btn btn-danger" onClick={() => handleDelete(deleteId)} disabled={deletingId === deleteId}>
+                                <Trash2 size={16} /> {deletingId === deleteId ? 'Menghapus...' : 'Hapus'}
                             </button>
                         </div>
                     </div>

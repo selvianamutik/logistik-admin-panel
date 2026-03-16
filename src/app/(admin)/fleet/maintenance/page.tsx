@@ -110,23 +110,23 @@ export default function MaintenancePage() {
                 </div>
             </div>
             {showModal && (
-                <div className="modal-overlay" onClick={() => setShowModal(false)}>
+                <div className="modal-overlay" onClick={() => { if (!saving) setShowModal(false); }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header"><h3 className="modal-title">Jadwalkan Maintenance</h3><button className="modal-close" onClick={() => setShowModal(false)} disabled={saving}><X size={20} /></button></div>
                         <div className="modal-body">
                             <div className="form-group"><label className="form-label">Kendaraan <span className="required">*</span></label>
-                                <select className="form-select" value={form.vehicleRef} onChange={e => setForm({ ...form, vehicleRef: e.target.value })}><option value="">Pilih</option>{vehicles.map(v => <option key={v._id} value={v._id}>{v.plateNumber} - {v.brandModel}</option>)}</select></div>
+                                <select className="form-select" value={form.vehicleRef} onChange={e => setForm({ ...form, vehicleRef: e.target.value })} disabled={saving}><option value="">Pilih</option>{vehicles.map(v => <option key={v._id} value={v._id}>{v.plateNumber} - {v.brandModel}</option>)}</select></div>
                             <div className="form-group"><label className="form-label">Tipe Servis <span className="required">*</span></label>
-                                <select className="form-select" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}>
+                                <select className="form-select" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} disabled={saving}>
                                     <option value="">Pilih</option><option>Servis Berkala</option><option>Ganti Oli</option><option>Ganti Rem</option><option>Ganti Ban</option><option>Spooring</option><option>Lainnya</option>
                                 </select></div>
                             <div className="form-group"><label className="form-label">Jadwal Berdasarkan</label>
-                                <select className="form-select" value={form.scheduleType} onChange={e => setForm({ ...form, scheduleType: e.target.value as 'DATE' | 'ODOMETER' })}>
+                                <select className="form-select" value={form.scheduleType} onChange={e => setForm({ ...form, scheduleType: e.target.value as 'DATE' | 'ODOMETER' })} disabled={saving}>
                                     <option value="DATE">Tanggal</option><option value="ODOMETER">Odometer</option>
                                 </select></div>
-                            {form.scheduleType === 'DATE' ? <div className="form-group"><label className="form-label">Tanggal</label><input type="date" className="form-input" value={form.plannedDate} onChange={e => setForm({ ...form, plannedDate: e.target.value })} /></div> :
-                                <div className="form-group"><label className="form-label">Odometer (km)</label><input type="number" className="form-input" value={form.plannedOdometer || ''} onChange={e => setForm({ ...form, plannedOdometer: Number(e.target.value) })} /></div>}
-                            <div className="form-group"><label className="form-label">Catatan</label><textarea className="form-textarea" rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
+                            {form.scheduleType === 'DATE' ? <div className="form-group"><label className="form-label">Tanggal</label><input type="date" className="form-input" value={form.plannedDate} onChange={e => setForm({ ...form, plannedDate: e.target.value })} disabled={saving} /></div> :
+                                <div className="form-group"><label className="form-label">Odometer (km)</label><input type="number" className="form-input" value={form.plannedOdometer || ''} onChange={e => setForm({ ...form, plannedOdometer: Number(e.target.value) })} disabled={saving} /></div>}
+                            <div className="form-group"><label className="form-label">Catatan</label><textarea className="form-textarea" rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} disabled={saving} /></div>
                         </div>
                         <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowModal(false)} disabled={saving}>Batal</button><button className="btn btn-primary" onClick={handleSave} disabled={saving}><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}</button></div>
                     </div>

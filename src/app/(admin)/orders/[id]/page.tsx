@@ -20,6 +20,7 @@ export default function OrderDetailPage() {
     const [notas, setNotas] = useState<FreightNota[]>([]);
     const [loading, setLoading] = useState(true);
     const [showDOModal, setShowDOModal] = useState(false);
+    const [creatingDO, setCreatingDO] = useState(false);
     // DO form
     const [doDate, setDoDate] = useState(new Date().toISOString().split('T')[0]);
     const [doVehicle, setDoVehicle] = useState('');
@@ -97,6 +98,7 @@ export default function OrderDetailPage() {
             addToast('error', 'Pilih minimal 1 item untuk surat jalan');
             return;
         }
+        setCreatingDO(true);
         try {
             const selVeh = vehicles.find(v => v._id === doVehicle);
             const selDriver = drivers.find(driver => driver._id === doDriver);
@@ -138,6 +140,8 @@ export default function OrderDetailPage() {
             await loadOrderDetail();
         } catch {
             addToast('error', 'Gagal membuat surat jalan');
+        } finally {
+            setCreatingDO(false);
         }
     };
 
@@ -352,21 +356,21 @@ export default function OrderDetailPage() {
 
             {/* Create DO Modal */}
             {showDOModal && (
-                <div className="modal-overlay" onClick={() => setShowDOModal(false)}>
+                <div className="modal-overlay" onClick={() => { if (!creatingDO) setShowDOModal(false); }}>
                     <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
                             <h3 className="modal-title">Buat Surat Jalan</h3>
-                            <button className="modal-close" onClick={() => setShowDOModal(false)}>&times;</button>
+                            <button className="modal-close" onClick={() => setShowDOModal(false)} disabled={creatingDO}>&times;</button>
                         </div>
                         <div className="modal-body">
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Tanggal</label>
-                                    <input type="date" className="form-input" value={doDate} onChange={e => setDoDate(e.target.value)} />
+                                    <input type="date" className="form-input" value={doDate} onChange={e => setDoDate(e.target.value)} disabled={creatingDO} />
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Kendaraan</label>
-                                    <select className="form-select" value={doVehicle} onChange={e => setDoVehicle(e.target.value)}>
+                                    <select className="form-select" value={doVehicle} onChange={e => setDoVehicle(e.target.value)} disabled={creatingDO}>
                                         <option value="">Pilih kendaraan</option>
                                         {vehicles.map(v => <option key={v._id} value={v._id}>{v.plateNumber}</option>)}
                                     </select>
@@ -374,7 +378,7 @@ export default function OrderDetailPage() {
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Supir</label>
-                                <select className="form-select" value={doDriver} onChange={e => setDoDriver(e.target.value)}>
+                                <select className="form-select" value={doDriver} onChange={e => setDoDriver(e.target.value)} disabled={creatingDO}>
                                     <option value="">-- Opsional, pilih supir --</option>
                                     {drivers.map(driver => <option key={driver._id} value={driver._id}>{driver.name}{driver.phone ? ` - ${driver.phone}` : ''}</option>)}
                                 </select>
@@ -384,7 +388,7 @@ export default function OrderDetailPage() {
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Catatan</label>
-                                <textarea className="form-textarea" rows={2} value={doNotes} onChange={e => setDoNotes(e.target.value)} placeholder="Catatan opsional..." />
+                                <textarea className="form-textarea" rows={2} value={doNotes} onChange={e => setDoNotes(e.target.value)} placeholder="Catatan opsional..." disabled={creatingDO} />
                             </div>
                             <div className="form-section-title">Pilih Item untuk DO</div>
                             {availableItems.length === 0 ? (
@@ -400,6 +404,7 @@ export default function OrderDetailPage() {
                                                         <input
                                                             type="checkbox"
                                                             checked={selectedItems.includes(item._id)}
+                                                            disabled={creatingDO}
                                                             onChange={e => {
                                                                 if (e.target.checked) setSelectedItems(prev => [...prev, item._id]);
                                                                 else setSelectedItems(prev => prev.filter(id => id !== item._id));
@@ -418,9 +423,9 @@ export default function OrderDetailPage() {
                             )}
                         </div>
                         <div className="modal-footer">
-                            <button className="btn btn-secondary" onClick={() => setShowDOModal(false)}>Batal</button>
-                            <button className="btn btn-primary" onClick={handleCreateDO} disabled={selectedItems.length === 0}>
-                                <Truck size={16} /> Buat Surat Jalan ({selectedItems.length} item)
+                            <button className="btn btn-secondary" onClick={() => setShowDOModal(false)} disabled={creatingDO}>Batal</button>
+                            <button className="btn btn-primary" onClick={handleCreateDO} disabled={selectedItems.length === 0 || creatingDO}>
+                                <Truck size={16} /> {creatingDO ? 'Membuat Surat Jalan...' : `Buat Surat Jalan (${selectedItems.length} item)`}
                             </button>
                         </div>
                     </div>

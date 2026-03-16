@@ -426,11 +426,11 @@ export default function BoronganDetailPage() {
             </div>
 
             {showPayModal && (
-                <div className="modal-overlay" onClick={() => setShowPayModal(false)}>
+                <div className="modal-overlay" onClick={() => { if (!paying) setShowPayModal(false); }}>
                     <div className="modal" onClick={(e) => e.stopPropagation()}>
                         <div className="modal-header">
                             <h3 className="modal-title">Bayar Upah Borongan</h3>
-                            <button className="modal-close" onClick={() => setShowPayModal(false)}>
+                            <button className="modal-close" onClick={() => setShowPayModal(false)} disabled={paying}>
                                 &times;
                             </button>
                         </div>
@@ -463,12 +463,12 @@ export default function BoronganDetailPage() {
 
                             <div className="form-group">
                                 <label className="form-label">Tanggal Bayar</label>
-                                <input type="date" className="form-input" value={payDate} onChange={(e) => setPayDate(e.target.value)} />
+                                <input type="date" className="form-input" value={payDate} onChange={(e) => setPayDate(e.target.value)} disabled={paying} />
                             </div>
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Metode Pembayaran</label>
-                                    <select className="form-select" value={payMethod} onChange={(e) => setPayMethod(e.target.value)}>
+                                    <select className="form-select" value={payMethod} onChange={(e) => setPayMethod(e.target.value)} disabled={paying}>
                                         <option value="CASH">Tunai</option>
                                         <option value="TRANSFER">Transfer</option>
                                         <option value="OTHER">Lainnya</option>
@@ -478,7 +478,7 @@ export default function BoronganDetailPage() {
                                     <label className="form-label">
                                         Rekening / Kas <span style={{ fontSize: '0.7rem', color: 'var(--color-gray-400)' }}>(opsional, untuk debit)</span>
                                     </label>
-                                    <select className="form-select" value={payBankRef} onChange={(e) => setPayBankRef(e.target.value)}>
+                                    <select className="form-select" value={payBankRef} onChange={(e) => setPayBankRef(e.target.value)} disabled={paying}>
                                         <option value="">{payMethod === 'CASH' ? '-- Otomatis ke Kas Tunai --' : '-- Tanpa Rekening --'}</option>
                                         {bankAccounts.map((account) => (
                                             <option key={account._id} value={account._id}>
@@ -503,11 +503,12 @@ export default function BoronganDetailPage() {
                                     value={payNote}
                                     onChange={(e) => setPayNote(e.target.value)}
                                     placeholder="Opsional..."
+                                    disabled={paying}
                                 />
                             </div>
                         </div>
                         <div className="modal-footer">
-                            <button className="btn btn-secondary" onClick={() => setShowPayModal(false)}>
+                            <button className="btn btn-secondary" onClick={() => setShowPayModal(false)} disabled={paying}>
                                 Batal
                             </button>
                             <button className="btn btn-success" onClick={handleMarkPaid} disabled={paying}>
