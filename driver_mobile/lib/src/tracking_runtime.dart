@@ -11,14 +11,21 @@ class DriverTrackingRuntime {
 
   static final DriverTrackingRuntime instance = DriverTrackingRuntime._();
   static const Duration _currentLocationTimeout = Duration(seconds: 20);
+  static const int _heartbeatFailureThreshold = 3;
 
   StreamSubscription<Position>? _positionSubscription;
   String? _activeOrderId;
   bool _hasHydrated = false;
+  int _consecutiveHeartbeatFailures = 0;
+  String? _lastHeartbeatError;
 
   final ValueNotifier<int> changes = ValueNotifier<int>(0);
 
   String? get activeOrderId => _activeOrderId;
+  String? get lastHeartbeatError => _lastHeartbeatError;
+  int get consecutiveHeartbeatFailures => _consecutiveHeartbeatFailures;
+  bool get hasCriticalHeartbeatFailure =>
+      _consecutiveHeartbeatFailures >= _heartbeatFailureThreshold;
 
   bool get isRunning => _positionSubscription != null && _activeOrderId != null;
 
@@ -96,6 +103,8 @@ class DriverTrackingRuntime {
 
     await DriverStorage.setActiveTrackingOrderRef(orderId);
     _activeOrderId = orderId;
+    _consecutiveHeartbeatFailures = 0;
+    _lastHeartbeatError = null;
     _notify();
 
     final locationSettings = defaultTargetPlatform == TargetPlatform.android
@@ -135,8 +144,10 @@ class DriverTrackingRuntime {
             accuracyM: position.accuracy,
             speedMps: position.speed,
           );
+          _markHeartbeatSuccess();
         } catch (error) {
           debugPrint('Tracking heartbeat failed: $error');
+          _markHeartbeatFailure(error.toString());
         }
       },
       onError: (Object error, StackTrace stackTrace) {
@@ -168,6 +179,8 @@ class DriverTrackingRuntime {
     await _positionSubscription?.cancel();
     _positionSubscription = null;
     _activeOrderId = null;
+    _consecutiveHeartbeatFailures = 0;
+    _lastHeartbeatError = null;
     await DriverStorage.clearActiveTrackingOrderRef();
     _notify();
   }
@@ -175,6 +188,21 @@ class DriverTrackingRuntime {
   Future<void> _markStreamInterrupted() async {
     await _positionSubscription?.cancel();
     _positionSubscription = null;
+    _notify();
+  }
+
+  void _markHeartbeatSuccess() {
+    if (_consecutiveHeartbeatFailures == 0 && _lastHeartbeatError == null) {
+      return;
+    }
+    _consecutiveHeartbeatFailures = 0;
+    _lastHeartbeatError = null;
+    _notify();
+  }
+
+  void _markHeartbeatFailure(String message) {
+    _consecutiveHeartbeatFailures = _consecutiveHeartbeatFailures + 1;
+    _lastHeartbeatError = message;
     _notify();
   }
 

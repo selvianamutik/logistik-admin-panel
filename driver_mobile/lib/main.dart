@@ -63,6 +63,8 @@ class _DriverHomePageState extends State<DriverHomePage>
   bool _trackingRuntimeHealthy = true;
   bool _hasStoredSession = false;
 
+  bool get _isMutating => _actionOrderId != null;
+
   DeliveryOrder? get _activeOrder =>
       _firstWhere(_orders, (order) => order.trackingState == TrackingState.active);
 
@@ -269,7 +271,7 @@ class _DriverHomePageState extends State<DriverHomePage>
     String action,
   ) async {
     final token = _token;
-    if (token == null || token.isEmpty) {
+    if (token == null || token.isEmpty || _isMutating) {
       return;
     }
 
@@ -331,7 +333,7 @@ class _DriverHomePageState extends State<DriverHomePage>
     DeliveryOrderStatus nextStatus,
   ) async {
     final token = _token;
-    if (token == null || token.isEmpty) {
+    if (token == null || token.isEmpty || _isMutating) {
       return;
     }
 
@@ -378,6 +380,10 @@ class _DriverHomePageState extends State<DriverHomePage>
   }
 
   Future<void> _handleLogout() async {
+    if (_isMutating) {
+      _showSnackBar('Tunggu proses yang sedang berjalan selesai dulu.');
+      return;
+    }
     final lockedOrder = _lockedTrackingOrder ?? _findOrderById(_trackingRuntime.activeOrderId);
     if (lockedOrder != null) {
       await showDialog<void>(
@@ -446,6 +452,12 @@ class _DriverHomePageState extends State<DriverHomePage>
   }
 
   Future<void> _clearStoredSessionAndShowLogin() async {
+    if (_trackingRuntime.activeOrderId != null || _trackingRuntime.isRunning) {
+      _showSnackBar(
+        'Tracking lokal masih terikat ke DO. Sambungkan lagi ke server dulu sebelum login ulang.',
+      );
+      return;
+    }
     await DriverStorage.clearAuthToken();
     await _trackingRuntime.stopLocalOnly();
     if (!mounted) {
@@ -472,7 +484,8 @@ class _DriverHomePageState extends State<DriverHomePage>
     if (activeOrder == null) {
       return true;
     }
-    return _trackingRuntime.isRunningFor(activeOrder.id);
+    return _trackingRuntime.isRunningFor(activeOrder.id) &&
+        !_trackingRuntime.hasCriticalHeartbeatFailure;
   }
 
   String? _activeServerOrderId(List<DeliveryOrder> orders) {
@@ -658,6 +671,7 @@ class _DriverHomePageState extends State<DriverHomePage>
                         width: double.infinity,
                         child: FilledButton.icon(
                           onPressed: _refreshing || _persistedToken == null
+                              || _isMutating
                               ? null
                               : () => _hydrateDriverApp(
                                     _persistedToken!,
@@ -681,6 +695,7 @@ class _DriverHomePageState extends State<DriverHomePage>
                         width: double.infinity,
                         child: OutlinedButton(
                           onPressed: _refreshing
+                              || _isMutating
                               ? null
                               : _clearStoredSessionAndShowLogin,
                           child: const Text('Login Ulang'),
@@ -710,7 +725,7 @@ class _DriverHomePageState extends State<DriverHomePage>
         actions: <Widget>[
           IconButton(
             tooltip: 'Refresh',
-            onPressed: _refreshing ? null : _refreshOrders,
+            onPressed: (_refreshing || _isMutating) ? null : _refreshOrders,
             icon: _refreshing
                 ? const SizedBox(
                     height: 18,
@@ -721,7 +736,7 @@ class _DriverHomePageState extends State<DriverHomePage>
           ),
           IconButton(
             tooltip: 'Keluar',
-            onPressed: _handleLogout,
+            onPressed: _isMutating ? null : _handleLogout,
             icon: const Icon(Icons.logout),
           ),
         ],
@@ -852,7 +867,9 @@ class _DriverHomePageState extends State<DriverHomePage>
             if (!_trackingRuntimeHealthy && activeOrder != null) ...<Widget>[
               const SizedBox(height: 12),
               Text(
-                'Server mencatat tracking aktif untuk ${activeOrder.doNumber}, tetapi runtime lokasi di perangkat tidak sedang berjalan. Tekan Pulihkan Tracking agar heartbeat aktif lagi.',
+                _trackingRuntime.isRunningFor(activeOrder.id)
+                    ? 'Tracking lokal masih berjalan, tetapi heartbeat ke server sedang gagal. Periksa internet dan GPS. Error terakhir: ${_trackingRuntime.lastHeartbeatError ?? 'tidak diketahui'}.'
+                    : 'Server mencatat tracking aktif untuk ${activeOrder.doNumber}, tetapi runtime lokasi di perangkat tidak sedang berjalan. Tekan Pulihkan Tracking agar heartbeat aktif lagi.',
                 style: const TextStyle(
                   color: Color(0xFFFEF3C7),
                   fontWeight: FontWeight.w700,
@@ -923,6 +940,7 @@ class _DriverHomePageState extends State<DriverHomePage>
     final showRestore = order.trackingState == TrackingState.active &&
         activeOrder?.id == order.id &&
         !_trackingRuntimeHealthy;
+    final interactionLocked = _isMutating && _actionOrderId != order.id;
     final nextDriverProgress = _nextDriverProgressStatus(order);
 
     return Card(
@@ -977,6 +995,7 @@ class _DriverHomePageState extends State<DriverHomePage>
                   width: double.infinity,
                   child: OutlinedButton.icon(
                     onPressed: busy
+                        || interactionLocked
                         ? null
                         : () => _handleDeliveryProgress(
                               order,
@@ -1002,6 +1021,7 @@ class _DriverHomePageState extends State<DriverHomePage>
                     width: double.infinity,
                     child: FilledButton(
                       onPressed: busy || order.isClosed
+                          || interactionLocked
                           ? null
                           : () => _handleTrackingAction(order, 'resume'),
                       child: busy
@@ -1027,6 +1047,7 @@ class _DriverHomePageState extends State<DriverHomePage>
                 width: double.infinity,
                 child: FilledButton(
                   onPressed: busy || order.isClosed || !canStartNew
+                      || interactionLocked
                       ? null
                       : () => _handleTrackingAction(
                             order,
