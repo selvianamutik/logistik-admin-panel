@@ -29,6 +29,36 @@ class DriverMobileApp extends StatelessWidget {
           primary: const Color(0xFF0F4C81),
         ),
         scaffoldBackgroundColor: const Color(0xFFF4F7FB),
+        cardTheme: CardThemeData(
+          elevation: 0,
+          margin: EdgeInsets.zero,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: Colors.white,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 16,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: const BorderSide(color: Color(0xFFD7E2F0)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: const BorderSide(color: Color(0xFFD7E2F0)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: const BorderSide(
+              color: Color(0xFF0F4C81),
+              width: 1.4,
+            ),
+          ),
+        ),
         useMaterial3: true,
       ),
       home: const DriverHomePage(),
@@ -547,15 +577,26 @@ class _DriverHomePageState extends State<DriverHomePage>
   @override
   Widget build(BuildContext context) {
     if (_booting) {
-      return const Scaffold(
+      return Scaffold(
         body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('Memuat aplikasi driver...'),
-            ],
+          child: Container(
+            margin: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(28),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(28),
+            ),
+            child: const Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text(
+                  'Memuat aplikasi driver...',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -580,88 +621,167 @@ class _DriverHomePageState extends State<DriverHomePage>
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 440),
               child: Card(
-                elevation: 2,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        'LOGISTIK DRIVER',
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                              color: const Color(0xFF0F4C81),
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 1.1,
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.fromLTRB(24, 24, 24, 22),
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: <Color>[
+                            Color(0xFF0F4C81),
+                            Color(0xFF155E75),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white24,
+                              borderRadius: BorderRadius.circular(18),
                             ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Masuk ke APK Driver',
-                        style:
-                            Theme.of(context).textTheme.headlineMedium?.copyWith(
+                            child: const Icon(
+                              Icons.local_shipping_rounded,
+                              color: Colors.white,
+                              size: 26,
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          Text(
+                            'LOGISTIK DRIVER',
+                            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                                  color: const Color(0xFFDCEBFF),
                                   fontWeight: FontWeight.w800,
+                                  letterSpacing: 1.1,
                                 ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Login dengan akun mobile driver yang dibuat oleh admin. Android paling stabil untuk tracking background; iOS tetap lebih ketat dan bisa berhenti bila izin atau sistem membatasi lokasi.',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: const Color(0xFF475569),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Masuk ke APK Driver',
+                            style:
+                                Theme.of(context).textTheme.headlineMedium?.copyWith(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                          ),
+                          const SizedBox(height: 10),
+                          const Text(
+                            'Gunakan akun mobile driver dari admin. Android paling stabil untuk tracking background.',
+                            style: TextStyle(
+                              color: Color(0xFFDCEBFF),
                               height: 1.45,
                             ),
-                      ),
-                      const SizedBox(height: 20),
-                      TextField(
-                        controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
-                        textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(
-                          labelText: 'Email driver',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: _passwordController,
-                        obscureText: true,
-                        onSubmitted: (_) => _submitting ? null : _handleLogin(),
-                        decoration: const InputDecoration(
-                          labelText: 'Password',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      if (_error != null) ...<Widget>[
-                        const SizedBox(height: 12),
-                        Text(
-                          _error!,
-                          style: const TextStyle(
-                            color: Color(0xFFB91C1C),
-                            fontWeight: FontWeight.w600,
                           ),
-                        ),
-                      ],
-                      const SizedBox(height: 20),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          onPressed: _submitting ? null : _handleLogin,
-                          child: _submitting
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.4,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Text('Masuk'),
-                        ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF0F9FF),
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                            child: const Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                Icon(
+                                  Icons.info_outline,
+                                  color: Color(0xFF0F4C81),
+                                  size: 20,
+                                ),
+                                SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    'Pastikan GPS aktif dan internet stabil agar last seen cepat muncul di dashboard admin.',
+                                    style: TextStyle(
+                                      color: Color(0xFF1E3A8A),
+                                      fontWeight: FontWeight.w600,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          TextField(
+                            controller: _emailController,
+                            keyboardType: TextInputType.emailAddress,
+                            textInputAction: TextInputAction.next,
+                            decoration: const InputDecoration(
+                              labelText: 'Email driver',
+                              prefixIcon: Icon(Icons.mail_outline),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _passwordController,
+                            obscureText: true,
+                            onSubmitted: (_) => _submitting ? null : _handleLogin(),
+                            decoration: const InputDecoration(
+                              labelText: 'Password',
+                              prefixIcon: Icon(Icons.lock_outline),
+                            ),
+                          ),
+                          if (_error != null) ...<Widget>[
+                            const SizedBox(height: 14),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFEF2F2),
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: Text(
+                                _error!,
+                                style: const TextStyle(
+                                  color: Color(0xFFB91C1C),
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 20),
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton(
+                              style: FilledButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(18),
+                                ),
+                              ),
+                              onPressed: _submitting ? null : _handleLogin,
+                              child: _submitting
+                                  ? const SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.4,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Text('Masuk'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -680,15 +800,23 @@ class _DriverHomePageState extends State<DriverHomePage>
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 440),
               child: Card(
-                elevation: 2,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(24),
-                ),
                 child: Padding(
                   padding: const EdgeInsets.all(24),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Icon(
+                          Icons.wifi_find_rounded,
+                          color: Color(0xFF0F4C81),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
                       Text(
                         'Sesi tersimpan ditemukan',
                         style:
@@ -709,6 +837,12 @@ class _DriverHomePageState extends State<DriverHomePage>
                       SizedBox(
                         width: double.infinity,
                         child: FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                          ),
                           onPressed: _refreshing || _persistedToken == null
                               || _isMutating
                               ? null
@@ -733,6 +867,12 @@ class _DriverHomePageState extends State<DriverHomePage>
                       SizedBox(
                         width: double.infinity,
                         child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                          ),
                           onPressed: _refreshing
                               || _isMutating
                               ? null
@@ -754,6 +894,9 @@ class _DriverHomePageState extends State<DriverHomePage>
   Widget _buildDashboard() {
     final activeOrder = _activeOrder;
     final lockedOrder = _lockedTrackingOrder;
+    final trackedOrderCount = _orders
+        .where((order) => order.trackingState == TrackingState.active)
+        .length;
     final companyName = _company?.name.isNotEmpty == true
         ? _company!.name
         : 'LOGISTIK';
@@ -789,25 +932,61 @@ class _DriverHomePageState extends State<DriverHomePage>
             const SizedBox(height: 16),
             _buildInfoCard(activeOrder, lockedOrder),
             const SizedBox(height: 16),
-            Row(
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
               children: <Widget>[
-                Expanded(
-                  child: Text(
-                    'DO Aktif Driver',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
-                  ),
+                _buildSummaryPill(
+                  'DO Ditugaskan',
+                  _orders.length.toString(),
+                  const Color(0xFFEFF6FF),
+                  const Color(0xFF0F4C81),
+                ),
+                _buildSummaryPill(
+                  'Tracking Aktif',
+                  trackedOrderCount.toString(),
+                  const Color(0xFFECFDF5),
+                  const Color(0xFF0F766E),
+                ),
+                _buildSummaryPill(
+                  'DO Terkunci',
+                  lockedOrder == null ? 'Tidak' : 'Ya',
+                  const Color(0xFFFFF7ED),
+                  const Color(0xFFC2410C),
                 ),
               ],
             ),
+            const SizedBox(height: 18),
+            Text(
+              'DO Aktif Driver',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Pantau surat jalan, last seen, dan aksi tracking dari satu layar.',
+              style: TextStyle(
+                color: Color(0xFF64748B),
+                height: 1.4,
+              ),
+            ),
             if (_error != null) ...<Widget>[
               const SizedBox(height: 12),
-              Text(
-                _error!,
-                style: const TextStyle(
-                  color: Color(0xFFB91C1C),
-                  fontWeight: FontWeight.w600,
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF2F2),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(
+                  _error!,
+                  style: const TextStyle(
+                    color: Color(0xFFB91C1C),
+                    fontWeight: FontWeight.w700,
+                    height: 1.4,
+                  ),
                 ),
               ),
             ],
@@ -824,54 +1003,68 @@ class _DriverHomePageState extends State<DriverHomePage>
 
   Widget _buildHeaderCard() {
     return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Row(
-          children: <Widget>[
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    (_company?.name ?? 'LOGISTIK').toUpperCase(),
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: const Color(0xFF0F4C81),
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.0,
-                        ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    _driver?.name ?? '-',
-                    style:
-                        Theme.of(context).textTheme.headlineSmall?.copyWith(
-                              fontWeight: FontWeight.w800,
-                            ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    (_driver!.phone.isNotEmpty ? _driver!.phone : _user?.email) ??
-                        '-',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: const Color(0xFF475569),
-                        ),
-                  ),
-                ],
+      clipBehavior: Clip.antiAlias,
+      child: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: <Color>[
+              Color(0xFF0F4C81),
+              Color(0xFF155E75),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(22),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      (_company?.name ?? 'LOGISTIK').toUpperCase(),
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                            color: const Color(0xFFDCEBFF),
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.0,
+                          ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _driver?.name ?? '-',
+                      style:
+                          Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                              ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      (_driver!.phone.isNotEmpty ? _driver!.phone : _user?.email) ??
+                          '-',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: const Color(0xFFDCEBFF),
+                          ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEFF6FF),
-                borderRadius: BorderRadius.circular(18),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Icon(
+                  Icons.local_shipping_rounded,
+                  color: Colors.white,
+                  size: 28,
+                ),
               ),
-              child: const Icon(
-                Icons.local_shipping_rounded,
-                color: Color(0xFF0F4C81),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -879,41 +1072,53 @@ class _DriverHomePageState extends State<DriverHomePage>
 
   Widget _buildInfoCard(DeliveryOrder? activeOrder, DeliveryOrder? lockedOrder) {
     return Card(
-      color: const Color(0xFF0F4C81),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Text(
-              'Tracking background driver',
+              'Status Tracking Driver',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: Colors.white,
                     fontWeight: FontWeight.w800,
                   ),
             ),
             const SizedBox(height: 10),
             const Text(
               'Saat tracking aktif, aplikasi akan menjalankan service lokasi dan mengirim heartbeat ke dashboard admin. Driver juga bisa mengirim progres perjalanan sampai status tiba. Penyelesaian akhir DO tetap dilakukan admin. Android paling stabil; di iPhone pastikan izin lokasi Always aktif dan aplikasi tidak di-force close.',
-              style: TextStyle(
-                color: Color(0xFFDBEAFE),
-                height: 1.45,
-              ),
+              style: TextStyle(color: Color(0xFF475569), height: 1.45),
             ),
             const SizedBox(height: 14),
-            _buildInfoRow('DO terkunci', lockedOrder?.doNumber ?? 'Belum ada'),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: <Widget>[
+                _buildSummaryInfoCard(
+                  'DO terkunci',
+                  lockedOrder?.doNumber ?? 'Belum ada',
+                  Icons.lock_outline,
+                  const Color(0xFFEFF6FF),
+                  const Color(0xFF0F4C81),
+                ),
+                _buildSummaryInfoCard(
+                  'Runtime lokal',
+                  _trackingRuntimeHealthy ? 'Sehat' : 'Perlu dipulihkan',
+                  Icons.radar_outlined,
+                  _trackingRuntimeHealthy
+                      ? const Color(0xFFECFDF5)
+                      : const Color(0xFFFFF7ED),
+                  _trackingRuntimeHealthy
+                      ? const Color(0xFF0F766E)
+                      : const Color(0xFFC2410C),
+                ),
+              ],
+            ),
             if (!_trackingRuntimeHealthy && activeOrder != null) ...<Widget>[
               const SizedBox(height: 12),
-              Text(
+              _buildNotice(
                 _trackingRuntime.isRunningFor(activeOrder.id)
                     ? 'Tracking lokal masih berjalan, tetapi heartbeat ke server sedang gagal. Periksa internet dan GPS. Error terakhir: ${_trackingRuntime.lastHeartbeatError ?? 'tidak diketahui'}.'
                     : 'Server mencatat tracking aktif untuk ${activeOrder.doNumber}, tetapi runtime lokasi di perangkat tidak sedang berjalan. Tekan Pulihkan Tracking agar heartbeat aktif lagi.',
-                style: const TextStyle(
-                  color: Color(0xFFFEF3C7),
-                  fontWeight: FontWeight.w700,
-                  height: 1.4,
-                ),
               ),
             ],
           ],
@@ -922,48 +1127,37 @@ class _DriverHomePageState extends State<DriverHomePage>
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
-    return Row(
-      children: <Widget>[
-        Expanded(
-          child: Text(
-            label,
-            style: const TextStyle(
-              color: Color(0xFFBFDBFE),
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-        Text(
-          value,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildEmptyCard() {
     return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      child: const Padding(
-        padding: EdgeInsets.all(20),
+      child: Padding(
+        padding: const EdgeInsets.all(22),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: const Icon(
+                Icons.assignment_outlined,
+                color: Color(0xFF0F4C81),
+                size: 24,
+              ),
+            ),
+            const SizedBox(height: 14),
+            const Text(
               'Belum ada DO',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w800,
               ),
             ),
-            SizedBox(height: 8),
-            Text(
-              'Belum ada surat jalan yang ditugaskan ke akun driver ini.',
-              style: TextStyle(color: Color(0xFF64748B)),
+            const SizedBox(height: 8),
+            const Text(
+              'Belum ada surat jalan yang ditugaskan ke akun driver ini. Hubungi admin bila seharusnya sudah ada penugasan.',
+              style: TextStyle(color: Color(0xFF64748B), height: 1.45),
             ),
           ],
         ),
@@ -1012,15 +1206,18 @@ class _DriverHomePageState extends State<DriverHomePage>
                     ],
                   ),
                 ),
-                _buildTrackingBadge(order.trackingState),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: <Widget>[
+                    _buildTrackingBadge(order.trackingState),
+                    const SizedBox(height: 8),
+                    _buildDoStatusChip(order.status),
+                  ],
+                ),
               ],
             ),
             const SizedBox(height: 14),
-            _buildMetaRow('Customer', order.customerName ?? '-'),
-            _buildMetaRow('Status DO', _formatDeliveryOrderStatus(order.status)),
-            _buildMetaRow('Tujuan', order.receiverAddress ?? '-'),
-            _buildMetaRow('Kendaraan', order.vehiclePlate ?? '-'),
-            _buildMetaRow('Last seen', _formatDateTime(order.trackingLastSeenAt)),
+            _buildMetaGrid(order),
             if (order.trackingLastLat != null && order.trackingLastLng != null)
               TextButton.icon(
                 onPressed: () => _handleOpenMap(order),
@@ -1029,36 +1226,57 @@ class _DriverHomePageState extends State<DriverHomePage>
               ),
             const SizedBox(height: 8),
             if (order.trackingState == TrackingState.active && !showRestore) ...<Widget>[
-              if (nextDriverProgress != null) ...<Widget>[
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: busy
-                        || interactionLocked
-                        ? null
-                        : () => _handleDeliveryProgress(
-                              order,
-                              nextDriverProgress,
-                            ),
-                    icon: const Icon(Icons.route),
-                    label: Text(
-                      _driverProgressButtonLabel(nextDriverProgress),
+              _buildActionPanel(
+                backgroundColor: const Color(0xFFECFDF5),
+                children: <Widget>[
+                  _buildSectionLabel('Tracking aktif'),
+                  const SizedBox(height: 8),
+                  if (nextDriverProgress != null) ...<Widget>[
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: busy
+                            || interactionLocked
+                            ? null
+                            : () => _handleDeliveryProgress(
+                                  order,
+                                  nextDriverProgress,
+                                ),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        icon: const Icon(Icons.route),
+                        label: Text(
+                          _driverProgressButtonLabel(nextDriverProgress),
+                        ),
+                      ),
                     ),
+                    const SizedBox(height: 10),
+                  ],
+                  _buildNotice(
+                    'Tracking harus tetap aktif sampai admin menyelesaikan DO ini. Driver tidak bisa menjeda atau menghentikannya sendiri.',
                   ),
-                ),
-                const SizedBox(height: 8),
-              ],
-              _buildNotice(
-                'Tracking harus tetap aktif sampai admin menyelesaikan DO ini. Driver tidak bisa menjeda atau menghentikannya sendiri.',
+                ],
               ),
             ]
             else if (order.trackingState == TrackingState.paused)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              _buildActionPanel(
+                backgroundColor: const Color(0xFFFFF7ED),
                 children: <Widget>[
+                  _buildSectionLabel('Tracking perlu dipulihkan'),
+                  const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
                       onPressed: busy || order.isClosed
                           || interactionLocked
                           ? null
@@ -1075,38 +1293,319 @@ class _DriverHomePageState extends State<DriverHomePage>
                           : const Text('Lanjutkan Tracking'),
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
                   _buildNotice(
                     'Status jeda ini hanya untuk data lama. Tracking harus dipulihkan sampai admin benar-benar menutup DO.',
                   ),
                 ],
               )
             else
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: busy || order.isClosed || !canStartNew
-                      || interactionLocked
-                      ? null
-                      : () => _handleTrackingAction(
-                            order,
-                            showRestore ? 'resume' : 'start',
-                          ),
-                  child: busy
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.4,
-                            color: Colors.white,
-                          ),
-                        )
-                      : Text(showRestore
-                          ? 'Pulihkan Tracking'
-                          : 'Mulai Tracking'),
-                ),
+              _buildActionPanel(
+                children: <Widget>[
+                  _buildSectionLabel(
+                    showRestore ? 'Pulihkan tracking' : 'Aksi utama',
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      onPressed: busy || order.isClosed || !canStartNew
+                          || interactionLocked
+                          ? null
+                          : () => _handleTrackingAction(
+                                order,
+                                showRestore ? 'resume' : 'start',
+                              ),
+                      child: busy
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.4,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Text(showRestore
+                              ? 'Pulihkan Tracking'
+                              : 'Mulai Tracking'),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _buildNotice(
+                    canStartNew
+                        ? 'Mulai tracking saat driver benar-benar berangkat. Setelah aktif, admin akan memantau dari dashboard.'
+                        : 'Masih ada DO lain yang sedang mengunci tracking. Selesaikan dulu DO tersebut bersama admin.',
+                  ),
+                ],
               ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSummaryPill(
+    String label,
+    String value,
+    Color backgroundColor,
+    Color foregroundColor,
+  ) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(
+            label,
+            style: TextStyle(
+              color: foregroundColor.withValues(alpha: 0.78),
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: TextStyle(
+              color: foregroundColor,
+              fontWeight: FontWeight.w800,
+              fontSize: 16,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryInfoCard(
+    String label,
+    String value,
+    IconData icon,
+    Color backgroundColor,
+    Color foregroundColor,
+  ) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 150),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.72),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, color: foregroundColor, size: 18),
+          ),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(
+                label,
+                style: TextStyle(
+                  color: foregroundColor.withValues(alpha: 0.78),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                value,
+                style: TextStyle(
+                  color: foregroundColor,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 15,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMetaGrid(DeliveryOrder order) {
+    final items = <({String label, String value, IconData icon})>[
+      (
+        label: 'Customer',
+        value: order.customerName ?? '-',
+        icon: Icons.apartment_rounded,
+      ),
+      (
+        label: 'Status DO',
+        value: _formatDeliveryOrderStatus(order.status),
+        icon: Icons.flag_outlined,
+      ),
+      (
+        label: 'Tujuan',
+        value: order.receiverAddress ?? '-',
+        icon: Icons.location_on_outlined,
+      ),
+      (
+        label: 'Kendaraan',
+        value: order.vehiclePlate ?? '-',
+        icon: Icons.local_shipping_outlined,
+      ),
+      (
+        label: 'Last seen (WIB)',
+        value: _formatDateTime(order.trackingLastSeenAt),
+        icon: Icons.schedule_outlined,
+      ),
+      (
+        label: 'Akurasi',
+        value: order.trackingLastAccuracyM == null
+            ? '-'
+            : '${order.trackingLastAccuracyM!.round()} m',
+        icon: Icons.gps_fixed,
+      ),
+    ];
+
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: items
+          .map(
+            (item) => SizedBox(
+              width: 155,
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Row(
+                      children: <Widget>[
+                        Icon(item.icon, size: 16, color: const Color(0xFF64748B)),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            item.label,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF64748B),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      item.value,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF0F172A),
+                        fontWeight: FontWeight.w700,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+
+  Widget _buildActionPanel({
+    required List<Widget> children,
+    Color backgroundColor = const Color(0xFFF8FAFC),
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children,
+      ),
+    );
+  }
+
+  Widget _buildSectionLabel(String text) {
+    return Text(
+      text,
+      style: const TextStyle(
+        color: Color(0xFF64748B),
+        fontWeight: FontWeight.w700,
+        fontSize: 12,
+        letterSpacing: 0.3,
+      ),
+    );
+  }
+
+  Widget _buildDoStatusChip(DeliveryOrderStatus status) {
+    late final Color backgroundColor;
+    late final Color foregroundColor;
+
+    switch (status) {
+      case DeliveryOrderStatus.created:
+        backgroundColor = const Color(0xFFF1F5F9);
+        foregroundColor = const Color(0xFF475569);
+        break;
+      case DeliveryOrderStatus.headingToPickup:
+        backgroundColor = const Color(0xFFFEF3C7);
+        foregroundColor = const Color(0xFFB45309);
+        break;
+      case DeliveryOrderStatus.onDelivery:
+        backgroundColor = const Color(0xFFE0F2FE);
+        foregroundColor = const Color(0xFF0369A1);
+        break;
+      case DeliveryOrderStatus.arrived:
+        backgroundColor = const Color(0xFFEDE9FE);
+        foregroundColor = const Color(0xFF6D28D9);
+        break;
+      case DeliveryOrderStatus.delivered:
+        backgroundColor = const Color(0xFFDCFCE7);
+        foregroundColor = const Color(0xFF15803D);
+        break;
+      case DeliveryOrderStatus.cancelled:
+        backgroundColor = const Color(0xFFFEE2E2);
+        foregroundColor = const Color(0xFFB91C1C);
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        _formatDeliveryOrderStatus(status),
+        style: TextStyle(
+          color: foregroundColor,
+          fontWeight: FontWeight.w700,
+          fontSize: 12,
         ),
       ),
     );
@@ -1144,35 +1643,6 @@ class _DriverHomePageState extends State<DriverHomePage>
           color: Colors.white,
           fontWeight: FontWeight.w700,
         ),
-      ),
-    );
-  }
-
-  Widget _buildMetaRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 12,
-              color: Color(0xFF64748B),
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.4,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 15,
-              color: Color(0xFF0F172A),
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
       ),
     );
   }
