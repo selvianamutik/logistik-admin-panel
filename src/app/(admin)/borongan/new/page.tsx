@@ -93,7 +93,7 @@ export default function NewBoronganPage() {
                     fetchEntity<DeliveryOrderItem[]>('/api/data?entity=delivery-order-items', 'Gagal memuat item DO'),
                     fetchEntity<Array<{ doRef?: string }>>('/api/data?entity=driver-borogan-items', 'Gagal memuat pemakaian DO borongan'),
                 ]);
-                setDrivers(driverResponse || []);
+                setDrivers((driverResponse || []).filter(driver => driver.active !== false));
                 setDeliveryOrders((deliveryOrderResponse || []).filter((item: DeliveryOrder) => item.status === 'DELIVERED'));
                 setDeliveryOrderItems(doItemResponse || []);
                 setUsedBoronganDoRefs(

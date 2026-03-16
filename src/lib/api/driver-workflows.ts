@@ -335,12 +335,19 @@ export async function handleDriverBoronganCreate(
         resolvedDriverRef = inferredDriverRef;
     }
 
+    const driverDerivedFromDo = Boolean(inferredDriverRef && inferredDriverRef === resolvedDriverRef && deliveryOrders.length > 0);
     let finalDriverName = driverName;
     if (resolvedDriverRef) {
-        const driverDoc = await getSanityClient().fetch<{ name?: string } | null>(
-            `*[_type == "driver" && _id == $id][0]{ name }`,
+        const driverDoc = await getSanityClient().fetch<{ _id: string; name?: string; active?: boolean } | null>(
+            `*[_type == "driver" && _id == $id][0]{ _id, name, active }`,
             { id: resolvedDriverRef }
         );
+        if (!driverDoc) {
+            return NextResponse.json({ error: 'Supir borongan tidak ditemukan' }, { status: 404 });
+        }
+        if (driverDoc.active === false && !driverDerivedFromDo) {
+            return NextResponse.json({ error: 'Supir borongan tidak aktif untuk slip manual' }, { status: 409 });
+        }
         if (driverDoc?.name) {
             finalDriverName = driverDoc.name;
         }

@@ -101,7 +101,7 @@ export default function NewNotaPage() {
                     fetchEntity<DeliveryOrderItem[]>('/api/data?entity=delivery-order-items', 'Gagal memuat item DO'),
                     fetchEntity<Array<{ doRef?: string }>>('/api/data?entity=freight-nota-items', 'Gagal memuat pemakaian DO nota'),
                 ]);
-                setCustomers(cust || []);
+                setCustomers((cust || []).filter(customer => customer.active !== false));
                 setCompany(comp || null);
                 setDeliveryOrders((dos || []).filter((item: DeliveryOrder) => item.status === 'DELIVERED'));
                 setOrders(ords || []);

@@ -770,13 +770,20 @@ export async function handleFreightNotaCreate(
     }
 
     const issueDate = normalizeText(data.issueDate) || new Date().toISOString().slice(0, 10);
+    const customerDerivedFromDo = Boolean(inferredCustomerRef && inferredCustomerRef === resolvedCustomerRef && deliveryOrders.length > 0);
     let finalCustomerName = customerName;
     let customerTermDays: number | null = null;
     if (resolvedCustomerRef) {
-        const customerDoc = await getSanityClient().fetch<{ name?: string; defaultPaymentTerm?: number } | null>(
-            `*[_type == "customer" && _id == $id][0]{ name, defaultPaymentTerm }`,
+        const customerDoc = await getSanityClient().fetch<{ _id: string; name?: string; defaultPaymentTerm?: number; active?: boolean } | null>(
+            `*[_type == "customer" && _id == $id][0]{ _id, name, defaultPaymentTerm, active }`,
             { id: resolvedCustomerRef }
         );
+        if (!customerDoc) {
+            return NextResponse.json({ error: 'Customer nota tidak ditemukan' }, { status: 404 });
+        }
+        if (customerDoc.active === false && !customerDerivedFromDo) {
+            return NextResponse.json({ error: 'Customer nota tidak aktif untuk nota manual' }, { status: 409 });
+        }
         if (customerDoc?.name) {
             finalCustomerName = customerDoc.name;
         }
