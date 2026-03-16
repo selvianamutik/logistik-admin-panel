@@ -6,6 +6,16 @@ import 'package:geolocator/geolocator.dart';
 import 'api.dart';
 import 'storage.dart';
 
+class TrackingPermissionState {
+  const TrackingPermissionState({
+    required this.hasBackgroundAccess,
+    this.advisoryMessage,
+  });
+
+  final bool hasBackgroundAccess;
+  final String? advisoryMessage;
+}
+
 class DriverTrackingRuntime {
   DriverTrackingRuntime._();
 
@@ -44,7 +54,7 @@ class DriverTrackingRuntime {
     _notify();
   }
 
-  Future<void> ensureLocationPermissions() async {
+  Future<TrackingPermissionState> ensureLocationPermissions() async {
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       throw Exception('GPS perangkat belum aktif. Nyalakan layanan lokasi dulu.');
@@ -65,21 +75,21 @@ class DriverTrackingRuntime {
       );
     }
 
-    if (defaultTargetPlatform == TargetPlatform.android &&
-        permission != LocationPermission.always) {
-      permission = await Geolocator.requestPermission();
-    }
-
     final requiresAlwaysPermission =
         defaultTargetPlatform == TargetPlatform.android ||
         defaultTargetPlatform == TargetPlatform.iOS;
 
     if (requiresAlwaysPermission && permission != LocationPermission.always) {
       final message = defaultTargetPlatform == TargetPlatform.iOS
-          ? 'Di iPhone, ubah izin lokasi ke "Always" agar tracking bisa tetap berjalan saat aplikasi di-background.'
-          : 'Izin lokasi background wajib diaktifkan agar tracking tetap berjalan saat layar mati.';
-      throw Exception(message);
+          ? 'Tracking dipulihkan, tetapi izin lokasi masih "While Using". Ubah ke "Always" agar tracking tetap jalan saat aplikasi di-background.'
+          : 'Tracking dipulihkan, tetapi izin lokasi background belum aktif. Saat layar mati atau aplikasi di-background, tracking bisa berhenti.';
+      return TrackingPermissionState(
+        hasBackgroundAccess: false,
+        advisoryMessage: message,
+      );
     }
+
+    return const TrackingPermissionState(hasBackgroundAccess: true);
   }
 
   Future<Position> getCurrentLocation() async {

@@ -289,7 +289,7 @@ class _DriverHomePageState extends State<DriverHomePage>
     });
 
     try {
-      await _trackingRuntime.ensureLocationPermissions();
+      final permissionState = await _trackingRuntime.ensureLocationPermissions();
       final currentPosition = await _trackingRuntime.getCurrentLocation();
 
       await DriverApi.postTrackingAction(
@@ -317,10 +317,16 @@ class _DriverHomePageState extends State<DriverHomePage>
       }
 
       await _refreshOrders();
-      _showSnackBar(
+      final successMessage =
         action == 'resume'
             ? 'Tracking dipulihkan lagi. Biarkan GPS dan internet tetap menyala sampai admin menutup DO.'
-            : 'Tracking background aktif. Driver tidak bisa menghentikannya sendiri sebelum admin menyelesaikan DO.',
+            : permissionState.hasBackgroundAccess
+                ? 'Tracking background aktif. Driver tidak bisa menghentikannya sendiri sebelum admin menyelesaikan DO.'
+                : 'Tracking aktif saat aplikasi terbuka. Driver tidak bisa menghentikannya sendiri sebelum admin menyelesaikan DO.';
+      _showSnackBar(
+        permissionState.advisoryMessage == null
+            ? successMessage
+            : '$successMessage ${permissionState.advisoryMessage}',
       );
     } catch (error) {
       if (error is ApiException &&
