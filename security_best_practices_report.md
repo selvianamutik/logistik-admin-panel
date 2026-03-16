@@ -46,7 +46,7 @@ Rekomendasi:
 - tambah test authz regression untuk entity sensitif
 - jangan pernah expose Sanity token ke client
 
-### 2. Low: Proxy page guard masih berbasis JWT claim, bukan live user lookup
+### 2. Low: Proxy page guard sekarang live-validated best-effort, dengan fallback JWT saat route session gagal
 
 Lokasi:
 
@@ -55,17 +55,18 @@ Lokasi:
 
 Temuan:
 
-- `getSession()` sekarang sudah revalidate user aktif dari Sanity
-- tetapi `proxy.ts` masih membaca token JWT langsung untuk route-shell redirect
+- `proxy.ts` sekarang mencoba revalidate sesi hidup lewat `/api/auth/session`
+- kalau sesi tidak valid, cookie dibersihkan lalu user diarahkan ulang ke login
+- fallback decode JWT masih dipakai hanya saat route session gagal sementara, supaya shell tidak ikut rapuh karena transient failure internal
 
 Impact:
 
-- user yang baru saja dinonaktifkan bisa sempat melihat shell halaman sampai cookie habis atau request API berikutnya gagal
-- data sensitif tetap lebih aman karena API/session sudah live-validated
+- risiko stale shell session turun jauh dibanding kondisi awal
+- residual gap kecil masih ada hanya saat live session check gagal sementara dan fallback JWT harus dipakai
 
 Rekomendasi:
 
-- kalau ingin menutup gap ini total, redesign page guard agar memakai lightweight revocation/session-version strategy
+- kalau ingin menutup gap ini total tanpa fallback, redesign page guard agar memakai lightweight revocation/session-version strategy
 
 ## Remediated In This Audit
 
@@ -132,6 +133,24 @@ Perbaikan:
 Lokasi:
 
 - [sanity.ts](/c:/LOGISTIK/app/src/lib/sanity.ts)
+
+### Fixed: admin tidak lagi menerima full company settings owner-only
+
+Perbaikan:
+
+- `entity=company` sekarang disanitasi per role
+- admin tetap mendapat field operasional yang memang dipakai UI, seperti branding, due date nota, dan info transfer
+- field owner-only seperti counter atau prefix numbering dan aset internal perusahaan tidak lagi dibuka penuh ke admin
+
+Lokasi:
+
+- [data-helpers.ts](/c:/LOGISTIK/app/src/lib/api/data-helpers.ts)
+- [route.ts](/c:/LOGISTIK/app/src/app/api/data/route.ts)
+
+Verifikasi runtime:
+
+- login `admin@company.local` ke production lalu `GET /api/data?entity=company` sekarang mengembalikan `numberingSettings` yang sudah dinolkan atau dikosongkan
+- login `owner@company.local` tetap mendapat profile penuh untuk halaman pengaturan perusahaan
 
 ## Verification
 
