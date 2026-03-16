@@ -10,6 +10,7 @@ import type { SessionUser, User } from './types';
 import { sanityGetById } from './sanity';
 import {
     createSessionToken,
+    DRIVER_SESSION_COOKIE,
     SESSION_COOKIE,
     SESSION_MAX_AGE,
     verifySessionToken,
@@ -71,15 +72,15 @@ export async function getSessionFromToken(token: string): Promise<SessionUser | 
     }
 }
 
-export async function getSession(): Promise<SessionUser | null> {
+export async function getSession(cookieName = SESSION_COOKIE): Promise<SessionUser | null> {
     try {
         const cookieStore = await cookies();
-        const token = cookieStore.get(SESSION_COOKIE)?.value;
+        const token = cookieStore.get(cookieName)?.value;
         if (!token) return null;
 
         const session = await getSessionFromToken(token);
         if (!session) {
-            cookieStore.delete(SESSION_COOKIE);
+            cookieStore.delete(cookieName);
             return null;
         }
 
@@ -102,9 +103,9 @@ async function shouldUseSecureCookies(): Promise<boolean> {
     return !/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host);
 }
 
-export async function setSessionCookie(token: string): Promise<void> {
+export async function setSessionCookie(token: string, cookieName = SESSION_COOKIE): Promise<void> {
     const cookieStore = await cookies();
-    cookieStore.set(SESSION_COOKIE, token, {
+    cookieStore.set(cookieName, token, {
         httpOnly: true,
         secure: await shouldUseSecureCookies(),
         sameSite: 'lax',
@@ -113,7 +114,11 @@ export async function setSessionCookie(token: string): Promise<void> {
     });
 }
 
-export async function clearSession(): Promise<void> {
+export async function clearSession(cookieName = SESSION_COOKIE): Promise<void> {
     const cookieStore = await cookies();
-    cookieStore.delete(SESSION_COOKIE);
+    cookieStore.delete(cookieName);
+}
+
+export async function getDriverSession(): Promise<SessionUser | null> {
+    return getSession(DRIVER_SESSION_COOKIE);
 }

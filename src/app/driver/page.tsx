@@ -22,6 +22,7 @@ type DriverSessionResponse = {
 };
 
 type DriverPortalError = Error & { status?: number };
+type DriverProgressStatus = Extract<DeliveryOrder['status'], 'ON_DELIVERY' | 'ARRIVED'>;
 
 function createDriverPortalError(status: number, message: string) {
     const error = new Error(message) as DriverPortalError;
@@ -44,6 +45,31 @@ function formatTrackingState(state?: DeliveryOrder['trackingState']) {
 
 function canDriverStartTracking(status: DeliveryOrder['status']) {
     return ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(status);
+}
+
+function getNextDriverProgressStatus(order: DeliveryOrder): DriverProgressStatus | null {
+    if (order.trackingState !== 'ACTIVE' || order.status === 'DELIVERED' || order.status === 'CANCELLED') {
+        return null;
+    }
+
+    switch (order.status) {
+        case 'HEADING_TO_PICKUP':
+            return 'ON_DELIVERY';
+        case 'ON_DELIVERY':
+            return 'ARRIVED';
+        default:
+            return null;
+    }
+}
+
+function getDriverProgressButtonLabel(nextStatus: DriverProgressStatus) {
+    return nextStatus === 'ON_DELIVERY' ? 'Tandai Dalam Pengiriman' : 'Tandai Sudah Tiba';
+}
+
+function getDriverProgressSuccessMessage(nextStatus: DriverProgressStatus) {
+    return nextStatus === 'ON_DELIVERY'
+        ? 'Status DO diperbarui menjadi dalam pengiriman.'
+        : 'Status DO diperbarui menjadi sudah tiba.';
 }
 
 export default function DriverPortalPage() {
@@ -161,6 +187,28 @@ export default function DriverPortalPage() {
             const payload = await res.json();
             if (!res.ok) {
                 throw createDriverPortalError(res.status, payload.error || 'Gagal mengirim tracking');
+            }
+
+            if (payload.data) {
+                applyOrderUpdate(payload.data as DeliveryOrder);
+            }
+
+            return payload.data as DeliveryOrder | undefined;
+        },
+        [applyOrderUpdate]
+    );
+
+    const postDeliveryProgress = useCallback(
+        async (deliveryOrderRef: string, status: DriverProgressStatus) => {
+            const res = await fetch('/api/driver/delivery-orders/status', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: deliveryOrderRef, status }),
+            });
+
+            const payload = await res.json();
+            if (!res.ok) {
+                throw createDriverPortalError(payload.status || res.status, payload.error || 'Gagal memperbarui progres perjalanan');
             }
 
             if (payload.data) {
@@ -298,10 +346,33 @@ export default function DriverPortalPage() {
             });
             return;
         }
-        await fetch('/api/auth/logout', { method: 'POST' });
+        await fetch('/api/driver/logout', { method: 'POST' });
         router.push('/driver/login');
         router.refresh();
     };
+
+    const handleDeliveryProgress = useCallback(
+        async (deliveryOrderRef: string, nextStatus: DriverProgressStatus) => {
+            setActionLoadingId(deliveryOrderRef);
+            try {
+                await postDeliveryProgress(deliveryOrderRef, nextStatus);
+                setFeedback({ type: 'success', message: getDriverProgressSuccessMessage(nextStatus) });
+                await loadOrders();
+            } catch (error) {
+                if (error instanceof Error && 'status' in error && (error.status === 401 || error.status === 403)) {
+                    handleDriverAuthFailure(error.message);
+                    return;
+                }
+                setFeedback({
+                    type: 'error',
+                    message: error instanceof Error ? error.message : 'Gagal memperbarui progres perjalanan',
+                });
+            } finally {
+                setActionLoadingId(null);
+            }
+        },
+        [handleDriverAuthFailure, loadOrders, postDeliveryProgress]
+    );
 
     if (loading) {
         return (
@@ -348,7 +419,7 @@ export default function DriverPortalPage() {
                         <>Belum ada DO yang mengunci tracking</>
                     )}
                 </div>
-                <button className="btn btn-secondary btn-sm" onClick={() => void loadOrders()} disabled={refreshing}>
+                <button className="btn btn-secondary btn-sm" onClick={() => void loadOrders()} disabled={refreshing || isActionInFlight}>
                     <RefreshCw size={15} className={refreshing ? 'spin' : ''} /> Refresh
                 </button>
             </section>
@@ -369,6 +440,7 @@ export default function DriverPortalPage() {
                         const trackingBadge = formatTrackingState(item.trackingState);
                         const isBusy = actionLoadingId === item._id;
                         const canStart = canDriverStartTracking(item.status);
+                        const nextProgressStatus = getNextDriverProgressStatus(item);
                         const mapsUrl =
                             typeof item.trackingLastLat === 'number' && typeof item.trackingLastLng === 'number'
                                 ? `https://www.google.com/maps?q=${item.trackingLastLat},${item.trackingLastLng}`
@@ -396,10 +468,21 @@ export default function DriverPortalPage() {
 
                                     <div className="driver-action-row">
                                         {item.trackingState === 'ACTIVE' ? (
-                                            <div className="text-muted text-sm" style={{ flex: 1, lineHeight: 1.5 }}>
-                                                Tracking harus tetap aktif sampai admin menyelesaikan DO ini. Driver tidak bisa menjeda
-                                                atau menghentikannya sendiri.
-                                            </div>
+                                            <>
+                                                {nextProgressStatus && (
+                                                    <button
+                                                        className="btn btn-secondary btn-sm"
+                                                        onClick={() => void handleDeliveryProgress(item._id, nextProgressStatus)}
+                                                        disabled={isActionInFlight}
+                                                    >
+                                                        <Truck size={15} /> {isBusy ? 'Memproses...' : getDriverProgressButtonLabel(nextProgressStatus)}
+                                                    </button>
+                                                )}
+                                                <div className="text-muted text-sm" style={{ flex: 1, lineHeight: 1.5 }}>
+                                                    Tracking harus tetap aktif sampai admin menyelesaikan DO ini. Driver tidak bisa menjeda
+                                                    atau menghentikannya sendiri.
+                                                </div>
+                                            </>
                                         ) : item.trackingState === 'PAUSED' ? (
                                             <>
                                                 <button className="btn btn-primary btn-sm" onClick={() => startTracking(item._id, true)} disabled={isActionInFlight || !canStart}>

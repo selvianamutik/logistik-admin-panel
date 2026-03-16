@@ -3,6 +3,7 @@ import { SignJWT, jwtVerify } from 'jose';
 import type { SessionUser } from './types';
 
 export const SESSION_COOKIE = 'logistik-session';
+export const DRIVER_SESSION_COOKIE = 'logistik-driver-session';
 export const SESSION_MAX_AGE = 60 * 60 * 24; // 24 hours
 
 function requireEnv(name: string): string {

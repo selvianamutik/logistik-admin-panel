@@ -1,4 +1,4 @@
-import { getSession, getSessionFromToken } from '@/lib/auth';
+import { getDriverSession, getSession, getSessionFromToken } from '@/lib/auth';
 import { getSanityClient, sanityGetById, sanityGetCompanyProfile } from '@/lib/sanity';
 import type { CompanyProfile, DeliveryOrder, Driver, SessionUser, User } from '@/lib/types';
 
@@ -35,7 +35,7 @@ export function hasBearerDriverAuth(request?: Request) {
 
 export async function requireDriverSessionContext(request?: Request): Promise<DriverSessionContext | { error: string; status: number }> {
     const bearerToken = getBearerToken(request);
-    const session = bearerToken ? await getSessionFromToken(bearerToken) : await getSession();
+    const session = bearerToken ? await getSessionFromToken(bearerToken) : await getDriverSession();
     if (!session) {
         return { error: 'Unauthorized', status: 401 };
     }

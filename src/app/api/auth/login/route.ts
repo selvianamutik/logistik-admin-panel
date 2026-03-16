@@ -7,6 +7,7 @@ import { getSanityClient, sanityGetById, sanityUpdate } from '@/lib/sanity';
 import { verifyPassword, createSession, hashPassword, isPasswordHashMigrated, setSessionCookie } from '@/lib/auth';
 import { clearFailedAttempts, getRequestIp, recordFailedAttempt } from '@/lib/api/rate-limit';
 import { ensureSameOriginRequest } from '@/lib/api/request-security';
+import { DRIVER_SESSION_COOKIE, SESSION_COOKIE } from '@/lib/session';
 import type { Driver, User } from '@/lib/types';
 
 const LOGIN_ATTEMPT_LIMIT = 10;
@@ -124,7 +125,10 @@ export async function POST(request: Request) {
 
         // Create session
         const token = await createSession(user);
-        await setSessionCookie(token);
+        await setSessionCookie(
+            token,
+            loginScope === 'DRIVER' ? DRIVER_SESSION_COOKIE : SESSION_COOKIE
+        );
 
         return NextResponse.json({
             success: true,
