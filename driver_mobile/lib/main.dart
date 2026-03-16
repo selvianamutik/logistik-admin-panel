@@ -1198,10 +1198,20 @@ class _DriverHomePageState extends State<DriverHomePage>
                                   fontWeight: FontWeight.w800,
                                 ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${order.masterResi ?? '-'} | ${_formatDate(order.date)}',
-                        style: const TextStyle(color: Color(0xFF64748B)),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: <Widget>[
+                          _buildHeaderMetaChip(
+                            icon: Icons.receipt_long_outlined,
+                            label: order.masterResi ?? '-',
+                          ),
+                          _buildHeaderMetaChip(
+                            icon: Icons.calendar_today_outlined,
+                            label: _formatDate(order.date),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -1217,6 +1227,8 @@ class _DriverHomePageState extends State<DriverHomePage>
               ],
             ),
             const SizedBox(height: 14),
+            _buildLastSeenBanner(order),
+            const SizedBox(height: 12),
             _buildMetaGrid(order),
             if (order.trackingLastLat != null && order.trackingLastLng != null)
               TextButton.icon(
@@ -1346,6 +1358,111 @@ class _DriverHomePageState extends State<DriverHomePage>
               ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildHeaderMetaChip({
+    required IconData icon,
+    required String label,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(icon, size: 14, color: const Color(0xFF64748B)),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF334155),
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLastSeenBanner(DeliveryOrder order) {
+    final hasSignal = order.trackingLastSeenAt != null;
+    final isActiveTracking = order.trackingState == TrackingState.active;
+    final lastSeen = _formatDateTime(order.trackingLastSeenAt);
+
+    Color backgroundColor = const Color(0xFFF8FAFC);
+    Color foregroundColor = const Color(0xFF475569);
+    IconData icon = Icons.schedule_outlined;
+    String label = 'Belum ada heartbeat';
+    String detail = 'Tracking belum mengirim posisi terbaru dari perangkat ini.';
+
+    if (hasSignal) {
+      backgroundColor = const Color(0xFFEFF6FF);
+      foregroundColor = const Color(0xFF0F4C81);
+      icon = Icons.access_time_filled_rounded;
+      label = 'Last seen $lastSeen';
+      detail = isActiveTracking
+          ? 'Posisi terakhir driver sudah tercatat dan akan terus diperbarui selama tracking sehat.'
+          : 'Ini posisi terakhir yang tersimpan sebelum tracking berhenti atau DO ditutup.';
+    } else if (isActiveTracking) {
+      backgroundColor = const Color(0xFFFFF7ED);
+      foregroundColor = const Color(0xFFC2410C);
+      icon = Icons.wifi_tethering_error_rounded;
+      label = 'Tracking aktif, heartbeat belum masuk';
+      detail =
+          'Periksa GPS, internet, dan izin lokasi bila status ini tidak berubah.';
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.72),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, size: 18, color: foregroundColor),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: foregroundColor,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  detail,
+                  style: TextStyle(
+                    color: foregroundColor.withValues(alpha: 0.9),
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
