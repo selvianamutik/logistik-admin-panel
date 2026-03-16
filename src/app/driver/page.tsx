@@ -53,7 +53,7 @@ export default function DriverPortalPage() {
 
     const [user, setUser] = useState<SessionUser | null>(null);
     const [driver, setDriver] = useState<Driver | null>(null);
-    const [companyName, setCompanyName] = useState('LOGISTIK');
+    const [companyName, setCompanyName] = useState('Gading Mas Surya');
     const [orders, setOrders] = useState<DeliveryOrder[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -119,7 +119,7 @@ export default function DriverPortalPage() {
 
                 setUser(sessionPayload.user);
                 setDriver(sessionPayload.driver);
-                setCompanyName(sessionPayload.company?.name || 'LOGISTIK');
+                setCompanyName(sessionPayload.company?.name || 'Gading Mas Surya');
                 await loadOrders('initial');
             } catch (error) {
                 if (error instanceof Error && 'status' in error && (error.status === 401 || error.status === 403)) {

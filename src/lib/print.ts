@@ -37,7 +37,7 @@ export function openBrandedPrint(opts: {
         showFooter = true,
     } = opts;
 
-    const companyName = company?.name || 'LOGISTIK';
+    const companyName = company?.name || 'Gading Mas Surya';
     const companyLogo = company?.logoUrl || '';
     const printDate = new Date().toLocaleDateString('id-ID', {
         day: '2-digit',

@@ -235,10 +235,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img src={company.logoUrl} alt="" className="sidebar-logo-img" />
                             ) : (
-                                <div className="sidebar-logo-icon">{(company?.name || 'L').charAt(0)}</div>
+                    <div className="sidebar-logo-icon">{(company?.name || 'Gading Mas Surya').charAt(0)}</div>
                             )}
                             <div className="sidebar-logo-text-wrap">
-                                <span className="sidebar-logo-text">{company?.name || 'LOGISTIK'}</span>
+                                <span className="sidebar-logo-text">{company?.name || 'Gading Mas Surya'}</span>
                                 <span className="sidebar-logo-subtitle">Sistem Manajemen</span>
                             </div>
                         </div>

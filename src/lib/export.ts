@@ -183,7 +183,7 @@ export async function exportToExcel(
 
     const title = options.title || sheetName;
     if (options.showCompanyHeader !== false) {
-        addMergedRow(company?.name || 'LOGISTIK');
+        addMergedRow(company?.name || 'Gading Mas Surya');
     }
     addMergedRow(title);
     if (options.subtitle) addMergedRow(options.subtitle);
@@ -246,8 +246,8 @@ export async function exportToExcel(
     }
 
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = company?.name || 'LOGISTIK';
-    workbook.company = company?.name || 'LOGISTIK';
+    workbook.creator = company?.name || 'Gading Mas Surya';
+    workbook.company = company?.name || 'Gading Mas Surya';
     workbook.created = new Date();
     workbook.modified = new Date();
     workbook.subject = options.subtitle || sheetName;
@@ -492,7 +492,7 @@ export async function exportFreightNotaDetail(
         : '';
     const extraNote = [resolvedCompany?.invoiceSettings?.footerNote, nota.notes].filter(Boolean).join(' ');
 
-    rows.push([resolvedCompany?.name || 'LOGISTIK', '', '', '', '', `PERINCIAN ONGKOS ANGKUT NO.${displayNumber}`, '', '', '', '', 'TGL.', fmtDate(nota.issueDate)]);
+    rows.push([resolvedCompany?.name || 'Gading Mas Surya', '', '', '', '', `PERINCIAN ONGKOS ANGKUT NO.${displayNumber}`, '', '', '', '', 'TGL.', fmtDate(nota.issueDate)]);
     merges.push({ startRow: 1, startCol: 1, endRow: 1, endCol: 5 });
     merges.push({ startRow: 1, startCol: 6, endRow: 1, endCol: 10 });
 
@@ -563,8 +563,8 @@ export async function exportFreightNotaDetail(
     merges.push({ startRow: rows.length, startCol: 1, endRow: rows.length, endCol: totalColumns });
 
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = resolvedCompany?.name || 'LOGISTIK';
-    workbook.company = resolvedCompany?.name || 'LOGISTIK';
+    workbook.creator = resolvedCompany?.name || 'Gading Mas Surya';
+    workbook.company = resolvedCompany?.name || 'Gading Mas Surya';
     workbook.created = new Date();
     workbook.modified = new Date();
     workbook.subject = `Nota ${displayNumber}`;

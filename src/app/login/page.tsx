@@ -53,8 +53,8 @@ export default function LoginPage() {
         <main className="login-page">
             <div className="login-card">
                 <div className="login-header">
-                    <div className="login-logo">L</div>
-                    <h1 className="login-title">LOGISTIK</h1>
+                    <div className="login-logo">G</div>
+                    <h1 className="login-title">Gading Mas Surya</h1>
                     <p className="login-subtitle">Panel Administrasi Internal</p>
                 </div>
 
