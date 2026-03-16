@@ -105,6 +105,12 @@ class _DriverHomePageState extends State<DriverHomePage>
   }
 
   void _handleTrackingRuntimeChanged() {
+    final authFailure = _trackingRuntime.authFailureMessage;
+    if (authFailure != null) {
+      _trackingRuntime.clearAuthFailure();
+      unawaited(_forceLogoutWithMessage(authFailure));
+      return;
+    }
     if (!mounted) {
       return;
     }

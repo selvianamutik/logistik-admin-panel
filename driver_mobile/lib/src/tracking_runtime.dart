@@ -18,11 +18,13 @@ class DriverTrackingRuntime {
   bool _hasHydrated = false;
   int _consecutiveHeartbeatFailures = 0;
   String? _lastHeartbeatError;
+  String? _authFailureMessage;
 
   final ValueNotifier<int> changes = ValueNotifier<int>(0);
 
   String? get activeOrderId => _activeOrderId;
   String? get lastHeartbeatError => _lastHeartbeatError;
+  String? get authFailureMessage => _authFailureMessage;
   int get consecutiveHeartbeatFailures => _consecutiveHeartbeatFailures;
   bool get hasCriticalHeartbeatFailure =>
       _consecutiveHeartbeatFailures >= _heartbeatFailureThreshold;
@@ -147,6 +149,12 @@ class DriverTrackingRuntime {
           _markHeartbeatSuccess();
         } catch (error) {
           debugPrint('Tracking heartbeat failed: $error');
+          if (error is ApiException &&
+              (error.statusCode == 401 || error.statusCode == 403)) {
+            _markAuthFailure(error.message);
+            unawaited(stopLocalOnly());
+            return;
+          }
           _markHeartbeatFailure(error.toString());
         }
       },
@@ -191,6 +199,14 @@ class DriverTrackingRuntime {
     _notify();
   }
 
+  void clearAuthFailure() {
+    if (_authFailureMessage == null) {
+      return;
+    }
+    _authFailureMessage = null;
+    _notify();
+  }
+
   void _markHeartbeatSuccess() {
     if (_consecutiveHeartbeatFailures == 0 && _lastHeartbeatError == null) {
       return;
@@ -203,6 +219,11 @@ class DriverTrackingRuntime {
   void _markHeartbeatFailure(String message) {
     _consecutiveHeartbeatFailures = _consecutiveHeartbeatFailures + 1;
     _lastHeartbeatError = message;
+    _notify();
+  }
+
+  void _markAuthFailure(String message) {
+    _authFailureMessage = message;
     _notify();
   }
 
