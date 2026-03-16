@@ -5,6 +5,8 @@
 import { format, parseISO } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
 
+const JAKARTA_TIME_ZONE = 'Asia/Jakarta';
+
 // ── Date formatting ──
 export function formatDate(dateStr: string | undefined, fmt: string = 'dd/MM/yyyy'): string {
     if (!dateStr) return '-';
@@ -18,7 +20,16 @@ export function formatDate(dateStr: string | undefined, fmt: string = 'dd/MM/yyy
 export function formatDateTime(dateStr: string | undefined): string {
     if (!dateStr) return '-';
     try {
-        return format(parseISO(dateStr), 'dd/MM/yyyy HH:mm', { locale: localeId });
+        const parsed = parseISO(dateStr);
+        return `${new Intl.DateTimeFormat('id-ID', {
+            timeZone: JAKARTA_TIME_ZONE,
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+        }).format(parsed).replace('.', ':')} WIB`;
     } catch {
         return dateStr;
     }

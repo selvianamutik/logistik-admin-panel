@@ -1190,7 +1190,10 @@ class _DriverHomePageState extends State<DriverHomePage>
     }
 
     try {
-      return DateFormat('dd/MM/yyyy HH:mm').format(DateTime.parse(value));
+      final parsed = DateTime.parse(value);
+      final jakartaTime =
+          (parsed.isUtc ? parsed : parsed.toUtc()).add(const Duration(hours: 7));
+      return '${DateFormat('dd/MM/yyyy HH:mm').format(jakartaTime)} WIB';
     } catch (_) {
       return value;
     }
