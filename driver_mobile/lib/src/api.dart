@@ -135,7 +135,7 @@ class DriverApi {
         .toList();
   }
 
-  static Future<void> postTrackingAction(
+  static Future<DeliveryOrder?> postTrackingAction(
     String token,
     String deliveryOrderRef,
     String action, {
@@ -144,7 +144,7 @@ class DriverApi {
     double? accuracyM,
     double? speedMps,
   }) async {
-    await _requestJson(
+    final payload = await _requestJson(
       '/api/driver/tracking',
       method: 'POST',
       token: token,
@@ -157,15 +157,20 @@ class DriverApi {
         'speedMps': speedMps,
       },
     );
+    final rawOrder = payload['data'];
+    if (rawOrder is Map<String, dynamic>) {
+      return DeliveryOrder.fromJson(rawOrder);
+    }
+    return null;
   }
 
-  static Future<void> postDeliveryStatus(
+  static Future<DeliveryOrder?> postDeliveryStatus(
     String token,
     String deliveryOrderRef,
     String status, {
     String? note,
   }) async {
-    await _requestJson(
+    final payload = await _requestJson(
       '/api/driver/delivery-orders/status',
       method: 'POST',
       token: token,
@@ -175,6 +180,11 @@ class DriverApi {
         'note': note,
       },
     );
+    final rawOrder = payload['data'];
+    if (rawOrder is Map<String, dynamic>) {
+      return DeliveryOrder.fromJson(rawOrder);
+    }
+    return null;
   }
 
   static CompanySummary? _parseCompany(dynamic raw) {

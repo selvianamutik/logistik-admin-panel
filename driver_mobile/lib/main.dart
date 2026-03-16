@@ -267,12 +267,30 @@ class _DriverHomePageState extends State<DriverHomePage>
     }
   }
 
-  Future<void> _refreshOrders() async {
+  Future<void> _refreshOrders({bool allowDuringMutation = false}) async {
     final token = _token;
-    if (token == null || token.isEmpty || _refreshing || _isMutating) {
+    if (token == null ||
+        token.isEmpty ||
+        _refreshing ||
+        (!allowDuringMutation && _isMutating)) {
       return;
     }
     await _hydrateDriverApp(token);
+  }
+
+  void _applyOrderUpdate(DeliveryOrder updatedOrder) {
+    if (!mounted) {
+      return;
+    }
+
+    final nextOrders = _orders
+        .map((order) => order.id == updatedOrder.id ? updatedOrder : order)
+        .toList(growable: false);
+
+    setState(() {
+      _orders = nextOrders;
+      _trackingRuntimeHealthy = _deriveTrackingRuntimeHealthy(nextOrders);
+    });
   }
 
   Future<void> _handleTrackingAction(
@@ -292,7 +310,7 @@ class _DriverHomePageState extends State<DriverHomePage>
       final permissionState = await _trackingRuntime.ensureLocationPermissions();
       final currentPosition = await _trackingRuntime.getCurrentLocation();
 
-      await DriverApi.postTrackingAction(
+      final updatedOrder = await DriverApi.postTrackingAction(
         token,
         order.id,
         action,
@@ -316,7 +334,10 @@ class _DriverHomePageState extends State<DriverHomePage>
         rethrow;
       }
 
-      await _refreshOrders();
+      if (updatedOrder != null) {
+        _applyOrderUpdate(updatedOrder);
+      }
+      await _refreshOrders(allowDuringMutation: true);
       final successMessage =
         action == 'resume'
             ? 'Tracking dipulihkan lagi. Biarkan GPS dan internet tetap menyala sampai admin menutup DO.'
@@ -357,12 +378,15 @@ class _DriverHomePageState extends State<DriverHomePage>
     });
 
     try {
-      await DriverApi.postDeliveryStatus(
+      final updatedOrder = await DriverApi.postDeliveryStatus(
         token,
         order.id,
         _toDeliveryStatusPayload(nextStatus),
       );
-      await _refreshOrders();
+      if (updatedOrder != null) {
+        _applyOrderUpdate(updatedOrder);
+      }
+      await _refreshOrders(allowDuringMutation: true);
       _showSnackBar(_deliveryProgressSuccessMessage(nextStatus));
     } catch (error) {
       if (error is ApiException &&
