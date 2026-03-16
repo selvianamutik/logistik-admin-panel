@@ -54,12 +54,14 @@ class _DriverHomePageState extends State<DriverHomePage>
   bool _refreshing = false;
   String? _actionOrderId;
   String? _token;
+  String? _persistedToken;
   DriverUser? _user;
   DriverProfile? _driver;
   CompanySummary? _company;
   List<DeliveryOrder> _orders = const <DeliveryOrder>[];
   String? _error;
   bool _trackingRuntimeHealthy = true;
+  bool _hasStoredSession = false;
 
   DeliveryOrder? get _activeOrder =>
       _firstWhere(_orders, (order) => order.trackingState == TrackingState.active);
@@ -112,9 +114,18 @@ class _DriverHomePageState extends State<DriverHomePage>
           return;
         }
         setState(() {
+          _persistedToken = null;
+          _hasStoredSession = false;
           _booting = false;
         });
         return;
+      }
+
+      if (mounted) {
+        setState(() {
+          _persistedToken = storedToken;
+          _hasStoredSession = true;
+        });
       }
 
       await _hydrateDriverApp(storedToken, boot: true);
@@ -124,7 +135,8 @@ class _DriverHomePageState extends State<DriverHomePage>
       }
       setState(() {
         _booting = false;
-        _error = 'Gagal memuat sesi lokal. Silakan login ulang.';
+        _error =
+            'Sesi tersimpan gagal dimuat. Coba sambungkan internet lalu tekan coba lagi.';
       });
     }
   }
@@ -158,11 +170,13 @@ class _DriverHomePageState extends State<DriverHomePage>
 
       setState(() {
         _token = token;
+        _persistedToken = token;
         _user = session.user;
         _driver = session.driver;
         _company = session.company;
         _orders = orders;
         _trackingRuntimeHealthy = _deriveTrackingRuntimeHealthy(orders);
+        _hasStoredSession = true;
         _error = null;
       });
     } catch (error) {
@@ -175,11 +189,13 @@ class _DriverHomePageState extends State<DriverHomePage>
         }
         setState(() {
           _token = null;
+          _persistedToken = null;
           _user = null;
           _driver = null;
           _company = null;
           _orders = const <DeliveryOrder>[];
           _trackingRuntimeHealthy = true;
+          _hasStoredSession = false;
           _error = error.message;
         });
       } else if (mounted) {
@@ -214,6 +230,12 @@ class _DriverHomePageState extends State<DriverHomePage>
       final payload = await DriverApi.loginDriver(email, password);
       await DriverStorage.setAuthToken(payload.token);
       _passwordController.clear();
+      if (mounted) {
+        setState(() {
+          _persistedToken = payload.token;
+          _hasStoredSession = true;
+        });
+      }
       await _hydrateDriverApp(payload.token);
     } catch (error) {
       if (!mounted) {
@@ -354,11 +376,13 @@ class _DriverHomePageState extends State<DriverHomePage>
 
     setState(() {
       _token = null;
+      _persistedToken = null;
       _user = null;
       _driver = null;
       _company = null;
       _orders = const <DeliveryOrder>[];
       _trackingRuntimeHealthy = true;
+      _hasStoredSession = false;
       _error = null;
     });
   }
@@ -371,12 +395,33 @@ class _DriverHomePageState extends State<DriverHomePage>
     }
     setState(() {
       _token = null;
+      _persistedToken = null;
       _user = null;
       _driver = null;
       _company = null;
       _orders = const <DeliveryOrder>[];
       _trackingRuntimeHealthy = true;
+      _hasStoredSession = false;
       _error = message;
+    });
+  }
+
+  Future<void> _clearStoredSessionAndShowLogin() async {
+    await DriverStorage.clearAuthToken();
+    await _trackingRuntime.stopLocalOnly();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _token = null;
+      _persistedToken = null;
+      _user = null;
+      _driver = null;
+      _company = null;
+      _orders = const <DeliveryOrder>[];
+      _trackingRuntimeHealthy = true;
+      _hasStoredSession = false;
+      _error = null;
     });
   }
 
@@ -426,6 +471,9 @@ class _DriverHomePageState extends State<DriverHomePage>
     }
 
     if (_token == null || _user == null || _driver == null) {
+      if (_hasStoredSession && _persistedToken != null) {
+        return _buildReconnectScreen();
+      }
       return _buildLoginScreen();
     }
 
@@ -519,6 +567,84 @@ class _DriverHomePageState extends State<DriverHomePage>
                                   ),
                                 )
                               : const Text('Masuk'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReconnectScreen() {
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 440),
+              child: Card(
+                elevation: 2,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        'Sesi tersimpan ditemukan',
+                        style:
+                            Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _error ??
+                            'Aplikasi belum bisa menyinkronkan data driver dari server.',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: const Color(0xFF475569),
+                              height: 1.45,
+                            ),
+                      ),
+                      const SizedBox(height: 20),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: _refreshing || _persistedToken == null
+                              ? null
+                              : () => _hydrateDriverApp(
+                                    _persistedToken!,
+                                    boot: true,
+                                  ),
+                          icon: _refreshing
+                              ? const SizedBox(
+                                  height: 18,
+                                  width: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(Icons.refresh),
+                          label: const Text('Coba Lagi'),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton(
+                          onPressed: _refreshing
+                              ? null
+                              : _clearStoredSessionAndShowLogin,
+                          child: const Text('Login Ulang'),
                         ),
                       ),
                     ],

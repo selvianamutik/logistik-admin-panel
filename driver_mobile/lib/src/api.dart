@@ -7,7 +7,7 @@ import 'models.dart';
 
 const String apiBaseUrl = String.fromEnvironment(
   'API_BASE_URL',
-  defaultValue: 'https://app-ten-gamma-49.vercel.app',
+  defaultValue: 'https://app-pytagotechs-projects.vercel.app',
 );
 const Duration _requestTimeout = Duration(seconds: 20);
 
