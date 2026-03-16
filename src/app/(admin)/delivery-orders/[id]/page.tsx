@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '../../layout';
-import { ArrowLeft, Printer, FileDown, Truck, Save, MapPin, Radio } from 'lucide-react';
+import { ArrowLeft, Printer, FileDown, Truck, Upload, Save, MapPin, Radio } from 'lucide-react';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
 import { formatDate, formatDateTime, DO_STATUS_MAP } from '@/lib/utils';
 import { generateDOPdf } from '@/lib/pdf/doTemplate';
@@ -20,6 +20,7 @@ export default function DODetailPage() {
     const [trackingLogs, setTrackingLogs] = useState<TrackingLog[]>([]);
     const [loading, setLoading] = useState(true);
     const [showStatusModal, setShowStatusModal] = useState(false);
+    const [showPODModal, setShowPODModal] = useState(false);
     const [newStatus, setNewStatus] = useState('');
     const [statusNote, setStatusNote] = useState('');
     const [podName, setPodName] = useState('');
@@ -29,6 +30,7 @@ export default function DODetailPage() {
     const [taripBorongan, setTaripBorongan] = useState<number>(0);
     const [keteranganBorongan, setKeteranganBorongan] = useState('');
     const [updatingStatus, setUpdatingStatus] = useState(false);
+    const [savingPOD, setSavingPOD] = useState(false);
     const [savingTarip, setSavingTarip] = useState(false);
 
     const fetchEntity = useCallback(async <T,>(url: string) => {
@@ -159,6 +161,43 @@ export default function DODetailPage() {
             addToast('error', 'Gagal memperbarui status surat jalan');
         } finally {
             setUpdatingStatus(false);
+        }
+    };
+
+    const savePOD = async () => {
+        setSavingPOD(true);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'delivery-orders',
+                    action: 'update',
+                    data: {
+                        id: doData?._id,
+                        updates: {
+                            podReceiverName: podName,
+                            podReceivedDate: podDate,
+                            podNote,
+                        },
+                    },
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menyimpan POD');
+                return;
+            }
+            setDoData(prev => prev ? { ...prev, podReceiverName: podName, podReceivedDate: podDate, podNote } : prev);
+            setShowPODModal(false);
+            setPodName('');
+            setPodDate(new Date().toISOString().split('T')[0]);
+            setPodNote('');
+            addToast('success', 'POD berhasil disimpan');
+        } catch {
+            addToast('error', 'Gagal menyimpan POD');
+        } finally {
+            setSavingPOD(false);
         }
     };
 
@@ -352,6 +391,19 @@ export default function DODetailPage() {
                             }}
                         >
                             <Truck size={16} /> {nextStatuses.includes('DELIVERED') ? 'Lanjut / Selesaikan DO' : 'Ubah Status'}
+                        </button>
+                    )}
+                    {doData.status === 'DELIVERED' && !doData.podReceiverName && (
+                        <button
+                            className="btn btn-success"
+                            onClick={() => {
+                                setPodName('');
+                                setPodDate(new Date().toISOString().split('T')[0]);
+                                setPodNote('');
+                                setShowPODModal(true);
+                            }}
+                        >
+                            <Upload size={16} /> Lengkapi POD
                         </button>
                     )}
                     <button className="btn btn-secondary" onClick={handleExportPDF}>
@@ -587,6 +639,37 @@ export default function DODetailPage() {
                             <button className="btn btn-secondary" onClick={() => setShowStatusModal(false)} disabled={updatingStatus}>Batal</button>
                             <button className={`btn ${isCompletingDelivery ? 'btn-success' : 'btn-primary'}`} onClick={updateDOStatus} disabled={!newStatus || updatingStatus || (isCompletingDelivery && (!podName.trim() || !podDate))}>
                                 <Save size={16} /> {updatingStatus ? 'Menyimpan...' : (isCompletingDelivery ? 'Selesaikan DO' : 'Simpan')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showPODModal && (
+                <div className="modal-overlay" onClick={() => { if (!savingPOD) setShowPODModal(false); }}>
+                    <div className="modal" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Lengkapi Proof of Delivery</h3>
+                            <button className="modal-close" onClick={() => setShowPODModal(false)} disabled={savingPOD}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="form-group">
+                                <label className="form-label">Nama Penerima POD <span className="required">*</span></label>
+                                <input className="form-input" value={podName} onChange={e => setPodName(e.target.value)} disabled={savingPOD} />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Tanggal Terima POD <span className="required">*</span></label>
+                                <input type="date" className="form-input" value={podDate} onChange={e => setPodDate(e.target.value)} disabled={savingPOD} />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Catatan POD</label>
+                                <textarea className="form-textarea" rows={2} value={podNote} onChange={e => setPodNote(e.target.value)} disabled={savingPOD} />
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setShowPODModal(false)} disabled={savingPOD}>Batal</button>
+                            <button className="btn btn-success" onClick={savePOD} disabled={savingPOD || !podName.trim() || !podDate}>
+                                <Upload size={16} /> {savingPOD ? 'Menyimpan...' : 'Simpan POD'}
                             </button>
                         </div>
                     </div>
