@@ -392,6 +392,7 @@ export async function handleDeliveryOrderCreate(
         description?: string;
         qtyKoli?: number;
         weight?: number;
+        status?: string;
     }>>(`*[_type == "orderItem" && _id in $ids]`, { ids: itemRefs });
     if (selectedItems.length !== itemRefs.length) {
         return NextResponse.json({ error: 'Sebagian item order tidak ditemukan' }, { status: 404 });
@@ -400,6 +401,9 @@ export async function handleDeliveryOrderCreate(
     for (const item of selectedItems) {
         if (extractRefId(item.orderRef) !== orderRef) {
             return NextResponse.json({ error: 'Ada item yang bukan milik order ini' }, { status: 400 });
+        }
+        if (item.status !== 'PENDING') {
+            return NextResponse.json({ error: 'Hanya item order berstatus pending yang bisa dibuatkan surat jalan' }, { status: 409 });
         }
 
         const activeAssignment = await getSanityClient().fetch<{ _id: string } | null>(

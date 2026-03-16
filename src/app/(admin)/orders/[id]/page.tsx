@@ -86,7 +86,7 @@ export default function OrderDetailPage() {
         .filter(doi => dos.some(d => d._id === doi.deliveryOrderRef && d.status !== 'CANCELLED'))
         .map(doi => doi.orderItemRef);
 
-    const availableItems = items.filter(i => !assignedItemIds.includes(i._id));
+    const availableItems = items.filter(i => i.status === 'PENDING' && !assignedItemIds.includes(i._id));
     const deliveredCount = items.filter(i => i.status === 'DELIVERED').length;
     const holdCount = items.filter(i => i.status === 'HOLD').length;
     const pendingCount = items.filter(i => i.status === 'PENDING').length;
