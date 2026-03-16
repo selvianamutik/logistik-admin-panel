@@ -5,7 +5,7 @@ import {
     sanityGetCompanyProfile,
     sanityUpdate,
 } from '@/lib/sanity';
-import type { User } from '@/lib/types';
+import type { CompanyProfile, User } from '@/lib/types';
 
 export type ApiSession = { _id: string; name: string; role: User['role'] };
 export type PublicUser = Omit<User, 'passwordHash'>;
@@ -64,6 +64,55 @@ export function sanitizeUserForClient(user: User): PublicUser {
     const { passwordHash, ...safeUser } = user;
     void passwordHash;
     return safeUser;
+}
+
+export function sanitizeCompanyProfileForRole(
+    company: CompanyProfile,
+    role: User['role']
+): CompanyProfile {
+    if (role === 'OWNER') {
+        return company;
+    }
+
+    return {
+        ...company,
+        headerStampUrl: undefined,
+        signatureStampUrl: undefined,
+        numberingSettings: {
+            resiPrefix: '',
+            resiCounter: 0,
+            resiPeriod: undefined,
+            doPrefix: '',
+            doCounter: 0,
+            doPeriod: undefined,
+            invoicePrefix: '',
+            invoiceCounter: 0,
+            invoicePeriod: undefined,
+            notaPrefix: undefined,
+            notaCounter: undefined,
+            notaPeriod: undefined,
+            notaSeriesCode: company.numberingSettings?.notaSeriesCode,
+            boronganPrefix: undefined,
+            boronganCounter: undefined,
+            boronganPeriod: undefined,
+            bonPrefix: undefined,
+            bonCounter: undefined,
+            bonPeriod: undefined,
+            incidentPrefix: '',
+            incidentCounter: 0,
+            incidentPeriod: undefined,
+        },
+        invoiceSettings: {
+            defaultTermDays: company.invoiceSettings?.defaultTermDays ?? 14,
+            dueDateDays: company.invoiceSettings?.dueDateDays ?? company.invoiceSettings?.defaultTermDays ?? 14,
+            footerNote: company.invoiceSettings?.footerNote || '',
+            invoiceMode: company.invoiceSettings?.invoiceMode || 'DO',
+        },
+        documentSettings: {
+            showContact: company.documentSettings?.showContact ?? true,
+            dateFormat: company.documentSettings?.dateFormat || 'DD/MM/YYYY',
+        },
+    };
 }
 
 export async function ensureCashAccount() {

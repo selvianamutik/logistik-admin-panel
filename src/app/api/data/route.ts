@@ -9,6 +9,7 @@ import { getSession } from '@/lib/auth';
 import {
     ensureCashAccount,
     isPlainObject,
+    sanitizeCompanyProfileForRole,
     sanitizeUserForClient,
     type ApiSession as Session,
 } from '@/lib/api/data-helpers';
@@ -222,7 +223,11 @@ export async function GET(request: Request) {
     try {
         if (entity === 'company') {
             const profile = await sanityGetCompanyProfile();
-            return NextResponse.json({ data: profile });
+            return NextResponse.json({
+                data: profile
+                    ? sanitizeCompanyProfileForRole(profile, session.role)
+                    : null,
+            });
         }
 
         if (entity === 'bank-accounts') {
