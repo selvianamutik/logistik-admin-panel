@@ -159,6 +159,24 @@ class DriverApi {
     );
   }
 
+  static Future<void> postDeliveryStatus(
+    String token,
+    String deliveryOrderRef,
+    String status, {
+    String? note,
+  }) async {
+    await _requestJson(
+      '/api/driver/delivery-orders/status',
+      method: 'POST',
+      token: token,
+      body: <String, dynamic>{
+        'id': deliveryOrderRef,
+        'status': status,
+        'note': note,
+      },
+    );
+  }
+
   static CompanySummary? _parseCompany(dynamic raw) {
     if (raw is Map<String, dynamic>) {
       return CompanySummary.fromJson(raw);

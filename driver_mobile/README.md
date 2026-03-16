@@ -5,6 +5,7 @@ App driver native resmi untuk Android dan iOS. App ini dipakai driver untuk:
 - login dengan akun mobile driver
 - melihat DO aktif miliknya
 - memulai / memulihkan tracking live
+- mengirim progres perjalanan (`Dalam Pengiriman`, `Sudah Tiba`)
 - mengirim heartbeat lokasi ke dashboard admin
 
 Project ini menggantikan implementasi React/Expo lama. Jalur React lama sudah

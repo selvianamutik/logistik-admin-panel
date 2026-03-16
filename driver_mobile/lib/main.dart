@@ -92,8 +92,11 @@ class _DriverHomePageState extends State<DriverHomePage>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && _token != null) {
-      unawaited(_hydrateDriverApp(_token!));
+    final resumableToken = _token ?? _persistedToken;
+    if (state == AppLifecycleState.resumed &&
+        resumableToken != null &&
+        resumableToken.isNotEmpty) {
+      unawaited(_hydrateDriverApp(resumableToken));
     }
   }
 
@@ -308,6 +311,42 @@ class _DriverHomePageState extends State<DriverHomePage>
             ? 'Tracking dipulihkan lagi. Biarkan GPS dan internet tetap menyala sampai admin menutup DO.'
             : 'Tracking background aktif. Driver tidak bisa menghentikannya sendiri sebelum admin menyelesaikan DO.',
       );
+    } catch (error) {
+      if (error is ApiException &&
+          (error.statusCode == 401 || error.statusCode == 403)) {
+        await _forceLogoutWithMessage(error.message);
+      }
+      _showSnackBar(error.toString());
+    } finally {
+      if (mounted) {
+        setState(() {
+          _actionOrderId = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _handleDeliveryProgress(
+    DeliveryOrder order,
+    DeliveryOrderStatus nextStatus,
+  ) async {
+    final token = _token;
+    if (token == null || token.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _actionOrderId = order.id;
+    });
+
+    try {
+      await DriverApi.postDeliveryStatus(
+        token,
+        order.id,
+        _toDeliveryStatusPayload(nextStatus),
+      );
+      await _refreshOrders();
+      _showSnackBar(_deliveryProgressSuccessMessage(nextStatus));
     } catch (error) {
       if (error is ApiException &&
           (error.statusCode == 401 || error.statusCode == 403)) {
@@ -802,7 +841,7 @@ class _DriverHomePageState extends State<DriverHomePage>
             ),
             const SizedBox(height: 10),
             const Text(
-              'Saat tracking aktif, aplikasi akan menjalankan service lokasi dan mengirim heartbeat ke dashboard admin. Driver tidak boleh mematikan tracking sendiri sebelum admin benar-benar menutup DO. Android paling stabil; di iPhone pastikan izin lokasi Always aktif dan aplikasi tidak di-force close.',
+              'Saat tracking aktif, aplikasi akan menjalankan service lokasi dan mengirim heartbeat ke dashboard admin. Driver juga bisa mengirim progres perjalanan sampai status tiba. Penyelesaian akhir DO tetap dilakukan admin. Android paling stabil; di iPhone pastikan izin lokasi Always aktif dan aplikasi tidak di-force close.',
               style: TextStyle(
                 color: Color(0xFFDBEAFE),
                 height: 1.45,
@@ -884,6 +923,7 @@ class _DriverHomePageState extends State<DriverHomePage>
     final showRestore = order.trackingState == TrackingState.active &&
         activeOrder?.id == order.id &&
         !_trackingRuntimeHealthy;
+    final nextDriverProgress = _nextDriverProgressStatus(order);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 14),
@@ -931,10 +971,29 @@ class _DriverHomePageState extends State<DriverHomePage>
                 label: const Text('Buka lokasi terakhir di Maps'),
               ),
             const SizedBox(height: 8),
-            if (order.trackingState == TrackingState.active && !showRestore)
+            if (order.trackingState == TrackingState.active && !showRestore) ...<Widget>[
+              if (nextDriverProgress != null) ...<Widget>[
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: busy
+                        ? null
+                        : () => _handleDeliveryProgress(
+                              order,
+                              nextDriverProgress,
+                            ),
+                    icon: const Icon(Icons.route),
+                    label: Text(
+                      _driverProgressButtonLabel(nextDriverProgress),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
               _buildNotice(
                 'Tracking harus tetap aktif sampai admin menyelesaikan DO ini. Driver tidak bisa menjeda atau menghentikannya sendiri.',
-              )
+              ),
+            ]
             else if (order.trackingState == TrackingState.paused)
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1115,6 +1174,69 @@ class _DriverHomePageState extends State<DriverHomePage>
         return 'Dibatalkan';
       case DeliveryOrderStatus.created:
         return 'Siap Berangkat';
+    }
+  }
+
+  DeliveryOrderStatus? _nextDriverProgressStatus(DeliveryOrder order) {
+    if (order.trackingState != TrackingState.active || order.isClosed) {
+      return null;
+    }
+
+    switch (order.status) {
+      case DeliveryOrderStatus.headingToPickup:
+        return DeliveryOrderStatus.onDelivery;
+      case DeliveryOrderStatus.onDelivery:
+        return DeliveryOrderStatus.arrived;
+      case DeliveryOrderStatus.created:
+      case DeliveryOrderStatus.arrived:
+      case DeliveryOrderStatus.delivered:
+      case DeliveryOrderStatus.cancelled:
+        return null;
+    }
+  }
+
+  String _driverProgressButtonLabel(DeliveryOrderStatus nextStatus) {
+    switch (nextStatus) {
+      case DeliveryOrderStatus.onDelivery:
+        return 'Tandai Dalam Pengiriman';
+      case DeliveryOrderStatus.arrived:
+        return 'Tandai Sudah Tiba';
+      case DeliveryOrderStatus.created:
+      case DeliveryOrderStatus.headingToPickup:
+      case DeliveryOrderStatus.delivered:
+      case DeliveryOrderStatus.cancelled:
+        return 'Kirim Progres';
+    }
+  }
+
+  String _toDeliveryStatusPayload(DeliveryOrderStatus status) {
+    switch (status) {
+      case DeliveryOrderStatus.headingToPickup:
+        return 'HEADING_TO_PICKUP';
+      case DeliveryOrderStatus.onDelivery:
+        return 'ON_DELIVERY';
+      case DeliveryOrderStatus.arrived:
+        return 'ARRIVED';
+      case DeliveryOrderStatus.delivered:
+        return 'DELIVERED';
+      case DeliveryOrderStatus.cancelled:
+        return 'CANCELLED';
+      case DeliveryOrderStatus.created:
+        return 'CREATED';
+    }
+  }
+
+  String _deliveryProgressSuccessMessage(DeliveryOrderStatus status) {
+    switch (status) {
+      case DeliveryOrderStatus.onDelivery:
+        return 'Status DO diperbarui menjadi dalam pengiriman.';
+      case DeliveryOrderStatus.arrived:
+        return 'Status DO diperbarui menjadi sudah tiba.';
+      case DeliveryOrderStatus.created:
+      case DeliveryOrderStatus.headingToPickup:
+      case DeliveryOrderStatus.delivered:
+      case DeliveryOrderStatus.cancelled:
+        return 'Progres perjalanan berhasil diperbarui.';
     }
   }
 
