@@ -14,9 +14,11 @@ export default function CustomersPage() {
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [showModal, setShowModal] = useState(false);
+    const [saving, setSaving] = useState(false);
     const [editItem, setEditItem] = useState<Customer | null>(null);
     const [form, setForm] = useState({ name: '', address: '', contactPerson: '', phone: '', email: '', defaultPaymentTerm: 14, npwp: '' });
     const [deleteId, setDeleteId] = useState<string | null>(null);
+    const [deletingId, setDeletingId] = useState<string | null>(null);
 
     useEffect(() => {
         const loadCustomers = async () => {
@@ -44,6 +46,7 @@ export default function CustomersPage() {
 
     const handleSave = async () => {
         if (!form.name) { addToast('error', 'Nama customer wajib diisi'); return; }
+        setSaving(true);
         try {
             if (editItem) {
                 const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'customers', action: 'update', data: { id: editItem._id, updates: { ...form, active: true } } }) });
@@ -61,10 +64,13 @@ export default function CustomersPage() {
             setShowModal(false);
         } catch {
             addToast('error', editItem ? 'Gagal memperbarui customer' : 'Gagal menambahkan customer');
+        } finally {
+            setSaving(false);
         }
     };
 
     const handleDelete = async (id: string) => {
+        setDeletingId(id);
         try {
             const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'customers', action: 'delete', data: { id } }) });
             const result = await res.json();
@@ -73,6 +79,8 @@ export default function CustomersPage() {
         } catch {
             addToast('error', 'Gagal menghapus customer');
             setDeleteId(null);
+        } finally {
+            setDeletingId(current => current === id ? null : current);
         }
     };
 
@@ -126,9 +134,9 @@ export default function CustomersPage() {
             </div>
 
             {showModal && (
-                <div className="modal-overlay" onClick={() => setShowModal(false)}>
+                <div className="modal-overlay" onClick={() => { if (!saving) setShowModal(false); }}>
                     <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header"><h3 className="modal-title">{editItem ? 'Edit Customer' : 'Tambah Customer'}</h3><button className="modal-close" onClick={() => setShowModal(false)}><X size={20} /></button></div>
+                        <div className="modal-header"><h3 className="modal-title">{editItem ? 'Edit Customer' : 'Tambah Customer'}</h3><button className="modal-close" onClick={() => setShowModal(false)} disabled={saving}><X size={20} /></button></div>
                         <div className="modal-body">
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Nama <span className="required">*</span></label><input className="form-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
@@ -144,16 +152,16 @@ export default function CustomersPage() {
                                 <div className="form-group"><label className="form-label">NPWP</label><input className="form-input" value={form.npwp} onChange={e => setForm({ ...form, npwp: e.target.value })} /></div>
                             </div>
                         </div>
-                        <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowModal(false)}>Batal</button><button className="btn btn-primary" onClick={handleSave}><Save size={16} /> Simpan</button></div>
+                        <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowModal(false)} disabled={saving}>Batal</button><button className="btn btn-primary" onClick={handleSave} disabled={saving}><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}</button></div>
                     </div>
                 </div>
             )}
             {deleteId && (
-                <div className="modal-overlay" onClick={() => setDeleteId(null)}>
+                <div className="modal-overlay" onClick={() => { if (!deletingId) setDeleteId(null); }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header"><h3 className="modal-title">Konfirmasi Hapus</h3></div>
                         <div className="modal-body"><p>Apakah Anda yakin ingin menghapus customer ini?</p></div>
-                        <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setDeleteId(null)}>Batal</button><button className="btn btn-danger" onClick={() => handleDelete(deleteId!)}><Trash2 size={16} /> Hapus</button></div>
+                        <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setDeleteId(null)} disabled={deletingId === deleteId}>Batal</button><button className="btn btn-danger" onClick={() => handleDelete(deleteId!)} disabled={deletingId === deleteId}><Trash2 size={16} /> {deletingId === deleteId ? 'Menghapus...' : 'Hapus'}</button></div>
                     </div>
                 </div>
             )}

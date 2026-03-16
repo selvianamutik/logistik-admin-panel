@@ -12,6 +12,7 @@ export default function ServicesPage() {
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
     const [editItem, setEditItem] = useState<Service | null>(null);
+    const [saving, setSaving] = useState(false);
     const [form, setForm] = useState({ name: '', description: '', active: true });
     const isOwner = user?.role === 'OWNER';
 
@@ -40,6 +41,7 @@ export default function ServicesPage() {
     const handleSave = async () => {
         if (!isOwner) { addToast('error', 'Hanya OWNER yang dapat mengubah layanan'); return; }
         if (!form.name) { addToast('error', 'Nama wajib'); return; }
+        setSaving(true);
         try {
             if (editItem) {
                 const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'services', action: 'update', data: { id: editItem._id, updates: form } }) });
@@ -62,6 +64,8 @@ export default function ServicesPage() {
             setShowModal(false);
         } catch {
             addToast('error', editItem ? 'Gagal memperbarui layanan' : 'Gagal menambah layanan');
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -82,14 +86,14 @@ export default function ServicesPage() {
                 </tbody>
             </table></div></div>
             {showModal && (
-                <div className="modal-overlay" onClick={() => setShowModal(false)}><div className="modal" onClick={e => e.stopPropagation()}>
-                    <div className="modal-header"><h3 className="modal-title">{editItem ? 'Edit' : 'Tambah'} Layanan</h3><button className="modal-close" onClick={() => setShowModal(false)}><X size={20} /></button></div>
+                <div className="modal-overlay" onClick={() => { if (!saving) setShowModal(false); }}><div className="modal" onClick={e => e.stopPropagation()}>
+                    <div className="modal-header"><h3 className="modal-title">{editItem ? 'Edit' : 'Tambah'} Layanan</h3><button className="modal-close" onClick={() => setShowModal(false)} disabled={saving}><X size={20} /></button></div>
                     <div className="modal-body">
                         <div className="form-group"><label className="form-label">Nama</label><input className="form-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
                         <div className="form-group"><label className="form-label">Deskripsi</label><textarea className="form-textarea" rows={2} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></div>
                         <div className="form-group"><label className="form-checkbox"><input type="checkbox" checked={form.active} onChange={e => setForm({ ...form, active: e.target.checked })} /> Aktif</label></div>
                     </div>
-                    <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowModal(false)}>Batal</button><button className="btn btn-primary" onClick={handleSave}><Save size={16} /> Simpan</button></div>
+                    <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowModal(false)} disabled={saving}>Batal</button><button className="btn btn-primary" onClick={handleSave} disabled={saving}><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}</button></div>
                 </div></div>
             )}
         </div>

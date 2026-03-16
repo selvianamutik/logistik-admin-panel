@@ -14,6 +14,8 @@ export default function UsersPage() {
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
     const [editUser, setEditUser] = useState<InternalUser | null>(null);
+    const [saving, setSaving] = useState(false);
+    const [togglingUserId, setTogglingUserId] = useState<string | null>(null);
     const [form, setForm] = useState({ name: '', email: '', role: 'ADMIN' as InternalUserRole, password: '' });
 
     useEffect(() => {
@@ -42,6 +44,7 @@ export default function UsersPage() {
         if (!form.name || !form.email) { addToast('error', 'Nama dan email wajib'); return; }
         if (!editUser && !form.password) { addToast('error', 'Password wajib untuk user baru'); return; }
         if (form.password && form.password.length < 8) { addToast('error', 'Password minimal 8 karakter'); return; }
+        setSaving(true);
         try {
             if (editUser) {
                 const updates: Record<string, unknown> = { name: form.name, email: form.email, role: form.role };
@@ -75,11 +78,14 @@ export default function UsersPage() {
             setShowModal(false);
         } catch {
             addToast('error', editUser ? 'Gagal memperbarui user' : 'Gagal menambah user');
+        } finally {
+            setSaving(false);
         }
     };
 
     const toggleActive = async (u: User) => {
         const currentlyActive = u.active !== false;
+        setTogglingUserId(u._id);
         try {
             const res = await fetch('/api/data', {
                 method: 'POST',
@@ -95,6 +101,8 @@ export default function UsersPage() {
             addToast('success', `User ${currentlyActive ? 'dinonaktifkan' : 'diaktifkan'}`);
         } catch {
             addToast('error', 'Gagal memperbarui status user');
+        } finally {
+            setTogglingUserId(current => current === u._id ? null : current);
         }
     };
 
@@ -114,8 +122,8 @@ export default function UsersPage() {
                                         <td><span className={`badge ${u.role === 'OWNER' ? 'badge-purple' : 'badge-info'}`}>{u.role}</span></td>
                                         <td><span className={`badge ${u.active !== false ? 'badge-success' : 'badge-gray'}`}>{u.active !== false ? 'Aktif' : 'Non-Aktif'}</span></td>
                                         <td><div className="table-actions">
-                                            <button className="table-action-btn" onClick={() => openEdit(u)}><Edit size={14} /> Edit</button>
-                                            <button className="table-action-btn" onClick={() => toggleActive(u)}><RefreshCw size={14} /> {u.active !== false ? 'Nonaktifkan' : 'Aktifkan'}</button>
+                                            <button className="table-action-btn" onClick={() => openEdit(u)} disabled={togglingUserId === u._id}><Edit size={14} /> Edit</button>
+                                            <button className="table-action-btn" onClick={() => toggleActive(u)} disabled={togglingUserId === u._id}><RefreshCw size={14} /> {togglingUserId === u._id ? 'Menyimpan...' : (u.active !== false ? 'Nonaktifkan' : 'Aktifkan')}</button>
                                         </div></td>
                                     </tr>
                                 ))}
@@ -125,9 +133,9 @@ export default function UsersPage() {
             </div>
 
             {showModal && (
-                <div className="modal-overlay" onClick={() => setShowModal(false)}>
+                <div className="modal-overlay" onClick={() => { if (!saving) setShowModal(false); }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header"><h3 className="modal-title">{editUser ? 'Edit User' : 'Tambah User'}</h3><button className="modal-close" onClick={() => setShowModal(false)}><X size={20} /></button></div>
+                        <div className="modal-header"><h3 className="modal-title">{editUser ? 'Edit User' : 'Tambah User'}</h3><button className="modal-close" onClick={() => setShowModal(false)} disabled={saving}><X size={20} /></button></div>
                         <div className="modal-body">
                             <div className="form-group"><label className="form-label">Nama <span className="required">*</span></label><input className="form-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
                             <div className="form-group"><label className="form-label">Email <span className="required">*</span></label><input className="form-input" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
@@ -138,7 +146,7 @@ export default function UsersPage() {
                             </div>
                             <div className="form-group"><label className="form-label">{editUser ? 'Reset Password (kosongkan jika tidak diubah)' : 'Password *'}</label><input className="form-input" type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} /><div className="form-hint">Minimal 8 karakter</div></div>
                         </div>
-                        <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowModal(false)}>Batal</button><button className="btn btn-primary" onClick={handleSave}><Save size={16} /> Simpan</button></div>
+                        <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowModal(false)} disabled={saving}>Batal</button><button className="btn btn-primary" onClick={handleSave} disabled={saving}><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}</button></div>
                     </div>
                 </div>
             )}

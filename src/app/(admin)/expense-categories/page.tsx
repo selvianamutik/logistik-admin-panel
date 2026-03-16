@@ -12,6 +12,7 @@ export default function ExpenseCategoriesPage() {
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
     const [editItem, setEditItem] = useState<ExpenseCategory | null>(null);
+    const [saving, setSaving] = useState(false);
     const [name, setName] = useState('');
     const isOwner = user?.role === 'OWNER';
 
@@ -40,6 +41,7 @@ export default function ExpenseCategoriesPage() {
     const handleSave = async () => {
         if (!isOwner) { addToast('error', 'Hanya OWNER yang dapat mengubah kategori biaya'); return; }
         if (!name) { addToast('error', 'Nama wajib'); return; }
+        setSaving(true);
         try {
             if (editItem) {
                 const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'expense-categories', action: 'update', data: { id: editItem._id, updates: { name } } }) });
@@ -62,6 +64,8 @@ export default function ExpenseCategoriesPage() {
             setShowModal(false);
         } catch {
             addToast('error', editItem ? 'Gagal memperbarui kategori biaya' : 'Gagal menambah kategori biaya');
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -82,10 +86,10 @@ export default function ExpenseCategoriesPage() {
                 </tbody>
             </table></div></div>
             {showModal && (
-                <div className="modal-overlay" onClick={() => setShowModal(false)}><div className="modal" onClick={e => e.stopPropagation()}>
-                    <div className="modal-header"><h3 className="modal-title">{editItem ? 'Edit' : 'Tambah'} Kategori</h3><button className="modal-close" onClick={() => setShowModal(false)}><X size={20} /></button></div>
+                <div className="modal-overlay" onClick={() => { if (!saving) setShowModal(false); }}><div className="modal" onClick={e => e.stopPropagation()}>
+                    <div className="modal-header"><h3 className="modal-title">{editItem ? 'Edit' : 'Tambah'} Kategori</h3><button className="modal-close" onClick={() => setShowModal(false)} disabled={saving}><X size={20} /></button></div>
                     <div className="modal-body"><div className="form-group"><label className="form-label">Nama Kategori</label><input className="form-input" value={name} onChange={e => setName(e.target.value)} autoFocus /></div></div>
-                    <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowModal(false)}>Batal</button><button className="btn btn-primary" onClick={handleSave}><Save size={16} /> Simpan</button></div>
+                    <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowModal(false)} disabled={saving}>Batal</button><button className="btn btn-primary" onClick={handleSave} disabled={saving}><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}</button></div>
                 </div></div>
             )}
         </div>

@@ -18,6 +18,8 @@ export default function TiresPage() {
     const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'replaced'>('all');
     const [showModal, setShowModal] = useState(false);
     const [editTarget, setEditTarget] = useState<TireEvent | null>(null);
+    const [saving, setSaving] = useState(false);
+    const [deletingId, setDeletingId] = useState<string | null>(null);
     const [form, setForm] = useState({
         vehicleRef: '',
         posisi: '',
@@ -84,6 +86,7 @@ export default function TiresPage() {
         if (!form.posisi) { addToast('error', 'Isi posisi ban'); return; }
         if (!form.tireBrand) { addToast('error', 'Isi merk/tipe ban'); return; }
         if (!form.tireSize) { addToast('error', 'Isi ukuran ban'); return; }
+        setSaving(true);
         try {
             const veh = vehicles.find(v => v._id === form.vehicleRef);
             const payload = { ...form, vehiclePlate: veh?.plateNumber, replaceDate: form.replaceDate || undefined };
@@ -113,10 +116,12 @@ export default function TiresPage() {
             setShowModal(false);
             loadData();
         } catch { addToast('error', 'Gagal menyimpan'); }
+        finally { setSaving(false); }
     };
 
     const handleDelete = async (id: string) => {
         if (!confirm('Hapus catatan ban ini?')) return;
+        setDeletingId(id);
         try {
             const res = await fetch('/api/data', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -130,6 +135,7 @@ export default function TiresPage() {
             addToast('success', 'Catatan ban dihapus');
             loadData();
         } catch { addToast('error', 'Gagal menghapus'); }
+        finally { setDeletingId(current => current === id ? null : current); }
     };
 
     const filtered = events.filter(e => {
@@ -219,8 +225,8 @@ export default function TiresPage() {
                                         <td className="text-muted">{ev.notes || '-'}</td>
                                         <td>
                                             <div style={{ display: 'flex', gap: 4 }}>
-                                                <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => openEdit(ev)}>Edit</button>
-                                                <button className="btn" style={{ padding: '4px 10px', fontSize: '0.75rem', background: 'var(--color-danger)', color: 'white' }} onClick={() => handleDelete(ev._id)}>Hapus</button>
+                                                <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => openEdit(ev)} disabled={deletingId === ev._id}>Edit</button>
+                                                <button className="btn" style={{ padding: '4px 10px', fontSize: '0.75rem', background: 'var(--color-danger)', color: 'white' }} onClick={() => handleDelete(ev._id)} disabled={deletingId === ev._id}>{deletingId === ev._id ? 'Menghapus...' : 'Hapus'}</button>
                                             </div>
                                         </td>
                                     </tr>
@@ -237,11 +243,11 @@ export default function TiresPage() {
 
             {/* Add/Edit Modal */}
             {showModal && (
-                <div className="modal-overlay" onClick={() => setShowModal(false)}>
+                <div className="modal-overlay" onClick={() => { if (!saving) setShowModal(false); }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
                             <h3 className="modal-title">{editTarget ? 'Edit Catatan Ban' : 'Catat Ban'}</h3>
-                            <button className="modal-close" onClick={() => setShowModal(false)}>&times;</button>
+                            <button className="modal-close" onClick={() => setShowModal(false)} disabled={saving}>&times;</button>
                         </div>
                         <div className="modal-body">
                             <div className="form-group">
@@ -289,8 +295,8 @@ export default function TiresPage() {
                             </div>
                         </div>
                         <div className="modal-footer">
-                            <button className="btn btn-secondary" onClick={() => setShowModal(false)}>Batal</button>
-                            <button className="btn btn-primary" onClick={handleSave}><Plus size={16} /> {editTarget ? 'Simpan Perubahan' : 'Simpan'}</button>
+                            <button className="btn btn-secondary" onClick={() => setShowModal(false)} disabled={saving}>Batal</button>
+                            <button className="btn btn-primary" onClick={handleSave} disabled={saving}><Plus size={16} /> {saving ? 'Menyimpan...' : (editTarget ? 'Simpan Perubahan' : 'Simpan')}</button>
                         </div>
                     </div>
                 </div>
