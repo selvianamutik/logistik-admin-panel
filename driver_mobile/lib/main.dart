@@ -62,6 +62,7 @@ class _DriverHomePageState extends State<DriverHomePage>
   String? _error;
   bool _trackingRuntimeHealthy = true;
   bool _hasStoredSession = false;
+  int _hydrateSequence = 0;
 
   bool get _isMutating => _actionOrderId != null;
 
@@ -96,6 +97,7 @@ class _DriverHomePageState extends State<DriverHomePage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final resumableToken = _token ?? _persistedToken;
     if (state == AppLifecycleState.resumed &&
+        !_isMutating &&
         resumableToken != null &&
         resumableToken.isNotEmpty) {
       unawaited(_hydrateDriverApp(resumableToken));
@@ -150,6 +152,7 @@ class _DriverHomePageState extends State<DriverHomePage>
     if (!mounted) {
       return;
     }
+    final hydrateSequence = ++_hydrateSequence;
 
     setState(() {
       if (boot) {
@@ -169,7 +172,7 @@ class _DriverHomePageState extends State<DriverHomePage>
 
       await _trackingRuntime.reconcileWithServer(_activeServerOrderId(orders));
 
-      if (!mounted) {
+      if (!mounted || hydrateSequence != _hydrateSequence) {
         return;
       }
 
@@ -189,7 +192,7 @@ class _DriverHomePageState extends State<DriverHomePage>
           (error.statusCode == 401 || error.statusCode == 403)) {
         await DriverStorage.clearAuthToken();
         await _trackingRuntime.stopLocalOnly();
-        if (!mounted) {
+        if (!mounted || hydrateSequence != _hydrateSequence) {
           return;
         }
         setState(() {
@@ -203,13 +206,13 @@ class _DriverHomePageState extends State<DriverHomePage>
           _hasStoredSession = false;
           _error = error.message;
         });
-      } else if (mounted) {
+      } else if (mounted && hydrateSequence == _hydrateSequence) {
         setState(() {
           _error = error.toString();
         });
       }
     } finally {
-      if (mounted) {
+      if (mounted && hydrateSequence == _hydrateSequence) {
         setState(() {
           _booting = false;
           _refreshing = false;
@@ -260,7 +263,7 @@ class _DriverHomePageState extends State<DriverHomePage>
 
   Future<void> _refreshOrders() async {
     final token = _token;
-    if (token == null || token.isEmpty) {
+    if (token == null || token.isEmpty || _refreshing || _isMutating) {
       return;
     }
     await _hydrateDriverApp(token);
