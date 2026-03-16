@@ -498,7 +498,7 @@ Tetap ada batasannya:
 - izin lokasi foreground/background harus aktif
 - GPS dan internet harus aktif
 - kalau user force stop aplikasi atau mencabut izin lokasi, tracking background berhenti
-- token driver mobile saat ini disimpan lokal di app supaya background task bisa membacanya
+- token driver mobile saat ini disimpan di secure storage perangkat, dengan fallback terbatas untuk environment test
 
 Jadi v1 APK ini sudah cocok untuk background tracking Android operasional, tetapi belum berarti semua edge-case device policy sudah sempurna.
 

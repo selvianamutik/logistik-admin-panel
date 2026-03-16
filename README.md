@@ -1,268 +1,128 @@
-# 🚛 LOGISTIK — Admin Panel
+# Gading Mas Surya - Admin Panel
 
-Sistem manajemen logistik berbasis web. Dibangun dengan **Next.js 16**, **Sanity CMS**, dan di-deploy ke **Vercel**.
+Sistem manajemen logistik berbasis web untuk operasional pengiriman, penagihan, kas/bank, armada, dan tracking driver.
 
----
+Stack utama:
+- Next.js 16
+- Sanity CMS
+- Vercel
+- Flutter untuk app driver mobile
 
-## 📋 Daftar Modul
+## Modul utama
 
-| Modul | URL | Deskripsi |
-|---|---|---|
-| Dashboard | `/dashboard` | Ringkasan statistik bisnis |
-| Order / Resi | `/orders` | Manajemen order pengiriman |
-| Surat Jalan | `/delivery-orders` | Tracking pengiriman per DO |
-| Customer | `/customers` | Data pelanggan |
-| Layanan | `/services` | Jenis layanan/komoditas |
-| **Nota Ongkos Angkut** | `/invoices` | Tagihan ongkos ke customer |
-| **Borongan Supir** | `/borongan` | Slip upah supir |
-| Bon Supir | `/driver-vouchers` | Uang jalan / bon supir |
-| Pengeluaran | `/expenses` | Pencatatan biaya operasional |
-| Kategori Biaya | `/expense-categories` | Kategori pengeluaran |
-| Rekening & Kas | `/bank-accounts` | Manajemen rekening bank dan kas tunai |
-| Laporan | `/reports` | Laba rugi & arus kas |
-| Fleet | `/fleet/*` | Kendaraan, supir, maintenance, ban, insiden |
-| Pengaturan | `/settings/*` | Profil, perusahaan, user, audit log |
+- `/dashboard` untuk ringkasan owner/admin
+- `/orders` untuk order/resi
+- `/delivery-orders` untuk surat jalan dan tracking per DO
+- `/invoices` untuk nota ongkos angkut
+- `/borongan` untuk slip borongan supir
+- `/driver-vouchers` untuk bon supir
+- `/expenses` untuk pengeluaran umum
+- `/bank-accounts` untuk rekening bank dan kas tunai
+- `/reports` untuk laba rugi dan arus kas
+- `/fleet/*` untuk supir, kendaraan, maintenance, ban, dan insiden
+- `/settings/*` untuk profil, perusahaan, user, dan audit log
 
----
+## Workflow inti
 
-## 🔄 Alur Kerja (Workflow)
+1. Order dibuat dari customer/pengirim.
+2. Dari order, admin membuat Delivery Order.
+3. Driver menjalankan tracking dan hanya boleh mengirim progres perjalanan.
+4. Admin menyelesaikan DO dan mengisi POD pada langkah yang sama.
+5. DO yang selesai bisa ditagihkan ke customer lewat Nota Ongkos.
+6. Pembayaran nota otomatis mem-posting income dan mutasi rekening/kas.
+7. DO yang selesai bisa dipakai untuk borongan supir.
+8. Bon supir dipakai untuk uang jalan dan disettle menjadi expense.
 
-### 1. Order → Surat Jalan → Selesai
+Dokumen alur lengkap ada di:
+- [WORKFLOW.md](C:\LOGISTIK\app\WORKFLOW.md)
+- [AUDIT.md](C:\LOGISTIK\app\AUDIT.md)
+- [security_best_practices_report.md](C:\LOGISTIK\app\security_best_practices_report.md)
 
-```
-📦 Buat Order (Resi)
-   └─ Isi customer, penerima, barang, berat
-   └─ Nomor Resi auto: R-202603-0001
+## Demo seed
 
-📋 Buat Surat Jalan (DO) dari Order
-   └─ Pilih kendaraan & supir
-   └─ Nomor DO auto: DO-202603-0001
-   └─ Status awal: CREATED
+Script seed aktif:
+- `npm run seed:sanity`
+- `npm run reseed:sanity`
 
-🚛 Set Tarip Borongan (SEBELUM BERANGKAT)
-   └─ Di halaman detail DO → card "Tarip Borongan Supir"
-   └─ Input Rp/kg → Simpan
-   └─ Tarip ini akan otomatis terisi saat buat Slip Borongan
+Dataset demo saat ini mencakup kondisi:
+- customer, layanan, kategori biaya aktif dan nonaktif
+- order `OPEN`, `PARTIAL`, `COMPLETE`, `ON_HOLD`, `CANCELLED`
+- DO `CREATED`, `HEADING_TO_PICKUP`, `ON_DELIVERY`, `ARRIVED`, `DELIVERED`, `CANCELLED`
+- nota `UNPAID`, `PARTIAL`, `PAID`
+- borongan `UNPAID`, `PAID`
+- bon supir `ISSUED`, `SETTLED`
+- maintenance, insiden, tracking log, mutasi rekening, kas tunai, dan laporan
 
-🚚 Update Status DO
-   └─ CREATED → ON_DELIVERY → DELIVERED
-   └─ Saat DELIVERED: upload POD (Proof of Delivery)
-   └─ ✅ Saat SEMUA DO dari order DELIVERED → Order otomatis → COMPLETE
+Profil perusahaan demo:
+- Nama: `Gading Mas Surya`
+- Alamat: `JL. KEMANTREN 08 - KEC. TULANGAN, KAB. SIDOARJO - JATIM - INDONESIA`
+- Telepon: `(031) 8853000`
+- Email: `gadingmassurya@gmail.com`
 
-🖨️ Cetak Surat Jalan (PDF)
-```
+Akun demo:
+- owner web: `owner@company.local / owner12345`
+- admin web: `admin@company.local / admin12345`
+- driver mobile:
+  - `driver.agus@company.local / driver12345`
+  - `driver.budi@company.local / driver12345`
+  - `driver.catur@company.local / driver12345`
 
----
+## Status DO yang aktif
 
-### 2. Nota Ongkos Angkut (Tagihan ke Customer)
+Flow status DO yang benar saat demo:
+- `CREATED`
+- `HEADING_TO_PICKUP`
+- `ON_DELIVERY`
+- `ARRIVED`
+- `DELIVERED`
+- `CANCELLED`
 
-```
-💼 Buat Nota (/invoices/new)
-   └─ Pilih customer dari dropdown
-   └─ Sistem filter DO milik customer tsb (berdasarkan orderRef → customerRef)
-   └─ Tambah baris dari Surat Jalan, atau tambah manual
-   └─ Kolom: NO.TRUCK | TANGGAL | NO.SJ | DARI | TUJUAN | BARANG | COLLIE | BERAT KG | TARIP | UANG RP
-   └─ UANG RP = BERAT KG × TARIP (auto-hitung)
-   └─ Nomor Nota auto: NOTA-202603-0001
-   └─ Status: UNPAID
+Catatan penting:
+- driver tidak boleh set `DELIVERED` atau `CANCELLED`
+- `DELIVERED` hanya di-set admin
+- POD diisi saat admin menyelesaikan DO
 
-💰 Terima Pembayaran
-   └─ Di halaman detail Nota → "Tambah Pembayaran"
-   └─ Masukkan jumlah, tanggal, rekening bank
-   └─ Status otomatis update:
-      UNPAID → PARTIAL (bayar sebagian)
-      PARTIAL → PAID (lunas)
-   └─ Pembayaran tercatat sebagai income
-   └─ Saldo rekening bank bertambah (CREDIT)
+## Driver mobile
 
-🖨️ Cetak Nota
-   └─ Format sesuai standar perusahaan
-   └─ Kolom perincian perjalanan lengkap
-```
+App driver resmi ada di:
+- [driver_mobile/README.md](C:\LOGISTIK\app\driver_mobile\README.md)
 
----
+Flow mobile:
+- login driver
+- lihat DO milik sendiri
+- mulai / pulihkan tracking
+- kirim progres perjalanan
+- heartbeat lokasi ke dashboard admin
 
-### 3. Borongan Supir (Upah Supir)
-
-```
-📝 Buat Slip Borongan (/borongan/new)
-   └─ Pilih supir
-   └─ Sistem tampilkan DO yang sudah diselesaikan supir tersebut
-   └─ Tarip otomatis terisi dari DO (yang sudah diset sebelum berangkat)
-   └─ UANG RP = BERAT KG × TARIP (auto-hitung)
-   └─ Nomor Slip auto: BRG-202603-0001
-   └─ Status: UNPAID
-
-💵 Bayar Upah Supir
-   └─ Di halaman detail Slip → "Bayar Borongan Supir"
-   └─ Modal: pilih rekening bank, metode, tanggal, catatan
-   └─ Saat konfirmasi:
-      ✅ Status Slip → PAID
-      ✅ Pengeluaran tercatat di modul Expenses
-      ✅ Saldo rekening bank berkurang (DEBIT)
-
-🖨️ Cetak Slip Borongan
-   └─ Format sama dengan Nota Ongkos
-```
-
----
-
-### 4. Bon Supir (Uang Jalan)
-
-Catatan terbaru:
-- Bon wajib memilih rekening sumber saat diterbitkan.
-- Pencairan bon langsung membuat mutasi bank `DEBIT`.
-- Settlement bon mem-posting item menjadi expense.
-- Sisa uang menghasilkan mutasi `CREDIT`; kekurangan menghasilkan `DEBIT`.
-
-```
-💴 Buat Bon (/driver-vouchers/new)
-   └─ Supir minta uang jalan sebelum berangkat
-   └─ Catat jumlah cash yang diberikan
-
-🧾 Supir Lapor Pengeluaran
-   └─ Di detail bon → tambah item pengeluaran (BBM, tol, dll)
-   └─ Status: DRAFT → ISSUED → SETTLED
-
-✅ Settle Bon
-   └─ Selisih cash vs pengeluaran dihitung otomatis
-   └─ Jika ada sisa, supir kembalikan
-```
-
----
-
-### 5. Laporan Keuangan
-
-```
-📊 Laba Rugi (/reports → tab Laba Rugi)
-   └─ Pendapatan: dari semua pembayaran masuk (payment)
-   └─ Pengeluaran: dari semua expense (termasuk upah borongan)
-   └─ Laba Bersih = Pendapatan - Pengeluaran
-   └─ Outstanding aktif: Nota Ongkos yang belum lunas
-
-💳 Arus Kas (/reports → tab Arus Kas)
-   └─ Per rekening bank dan kas tunai: masuk & keluar
-   └─ Semua transaksi kronologis
-```
-
----
-
-### 6. Fleet Management
-
-```
-🚗 Kendaraan (/fleet/vehicles)
-   └─ Data unit, plat, STNK, KIR, asuransi
-
-👤 Supir (/fleet/drivers)
-   └─ Data supir, lisensi, KTP
-
-🔧 Maintenance (/fleet/maintenance)
-   └─ Jadwal servis berkala
-
-🛞 Ban (/fleet/tires)
-   └─ Tracking kondisi ban per unit
-
-🚨 Insiden (/fleet/incidents)
-   └─ Laporan kecelakaan/insiden
-   └─ Status: OPEN → IN_REVIEW → RESOLVED
-```
-
----
-
-## 🔢 Format Nomor Otomatis
-
-| Dokumen | Format | Contoh |
-|---|---|---|
-| Order / Resi | `R-20YYMM-XXXX` | `R-202603-0001` |
-| Surat Jalan (DO) | `DO-20YYMM-XXXX` | `DO-202603-0012` |
-| Nota Ongkos | `NOTA-20YYMM-XXXX` | `NOTA-202603-0003` |
-| Slip Borongan | `BRG-20YYMM-XXXX` | `BRG-202603-0005` |
-| Insiden | `INC-20YYMM-XXXX` | `INC-202603-0001` |
-
----
-
-## 🔐 Role & Akses
-
-| Fitur | OWNER | ADMIN | OPERATOR |
-|---|---|---|---|
-| Semua modul | ✅ | ✅ | ⚡ Terbatas |
-| Nota Ongkos Angkut | ✅ | ✅ | ❌ |
-| Borongan Supir | ✅ | ✅ | ❌ |
-| Laporan | ✅ | ✅ | ❌ |
-| Audit Log | ✅ | ❌ | ❌ |
-| User Management | ✅ | ❌ | ❌ |
-| Rekening & Kas | ✅ | ✅ | ❌ |
-
----
-
-## 🧩 Hubungan Antar Modul
-
-```
-Customer ──────────────────────────────────────────────┐
-   │                                                    │
-   ↓                                                    ↓
-Order ──► Delivery Order (DO) ──► Nota Ongkos Angkut
-               │                       │
-               │                       └──► Payment ──► Bank Account
-               │
-               ↓
-          Driver/Vehicle
-               │
-               ├──► Tarip Borongan (diset sebelum berangkat di DO)
-               │
-               └──► Slip Borongan ──► Expense ──► Bank Account (DEBIT)
-                         │
-                         └──► Bon Supir (uang jalan)
-```
-
----
-
-## ⚙️ Tech Stack
-
-- **Framework**: Next.js 16 (App Router)
-- **Database**: Sanity CMS
-- **Auth**: Custom session-based auth
-- **Deploy**: Vercel
-- **PDF**: Client-side print window
-
-## 🛠️ Development
-
-Catatan:
-- Build produksi default memakai `webpack` karena pada environment lokal Windows ini `next start` dari build Turbopack sempat mengembalikan asset `/_next/static/*` sebagai `404/500`.
-- `build:turbopack` disediakan hanya untuk eksperimen, bukan jalur stabil yang direkomendasikan saat ini.
+## Development
 
 ```bash
-# Install
 npm install
-
-# Dev server
 npm run dev
-
-# Build
-npm run build
-
-# Opsional: build Turbopack eksperimental
-npm run build:turbopack
-
-# Type check
 npm run typecheck
-
-# Reset seluruh dataset lalu seed ulang
-npm run reseed:sanity
-
-# Audit konsistensi data finansial
+npm run build
 npm run audit:finance
-
-# Deploy
-npx vercel --prod
 ```
 
-## 🌍 Environment Variables
+Seed ulang demo:
 
+```bash
+npm run reseed:sanity
 ```
-NEXT_PUBLIC_SANITY_PROJECT_ID=xxx
+
+## Build note
+
+Jalur build produksi yang stabil di repo ini:
+- `npm run build`
+
+`build:turbopack` hanya untuk eksperimen lokal.
+
+## Environment variables
+
+```bash
+NEXT_PUBLIC_SANITY_PROJECT_ID=...
 NEXT_PUBLIC_SANITY_DATASET=production
 SANITY_API_VERSION=2024-01-01
-SANITY_API_TOKEN=xxx
-JWT_SECRET=xxx
+SANITY_API_TOKEN=...
+JWT_SECRET=...
 ```

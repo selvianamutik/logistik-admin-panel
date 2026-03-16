@@ -25,7 +25,7 @@ mobile.
 
 Default API base URL:
 
-- `https://app-ten-gamma-49.vercel.app`
+- `https://app-pytagotechs-projects.vercel.app`
 
 Override saat build:
 
@@ -135,6 +135,6 @@ Catatan:
 - Android tetap platform operasional utama untuk tracking background paling stabil.
 - iOS bisa diinstall, tetapi background location di iPhone tetap lebih ketat dan harus memakai izin lokasi `Always`.
 - tracking tetap bergantung pada izin lokasi, GPS aktif, dan internet aktif.
-- token driver disimpan lokal agar runtime tracking bisa melanjutkan heartbeat.
+- token driver disimpan di secure storage perangkat, dengan fallback terbatas untuk environment test.
 - pada toolchain Windows lokal ini, `build appbundle` masih bisa mengeluarkan warning strip symbol dari Android toolchain, tetapi file `.aab` tetap berhasil dibuat
 - untuk distribusi langsung ke device, lebih aman pakai APK split-per-ABI daripada APK universal release

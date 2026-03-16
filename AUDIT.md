@@ -152,7 +152,7 @@ Brutal truth-nya:
 - ini sudah jauh lebih layak untuk operasional lapangan dibanding browser HP
 - tapi belum berarti semua risiko device-level hilang
 - iOS belum jadi fokus utama
-- token driver mobile saat ini masih disimpan lokal di aplikasi agar task background bisa membacanya
+- token driver mobile saat ini disimpan di secure storage perangkat, dengan fallback terbatas untuk environment test
 
 Jadi secara produk:
 
