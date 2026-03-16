@@ -63,6 +63,12 @@ Artinya:
   - `DELIVERED`
 - Saat DO berubah, status item order ikut disinkronkan.
 - Status order dihitung dari status seluruh item, bukan cuma jumlah DO.
+- Status `DELIVERED` ditetapkan oleh admin/dispatcher, bukan oleh driver.
+- Saat admin menyelesaikan DO ke `DELIVERED`, data POD diisi di langkah yang sama:
+  - nama penerima
+  - tanggal terima
+  - catatan POD
+- Jadi status selesai dan POD sekarang menjadi satu aksi operasional, bukan dua langkah terpisah.
 
 Hasil akhirnya:
 

@@ -228,6 +228,9 @@ export async function handleDeliveryOrderStatusUpdate(
         orderRef?: unknown;
         driverRef?: unknown;
         trackingState?: string;
+        podReceiverName?: string;
+        podReceivedDate?: string;
+        podNote?: string;
     }>(id);
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
@@ -242,6 +245,18 @@ export async function handleDeliveryOrderStatusUpdate(
         `*[_type == "deliveryOrderItem" && deliveryOrderRef == $ref]{ orderItemRef }`,
         { ref: id }
     );
+    const podReceiverName = normalizeOptionalText(data.podReceiverName);
+    const podReceivedDate = normalizeOptionalText(data.podReceivedDate);
+    const podNote = normalizeOptionalText(data.podNote);
+
+    if (status === 'DELIVERED') {
+        if (!podReceiverName) {
+            return NextResponse.json({ error: 'Nama penerima POD wajib diisi untuk menyelesaikan surat jalan' }, { status: 400 });
+        }
+        if (!podReceivedDate) {
+            return NextResponse.json({ error: 'Tanggal terima POD wajib diisi untuk menyelesaikan surat jalan' }, { status: 400 });
+        }
+    }
 
     const nextOrderItemStatus =
         status === 'ON_DELIVERY' || status === 'ARRIVED'
@@ -257,6 +272,13 @@ export async function handleDeliveryOrderStatusUpdate(
         .patch(id, {
             set: {
                 status,
+                ...(status === 'DELIVERED'
+                    ? {
+                        podReceiverName,
+                        podReceivedDate,
+                        podNote,
+                    }
+                    : {}),
                 ...(shouldStopTracking
                     ? {
                         trackingState: 'STOPPED',
@@ -311,6 +333,13 @@ export async function handleDeliveryOrderStatusUpdate(
         data: {
             ...deliveryOrder,
             status,
+            ...(status === 'DELIVERED'
+                ? {
+                    podReceiverName,
+                    podReceivedDate,
+                    podNote,
+                }
+                : {}),
             trackingState: shouldStopTracking ? 'STOPPED' : deliveryOrder.trackingState,
             trackingStoppedAt: shouldStopTracking ? timestamp : undefined,
         },
