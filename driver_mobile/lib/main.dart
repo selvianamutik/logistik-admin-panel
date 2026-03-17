@@ -106,6 +106,23 @@ class _DriverHomePageState extends State<DriverHomePage>
             order.trackingState == TrackingState.paused,
       );
 
+  List<DeliveryOrder> get _visibleOrders {
+    final lockedOrder = _lockedTrackingOrder;
+    if (lockedOrder != null) {
+      return <DeliveryOrder>[lockedOrder];
+    }
+
+    final orders = List<DeliveryOrder>.of(_orders);
+    orders.sort((left, right) {
+      final byDate = right.date.compareTo(left.date);
+      if (byDate != 0) {
+        return byDate;
+      }
+      return right.doNumber.compareTo(left.doNumber);
+    });
+    return orders;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -894,6 +911,7 @@ class _DriverHomePageState extends State<DriverHomePage>
   Widget _buildDashboard() {
     final activeOrder = _activeOrder;
     final lockedOrder = _lockedTrackingOrder;
+    final visibleOrders = _visibleOrders;
     final trackedOrderCount = _orders
         .where((order) => order.trackingState == TrackingState.active)
         .length;
@@ -937,8 +955,8 @@ class _DriverHomePageState extends State<DriverHomePage>
               runSpacing: 10,
               children: <Widget>[
                 _buildSummaryPill(
-                  'DO Ditugaskan',
-                  _orders.length.toString(),
+                  'DO Aktif',
+                  visibleOrders.length.toString(),
                   const Color(0xFFEFF6FF),
                   const Color(0xFF0F4C81),
                 ),
@@ -964,9 +982,11 @@ class _DriverHomePageState extends State<DriverHomePage>
                   ),
             ),
             const SizedBox(height: 4),
-            const Text(
-              'Pantau surat jalan, last seen, dan aksi tracking dari satu layar.',
-              style: TextStyle(
+            Text(
+              lockedOrder == null
+                  ? 'Tampilkan hanya DO yang masih operasional agar driver tidak bingung.'
+                  : 'Tracking sedang terkunci di ${lockedOrder.doNumber}. Fokuskan driver ke DO ini sampai admin menutupnya.',
+              style: const TextStyle(
                 color: Color(0xFF64748B),
                 height: 1.4,
               ),
@@ -991,10 +1011,10 @@ class _DriverHomePageState extends State<DriverHomePage>
               ),
             ],
             const SizedBox(height: 12),
-            if (_orders.isEmpty)
+            if (visibleOrders.isEmpty)
               _buildEmptyCard()
             else
-              ..._orders.map(_buildOrderCard),
+              ...visibleOrders.map(_buildOrderCard),
           ],
         ),
       ),
@@ -1145,20 +1165,20 @@ class _DriverHomePageState extends State<DriverHomePage>
                 color: Color(0xFF0F4C81),
                 size: 24,
               ),
-            ),
-            const SizedBox(height: 14),
-            const Text(
-              'Belum ada DO',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
               ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Belum ada surat jalan yang ditugaskan ke akun driver ini. Hubungi admin bila seharusnya sudah ada penugasan.',
-              style: TextStyle(color: Color(0xFF64748B), height: 1.45),
-            ),
+              const SizedBox(height: 14),
+              const Text(
+                'Belum ada DO aktif',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Belum ada surat jalan operasional yang ditugaskan ke akun driver ini. Hubungi admin bila seharusnya sudah ada penugasan.',
+                style: TextStyle(color: Color(0xFF64748B), height: 1.45),
+              ),
           ],
         ),
       ),

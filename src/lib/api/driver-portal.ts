@@ -75,7 +75,7 @@ export async function getDriverAssignedDeliveryOrders(driverRef: string) {
         `*[
             _type == "deliveryOrder" &&
             (driverRef == $driverRef || driverRef._ref == $driverRef) &&
-            status in ["CREATED", "HEADING_TO_PICKUP", "ON_DELIVERY", "ARRIVED", "DELIVERED"]
+            status in ["CREATED", "HEADING_TO_PICKUP", "ON_DELIVERY", "ARRIVED"]
         ] | order(date desc, _createdAt desc){
             _id,
             doNumber,
