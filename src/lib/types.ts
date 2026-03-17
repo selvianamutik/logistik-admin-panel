@@ -544,6 +544,7 @@ export interface IncidentActionLog {
 export interface AuditLog {
   _id: string;
   _type: 'auditLog';
+  _createdAt?: string;
   actorUserRef: string;
   actorUserName?: string;
   action: string;

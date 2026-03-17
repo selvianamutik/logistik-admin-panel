@@ -91,7 +91,7 @@ export async function syncOrderStatusFromItems(orderRef: string, session: ApiSes
     }
 
     await sanityUpdate(orderRef, { status: nextStatus });
-    void addAuditLog(
+    await addAuditLog(
         session,
         'UPDATE',
         'orders',
@@ -205,7 +205,7 @@ export async function handleOrderCreate(
     }
 
     await transaction.commit();
-    void addAuditLog(session, 'CREATE', 'orders', orderId, `Created orders: ${masterResi}`);
+    await addAuditLog(session, 'CREATE', 'orders', orderId, `Created orders: ${masterResi}`);
     return NextResponse.json({ data: orderDoc, id: orderId });
 }
 
@@ -321,7 +321,7 @@ export async function handleDeliveryOrderStatusUpdate(
         await syncOrderStatusFromItems(orderRef, session, addAuditLog);
     }
 
-    void addAuditLog(
+    await addAuditLog(
         session,
         'UPDATE',
         'delivery-orders',
@@ -488,7 +488,7 @@ export async function handleDeliveryOrderCreate(
     }
 
     await transaction.commit();
-    void addAuditLog(session, 'CREATE', 'delivery-orders', doId, `Created delivery-orders: ${doNumber}`);
+    await addAuditLog(session, 'CREATE', 'delivery-orders', doId, `Created delivery-orders: ${doNumber}`);
     return NextResponse.json({ data: doDoc, id: doId });
 }
 
@@ -534,6 +534,6 @@ export async function handleOrderDelete(
     transaction.delete(id);
     await transaction.commit();
 
-    void addAuditLog(session, 'DELETE', 'orders', id, `Deleted orders ${order.masterResi || id}`);
+    await addAuditLog(session, 'DELETE', 'orders', id, `Deleted orders ${order.masterResi || id}`);
     return NextResponse.json({ success: true });
 }

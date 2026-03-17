@@ -251,7 +251,7 @@ export async function handleInvoiceCreate(
     }
 
     await transaction.commit();
-    void addAuditLog(session, 'CREATE', 'invoices', invoiceId, `Created invoices: ${invoiceNumber}`);
+    await addAuditLog(session, 'CREATE', 'invoices', invoiceId, `Created invoices: ${invoiceNumber}`);
     return NextResponse.json({ data: invoiceDoc, id: invoiceId });
 }
 
@@ -295,6 +295,6 @@ export async function handleCustomerDelete(
     }
 
     await sanityDelete(id);
-    void addAuditLog(session, 'DELETE', 'customers', id, `Deleted customers ${customer.name || id}`);
+    await addAuditLog(session, 'DELETE', 'customers', id, `Deleted customers ${customer.name || id}`);
     return NextResponse.json({ success: true });
 }

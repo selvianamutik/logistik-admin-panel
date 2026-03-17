@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { createSession, hashPassword, isPasswordHashMigrated, verifyPassword } from '@/lib/auth';
+import { writeAuditLog } from '@/lib/api/data-helpers';
 import { getDriverAppContext, sanitizeDriverForMobile } from '@/lib/api/driver-portal';
 import { clearFailedAttempts, getRequestIp, recordFailedAttempt } from '@/lib/api/rate-limit';
 import { sanityGetById, sanityUpdate, getSanityClient } from '@/lib/sanity';
@@ -93,6 +94,13 @@ export async function POST(request: Request) {
             passwordHash: nextPasswordHash || user.passwordHash,
         });
         const appContext = await getDriverAppContext();
+        await writeAuditLog(
+            { _id: user._id, name: user.name },
+            'LOGIN',
+            'driver-mobile-auth',
+            user._id,
+            'Login aplikasi driver'
+        );
 
         return NextResponse.json({
             success: true,

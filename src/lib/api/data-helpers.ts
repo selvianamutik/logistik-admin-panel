@@ -9,6 +9,7 @@ import type { CompanyProfile, User } from '@/lib/types';
 
 export type ApiSession = { _id: string; name: string; role: User['role'] };
 export type PublicUser = Omit<User, 'passwordHash'>;
+export type AuditLogActor = Pick<ApiSession, '_id' | 'name'>;
 
 export type BankAccountSummary = {
     _id: string;
@@ -176,4 +177,27 @@ export function isMutationConflictError(err: unknown) {
                 : '';
 
     return statusCode === 409 || /revision/i.test(message) || /conflict/i.test(message);
+}
+
+export async function writeAuditLog(
+    actor: AuditLogActor,
+    action: string,
+    entityType: string,
+    entityRef: string,
+    summary: string
+) {
+    try {
+        await sanityCreate({
+            _type: 'auditLog',
+            actorUserRef: actor._id,
+            actorUserName: actor.name,
+            action,
+            entityType,
+            entityRef,
+            changesSummary: summary,
+            timestamp: new Date().toISOString(),
+        });
+    } catch (error) {
+        console.warn('Audit log write failed', error);
+    }
 }

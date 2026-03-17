@@ -212,7 +212,7 @@ export async function POST(request: Request) {
                 createdAt: new Date().toISOString(),
             });
 
-            void addAuditLog(auth.session, 'CREATE', created._id, `Membuat akun driver mobile untuk ${driver.name}`);
+            await addAuditLog(auth.session, 'CREATE', created._id, `Membuat akun driver mobile untuk ${driver.name}`);
             return NextResponse.json({ data: sanitizeUserForClient(created) });
         }
 
@@ -276,7 +276,7 @@ export async function POST(request: Request) {
             updated = await sanityUpdate<User>(id, updates);
         }
 
-        void addAuditLog(auth.session, 'UPDATE', id, `Memperbarui akun driver mobile untuk ${driver.name}`);
+        await addAuditLog(auth.session, 'UPDATE', id, `Memperbarui akun driver mobile untuk ${driver.name}`);
         return NextResponse.json({
             data: sanitizeUserForClient(updated),
             meta: {

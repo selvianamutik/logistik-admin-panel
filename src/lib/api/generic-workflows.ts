@@ -308,7 +308,7 @@ export async function handleGenericUpdate(
         }
         const normalizedTireUpdates = await normalizeTireEventPayload({ ...existingTire, ...updates }, id);
         const updated = await sanityUpdate(id, normalizedTireUpdates);
-        void addAuditLog(session, 'UPDATE', entity, id, `Updated ${entity}: ${JSON.stringify(normalizedTireUpdates).slice(0, 200)}`);
+        await addAuditLog(session, 'UPDATE', entity, id, `Updated ${entity}: ${JSON.stringify(normalizedTireUpdates).slice(0, 200)}`);
         return NextResponse.json({ data: updated });
     }
 
@@ -356,7 +356,7 @@ export async function handleGenericUpdate(
         await setSessionCookie(nextSessionToken);
     }
 
-    void addAuditLog(session, 'UPDATE', entity, id, `Updated ${entity}: ${JSON.stringify(normalizedUpdates).slice(0, 200)}`);
+    await addAuditLog(session, 'UPDATE', entity, id, `Updated ${entity}: ${JSON.stringify(normalizedUpdates).slice(0, 200)}`);
 
     if (entity === 'order-items' && typeof normalizedUpdates.status === 'string') {
         const orderItem = updated as { orderRef?: unknown };
@@ -388,7 +388,7 @@ export async function handleGenericDelete(
     addAuditLog: AuditLogFn
 ) {
     if (entity === 'driver-voucher-items') {
-        return handleDriverVoucherItemDelete(data);
+        return handleDriverVoucherItemDelete(session, data, addAuditLog);
     }
 
     if (isProtectedLedgerEntity(entity)) {
@@ -437,7 +437,7 @@ export async function handleGenericDelete(
     }
 
     await sanityDelete(id);
-    void addAuditLog(session, 'DELETE', entity, id, `Deleted ${entity} ${id}`);
+    await addAuditLog(session, 'DELETE', entity, id, `Deleted ${entity} ${id}`);
     return NextResponse.json({ success: true });
 }
 
@@ -452,11 +452,13 @@ export async function handleGenericCreate(
         const existing = await sanityGetCompanyProfile();
         if (existing?._id) {
             const updated = await sanityUpdate(existing._id, data);
-            void addAuditLog(session, 'UPDATE', 'companyProfile', existing._id, 'Company profile updated');
+            await addAuditLog(session, 'UPDATE', 'companyProfile', existing._id, 'Company profile updated');
             return NextResponse.json({ data: updated });
         }
 
         const created = await sanityCreate({ _type: 'companyProfile', ...data });
+        const createdId = (created as Record<string, unknown>)._id as string;
+        await addAuditLog(session, 'CREATE', 'companyProfile', createdId, 'Company profile created');
         return NextResponse.json({ data: created });
     }
 
@@ -583,7 +585,7 @@ export async function handleGenericCreate(
         await sanityUpdate(newId, { currentBalance: Number.isFinite(initialBalance) ? initialBalance : 0 });
     }
 
-    void addAuditLog(
+    await addAuditLog(
         session,
         'CREATE',
         entity,

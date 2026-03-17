@@ -587,7 +587,7 @@ export async function handleIncidentCreate(
         })
         .commit();
 
-    void addAuditLog(session, 'CREATE', 'incidents', incidentId, `Created incidents: ${incidentNumber}`);
+    await addAuditLog(session, 'CREATE', 'incidents', incidentId, `Created incidents: ${incidentNumber}`);
     return NextResponse.json({ data: incidentDoc, id: incidentId });
 }
 
@@ -628,7 +628,7 @@ export async function handleIncidentStatusUpdate(
         })
         .commit();
 
-    void addAuditLog(
+    await addAuditLog(
         session,
         'UPDATE',
         'incidents',
@@ -668,7 +668,7 @@ export async function handleServiceDelete(
     }
 
     await sanityDelete(id);
-    void addAuditLog(session, 'DELETE', 'services', id, `Deleted services ${service.name || id}`);
+    await addAuditLog(session, 'DELETE', 'services', id, `Deleted services ${service.name || id}`);
     return NextResponse.json({ success: true });
 }
 
@@ -696,7 +696,7 @@ export async function handleExpenseCategoryDelete(
     }
 
     await sanityDelete(id);
-    void addAuditLog(session, 'DELETE', 'expense-categories', id, `Deleted expense-categories ${category.name || id}`);
+    await addAuditLog(session, 'DELETE', 'expense-categories', id, `Deleted expense-categories ${category.name || id}`);
     return NextResponse.json({ success: true });
 }
 
@@ -752,7 +752,7 @@ export async function handleDriverDelete(
     }
 
     await sanityDelete(id);
-    void addAuditLog(session, 'DELETE', 'drivers', id, `Deleted drivers ${driver.name || id}`);
+    await addAuditLog(session, 'DELETE', 'drivers', id, `Deleted drivers ${driver.name || id}`);
     return NextResponse.json({ success: true });
 }
 
@@ -797,7 +797,7 @@ export async function handleDriverUpdate(
             );
         }
 
-        void addAuditLog(session, 'UPDATE', 'drivers', id, `Updated drivers: ${JSON.stringify(normalizedUpdates).slice(0, 200)}`);
+        await addAuditLog(session, 'UPDATE', 'drivers', id, `Updated drivers: ${JSON.stringify(normalizedUpdates).slice(0, 200)}`);
         return NextResponse.json({
             data: updated,
             meta: {
@@ -872,9 +872,9 @@ export async function handleDriverUpdate(
         return NextResponse.json({ error: 'Supir tidak ditemukan' }, { status: 404 });
     }
 
-    void addAuditLog(session, 'UPDATE', 'drivers', id, `Updated drivers: ${JSON.stringify(normalizedUpdates).slice(0, 200)}`);
+    await addAuditLog(session, 'UPDATE', 'drivers', id, `Updated drivers: ${JSON.stringify(normalizedUpdates).slice(0, 200)}`);
     for (const deliveryOrder of trackedDeliveryOrders) {
-        void addAuditLog(
+        await addAuditLog(
             session,
             'UPDATE',
             'delivery-orders',
@@ -883,7 +883,7 @@ export async function handleDriverUpdate(
         );
     }
     for (const user of activeLinkedUsers) {
-        void addAuditLog(
+        await addAuditLog(
             session,
             'UPDATE',
             'users',
@@ -966,6 +966,6 @@ export async function handleVehicleDelete(
     }
 
     await sanityDelete(id);
-    void addAuditLog(session, 'DELETE', 'vehicles', id, `Deleted vehicles ${vehicle.plateNumber || id}`);
+    await addAuditLog(session, 'DELETE', 'vehicles', id, `Deleted vehicles ${vehicle.plateNumber || id}`);
     return NextResponse.json({ success: true });
 }

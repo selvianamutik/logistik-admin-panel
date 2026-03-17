@@ -279,6 +279,20 @@ export async function GET(request: Request) {
             items = (items as unknown as Vehicle[]).map(item => sanitizeVehicleForRole(item, session.role)) as unknown as Record<string, unknown>[];
         }
 
+        if (entity === 'audit-logs') {
+            items = [...items].sort((left, right) => {
+                const leftTime =
+                    (typeof left.timestamp === 'string' && left.timestamp) ||
+                    (typeof left._createdAt === 'string' && left._createdAt) ||
+                    '';
+                const rightTime =
+                    (typeof right.timestamp === 'string' && right.timestamp) ||
+                    (typeof right._createdAt === 'string' && right._createdAt) ||
+                    '';
+                return rightTime.localeCompare(leftTime);
+            });
+        }
+
         return NextResponse.json({ data: items });
     } catch (err) {
         console.error('API GET Error:', err);
@@ -384,7 +398,7 @@ export async function POST(request: Request) {
         }
 
         if (entity === 'bank-transactions' && action === 'transfer') {
-            return handleBankTransfer(data);
+            return handleBankTransfer(session, data, addAuditLog);
         }
 
         if (entity === 'payments') {
@@ -400,7 +414,7 @@ export async function POST(request: Request) {
         }
 
         if (entity === 'driver-voucher-items') {
-            return handleDriverVoucherItemCreate(data);
+            return handleDriverVoucherItemCreate(session, data, addAuditLog);
         }
 
         if (entity === 'incidents') {

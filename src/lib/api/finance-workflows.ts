@@ -255,7 +255,7 @@ export async function handlePaymentCreate(
 
         try {
             await transaction.commit();
-            void addAuditLog(
+            await addAuditLog(
                 session,
                 'CREATE',
                 'payments',
@@ -297,7 +297,11 @@ export async function handlePaymentCreate(
     );
 }
 
-export async function handleBankTransfer(data: Record<string, unknown>) {
+export async function handleBankTransfer(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
     const amount = typeof data.amount === 'number' ? data.amount : Number(data.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
         return NextResponse.json({ error: 'Nominal transfer tidak valid' }, { status: 400 });
@@ -367,6 +371,13 @@ export async function handleBankTransfer(data: Record<string, unknown>) {
 
         try {
             await transaction.commit();
+            await addAuditLog(
+                session,
+                'CREATE',
+                'bank-transactions',
+                transferId,
+                `Transfer ${amount} dari ${fromAcc.bankName} ke ${toAcc.bankName}`
+            );
             return NextResponse.json({ success: true, transferId });
         } catch (err) {
             if (!isMutationConflictError(err)) {
@@ -448,7 +459,7 @@ export async function handleExpenseCreate(
     if (!selectedAccountRef) {
         const created = await sanityCreate(expenseDocBase);
         const expenseId = (created as Record<string, unknown>)._id as string;
-        void addAuditLog(session, 'CREATE', 'expenses', expenseId, `Created expenses: ${expenseId}`);
+        await addAuditLog(session, 'CREATE', 'expenses', expenseId, `Created expenses: ${expenseId}`);
         return NextResponse.json({ data: created, id: expenseId });
     }
 
@@ -497,7 +508,7 @@ export async function handleExpenseCreate(
 
         try {
             await transaction.commit();
-            void addAuditLog(session, 'CREATE', 'expenses', expenseId, `Created expenses: ${expenseId}`);
+            await addAuditLog(session, 'CREATE', 'expenses', expenseId, `Created expenses: ${expenseId}`);
             return NextResponse.json({ data: expenseDoc, id: expenseId });
         } catch (err) {
             if (!isMutationConflictError(err)) {
@@ -869,7 +880,7 @@ export async function handleFreightNotaCreate(
     }
 
     await transaction.commit();
-    void addAuditLog(session, 'CREATE', 'freight-notas', notaId, `Created freight-notas: ${notaNumber}`);
+    await addAuditLog(session, 'CREATE', 'freight-notas', notaId, `Created freight-notas: ${notaNumber}`);
     return NextResponse.json({ data: notaDoc, id: notaId });
 }
 
@@ -907,6 +918,6 @@ export async function handleFreightNotaDelete(
     transaction.delete(id);
     await transaction.commit();
 
-    void addAuditLog(session, 'DELETE', 'freight-notas', id, `Deleted freight-notas ${nota.notaNumber || id}`);
+    await addAuditLog(session, 'DELETE', 'freight-notas', id, `Deleted freight-notas ${nota.notaNumber || id}`);
     return NextResponse.json({ success: true });
 }

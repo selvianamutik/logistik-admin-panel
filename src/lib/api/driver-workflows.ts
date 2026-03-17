@@ -402,7 +402,7 @@ export async function handleDriverBoronganCreate(
     }
 
     await transaction.commit();
-    void addAuditLog(session, 'CREATE', 'driver-borongans', boronganId, `Created driver-borongans: ${boronganNumber}`);
+    await addAuditLog(session, 'CREATE', 'driver-borongans', boronganId, `Created driver-borongans: ${boronganNumber}`);
     return NextResponse.json({ data: boronganDoc, id: boronganId });
 }
 
@@ -443,7 +443,7 @@ export async function handleDriverBoronganDelete(
     transaction.delete(id);
     await transaction.commit();
 
-    void addAuditLog(session, 'DELETE', 'driver-borongans', id, `Deleted driver-borongans ${borongan.boronganNumber || id}`);
+    await addAuditLog(session, 'DELETE', 'driver-borongans', id, `Deleted driver-borongans ${borongan.boronganNumber || id}`);
     return NextResponse.json({ success: true });
 }
 
@@ -582,7 +582,7 @@ export async function handleBoronganPayment(
 
         try {
             await transaction.commit();
-            void addAuditLog(
+            await addAuditLog(
                 session,
                 'CREATE',
                 'driver-borongans',
@@ -824,7 +824,7 @@ export async function handleDriverVoucherCreate(
 
         try {
             await transaction.commit();
-            void addAuditLog(session, 'CREATE', 'driver-vouchers', voucherId, `Bon supir diterbitkan: ${bonNumber}`);
+            await addAuditLog(session, 'CREATE', 'driver-vouchers', voucherId, `Bon supir diterbitkan: ${bonNumber}`);
             return NextResponse.json({ data: voucherDoc, id: voucherId });
         } catch (err) {
             if (!isMutationConflictError(err)) {
@@ -846,7 +846,11 @@ export async function handleDriverVoucherCreate(
     );
 }
 
-export async function handleDriverVoucherItemCreate(data: Record<string, unknown>) {
+export async function handleDriverVoucherItemCreate(
+    session: Pick<ApiSession, '_id' | 'name'>,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
     const voucherRef = typeof data.voucherRef === 'string' ? data.voucherRef : '';
     if (!voucherRef) {
         return NextResponse.json({ error: 'Bon supir tidak valid' }, { status: 400 });
@@ -892,6 +896,13 @@ export async function handleDriverVoucherItemCreate(data: Record<string, unknown
                 })
                 .commit();
 
+            await addAuditLog(
+                session,
+                'CREATE',
+                'driver-voucher-items',
+                itemId,
+                `Menambah item bon ${state.voucher.bonNumber}: ${itemDoc.category} ${itemDoc.description ? `- ${itemDoc.description}` : ''} (${itemDoc.amount})`
+            );
             return NextResponse.json({
                 data: itemDoc,
                 voucher: {
@@ -920,7 +931,11 @@ export async function handleDriverVoucherItemCreate(data: Record<string, unknown
     );
 }
 
-export async function handleDriverVoucherItemDelete(data: Record<string, unknown>) {
+export async function handleDriverVoucherItemDelete(
+    session: Pick<ApiSession, '_id' | 'name'>,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
     const itemId = typeof data.id === 'string' ? data.id : '';
     if (!itemId) {
         return NextResponse.json({ error: 'Item bon tidak valid' }, { status: 400 });
@@ -945,6 +960,7 @@ export async function handleDriverVoucherItemDelete(data: Record<string, unknown
             .filter(existing => existing._id !== itemId)
             .reduce((sum, existing) => sum + existing.amount, 0);
         const nextBalance = (state.voucher.cashGiven || 0) - nextTotal;
+        const deletedItem = state.items.find(existing => existing._id === itemId);
 
         try {
             await getSanityClient()
@@ -959,6 +975,13 @@ export async function handleDriverVoucherItemDelete(data: Record<string, unknown
                 })
                 .commit();
 
+            await addAuditLog(
+                session,
+                'DELETE',
+                'driver-voucher-items',
+                itemId,
+                `Menghapus item bon ${state.voucher.bonNumber}: ${deletedItem?.category || 'Item'}${deletedItem?.description ? ` - ${deletedItem.description}` : ''}`
+            );
             return NextResponse.json({
                 success: true,
                 voucher: {
@@ -1120,7 +1143,7 @@ export async function handleDriverVoucherSettlement(
                 settlementBankName: settlementBank?.bankName,
             };
 
-            void addAuditLog(session, 'UPDATE', 'driver-vouchers', voucherId, `Bon supir settle: ${state.voucher.bonNumber}`);
+            await addAuditLog(session, 'UPDATE', 'driver-vouchers', voucherId, `Bon supir settle: ${state.voucher.bonNumber}`);
             return NextResponse.json({ data: updatedVoucher });
         } catch (err) {
             if (!isMutationConflictError(err)) {
@@ -1224,7 +1247,7 @@ export async function handleDriverVoucherIssueRepair(
                 issueBankName: bank.bankName,
             };
 
-            void addAuditLog(session, 'UPDATE', 'driver-vouchers', voucherId, `Rekonsiliasi pencairan bon: ${voucher.bonNumber}`);
+            await addAuditLog(session, 'UPDATE', 'driver-vouchers', voucherId, `Rekonsiliasi pencairan bon: ${voucher.bonNumber}`);
             return NextResponse.json({ data: updatedVoucher });
         } catch (err) {
             if (!isMutationConflictError(err)) {

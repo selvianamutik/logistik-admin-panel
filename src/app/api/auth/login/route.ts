@@ -5,6 +5,7 @@
 import { NextResponse } from 'next/server';
 import { getSanityClient, sanityGetById, sanityUpdate } from '@/lib/sanity';
 import { verifyPassword, createSession, hashPassword, isPasswordHashMigrated, setSessionCookie } from '@/lib/auth';
+import { writeAuditLog } from '@/lib/api/data-helpers';
 import { clearFailedAttempts, getRequestIp, recordFailedAttempt } from '@/lib/api/rate-limit';
 import { ensureSameOriginRequest } from '@/lib/api/request-security';
 import { DRIVER_SESSION_COOKIE, SESSION_COOKIE } from '@/lib/session';
@@ -128,6 +129,13 @@ export async function POST(request: Request) {
         await setSessionCookie(
             token,
             loginScope === 'DRIVER' ? DRIVER_SESSION_COOKIE : SESSION_COOKIE
+        );
+        await writeAuditLog(
+            { _id: user._id, name: user.name },
+            'LOGIN',
+            loginScope === 'DRIVER' ? 'driver-web-auth' : 'admin-web-auth',
+            user._id,
+            loginScope === 'DRIVER' ? 'Login portal driver' : 'Login admin web'
         );
 
         return NextResponse.json({
