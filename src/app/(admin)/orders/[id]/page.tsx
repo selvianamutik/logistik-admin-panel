@@ -85,6 +85,13 @@ export default function OrderDetailPage() {
     const assignedItemIds = doItems
         .filter(doi => dos.some(d => d._id === doi.deliveryOrderRef && d.status !== 'CANCELLED'))
         .map(doi => doi.orderItemRef);
+    const activeAssignmentByItemId = doItems.reduce<Record<string, DeliveryOrder | undefined>>((acc, doi) => {
+        const activeDeliveryOrder = dos.find(d => d._id === doi.deliveryOrderRef && d.status !== 'CANCELLED');
+        if (activeDeliveryOrder && doi.orderItemRef) {
+            acc[doi.orderItemRef] = activeDeliveryOrder;
+        }
+        return acc;
+    }, {});
 
     const availableItems = items.filter(i => i.status === 'PENDING' && !assignedItemIds.includes(i._id));
     const deliveredCount = items.filter(i => i.status === 'DELIVERED').length;
@@ -274,7 +281,9 @@ export default function OrderDetailPage() {
                     <table>
                         <thead><tr><th>Deskripsi</th><th>Koli</th><th>Berat (kg)</th><th>Status</th><th>Aksi</th></tr></thead>
                         <tbody>
-                            {items.map(item => (
+                            {items.map(item => {
+                                const activeAssignment = activeAssignmentByItemId[item._id];
+                                return (
                                 <tr key={item._id}>
                                     <td className="font-medium">{item.description}</td>
                                     <td>{item.qtyKoli}</td>
@@ -286,16 +295,22 @@ export default function OrderDetailPage() {
                                     </td>
                                     <td>
                                         <div className="table-actions">
-                                            {item.status === 'PENDING' && (
+                                            {!activeAssignment && item.status === 'PENDING' && (
                                                 <button className="table-action-btn" onClick={() => updateItemStatus(item._id, 'HOLD')}>Set Hold</button>
                                             )}
-                                            {item.status === 'HOLD' && (
+                                            {!activeAssignment && item.status === 'HOLD' && (
                                                 <button className="table-action-btn" onClick={() => updateItemStatus(item._id, 'PENDING')}>Set Pending</button>
+                                            )}
+                                            {activeAssignment && (
+                                                <Link href={`/delivery-orders/${activeAssignment._id}`} className="table-action-btn" title="Item ini sudah masuk surat jalan aktif">
+                                                    <Eye size={14} /> {activeAssignment.doNumber || 'Lihat DO'}
+                                                </Link>
                                             )}
                                         </div>
                                     </td>
                                 </tr>
-                            ))}
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>

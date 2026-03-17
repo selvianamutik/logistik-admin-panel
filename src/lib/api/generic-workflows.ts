@@ -282,6 +282,25 @@ export async function handleGenericUpdate(
         }
     }
 
+    if (entity === 'order-items' && typeof updates.status === 'string') {
+        const activeAssignment = await getSanityClient().fetch<{ doNumber?: string } | null>(
+            `*[
+                _type == "deliveryOrderItem" &&
+                orderItemRef == $orderItemRef &&
+                defined(*[_type == "deliveryOrder" && _id == ^.deliveryOrderRef && status != "CANCELLED"][0]._id)
+            ][0]{
+                "doNumber": *[_type == "deliveryOrder" && _id == ^.deliveryOrderRef][0].doNumber
+            }`,
+            { orderItemRef: id }
+        );
+        if (activeAssignment) {
+            return NextResponse.json(
+                { error: `Item order yang sudah masuk ${activeAssignment.doNumber || 'surat jalan aktif'} tidak boleh diubah statusnya manual` },
+                { status: 409 }
+            );
+        }
+    }
+
     if (entity === 'maintenances' && typeof updates.status === 'string') {
         const existingMaintenance = await sanityGetById<{ status?: string }>(id);
         if (!existingMaintenance) {

@@ -53,8 +53,8 @@ export function formatNumber(num: number | undefined): string {
 
 // ── Status labels & colors ──
 export const ORDER_STATUS_MAP: Record<string, { label: string; color: string }> = {
-    OPEN: { label: 'Open', color: 'info' },
-    PARTIAL: { label: 'Partial', color: 'warning' },
+    OPEN: { label: 'Belum Terkirim', color: 'info' },
+    PARTIAL: { label: 'Sebagian Terkirim', color: 'warning' },
     COMPLETE: { label: 'Selesai', color: 'success' },
     ON_HOLD: { label: 'Ditahan', color: 'purple' },
     CANCELLED: { label: 'Dibatalkan', color: 'danger' },
@@ -62,7 +62,7 @@ export const ORDER_STATUS_MAP: Record<string, { label: string; color: string }> 
 
 export const ITEM_STATUS_MAP: Record<string, { label: string; color: string }> = {
     PENDING: { label: 'Pending', color: 'gray' },
-    ON_DELIVERY: { label: 'Dikirim', color: 'info' },
+    ON_DELIVERY: { label: 'Dalam Pengiriman', color: 'info' },
     DELIVERED: { label: 'Terkirim', color: 'success' },
     HOLD: { label: 'Ditahan', color: 'warning' },
     RETURNED: { label: 'Retur', color: 'danger' },
