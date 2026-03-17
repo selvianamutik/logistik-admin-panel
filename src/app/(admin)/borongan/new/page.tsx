@@ -132,7 +132,7 @@ export default function NewBoronganPage() {
             collie,
             beratKg,
             tarip,
-            uangRp: beratKg * tarip,
+            uangRp: tarip,
             ket: deliveryOrder.keteranganBorongan || '',
         };
     };
@@ -142,8 +142,8 @@ export default function NewBoronganPage() {
             previous.map(row => {
                 if (row.id !== id) return row;
                 const updated = { ...row, [field]: value };
-                if (field === 'beratKg' || field === 'tarip') {
-                    updated.uangRp = updated.beratKg * updated.tarip;
+                if (field === 'tarip') {
+                    updated.uangRp = updated.tarip;
                 }
                 return updated;
             })
@@ -179,7 +179,7 @@ export default function NewBoronganPage() {
         }
 
         if (!nextRow.tarip) {
-            addToast('info', 'Tarip borongan DO ini belum diisi. Cek dan lengkapi sebelum simpan.');
+            addToast('info', 'Tarif borongan DO ini belum diisi. Cek dan lengkapi sebelum simpan.');
         }
 
         setRows(previous => {
@@ -373,6 +373,9 @@ export default function NewBoronganPage() {
                             <p style={{ margin: '0.65rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                                 DO yang sudah dipakai di slip lain atau sudah kamu pilih di tabel otomatis disembunyikan.
                             </p>
+                            <p style={{ margin: '0.45rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                Borongan default dihitung per DO/perjalanan. Berat dan collie tetap ditampilkan sebagai info operasional.
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -391,8 +394,11 @@ export default function NewBoronganPage() {
                                 <strong>{totalCollie}</strong>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem', fontSize: '0.85rem' }}>
-                                <span className="text-muted">Total Berat</span>
+                                <span className="text-muted">Total Berat (info)</span>
                                 <strong>{totalBerat.toLocaleString('id')} kg</strong>
+                            </div>
+                            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.45, marginBottom: '1rem' }}>
+                                Upah dihitung dari penjumlahan tarif borongan tiap DO/perjalanan, bukan dari berat x tarif.
                             </div>
                             <button className="btn btn-primary" style={{ width: '100%' }} onClick={handleSave} disabled={saving}>
                                 <Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan Slip Borongan'}
@@ -420,8 +426,8 @@ export default function NewBoronganPage() {
                                 <th>BARANG</th>
                                 <th>COLLIE</th>
                                 <th>BERAT KG</th>
-                                <th>TARIP</th>
-                                <th>UANG RP</th>
+                                <th>TARIF BORONGAN</th>
+                                <th>UPAH RP</th>
                                 <th>KET</th>
                                 <th style={{ width: 36 }} />
                             </tr>
@@ -492,6 +498,7 @@ export default function NewBoronganPage() {
                                             className="form-input"
                                             value={row.tarip || ''}
                                             onChange={event => updateRow(row.id, 'tarip', Number(event.target.value))}
+                                            placeholder="Upah per DO"
                                         />
                                     </td>
                                     <td style={{ fontWeight: 600, color: 'var(--color-primary)' }}>{formatCurrency(row.uangRp)}</td>

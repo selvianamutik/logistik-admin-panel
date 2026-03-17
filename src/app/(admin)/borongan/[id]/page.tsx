@@ -248,7 +248,7 @@ export default function BoronganDetailPage() {
                                     <div className="detail-value">{borong.totalCollie || 0}</div>
                                 </div>
                                 <div className="detail-item">
-                                    <div className="detail-label">Total Berat</div>
+                                    <div className="detail-label">Total Berat (info)</div>
                                     <div className="detail-value">{(borong.totalWeightKg || 0).toLocaleString('id')} kg</div>
                                 </div>
                             </div>
@@ -291,8 +291,8 @@ export default function BoronganDetailPage() {
                                         <th>BARANG</th>
                                         <th>COLLIE</th>
                                         <th>BERAT KG</th>
-                                        <th>TARIP</th>
-                                        <th style={{ textAlign: 'right' }}>UANG RP</th>
+                                        <th>TARIF BORONGAN</th>
+                                        <th style={{ textAlign: 'right' }}>UPAH RP</th>
                                         <th>KET</th>
                                     </tr>
                                 </thead>
@@ -343,8 +343,11 @@ export default function BoronganDetailPage() {
                                 <strong>{borong.totalCollie || 0}</strong>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem', fontSize: '0.85rem' }}>
-                                <span className="text-muted">Total Berat</span>
+                                <span className="text-muted">Total Berat (info)</span>
                                 <strong>{(borong.totalWeightKg || 0).toLocaleString('id')} kg</strong>
+                            </div>
+                            <div style={{ fontSize: '0.78rem', color: 'var(--color-gray-500)', lineHeight: 1.45, marginBottom: '1rem' }}>
+                                Slip ini dihitung dari tarif borongan per DO/perjalanan. Berat dan collie tetap disimpan sebagai konteks operasional.
                             </div>
                             {borong.status === 'UNPAID' && (
                                 <button className="btn btn-success" style={{ width: '100%' }} onClick={() => setShowPayModal(true)}>
@@ -392,8 +395,8 @@ export default function BoronganDetailPage() {
                             <th>BARANG</th>
                             <th>COLLIE</th>
                             <th>BERAT KG</th>
-                            <th>TARIP</th>
-                            <th>UANG RP.</th>
+                            <th>TARIF BORONGAN</th>
+                            <th>UPAH RP.</th>
                             <th>KET</th>
                         </tr>
                     </thead>

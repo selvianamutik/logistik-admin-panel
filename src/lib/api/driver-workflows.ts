@@ -132,11 +132,11 @@ export async function handleDriverBoronganCreate(
             if ((!date || !noSJ || !tujuan) && !doRef) {
                 throw new Error('Baris borongan wajib punya tanggal, nomor SJ, dan tujuan');
             }
-            if ((!Number.isFinite(beratKg) || beratKg <= 0) && !doRef) {
-                throw new Error('Berat pada baris borongan harus lebih besar dari 0');
+            if (!Number.isFinite(beratKg) || beratKg < 0) {
+                throw new Error('Berat pada baris borongan tidak valid');
             }
             if ((!Number.isFinite(tarip) || tarip <= 0) && !doRef) {
-                throw new Error('Tarip pada baris borongan harus lebih besar dari 0');
+                throw new Error('Tarif borongan pada baris harus lebih besar dari 0');
             }
             if (!Number.isFinite(collie) || collie < 0) {
                 throw new Error('Collie pada baris borongan tidak valid');
@@ -153,7 +153,7 @@ export async function handleDriverBoronganCreate(
                 collie: collie > 0 ? collie : undefined,
                 beratKg,
                 tarip,
-                uangRp: beratKg * tarip,
+                uangRp: tarip,
                 ket: normalizeOptionalText(row.ket),
             };
         });
@@ -273,7 +273,7 @@ export async function handleDriverBoronganCreate(
             row.tarip = normalizeNumber(deliveryOrder.taripBorongan || 0);
         }
         row.ket = row.ket || normalizeOptionalText(deliveryOrder.keteranganBorongan);
-        row.uangRp = row.beratKg * row.tarip;
+        row.uangRp = row.tarip;
     }
 
     for (const row of rows) {
@@ -283,7 +283,7 @@ export async function handleDriverBoronganCreate(
                 { status: 400 }
             );
         }
-        if (!Number.isFinite(row.beratKg) || row.beratKg <= 0) {
+        if (!Number.isFinite(row.beratKg) || row.beratKg < 0) {
             return NextResponse.json(
                 { error: `Berat pada baris borongan ${row.doNumber || row.noSJ || row.doRef || ''} tidak valid` },
                 { status: 400 }
@@ -291,11 +291,11 @@ export async function handleDriverBoronganCreate(
         }
         if (!Number.isFinite(row.tarip) || row.tarip <= 0) {
             return NextResponse.json(
-                { error: `Tarip pada baris borongan ${row.doNumber || row.noSJ || row.doRef || ''} tidak valid` },
+                { error: `Tarif borongan pada baris ${row.doNumber || row.noSJ || row.doRef || ''} tidak valid` },
                 { status: 400 }
             );
         }
-        row.uangRp = row.beratKg * row.tarip;
+        row.uangRp = row.tarip;
     }
 
     if (uniqueDoRefs.length > 0) {

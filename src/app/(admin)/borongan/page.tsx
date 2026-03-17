@@ -55,7 +55,7 @@ export default function BoronganListPage() {
             <div className="page-header">
                 <div className="page-header-left">
                     <h1 className="page-title">Borongan Supir</h1>
-                    <p className="page-subtitle">Kelola slip upah borongan supir</p>
+                    <p className="page-subtitle">Kelola slip upah supir per DO/perjalanan</p>
                 </div>
                 <div className="page-actions">
                     <button type="button" className="btn btn-primary" onClick={() => router.push('/borongan/new')}>
@@ -111,7 +111,7 @@ export default function BoronganListPage() {
                                 <th>Supir</th>
                                 <th>Periode</th>
                                 <th>Total Collie</th>
-                                <th>Total Berat</th>
+                                <th>Total Berat (info)</th>
                                 <th>Total Upah</th>
                                 <th>Status</th>
                                 <th>Aksi</th>

@@ -146,6 +146,9 @@ Jadi perilaku saat ini adalah:
 - Sistem membuat nomor borongan otomatis.
 - Status awal: `UNPAID`.
 - Detail perjalanan disimpan sebagai `driverBoronganItem`.
+- Dasar hitung default sekarang adalah `per DO / per perjalanan`.
+- `taripBorongan` pada DO diperlakukan sebagai nilai upah tetap untuk DO itu.
+- `berat` dan `collie` tetap disimpan sebagai informasi operasional, tetapi tidak menjadi pengali utama upah.
 
 ### 5.2 Bayar borongan
 
@@ -518,6 +521,12 @@ Kalau ada salah input, perbaikannya harus lewat workflow/admin patch yang diseng
 ### 15.2 Tarip Borongan DO
 
 Tarip borongan pada DO boleh diisi untuk kebutuhan pembuatan slip borongan.
+
+Maknanya saat ini:
+
+- itu adalah `tarif upah per DO / per perjalanan`
+- bukan tarif per kg
+- saat DO dimasukkan ke slip borongan, nilai ini menjadi `upah` baris tersebut
 
 Tetapi:
 
