@@ -33,6 +33,24 @@ function buildRouteLabel(origin?: string, destination?: string) {
     return from || to || undefined;
 }
 
+function computeDriverVoucherTotals(
+    cashGiven: number,
+    operationalSpent: number,
+    driverFeeAmount: number
+) {
+    const safeCashGiven = Number.isFinite(cashGiven) ? cashGiven : 0;
+    const safeOperationalSpent = Number.isFinite(operationalSpent) ? operationalSpent : 0;
+    const safeDriverFeeAmount = Number.isFinite(driverFeeAmount) ? driverFeeAmount : 0;
+    const totalClaimAmount = safeOperationalSpent + safeDriverFeeAmount;
+
+    return {
+        totalSpent: safeOperationalSpent,
+        driverFeeAmount: safeDriverFeeAmount,
+        totalClaimAmount,
+        balance: safeCashGiven - totalClaimAmount,
+    };
+}
+
 type NormalizedDriverBoronganRow = {
     doRef?: string;
     doNumber?: string;
@@ -307,6 +325,27 @@ export async function handleDriverBoronganCreate(
             const duplicate = existingBoronganItems[0];
             return NextResponse.json(
                 { error: `DO ${duplicate.doNumber || duplicate.doRef || ''} sudah tercantum di slip borongan lain` },
+                { status: 409 }
+            );
+        }
+
+        const existingVoucherWages = await getSanityClient().fetch<Array<{ doNumber?: string; bonNumber?: string }>>(
+            `*[
+                _type == "driverVoucher" &&
+                (deliveryOrderRef in $ids || deliveryOrderRef._ref in $ids) &&
+                coalesce(driverFeeAmount, 0) > 0
+            ]{
+                doNumber,
+                bonNumber
+            }`,
+            { ids: uniqueDoRefs }
+        );
+        if (existingVoucherWages.length > 0) {
+            const duplicateVoucher = existingVoucherWages[0];
+            return NextResponse.json(
+                {
+                    error: `DO ${duplicateVoucher.doNumber || ''} sudah memakai upah supir di bon ${duplicateVoucher.bonNumber || ''}. Jangan dobel lewat slip borongan.`,
+                },
                 { status: 409 }
             );
         }
@@ -636,18 +675,23 @@ async function getDriverVoucherState(voucherId: string) {
         bonNumber: string;
         status: string;
         cashGiven: number;
+        driverFeeAmount?: number;
+        totalClaimAmount?: number;
         issuedDate: string;
         issueBankRef?: string;
         issueBankName?: string;
         vehicleRef?: string;
+        vehiclePlate?: string;
+        driverName?: string;
+        deliveryOrderRef?: string;
     }>(voucherId);
 
     if (!voucher) {
         return { error: NextResponse.json({ error: 'Bon supir tidak ditemukan' }, { status: 404 }) };
     }
 
-    const items = await getSanityClient().fetch<Array<{ _id: string; category: string; description?: string; amount: number }>>(
-        `*[_type == "driverVoucherItem" && voucherRef == $ref] | order(_createdAt asc){ _id, category, description, amount }`,
+    const items = await getSanityClient().fetch<Array<{ _id: string; category: string; description?: string; amount: number; expenseDate?: string }>>(
+        `*[_type == "driverVoucherItem" && voucherRef == $ref] | order(coalesce(expenseDate, _createdAt) asc){ _id, expenseDate, category, description, amount }`,
         { ref: voucherId }
     );
 
@@ -679,6 +723,11 @@ export async function handleDriverVoucherCreate(
             ? data.issuedDate
             : new Date().toISOString().slice(0, 10);
     assertIsoDate(issueDate, 'Tanggal bon');
+
+    const requestedDriverFeeAmount = normalizeNumber(data.driverFeeAmount ?? 0);
+    if (!Number.isFinite(requestedDriverFeeAmount) || requestedDriverFeeAmount < 0) {
+        return NextResponse.json({ error: 'Upah supir pada bon tidak valid' }, { status: 400 });
+    }
 
     const driver = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(driverRef);
     if (!driver) {
@@ -717,12 +766,13 @@ export async function handleDriverVoucherCreate(
             vehiclePlate?: string;
             receiverAddress?: string;
             pickupAddress?: string;
+            taripBorongan?: number;
             orderRef?: unknown;
         }>(deliveryOrderRef);
         if (!deliveryOrder) {
             return NextResponse.json({ error: 'Surat jalan bon tidak ditemukan' }, { status: 404 });
         }
-        if (deliveryOrder.status && !['CREATED', 'ON_DELIVERY'].includes(deliveryOrder.status)) {
+        if (deliveryOrder.status && !['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status)) {
             return NextResponse.json(
                 { error: `Bon supir hanya boleh dikaitkan ke DO yang masih operasional. Status DO ${deliveryOrder.doNumber || deliveryOrderRef} sekarang ${deliveryOrder.status}.` },
                 { status: 409 }
@@ -757,6 +807,42 @@ export async function handleDriverVoucherCreate(
             deliveryOrder.pickupAddress || order?.pickupAddress,
             deliveryOrder.receiverAddress || order?.receiverAddress,
         );
+
+        const existingVoucher = await getSanityClient().fetch<{ bonNumber?: string; status?: string } | null>(
+            `*[
+                _type == "driverVoucher" &&
+                (deliveryOrderRef == $ref || deliveryOrderRef._ref == $ref)
+            ][0]{
+                bonNumber,
+                status
+            }`,
+            { ref: deliveryOrderRef }
+        );
+        if (existingVoucher) {
+            return NextResponse.json(
+                { error: `DO ${deliveryOrder.doNumber || deliveryOrderRef} sudah punya bon ${existingVoucher.bonNumber || ''}. Gunakan satu bon per perjalanan agar settlement tidak bercampur.` },
+                { status: 409 }
+            );
+        }
+
+        const effectiveDriverFeeAmount =
+            requestedDriverFeeAmount > 0
+                ? requestedDriverFeeAmount
+                : normalizeNumber(deliveryOrder.taripBorongan || 0);
+        if (effectiveDriverFeeAmount > 0) {
+            const existingBoronganItem = await getSanityClient().fetch<{ doNumber?: string } | null>(
+                `*[_type == "driverBoronganItem" && doRef == $ref][0]{ doNumber }`,
+                { ref: deliveryOrderRef }
+            );
+            if (existingBoronganItem) {
+                return NextResponse.json(
+                    { error: `DO ${deliveryOrder.doNumber || deliveryOrderRef} sudah tercantum di slip borongan. Upah supir tidak boleh dobel.` },
+                    { status: 409 }
+                );
+            }
+        }
+
+        data.driverFeeAmount = effectiveDriverFeeAmount;
     }
 
     if (canonicalVehicleRef && !canonicalVehiclePlate) {
@@ -769,6 +855,8 @@ export async function handleDriverVoucherCreate(
 
     const bonNumber = await sanityGetNextNumber('bon');
     const voucherId = crypto.randomUUID();
+    const driverFeeAmount = normalizeNumber(data.driverFeeAmount ?? requestedDriverFeeAmount);
+    const voucherTotals = computeDriverVoucherTotals(cashGiven, 0, driverFeeAmount);
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
         const issueBank = await getLedgerAccount(issueBankRef);
@@ -793,10 +881,12 @@ export async function handleDriverVoucherCreate(
             bonNumber,
             issuedDate: issueDate,
             cashGiven,
+            driverFeeAmount: voucherTotals.driverFeeAmount,
+            totalClaimAmount: voucherTotals.totalClaimAmount,
             issueBankRef,
             issueBankName: issueBank.bankName,
-            totalSpent: 0,
-            balance: cashGiven,
+            totalSpent: voucherTotals.totalSpent,
+            balance: voucherTotals.balance,
             status: 'ISSUED',
             notes: normalizeOptionalText(data.notes),
         };
@@ -861,6 +951,12 @@ export async function handleDriverVoucherItemCreate(
         return NextResponse.json({ error: 'Nominal item tidak valid' }, { status: 400 });
     }
 
+    const expenseDate =
+        typeof data.expenseDate === 'string' && data.expenseDate
+            ? data.expenseDate
+            : new Date().toISOString().slice(0, 10);
+    assertIsoDate(expenseDate, 'Tanggal biaya perjalanan');
+
     for (let attempt = 0; attempt < 3; attempt += 1) {
         const state = await getDriverVoucherState(voucherRef);
         if ('error' in state) return state.error;
@@ -872,12 +968,17 @@ export async function handleDriverVoucherItemCreate(
         }
 
         const itemId = crypto.randomUUID();
-        const nextTotal = state.items.reduce((sum, item) => sum + item.amount, 0) + amount;
-        const nextBalance = (state.voucher.cashGiven || 0) - nextTotal;
+        const nextOperationalSpent = state.items.reduce((sum, item) => sum + item.amount, 0) + amount;
+        const nextTotals = computeDriverVoucherTotals(
+            state.voucher.cashGiven || 0,
+            nextOperationalSpent,
+            normalizeNumber(state.voucher.driverFeeAmount || 0)
+        );
         const itemDoc = {
             _id: itemId,
             _type: 'driverVoucherItem',
             voucherRef,
+            expenseDate,
             category: typeof data.category === 'string' && data.category.trim() ? data.category.trim() : 'Lain-lain',
             description: typeof data.description === 'string' ? data.description.trim() : '',
             amount,
@@ -890,8 +991,9 @@ export async function handleDriverVoucherItemCreate(
                 .patch(voucherRef, {
                     ifRevisionID: state.voucher._rev,
                     set: {
-                        totalSpent: nextTotal,
-                        balance: nextBalance,
+                        totalSpent: nextTotals.totalSpent,
+                        totalClaimAmount: nextTotals.totalClaimAmount,
+                        balance: nextTotals.balance,
                     },
                 })
                 .commit();
@@ -907,8 +1009,9 @@ export async function handleDriverVoucherItemCreate(
                 data: itemDoc,
                 voucher: {
                     ...state.voucher,
-                    totalSpent: nextTotal,
-                    balance: nextBalance,
+                    totalSpent: nextTotals.totalSpent,
+                    totalClaimAmount: nextTotals.totalClaimAmount,
+                    balance: nextTotals.balance,
                 },
             });
         } catch (err) {
@@ -956,10 +1059,14 @@ export async function handleDriverVoucherItemDelete(
             return NextResponse.json({ error: 'Revisi bon tidak tersedia' }, { status: 409 });
         }
 
-        const nextTotal = state.items
+        const nextOperationalSpent = state.items
             .filter(existing => existing._id !== itemId)
             .reduce((sum, existing) => sum + existing.amount, 0);
-        const nextBalance = (state.voucher.cashGiven || 0) - nextTotal;
+        const nextTotals = computeDriverVoucherTotals(
+            state.voucher.cashGiven || 0,
+            nextOperationalSpent,
+            normalizeNumber(state.voucher.driverFeeAmount || 0)
+        );
         const deletedItem = state.items.find(existing => existing._id === itemId);
 
         try {
@@ -969,8 +1076,9 @@ export async function handleDriverVoucherItemDelete(
                 .patch(item.voucherRef, {
                     ifRevisionID: state.voucher._rev,
                     set: {
-                        totalSpent: nextTotal,
-                        balance: nextBalance,
+                        totalSpent: nextTotals.totalSpent,
+                        totalClaimAmount: nextTotals.totalClaimAmount,
+                        balance: nextTotals.balance,
                     },
                 })
                 .commit();
@@ -986,8 +1094,9 @@ export async function handleDriverVoucherItemDelete(
                 success: true,
                 voucher: {
                     ...state.voucher,
-                    totalSpent: nextTotal,
-                    balance: nextBalance,
+                    totalSpent: nextTotals.totalSpent,
+                    totalClaimAmount: nextTotals.totalClaimAmount,
+                    balance: nextTotals.balance,
                 },
             });
         } catch (err) {
@@ -1036,8 +1145,9 @@ export async function handleDriverVoucherSettlement(
         if (state.voucher.status === 'SETTLED') {
             return NextResponse.json({ error: 'Bon supir ini sudah settle' }, { status: 409 });
         }
-        if (state.items.length === 0) {
-            return NextResponse.json({ error: 'Tambahkan minimal satu item pengeluaran sebelum settle' }, { status: 400 });
+        const driverFeeAmount = normalizeNumber(state.voucher.driverFeeAmount || 0);
+        if (state.items.length === 0 && driverFeeAmount <= 0) {
+            return NextResponse.json({ error: 'Isi biaya perjalanan atau upah supir sebelum settlement' }, { status: 400 });
         }
 
         const existingExpense = await getSanityClient().fetch<{ _id: string } | null>(
@@ -1048,8 +1158,26 @@ export async function handleDriverVoucherSettlement(
             return NextResponse.json({ error: 'Bon supir ini sudah pernah diposting ke pengeluaran' }, { status: 409 });
         }
 
+        if (state.voucher.deliveryOrderRef && driverFeeAmount > 0) {
+            const existingBoronganItem = await getSanityClient().fetch<{ doNumber?: string } | null>(
+                `*[_type == "driverBoronganItem" && doRef == $ref][0]{ doNumber }`,
+                { ref: state.voucher.deliveryOrderRef }
+            );
+            if (existingBoronganItem) {
+                return NextResponse.json(
+                    { error: `DO ${existingBoronganItem.doNumber || state.voucher.deliveryOrderRef} sudah ada di slip borongan. Upah supir tidak boleh dobel.` },
+                    { status: 409 }
+                );
+            }
+        }
+
         const totalSpent = state.items.reduce((sum, item) => sum + item.amount, 0);
-        const balance = (state.voucher.cashGiven || 0) - totalSpent;
+        const totals = computeDriverVoucherTotals(
+            state.voucher.cashGiven || 0,
+            totalSpent,
+            driverFeeAmount
+        );
+        const balance = totals.balance;
         const settlementBankRef =
             typeof data.settlementBankRef === 'string' && data.settlementBankRef
                 ? data.settlementBankRef
@@ -1077,12 +1205,30 @@ export async function handleDriverVoucherSettlement(
                 _type: 'expense',
                 categoryRef: toCategoryRef(item.category),
                 categoryName: item.category,
-                date: settledDate,
+                date: item.expenseDate || settledDate,
                 amount: item.amount,
                 description: item.description || `Pengeluaran bon supir ${state.voucher.bonNumber}`,
                 note: `Bon supir ${state.voucher.bonNumber}`,
                 privacyLevel: 'internal',
                 relatedVehicleRef: state.voucher.vehicleRef,
+                relatedVehiclePlate: state.voucher.vehiclePlate,
+                voucherRef: voucherId,
+            });
+        }
+
+        if (driverFeeAmount > 0) {
+            transaction.create({
+                _id: crypto.randomUUID(),
+                _type: 'expense',
+                categoryRef: 'driver-borongan',
+                categoryName: 'Borongan Supir',
+                date: settledDate,
+                amount: driverFeeAmount,
+                description: `Upah supir ${state.voucher.driverName || '-'} - ${state.voucher.bonNumber}`,
+                note: `Settlement bon supir ${state.voucher.bonNumber}`,
+                privacyLevel: 'internal',
+                relatedVehicleRef: state.voucher.vehicleRef,
+                relatedVehiclePlate: state.voucher.vehiclePlate,
                 voucherRef: voucherId,
             });
         }
@@ -1122,8 +1268,10 @@ export async function handleDriverVoucherSettlement(
                 status: 'SETTLED',
                 settledDate,
                 settledBy: session.name,
-                totalSpent,
-                balance,
+                totalSpent: totals.totalSpent,
+                driverFeeAmount: totals.driverFeeAmount,
+                totalClaimAmount: totals.totalClaimAmount,
+                balance: totals.balance,
                 settlementBankRef: settlementBankRef || undefined,
                 settlementBankName: settlementBank?.bankName,
             },
@@ -1137,8 +1285,10 @@ export async function handleDriverVoucherSettlement(
                 status: 'SETTLED',
                 settledDate,
                 settledBy: session.name,
-                totalSpent,
-                balance,
+                totalSpent: totals.totalSpent,
+                driverFeeAmount: totals.driverFeeAmount,
+                totalClaimAmount: totals.totalClaimAmount,
+                balance: totals.balance,
                 settlementBankRef: settlementBankRef || undefined,
                 settlementBankName: settlementBank?.bankName,
             };

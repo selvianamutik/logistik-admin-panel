@@ -15,7 +15,7 @@ const STATUS_MAP: Record<string, { label: string; cls: string }> = {
     SETTLED: { label: 'Selesai', cls: 'badge-green' },
 };
 
-const EXPENSE_CATEGORIES = ['Solar/BBM', 'Tol', 'Parkir', 'Makan', 'Bongkar Muat', 'Perbaikan', 'Lain-lain'];
+const EXPENSE_CATEGORIES = ['BBM / Solar', 'Tol & Parkir', 'Parkir', 'Makan', 'Menginap', 'Bongkar Muat', 'Perbaikan', 'Lain-lain'];
 
 export default function DriverVoucherDetailPage() {
     const router = useRouter();
@@ -31,7 +31,12 @@ export default function DriverVoucherDetailPage() {
     const [savingItem, setSavingItem] = useState(false);
     const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
     const [repairingIssueLedger, setRepairingIssueLedger] = useState(false);
-    const [itemForm, setItemForm] = useState({ category: 'Solar/BBM', description: '', amount: 0 });
+    const [itemForm, setItemForm] = useState({
+        expenseDate: new Date().toISOString().slice(0, 10),
+        category: 'BBM / Solar',
+        description: '',
+        amount: 0,
+    });
     const [settlementDate, setSettlementDate] = useState(new Date().toISOString().slice(0, 10));
     const [settlementBankRef, setSettlementBankRef] = useState('');
     const [issueBankRepairRef, setIssueBankRepairRef] = useState('');
@@ -68,8 +73,10 @@ export default function DriverVoucherDetailPage() {
         void loadVoucherDetail();
     }, [loadVoucherDetail]);
 
-    const totalSpent = items.reduce((sum, item) => sum + item.amount, 0);
-    const balance = (voucher?.cashGiven || 0) - totalSpent;
+    const operationalSpent = items.reduce((sum, item) => sum + item.amount, 0);
+    const driverFeeAmount = voucher?.driverFeeAmount || 0;
+    const totalClaimAmount = operationalSpent + driverFeeAmount;
+    const balance = (voucher?.cashGiven || 0) - totalClaimAmount;
     const isSettled = voucher?.status === 'SETTLED';
 
     const handleAddItem = async () => {
@@ -87,6 +94,7 @@ export default function DriverVoucherDetailPage() {
                     entity: 'driver-voucher-items',
                     data: {
                         voucherRef: params.id,
+                        expenseDate: itemForm.expenseDate,
                         category: itemForm.category,
                         description: itemForm.description,
                         amount: itemForm.amount,
@@ -98,14 +106,18 @@ export default function DriverVoucherDetailPage() {
                 addToast('error', result.error || 'Gagal menambah item');
                 return;
             }
-
-            setItems(prev => [...prev, result.data]);
+            setItems(prev => [...prev, result.data].sort((a, b) => (a.expenseDate || '').localeCompare(b.expenseDate || '')));
             if (result.voucher) {
                 setVoucher(result.voucher);
             }
             addToast('success', 'Item pengeluaran ditambahkan');
             setShowAddItem(false);
-            setItemForm({ category: 'Solar/BBM', description: '', amount: 0 });
+            setItemForm({
+                expenseDate: new Date().toISOString().slice(0, 10),
+                category: 'BBM / Solar',
+                description: '',
+                amount: 0,
+            });
         } catch {
             addToast('error', 'Gagal menambah item');
         } finally {
@@ -184,8 +196,8 @@ export default function DriverVoucherDetailPage() {
 
     const handleSettle = async () => {
         if (!voucher) return;
-        if (items.length === 0) {
-            addToast('error', 'Tambahkan minimal satu item sebelum settlement');
+        if (items.length === 0 && driverFeeAmount <= 0) {
+            addToast('error', 'Isi biaya perjalanan atau upah supir sebelum settlement');
             return;
         }
         if (balance !== 0 && !settlementBankRef) {
@@ -234,17 +246,21 @@ export default function DriverVoucherDetailPage() {
                     <td style="border:none;padding:2px 8px;font-weight:600">Kendaraan</td><td style="border:none;padding:2px 8px">${voucher?.vehiclePlate || '-'}</td></tr>
                 <tr><td style="border:none;padding:2px 8px;font-weight:600">DO</td><td style="border:none;padding:2px 8px">${voucher?.doNumber || '-'}</td>
                     <td style="border:none;padding:2px 8px;font-weight:600">Rute</td><td style="border:none;padding:2px 8px">${voucher?.route || '-'}</td></tr>
-                <tr><td style="border:none;padding:2px 8px;font-weight:600">Uang Diberikan</td><td style="border:none;padding:2px 8px;font-weight:700;font-size:1.05em">${formatCurrency(voucher?.cashGiven || 0)}</td>
+                <tr><td style="border:none;padding:2px 8px;font-weight:600">Uang Jalan Awal</td><td style="border:none;padding:2px 8px;font-weight:700;font-size:1.05em">${formatCurrency(voucher?.cashGiven || 0)}</td>
                     <td style="border:none;padding:2px 8px;font-weight:600">Rekening Sumber</td><td style="border:none;padding:2px 8px">${voucher?.issueBankName || '-'}</td></tr>
+                <tr><td style="border:none;padding:2px 8px;font-weight:600">Upah Supir</td><td style="border:none;padding:2px 8px">${formatCurrency(driverFeeAmount)}</td>
+                    <td style="border:none;padding:2px 8px;font-weight:600">Biaya Perjalanan</td><td style="border:none;padding:2px 8px">${formatCurrency(operationalSpent)}</td></tr>
                 <tr><td style="border:none;padding:2px 8px;font-weight:600">Status</td><td style="border:none;padding:2px 8px">${STATUS_MAP[voucher?.status || '']?.label || voucher?.status}</td>
                     <td style="border:none;padding:2px 8px;font-weight:600">Rekening Settlement</td><td style="border:none;padding:2px 8px">${voucher?.settlementBankName || '-'}</td></tr>
                 </tbody></table>
             </div>
-            <table><thead><tr><th>No</th><th>Kategori</th><th>Deskripsi</th><th class="r">Jumlah</th></tr></thead>
-            <tbody>${items.map((item, index) => `<tr><td>${index + 1}</td><td class="b">${item.category}</td><td>${item.description || '-'}</td><td class="r">${formatCurrency(item.amount)}</td></tr>`).join('')}
-            <tr style="border-top:2px solid #1e293b"><td colspan="3" class="r b">Total Pengeluaran</td><td class="r b">${formatCurrency(totalSpent)}</td></tr>
-            <tr><td colspan="3" class="r b">Uang Diberikan</td><td class="r">${formatCurrency(voucher?.cashGiven || 0)}</td></tr>
-            <tr style="border-top:2px solid #1e293b"><td colspan="3" class="r b">${balance >= 0 ? 'Sisa Dikembalikan' : 'Kurang Bayar'}</td><td class="r b" style="color:${balance < 0 ? '#ef4444' : '#16a34a'}">${formatCurrency(Math.abs(balance))}</td></tr>
+            <table><thead><tr><th>No</th><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th class="r">Jumlah</th></tr></thead>
+            <tbody>${items.map((item, index) => `<tr><td>${index + 1}</td><td>${item.expenseDate ? formatDate(item.expenseDate) : '-'}</td><td class="b">${item.category}</td><td>${item.description || '-'}</td><td class="r">${formatCurrency(item.amount)}</td></tr>`).join('')}
+            <tr style="border-top:2px solid #1e293b"><td colspan="4" class="r b">Total Biaya Perjalanan</td><td class="r b">${formatCurrency(operationalSpent)}</td></tr>
+            <tr><td colspan="4" class="r b">Upah Supir</td><td class="r">${formatCurrency(driverFeeAmount)}</td></tr>
+            <tr><td colspan="4" class="r b">Total Hak Supir</td><td class="r">${formatCurrency(totalClaimAmount)}</td></tr>
+            <tr><td colspan="4" class="r b">Uang Jalan Awal</td><td class="r">${formatCurrency(voucher?.cashGiven || 0)}</td></tr>
+            <tr style="border-top:2px solid #1e293b"><td colspan="4" class="r b">${balance >= 0 ? 'Sisa Dikembalikan' : 'Tambahan Bayar ke Supir'}</td><td class="r b" style="color:${balance < 0 ? '#ef4444' : '#16a34a'}">${formatCurrency(Math.abs(balance))}</td></tr>
             </tbody></table>
             <div style="margin-top:40px;display:flex;justify-content:space-between">
                 <div style="text-align:center;width:200px"><div style="margin-bottom:60px">Supir,</div><div style="border-top:1px solid #333;padding-top:4px">(${voucher?.driverName || '________________'})</div></div>
@@ -258,7 +274,7 @@ export default function DriverVoucherDetailPage() {
     }
 
     const statusConfig = STATUS_MAP[voucher.status] || { label: voucher.status, cls: 'badge-gray' };
-    const settlementLabel = balance > 0 ? 'Sisa akan kembali ke rekening' : balance < 0 ? 'Tambahan pembayaran diperlukan' : 'Tidak ada selisih';
+    const settlementLabel = balance > 0 ? 'Sisa akan kembali ke rekening atau kas perusahaan' : balance < 0 ? 'Perusahaan masih perlu menambah pembayaran ke supir' : 'Tidak ada selisih';
 
     return (
         <div>
@@ -274,7 +290,7 @@ export default function DriverVoucherDetailPage() {
                     </div>
                 </div>
                 <div className="page-actions" style={{ flexWrap: 'wrap' }}>
-                    {!isSettled && items.length > 0 && <button className="btn btn-primary" onClick={openSettleModal}><CheckCircle size={16} /> Selesaikan Bon</button>}
+                    {!isSettled && (items.length > 0 || driverFeeAmount > 0) && <button className="btn btn-primary" onClick={openSettleModal}><CheckCircle size={16} /> Selesaikan Bon</button>}
                     <button className="btn btn-secondary btn-sm" onClick={handlePrint}><Printer size={15} /> Print Bon</button>
                 </div>
             </div>
@@ -304,15 +320,23 @@ export default function DriverVoucherDetailPage() {
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-4)', marginBottom: 'var(--space-6)' }}>
                 <div className="card"><div className="card-body" style={{ padding: 'var(--space-4)' }}>
-                    <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>Uang Diberikan</div>
+                    <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>Uang Jalan Awal</div>
                     <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{formatCurrency(voucher.cashGiven)}</div>
                 </div></div>
                 <div className="card"><div className="card-body" style={{ padding: 'var(--space-4)' }}>
-                    <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>Total Pengeluaran</div>
-                    <div style={{ fontSize: '1.3rem', fontWeight: 700, color: '#ef4444' }}>{formatCurrency(totalSpent)}</div>
+                    <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>Biaya Perjalanan</div>
+                    <div style={{ fontSize: '1.3rem', fontWeight: 700, color: '#ef4444' }}>{formatCurrency(operationalSpent)}</div>
                 </div></div>
                 <div className="card"><div className="card-body" style={{ padding: 'var(--space-4)' }}>
-                    <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>{balance >= 0 ? 'Sisa (Dikembalikan)' : 'Kurang Bayar'}</div>
+                    <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>Upah Supir</div>
+                    <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{formatCurrency(driverFeeAmount)}</div>
+                </div></div>
+                <div className="card"><div className="card-body" style={{ padding: 'var(--space-4)' }}>
+                    <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>Total Hak Supir</div>
+                    <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{formatCurrency(totalClaimAmount)}</div>
+                </div></div>
+                <div className="card"><div className="card-body" style={{ padding: 'var(--space-4)' }}>
+                    <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>{balance >= 0 ? 'Sisa (Dikembalikan)' : 'Tambahan Bayar'}</div>
                     <div style={{ fontSize: '1.3rem', fontWeight: 700, color: balance >= 0 ? '#16a34a' : '#ef4444' }}>{formatCurrency(Math.abs(balance))}</div>
                 </div></div>
             </div>
@@ -325,6 +349,7 @@ export default function DriverVoucherDetailPage() {
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>SURAT JALAN</div><div>{voucher.doNumber || '-'}</div></div>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>KENDARAAN</div><div>{voucher.vehiclePlate || '-'}</div></div>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>RUTE</div><div>{voucher.route || '-'}</div></div>
+                        <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>UPAH SUPIR</div><div>{formatCurrency(driverFeeAmount)}</div></div>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>REKENING SUMBER</div><div>{voucher.issueBankName || '-'}</div></div>
                         {voucher.notes && <div style={{ gridColumn: '1 / -1' }}><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>CATATAN</div><div>{voucher.notes}</div></div>}
                         {isSettled && voucher.settledDate && <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>TANGGAL SELESAI</div><div>{formatDate(voucher.settledDate)}</div></div>}
@@ -335,20 +360,21 @@ export default function DriverVoucherDetailPage() {
 
             <div className="card">
                 <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h3 className="card-title">Detail Pengeluaran ({items.length})</h3>
-                    {!isSettled && <button className="btn btn-primary btn-sm" onClick={() => setShowAddItem(true)}><Plus size={14} /> Tambah Item</button>}
+                    <h3 className="card-title">Biaya Perjalanan Aktual ({items.length})</h3>
+                    {!isSettled && <button className="btn btn-primary btn-sm" onClick={() => setShowAddItem(true)}><Plus size={14} /> Tambah Biaya</button>}
                 </div>
                 <div className="card-body" style={{ padding: 0 }}>
                     <div className="table-wrapper">
                         <table>
-                            <thead><tr><th>No</th><th>Kategori</th><th>Deskripsi</th><th>Jumlah</th>{!isSettled && <th>Aksi</th>}</tr></thead>
+                            <thead><tr><th>No</th><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th>Jumlah</th>{!isSettled && <th>Aksi</th>}</tr></thead>
                             <tbody>
                                 {items.length === 0 ? (
-                                    <tr><td colSpan={isSettled ? 4 : 5} style={{ textAlign: 'center', padding: 'var(--space-8)', color: 'var(--text-muted)' }}>Belum ada item pengeluaran</td></tr>
+                                    <tr><td colSpan={isSettled ? 5 : 6} style={{ textAlign: 'center', padding: 'var(--space-8)', color: 'var(--text-muted)' }}>Belum ada biaya perjalanan aktual</td></tr>
                                 ) : (
                                     items.map((item, index) => (
                                         <tr key={item._id}>
                                             <td>{index + 1}</td>
+                                            <td>{item.expenseDate ? formatDate(item.expenseDate) : '-'}</td>
                                             <td><span className="badge badge-gray">{item.category}</span></td>
                                             <td>{item.description || '-'}</td>
                                             <td className="font-medium">{formatCurrency(item.amount)}</td>
@@ -356,7 +382,7 @@ export default function DriverVoucherDetailPage() {
                                         </tr>
                                     ))
                                 )}
-                                {items.length > 0 && <tr style={{ borderTop: '2px solid var(--border-color)', fontWeight: 700 }}><td colSpan={3} style={{ textAlign: 'right' }}>TOTAL</td><td>{formatCurrency(totalSpent)}</td>{!isSettled && <td />}</tr>}
+                                {items.length > 0 && <tr style={{ borderTop: '2px solid var(--border-color)', fontWeight: 700 }}><td colSpan={4} style={{ textAlign: 'right' }}>TOTAL BIAYA PERJALANAN</td><td>{formatCurrency(operationalSpent)}</td>{!isSettled && <td />}</tr>}
                             </tbody>
                         </table>
                     </div>
@@ -366,8 +392,12 @@ export default function DriverVoucherDetailPage() {
             {showAddItem && (
                 <div className="modal-overlay" onClick={() => { if (!savingItem) setShowAddItem(false); }}>
                     <div className="modal" onClick={event => event.stopPropagation()}>
-                        <div className="modal-header"><h3 className="modal-title">Tambah Item Pengeluaran</h3><button className="modal-close" onClick={() => setShowAddItem(false)} disabled={savingItem}><X size={20} /></button></div>
+                        <div className="modal-header"><h3 className="modal-title">Tambah Biaya Perjalanan</h3><button className="modal-close" onClick={() => setShowAddItem(false)} disabled={savingItem}><X size={20} /></button></div>
                         <div className="modal-body">
+                            <div className="form-group">
+                                <label className="form-label">Tanggal Biaya</label>
+                                <input type="date" className="form-input" value={itemForm.expenseDate} onChange={event => setItemForm({ ...itemForm, expenseDate: event.target.value })} />
+                            </div>
                             <div className="form-group">
                                 <label className="form-label">Kategori</label>
                                 <select className="form-select" value={itemForm.category} onChange={event => setItemForm({ ...itemForm, category: event.target.value })}>
@@ -406,8 +436,10 @@ export default function DriverVoucherDetailPage() {
                                 <div className="text-muted" style={{ fontSize: '0.78rem', marginTop: '0.35rem' }}>{settlementLabel}</div>
                             </div>
                             <div style={{ background: 'var(--color-bg-secondary)', borderRadius: '0.6rem', padding: '0.85rem 1rem' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem' }}><span>Total Pengeluaran</span><strong>{formatCurrency(totalSpent)}</strong></div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{balance >= 0 ? 'Sisa Dikembalikan' : 'Kurang Bayar'}</span><strong style={{ color: balance >= 0 ? '#16a34a' : '#ef4444' }}>{formatCurrency(Math.abs(balance))}</strong></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Biaya Perjalanan</span><strong>{formatCurrency(operationalSpent)}</strong></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Upah Supir</span><strong>{formatCurrency(driverFeeAmount)}</strong></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Total Hak Supir</span><strong>{formatCurrency(totalClaimAmount)}</strong></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{balance >= 0 ? 'Sisa Dikembalikan' : 'Tambahan Bayar ke Supir'}</span><strong style={{ color: balance >= 0 ? '#16a34a' : '#ef4444' }}>{formatCurrency(Math.abs(balance))}</strong></div>
                             </div>
                         </div>
                         <div className="modal-footer">

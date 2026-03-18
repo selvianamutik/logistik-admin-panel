@@ -50,14 +50,14 @@ export default function DriverVouchersPage() {
 
     return (
         <div>
-            <div className="page-header"><div className="page-header-left"><h1 className="page-title">Bon Supir</h1><p className="page-subtitle">Kelola uang operasional & pertanggungjawaban supir</p></div>
+            <div className="page-header"><div className="page-header-left"><h1 className="page-title">Bon Supir</h1><p className="page-subtitle">Kelola uang jalan awal, biaya perjalanan, upah supir, dan settlement akhir</p></div>
                 <div className="page-actions" style={{ flexWrap: 'wrap' }}>
                     <button className="btn btn-secondary btn-sm" onClick={async () => {
                         const co = await fetchCompanyProfile();
                         openBrandedPrint({
                             title: 'Daftar Bon Supir', company: co, bodyHtml: `
-                            <table><thead><tr><th>No. Bon</th><th>Supir</th><th>Tanggal</th><th>DO</th><th class="r">Uang</th><th class="r">Terpakai</th><th class="r">Sisa</th><th>Status</th></tr></thead>
-                            <tbody>${filtered.map(v => `<tr><td class="b">${v.bonNumber}</td><td>${v.driverName || '-'}</td><td>${formatDate(v.issuedDate)}</td><td>${v.doNumber || '-'}</td><td class="r">${formatCurrency(v.cashGiven)}</td><td class="r">${formatCurrency(v.totalSpent)}</td><td class="r b">${formatCurrency(v.balance)}</td><td>${STATUS_MAP[v.status]?.label || v.status}</td></tr>`).join('')}
+                            <table><thead><tr><th>No. Bon</th><th>Supir</th><th>Tanggal</th><th>DO</th><th class="r">Uang Jalan</th><th class="r">Biaya</th><th class="r">Upah</th><th class="r">Total Hak</th><th class="r">Selisih</th><th>Status</th></tr></thead>
+                            <tbody>${filtered.map(v => `<tr><td class="b">${v.bonNumber}</td><td>${v.driverName || '-'}</td><td>${formatDate(v.issuedDate)}</td><td>${v.doNumber || '-'}</td><td class="r">${formatCurrency(v.cashGiven)}</td><td class="r">${formatCurrency(v.totalSpent)}</td><td class="r">${formatCurrency(v.driverFeeAmount || 0)}</td><td class="r">${formatCurrency(v.totalClaimAmount || ((v.totalSpent || 0) + (v.driverFeeAmount || 0)))}</td><td class="r b">${formatCurrency(v.balance)}</td><td>${STATUS_MAP[v.status]?.label || v.status}</td></tr>`).join('')}
                             </tbody></table>`
                         });
                     }}><Printer size={15} /> Print</button>
@@ -79,12 +79,13 @@ export default function DriverVouchersPage() {
                 </div>
                 <div className="table-wrapper">
                     <table>
-                        <thead><tr><th>No. Bon</th><th>Supir</th><th>Tanggal</th><th>DO</th><th>Rute</th><th>Uang Diberikan</th><th>Terpakai</th><th>Sisa</th><th>Status</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>No. Bon</th><th>Supir</th><th>Tanggal</th><th>DO</th><th>Rute</th><th>Uang Jalan</th><th>Biaya</th><th>Upah</th><th>Total Hak</th><th>Selisih</th><th>Status</th><th>Aksi</th></tr></thead>
                         <tbody>
-                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                filtered.length === 0 ? <tr><td colSpan={10}><div className="empty-state"><Receipt size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada bon supir</div><div className="empty-state-text">Buat bon supir untuk mencatat uang operasional supir</div></div></td></tr> :
+                            {loading ? [1, 2, 3].map(i => <tr key={i}>{Array.from({ length: 12 }).map((_, j) => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
+                                filtered.length === 0 ? <tr><td colSpan={12}><div className="empty-state"><Receipt size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada bon supir</div><div className="empty-state-text">Buat bon supir untuk mencatat uang jalan, biaya perjalanan, dan upah supir</div></div></td></tr> :
                                     filtered.map(v => {
                                         const st = STATUS_MAP[v.status] || { label: v.status, cls: 'badge-gray' };
+                                        const totalClaimAmount = v.totalClaimAmount || ((v.totalSpent || 0) + (v.driverFeeAmount || 0));
                                         return (
                                             <tr key={v._id}>
                                                 <td>
@@ -106,6 +107,8 @@ export default function DriverVouchersPage() {
                                                 <td className="text-muted">{v.route || '-'}</td>
                                                 <td className="font-medium">{formatCurrency(v.cashGiven)}</td>
                                                 <td>{formatCurrency(v.totalSpent)}</td>
+                                                <td>{formatCurrency(v.driverFeeAmount || 0)}</td>
+                                                <td className="font-medium">{formatCurrency(totalClaimAmount)}</td>
                                                 <td className={v.balance >= 0 ? 'font-medium' : 'font-medium'} style={{ color: v.balance < 0 ? '#ef4444' : v.balance > 0 ? '#16a34a' : undefined }}>{formatCurrency(v.balance)}</td>
                                                 <td>
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', alignItems: 'flex-start' }}>

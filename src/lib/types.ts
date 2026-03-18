@@ -143,6 +143,8 @@ export interface DriverVoucher {
   route?: string;
   issuedDate: string;
   cashGiven: number;
+  driverFeeAmount?: number;
+  totalClaimAmount?: number;
   issueBankRef?: string;
   issueBankName?: string;
   totalSpent: number;
@@ -159,6 +161,7 @@ export interface DriverVoucherItem {
   _id: string;
   _type: 'driverVoucherItem';
   voucherRef: string;
+  expenseDate?: string;
   category: string;
   description: string;
   amount: number;
@@ -234,8 +237,8 @@ export interface DeliveryOrder {
   pickupAddress?: string;
   serviceRef?: string;
   serviceName?: string;
-  taripBorongan?: number;       // Tarif upah supir per kg, diinput SEBELUM berangkat
-  keteranganBorongan?: string;  // Keterangan tarip borongan
+  taripBorongan?: number;       // Tarif upah supir per DO/perjalanan
+  keteranganBorongan?: string;  // Keterangan upah borongan
   trackingState?: 'IDLE' | 'ACTIVE' | 'PAUSED' | 'STOPPED';
   trackingStartedAt?: string;
   trackingStoppedAt?: string;

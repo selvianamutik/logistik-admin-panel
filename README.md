@@ -31,7 +31,7 @@ Stack utama:
 5. DO yang selesai bisa ditagihkan ke customer lewat Nota Ongkos.
 6. Pembayaran nota otomatis mem-posting income dan mutasi rekening/kas.
 7. DO yang selesai bisa dipakai untuk borongan supir.
-8. Bon supir dipakai untuk uang jalan dan disettle menjadi expense.
+8. Bon supir dipakai untuk uang jalan awal, biaya perjalanan aktual, dan bisa sekaligus memuat upah supir saat settlement akhir.
 
 Dokumen alur lengkap ada di:
 - [WORKFLOW.md](C:\LOGISTIK\app\WORKFLOW.md)
@@ -50,7 +50,7 @@ Dataset demo saat ini mencakup kondisi:
 - DO `CREATED`, `HEADING_TO_PICKUP`, `ON_DELIVERY`, `ARRIVED`, `DELIVERED`, `CANCELLED`
 - nota `UNPAID`, `PARTIAL`, `PAID`
 - borongan `UNPAID`, `PAID`
-- bon supir `ISSUED`, `SETTLED`
+- bon supir `ISSUED`, `SETTLED`, termasuk skenario sisa uang kembali dan tambahan bayar ke supir
 - maintenance, insiden, tracking log, mutasi rekening, kas tunai, dan laporan
 
 Profil perusahaan demo:

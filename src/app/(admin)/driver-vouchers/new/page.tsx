@@ -24,6 +24,7 @@ export default function NewDriverVoucherPage() {
         issueBankRef: '',
         issuedDate: new Date().toISOString().split('T')[0],
         cashGiven: 0,
+        driverFeeAmount: 0,
         notes: '',
     });
 
@@ -45,7 +46,7 @@ export default function NewDriverVoucherPage() {
             fetchEntity<BankAccount[]>('/api/data?entity=bank-accounts'),
         ]).then(([driverRows, deliveryOrders, orderRows, vehicleRows, accountRows]) => {
             setDrivers((driverRows || []).filter((driver) => driver.active !== false));
-            setDos((deliveryOrders || []).filter((deliveryOrder) => ['CREATED', 'ON_DELIVERY'].includes(deliveryOrder.status)));
+            setDos((deliveryOrders || []).filter((deliveryOrder) => ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status)));
             setOrders(orderRows || []);
             setVehicles((vehicleRows || []).filter((vehicle) => vehicle.status !== 'SOLD' && vehicle.status !== 'OUT_OF_SERVICE'));
             setBankAccounts((accountRows || []).filter((account) => account.active !== false));
@@ -69,6 +70,7 @@ export default function NewDriverVoucherPage() {
             vehicleRef: doId ? (doItem?.vehicleRef || '') : '',
             driverRef: doItem?.driverRef || prev.driverRef,
             route: doId ? inferredRoute : '',
+            driverFeeAmount: doId ? Number(doItem?.taripBorongan || 0) : 0,
         }));
     };
 
@@ -82,6 +84,7 @@ export default function NewDriverVoucherPage() {
                     deliveryOrderRef: '',
                     vehicleRef: '',
                     route: '',
+                    driverFeeAmount: 0,
                 };
             }
 
@@ -127,10 +130,12 @@ export default function NewDriverVoucherPage() {
             route: form.route || undefined,
             issuedDate: form.issuedDate,
             cashGiven: form.cashGiven,
+            driverFeeAmount: form.driverFeeAmount,
             issueBankRef: form.issueBankRef,
             issueBankName: issueBank?.bankName || undefined,
             totalSpent: 0,
-            balance: form.cashGiven,
+            totalClaimAmount: form.driverFeeAmount,
+            balance: form.cashGiven - form.driverFeeAmount,
             status: 'ISSUED',
             notes: form.notes || undefined,
         };
@@ -194,7 +199,7 @@ export default function NewDriverVoucherPage() {
                                 {filteredDos.map(deliveryOrder => <option key={deliveryOrder._id} value={deliveryOrder._id}>{deliveryOrder.doNumber} {deliveryOrder.driverName ? `(${deliveryOrder.driverName})` : ''}</option>)}
                             </select>
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                Hanya DO yang masih operasional yang bisa dipakai untuk bon supir.
+                                Hanya DO yang masih operasional yang bisa dipakai untuk bon supir, dan satu DO hanya boleh punya satu bon aktif.
                             </div>
                         </div>
                         <div className="form-group">
@@ -225,8 +230,34 @@ export default function NewDriverVoucherPage() {
                     </div>
                     <div className="form-row">
                         <div className="form-group">
-                            <label className="form-label">Uang Diberikan <span className="required">*</span></label>
+                            <label className="form-label">Uang Jalan Awal <span className="required">*</span></label>
                             <input type="number" className="form-input" placeholder="0" value={form.cashGiven || ''} onChange={e => setForm({ ...form, cashGiven: Number(e.target.value) })} />
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label">Upah Supir / Borongan</label>
+                            <input
+                                type="number"
+                                className="form-input"
+                                placeholder="0"
+                                value={form.driverFeeAmount || ''}
+                                onChange={e => setForm({ ...form, driverFeeAmount: Number(e.target.value) })}
+                            />
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                Jika pilih DO, nilai ini otomatis mengikuti tarif borongan DO dan ikut dihitung saat settlement akhir.
+                            </div>
+                        </div>
+                    </div>
+                    <div className="card" style={{ marginTop: 'var(--space-4)', background: 'var(--color-bg-secondary)' }}>
+                        <div className="card-body" style={{ padding: 'var(--space-4)' }}>
+                            <div style={{ fontWeight: 700, marginBottom: '0.5rem' }}>Ringkasan Settlement</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem' }}>
+                                <div><div className="text-muted" style={{ fontSize: '0.75rem' }}>Uang Jalan Awal</div><div style={{ fontWeight: 700 }}>Rp {form.cashGiven.toLocaleString('id-ID')}</div></div>
+                                <div><div className="text-muted" style={{ fontSize: '0.75rem' }}>Upah Supir</div><div style={{ fontWeight: 700 }}>Rp {form.driverFeeAmount.toLocaleString('id-ID')}</div></div>
+                                <div><div className="text-muted" style={{ fontSize: '0.75rem' }}>Estimasi Selisih Awal</div><div style={{ fontWeight: 700, color: form.cashGiven - form.driverFeeAmount >= 0 ? '#16a34a' : '#ef4444' }}>Rp {Math.abs(form.cashGiven - form.driverFeeAmount).toLocaleString('id-ID')} {form.cashGiven - form.driverFeeAmount >= 0 ? 'sisa' : 'kurang bayar'}</div></div>
+                            </div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.75rem' }}>
+                                Biaya perjalanan aktual akan ditambahkan satu per satu setelah supir kembali. Settlement akhir = uang jalan awal dibanding total biaya aktual + upah supir.
+                            </div>
                         </div>
                     </div>
                     <div className="form-group">

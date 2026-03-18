@@ -177,8 +177,8 @@ Efeknya:
 
 ## 6. Alur Bon Supir
 
-Bon supir berbeda dari borongan.
-Bon adalah uang jalan di depan, bukan upah akhir.
+Bon supir berbeda dari borongan murni.
+Bon dipakai untuk uang jalan di depan, lalu di-settle bersama biaya perjalanan aktual dan, jika dipakai, upah supir per perjalanan.
 
 ### 6.1 Terbitkan bon
 
@@ -191,19 +191,21 @@ Saat bon dibuat:
 
 Jadi bon supir selalu punya konsekuensi kas/bank sejak awal.
 
-### 6.2 Tambah item bon
+### 6.2 Tambah biaya perjalanan
 
-- User menambah item pengeluaran per bon.
+- User menambah item biaya perjalanan per bon, misalnya BBM, tol, parkir, makan, atau menginap.
 - Sistem menyimpan item lalu menghitung ulang:
   - `totalSpent`
+  - `totalClaimAmount`
   - `balance`
 
 ### 6.3 Settlement bon
 
 Saat bon diselesaikan:
 
-1. setiap item bon diposting menjadi `expense`,
-2. sistem menghitung selisih antara uang yang diberikan vs pengeluaran,
+1. setiap item biaya perjalanan diposting menjadi `expense`,
+2. jika bon memuat `driverFeeAmount`, sistem juga membuat expense `Borongan Supir`,
+3. sistem menghitung selisih antara uang jalan awal vs total biaya perjalanan + upah supir,
 3. jika ada sisa:
    - sistem membuat `bankTransaction` `CREDIT`,
    - artinya uang kembali ke rekening,

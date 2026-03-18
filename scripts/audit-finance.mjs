@@ -76,10 +76,10 @@ async function main() {
         "payments": *[_type == "payment"]{ _id, invoiceRef, amount, date },
         "borongans": *[_type == "driverBorongan"]{ _id, boronganNumber, totalAmount, status },
         "driverVouchers": *[_type == "driverVoucher"]{
-            _id, bonNumber, status, issuedDate, cashGiven, totalSpent, balance,
+            _id, bonNumber, status, issuedDate, cashGiven, totalSpent, driverFeeAmount, totalClaimAmount, balance,
             issueBankRef, settlementBankRef
         },
-        "driverVoucherItems": *[_type == "driverVoucherItem"]{ _id, voucherRef, category, amount },
+        "driverVoucherItems": *[_type == "driverVoucherItem"]{ _id, voucherRef, category, amount, expenseDate },
         "expenses": *[_type == "expense"]{
             _id, amount, date, bankAccountRef, boronganRef, voucherRef, categoryName
         },
@@ -165,7 +165,9 @@ async function main() {
         const expenses = voucherExpenseGroups.get(voucher._id) || [];
         const bankTx = voucherBankTxGroups.get(voucher._id) || [];
         const computedSpent = sum(items, item => item.amount || 0);
-        const computedBalance = (voucher.cashGiven || 0) - computedSpent;
+        const computedDriverFee = voucher.driverFeeAmount || 0;
+        const computedClaim = computedSpent + computedDriverFee;
+        const computedBalance = (voucher.cashGiven || 0) - computedClaim;
 
         if (!voucher.issueBankRef) {
             voucherFindings.push(`Bon ${voucher.bonNumber} tidak punya rekening sumber`);
@@ -173,11 +175,30 @@ async function main() {
         if ((voucher.totalSpent || 0) !== computedSpent) {
             voucherFindings.push(`Bon ${voucher.bonNumber} totalSpent ${fmtCurrency(voucher.totalSpent)} tidak cocok dengan item ${fmtCurrency(computedSpent)}`);
         }
+        if ((voucher.totalClaimAmount || 0) !== computedClaim) {
+            voucherFindings.push(`Bon ${voucher.bonNumber} totalClaimAmount ${fmtCurrency(voucher.totalClaimAmount)} tidak cocok dengan perhitungan ${fmtCurrency(computedClaim)}`);
+        }
         if ((voucher.balance || 0) !== computedBalance) {
             voucherFindings.push(`Bon ${voucher.bonNumber} balance ${fmtCurrency(voucher.balance)} tidak cocok dengan perhitungan ${fmtCurrency(computedBalance)}`);
         }
-        if (voucher.status === 'SETTLED' && expenses.length === 0) {
-            voucherFindings.push(`Bon ${voucher.bonNumber} sudah SETTLED tapi belum diposting ke expense`);
+        if (voucher.status === 'SETTLED') {
+            const expectedExpenseCount = items.length + (computedDriverFee > 0 ? 1 : 0);
+            if (expenses.length === 0) {
+                voucherFindings.push(`Bon ${voucher.bonNumber} sudah SETTLED tapi belum diposting ke expense`);
+            } else if (expenses.length !== expectedExpenseCount) {
+                voucherFindings.push(`Bon ${voucher.bonNumber} punya ${expenses.length} expense, seharusnya ${expectedExpenseCount}`);
+            }
+
+            const wageExpenses = expenses.filter(expense => expense.categoryName === 'Borongan Supir');
+            if (computedDriverFee > 0) {
+                if (wageExpenses.length !== 1) {
+                    voucherFindings.push(`Bon ${voucher.bonNumber} harus punya tepat 1 expense upah supir`);
+                } else if ((wageExpenses[0].amount || 0) !== computedDriverFee) {
+                    voucherFindings.push(`Bon ${voucher.bonNumber} expense upah supir ${fmtCurrency(wageExpenses[0].amount)} tidak cocok dengan driver fee ${fmtCurrency(computedDriverFee)}`);
+                }
+            } else if (wageExpenses.length > 0) {
+                voucherFindings.push(`Bon ${voucher.bonNumber} tidak punya driver fee tapi ada expense Borongan Supir`);
+            }
         }
         if (voucher.status !== 'SETTLED' && expenses.length > 0) {
             voucherFindings.push(`Bon ${voucher.bonNumber} belum settle tapi sudah punya expense`);

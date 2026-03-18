@@ -155,8 +155,19 @@ export default function ReportsPage() {
     (sum, item) => sum + (item.cashGiven || 0),
     0,
   );
-  const openVoucherSpent = openDriverVouchers.reduce(
+  const openVoucherOperationalSpent = openDriverVouchers.reduce(
     (sum, item) => sum + (item.totalSpent || 0),
+    0,
+  );
+  const openVoucherDriverFees = openDriverVouchers.reduce(
+    (sum, item) => sum + (item.driverFeeAmount || 0),
+    0,
+  );
+  const openVoucherClaims = openDriverVouchers.reduce(
+    (sum, item) =>
+      sum +
+      (item.totalClaimAmount ||
+        (item.totalSpent || 0) + (item.driverFeeAmount || 0)),
     0,
   );
   const openVoucherReturn = openDriverVouchers.reduce(
@@ -489,7 +500,7 @@ export default function ReportsPage() {
               },
               {
                 label: "Bon Belum Settle",
-                value: formatCurrency(openVoucherSpent),
+                value: formatCurrency(openVoucherClaims),
                 note: `${openDriverVouchers.length} bon aktif`,
                 color: "var(--color-primary)",
               },
@@ -550,7 +561,7 @@ export default function ReportsPage() {
                       textTransform: "uppercase",
                     }}
                   >
-                    Uang Dicairkan
+                    Uang Jalan Dicairkan
                   </div>
                   <div style={{ fontSize: "1.05rem", fontWeight: 700 }}>
                     {formatCurrency(openVoucherCash)}
@@ -570,7 +581,7 @@ export default function ReportsPage() {
                       textTransform: "uppercase",
                     }}
                   >
-                    Biaya Belum Diposting
+                    Biaya Perjalanan
                   </div>
                   <div
                     style={{
@@ -579,7 +590,47 @@ export default function ReportsPage() {
                       color: "var(--color-danger)",
                     }}
                   >
-                    {formatCurrency(openVoucherSpent)}
+                    {formatCurrency(openVoucherOperationalSpent)}
+                  </div>
+                </div>
+                <div
+                  style={{
+                    background: "var(--color-gray-50)",
+                    borderRadius: "0.6rem",
+                    padding: "0.85rem 1rem",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: "0.68rem",
+                      color: "var(--text-muted)",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Upah Supir Pending
+                  </div>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 700 }}>
+                    {formatCurrency(openVoucherDriverFees)}
+                  </div>
+                </div>
+                <div
+                  style={{
+                    background: "var(--color-gray-50)",
+                    borderRadius: "0.6rem",
+                    padding: "0.85rem 1rem",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: "0.68rem",
+                      color: "var(--text-muted)",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Total Hak Pending
+                  </div>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 700 }}>
+                    {formatCurrency(openVoucherClaims)}
                   </div>
                 </div>
                 <div
@@ -636,15 +687,17 @@ export default function ReportsPage() {
                 </div>
               </div>
               <div className="table-wrapper" style={{ overflowX: "auto" }}>
-                <table style={{ minWidth: 720 }}>
+                <table style={{ minWidth: 960 }}>
                   <thead>
                     <tr>
                       <th>No. Bon</th>
                       <th>Tanggal</th>
                       <th>Supir</th>
                       <th>Rekening</th>
-                      <th style={{ textAlign: "right" }}>Uang</th>
-                      <th style={{ textAlign: "right" }}>Terpakai</th>
+                      <th style={{ textAlign: "right" }}>Uang Jalan</th>
+                      <th style={{ textAlign: "right" }}>Biaya</th>
+                      <th style={{ textAlign: "right" }}>Upah</th>
+                      <th style={{ textAlign: "right" }}>Total Hak</th>
                       <th style={{ textAlign: "right" }}>Selisih</th>
                     </tr>
                   </thead>
@@ -652,7 +705,7 @@ export default function ReportsPage() {
                     {openDriverVouchers.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={7}
+                          colSpan={9}
                           style={{
                             textAlign: "center",
                             padding: "2rem 1rem",
@@ -663,32 +716,43 @@ export default function ReportsPage() {
                         </td>
                       </tr>
                     ) : (
-                      openDriverVouchers.map((item) => (
-                        <tr key={item._id}>
-                          <td style={{ fontWeight: 600 }}>{item.bonNumber}</td>
-                          <td>{formatDate(item.issuedDate)}</td>
-                          <td>{item.driverName || "-"}</td>
-                          <td>{item.issueBankName || "-"}</td>
-                          <td style={{ textAlign: "right", fontWeight: 600 }}>
-                            {formatCurrency(item.cashGiven)}
-                          </td>
-                          <td style={{ textAlign: "right" }}>
-                            {formatCurrency(item.totalSpent)}
-                          </td>
-                          <td
-                            style={{
-                              textAlign: "right",
-                              fontWeight: 700,
-                              color:
-                                item.balance < 0
-                                  ? "var(--color-danger)"
-                                  : "var(--color-success)",
-                            }}
-                          >
-                            {formatCurrency(item.balance)}
-                          </td>
-                        </tr>
-                      ))
+                      openDriverVouchers.map((item) => {
+                        const totalClaimAmount =
+                          item.totalClaimAmount ||
+                          (item.totalSpent || 0) + (item.driverFeeAmount || 0);
+                        return (
+                          <tr key={item._id}>
+                            <td style={{ fontWeight: 600 }}>{item.bonNumber}</td>
+                            <td>{formatDate(item.issuedDate)}</td>
+                            <td>{item.driverName || "-"}</td>
+                            <td>{item.issueBankName || "-"}</td>
+                            <td style={{ textAlign: "right", fontWeight: 600 }}>
+                              {formatCurrency(item.cashGiven)}
+                            </td>
+                            <td style={{ textAlign: "right" }}>
+                              {formatCurrency(item.totalSpent)}
+                            </td>
+                            <td style={{ textAlign: "right" }}>
+                              {formatCurrency(item.driverFeeAmount || 0)}
+                            </td>
+                            <td style={{ textAlign: "right", fontWeight: 600 }}>
+                              {formatCurrency(totalClaimAmount)}
+                            </td>
+                            <td
+                              style={{
+                                textAlign: "right",
+                                fontWeight: 700,
+                                color:
+                                  item.balance < 0
+                                    ? "var(--color-danger)"
+                                    : "var(--color-success)",
+                              }}
+                            >
+                              {formatCurrency(item.balance)}
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
