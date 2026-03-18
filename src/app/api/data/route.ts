@@ -39,6 +39,8 @@ import {
 } from '@/lib/api/operations-workflows';
 import {
     handleDeliveryOrderCreate,
+    handleOrderItemHoldRelease,
+    handleOrderItemHoldSet,
     handleDeliveryOrderStatusUpdate,
     handleOrderCreate,
 } from '@/lib/api/order-workflows';
@@ -371,6 +373,14 @@ export async function POST(request: Request) {
 
         if (entity === 'delivery-orders' && action === 'create-with-items') {
             return handleDeliveryOrderCreate(session, data, addAuditLog);
+        }
+
+        if (entity === 'order-items' && action === 'set-hold-quantity') {
+            return handleOrderItemHoldSet(session, data, addAuditLog);
+        }
+
+        if (entity === 'order-items' && action === 'release-hold') {
+            return handleOrderItemHoldRelease(session, data, addAuditLog);
         }
 
         if (entity === 'freight-notas' && action === 'create-with-items') {

@@ -283,22 +283,10 @@ export async function handleGenericUpdate(
     }
 
     if (entity === 'order-items' && typeof updates.status === 'string') {
-        const activeAssignment = await getSanityClient().fetch<{ doNumber?: string } | null>(
-            `*[
-                _type == "deliveryOrderItem" &&
-                orderItemRef == $orderItemRef &&
-                defined(*[_type == "deliveryOrder" && _id == ^.deliveryOrderRef && status != "CANCELLED"][0]._id)
-            ][0]{
-                "doNumber": *[_type == "deliveryOrder" && _id == ^.deliveryOrderRef][0].doNumber
-            }`,
-            { orderItemRef: id }
+        return NextResponse.json(
+            { error: 'Status item order harus lewat workflow server agar qty parsial, hold, dan DO tetap sinkron' },
+            { status: 409 }
         );
-        if (activeAssignment) {
-            return NextResponse.json(
-                { error: `Item order yang sudah masuk ${activeAssignment.doNumber || 'surat jalan aktif'} tidak boleh diubah statusnya manual` },
-                { status: 409 }
-            );
-        }
     }
 
     if (entity === 'maintenances' && typeof updates.status === 'string') {

@@ -60,12 +60,34 @@ Artinya:
 - Sistem membuat nomor DO otomatis.
 - Status awal DO: `CREATED`.
 - Item DO direlasikan ke item order yang dibawa.
+- 1 item order sekarang bisa dikirim **penuh** atau **parsial per qty**.
+- Jadi sistem mendukung dua pola partial:
+  - `partial per item`
+    contoh: item A terkirim, item B masih pending.
+  - `partial per qty`
+    contoh: 1 item qty 100, dikirim 50 dulu, sisa 50 di-hold.
+
+### 3.2.1 Partial per qty dalam item yang sama
+
+- `qtyKoli` dan `weight` di item order tetap menyimpan total pesanan awal.
+- Saat admin membuat DO, admin bisa menentukan `qty kirim` yang lebih kecil dari total item.
+- Sistem menyimpan progres item:
+  - `deliveredQtyKoli / deliveredWeight`
+  - `assignedQtyKoli / assignedWeight`
+  - `heldQtyKoli / heldWeight`
+- Sisa qty yang belum masuk DO tetap dianggap `pending`.
+- Sisa qty juga bisa langsung di-hold dengan alasan dan lokasi, misalnya:
+  - gudang tujuan penuh
+  - inap di gudang transit
+- Seluruh aksi ini dicatat di audit log.
 
 ### 3.3 Jalankan pengiriman
 
 - Status DO bergerak:
   - `CREATED`
+  - `HEADING_TO_PICKUP`
   - `ON_DELIVERY`
+  - `ARRIVED`
   - `DELIVERED`
 - Saat DO berubah, status item order ikut disinkronkan.
 - Status order dihitung dari status seluruh item, bukan cuma jumlah DO.
@@ -83,6 +105,21 @@ Hasil akhirnya:
 - sebagian sudah jalan / selesai -> `PARTIAL`
 - ada hold tanpa progress kirim -> `ON_HOLD`
 - belum ada progress -> `OPEN`
+
+### 3.4 Hold pada item order
+
+- Hold sekarang tidak lagi sekadar ubah badge status.
+- Hold dicatat sebagai qty yang ditahan.
+- Admin bisa:
+  - menahan sebagian atau seluruh sisa qty yang masih pending,
+  - mengisi alasan hold,
+  - mengisi lokasi hold.
+- Hold bisa dipakai untuk kasus seperti:
+  - gudang tujuan penuh,
+  - barang inap di gudang transit,
+  - dokumen belum siap,
+  - menunggu slot bongkar.
+- Saat hold dilepas, qty tersebut kembali menjadi `pending` dan bisa dibuatkan DO berikutnya.
 
 ## 4. Alur Nota Ongkos
 

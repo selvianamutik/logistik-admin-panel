@@ -1,5 +1,11 @@
 import { NextResponse } from 'next/server';
 
+import {
+    calculateWeightPortion,
+    deriveOrderItemStatusFromProgress,
+    getOrderItemProgress,
+    roundQuantity,
+} from '@/lib/order-item-progress';
 import { getSanityClient, sanityGetById, sanityGetNextNumber, sanityUpdate } from '@/lib/sanity';
 
 import {
@@ -19,7 +25,17 @@ type AuditLogFn = (
     summary: string
 ) => void | Promise<void>;
 
-type OrderItemStatusSummary = { status?: string };
+type OrderItemStatusSummary = {
+    status?: string;
+    qtyKoli?: number;
+    weight?: number;
+    deliveredQtyKoli?: number;
+    deliveredWeight?: number;
+    assignedQtyKoli?: number;
+    assignedWeight?: number;
+    heldQtyKoli?: number;
+    heldWeight?: number;
+};
 
 type NormalizedOrderItemInput = {
     description: string;
@@ -27,6 +43,31 @@ type NormalizedOrderItemInput = {
     weight: number;
     volume?: number;
     value?: number;
+};
+
+type DeliveryOrderItemSelection = {
+    orderItemRef: string;
+    qtyKoli: number;
+    holdRemaining: boolean;
+    holdReason?: string;
+    holdLocation?: string;
+};
+
+type OrderItemProgressSnapshot = {
+    _id: string;
+    orderRef?: unknown;
+    description?: string;
+    qtyKoli?: number;
+    weight?: number;
+    status?: string;
+    deliveredQtyKoli?: number;
+    deliveredWeight?: number;
+    assignedQtyKoli?: number;
+    assignedWeight?: number;
+    heldQtyKoli?: number;
+    heldWeight?: number;
+    holdReason?: string;
+    holdLocation?: string;
 };
 
 const DO_STATUS_TRANSITIONS: Record<string, string[]> = {
@@ -64,7 +105,11 @@ async function releaseDriverTrackingLockIfOwned(driverRef: unknown, deliveryOrde
 function deriveOrderStatusFromItems(items: OrderItemStatusSummary[]) {
     const allDelivered = items.length > 0 && items.every(item => item.status === 'DELIVERED');
     const anyInProgress = items.some(
-        item => item.status === 'DELIVERED' || item.status === 'ON_DELIVERY'
+        item =>
+            item.status === 'DELIVERED' ||
+            item.status === 'PARTIAL' ||
+            item.status === 'ASSIGNED' ||
+            item.status === 'ON_DELIVERY'
     );
     const anyHold = items.some(item => item.status === 'HOLD');
 
@@ -74,6 +119,36 @@ function deriveOrderStatusFromItems(items: OrderItemStatusSummary[]) {
     return 'OPEN';
 }
 
+function normalizeDeliveryOrderSelections(data: Record<string, unknown>, orderItems: OrderItemProgressSnapshot[]) {
+    const rawSelections = Array.isArray(data.items) ? data.items : [];
+    if (rawSelections.length > 0) {
+        const selections = rawSelections
+            .filter(isPlainObject)
+            .map<DeliveryOrderItemSelection>(item => ({
+                orderItemRef: normalizeText(item.orderItemRef),
+                qtyKoli: normalizeNumber(item.qtyKoli),
+                holdRemaining: Boolean(item.holdRemaining),
+                holdReason: normalizeOptionalText(item.holdReason),
+                holdLocation: normalizeOptionalText(item.holdLocation),
+            }));
+        return selections.filter(item => item.orderItemRef);
+    }
+
+    const rawItemRefs = Array.isArray(data.itemRefs) ? data.itemRefs : [];
+    const itemRefs = rawItemRefs.filter((item): item is string => typeof item === 'string' && item.length > 0);
+    return orderItems
+        .filter(item => itemRefs.includes(item._id))
+        .map<DeliveryOrderItemSelection>(item => ({
+            orderItemRef: item._id,
+            qtyKoli: normalizeNumber(item.qtyKoli),
+            holdRemaining: false,
+        }));
+}
+
+function summarizeSelection(selection: DeliveryOrderItemSelection, description?: string) {
+    return `${description || selection.orderItemRef}: ${roundQuantity(selection.qtyKoli)} koli${selection.holdRemaining ? ' + sisa hold' : ''}`;
+}
+
 export async function syncOrderStatusFromItems(orderRef: string, session: ApiSession, addAuditLog: AuditLogFn) {
     const order = await sanityGetById<{ _id: string; status?: string }>(orderRef);
     if (!order || order.status === 'CANCELLED') {
@@ -81,7 +156,17 @@ export async function syncOrderStatusFromItems(orderRef: string, session: ApiSes
     }
 
     const items = await getSanityClient().fetch<OrderItemStatusSummary[]>(
-        `*[_type == "orderItem" && orderRef == $orderRef]{ status }`,
+        `*[_type == "orderItem" && orderRef == $orderRef]{
+            status,
+            qtyKoli,
+            weight,
+            deliveredQtyKoli,
+            deliveredWeight,
+            assignedQtyKoli,
+            assignedWeight,
+            heldQtyKoli,
+            heldWeight
+        }`,
         { orderRef }
     );
     const nextStatus = deriveOrderStatusFromItems(items);
@@ -98,6 +183,117 @@ export async function syncOrderStatusFromItems(orderRef: string, session: ApiSes
         orderRef,
         `Order auto-${nextStatus}: sinkronisasi dari ${items.length} item`
     );
+}
+
+export async function handleOrderItemHoldSet(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const id = typeof data.id === 'string' ? data.id : '';
+    const holdQtyKoli = normalizeNumber(data.holdQtyKoli);
+    const holdReason = normalizeOptionalText(data.holdReason);
+    const holdLocation = normalizeOptionalText(data.holdLocation);
+
+    if (!id || !Number.isFinite(holdQtyKoli) || holdQtyKoli <= 0) {
+        return NextResponse.json({ error: 'Jumlah koli hold tidak valid' }, { status: 400 });
+    }
+    if (!holdReason) {
+        return NextResponse.json({ error: 'Alasan hold wajib diisi' }, { status: 400 });
+    }
+
+    const orderItem = await sanityGetById<OrderItemProgressSnapshot>(id);
+    if (!orderItem) {
+        return NextResponse.json({ error: 'Item order tidak ditemukan' }, { status: 404 });
+    }
+
+    const progress = getOrderItemProgress(orderItem);
+    if (progress.pendingQtyKoli <= 0) {
+        return NextResponse.json({ error: 'Tidak ada sisa qty yang bisa ditahan' }, { status: 409 });
+    }
+    if (holdQtyKoli > progress.pendingQtyKoli) {
+        return NextResponse.json({ error: 'Jumlah hold melebihi sisa qty yang siap dikirim' }, { status: 409 });
+    }
+
+    const holdWeight = calculateWeightPortion(progress.totalWeight, progress.totalQtyKoli, holdQtyKoli);
+    const updates = {
+        heldQtyKoli: roundQuantity(progress.heldQtyKoli + holdQtyKoli),
+        heldWeight: roundQuantity(progress.heldWeight + holdWeight),
+        holdReason,
+        holdLocation: holdLocation || undefined,
+        status: deriveOrderItemStatusFromProgress({
+            ...progress,
+            heldQtyKoli: roundQuantity(progress.heldQtyKoli + holdQtyKoli),
+            heldWeight: roundQuantity(progress.heldWeight + holdWeight),
+            pendingQtyKoli: roundQuantity(Math.max(progress.pendingQtyKoli - holdQtyKoli, 0)),
+            pendingWeight: roundQuantity(Math.max(progress.pendingWeight - holdWeight, 0)),
+        }),
+    };
+
+    const updated = await sanityUpdate(id, updates);
+    const orderRef = extractRefId(orderItem.orderRef);
+    if (orderRef) {
+        await syncOrderStatusFromItems(orderRef, session, addAuditLog);
+    }
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'order-items',
+        id,
+        `Item order hold ${holdQtyKoli} koli${holdLocation ? ` di ${holdLocation}` : ''}: ${holdReason}`
+    );
+
+    return NextResponse.json({ data: updated });
+}
+
+export async function handleOrderItemHoldRelease(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const id = typeof data.id === 'string' ? data.id : '';
+    if (!id) {
+        return NextResponse.json({ error: 'Item order tidak valid' }, { status: 400 });
+    }
+
+    const orderItem = await sanityGetById<OrderItemProgressSnapshot>(id);
+    if (!orderItem) {
+        return NextResponse.json({ error: 'Item order tidak ditemukan' }, { status: 404 });
+    }
+
+    const progress = getOrderItemProgress(orderItem);
+    if (progress.heldQtyKoli <= 0) {
+        return NextResponse.json({ error: 'Item ini tidak punya qty hold aktif' }, { status: 409 });
+    }
+
+    const updates = {
+        heldQtyKoli: 0,
+        heldWeight: 0,
+        holdReason: undefined,
+        holdLocation: undefined,
+        status: deriveOrderItemStatusFromProgress({
+            ...progress,
+            heldQtyKoli: 0,
+            heldWeight: 0,
+            pendingQtyKoli: roundQuantity(progress.pendingQtyKoli + progress.heldQtyKoli),
+            pendingWeight: roundQuantity(progress.pendingWeight + progress.heldWeight),
+        }),
+    };
+    const updated = await sanityUpdate(id, updates);
+
+    const orderRef = extractRefId(orderItem.orderRef);
+    if (orderRef) {
+        await syncOrderStatusFromItems(orderRef, session, addAuditLog);
+    }
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'order-items',
+        id,
+        `Release hold item order ${progress.heldQtyKoli} koli`
+    );
+
+    return NextResponse.json({ data: updated });
 }
 
 export async function handleOrderCreate(
@@ -200,6 +396,12 @@ export async function handleOrderCreate(
             weight: item.weight,
             volume: item.volume,
             value: item.value,
+            deliveredQtyKoli: 0,
+            deliveredWeight: 0,
+            assignedQtyKoli: 0,
+            assignedWeight: 0,
+            heldQtyKoli: 0,
+            heldWeight: 0,
             status: 'PENDING',
         });
     }
@@ -241,8 +443,20 @@ export async function handleDeliveryOrderStatusUpdate(
         return NextResponse.json({ error: 'Transisi status DO tidak valid' }, { status: 400 });
     }
 
-    const doItems = await getSanityClient().fetch<Array<{ orderItemRef?: unknown }>>(
-        `*[_type == "deliveryOrderItem" && deliveryOrderRef == $ref]{ orderItemRef }`,
+    const doItems = await getSanityClient().fetch<Array<{
+        orderItemRef?: unknown;
+        shippedQtyKoli?: number;
+        shippedWeight?: number;
+        orderItemQtyKoli?: number;
+        orderItemWeight?: number;
+    }>>(
+        `*[_type == "deliveryOrderItem" && deliveryOrderRef == $ref]{
+            orderItemRef,
+            shippedQtyKoli,
+            shippedWeight,
+            orderItemQtyKoli,
+            orderItemWeight
+        }`,
         { ref: id }
     );
     const podReceiverName = normalizeOptionalText(data.podReceiverName);
@@ -257,13 +471,6 @@ export async function handleDeliveryOrderStatusUpdate(
             return NextResponse.json({ error: 'Tanggal terima POD wajib diisi untuk menyelesaikan surat jalan' }, { status: 400 });
         }
     }
-
-    const nextOrderItemStatus =
-        status === 'ON_DELIVERY' || status === 'ARRIVED'
-            ? 'ON_DELIVERY'
-            : status === 'DELIVERED'
-                ? 'DELIVERED'
-                : 'PENDING';
 
     const timestamp = new Date().toISOString();
     const shouldStopTracking = status === 'DELIVERED' || status === 'CANCELLED';
@@ -302,7 +509,54 @@ export async function handleDeliveryOrderStatusUpdate(
     for (const item of doItems) {
         const orderItemRef = extractRefId(item.orderItemRef);
         if (orderItemRef) {
-            transaction.patch(orderItemRef, { set: { status: nextOrderItemStatus } });
+            const orderItem = await sanityGetById<OrderItemProgressSnapshot>(orderItemRef);
+            if (!orderItem) {
+                continue;
+            }
+
+            const progress = getOrderItemProgress(orderItem);
+            const shippedQtyKoli = normalizeNumber(item.shippedQtyKoli ?? item.orderItemQtyKoli ?? 0);
+            const shippedWeight = normalizeNumber(item.shippedWeight ?? item.orderItemWeight ?? 0);
+
+            if (status === 'HEADING_TO_PICKUP' || status === 'ON_DELIVERY' || status === 'ARRIVED') {
+                transaction.patch(orderItemRef, { set: { status: 'ON_DELIVERY' } });
+                continue;
+            }
+
+            if (status === 'DELIVERED') {
+                const nextProgress = {
+                    ...progress,
+                    assignedQtyKoli: roundQuantity(Math.max(progress.assignedQtyKoli - shippedQtyKoli, 0)),
+                    assignedWeight: roundQuantity(Math.max(progress.assignedWeight - shippedWeight, 0)),
+                    deliveredQtyKoli: roundQuantity(Math.min(progress.deliveredQtyKoli + shippedQtyKoli, progress.totalQtyKoli)),
+                    deliveredWeight: roundQuantity(Math.min(progress.deliveredWeight + shippedWeight, progress.totalWeight)),
+                };
+                transaction.patch(orderItemRef, {
+                    set: {
+                        assignedQtyKoli: nextProgress.assignedQtyKoli,
+                        assignedWeight: nextProgress.assignedWeight,
+                        deliveredQtyKoli: nextProgress.deliveredQtyKoli,
+                        deliveredWeight: nextProgress.deliveredWeight,
+                        status: deriveOrderItemStatusFromProgress(nextProgress),
+                    },
+                });
+                continue;
+            }
+
+            if (status === 'CANCELLED') {
+                const nextProgress = {
+                    ...progress,
+                    assignedQtyKoli: roundQuantity(Math.max(progress.assignedQtyKoli - shippedQtyKoli, 0)),
+                    assignedWeight: roundQuantity(Math.max(progress.assignedWeight - shippedWeight, 0)),
+                };
+                transaction.patch(orderItemRef, {
+                    set: {
+                        assignedQtyKoli: nextProgress.assignedQtyKoli,
+                        assignedWeight: nextProgress.assignedWeight,
+                        status: deriveOrderItemStatusFromProgress(nextProgress),
+                    },
+                });
+            }
         }
     }
 
@@ -352,10 +606,8 @@ export async function handleDeliveryOrderCreate(
     addAuditLog: AuditLogFn
 ) {
     const orderRef = typeof data.orderRef === 'string' ? data.orderRef : '';
-    const rawItemRefs = Array.isArray(data.itemRefs) ? data.itemRefs : [];
-    const itemRefs = rawItemRefs.filter((item): item is string => typeof item === 'string' && item.length > 0);
-    if (!orderRef || itemRefs.length === 0) {
-        return NextResponse.json({ error: 'Order dan item surat jalan wajib diisi' }, { status: 400 });
+    if (!orderRef) {
+        return NextResponse.json({ error: 'Order surat jalan wajib diisi' }, { status: 400 });
     }
 
     const order = await sanityGetById<{
@@ -415,37 +667,97 @@ export async function handleDeliveryOrderCreate(
             ? data.date
             : new Date().toISOString().slice(0, 10);
 
-    const selectedItems = await getSanityClient().fetch<Array<{
-        _id: string;
-        orderRef?: unknown;
-        description?: string;
-        qtyKoli?: number;
-        weight?: number;
-        status?: string;
-    }>>(`*[_type == "orderItem" && _id in $ids]`, { ids: itemRefs });
-    if (selectedItems.length !== itemRefs.length) {
+    const requestedItemIds = Array.from(new Set([
+        ...(Array.isArray(data.itemRefs) ? data.itemRefs.filter((item): item is string => typeof item === 'string' && item.length > 0) : []),
+        ...(Array.isArray(data.items)
+            ? data.items
+                .filter(isPlainObject)
+                .map(item => normalizeText(item.orderItemRef))
+                .filter(Boolean)
+            : []),
+    ]));
+    if (requestedItemIds.length === 0) {
+        return NextResponse.json({ error: 'Pilih minimal 1 item untuk surat jalan' }, { status: 400 });
+    }
+
+    const selectedItems = await getSanityClient().fetch<OrderItemProgressSnapshot[]>(
+        `*[_type == "orderItem" && _id in $ids]{
+            _id,
+            orderRef,
+            description,
+            qtyKoli,
+            weight,
+            status,
+            deliveredQtyKoli,
+            deliveredWeight,
+            assignedQtyKoli,
+            assignedWeight,
+            heldQtyKoli,
+            heldWeight,
+            holdReason,
+            holdLocation
+        }`,
+        { ids: requestedItemIds }
+    );
+    if (selectedItems.length !== requestedItemIds.length) {
         return NextResponse.json({ error: 'Sebagian item order tidak ditemukan' }, { status: 404 });
     }
 
+    const normalizedSelections = normalizeDeliveryOrderSelections(data, selectedItems);
+    if (normalizedSelections.length === 0) {
+        return NextResponse.json({ error: 'Pilih minimal 1 item untuk surat jalan' }, { status: 400 });
+    }
+
+    const duplicateSelection = normalizedSelections.find(
+        (selection, index) => normalizedSelections.findIndex(candidate => candidate.orderItemRef === selection.orderItemRef) !== index
+    );
+    if (duplicateSelection) {
+        return NextResponse.json({ error: 'Item surat jalan tidak boleh dipilih dua kali' }, { status: 400 });
+    }
+
+    const selectionByItemId = new Map(normalizedSelections.map(selection => [selection.orderItemRef, selection]));
+    const selectionSummaries: string[] = [];
+
     for (const item of selectedItems) {
+        const selection = selectionByItemId.get(item._id);
+        if (!selection) {
+            continue;
+        }
         if (extractRefId(item.orderRef) !== orderRef) {
             return NextResponse.json({ error: 'Ada item yang bukan milik order ini' }, { status: 400 });
         }
-        if (item.status !== 'PENDING') {
-            return NextResponse.json({ error: 'Hanya item order berstatus pending yang bisa dibuatkan surat jalan' }, { status: 409 });
-        }
 
+        const progress = getOrderItemProgress(item);
         const activeAssignment = await getSanityClient().fetch<{ _id: string } | null>(
             `*[
                 _type == "deliveryOrderItem" &&
                 orderItemRef == $orderItemRef &&
-                defined(*[_type == "deliveryOrder" && _id == ^.deliveryOrderRef && status != "CANCELLED"][0]._id)
+                defined(*[_type == "deliveryOrder" && _id == ^.deliveryOrderRef && status in ["CREATED", "HEADING_TO_PICKUP", "ON_DELIVERY", "ARRIVED"]][0]._id)
             ][0]{ _id }`,
             { orderItemRef: item._id }
         );
         if (activeAssignment) {
             return NextResponse.json({ error: 'Ada item yang sudah terikat ke surat jalan aktif lain' }, { status: 409 });
         }
+
+        if (!Number.isFinite(selection.qtyKoli) || selection.qtyKoli <= 0) {
+            return NextResponse.json({ error: 'Jumlah koli kirim harus lebih besar dari 0' }, { status: 400 });
+        }
+        if (selection.qtyKoli > progress.pendingQtyKoli) {
+            return NextResponse.json({ error: `Jumlah koli kirim untuk ${item.description || 'item order'} melebihi sisa qty yang siap dikirim` }, { status: 409 });
+        }
+
+        const remainingQtyAfterShipment = roundQuantity(Math.max(progress.pendingQtyKoli - selection.qtyKoli, 0));
+        if (selection.holdRemaining) {
+            if (remainingQtyAfterShipment <= 0) {
+                return NextResponse.json({ error: `Tidak ada sisa qty ${item.description || 'item order'} yang bisa ditahan` }, { status: 409 });
+            }
+            if (!selection.holdReason) {
+                return NextResponse.json({ error: `Alasan hold wajib diisi untuk sisa qty ${item.description || 'item order'}` }, { status: 400 });
+            }
+        }
+
+        selectionSummaries.push(summarizeSelection(selection, item.description));
     }
 
     const doId = crypto.randomUUID();
@@ -476,19 +788,61 @@ export async function handleDeliveryOrderCreate(
 
     const transaction = getSanityClient().transaction().create(doDoc);
     for (const item of selectedItems) {
+        const selection = selectionByItemId.get(item._id);
+        if (!selection) {
+            continue;
+        }
+
+        const progress = getOrderItemProgress(item);
+        const shippedQtyKoli = roundQuantity(selection.qtyKoli);
+        const shippedWeight = calculateWeightPortion(progress.totalWeight, progress.totalQtyKoli, shippedQtyKoli);
+        const remainingQtyAfterShipment = roundQuantity(Math.max(progress.pendingQtyKoli - shippedQtyKoli, 0));
+        const remainingWeightAfterShipment = roundQuantity(Math.max(progress.pendingWeight - shippedWeight, 0));
+        const holdQtyToApply = selection.holdRemaining ? remainingQtyAfterShipment : 0;
+        const holdWeightToApply = selection.holdRemaining ? remainingWeightAfterShipment : 0;
+        const nextProgress = {
+            ...progress,
+            assignedQtyKoli: roundQuantity(progress.assignedQtyKoli + shippedQtyKoli),
+            assignedWeight: roundQuantity(progress.assignedWeight + shippedWeight),
+            heldQtyKoli: roundQuantity(progress.heldQtyKoli + holdQtyToApply),
+            heldWeight: roundQuantity(progress.heldWeight + holdWeightToApply),
+            pendingQtyKoli: roundQuantity(Math.max(progress.pendingQtyKoli - shippedQtyKoli - holdQtyToApply, 0)),
+            pendingWeight: roundQuantity(Math.max(progress.pendingWeight - shippedWeight - holdWeightToApply, 0)),
+        };
+
         transaction.create({
             _id: crypto.randomUUID(),
             _type: 'deliveryOrderItem',
             deliveryOrderRef: doId,
             orderItemRef: item._id,
             orderItemDescription: item.description,
-            orderItemQtyKoli: item.qtyKoli,
-            orderItemWeight: item.weight,
+            orderItemQtyKoli: shippedQtyKoli,
+            orderItemWeight: shippedWeight,
+            shippedQtyKoli,
+            shippedWeight,
+        });
+        transaction.patch(item._id, {
+            set: {
+                assignedQtyKoli: nextProgress.assignedQtyKoli,
+                assignedWeight: nextProgress.assignedWeight,
+                heldQtyKoli: nextProgress.heldQtyKoli,
+                heldWeight: nextProgress.heldWeight,
+                holdReason: selection.holdRemaining ? selection.holdReason : item.holdReason,
+                holdLocation: selection.holdRemaining ? selection.holdLocation : item.holdLocation,
+                status: deriveOrderItemStatusFromProgress(nextProgress),
+            },
         });
     }
 
     await transaction.commit();
-    await addAuditLog(session, 'CREATE', 'delivery-orders', doId, `Created delivery-orders: ${doNumber}`);
+    await syncOrderStatusFromItems(orderRef, session, addAuditLog);
+    await addAuditLog(
+        session,
+        'CREATE',
+        'delivery-orders',
+        doId,
+        `Created delivery-orders: ${doNumber} (${selectionSummaries.join('; ')})`
+    );
     return NextResponse.json({ data: doDoc, id: doId });
 }
 

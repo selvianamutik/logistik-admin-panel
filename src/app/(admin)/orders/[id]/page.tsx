@@ -5,8 +5,23 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '../../layout';
 import { ArrowLeft, Truck, FileText, Edit, Eye } from 'lucide-react';
-import { formatDate, formatCurrency, ORDER_STATUS_MAP, ITEM_STATUS_MAP, DO_STATUS_MAP, INVOICE_STATUS_MAP } from '@/lib/utils';
+import { formatDate, formatCurrency, formatNumber, ORDER_STATUS_MAP, ITEM_STATUS_MAP, DO_STATUS_MAP, INVOICE_STATUS_MAP } from '@/lib/utils';
+import { calculateWeightPortion, getOrderItemProgress, roundQuantity } from '@/lib/order-item-progress';
 import type { Order, OrderItem, DeliveryOrder, DeliveryOrderItem, Driver, FreightNota, FreightNotaItem, Vehicle } from '@/lib/types';
+
+type SelectedShipmentMap = Record<string, {
+    qtyKoli: string;
+    holdRemaining: boolean;
+    holdReason: string;
+    holdLocation: string;
+}>;
+
+function formatProgressLine(label: string, qtyKoli: number, weight: number) {
+    if (qtyKoli <= 0 && weight <= 0) {
+        return null;
+    }
+    return `${label}: ${formatNumber(qtyKoli)} koli / ${formatNumber(roundQuantity(weight))} kg`;
+}
 
 export default function OrderDetailPage() {
     const params = useParams();
@@ -26,9 +41,15 @@ export default function OrderDetailPage() {
     const [doVehicle, setDoVehicle] = useState('');
     const [doDriver, setDoDriver] = useState('');
     const [doNotes, setDoNotes] = useState('');
-    const [selectedItems, setSelectedItems] = useState<string[]>([]);
+    const [selectedShipments, setSelectedShipments] = useState<SelectedShipmentMap>({});
     const [vehicles, setVehicles] = useState<Array<Pick<Vehicle, '_id' | 'plateNumber'>>>([]);
     const [drivers, setDrivers] = useState<Driver[]>([]);
+    const [showHoldModal, setShowHoldModal] = useState(false);
+    const [holdingItem, setHoldingItem] = useState<OrderItem | null>(null);
+    const [holdQtyKoli, setHoldQtyKoli] = useState('');
+    const [holdReason, setHoldReason] = useState('');
+    const [holdLocation, setHoldLocation] = useState('');
+    const [savingHold, setSavingHold] = useState(false);
 
     const loadOrderDetail = useCallback(async () => {
         const fetchEntity = async <T,>(url: string) => {
@@ -81,26 +102,53 @@ export default function OrderDetailPage() {
         void loadOrderDetail();
     }, [loadOrderDetail]);
 
-    // Get already assigned item IDs
-    const assignedItemIds = doItems
-        .filter(doi => dos.some(d => d._id === doi.deliveryOrderRef && d.status !== 'CANCELLED'))
-        .map(doi => doi.orderItemRef);
     const activeAssignmentByItemId = doItems.reduce<Record<string, DeliveryOrder | undefined>>((acc, doi) => {
-        const activeDeliveryOrder = dos.find(d => d._id === doi.deliveryOrderRef && d.status !== 'CANCELLED');
+        const activeDeliveryOrder = dos.find(d => d._id === doi.deliveryOrderRef && ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(d.status));
         if (activeDeliveryOrder && doi.orderItemRef) {
             acc[doi.orderItemRef] = activeDeliveryOrder;
         }
         return acc;
     }, {});
+    const doItemByOrderItemId = doItems.reduce<Record<string, DeliveryOrderItem | undefined>>((acc, doi) => {
+        if (doi.orderItemRef && activeAssignmentByItemId[doi.orderItemRef]) {
+            acc[doi.orderItemRef] = doi;
+        }
+        return acc;
+    }, {});
+    const itemProgressById = items.reduce<Record<string, ReturnType<typeof getOrderItemProgress>>>((acc, item) => {
+        acc[item._id] = getOrderItemProgress(item);
+        return acc;
+    }, {});
 
-    const availableItems = items.filter(i => i.status === 'PENDING' && !assignedItemIds.includes(i._id));
-    const deliveredCount = items.filter(i => i.status === 'DELIVERED').length;
-    const holdCount = items.filter(i => i.status === 'HOLD').length;
-    const pendingCount = items.filter(i => i.status === 'PENDING').length;
+    const availableItems = items.filter(item => {
+        const progress = itemProgressById[item._id];
+        return progress.pendingQtyKoli > 0 && progress.assignedQtyKoli <= 0;
+    });
+    const totalQtyKoli = items.reduce((sum, item) => sum + itemProgressById[item._id].totalQtyKoli, 0);
+    const deliveredQtyKoli = items.reduce((sum, item) => sum + itemProgressById[item._id].deliveredQtyKoli, 0);
+    const assignedQtyKoli = items.reduce((sum, item) => sum + itemProgressById[item._id].assignedQtyKoli, 0);
+    const holdQtyTotal = items.reduce((sum, item) => sum + itemProgressById[item._id].heldQtyKoli, 0);
+    const pendingQtyTotal = items.reduce((sum, item) => sum + itemProgressById[item._id].pendingQtyKoli, 0);
     const deliveredDoCount = dos.filter(d => d.status === 'DELIVERED').length;
-    const progress = items.length > 0 ? Math.round((deliveredCount / items.length) * 100) : 0;
+    const progress = totalQtyKoli > 0 ? Math.round((deliveredQtyKoli / totalQtyKoli) * 100) : 0;
 
     const handleCreateDO = async () => {
+        const selectedItems = availableItems
+            .filter(item => selectedShipments[item._id])
+            .map(item => {
+                const progress = itemProgressById[item._id];
+                const selection = selectedShipments[item._id];
+                const qtyKoli = Number(selection.qtyKoli || 0);
+                return {
+                    orderItemRef: item._id,
+                    qtyKoli,
+                    holdRemaining: selection.holdRemaining && qtyKoli < progress.pendingQtyKoli,
+                    holdReason: selection.holdReason.trim(),
+                    holdLocation: selection.holdLocation.trim(),
+                };
+            })
+            .filter(item => Number.isFinite(item.qtyKoli) && item.qtyKoli > 0);
+
         if (selectedItems.length === 0) {
             addToast('error', 'Pilih minimal 1 item untuk surat jalan');
             return;
@@ -117,7 +165,7 @@ export default function OrderDetailPage() {
                     action: 'create-with-items',
                     data: {
                         orderRef: order?._id,
-                        itemRefs: selectedItems,
+                        items: selectedItems,
                         masterResi: order?.masterResi,
                         vehicleRef: doVehicle || undefined,
                         vehiclePlate: selVeh?.plateNumber || '',
@@ -139,7 +187,7 @@ export default function OrderDetailPage() {
 
             addToast('success', `Surat Jalan dibuat: ${doData.data?.doNumber || ''}`);
             setShowDOModal(false);
-            setSelectedItems([]);
+            setSelectedShipments({});
             setDoVehicle('');
             setDoDriver('');
             setDoNotes('');
@@ -152,35 +200,71 @@ export default function OrderDetailPage() {
         }
     };
 
-    const updateItemStatus = async (itemId: string, newStatus: string) => {
-        const res = await fetch('/api/data', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ entity: 'order-items', action: 'update', data: { id: itemId, updates: { status: newStatus } } }),
-        });
-        const result = await res.json();
-        if (!res.ok) {
-            addToast('error', result.error || 'Gagal memperbarui status item');
+    const openHoldModal = (item: OrderItem) => {
+        const progress = itemProgressById[item._id];
+        setHoldingItem(item);
+        setHoldQtyKoli(String(progress.pendingQtyKoli || ''));
+        setHoldReason('');
+        setHoldLocation('');
+        setShowHoldModal(true);
+    };
+
+    const saveHoldQuantity = async () => {
+        if (!holdingItem) {
             return;
         }
-        setItems(prev => prev.map(i => i._id === itemId ? { ...i, status: newStatus as OrderItem['status'] } : i));
-
-        // Recalculate order status
-        const updatedItems = items.map(i => i._id === itemId ? { ...i, status: newStatus } : i);
-        const allDelivered = updatedItems.every(i => i.status === 'DELIVERED');
-        const anyInProgress = updatedItems.some(i => i.status === 'DELIVERED' || i.status === 'ON_DELIVERY');
-        const anyHold = updatedItems.some(i => i.status === 'HOLD');
-        let newOrderStatus = order?.status || 'OPEN';
-        if (allDelivered) newOrderStatus = 'COMPLETE';
-        else if (anyInProgress) newOrderStatus = 'PARTIAL';
-        else if (anyHold) newOrderStatus = 'ON_HOLD';
-        else newOrderStatus = 'OPEN';
-
-        if (newOrderStatus !== order?.status) {
-            setOrder(prev => prev ? { ...prev, status: newOrderStatus as Order['status'] } : prev);
+        setSavingHold(true);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'order-items',
+                    action: 'set-hold-quantity',
+                    data: {
+                        id: holdingItem._id,
+                        holdQtyKoli: Number(holdQtyKoli),
+                        holdReason,
+                        holdLocation,
+                    },
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menyimpan hold qty');
+                return;
+            }
+            addToast('success', 'Sisa qty item berhasil di-hold');
+            setShowHoldModal(false);
+            setHoldingItem(null);
+            setHoldQtyKoli('');
+            setHoldReason('');
+            setHoldLocation('');
+            await loadOrderDetail();
+        } catch {
+            addToast('error', 'Gagal menyimpan hold qty');
+        } finally {
+            setSavingHold(false);
         }
+    };
 
-        addToast('success', 'Status item diperbarui');
+    const releaseHoldQuantity = async (item: OrderItem) => {
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entity: 'order-items', action: 'release-hold', data: { id: item._id } }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal melepas hold item');
+                return;
+            }
+            addToast('success', 'Hold item berhasil dilepas');
+            await loadOrderDetail();
+        } catch {
+            addToast('error', 'Gagal melepas hold item');
+        }
     };
 
     if (loading) {
@@ -207,7 +291,7 @@ export default function OrderDetailPage() {
                     </div>
                 </div>
                 <div className="page-actions">
-                    <button className="btn btn-primary" onClick={() => setShowDOModal(true)} disabled={availableItems.length === 0}>
+                    <button className="btn btn-primary" onClick={() => { setSelectedShipments({}); setShowDOModal(true); }} disabled={availableItems.length === 0}>
                         <Truck size={16} /> Buat Surat Jalan
                     </button>
                     <button className="btn btn-secondary" onClick={() => router.push('/invoices/new')}>
@@ -228,15 +312,16 @@ export default function OrderDetailPage() {
                 <div className="card-body">
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 'var(--font-size-sm)' }}>
                         <span className="font-semibold">Progress Pengiriman</span>
-                        <span className="text-muted">{deliveredCount}/{items.length} item terkirim ({progress}%)</span>
+                        <span className="text-muted">{formatNumber(deliveredQtyKoli)}/{formatNumber(totalQtyKoli)} koli terkirim ({progress}%)</span>
                     </div>
                     <div className="progress-bar">
                         <div className={`progress-bar-fill ${progress === 100 ? 'success' : ''}`} style={{ width: `${progress}%` }} />
                     </div>
                     <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 'var(--font-size-xs)', color: 'var(--color-gray-500)' }}>
-                        <span style={{ color: 'var(--color-success)' }}>{deliveredCount} Terkirim</span>
-                        <span style={{ color: 'var(--color-warning)' }}>{holdCount} Ditahan</span>
-                        <span>{pendingCount} Pending</span>
+                        <span style={{ color: 'var(--color-success)' }}>{formatNumber(deliveredQtyKoli)} Terkirim</span>
+                        <span style={{ color: 'var(--color-primary)' }}>{formatNumber(assignedQtyKoli)} Dalam DO</span>
+                        <span style={{ color: 'var(--color-warning)' }}>{formatNumber(holdQtyTotal)} Ditahan</span>
+                        <span>{formatNumber(pendingQtyTotal)} Pending</span>
                     </div>
                 </div>
             </div>
@@ -279,15 +364,35 @@ export default function OrderDetailPage() {
                 </div>
                 <div className="table-wrapper">
                     <table>
-                        <thead><tr><th>Deskripsi</th><th>Koli</th><th>Berat (kg)</th><th>Status</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>Deskripsi</th><th>Koli</th><th>Berat (kg)</th><th>Progress</th><th>Status</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {items.map(item => {
                                 const activeAssignment = activeAssignmentByItemId[item._id];
+                                const doItem = doItemByOrderItemId[item._id];
+                                const progressInfo = itemProgressById[item._id];
+                                const progressLines = [
+                                    formatProgressLine('Terkirim', progressInfo.deliveredQtyKoli, progressInfo.deliveredWeight),
+                                    formatProgressLine('Dalam DO', progressInfo.assignedQtyKoli, progressInfo.assignedWeight),
+                                    formatProgressLine('Hold', progressInfo.heldQtyKoli, progressInfo.heldWeight),
+                                    formatProgressLine('Siap kirim', progressInfo.pendingQtyKoli, progressInfo.pendingWeight),
+                                ].filter((line): line is string => Boolean(line));
                                 return (
                                 <tr key={item._id}>
                                     <td className="font-medium">{item.description}</td>
                                     <td>{item.qtyKoli}</td>
                                     <td>{item.weight}</td>
+                                    <td>
+                                        <div style={{ display: 'grid', gap: '0.25rem', minWidth: 220 }}>
+                                            {progressLines.map(line => (
+                                                <div key={line} style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>{line}</div>
+                                            ))}
+                                            {item.holdReason && (
+                                                <div style={{ fontSize: '0.76rem', color: 'var(--color-warning-dark)' }}>
+                                                    Alasan hold: {item.holdReason}{item.holdLocation ? ` (${item.holdLocation})` : ''}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </td>
                                     <td>
                                         <span className={`badge badge-${ITEM_STATUS_MAP[item.status]?.color || 'gray'}`}>
                                             <span className="badge-dot" /> {ITEM_STATUS_MAP[item.status]?.label}
@@ -295,15 +400,17 @@ export default function OrderDetailPage() {
                                     </td>
                                     <td>
                                         <div className="table-actions">
-                                            {!activeAssignment && item.status === 'PENDING' && (
-                                                <button className="table-action-btn" onClick={() => updateItemStatus(item._id, 'HOLD')}>Set Hold</button>
+                                            {progressInfo.pendingQtyKoli > 0 && (
+                                                <button className="table-action-btn" onClick={() => openHoldModal(item)}>
+                                                    {activeAssignment ? 'Tahan Sisa' : 'Set Hold'}
+                                                </button>
                                             )}
-                                            {!activeAssignment && item.status === 'HOLD' && (
-                                                <button className="table-action-btn" onClick={() => updateItemStatus(item._id, 'PENDING')}>Set Pending</button>
+                                            {progressInfo.heldQtyKoli > 0 && (
+                                                <button className="table-action-btn" onClick={() => void releaseHoldQuantity(item)}>Lepas Hold</button>
                                             )}
                                             {activeAssignment && (
                                                 <Link href={`/delivery-orders/${activeAssignment._id}`} className="table-action-btn" title="Item ini sudah masuk surat jalan aktif">
-                                                    <Eye size={14} /> {activeAssignment.doNumber || 'Lihat DO'}
+                                                    <Eye size={14} /> {activeAssignment.doNumber || 'Lihat DO'}{doItem?.orderItemQtyKoli ? ` (${formatNumber(doItem.orderItemQtyKoli)} koli)` : ''}
                                                 </Link>
                                             )}
                                         </div>
@@ -411,27 +518,150 @@ export default function OrderDetailPage() {
                             ) : (
                                 <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
                                     <table>
-                                        <thead><tr><th style={{ width: 40 }}></th><th>Item</th><th>Koli</th><th>Berat</th><th>Status</th></tr></thead>
+                                        <thead><tr><th style={{ width: 40 }}></th><th>Item</th><th>Progress</th><th>Kirim Koli</th><th>Hold Sisa</th></tr></thead>
                                         <tbody>
-                                            {availableItems.map(item => (
-                                                <tr key={item._id}>
-                                                    <td>
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={selectedItems.includes(item._id)}
-                                                            disabled={creatingDO}
-                                                            onChange={e => {
-                                                                if (e.target.checked) setSelectedItems(prev => [...prev, item._id]);
-                                                                else setSelectedItems(prev => prev.filter(id => id !== item._id));
-                                                            }}
-                                                        />
-                                                    </td>
-                                                    <td>{item.description}</td>
-                                                    <td>{item.qtyKoli}</td>
-                                                    <td>{item.weight} kg</td>
-                                                    <td><span className={`badge badge-${ITEM_STATUS_MAP[item.status]?.color}`}>{ITEM_STATUS_MAP[item.status]?.label}</span></td>
-                                                </tr>
-                                            ))}
+                                            {availableItems.map(item => {
+                                                const selection = selectedShipments[item._id];
+                                                const progressInfo = itemProgressById[item._id];
+                                                const selectedQty = Number(selection?.qtyKoli || 0);
+                                                const shippedWeightPreview = selectedQty > 0
+                                                    ? calculateWeightPortion(progressInfo.totalWeight, progressInfo.totalQtyKoli, selectedQty)
+                                                    : 0;
+                                                const remainingAfterShipment = roundQuantity(Math.max(progressInfo.pendingQtyKoli - selectedQty, 0));
+                                                return (
+                                                    <tr key={item._id}>
+                                                        <td>
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={Boolean(selection)}
+                                                                disabled={creatingDO}
+                                                                onChange={e => {
+                                                                    if (e.target.checked) {
+                                                                        setSelectedShipments(prev => ({
+                                                                            ...prev,
+                                                                            [item._id]: {
+                                                                                qtyKoli: String(progressInfo.pendingQtyKoli),
+                                                                                holdRemaining: false,
+                                                                                holdReason: '',
+                                                                                holdLocation: '',
+                                                                            },
+                                                                        }));
+                                                                    } else {
+                                                                        setSelectedShipments(prev => {
+                                                                            const next = { ...prev };
+                                                                            delete next[item._id];
+                                                                            return next;
+                                                                        });
+                                                                    }
+                                                                }}
+                                                            />
+                                                        </td>
+                                                        <td>
+                                                            <div className="font-medium">{item.description}</div>
+                                                            <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+                                                                Total {formatNumber(progressInfo.totalQtyKoli)} koli / {formatNumber(progressInfo.totalWeight)} kg
+                                                            </div>
+                                                        </td>
+                                                        <td style={{ minWidth: 180 }}>
+                                                            <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', display: 'grid', gap: '0.2rem' }}>
+                                                                <div>Terkirim: {formatNumber(progressInfo.deliveredQtyKoli)} koli</div>
+                                                                <div>Ditahan: {formatNumber(progressInfo.heldQtyKoli)} koli</div>
+                                                                <div>Siap kirim: {formatNumber(progressInfo.pendingQtyKoli)} koli</div>
+                                                            </div>
+                                                        </td>
+                                                        <td style={{ minWidth: 180 }}>
+                                                            <input
+                                                                type="number"
+                                                                min="0"
+                                                                step="0.01"
+                                                                className="form-input"
+                                                                value={selection?.qtyKoli || ''}
+                                                                disabled={!selection || creatingDO}
+                                                                onChange={e => {
+                                                                    const value = e.target.value;
+                                                                    setSelectedShipments(prev => ({
+                                                                        ...prev,
+                                                                        [item._id]: {
+                                                                            ...(prev[item._id] || {
+                                                                                holdRemaining: false,
+                                                                                holdReason: '',
+                                                                                holdLocation: '',
+                                                                            }),
+                                                                            qtyKoli: value,
+                                                                        },
+                                                                    }));
+                                                                }}
+                                                            />
+                                                            {selection && (
+                                                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                                                                    Perkiraan berat kirim: {formatNumber(shippedWeightPreview)} kg
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                        <td style={{ minWidth: 220 }}>
+                                                            {selection ? (
+                                                                <div style={{ display: 'grid', gap: '0.4rem' }}>
+                                                                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.82rem' }}>
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={selection.holdRemaining}
+                                                                            disabled={creatingDO || remainingAfterShipment <= 0}
+                                                                            onChange={e => {
+                                                                                setSelectedShipments(prev => ({
+                                                                                    ...prev,
+                                                                                    [item._id]: {
+                                                                                        ...prev[item._id],
+                                                                                        holdRemaining: e.target.checked,
+                                                                                    },
+                                                                                }));
+                                                                            }}
+                                                                        />
+                                                                        Tahan sisa {formatNumber(remainingAfterShipment)} koli
+                                                                    </label>
+                                                                    {selection.holdRemaining && remainingAfterShipment > 0 && (
+                                                                        <>
+                                                                            <input
+                                                                                className="form-input"
+                                                                                placeholder="Alasan hold, mis. gudang tujuan penuh"
+                                                                                value={selection.holdReason}
+                                                                                disabled={creatingDO}
+                                                                                onChange={e => {
+                                                                                    const value = e.target.value;
+                                                                                    setSelectedShipments(prev => ({
+                                                                                        ...prev,
+                                                                                        [item._id]: {
+                                                                                            ...prev[item._id],
+                                                                                            holdReason: value,
+                                                                                        },
+                                                                                    }));
+                                                                                }}
+                                                                            />
+                                                                            <input
+                                                                                className="form-input"
+                                                                                placeholder="Lokasi hold, mis. gudang transit"
+                                                                                value={selection.holdLocation}
+                                                                                disabled={creatingDO}
+                                                                                onChange={e => {
+                                                                                    const value = e.target.value;
+                                                                                    setSelectedShipments(prev => ({
+                                                                                        ...prev,
+                                                                                        [item._id]: {
+                                                                                            ...prev[item._id],
+                                                                                            holdLocation: value,
+                                                                                        },
+                                                                                    }));
+                                                                                }}
+                                                                            />
+                                                                        </>
+                                                                    )}
+                                                                </div>
+                                                            ) : (
+                                                                <span className="text-muted text-sm">Pilih item dulu</span>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 </div>
@@ -439,8 +669,51 @@ export default function OrderDetailPage() {
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setShowDOModal(false)} disabled={creatingDO}>Batal</button>
-                            <button className="btn btn-primary" onClick={handleCreateDO} disabled={selectedItems.length === 0 || creatingDO}>
-                                <Truck size={16} /> {creatingDO ? 'Membuat Surat Jalan...' : `Buat Surat Jalan (${selectedItems.length} item)`}
+                            <button className="btn btn-primary" onClick={handleCreateDO} disabled={Object.keys(selectedShipments).length === 0 || creatingDO}>
+                                <Truck size={16} /> {creatingDO ? 'Membuat Surat Jalan...' : `Buat Surat Jalan (${Object.keys(selectedShipments).length} item)`}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showHoldModal && holdingItem && (
+                <div className="modal-overlay" onClick={() => { if (!savingHold) { setShowHoldModal(false); setHoldingItem(null); } }}>
+                    <div className="modal" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Tahan Qty Item</h3>
+                            <button className="modal-close" onClick={() => { setShowHoldModal(false); setHoldingItem(null); }} disabled={savingHold}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="form-group">
+                                <label className="form-label">Item</label>
+                                <div className="detail-value">{holdingItem.description}</div>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Qty hold (koli)</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    className="form-input"
+                                    value={holdQtyKoli}
+                                    onChange={e => setHoldQtyKoli(e.target.value)}
+                                    disabled={savingHold}
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Alasan hold</label>
+                                <input className="form-input" value={holdReason} onChange={e => setHoldReason(e.target.value)} disabled={savingHold} placeholder="Mis. gudang tujuan penuh" />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Lokasi hold</label>
+                                <input className="form-input" value={holdLocation} onChange={e => setHoldLocation(e.target.value)} disabled={savingHold} placeholder="Mis. gudang transit Surabaya" />
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => { setShowHoldModal(false); setHoldingItem(null); }} disabled={savingHold}>Batal</button>
+                            <button className="btn btn-primary" onClick={() => void saveHoldQuantity()} disabled={savingHold}>
+                                {savingHold ? 'Menyimpan Hold...' : 'Simpan Hold'}
                             </button>
                         </div>
                     </div>

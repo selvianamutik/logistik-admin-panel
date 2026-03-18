@@ -169,7 +169,7 @@ export interface DriverVoucherItem {
 
 // ── Order ──
 export type OrderStatus = 'OPEN' | 'PARTIAL' | 'COMPLETE' | 'ON_HOLD' | 'CANCELLED';
-export type OrderItemStatus = 'PENDING' | 'ON_DELIVERY' | 'DELIVERED' | 'HOLD' | 'RETURNED';
+export type OrderItemStatus = 'PENDING' | 'ASSIGNED' | 'ON_DELIVERY' | 'PARTIAL' | 'DELIVERED' | 'HOLD' | 'RETURNED';
 
 export interface Order {
   _id: string;
@@ -199,6 +199,14 @@ export interface OrderItem {
   weight: number;
   volume?: number;
   value?: number;
+  deliveredQtyKoli?: number;
+  deliveredWeight?: number;
+  assignedQtyKoli?: number;
+  assignedWeight?: number;
+  heldQtyKoli?: number;
+  heldWeight?: number;
+  holdReason?: string;
+  holdLocation?: string;
   status: OrderItemStatus;
 }
 
@@ -258,6 +266,8 @@ export interface DeliveryOrderItem {
   orderItemDescription?: string;
   orderItemQtyKoli?: number;
   orderItemWeight?: number;
+  shippedQtyKoli?: number;
+  shippedWeight?: number;
 }
 
 // ── Tracking Log ──
