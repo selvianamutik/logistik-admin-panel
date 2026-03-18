@@ -49,6 +49,13 @@ export function calculateWeightPortion(totalWeight: number, totalQtyKoli: number
   return roundQuantity((totalWeight / totalQtyKoli) * qtyKoli, 2);
 }
 
+export function calculateVolumePortion(totalVolume: number, totalQtyKoli: number, qtyKoli: number) {
+  if (!Number.isFinite(totalQtyKoli) || totalQtyKoli <= 0) {
+    return 0;
+  }
+  return roundQuantity((totalVolume / totalQtyKoli) * qtyKoli, 3);
+}
+
 export function getOrderItemProgress(source: OrderItemProgressSource): OrderItemProgress {
   const totalQtyKoli = clampNonNegative(source.qtyKoli);
   const totalWeight = clampNonNegative(source.weight);

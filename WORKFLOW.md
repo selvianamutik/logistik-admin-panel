@@ -106,6 +106,16 @@ Artinya:
   - nama penerima
   - tanggal terima
   - catatan POD
+- Saat menyelesaikan DO, admin juga sekarang mengisi **muatan aktual** per item:
+  - `qty aktual`
+  - `berat aktual`
+  - `volume aktual`
+- Sistem membedakan:
+  - `muatan rencana` saat DO dibuat
+  - `muatan aktual` saat DO selesai
+- Kalau muatan aktual lebih kecil dari rencana, selisih qty kembali menjadi `pending` di item order.
+- Kalau berat aktual lebih besar dari estimasi awal, sistem menaikkan total berat item order secukupnya agar progres dan nota tidak terpotong palsu.
+- Freight Nota sekarang mengambil berat/koli dari **muatan aktual final DO**, bukan angka rencana, bila data aktual sudah tersedia.
 - Jadi status selesai dan POD sekarang menjadi satu aksi operasional, bukan dua langkah terpisah.
 
 Hasil akhirnya:

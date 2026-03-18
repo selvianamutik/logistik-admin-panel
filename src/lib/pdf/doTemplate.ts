@@ -6,6 +6,7 @@
 import jsPDF from 'jspdf';
 import type { DeliveryOrder, DeliveryOrderItem, CompanyProfile } from '@/lib/types';
 import { formatDate } from '@/lib/utils';
+import { formatCargoSummary } from '@/lib/measurement';
 
 // ── Simple table drawing helper ──
 function drawTable(
@@ -119,15 +120,35 @@ export function generateDOPdf(
     y += 8;
 
     // ─── Items Table ───
-    const colWidths = [12, contentWidth - 57, 20, 25];
+    const colWidths = [12, contentWidth - 82, 20, 50];
     const tableRows = doItems.map((item, idx) => [
         `${idx + 1}`,
         item.orderItemDescription || '-',
-        `${item.orderItemQtyKoli || 1}`,
-        `${item.orderItemWeight || 0} kg`,
+        `${item.actualQtyKoli ?? item.orderItemQtyKoli ?? 1}`,
+        formatCargoSummary(
+            item.actualQtyKoli !== undefined || item.actualWeightKg !== undefined || item.actualVolumeM3 !== undefined
+                ? {
+                    qtyKoli: item.actualQtyKoli,
+                    weightKg: item.actualWeightKg,
+                    weightInputValue: item.actualWeightInputValue,
+                    weightInputUnit: item.actualWeightInputUnit,
+                    volumeM3: item.actualVolumeM3,
+                    volumeInputValue: item.actualVolumeInputValue,
+                    volumeInputUnit: item.actualVolumeInputUnit,
+                }
+                : {
+                    qtyKoli: item.orderItemQtyKoli,
+                    weightKg: item.orderItemWeight,
+                    weightInputValue: item.orderItemWeightInputValue,
+                    weightInputUnit: item.orderItemWeightInputUnit,
+                    volumeM3: item.orderItemVolumeM3,
+                    volumeInputValue: item.orderItemVolumeInputValue,
+                    volumeInputUnit: item.orderItemVolumeInputUnit,
+                }
+        ),
     ]);
 
-    y = drawTable(doc, y, ['No', 'Deskripsi Barang', 'Koli', 'Berat'], tableRows, colWidths, margin);
+    y = drawTable(doc, y, ['No', 'Deskripsi Barang', 'Koli', 'Muatan'], tableRows, colWidths, margin);
     y += 6;
 
     // ─── Notes ───

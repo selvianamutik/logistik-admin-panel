@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import {
     calculateWeightPortion,
+    calculateVolumePortion,
     deriveOrderItemStatusFromProgress,
     getOrderItemProgress,
     roundQuantity,
@@ -16,7 +17,14 @@ import {
     normalizeText,
     type ApiSession,
 } from './data-helpers';
-import { convertVolumeToM3, convertWeightToKg, type VolumeInputUnit, type WeightInputUnit } from '@/lib/measurement';
+import {
+    convertKgToWeightInputValue,
+    convertM3ToVolumeInputValue,
+    convertVolumeToM3,
+    convertWeightToKg,
+    type VolumeInputUnit,
+    type WeightInputUnit,
+} from '@/lib/measurement';
 
 type AuditLogFn = (
     session: Pick<ApiSession, '_id' | 'name'>,
@@ -78,6 +86,38 @@ type OrderItemProgressSnapshot = {
     heldWeight?: number;
     holdReason?: string;
     holdLocation?: string;
+};
+
+type DeliveryOrderItemCargoSnapshot = {
+    _id: string;
+    orderItemRef?: unknown;
+    shippedQtyKoli?: number;
+    shippedWeight?: number;
+    orderItemQtyKoli?: number;
+    orderItemWeight?: number;
+    orderItemVolumeM3?: number;
+    orderItemWeightInputValue?: number;
+    orderItemWeightInputUnit?: WeightInputUnit;
+    orderItemVolumeInputValue?: number;
+    orderItemVolumeInputUnit?: VolumeInputUnit;
+    actualQtyKoli?: number;
+    actualWeightKg?: number;
+    actualVolumeM3?: number;
+    actualWeightInputValue?: number;
+    actualWeightInputUnit?: WeightInputUnit;
+    actualVolumeInputValue?: number;
+    actualVolumeInputUnit?: VolumeInputUnit;
+};
+
+type NormalizedActualCargoInput = {
+    deliveryOrderItemRef: string;
+    actualQtyKoli: number;
+    actualWeightKg: number;
+    actualWeightInputValue?: number;
+    actualWeightInputUnit?: WeightInputUnit;
+    actualVolumeM3?: number;
+    actualVolumeInputValue?: number;
+    actualVolumeInputUnit?: VolumeInputUnit;
 };
 
 const DO_STATUS_TRANSITIONS: Record<string, string[]> = {
@@ -153,6 +193,76 @@ function normalizeDeliveryOrderSelections(data: Record<string, unknown>, orderIt
             qtyKoli: normalizeNumber(item.qtyKoli),
             holdRemaining: false,
         }));
+}
+
+function normalizeDeliveryOrderActualCargoInputs(
+    data: Record<string, unknown>,
+    doItems: DeliveryOrderItemCargoSnapshot[]
+) {
+    const rawActualItems = Array.isArray(data.actualItems) ? data.actualItems : [];
+    const providedActuals = new Map<string, Record<string, unknown>>();
+    for (const rawItem of rawActualItems) {
+        if (!isPlainObject(rawItem)) {
+            continue;
+        }
+        const deliveryOrderItemRef = normalizeText(rawItem.deliveryOrderItemRef);
+        if (!deliveryOrderItemRef) {
+            continue;
+        }
+        providedActuals.set(deliveryOrderItemRef, rawItem);
+    }
+
+    const normalized = new Map<string, NormalizedActualCargoInput>();
+    for (const item of doItems) {
+        const plannedQtyKoli = roundQuantity(normalizeNumber(item.shippedQtyKoli ?? item.orderItemQtyKoli ?? 0));
+        const plannedWeightKg = roundQuantity(normalizeNumber(item.shippedWeight ?? item.orderItemWeight ?? 0));
+        const plannedVolumeM3 = roundQuantity(normalizeNumber(item.orderItemVolumeM3 ?? 0), 3);
+
+        const rawItem = providedActuals.get(item._id);
+        const weightInputUnit: WeightInputUnit =
+            rawItem?.actualWeightInputUnit === 'TON'
+                ? 'TON'
+                : item.actualWeightInputUnit || item.orderItemWeightInputUnit || 'KG';
+        const volumeInputUnit: VolumeInputUnit =
+            rawItem?.actualVolumeInputUnit === 'LITER'
+                ? 'LITER'
+                : rawItem?.actualVolumeInputUnit === 'KL'
+                    ? 'KL'
+                : item.actualVolumeInputUnit || item.orderItemVolumeInputUnit || 'M3';
+
+        const actualQtyKoli = roundQuantity(
+            normalizeNumber(rawItem?.actualQtyKoli ?? item.actualQtyKoli ?? plannedQtyKoli)
+        );
+        const rawWeightInputValue = normalizeNumber(
+            rawItem?.actualWeightInputValue ??
+            item.actualWeightInputValue ??
+            (item.actualWeightKg !== undefined
+                ? convertKgToWeightInputValue(normalizeNumber(item.actualWeightKg), weightInputUnit)
+                : item.orderItemWeightInputValue ?? convertKgToWeightInputValue(plannedWeightKg, weightInputUnit))
+        );
+        const rawVolumeInputValue = normalizeNumber(
+            rawItem?.actualVolumeInputValue ??
+            item.actualVolumeInputValue ??
+            (item.actualVolumeM3 !== undefined
+                ? convertM3ToVolumeInputValue(normalizeNumber(item.actualVolumeM3), volumeInputUnit)
+                : item.orderItemVolumeInputValue ?? convertM3ToVolumeInputValue(plannedVolumeM3, volumeInputUnit))
+        );
+        const actualWeightKg = roundQuantity(convertWeightToKg(rawWeightInputValue, weightInputUnit));
+        const actualVolumeM3 = roundQuantity(convertVolumeToM3(rawVolumeInputValue, volumeInputUnit), 3);
+
+        normalized.set(item._id, {
+            deliveryOrderItemRef: item._id,
+            actualQtyKoli,
+            actualWeightKg,
+            actualWeightInputValue: rawWeightInputValue > 0 ? rawWeightInputValue : undefined,
+            actualWeightInputUnit: rawWeightInputValue > 0 ? weightInputUnit : undefined,
+            actualVolumeM3: actualVolumeM3 > 0 ? actualVolumeM3 : undefined,
+            actualVolumeInputValue: rawVolumeInputValue > 0 ? rawVolumeInputValue : undefined,
+            actualVolumeInputUnit: rawVolumeInputValue > 0 ? volumeInputUnit : undefined,
+        });
+    }
+
+    return normalized;
 }
 
 function summarizeSelection(selection: DeliveryOrderItemSelection, description?: string) {
@@ -472,18 +582,44 @@ export async function handleDeliveryOrderStatusUpdate(
     }
 
     const doItems = await getSanityClient().fetch<Array<{
+        _id: string;
         orderItemRef?: unknown;
         shippedQtyKoli?: number;
         shippedWeight?: number;
         orderItemQtyKoli?: number;
         orderItemWeight?: number;
+        orderItemVolumeM3?: number;
+        orderItemWeightInputValue?: number;
+        orderItemWeightInputUnit?: WeightInputUnit;
+        orderItemVolumeInputValue?: number;
+        orderItemVolumeInputUnit?: VolumeInputUnit;
+        actualQtyKoli?: number;
+        actualWeightKg?: number;
+        actualVolumeM3?: number;
+        actualWeightInputValue?: number;
+        actualWeightInputUnit?: WeightInputUnit;
+        actualVolumeInputValue?: number;
+        actualVolumeInputUnit?: VolumeInputUnit;
     }>>(
         `*[_type == "deliveryOrderItem" && deliveryOrderRef == $ref]{
+            _id,
             orderItemRef,
             shippedQtyKoli,
             shippedWeight,
             orderItemQtyKoli,
-            orderItemWeight
+            orderItemWeight,
+            orderItemVolumeM3,
+            orderItemWeightInputValue,
+            orderItemWeightInputUnit,
+            orderItemVolumeInputValue,
+            orderItemVolumeInputUnit,
+            actualQtyKoli,
+            actualWeightKg,
+            actualVolumeM3,
+            actualWeightInputValue,
+            actualWeightInputUnit,
+            actualVolumeInputValue,
+            actualVolumeInputUnit
         }`,
         { ref: id }
     );
@@ -500,6 +636,9 @@ export async function handleDeliveryOrderStatusUpdate(
         }
     }
 
+    const actualCargoByDoItemId =
+        status === 'DELIVERED' ? normalizeDeliveryOrderActualCargoInputs(data, doItems) : new Map<string, NormalizedActualCargoInput>();
+
     const timestamp = new Date().toISOString();
     const shouldStopTracking = status === 'DELIVERED' || status === 'CANCELLED';
     const transaction = getSanityClient()
@@ -512,6 +651,9 @@ export async function handleDeliveryOrderStatusUpdate(
                         podReceiverName,
                         podReceivedDate,
                         podNote,
+                        cargoFinalizedAt: timestamp,
+                        cargoFinalizedBy: session._id,
+                        cargoFinalizedByName: session.name,
                     }
                     : {}),
                 ...(shouldStopTracking
@@ -543,8 +685,8 @@ export async function handleDeliveryOrderStatusUpdate(
             }
 
             const progress = getOrderItemProgress(orderItem);
-            const shippedQtyKoli = normalizeNumber(item.shippedQtyKoli ?? item.orderItemQtyKoli ?? 0);
-            const shippedWeight = normalizeNumber(item.shippedWeight ?? item.orderItemWeight ?? 0);
+            const plannedQtyKoli = roundQuantity(normalizeNumber(item.shippedQtyKoli ?? item.orderItemQtyKoli ?? 0));
+            const plannedWeight = roundQuantity(normalizeNumber(item.shippedWeight ?? item.orderItemWeight ?? 0));
 
             if (status === 'HEADING_TO_PICKUP' || status === 'ON_DELIVERY' || status === 'ARRIVED') {
                 transaction.patch(orderItemRef, { set: { status: 'ON_DELIVERY' } });
@@ -552,20 +694,76 @@ export async function handleDeliveryOrderStatusUpdate(
             }
 
             if (status === 'DELIVERED') {
+                const actualCargo = actualCargoByDoItemId.get(item._id);
+                if (!actualCargo) {
+                    return NextResponse.json({ error: 'Muatan aktual surat jalan tidak lengkap' }, { status: 400 });
+                }
+                if (!Number.isFinite(actualCargo.actualQtyKoli) || actualCargo.actualQtyKoli <= 0) {
+                    return NextResponse.json(
+                        { error: `Qty aktual untuk ${orderItem.description || 'item order'} harus lebih besar dari 0` },
+                        { status: 400 }
+                    );
+                }
+                if (actualCargo.actualQtyKoli > plannedQtyKoli) {
+                    return NextResponse.json(
+                        {
+                            error: `Qty aktual untuk ${orderItem.description || 'item order'} tidak boleh melebihi rencana DO. Ubah rencana DO terlebih dahulu bila muatan aktual lebih besar.`,
+                        },
+                        { status: 409 }
+                    );
+                }
+                if (!Number.isFinite(actualCargo.actualWeightKg) || actualCargo.actualWeightKg < 0) {
+                    return NextResponse.json(
+                        { error: `Berat aktual untuk ${orderItem.description || 'item order'} tidak valid` },
+                        { status: 400 }
+                    );
+                }
+                if ((plannedWeight > 0 || normalizeNumber(item.orderItemWeight ?? 0) > 0) && actualCargo.actualWeightKg <= 0) {
+                    return NextResponse.json(
+                        { error: `Berat aktual untuk ${orderItem.description || 'item order'} wajib diisi` },
+                        { status: 400 }
+                    );
+                }
+                if (actualCargo.actualVolumeM3 !== undefined && (!Number.isFinite(actualCargo.actualVolumeM3) || actualCargo.actualVolumeM3 < 0)) {
+                    return NextResponse.json(
+                        { error: `Volume aktual untuk ${orderItem.description || 'item order'} tidak valid` },
+                        { status: 400 }
+                    );
+                }
+
+                const actualQtyKoli = actualCargo.actualQtyKoli;
+                const actualWeight = roundQuantity(actualCargo.actualWeightKg);
+                const otherReservedWeight = roundQuantity(
+                    Math.max(progress.deliveredWeight + progress.assignedWeight + progress.heldWeight - plannedWeight, 0)
+                );
+                const nextTotalWeight = roundQuantity(Math.max(progress.totalWeight, otherReservedWeight + actualWeight));
                 const nextProgress = {
                     ...progress,
-                    assignedQtyKoli: roundQuantity(Math.max(progress.assignedQtyKoli - shippedQtyKoli, 0)),
-                    assignedWeight: roundQuantity(Math.max(progress.assignedWeight - shippedWeight, 0)),
-                    deliveredQtyKoli: roundQuantity(Math.min(progress.deliveredQtyKoli + shippedQtyKoli, progress.totalQtyKoli)),
-                    deliveredWeight: roundQuantity(Math.min(progress.deliveredWeight + shippedWeight, progress.totalWeight)),
+                    totalWeight: nextTotalWeight,
+                    assignedQtyKoli: roundQuantity(Math.max(progress.assignedQtyKoli - plannedQtyKoli, 0)),
+                    assignedWeight: roundQuantity(Math.max(progress.assignedWeight - plannedWeight, 0)),
+                    deliveredQtyKoli: roundQuantity(Math.min(progress.deliveredQtyKoli + actualQtyKoli, progress.totalQtyKoli)),
+                    deliveredWeight: roundQuantity(progress.deliveredWeight + actualWeight),
                 };
                 transaction.patch(orderItemRef, {
                     set: {
+                        weight: nextTotalWeight,
                         assignedQtyKoli: nextProgress.assignedQtyKoli,
                         assignedWeight: nextProgress.assignedWeight,
                         deliveredQtyKoli: nextProgress.deliveredQtyKoli,
                         deliveredWeight: nextProgress.deliveredWeight,
                         status: deriveOrderItemStatusFromProgress(nextProgress),
+                    },
+                });
+                transaction.patch(item._id, {
+                    set: {
+                        actualQtyKoli: actualCargo.actualQtyKoli,
+                        actualWeightKg: actualWeight,
+                        actualVolumeM3: actualCargo.actualVolumeM3,
+                        actualWeightInputValue: actualCargo.actualWeightInputValue,
+                        actualWeightInputUnit: actualCargo.actualWeightInputUnit,
+                        actualVolumeInputValue: actualCargo.actualVolumeInputValue,
+                        actualVolumeInputUnit: actualCargo.actualVolumeInputUnit,
                     },
                 });
                 continue;
@@ -574,8 +772,8 @@ export async function handleDeliveryOrderStatusUpdate(
             if (status === 'CANCELLED') {
                 const nextProgress = {
                     ...progress,
-                    assignedQtyKoli: roundQuantity(Math.max(progress.assignedQtyKoli - shippedQtyKoli, 0)),
-                    assignedWeight: roundQuantity(Math.max(progress.assignedWeight - shippedWeight, 0)),
+                    assignedQtyKoli: roundQuantity(Math.max(progress.assignedQtyKoli - plannedQtyKoli, 0)),
+                    assignedWeight: roundQuantity(Math.max(progress.assignedWeight - plannedWeight, 0)),
                 };
                 transaction.patch(orderItemRef, {
                     set: {
@@ -608,7 +806,7 @@ export async function handleDeliveryOrderStatusUpdate(
         'UPDATE',
         'delivery-orders',
         id,
-        `DO status ${deliveryOrder.doNumber || id}: ${deliveryOrder.status || '-'} -> ${status}`
+        `DO status ${deliveryOrder.doNumber || id}: ${deliveryOrder.status || '-'} -> ${status}${status === 'DELIVERED' ? ` (muatan aktual difinalisasi ${doItems.length} item)` : ''}`
     );
 
     return NextResponse.json({
@@ -620,6 +818,9 @@ export async function handleDeliveryOrderStatusUpdate(
                     podReceiverName,
                     podReceivedDate,
                     podNote,
+                    cargoFinalizedAt: timestamp,
+                    cargoFinalizedBy: session._id,
+                    cargoFinalizedByName: session.name,
                 }
                 : {}),
             trackingState: shouldStopTracking ? 'STOPPED' : deliveryOrder.trackingState,
@@ -829,6 +1030,15 @@ export async function handleDeliveryOrderCreate(
         const progress = getOrderItemProgress(item);
         const shippedQtyKoli = roundQuantity(selection.qtyKoli);
         const shippedWeight = calculateWeightPortion(progress.totalWeight, progress.totalQtyKoli, shippedQtyKoli);
+        const shippedVolumeM3 = calculateVolumePortion(normalizeNumber(item.volume ?? 0), progress.totalQtyKoli, shippedQtyKoli);
+        const shippedWeightInputValue =
+            item.weightInputValue && item.weightInputUnit
+                ? roundQuantity(convertKgToWeightInputValue(shippedWeight, item.weightInputUnit), item.weightInputUnit === 'TON' ? 3 : 2)
+                : undefined;
+        const shippedVolumeInputValue =
+            item.volumeInputValue && item.volumeInputUnit
+                ? roundQuantity(convertM3ToVolumeInputValue(shippedVolumeM3, item.volumeInputUnit), item.volumeInputUnit === 'LITER' ? 0 : 3)
+                : undefined;
         const remainingQtyAfterShipment = roundQuantity(Math.max(progress.pendingQtyKoli - shippedQtyKoli, 0));
         const remainingWeightAfterShipment = roundQuantity(Math.max(progress.pendingWeight - shippedWeight, 0));
         const holdQtyToApply = selection.holdRemaining ? remainingQtyAfterShipment : 0;
@@ -851,10 +1061,10 @@ export async function handleDeliveryOrderCreate(
             orderItemDescription: item.description,
             orderItemQtyKoli: shippedQtyKoli,
             orderItemWeight: shippedWeight,
-            orderItemVolumeM3: item.volume,
-            orderItemWeightInputValue: item.weightInputValue,
+            orderItemVolumeM3: shippedVolumeM3 > 0 ? shippedVolumeM3 : undefined,
+            orderItemWeightInputValue: shippedWeightInputValue,
             orderItemWeightInputUnit: item.weightInputUnit,
-            orderItemVolumeInputValue: item.volumeInputValue,
+            orderItemVolumeInputValue: shippedVolumeInputValue,
             orderItemVolumeInputUnit: item.volumeInputUnit,
             shippedQtyKoli,
             shippedWeight,

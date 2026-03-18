@@ -7,9 +7,55 @@ import { useToast } from '../../layout';
 import { ArrowLeft, Printer, FileDown, Truck, Upload, Save, MapPin, Radio } from 'lucide-react';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
 import { formatDate, formatDateTime, DO_STATUS_MAP } from '@/lib/utils';
-import { formatVolumeDisplay, formatWeightDisplay } from '@/lib/measurement';
+import {
+    formatCargoSummary,
+    VOLUME_INPUT_UNIT_OPTIONS,
+    WEIGHT_INPUT_UNIT_OPTIONS,
+    type VolumeInputUnit,
+    type WeightInputUnit,
+} from '@/lib/measurement';
 import { generateDOPdf } from '@/lib/pdf/doTemplate';
 import type { DeliveryOrder, DeliveryOrderItem, TrackingLog, CompanyProfile, Order } from '@/lib/types';
+
+interface ActualCargoDraft {
+    deliveryOrderItemRef: string;
+    description: string;
+    plannedQtyKoli: number;
+    plannedWeightKg: number;
+    plannedWeightInputValue?: number;
+    plannedWeightInputUnit?: WeightInputUnit;
+    plannedVolumeM3?: number;
+    plannedVolumeInputValue?: number;
+    plannedVolumeInputUnit?: VolumeInputUnit;
+    actualQtyKoli: string;
+    actualWeightInputValue: string;
+    actualWeightInputUnit: WeightInputUnit;
+    actualVolumeInputValue: string;
+    actualVolumeInputUnit: VolumeInputUnit;
+    requireWeight: boolean;
+    requireVolume: boolean;
+}
+
+function buildActualCargoDraft(item: DeliveryOrderItem): ActualCargoDraft {
+    return {
+        deliveryOrderItemRef: item._id,
+        description: item.orderItemDescription || '-',
+        plannedQtyKoli: Number(item.orderItemQtyKoli || item.shippedQtyKoli || 0),
+        plannedWeightKg: Number(item.orderItemWeight || item.shippedWeight || 0),
+        plannedWeightInputValue: item.orderItemWeightInputValue,
+        plannedWeightInputUnit: item.orderItemWeightInputUnit,
+        plannedVolumeM3: item.orderItemVolumeM3,
+        plannedVolumeInputValue: item.orderItemVolumeInputValue,
+        plannedVolumeInputUnit: item.orderItemVolumeInputUnit,
+        actualQtyKoli: String(item.actualQtyKoli ?? item.orderItemQtyKoli ?? item.shippedQtyKoli ?? 0),
+        actualWeightInputValue: String(item.actualWeightInputValue ?? item.orderItemWeightInputValue ?? item.actualWeightKg ?? item.orderItemWeight ?? item.shippedWeight ?? ''),
+        actualWeightInputUnit: item.actualWeightInputUnit || item.orderItemWeightInputUnit || 'KG',
+        actualVolumeInputValue: String(item.actualVolumeInputValue ?? item.orderItemVolumeInputValue ?? item.actualVolumeM3 ?? item.orderItemVolumeM3 ?? ''),
+        actualVolumeInputUnit: item.actualVolumeInputUnit || item.orderItemVolumeInputUnit || 'M3',
+        requireWeight: Number(item.orderItemWeight || item.shippedWeight || 0) > 0,
+        requireVolume: Number(item.orderItemVolumeM3 || 0) > 0,
+    };
+}
 
 export default function DODetailPage() {
     const params = useParams();
@@ -27,6 +73,7 @@ export default function DODetailPage() {
     const [podName, setPodName] = useState('');
     const [podDate, setPodDate] = useState(new Date().toISOString().split('T')[0]);
     const [podNote, setPodNote] = useState('');
+    const [actualCargoItems, setActualCargoItems] = useState<ActualCargoDraft[]>([]);
     const [editingTarip, setEditingTarip] = useState(false);
     const [taripBorongan, setTaripBorongan] = useState<number>(0);
     const [keteranganBorongan, setKeteranganBorongan] = useState('');
@@ -84,6 +131,30 @@ export default function DODetailPage() {
         }
     }, [addToast, doId, fetchEntity]);
 
+    const openStatusModal = () => {
+        setNewStatus('');
+        setStatusNote('');
+        setPodName('');
+        setPodDate(new Date().toISOString().split('T')[0]);
+        setPodNote('');
+        setActualCargoItems(doItems.map(buildActualCargoDraft));
+        setShowStatusModal(true);
+    };
+
+    const updateActualCargoDraft = (
+        deliveryOrderItemRef: string,
+        field: keyof Pick<ActualCargoDraft, 'actualQtyKoli' | 'actualWeightInputValue' | 'actualWeightInputUnit' | 'actualVolumeInputValue' | 'actualVolumeInputUnit'>,
+        value: string
+    ) => {
+        setActualCargoItems(previous =>
+            previous.map(item =>
+                item.deliveryOrderItemRef === deliveryOrderItemRef
+                    ? { ...item, [field]: value }
+                    : item
+            )
+        );
+    };
+
     useEffect(() => {
         void loadDO('initial');
     }, [loadDO]);
@@ -116,6 +187,16 @@ export default function DODetailPage() {
                                 podReceiverName: podName,
                                 podReceivedDate: podDate,
                                 podNote,
+                                actualItems: actualCargoItems.map(item => ({
+                                    deliveryOrderItemRef: item.deliveryOrderItemRef,
+                                    actualQtyKoli: Number(item.actualQtyKoli),
+                                    actualWeightInputValue: Number(item.actualWeightInputValue),
+                                    actualWeightInputUnit: item.actualWeightInputUnit,
+                                    actualVolumeInputValue: item.actualVolumeInputValue.trim()
+                                        ? Number(item.actualVolumeInputValue)
+                                        : 0,
+                                    actualVolumeInputUnit: item.actualVolumeInputUnit,
+                                })),
                             }
                             : {}),
                     },
@@ -127,17 +208,6 @@ export default function DODetailPage() {
                 return;
             }
 
-            setDoData(prev => prev ? {
-                ...prev,
-                status: newStatus as DeliveryOrder['status'],
-                ...(completingDelivery
-                    ? {
-                        podReceiverName: podName,
-                        podReceivedDate: podDate,
-                        podNote,
-                    }
-                    : {}),
-            } : prev);
             setTrackingLogs(prev => [...prev, {
                 _id: 'new-' + Date.now(),
                 _type: 'trackingLog',
@@ -147,6 +217,7 @@ export default function DODetailPage() {
                 note: statusNote || undefined,
                 timestamp: new Date().toISOString(),
             }]);
+            await loadDO();
             setShowStatusModal(false);
             setNewStatus('');
             setStatusNote('');
@@ -154,6 +225,7 @@ export default function DODetailPage() {
                 setPodName('');
                 setPodDate(new Date().toISOString().split('T')[0]);
                 setPodNote('');
+                setActualCargoItems([]);
                 addToast('success', 'Surat jalan diselesaikan dan POD tersimpan');
             } else {
                 addToast('success', `Status DO diperbarui ke ${DO_STATUS_MAP[newStatus]?.label || newStatus}`);
@@ -270,21 +342,28 @@ export default function DODetailPage() {
                                 <tr>
                                     <td>${index + 1}</td>
                                     <td>${item.orderItemDescription || '-'}</td>
-                                    <td class="r">${item.orderItemQtyKoli || 0}</td>
-                                    <td>${[
-                                        formatWeightDisplay({
-                                            weightKg: item.orderItemWeight,
-                                            weightInputValue: item.orderItemWeightInputValue,
-                                            weightInputUnit: item.orderItemWeightInputUnit,
-                                            includeCanonical: true,
-                                        }),
-                                        formatVolumeDisplay({
-                                            volumeM3: item.orderItemVolumeM3,
-                                            volumeInputValue: item.orderItemVolumeInputValue,
-                                            volumeInputUnit: item.orderItemVolumeInputUnit,
-                                            includeCanonical: true,
-                                        }),
-                                    ].filter(value => value !== '-').join(' / ') || '-'}</td>
+                                    <td class="r">${item.actualQtyKoli ?? item.orderItemQtyKoli ?? 0}</td>
+                                    <td>${formatCargoSummary(
+                                        item.actualQtyKoli !== undefined || item.actualWeightKg !== undefined || item.actualVolumeM3 !== undefined
+                                            ? {
+                                                qtyKoli: item.actualQtyKoli,
+                                                weightKg: item.actualWeightKg,
+                                                weightInputValue: item.actualWeightInputValue,
+                                                weightInputUnit: item.actualWeightInputUnit,
+                                                volumeM3: item.actualVolumeM3,
+                                                volumeInputValue: item.actualVolumeInputValue,
+                                                volumeInputUnit: item.actualVolumeInputUnit,
+                                            }
+                                            : {
+                                                qtyKoli: item.orderItemQtyKoli,
+                                                weightKg: item.orderItemWeight,
+                                                weightInputValue: item.orderItemWeightInputValue,
+                                                weightInputUnit: item.orderItemWeightInputUnit,
+                                                volumeM3: item.orderItemVolumeM3,
+                                                volumeInputValue: item.orderItemVolumeInputValue,
+                                                volumeInputUnit: item.orderItemVolumeInputUnit,
+                                            }
+                                    )}</td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -367,6 +446,17 @@ export default function DODetailPage() {
 
     const nextStatuses = getNextStatuses(doData.status);
     const isCompletingDelivery = newStatus === 'DELIVERED';
+    const actualCargoReady = actualCargoItems.every(item => {
+        const qty = Number(item.actualQtyKoli);
+        const weight = Number(item.actualWeightInputValue);
+        const volume = Number(item.actualVolumeInputValue);
+        return (
+            Number.isFinite(qty) &&
+            qty > 0 &&
+            (!item.requireWeight || (Number.isFinite(weight) && weight > 0)) &&
+            (!item.requireVolume || (Number.isFinite(volume) && volume > 0))
+        );
+    });
     const hasLiveCoordinates = typeof doData.trackingLastLat === 'number' && typeof doData.trackingLastLng === 'number';
     const trackingMapUrl = hasLiveCoordinates ? `https://www.google.com/maps?q=${doData.trackingLastLat},${doData.trackingLastLng}` : null;
     const trackingLat = hasLiveCoordinates ? doData.trackingLastLat as number : null;
@@ -393,17 +483,7 @@ export default function DODetailPage() {
                 </div>
                 <div className="page-actions">
                     {nextStatuses.length > 0 && (
-                        <button
-                            className="btn btn-primary"
-                            onClick={() => {
-                                setNewStatus('');
-                                setStatusNote('');
-                                setPodName('');
-                                setPodDate(new Date().toISOString().split('T')[0]);
-                                setPodNote('');
-                                setShowStatusModal(true);
-                            }}
-                        >
+                        <button className="btn btn-primary" onClick={openStatusModal}>
                             <Truck size={16} /> {nextStatuses.includes('DELIVERED') ? 'Lanjut / Selesaikan DO' : 'Ubah Status'}
                         </button>
                     )}
@@ -449,6 +529,18 @@ export default function DODetailPage() {
                             <div className="detail-item"><div className="detail-label">Layanan</div><div className="detail-value">{doData.serviceName || '-'}</div></div>
                             <div className="detail-item"><div className="detail-label">Telepon Penerima</div><div className="detail-value">{doData.receiverPhone || '-'}</div></div>
                         </div>
+                        {doData.cargoFinalizedAt && (
+                            <div className="detail-row">
+                                <div className="detail-item">
+                                    <div className="detail-label">Muatan Aktual Final</div>
+                                    <div className="detail-value">{formatDateTime(doData.cargoFinalizedAt)}</div>
+                                </div>
+                                <div className="detail-item">
+                                    <div className="detail-label">Difinalkan Oleh</div>
+                                    <div className="detail-value">{doData.cargoFinalizedByName || '-'}</div>
+                                </div>
+                            </div>
+                        )}
                         <div className="mt-2"><div className="detail-label">Alamat Pickup</div><div className="detail-value">{doData.pickupAddress || '-'}</div></div>
                         {doData.notes && <div className="mt-2"><div className="detail-label">Catatan</div><div className="detail-value">{doData.notes}</div></div>}
                     </div>
@@ -534,9 +626,9 @@ export default function DODetailPage() {
                     {!editingTarip ? (
                         <div className="detail-row">
                             <div className="detail-item">
-                                <div className="detail-label">Tarip per kg</div>
+                                <div className="detail-label">Tarif Borongan per DO</div>
                                 <div className="detail-value font-semibold" style={{ color: doData.taripBorongan ? 'var(--color-primary)' : 'var(--color-gray-400)' }}>
-                                    {doData.taripBorongan ? `Rp ${doData.taripBorongan.toLocaleString('id')}/kg` : 'Belum diisi'}
+                                    {doData.taripBorongan ? `Rp ${doData.taripBorongan.toLocaleString('id')}` : 'Belum diisi'}
                                 </div>
                             </div>
                             <div className="detail-item">
@@ -548,7 +640,7 @@ export default function DODetailPage() {
                         <div>
                             <div className="form-row">
                                 <div className="form-group">
-                                    <label className="form-label">Tarip per kg (Rp) <span className="required">*</span></label>
+                                    <label className="form-label">Tarif Borongan per DO (Rp) <span className="required">*</span></label>
                                     <input type="number" className="form-input" value={taripBorongan || ''} onChange={e => setTaripBorongan(Number(e.target.value))} placeholder="Contoh: 50" />
                                 </div>
                                 <div className="form-group">
@@ -577,26 +669,41 @@ export default function DODetailPage() {
                             {doItems.map(item => (
                                 <tr key={item._id}>
                                     <td className="font-medium">{item.orderItemDescription}</td>
-                                    <td>{item.orderItemQtyKoli}</td>
                                     <td>
+                                        <div className="text-muted text-xs">Rencana</div>
+                                        <div className="font-medium">{item.orderItemQtyKoli || 0} koli</div>
+                                        <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>Aktual</div>
+                                        <div className="font-medium" style={{ color: item.actualQtyKoli !== undefined ? 'var(--color-success)' : 'var(--color-gray-500)' }}>
+                                            {item.actualQtyKoli !== undefined ? `${item.actualQtyKoli} koli` : 'Belum final'}
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div className="text-muted text-xs">Rencana</div>
                                         <div className="font-medium">
-                                            {formatWeightDisplay({
+                                            {formatCargoSummary({
+                                                qtyKoli: item.orderItemQtyKoli,
                                                 weightKg: item.orderItemWeight,
                                                 weightInputValue: item.orderItemWeightInputValue,
                                                 weightInputUnit: item.orderItemWeightInputUnit,
-                                                includeCanonical: true,
+                                                volumeM3: item.orderItemVolumeM3,
+                                                volumeInputValue: item.orderItemVolumeInputValue,
+                                                volumeInputUnit: item.orderItemVolumeInputUnit,
                                             })}
                                         </div>
-                                        {((item.orderItemVolumeInputValue || 0) > 0 || (item.orderItemVolumeM3 || 0) > 0) && (
-                                            <div className="text-muted text-sm">
-                                                {formatVolumeDisplay({
-                                                    volumeM3: item.orderItemVolumeM3,
-                                                    volumeInputValue: item.orderItemVolumeInputValue,
-                                                    volumeInputUnit: item.orderItemVolumeInputUnit,
-                                                    includeCanonical: true,
-                                                })}
-                                            </div>
-                                        )}
+                                        <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>Aktual</div>
+                                        <div className="font-medium" style={{ color: item.actualQtyKoli !== undefined ? 'var(--color-success)' : 'var(--color-gray-500)' }}>
+                                            {item.actualQtyKoli !== undefined || item.actualWeightKg !== undefined || item.actualVolumeM3 !== undefined
+                                                ? formatCargoSummary({
+                                                    qtyKoli: item.actualQtyKoli,
+                                                    weightKg: item.actualWeightKg,
+                                                    weightInputValue: item.actualWeightInputValue,
+                                                    weightInputUnit: item.actualWeightInputUnit,
+                                                    volumeM3: item.actualVolumeM3,
+                                                    volumeInputValue: item.actualVolumeInputValue,
+                                                    volumeInputUnit: item.actualVolumeInputUnit,
+                                                })
+                                                : 'Belum final'}
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
@@ -647,7 +754,7 @@ export default function DODetailPage() {
                             {isCompletingDelivery && (
                                 <>
                                     <div style={{ background: 'var(--color-success-light)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: '0.8rem', color: 'var(--color-success)' }}>
-                                        Status selesai ditetapkan oleh admin. Isi data penerimaan di bawah ini, lalu sistem akan menyimpan POD sekaligus menandai DO sebagai <strong>Delivered</strong>.
+                                        Status selesai ditetapkan oleh admin. Isi POD dan muatan aktual di bawah ini. Sistem akan memakai muatan aktual sebagai realisasi akhir DO, mengembalikan selisih rencana ke pending bila perlu, lalu menandai DO sebagai <strong>Delivered</strong>.
                                     </div>
                                     <div className="form-group">
                                         <label className="form-label">Nama Penerima POD <span className="required">*</span></label>
@@ -661,6 +768,91 @@ export default function DODetailPage() {
                                         <label className="form-label">Catatan POD</label>
                                         <textarea className="form-textarea" rows={2} value={podNote} onChange={e => setPodNote(e.target.value)} disabled={updatingStatus} />
                                     </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Muatan Aktual per Item <span className="required">*</span></label>
+                                        <div style={{ display: 'grid', gap: '0.75rem' }}>
+                                            {actualCargoItems.map(item => (
+                                                <div key={item.deliveryOrderItemRef} style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)' }}>
+                                                    <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>{item.description}</div>
+                                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+                                                        Rencana: {formatCargoSummary({
+                                                            qtyKoli: item.plannedQtyKoli,
+                                                            weightKg: item.plannedWeightKg,
+                                                            weightInputValue: item.plannedWeightInputValue,
+                                                            weightInputUnit: item.plannedWeightInputUnit,
+                                                            volumeM3: item.plannedVolumeM3,
+                                                            volumeInputValue: item.plannedVolumeInputValue,
+                                                            volumeInputUnit: item.plannedVolumeInputUnit,
+                                                        })}
+                                                    </div>
+                                                    <div className="form-row">
+                                                        <div className="form-group">
+                                                            <label className="form-label">Koli Aktual <span className="required">*</span></label>
+                                                            <input
+                                                                type="number"
+                                                                min="0"
+                                                                step="0.01"
+                                                                className="form-input"
+                                                                value={item.actualQtyKoli}
+                                                                onChange={e => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualQtyKoli', e.target.value)}
+                                                                disabled={updatingStatus}
+                                                            />
+                                                        </div>
+                                                        <div className="form-group">
+                                                            <label className="form-label">Berat Aktual {item.requireWeight && <span className="required">*</span>}</label>
+                                                            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
+                                                                <input
+                                                                    type="number"
+                                                                    min="0"
+                                                                    step="0.01"
+                                                                    className="form-input"
+                                                                    value={item.actualWeightInputValue}
+                                                                    onChange={e => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualWeightInputValue', e.target.value)}
+                                                                    disabled={updatingStatus}
+                                                                />
+                                                                <select
+                                                                    className="form-select"
+                                                                    value={item.actualWeightInputUnit}
+                                                                    onChange={e => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualWeightInputUnit', e.target.value)}
+                                                                    disabled={updatingStatus}
+                                                                >
+                                                                    {WEIGHT_INPUT_UNIT_OPTIONS.map(option => (
+                                                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="form-row">
+                                                        <div className="form-group">
+                                                            <label className="form-label">Volume Aktual {item.requireVolume && <span className="required">*</span>}</label>
+                                                            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
+                                                                <input
+                                                                    type="number"
+                                                                    min="0"
+                                                                    step="0.01"
+                                                                    className="form-input"
+                                                                    value={item.actualVolumeInputValue}
+                                                                    onChange={e => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualVolumeInputValue', e.target.value)}
+                                                                    disabled={updatingStatus}
+                                                                />
+                                                                <select
+                                                                    className="form-select"
+                                                                    value={item.actualVolumeInputUnit}
+                                                                    onChange={e => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualVolumeInputUnit', e.target.value)}
+                                                                    disabled={updatingStatus}
+                                                                >
+                                                                    {VOLUME_INPUT_UNIT_OPTIONS.map(option => (
+                                                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
                                 </>
                             )}
                             <div className="form-group">
@@ -670,7 +862,7 @@ export default function DODetailPage() {
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setShowStatusModal(false)} disabled={updatingStatus}>Batal</button>
-                            <button className={`btn ${isCompletingDelivery ? 'btn-success' : 'btn-primary'}`} onClick={updateDOStatus} disabled={!newStatus || updatingStatus || (isCompletingDelivery && (!podName.trim() || !podDate))}>
+                            <button className={`btn ${isCompletingDelivery ? 'btn-success' : 'btn-primary'}`} onClick={updateDOStatus} disabled={!newStatus || updatingStatus || (isCompletingDelivery && (!podName.trim() || !podDate || !actualCargoReady))}>
                                 <Save size={16} /> {updatingStatus ? 'Menyimpan...' : (isCompletingDelivery ? 'Selesaikan DO' : 'Simpan')}
                             </button>
                         </div>

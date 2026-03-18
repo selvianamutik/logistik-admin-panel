@@ -23,11 +23,22 @@ export function convertWeightToKg(value: number, unit: WeightInputUnit) {
   return unit === 'TON' ? value * 1000 : value;
 }
 
+export function convertKgToWeightInputValue(valueKg: number, unit: WeightInputUnit) {
+  return unit === 'TON' ? valueKg / 1000 : valueKg;
+}
+
 export function convertVolumeToM3(value: number, unit: VolumeInputUnit) {
   if (unit === 'LITER') {
     return value / 1000;
   }
   return value;
+}
+
+export function convertM3ToVolumeInputValue(valueM3: number, unit: VolumeInputUnit) {
+  if (unit === 'LITER') {
+    return valueM3 * 1000;
+  }
+  return valueM3;
 }
 
 export function formatWeightDisplay(input: {

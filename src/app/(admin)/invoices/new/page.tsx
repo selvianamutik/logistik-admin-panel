@@ -154,8 +154,8 @@ export default function NewNotaPage() {
                 .map(item => item.orderItemDescription?.trim())
                 .filter((value): value is string => Boolean(value))
         )];
-        const collie = relatedItems.reduce((sum, item) => sum + Number(item.orderItemQtyKoli || 0), 0);
-        const beratKg = relatedItems.reduce((sum, item) => sum + Number(item.orderItemWeight || 0), 0);
+        const collie = relatedItems.reduce((sum, item) => sum + Number(item.actualQtyKoli ?? item.orderItemQtyKoli ?? 0), 0);
+        const beratKg = relatedItems.reduce((sum, item) => sum + Number(item.actualWeightKg ?? item.orderItemWeight ?? 0), 0);
 
         return {
             id: Math.random().toString(36).slice(2),

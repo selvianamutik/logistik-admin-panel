@@ -53,6 +53,8 @@ type FreightNotaDeliveryOrderItemSource = {
     orderItemDescription?: string;
     orderItemQtyKoli?: number;
     orderItemWeight?: number;
+    actualQtyKoli?: number;
+    actualWeightKg?: number;
 };
 
 function summarizeDeliveryOrderItems(items: FreightNotaDeliveryOrderItemSource[]) {
@@ -61,8 +63,14 @@ function summarizeDeliveryOrderItems(items: FreightNotaDeliveryOrderItemSource[]
             .map(item => normalizeOptionalText(item.orderItemDescription))
             .filter((value): value is string => Boolean(value))
     )];
-    const collie = items.reduce((sum, item) => sum + normalizeNumber(item.orderItemQtyKoli || 0), 0);
-    const beratKg = items.reduce((sum, item) => sum + normalizeNumber(item.orderItemWeight || 0), 0);
+    const collie = items.reduce(
+        (sum, item) => sum + normalizeNumber(item.actualQtyKoli ?? item.orderItemQtyKoli ?? 0),
+        0
+    );
+    const beratKg = items.reduce(
+        (sum, item) => sum + normalizeNumber(item.actualWeightKg ?? item.orderItemWeight ?? 0),
+        0
+    );
 
     return {
         barang: descriptions.join(', '),
@@ -644,7 +652,9 @@ export async function handleFreightNotaCreate(
                 deliveryOrderRef,
                 orderItemDescription,
                 orderItemQtyKoli,
-                orderItemWeight
+                orderItemWeight,
+                actualQtyKoli,
+                actualWeightKg
             }`,
             { ids: uniqueDoRefs }
         )

@@ -262,6 +262,9 @@ export interface DeliveryOrder {
   trackingLastAccuracyM?: number;
   trackingLastSpeedKph?: number;
   trackingLastSource?: 'DRIVER_APP';
+  cargoFinalizedAt?: string;
+  cargoFinalizedBy?: string;
+  cargoFinalizedByName?: string;
 }
 
 export interface DeliveryOrderItem {
@@ -279,6 +282,13 @@ export interface DeliveryOrderItem {
   orderItemVolumeInputUnit?: VolumeInputUnit;
   shippedQtyKoli?: number;
   shippedWeight?: number;
+  actualQtyKoli?: number;
+  actualWeightKg?: number;
+  actualVolumeM3?: number;
+  actualWeightInputValue?: number;
+  actualWeightInputUnit?: WeightInputUnit;
+  actualVolumeInputValue?: number;
+  actualVolumeInputUnit?: VolumeInputUnit;
 }
 
 // ── Tracking Log ──
