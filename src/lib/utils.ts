@@ -127,6 +127,14 @@ export const TIRE_POSITION_MAP: Record<string, string> = {
     SPARE: 'Cadangan',
 };
 
+export const TIRE_ASSET_STATUS_MAP: Record<string, { label: string; color: string }> = {
+    IN_USE: { label: 'Terpasang', color: 'success' },
+    SPARE: { label: 'Serep', color: 'info' },
+    IN_WAREHOUSE: { label: 'Di Gudang', color: 'gray' },
+    LOANED_OUT: { label: 'Dipinjam Keluar', color: 'warning' },
+    SCRAPPED: { label: 'Afkir', color: 'danger' },
+};
+
 export const TIRE_ACTION_MAP: Record<string, string> = {
     PATCH: 'Tambal',
     REPLACE_NEW: 'Ganti Baru',

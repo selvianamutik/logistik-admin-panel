@@ -2,11 +2,57 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '../../layout';
-import { Plus, Search, Disc3, CheckCircle, Clock } from 'lucide-react';
-import { formatDate } from '@/lib/utils';
+import { Plus, Search, Disc3, CheckCircle, Warehouse, ExternalLink } from 'lucide-react';
+import { formatDate, TIRE_ASSET_STATUS_MAP } from '@/lib/utils';
+import {
+    formatTireSlotLabel,
+    INTERNAL_TIRE_SLOT_CODES,
+    resolveTireAssetStatus,
+    resolveTireHolderType,
+    resolveTirePlacementLabel,
+    resolveTireSlotCode,
+    TIRE_HOLDER_TYPE_OPTIONS,
+    TIRE_STATUS_OPTIONS,
+    type TireAssetStatus,
+    type TireHolderType,
+} from '@/lib/tire-slots';
 import type { TireEvent, Vehicle } from '@/lib/types';
 
 const TIRE_TYPES = ['Tubeless', 'Tube Type', 'Solid'] as const;
+
+type TireFormState = {
+    tireCode: string;
+    holderType: TireHolderType;
+    status: TireAssetStatus;
+    vehicleRef: string;
+    slotCode: string;
+    tireType: 'Tubeless' | 'Tube Type' | 'Solid';
+    tireBrand: string;
+    tireSize: string;
+    installDate: string;
+    notes: string;
+    externalPartyName: string;
+    externalPlateNumber: string;
+};
+
+const DEFAULT_FORM: TireFormState = {
+    tireCode: '',
+    holderType: 'INTERNAL_VEHICLE',
+    status: 'IN_USE',
+    vehicleRef: '',
+    slotCode: '1L',
+    tireType: 'Tubeless',
+    tireBrand: '',
+    tireSize: '',
+    installDate: new Date().toISOString().split('T')[0],
+    notes: '',
+    externalPartyName: '',
+    externalPlateNumber: '',
+};
+
+function statusFilterMatch(event: TireEvent, filter: 'all' | TireAssetStatus) {
+    return filter === 'all' || resolveTireAssetStatus(event) === filter;
+}
 
 export default function TiresPage() {
     const { addToast } = useToast();
@@ -15,21 +61,12 @@ export default function TiresPage() {
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [filterVehicle, setFilterVehicle] = useState('');
-    const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'replaced'>('all');
+    const [filterStatus, setFilterStatus] = useState<'all' | TireAssetStatus>('all');
     const [showModal, setShowModal] = useState(false);
     const [editTarget, setEditTarget] = useState<TireEvent | null>(null);
     const [saving, setSaving] = useState(false);
     const [deletingId, setDeletingId] = useState<string | null>(null);
-    const [form, setForm] = useState({
-        vehicleRef: '',
-        posisi: '',
-        tireType: 'Tubeless' as 'Tubeless' | 'Tube Type' | 'Solid',
-        tireBrand: '',
-        tireSize: '',
-        installDate: new Date().toISOString().split('T')[0],
-        replaceDate: '',
-        notes: '',
-    });
+    const [form, setForm] = useState<TireFormState>(DEFAULT_FORM);
 
     const loadData = useCallback(async () => {
         const fetchEntity = async <T,>(url: string) => {
@@ -60,50 +97,94 @@ export default function TiresPage() {
         void loadData();
     }, [loadData]);
 
+    const selectableVehicles = vehicles.filter(vehicle => vehicle.status !== 'SOLD' || vehicle._id === editTarget?.vehicleRef);
+    const internalSlots = INTERNAL_TIRE_SLOT_CODES.filter(code => form.status === 'SPARE' ? code.startsWith('SP') : !code.startsWith('SP'));
+    const resolvedEvents = events.map(event => {
+        const holderType = resolveTireHolderType(event);
+        const status = resolveTireAssetStatus(event);
+        const slotCode = resolveTireSlotCode(event);
+        const slotLabel = slotCode ? formatTireSlotLabel(slotCode) : undefined;
+        return {
+            ...event,
+            holderType,
+            status,
+            tireCodeLabel: event.tireCode?.trim() || 'Belum dikodekan',
+            slotCode,
+            slotLabel,
+            placementLabel: resolveTirePlacementLabel({ ...event, holderType, status, slotCode }),
+        };
+    });
+
+    const resetForm = () => setForm({ ...DEFAULT_FORM, installDate: new Date().toISOString().split('T')[0] });
+
     const openAdd = () => {
         setEditTarget(null);
-        setForm({ vehicleRef: '', posisi: '', tireType: 'Tubeless', tireBrand: '', tireSize: '', installDate: new Date().toISOString().split('T')[0], replaceDate: '', notes: '' });
+        resetForm();
         setShowModal(true);
     };
 
-    const openEdit = (ev: TireEvent) => {
-        setEditTarget(ev);
+    const openEdit = (event: TireEvent) => {
+        const holderType = resolveTireHolderType(event);
+        const status = resolveTireAssetStatus(event);
+        const slotCode = resolveTireSlotCode(event) || '';
+        setEditTarget(event);
         setForm({
-            vehicleRef: ev.vehicleRef,
-            posisi: ev.posisi,
-            tireType: ev.tireType,
-            tireBrand: ev.tireBrand,
-            tireSize: ev.tireSize,
-            installDate: ev.installDate,
-            replaceDate: ev.replaceDate || '',
-            notes: ev.notes || '',
+            tireCode: event.tireCode || '',
+            holderType,
+            status,
+            vehicleRef: event.vehicleRef || '',
+            slotCode,
+            tireType: event.tireType,
+            tireBrand: event.tireBrand,
+            tireSize: event.tireSize,
+            installDate: event.installDate,
+            notes: event.notes || '',
+            externalPartyName: event.externalPartyName || '',
+            externalPlateNumber: event.externalPlateNumber || '',
         });
         setShowModal(true);
     };
 
+    const updateForm = <K extends keyof TireFormState>(key: K, value: TireFormState[K]) => {
+        setForm(prev => ({ ...prev, [key]: value }));
+    };
+
     const handleSave = async () => {
-        if (!form.vehicleRef) { addToast('error', 'Pilih kendaraan'); return; }
-        if (!form.posisi) { addToast('error', 'Isi posisi ban'); return; }
+        if (!form.tireCode) { addToast('error', 'Isi kode ban'); return; }
         if (!form.tireBrand) { addToast('error', 'Isi merk/tipe ban'); return; }
         if (!form.tireSize) { addToast('error', 'Isi ukuran ban'); return; }
+        if (form.holderType === 'INTERNAL_VEHICLE' && !form.vehicleRef) { addToast('error', 'Pilih kendaraan'); return; }
+        if (form.holderType === 'INTERNAL_VEHICLE' && !form.slotCode) { addToast('error', 'Pilih slot ban'); return; }
+        if (form.holderType === 'EXTERNAL_VEHICLE' && !form.externalPartyName && !form.externalPlateNumber) {
+            addToast('error', 'Isi nama pihak luar atau plat luar');
+            return;
+        }
+
         setSaving(true);
         try {
-            const veh = vehicles.find(v => v._id === form.vehicleRef);
-            const payload = { ...form, vehiclePlate: veh?.plateNumber, replaceDate: form.replaceDate || undefined };
+            const vehicle = vehicles.find(item => item._id === form.vehicleRef);
+            const payload = {
+                ...form,
+                vehiclePlate: vehicle?.plateNumber,
+                slotLabel: form.slotCode ? formatTireSlotLabel(form.slotCode) : undefined,
+            };
+
             if (editTarget) {
                 const res = await fetch('/api/data', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ entity: 'tire-events', action: 'update', data: { id: editTarget._id, updates: payload } }),
                 });
                 const result = await res.json();
                 if (!res.ok) {
-                    addToast('error', result.error || 'Gagal memperbarui catatan ban');
+                    addToast('error', result.error || 'Gagal memperbarui data ban');
                     return;
                 }
                 addToast('success', 'Data ban berhasil diperbarui');
             } else {
                 const res = await fetch('/api/data', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ entity: 'tire-events', data: payload }),
                 });
                 const result = await res.json();
@@ -114,9 +195,13 @@ export default function TiresPage() {
                 addToast('success', 'Ban berhasil dicatat');
             }
             setShowModal(false);
-            loadData();
-        } catch { addToast('error', 'Gagal menyimpan'); }
-        finally { setSaving(false); }
+            resetForm();
+            await loadData();
+        } catch {
+            addToast('error', 'Gagal menyimpan data ban');
+        } finally {
+            setSaving(false);
+        }
     };
 
     const handleDelete = async (id: string) => {
@@ -124,48 +209,61 @@ export default function TiresPage() {
         setDeletingId(id);
         try {
             const res = await fetch('/api/data', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ entity: 'tire-events', action: 'delete', data: { id } }),
             });
             const result = await res.json();
             if (!res.ok) {
-                addToast('error', result.error || 'Gagal menghapus catatan ban');
+                addToast('error', result.error || 'Gagal menghapus ban');
                 return;
             }
-            addToast('success', 'Catatan ban dihapus');
-            loadData();
-        } catch { addToast('error', 'Gagal menghapus'); }
-        finally { setDeletingId(current => current === id ? null : current); }
+            addToast('success', 'Data ban dihapus');
+            await loadData();
+        } catch {
+            addToast('error', 'Gagal menghapus ban');
+        } finally {
+            setDeletingId(current => current === id ? null : current);
+        }
     };
 
-    const filtered = events.filter(e => {
-        const matchSearch = !search || e.vehiclePlate?.toLowerCase().includes(search.toLowerCase()) || e.posisi?.toLowerCase().includes(search.toLowerCase()) || e.tireBrand?.toLowerCase().includes(search.toLowerCase());
-        const matchVehicle = !filterVehicle || e.vehicleRef === filterVehicle;
-        const matchStatus = filterStatus === 'all' || (filterStatus === 'active' ? !e.replaceDate : !!e.replaceDate);
-        return matchSearch && matchVehicle && matchStatus;
+    const filtered = resolvedEvents.filter(event => {
+        const text = [
+            event.tireCodeLabel,
+            event.tireBrand,
+            event.tireSize,
+            event.vehiclePlate,
+            event.placementLabel,
+            event.externalPartyName,
+            event.externalPlateNumber,
+        ].filter(Boolean).join(' ').toLowerCase();
+        const matchSearch = !search || text.includes(search.toLowerCase());
+        const matchVehicle = !filterVehicle || event.vehicleRef === filterVehicle;
+        return matchSearch && matchVehicle && statusFilterMatch(event, filterStatus);
     });
 
-    const activeBans = filtered.filter(e => !e.replaceDate);
-    const replacedBans = filtered.filter(e => !!e.replaceDate);
-    const selectableVehicles = vehicles.filter(vehicle => vehicle.status !== 'SOLD' || vehicle._id === editTarget?.vehicleRef);
+    const mountedCount = resolvedEvents.filter(event => event.status === 'IN_USE').length;
+    const spareCount = resolvedEvents.filter(event => event.status === 'SPARE').length;
+    const warehouseCount = resolvedEvents.filter(event => event.status === 'IN_WAREHOUSE').length;
+    const loanedCount = resolvedEvents.filter(event => event.status === 'LOANED_OUT').length;
 
     return (
         <div>
             <div className="page-header">
                 <div className="page-header-left">
                     <h1 className="page-title">Manajemen Ban</h1>
-                    <p className="page-subtitle">Catat dan pantau kondisi ban tiap kendaraan</p>
+                    <p className="page-subtitle">Lacak ban per kode unik, posisi slot, serep, gudang, dan pinjam keluar.</p>
                 </div>
                 <div className="page-actions">
                     <button className="btn btn-primary" onClick={openAdd}><Plus size={16} /> Catat Ban</button>
                 </div>
             </div>
 
-            {/* KPI */}
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
-                <div className="kpi-card"><div className="kpi-icon success"><CheckCircle size={20} /></div><div className="kpi-content"><div className="kpi-label">Ban Terpasang</div><div className="kpi-value">{events.filter(e => !e.replaceDate).length}</div></div></div>
-                <div className="kpi-card"><div className="kpi-icon warning"><Clock size={20} /></div><div className="kpi-content"><div className="kpi-label">Sudah Diganti</div><div className="kpi-value">{events.filter(e => !!e.replaceDate).length}</div></div></div>
-                <div className="kpi-card"><div className="kpi-icon info"><Disc3 size={20} /></div><div className="kpi-content"><div className="kpi-label">Total Catatan</div><div className="kpi-value">{events.length}</div></div></div>
+                <div className="kpi-card"><div className="kpi-icon success"><CheckCircle size={20} /></div><div className="kpi-content"><div className="kpi-label">Terpasang</div><div className="kpi-value">{mountedCount}</div></div></div>
+                <div className="kpi-card"><div className="kpi-icon info"><Disc3 size={20} /></div><div className="kpi-content"><div className="kpi-label">Serep</div><div className="kpi-value">{spareCount}</div></div></div>
+                <div className="kpi-card"><div className="kpi-icon warning"><ExternalLink size={20} /></div><div className="kpi-content"><div className="kpi-label">Dipinjam Keluar</div><div className="kpi-value">{loanedCount}</div></div></div>
+                <div className="kpi-card"><div className="kpi-icon primary"><Warehouse size={20} /></div><div className="kpi-content"><div className="kpi-label">Di Gudang</div><div className="kpi-value">{warehouseCount}</div></div></div>
             </div>
 
             <div className="table-container">
@@ -173,16 +271,15 @@ export default function TiresPage() {
                     <div className="table-toolbar-left">
                         <div className="table-search">
                             <Search size={16} className="table-search-icon" />
-                            <input type="text" placeholder="Cari plat, posisi, merk..." value={search} onChange={e => setSearch(e.target.value)} />
+                            <input type="text" placeholder="Cari kode ban, plat, lokasi, merk..." value={search} onChange={e => setSearch(e.target.value)} />
                         </div>
                         <select className="form-select" style={{ width: 'auto' }} value={filterVehicle} onChange={e => setFilterVehicle(e.target.value)}>
                             <option value="">Semua Kendaraan</option>
-                            {vehicles.map(v => <option key={v._id} value={v._id}>{v.plateNumber}</option>)}
+                            {vehicles.map(vehicle => <option key={vehicle._id} value={vehicle._id}>{vehicle.plateNumber}</option>)}
                         </select>
-                        <select className="form-select" style={{ width: 'auto' }} value={filterStatus} onChange={e => setFilterStatus(e.target.value as 'all' | 'active' | 'replaced')}>
+                        <select className="form-select" style={{ width: 'auto' }} value={filterStatus} onChange={e => setFilterStatus(e.target.value as 'all' | TireAssetStatus)}>
                             <option value="all">Semua Status</option>
-                            <option value="active">Terpasang</option>
-                            <option value="replaced">Sudah Diganti</option>
+                            {TIRE_STATUS_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                         </select>
                     </div>
                 </div>
@@ -190,43 +287,50 @@ export default function TiresPage() {
                     <table>
                         <thead>
                             <tr>
-                                <th>Kendaraan</th>
-                                <th>Posisi</th>
-                                <th>Jenis</th>
-                                <th>Merk & Tipe</th>
-                                <th>Ukuran</th>
-                                <th>Tgl Pasang</th>
-                                <th>Tgl Ganti</th>
+                                <th>Kode Ban</th>
+                                <th>Lokasi Saat Ini</th>
                                 <th>Status</th>
+                                <th>Merk & Ukuran</th>
+                                <th>Tgl Catat</th>
                                 <th>Catatan</th>
                                 <th></th>
                             </tr>
                         </thead>
                         <tbody>
-                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
+                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 filtered.length === 0 ? (
-                                    <tr><td colSpan={10}>
+                                    <tr><td colSpan={7}>
                                         <div className="empty-state">
                                             <Disc3 size={48} className="empty-state-icon" />
-                                            <div className="empty-state-title">Belum ada catatan ban</div>
-                                            <div className="empty-state-text">Catat ban yang terpasang pada tiap kendaraan</div>
+                                            <div className="empty-state-title">Belum ada ban tercatat</div>
+                                            <div className="empty-state-text">Tambahkan ban per kode unik agar perpindahan antar unit dan pinjam keluar bisa dilacak.</div>
                                         </div>
                                     </td></tr>
-                                ) : filtered.map(ev => (
-                                    <tr key={ev._id}>
-                                        <td className="font-medium">{ev.vehiclePlate || '-'}</td>
-                                        <td>{ev.posisi}</td>
-                                        <td><span className="badge badge-blue"><span className="badge-dot" />{ev.tireType}</span></td>
-                                        <td className="font-medium">{ev.tireBrand}</td>
-                                        <td className="font-mono">{ev.tireSize}</td>
-                                        <td className="text-muted">{formatDate(ev.installDate)}</td>
-                                        <td className="text-muted">{ev.replaceDate ? formatDate(ev.replaceDate) : <span style={{ color: 'var(--color-success)', fontWeight: 600 }}>Terpasang</span>}</td>
-                                        <td>{ev.replaceDate ? <span className="badge badge-gray"><span className="badge-dot" />Diganti</span> : <span className="badge badge-green"><span className="badge-dot" />Aktif</span>}</td>
-                                        <td className="text-muted">{ev.notes || '-'}</td>
+                                ) : filtered.map(event => (
+                                    <tr key={event._id}>
+                                        <td>
+                                            <div className="font-medium">{event.tireCodeLabel}</div>
+                                            <div className="text-muted text-sm">{event.tireType}</div>
+                                        </td>
+                                        <td>
+                                            <div className="font-medium">{event.placementLabel}</div>
+                                            {event.slotCode && <div className="text-muted text-sm">{event.slotCode} - {event.slotLabel || formatTireSlotLabel(event.slotCode)}</div>}
+                                        </td>
+                                        <td>
+                                            <span className={`badge badge-${TIRE_ASSET_STATUS_MAP[event.status]?.color || 'gray'}`}>
+                                                <span className="badge-dot" /> {TIRE_ASSET_STATUS_MAP[event.status]?.label || event.status}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <div className="font-medium">{event.tireBrand}</div>
+                                            <div className="font-mono text-sm">{event.tireSize}</div>
+                                        </td>
+                                        <td className="text-muted">{formatDate(event.installDate)}</td>
+                                        <td className="text-muted">{event.notes || '-'}</td>
                                         <td>
                                             <div style={{ display: 'flex', gap: 4 }}>
-                                                <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => openEdit(ev)} disabled={deletingId === ev._id}>Edit</button>
-                                                <button className="btn" style={{ padding: '4px 10px', fontSize: '0.75rem', background: 'var(--color-danger)', color: 'white' }} onClick={() => handleDelete(ev._id)} disabled={deletingId === ev._id}>{deletingId === ev._id ? 'Menghapus...' : 'Hapus'}</button>
+                                                <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => openEdit(event)} disabled={deletingId === event._id}>Edit</button>
+                                                <button className="btn" style={{ padding: '4px 10px', fontSize: '0.75rem', background: 'var(--color-danger)', color: 'white' }} onClick={() => handleDelete(event._id)} disabled={deletingId === event._id}>{deletingId === event._id ? 'Menghapus...' : 'Hapus'}</button>
                                             </div>
                                         </td>
                                     </tr>
@@ -236,67 +340,144 @@ export default function TiresPage() {
                 </div>
                 {filtered.length > 0 && (
                     <div className="pagination">
-                        <div className="pagination-info">{activeBans.length} terpasang | {replacedBans.length} sudah diganti | {filtered.length} total</div>
+                        <div className="pagination-info">{mountedCount} terpasang | {spareCount} serep | {loanedCount} dipinjam | {warehouseCount} gudang</div>
                     </div>
                 )}
             </div>
 
-            {/* Add/Edit Modal */}
             {showModal && (
                 <div className="modal-overlay" onClick={() => { if (!saving) setShowModal(false); }}>
-                    <div className="modal" onClick={e => e.stopPropagation()}>
+                    <div className="modal modal-lg" onClick={event => event.stopPropagation()}>
                         <div className="modal-header">
-                            <h3 className="modal-title">{editTarget ? 'Edit Catatan Ban' : 'Catat Ban'}</h3>
+                            <h3 className="modal-title">{editTarget ? 'Edit Ban' : 'Catat Ban'}</h3>
                             <button className="modal-close" onClick={() => setShowModal(false)} disabled={saving}>&times;</button>
                         </div>
                         <div className="modal-body">
-                            <div className="form-group">
-                                <label className="form-label">Kendaraan</label>
-                                <select className="form-select" value={form.vehicleRef} onChange={e => setForm({ ...form, vehicleRef: e.target.value })} disabled={!!editTarget}>
-                                    <option value="">Pilih kendaraan</option>
-                                    {selectableVehicles.map(v => <option key={v._id} value={v._id}>{v.plateNumber} - {v.brandModel}</option>)}
-                                </select>
-                            </div>
                             <div className="form-row">
                                 <div className="form-group">
-                                    <label className="form-label">Posisi Ban</label>
-                                    <input type="text" className="form-input" placeholder="cth: Depan Kiri, Belakang Kanan Luar" value={form.posisi} onChange={e => setForm({ ...form, posisi: e.target.value })} />
+                                    <label className="form-label">Kode Ban</label>
+                                    <input className="form-input" value={form.tireCode} onChange={e => updateForm('tireCode', e.target.value.toUpperCase())} placeholder="cth: BAN-0001" disabled={saving} />
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Jenis Ban</label>
-                                    <select className="form-select" value={form.tireType} onChange={e => setForm({ ...form, tireType: e.target.value as 'Tubeless' | 'Tube Type' | 'Solid' })}>
-                                        {TIRE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                                    <select className="form-select" value={form.tireType} onChange={e => updateForm('tireType', e.target.value as TireFormState['tireType'])} disabled={saving}>
+                                        {TIRE_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
                                     </select>
                                 </div>
                             </div>
+
                             <div className="form-row">
                                 <div className="form-group">
-                                    <label className="form-label">Merk & Tipe Ban</label>
-                                    <input type="text" className="form-input" placeholder="cth: Bridgestone R150" value={form.tireBrand} onChange={e => setForm({ ...form, tireBrand: e.target.value })} />
+                                    <label className="form-label">Lokasi Holder</label>
+                                    <select
+                                        className="form-select"
+                                        value={form.holderType}
+                                        onChange={e => {
+                                            const nextHolderType = e.target.value as TireHolderType;
+                                            updateForm('holderType', nextHolderType);
+                                            if (nextHolderType === 'EXTERNAL_VEHICLE') {
+                                                updateForm('status', 'LOANED_OUT');
+                                                updateForm('vehicleRef', '');
+                                                updateForm('slotCode', '');
+                                            } else if (nextHolderType === 'WAREHOUSE') {
+                                                updateForm('status', 'IN_WAREHOUSE');
+                                                updateForm('vehicleRef', '');
+                                                updateForm('slotCode', '');
+                                            } else {
+                                                updateForm('status', 'IN_USE');
+                                                updateForm('slotCode', '1L');
+                                            }
+                                        }}
+                                        disabled={saving}
+                                    >
+                                        {TIRE_HOLDER_TYPE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Status</label>
+                                    <select className="form-select" value={form.status} onChange={e => updateForm('status', e.target.value as TireAssetStatus)} disabled={saving}>
+                                        {TIRE_STATUS_OPTIONS
+                                            .filter(option => {
+                                                if (form.holderType === 'INTERNAL_VEHICLE') return option.value === 'IN_USE' || option.value === 'SPARE';
+                                                if (form.holderType === 'EXTERNAL_VEHICLE') return option.value === 'LOANED_OUT';
+                                                return option.value === 'IN_WAREHOUSE' || option.value === 'SCRAPPED';
+                                            })
+                                            .map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+
+                            {form.holderType === 'INTERNAL_VEHICLE' && (
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Kendaraan</label>
+                                        <select className="form-select" value={form.vehicleRef} onChange={e => updateForm('vehicleRef', e.target.value)} disabled={saving}>
+                                            <option value="">Pilih kendaraan</option>
+                                            {selectableVehicles.map(vehicle => <option key={vehicle._id} value={vehicle._id}>{vehicle.plateNumber} - {vehicle.brandModel}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Slot Posisi</label>
+                                        <select className="form-select" value={form.slotCode} onChange={e => updateForm('slotCode', e.target.value)} disabled={saving}>
+                                            <option value="">Pilih slot</option>
+                                            {internalSlots.map(slotCode => <option key={slotCode} value={slotCode}>{slotCode} - {formatTireSlotLabel(slotCode)}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                            )}
+
+                            {form.holderType === 'EXTERNAL_VEHICLE' && (
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Nama Pihak / Truk Luar</label>
+                                        <input className="form-input" value={form.externalPartyName} onChange={e => updateForm('externalPartyName', e.target.value)} placeholder="cth: CV Transport Jaya" disabled={saving} />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Plat Luar</label>
+                                        <input className="form-input" value={form.externalPlateNumber} onChange={e => updateForm('externalPlateNumber', e.target.value.toUpperCase())} placeholder="cth: B 9123 XYZ" disabled={saving} />
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Merk / Tipe Ban</label>
+                                    <input className="form-input" value={form.tireBrand} onChange={e => updateForm('tireBrand', e.target.value)} placeholder="cth: Bridgestone R150" disabled={saving} />
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Ukuran Ban</label>
-                                    <input type="text" className="form-input" placeholder="cth: 11.00-20, 295/80R22.5" value={form.tireSize} onChange={e => setForm({ ...form, tireSize: e.target.value })} />
+                                    <input className="form-input" value={form.tireSize} onChange={e => updateForm('tireSize', e.target.value)} placeholder="cth: 11.00-20 / 295-80R22.5" disabled={saving} />
                                 </div>
                             </div>
+
                             <div className="form-row">
                                 <div className="form-group">
-                                    <label className="form-label">Tanggal Pemakaian</label>
-                                    <input type="date" className="form-input" value={form.installDate} onChange={e => setForm({ ...form, installDate: e.target.value })} />
+                                    <label className="form-label">Tanggal Catat</label>
+                                    <input type="date" className="form-input" value={form.installDate} onChange={e => updateForm('installDate', e.target.value)} disabled={saving} />
                                 </div>
                                 <div className="form-group">
-                                    <label className="form-label">Tanggal Penggantian <span className="text-muted">(kosong = masih aktif)</span></label>
-                                    <input type="date" className="form-input" value={form.replaceDate} onChange={e => setForm({ ...form, replaceDate: e.target.value })} />
+                                        <label className="form-label">Preview Lokasi</label>
+                                        <div className="detail-value" style={{ minHeight: 42, display: 'flex', alignItems: 'center' }}>
+                                        {resolveTirePlacementLabel({
+                                            holderType: form.holderType,
+                                            status: form.status,
+                                            vehiclePlate: vehicles.find(item => item._id === form.vehicleRef)?.plateNumber,
+                                            slotCode: form.slotCode,
+                                            externalPartyName: form.externalPartyName,
+                                            externalPlateNumber: form.externalPlateNumber,
+                                        })}
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
+
                             <div className="form-group">
                                 <label className="form-label">Catatan</label>
-                                <textarea className="form-textarea" rows={2} placeholder="Catatan tambahan..." value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} />
+                                <textarea className="form-textarea" rows={3} value={form.notes} onChange={e => updateForm('notes', e.target.value)} placeholder="Catatan perpindahan, pinjam keluar, kondisi ban, dll." disabled={saving} />
                             </div>
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setShowModal(false)} disabled={saving}>Batal</button>
-                            <button className="btn btn-primary" onClick={handleSave} disabled={saving}><Plus size={16} /> {saving ? 'Menyimpan...' : (editTarget ? 'Simpan Perubahan' : 'Simpan')}</button>
+                            <button className="btn btn-primary" onClick={handleSave} disabled={saving}><Plus size={16} /> {saving ? 'Menyimpan...' : editTarget ? 'Simpan Perubahan' : 'Simpan'}</button>
                         </div>
                     </div>
                 </div>
@@ -304,4 +485,3 @@ export default function TiresPage() {
         </div>
     );
 }
-

@@ -315,7 +315,13 @@ export async function handleGenericUpdate(
         }
         const normalizedTireUpdates = await normalizeTireEventPayload({ ...existingTire, ...updates }, id);
         const updated = await sanityUpdate(id, normalizedTireUpdates);
-        await addAuditLog(session, 'UPDATE', entity, id, `Updated ${entity}: ${JSON.stringify(normalizedTireUpdates).slice(0, 200)}`);
+        await addAuditLog(
+            session,
+            'UPDATE',
+            entity,
+            id,
+            `Update ban ${normalizedTireUpdates.tireCode}: ${normalizedTireUpdates.posisi} (${normalizedTireUpdates.status})`
+        );
         return NextResponse.json({ data: updated });
     }
 
@@ -597,7 +603,9 @@ export async function handleGenericCreate(
         'CREATE',
         entity,
         newId,
-        `Created ${entity}: ${buildCreateSummary(newDoc, newId)}`
+        entity === 'tire-events'
+            ? `Create ban ${(newDoc as Record<string, unknown>).tireCode}: ${(newDoc as Record<string, unknown>).posisi} (${(newDoc as Record<string, unknown>).status})`
+            : `Created ${entity}: ${buildCreateSummary(newDoc, newId)}`
     );
 
     return NextResponse.json({

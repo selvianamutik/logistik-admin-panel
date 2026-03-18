@@ -2,6 +2,12 @@ import { NextResponse } from 'next/server';
 
 import { getSanityClient, sanityDelete, sanityGetById, sanityGetNextNumber, sanityUpdate } from '@/lib/sanity';
 import type { Driver, User } from '@/lib/types';
+import {
+    buildTirePlacementLabel,
+    formatTireSlotLabel,
+    isKnownInternalTireSlotCode,
+    normalizeTireSlotCode,
+} from '@/lib/tire-slots';
 
 import {
     assertIsoDate,
@@ -30,10 +36,17 @@ type MaintenanceCreatePayload = {
 };
 
 type NormalizedTireEventPayload = {
-    vehicleRef: string;
+    tireCode: string;
+    holderType: 'INTERNAL_VEHICLE' | 'EXTERNAL_VEHICLE' | 'WAREHOUSE';
+    status: 'IN_USE' | 'SPARE' | 'IN_WAREHOUSE' | 'LOANED_OUT' | 'SCRAPPED';
+    vehicleRef?: string;
     vehiclePlate?: string;
     posisi: string;
     positionKey: string;
+    slotCode?: string;
+    slotLabel?: string;
+    externalPartyName?: string;
+    externalPlateNumber?: string;
     tireType: 'Tubeless' | 'Tube Type' | 'Solid';
     tireBrand: string;
     tireSize: string;
@@ -407,74 +420,147 @@ export async function normalizeTireEventPayload(
     data: Record<string, unknown>,
     excludeId = ''
 ): Promise<NormalizedTireEventPayload> {
-    const vehicleRef = normalizeText(data.vehicleRef);
-    const posisi = normalizeText(data.posisi);
+    const tireCode = normalizeText(data.tireCode).toUpperCase().replace(/\s+/g, '-');
+    const holderType =
+        data.holderType === 'EXTERNAL_VEHICLE' || data.holderType === 'WAREHOUSE'
+            ? data.holderType
+            : 'INTERNAL_VEHICLE';
+    const rawStatus = normalizeText(data.status).toUpperCase();
+    const status =
+        rawStatus === 'SPARE' ||
+        rawStatus === 'IN_WAREHOUSE' ||
+        rawStatus === 'LOANED_OUT' ||
+        rawStatus === 'SCRAPPED'
+            ? rawStatus
+            : 'IN_USE';
+    const vehicleRef = normalizeOptionalText(data.vehicleRef);
+    const slotCode = normalizeOptionalText(data.slotCode) ? normalizeTireSlotCode(String(data.slotCode)) : '';
+    const slotLabel = slotCode ? formatTireSlotLabel(slotCode) : '';
     const tireBrand = normalizeText(data.tireBrand);
     const tireSize = normalizeText(data.tireSize);
     const installDate = normalizeText(data.installDate);
     const replaceDate = normalizeOptionalText(data.replaceDate);
     const notes = normalizeOptionalText(data.notes);
+    const externalPartyName = normalizeOptionalText(data.externalPartyName);
+    const externalPlateNumber = normalizeOptionalText(data.externalPlateNumber)?.toUpperCase();
     const tireType =
         data.tireType === 'Tube Type' || data.tireType === 'Solid' ? data.tireType : 'Tubeless';
 
-    if (!vehicleRef || !posisi || !tireBrand || !tireSize || !installDate) {
-        throw new Error('Data ban wajib diisi lengkap');
+    if (!tireCode || !tireBrand || !tireSize || !installDate) {
+        throw new Error('Kode ban, merk, ukuran, dan tanggal pencatatan wajib diisi');
     }
 
+    assertIsoDate(installDate, 'Tanggal pencatatan ban');
+    if (replaceDate) {
+        assertIsoDate(replaceDate, 'Tanggal penggantian ban');
+    }
     if (replaceDate && replaceDate < installDate) {
         throw new Error('Tanggal penggantian ban tidak boleh sebelum tanggal pasang');
     }
 
-    const vehicle = await sanityGetById<{ _id: string; plateNumber?: string; status?: string }>(vehicleRef);
-    if (!vehicle) {
-        throw new Error('Kendaraan ban tidak ditemukan');
-    }
-    let canUseSoldVehicle = false;
-    if (excludeId) {
-        const existingTireEvent = await sanityGetById<{ vehicleRef?: string }>(excludeId);
-        canUseSoldVehicle = existingTireEvent?.vehicleRef === vehicleRef;
-    }
-    if (vehicle.status === 'SOLD' && !canUseSoldVehicle) {
-        throw new Error('Kendaraan yang sudah dijual tidak bisa dicatat pada manajemen ban');
+    const duplicateTireCode = await findDuplicateLowerTextDoc('tireEvent', 'tireCode', tireCode, excludeId);
+    if (duplicateTireCode) {
+        throw new Error('Kode ban sudah digunakan');
     }
 
-    const positionKey = normalizeTirePositionKey(posisi);
-    if (!replaceDate) {
-        const activeTires = await getSanityClient().fetch<Array<{
-            _id: string;
-            posisi?: string;
-            positionKey?: string;
-            replaceDate?: string;
-        }>>(
-            `*[
-                _type == "tireEvent" &&
-                vehicleRef == $vehicleRef &&
-                !defined(replaceDate)
-            ]{
-                _id,
-                posisi,
-                positionKey,
-                replaceDate
-            }`,
-            { vehicleRef }
-        );
-        const activeDuplicate = activeTires.find(item => {
-            if (item._id === excludeId) {
-                return false;
+    let normalizedVehiclePlate: string | undefined;
+    let existingTireEvent: { vehicleRef?: string; vehiclePlate?: string } | null = null;
+    if (excludeId) {
+        existingTireEvent = await sanityGetById<{ vehicleRef?: string; vehiclePlate?: string }>(excludeId);
+    }
+
+    if (holderType === 'INTERNAL_VEHICLE') {
+        if (!['IN_USE', 'SPARE'].includes(status)) {
+            throw new Error('Ban internal hanya boleh berstatus terpasang atau serep');
+        }
+        if (!vehicleRef) {
+            throw new Error('Kendaraan wajib dipilih untuk ban internal');
+        }
+        if (!slotCode) {
+            throw new Error('Slot/kode posisi ban wajib diisi');
+        }
+        if (!isKnownInternalTireSlotCode(slotCode)) {
+            throw new Error('Kode slot ban tidak valid');
+        }
+        const isSpareSlot = slotCode.startsWith('SP');
+        if (status === 'SPARE' && !isSpareSlot) {
+            throw new Error('Ban serep wajib memakai slot SP');
+        }
+        if (status === 'IN_USE' && isSpareSlot) {
+            throw new Error('Ban terpasang tidak boleh memakai slot serep');
+        }
+        const vehicle = await sanityGetById<{ _id: string; plateNumber?: string; status?: string }>(vehicleRef);
+        if (!vehicle) {
+            throw new Error('Kendaraan ban tidak ditemukan');
+        }
+        const canUseSoldVehicle = existingTireEvent?.vehicleRef === vehicleRef;
+        if (vehicle.status === 'SOLD' && !canUseSoldVehicle) {
+            throw new Error('Kendaraan yang sudah dijual tidak bisa dicatat pada manajemen ban');
+        }
+        normalizedVehiclePlate = vehicle.plateNumber;
+
+        if (status !== 'SCRAPPED') {
+            const activeTires = await getSanityClient().fetch<Array<{
+                _id: string;
+                slotCode?: string;
+                holderType?: string;
+                status?: string;
+                vehicleRef?: string;
+            }>>(
+                `*[
+                    _type == "tireEvent" &&
+                    vehicleRef == $vehicleRef &&
+                    holderType == "INTERNAL_VEHICLE" &&
+                    status in ["IN_USE", "SPARE"]
+                ]{
+                    _id,
+                    slotCode,
+                    holderType,
+                    status,
+                    vehicleRef
+                }`,
+                { vehicleRef }
+            );
+            const activeDuplicate = activeTires.find(item => item._id !== excludeId && normalizeTireSlotCode(item.slotCode || '') === slotCode);
+            if (activeDuplicate) {
+                throw new Error('Slot ban ini masih dipakai ban lain pada kendaraan yang sama');
             }
-            const existingKey = normalizeTirePositionKey(item.positionKey || item.posisi || '');
-            return existingKey === positionKey;
-        });
-        if (activeDuplicate) {
-            throw new Error('Posisi ban ini masih aktif pada kendaraan yang sama');
+        }
+    } else if (holderType === 'EXTERNAL_VEHICLE') {
+        if (status !== 'LOANED_OUT') {
+            throw new Error('Ban pinjam keluar wajib berstatus dipinjam keluar');
+        }
+        if (!externalPartyName && !externalPlateNumber) {
+            throw new Error('Nama pihak luar atau plat luar wajib diisi untuk ban pinjam keluar');
+        }
+    } else {
+        if (status !== 'IN_WAREHOUSE' && status !== 'SCRAPPED') {
+            throw new Error('Ban di gudang hanya boleh berstatus gudang atau afkir');
         }
     }
 
+    const posisi = buildTirePlacementLabel({
+        holderType,
+        status,
+        vehiclePlate: normalizedVehiclePlate,
+        slotCode,
+        externalPartyName,
+        externalPlateNumber,
+    });
+    const positionKey = normalizeTirePositionKey(slotCode || posisi);
+
     return {
-        vehicleRef,
-        vehiclePlate: vehicle.plateNumber,
+        tireCode,
+        holderType,
+        status,
+        vehicleRef: holderType === 'INTERNAL_VEHICLE' ? vehicleRef || undefined : undefined,
+        vehiclePlate: holderType === 'INTERNAL_VEHICLE' ? normalizedVehiclePlate : undefined,
         posisi,
         positionKey,
+        slotCode: holderType === 'INTERNAL_VEHICLE' ? slotCode || undefined : undefined,
+        slotLabel: holderType === 'INTERNAL_VEHICLE' ? slotLabel || undefined : undefined,
+        externalPartyName: holderType === 'EXTERNAL_VEHICLE' ? externalPartyName : undefined,
+        externalPlateNumber: holderType === 'EXTERNAL_VEHICLE' ? externalPlateNumber : undefined,
         tireType,
         tireBrand,
         tireSize,

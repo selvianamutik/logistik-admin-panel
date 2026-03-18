@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useApp, useToast } from '../../../layout';
 import { ArrowLeft, Car, Wrench, AlertTriangle, Truck, Edit } from 'lucide-react';
-import { VEHICLE_STATUS_MAP, MAINTENANCE_STATUS_MAP, INCIDENT_STATUS_MAP, DO_STATUS_MAP, formatDate, formatCurrency } from '@/lib/utils';
+import { VEHICLE_STATUS_MAP, MAINTENANCE_STATUS_MAP, INCIDENT_STATUS_MAP, DO_STATUS_MAP, TIRE_ASSET_STATUS_MAP, formatDate, formatCurrency } from '@/lib/utils';
+import { formatTireSlotLabel, resolveTireAssetStatus, resolveTirePlacementLabel, resolveTireSlotCode } from '@/lib/tire-slots';
 import type { Vehicle, Maintenance, Incident, DeliveryOrder, TireEvent, Expense } from '@/lib/types';
 
 export default function VehicleDetailPage() {
@@ -138,54 +139,71 @@ export default function VehicleDetailPage() {
             )}
 
             {tab === 'ban' && (() => {
-                const activeTires = tireEvents.filter(t => !t.replaceDate);
-                const replacedTires = tireEvents.filter(t => !!t.replaceDate);
+                const tireRows = tireEvents.map(event => {
+                    const status = resolveTireAssetStatus(event);
+                    const slotCode = resolveTireSlotCode(event);
+                    return {
+                        ...event,
+                        status,
+                        tireCodeLabel: event.tireCode?.trim() || 'Belum dikodekan',
+                        slotCode,
+                        slotLabel: slotCode ? formatTireSlotLabel(slotCode) : undefined,
+                        placementLabel: resolveTirePlacementLabel(event),
+                    };
+                });
+                const mountedTires = tireRows.filter(row => row.status === 'IN_USE');
+                const spareTires = tireRows.filter(row => row.status === 'SPARE');
+                const otherTires = tireRows.filter(row => row.status !== 'IN_USE' && row.status !== 'SPARE');
                 return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                         <div className="card">
                             <div className="card-body">
-                                <h3 style={{ fontWeight: 600, marginBottom: '1rem', fontSize: '0.95rem' }}>Ban Terpasang Saat Ini</h3>
-                                {activeTires.length === 0 ? (
-                                    <p className="text-center text-muted">Belum ada catatan ban aktif</p>
+                                <div className="kpi-grid" style={{ gridTemplateColumns: '1fr 1fr 1fr', marginBottom: '1rem' }}>
+                                    <div className="kpi-card"><div className="kpi-icon success"><Truck size={20} /></div><div className="kpi-content"><div className="kpi-label">Terpasang</div><div className="kpi-value">{mountedTires.length}</div></div></div>
+                                    <div className="kpi-card"><div className="kpi-icon info"><Car size={20} /></div><div className="kpi-content"><div className="kpi-label">Serep Unit</div><div className="kpi-value">{spareTires.length}</div></div></div>
+                                    <div className="kpi-card"><div className="kpi-icon warning"><AlertTriangle size={20} /></div><div className="kpi-content"><div className="kpi-label">Lainnya</div><div className="kpi-value">{otherTires.length}</div></div></div>
+                                </div>
+                                {tireRows.length === 0 ? (
+                                    <p className="text-center text-muted">Belum ada catatan ban pada unit ini</p>
                                 ) : (
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.75rem' }}>
-                                        {activeTires.map(te => (
-                                            <div key={te._id} style={{ border: '1px solid var(--color-border)', borderRadius: 10, padding: '0.875rem', background: 'var(--color-bg-secondary)' }}>
-                                                <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--color-text-primary)', marginBottom: 4 }}>{te.posisi}</div>
-                                                <div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', marginBottom: 2 }}>{te.tireBrand}</div>
-                                                <div style={{ fontSize: '0.8rem', fontFamily: 'monospace', color: 'var(--color-text-secondary)', marginBottom: 4 }}>{te.tireSize}</div>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                    <span className="badge badge-blue" style={{ fontSize: '0.7rem' }}>{te.tireType}</span>
-                                                    <span style={{ fontSize: '0.72rem', color: 'var(--color-text-secondary)' }}>{formatDate(te.installDate)}</span>
-                                                </div>
-                                                {te.notes && <div style={{ fontSize: '0.72rem', color: 'var(--color-text-secondary)', marginTop: 4 }}>{te.notes}</div>}
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                        {replacedTires.length > 0 && (
-                            <div className="card">
-                                <div className="card-body">
-                                    <h3 style={{ fontWeight: 600, marginBottom: '1rem', fontSize: '0.95rem' }}>Riwayat Ban Diganti</h3>
                                     <div className="table-wrapper">
                                         <table>
-                                            <thead><tr><th>Posisi</th><th>Merk & Tipe</th><th>Ukuran</th><th>Jenis</th><th>Tgl Pasang</th><th>Tgl Ganti</th></tr></thead>
+                                            <thead><tr><th>Kode Ban</th><th>Lokasi</th><th>Status</th><th>Merk & Ukuran</th><th>Tgl Catat</th><th>Catatan</th></tr></thead>
                                             <tbody>
-                                                {replacedTires.map(te => (
+                                                {tireRows.map(te => (
                                                     <tr key={te._id}>
-                                                        <td>{te.posisi}</td>
-                                                        <td className="font-medium">{te.tireBrand}</td>
-                                                        <td className="font-mono">{te.tireSize}</td>
-                                                        <td><span className="badge badge-gray">{te.tireType}</span></td>
+                                                        <td>
+                                                            <div className="font-medium">{te.tireCodeLabel}</div>
+                                                            <div className="text-muted text-sm">{te.tireType}</div>
+                                                        </td>
+                                                        <td>
+                                                            <div className="font-medium">{te.placementLabel}</div>
+                                                            {te.slotCode && <div className="text-muted text-sm">{te.slotCode} - {te.slotLabel}</div>}
+                                                        </td>
+                                                        <td>
+                                                            <span className={`badge badge-${TIRE_ASSET_STATUS_MAP[te.status]?.color || 'gray'}`}>
+                                                                {TIRE_ASSET_STATUS_MAP[te.status]?.label || te.status}
+                                                            </span>
+                                                        </td>
+                                                        <td>
+                                                            <div className="font-medium">{te.tireBrand}</div>
+                                                            <div className="font-mono text-sm">{te.tireSize}</div>
+                                                        </td>
                                                         <td className="text-muted">{formatDate(te.installDate)}</td>
-                                                        <td className="text-muted">{formatDate(te.replaceDate!)}</td>
+                                                        <td className="text-muted">{te.notes || '-'}</td>
                                                     </tr>
                                                 ))}
                                             </tbody>
                                         </table>
                                     </div>
+                                )}
+                            </div>
+                        </div>
+                        {otherTires.length > 0 && (
+                            <div className="card">
+                                <div className="card-body">
+                                    <h3 style={{ fontWeight: 600, marginBottom: '0.5rem', fontSize: '0.95rem' }}>Catatan Tambahan</h3>
+                                    <p className="text-muted">Status selain terpasang atau serep pada unit ini tetap ditampilkan di tabel utama agar perpindahan ban mudah diaudit.</p>
                                 </div>
                             </div>
                         )}

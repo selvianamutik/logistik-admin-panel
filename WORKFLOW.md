@@ -597,3 +597,33 @@ Field yang dikunci setelah ada surat jalan:
 - pickup address
 
 Tujuannya supaya order tidak drift dengan DO, nota, dan dokumen turunan yang sudah terbentuk.
+
+## 17. Workflow Manajemen Ban
+
+- Setiap ban dicatat sebagai aset fisik dengan `kode ban` unik, bukan sekadar teks posisi.
+- Lokasi ban saat ini wajib jelas:
+  - `Kendaraan internal`
+  - `Serep unit`
+  - `Gudang / stok`
+  - `Dipinjam keluar`
+  - `Afkir`
+- Untuk kendaraan internal, posisi ban tidak lagi bebas. Gunakan `slot code` standar:
+  - `1L`, `1R`
+  - `2L`, `2R`
+  - `2LI`, `2LO`, `2RI`, `2RO`
+  - `3L`, `3R`
+  - `SP1`, `SP2`, `SP3`
+- Arti kode:
+  - angka = urutan as dari depan ke belakang
+  - `L` / `R` = kiri / kanan
+  - `I` / `O` = dalam / luar untuk ban ganda
+  - `SP` = slot serep pada unit
+- Ban `IN_USE` tidak boleh memakai slot `SP`.
+- Ban `SPARE` wajib memakai slot `SP`.
+- Satu slot aktif pada kendaraan internal hanya boleh ditempati satu ban.
+- Ban yang dipinjam ke kendaraan / pihak luar disimpan dengan status `LOANED_OUT` dan identitas pihak luar atau plat luar.
+- Ban gudang disimpan dengan status `IN_WAREHOUSE`.
+- Ban rusak berat / tidak layak pakai disimpan dengan status `SCRAPPED`.
+- Halaman `Manajemen Ban` menampilkan posisi aktual ban saat ini, bukan asumsi dari teks manual lama.
+- Detail kendaraan menampilkan ban terpasang dan serep unit berdasarkan status/slot, bukan lagi berdasarkan `replaceDate`.
+- Create / update / delete catatan ban tetap keluar di audit log per user.

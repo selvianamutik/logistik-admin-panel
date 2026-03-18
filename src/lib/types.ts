@@ -501,13 +501,23 @@ export interface Maintenance {
 export type TirePosition = 'FRONT_LEFT' | 'FRONT_RIGHT' | 'REAR_LEFT' | 'REAR_RIGHT' | 'SPARE';
 export type TireAction = 'PATCH' | 'REPLACE_NEW' | 'ROTATE' | 'VULCANIZE';
 export type TireCause = 'FLAT' | 'BLOWOUT' | 'WORN' | 'NAIL' | 'OTHER';
+export type TireHolderType = 'INTERNAL_VEHICLE' | 'EXTERNAL_VEHICLE' | 'WAREHOUSE';
+export type TireAssetStatus = 'IN_USE' | 'SPARE' | 'IN_WAREHOUSE' | 'LOANED_OUT' | 'SCRAPPED';
 
 export interface TireEvent {
   _id: string;
   _type: 'tireEvent';
-  vehicleRef: string;
+  tireCode: string;
+  holderType: TireHolderType;
+  status: TireAssetStatus;
+  vehicleRef?: string;
   vehiclePlate?: string;
   posisi: string;
+  positionKey?: string;
+  slotCode?: string;
+  slotLabel?: string;
+  externalPartyName?: string;
+  externalPlateNumber?: string;
   tireType: 'Tubeless' | 'Tube Type' | 'Solid';
   tireBrand: string;
   tireSize: string;
