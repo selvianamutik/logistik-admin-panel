@@ -8,15 +8,17 @@ import { Plus, Search, Eye, Edit, Trash2, Package, FileDown, Printer } from 'luc
 import { formatDate, ORDER_STATUS_MAP } from '@/lib/utils';
 import { exportOrders } from '@/lib/export';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
-import type { Order } from '@/lib/types';
+import type { Order, Service } from '@/lib/types';
 
 export default function OrdersPage() {
     const router = useRouter();
     const { addToast } = useToast();
     const [orders, setOrders] = useState<Order[]>([]);
+    const [services, setServices] = useState<Service[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
+    const [serviceFilter, setServiceFilter] = useState('');
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -29,6 +31,12 @@ export default function OrdersPage() {
                     throw new Error(payload.error || 'Gagal memuat order');
                 }
                 setOrders(payload.data || []);
+                const serviceRes = await fetch('/api/data?entity=services');
+                const servicePayload = await serviceRes.json();
+                if (!serviceRes.ok) {
+                    throw new Error(servicePayload.error || 'Gagal memuat kategori armada');
+                }
+                setServices(servicePayload.data || []);
             } catch (error) {
                 addToast('error', error instanceof Error ? error.message : 'Gagal memuat order');
             } finally {
@@ -39,13 +47,29 @@ export default function OrdersPage() {
         void loadOrders();
     }, [addToast]);
 
+    const getServiceLabel = (order: Order) => {
+        const service = services.find(item => item._id === order.serviceRef);
+        if (service) {
+            return `${service.code} - ${service.name}`;
+        }
+        return order.serviceName || '-';
+    };
+
+    const availableServiceOptions = services.filter(service =>
+        service.active !== false || orders.some(order => order.serviceRef === service._id)
+    );
+
     const filtered = orders.filter(o => {
+        const service = services.find(item => item._id === o.serviceRef);
         const matchSearch = !search ||
             o.masterResi?.toLowerCase().includes(search.toLowerCase()) ||
             o.customerName?.toLowerCase().includes(search.toLowerCase()) ||
-            o.receiverName?.toLowerCase().includes(search.toLowerCase());
+            o.receiverName?.toLowerCase().includes(search.toLowerCase()) ||
+            o.serviceName?.toLowerCase().includes(search.toLowerCase()) ||
+            service?.code?.toLowerCase().includes(search.toLowerCase());
         const matchStatus = !statusFilter || o.status === statusFilter;
-        return matchSearch && matchStatus;
+        const matchService = !serviceFilter || o.serviceRef === serviceFilter;
+        return matchSearch && matchStatus && matchService;
     });
 
     const handleDelete = async (id: string) => {
@@ -105,11 +129,22 @@ export default function OrdersPage() {
                             <Search size={16} className="table-search-icon" />
                             <input
                                 type="text"
-                                placeholder="Cari resi, customer, penerima..."
+                                placeholder="Cari resi, customer, penerima, kategori..."
                                 value={search}
                                 onChange={e => setSearch(e.target.value)}
                             />
                         </div>
+                        <select
+                            className="form-select"
+                            style={{ width: 'auto', minWidth: 180 }}
+                            value={serviceFilter}
+                            onChange={e => setServiceFilter(e.target.value)}
+                        >
+                            <option value="">Semua Kategori</option>
+                            {availableServiceOptions.map(service => (
+                                <option key={service._id} value={service._id}>{service.code} - {service.name}</option>
+                            ))}
+                        </select>
                         <select
                             className="form-select"
                             style={{ width: 'auto', minWidth: 140 }}
@@ -169,7 +204,7 @@ export default function OrdersPage() {
                                         </td>
                                         <td>{order.customerName}</td>
                                         <td>{order.receiverName}</td>
-                                        <td>{order.serviceName || '-'}</td>
+                                        <td>{getServiceLabel(order)}</td>
                                         <td>
                                             <span className={`badge badge-${ORDER_STATUS_MAP[order.status]?.color || 'gray'}`}>
                                                 <span className="badge-dot" />

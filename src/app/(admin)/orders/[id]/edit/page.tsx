@@ -147,7 +147,7 @@ export default function OrderEditPage() {
                                     setForm({ ...form, serviceRef: e.target.value, serviceName: svc?.name || '' });
                                 }} disabled={hasDeliveryOrders}>
                                     <option value="">Pilih kategori armada</option>
-                                    {services.map(s => <option key={s._id} value={s._id}>{s.name}</option>)}
+                                    {services.map(s => <option key={s._id} value={s._id}>{s.code} - {s.name}</option>)}
                                 </select>
                                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
                                     Kategori armada ini dipakai untuk memfilter kendaraan yang boleh dipilih saat membuat surat jalan.

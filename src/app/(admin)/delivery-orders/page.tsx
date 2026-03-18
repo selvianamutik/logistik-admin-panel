@@ -7,16 +7,18 @@ import { Search, Eye, Truck, FileDown, Printer } from 'lucide-react';
 import { formatDate, formatDateTime, DO_STATUS_MAP } from '@/lib/utils';
 import { exportToExcel } from '@/lib/export';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
-import type { DeliveryOrder } from '@/lib/types';
+import type { DeliveryOrder, Service } from '@/lib/types';
 import { useToast } from '../layout';
 
 export default function DeliveryOrdersPage() {
     const router = useRouter();
     const { addToast } = useToast();
     const [items, setItems] = useState<DeliveryOrder[]>([]);
+    const [services, setServices] = useState<Service[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
+    const [serviceFilter, setServiceFilter] = useState('');
 
     useEffect(() => {
         const loadDeliveryOrders = async () => {
@@ -27,6 +29,12 @@ export default function DeliveryOrdersPage() {
                     throw new Error(payload.error || 'Gagal memuat surat jalan');
                 }
                 setItems(payload.data || []);
+                const serviceRes = await fetch('/api/data?entity=services');
+                const servicePayload = await serviceRes.json();
+                if (!serviceRes.ok) {
+                    throw new Error(servicePayload.error || 'Gagal memuat kategori armada');
+                }
+                setServices(servicePayload.data || []);
             } catch (error) {
                 addToast('error', error instanceof Error ? error.message : 'Gagal memuat surat jalan');
             } finally {
@@ -37,10 +45,30 @@ export default function DeliveryOrdersPage() {
         void loadDeliveryOrders();
     }, [addToast]);
 
+    const getServiceLabel = (deliveryOrder: DeliveryOrder) => {
+        const service = services.find(item => item._id === deliveryOrder.serviceRef);
+        if (service) {
+            return `${service.code} - ${service.name}`;
+        }
+        return deliveryOrder.serviceName || '-';
+    };
+
+    const availableServiceOptions = services.filter(service =>
+        service.active !== false || items.some(deliveryOrder => deliveryOrder.serviceRef === service._id)
+    );
+
     const filtered = items.filter(d => {
-        const m = !search || d.doNumber?.toLowerCase().includes(search.toLowerCase()) || d.customerName?.toLowerCase().includes(search.toLowerCase());
+        const service = services.find(item => item._id === d.serviceRef);
+        const m = !search
+            || d.doNumber?.toLowerCase().includes(search.toLowerCase())
+            || d.customerName?.toLowerCase().includes(search.toLowerCase())
+            || d.vehiclePlate?.toLowerCase().includes(search.toLowerCase())
+            || d.driverName?.toLowerCase().includes(search.toLowerCase())
+            || d.serviceName?.toLowerCase().includes(search.toLowerCase())
+            || service?.code?.toLowerCase().includes(search.toLowerCase());
         const s = !statusFilter || d.status === statusFilter;
-        return m && s;
+        const c = !serviceFilter || d.serviceRef === serviceFilter;
+        return m && s && c;
     });
 
     return (
@@ -77,8 +105,12 @@ export default function DeliveryOrdersPage() {
                     <div className="table-toolbar-left">
                         <div className="table-search">
                             <Search size={16} className="table-search-icon" />
-                            <input type="text" placeholder="Cari nomor DO, customer..." value={search} onChange={e => setSearch(e.target.value)} />
+                            <input type="text" placeholder="Cari DO, customer, kendaraan, driver, kategori..." value={search} onChange={e => setSearch(e.target.value)} />
                         </div>
+                        <select className="form-select" style={{ width: 'auto', minWidth: 180 }} value={serviceFilter} onChange={e => setServiceFilter(e.target.value)}>
+                            <option value="">Semua Kategori</option>
+                            {availableServiceOptions.map(service => <option key={service._id} value={service._id}>{service.code} - {service.name}</option>)}
+                        </select>
                         <select className="form-select" style={{ width: 'auto', minWidth: 140 }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
                             <option value="">Semua Status</option>
                             {Object.entries(DO_STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
@@ -87,16 +119,17 @@ export default function DeliveryOrdersPage() {
                 </div>
                 <div className="table-wrapper">
                     <table>
-                        <thead><tr><th>No. DO</th><th>Resi</th><th>Customer</th><th>Kendaraan</th><th>Tanggal</th><th>Status</th><th>Tracking</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>No. DO</th><th>Resi</th><th>Customer</th><th>Kategori</th><th>Kendaraan</th><th>Tanggal</th><th>Status</th><th>Tracking</th><th>Aksi</th></tr></thead>
                         <tbody>
-                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
+                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 filtered.length === 0 ? (
-                                    <tr><td colSpan={8}><div className="empty-state"><Truck size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada surat jalan</div><div className="empty-state-text">Buat surat jalan dari halaman detail order</div></div></td></tr>
+                                    <tr><td colSpan={9}><div className="empty-state"><Truck size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada surat jalan</div><div className="empty-state-text">Buat surat jalan dari halaman detail order</div></div></td></tr>
                                 ) : filtered.map(d => (
                                     <tr key={d._id}>
                                         <td><Link href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{d.doNumber}</Link></td>
                                         <td><Link href={`/orders/${d.orderRef}`} className="text-muted">{d.masterResi}</Link></td>
                                         <td>{d.customerName}</td>
+                                        <td>{getServiceLabel(d)}</td>
                                         <td>{d.vehiclePlate || '-'}</td>
                                         <td className="text-muted">{formatDate(d.date)}</td>
                                         <td><span className={`badge badge-${DO_STATUS_MAP[d.status]?.color}`}><span className="badge-dot" /> {DO_STATUS_MAP[d.status]?.label}</span></td>

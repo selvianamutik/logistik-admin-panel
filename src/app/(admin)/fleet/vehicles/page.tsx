@@ -8,15 +8,17 @@ import { useToast } from '../../layout';
 import { VEHICLE_STATUS_MAP, formatDate } from '@/lib/utils';
 import { exportVehicles } from '@/lib/export';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
-import type { Vehicle } from '@/lib/types';
+import type { Service, Vehicle } from '@/lib/types';
 
 export default function VehiclesPage() {
     const router = useRouter();
     const { addToast } = useToast();
     const [items, setItems] = useState<Vehicle[]>([]);
+    const [services, setServices] = useState<Service[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
+    const [serviceFilter, setServiceFilter] = useState('');
 
     useEffect(() => {
         const loadVehicles = async () => {
@@ -27,6 +29,12 @@ export default function VehiclesPage() {
                     throw new Error(payload.error || 'Gagal memuat data kendaraan');
                 }
                 setItems(payload.data || []);
+                const serviceRes = await fetch('/api/data?entity=services');
+                const servicePayload = await serviceRes.json();
+                if (!serviceRes.ok) {
+                    throw new Error(servicePayload.error || 'Gagal memuat kategori armada');
+                }
+                setServices(servicePayload.data || []);
             } catch (error) {
                 addToast('error', error instanceof Error ? error.message : 'Gagal memuat data kendaraan');
             } finally {
@@ -37,14 +45,29 @@ export default function VehiclesPage() {
         void loadVehicles();
     }, [addToast]);
 
+    const getServiceLabel = (vehicle: Vehicle) => {
+        const service = services.find(item => item._id === vehicle.serviceRef);
+        if (service) {
+            return `${service.code} - ${service.name}`;
+        }
+        return vehicle.serviceName || '-';
+    };
+
+    const availableServiceOptions = services.filter(service =>
+        service.active !== false || items.some(vehicle => vehicle.serviceRef === service._id)
+    );
+
     const filtered = items.filter(v => {
+        const service = services.find(item => item._id === v.serviceRef);
         const m = !search
             || v.plateNumber?.toLowerCase().includes(search.toLowerCase())
             || v.brandModel?.toLowerCase().includes(search.toLowerCase())
             || v.unitCode?.toLowerCase().includes(search.toLowerCase())
-            || v.serviceName?.toLowerCase().includes(search.toLowerCase());
+            || v.serviceName?.toLowerCase().includes(search.toLowerCase())
+            || service?.code?.toLowerCase().includes(search.toLowerCase());
         const s = !statusFilter || v.status === statusFilter;
-        return m && s;
+        const c = !serviceFilter || v.serviceRef === serviceFilter;
+        return m && s && c;
     });
 
     return (
@@ -73,7 +96,11 @@ export default function VehiclesPage() {
             <div className="table-container">
                 <div className="table-toolbar">
                     <div className="table-toolbar-left">
-                        <div className="table-search"><Search size={16} className="table-search-icon" /><input placeholder="Cari plat, merk..." value={search} onChange={e => setSearch(e.target.value)} /></div>
+                        <div className="table-search"><Search size={16} className="table-search-icon" /><input placeholder="Cari kode unit, plat, merk, kategori..." value={search} onChange={e => setSearch(e.target.value)} /></div>
+                        <select className="form-select" style={{ width: 'auto', minWidth: 180 }} value={serviceFilter} onChange={e => setServiceFilter(e.target.value)}>
+                            <option value="">Semua Kategori</option>
+                            {availableServiceOptions.map(service => <option key={service._id} value={service._id}>{service.code} - {service.name}</option>)}
+                        </select>
                         <select className="form-select" style={{ width: 'auto', minWidth: 140 }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
                             <option value="">Semua Status</option>
                             {Object.entries(VEHICLE_STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
@@ -91,7 +118,7 @@ export default function VehiclesPage() {
                                             <td className="font-mono text-muted">{v.unitCode}</td>
                                             <td className="font-semibold">{v.plateNumber}</td>
                                             <td>{v.brandModel}</td>
-                                            <td>{v.serviceName || '-'}</td>
+                                            <td>{getServiceLabel(v)}</td>
                                             <td>{v.vehicleType}</td>
                                             <td>{v.year}</td>
                                             <td><span className={`badge badge-${VEHICLE_STATUS_MAP[v.status]?.color}`}><span className="badge-dot" /> {VEHICLE_STATUS_MAP[v.status]?.label}</span></td>
