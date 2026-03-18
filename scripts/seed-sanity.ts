@@ -272,6 +272,7 @@ function buildSeedDocuments() {
         {
             _id: 'svc-001',
             _type: 'service',
+            code: 'CDD',
             name: 'CDD / Engkel',
             description: 'Kategori armada Colt Diesel / engkel untuk distribusi umum dan muatan menengah.',
             active: true,
@@ -279,6 +280,7 @@ function buildSeedDocuments() {
         {
             _id: 'svc-002',
             _type: 'service',
+            code: 'CDB',
             name: 'CDD Box / Canter',
             description: 'Kategori armada box/canter untuk distribusi retail, rute cepat, dan muatan tertutup.',
             active: true,
@@ -286,6 +288,7 @@ function buildSeedDocuments() {
         {
             _id: 'svc-003',
             _type: 'service',
+            code: 'FUS',
             name: 'Fuso / Heavy',
             description: 'Kategori armada Fuso/truck besar untuk muatan berat, proyek, dan partai besar.',
             active: true,
@@ -293,6 +296,7 @@ function buildSeedDocuments() {
         {
             _id: 'svc-004',
             _type: 'service',
+            code: 'LEG',
             name: 'Kategori Lama',
             description: 'Kategori armada lama yang sudah tidak dipakai.',
             active: false,
@@ -361,7 +365,7 @@ function buildSeedDocuments() {
         {
             _id: 'veh-001',
             _type: 'vehicle',
-            unitCode: 'GM-001',
+            unitCode: 'CDD-001',
             plateNumber: 'W 8123 GS',
             vehicleType: 'TRUCK',
             brandModel: 'Mitsubishi Colt Diesel FE 74',
@@ -381,7 +385,7 @@ function buildSeedDocuments() {
         {
             _id: 'veh-002',
             _type: 'vehicle',
-            unitCode: 'GM-002',
+            unitCode: 'FUS-001',
             plateNumber: 'L 9456 AB',
             vehicleType: 'TRUCK',
             brandModel: 'Hino Dutro 110 SDL',
@@ -401,7 +405,7 @@ function buildSeedDocuments() {
         {
             _id: 'veh-003',
             _type: 'vehicle',
-            unitCode: 'GM-003',
+            unitCode: 'CDD-002',
             plateNumber: 'N 7788 CD',
             vehicleType: 'TRUCK',
             brandModel: 'Isuzu Elf NMR 71',
@@ -421,7 +425,7 @@ function buildSeedDocuments() {
         {
             _id: 'veh-004',
             _type: 'vehicle',
-            unitCode: 'GM-004',
+            unitCode: 'CDD-003',
             plateNumber: 'W 1122 EF',
             vehicleType: 'TRUCK',
             brandModel: 'Toyota Dyna 130 HT',
@@ -441,7 +445,7 @@ function buildSeedDocuments() {
         {
             _id: 'veh-005',
             _type: 'vehicle',
-            unitCode: 'GM-005',
+            unitCode: 'CDB-001',
             plateNumber: 'AG 3344 HI',
             vehicleType: 'TRUCK',
             brandModel: 'Mitsubishi Canter HDX',

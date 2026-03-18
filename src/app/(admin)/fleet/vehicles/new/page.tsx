@@ -52,6 +52,10 @@ export default function VehicleNewPage() {
             addToast('error', 'Plat nomor dan merk/model wajib');
             return;
         }
+        if (!form.serviceRef) {
+            addToast('error', 'Kategori armada wajib dipilih');
+            return;
+        }
         setSaving(true);
         try {
             const payload = {
@@ -101,7 +105,7 @@ export default function VehicleNewPage() {
                         <div className="card-header"><span className="card-header-title">Informasi Kendaraan</span></div>
                         <div className="card-body">
                             <div className="form-row">
-                                <div className="form-group"><label className="form-label">Kode Unit</label><input className="form-input" value={form.unitCode} onChange={e => setForm({ ...form, unitCode: e.target.value })} placeholder="TRK-001" /></div>
+                                <div className="form-group"><label className="form-label">Kode Unit</label><input className="form-input" value={form.unitCode} onChange={e => setForm({ ...form, unitCode: e.target.value.toUpperCase() })} placeholder="Kosongkan untuk auto-generate dari kategori" /></div>
                                 <div className="form-group"><label className="form-label">Plat Nomor <span className="required">*</span></label><input className="form-input" value={form.plateNumber} onChange={e => setForm({ ...form, plateNumber: e.target.value })} placeholder="B 1234 XYZ" /></div>
                             </div>
                             <div className="form-row">
@@ -117,10 +121,10 @@ export default function VehicleNewPage() {
                                     <label className="form-label">Kategori Truk / Armada</label>
                                     <select className="form-select" value={form.serviceRef} onChange={e => setForm({ ...form, serviceRef: e.target.value })}>
                                         <option value="">Pilih kategori armada</option>
-                                        {services.map(service => <option key={service._id} value={service._id}>{service.name}</option>)}
+                                        {services.map(service => <option key={service._id} value={service._id}>{service.code} - {service.name}</option>)}
                                     </select>
                                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                        Kategori ini dipakai untuk mencocokkan kendaraan dengan order saat membuat surat jalan.
+                                        Kategori ini dipakai untuk mencocokkan kendaraan dengan order saat membuat surat jalan. Kode unit akan mengikuti prefix kode kategori.
                                     </div>
                                 </div>
                                 <div className="form-group"><label className="form-label">Base / Lokasi</label><input className="form-input" value={form.base} onChange={e => setForm({ ...form, base: e.target.value })} placeholder="Jakarta" /></div>

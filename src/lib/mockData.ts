@@ -121,9 +121,9 @@ const seedData: DataStore = {
     ],
 
     services: [
-        { _id: 'svc-001', _type: 'service', name: 'Reguler', description: 'Pengiriman reguler 3-5 hari kerja', active: true },
-        { _id: 'svc-002', _type: 'service', name: 'Express', description: 'Pengiriman express 1-2 hari kerja', active: true },
-        { _id: 'svc-003', _type: 'service', name: 'Cargo', description: 'Pengiriman cargo untuk barang besar/berat', active: true }
+        { _id: 'svc-001', _type: 'service', code: 'CDD', name: 'CDD / Engkel', description: 'Kategori armada Colt Diesel / engkel untuk distribusi umum dan muatan menengah', active: true },
+        { _id: 'svc-002', _type: 'service', code: 'CDB', name: 'CDD Box / Canter', description: 'Kategori armada box/canter untuk distribusi retail, rute cepat, dan muatan tertutup', active: true },
+        { _id: 'svc-003', _type: 'service', code: 'FUS', name: 'Fuso / Heavy', description: 'Kategori armada Fuso/truck besar untuk muatan berat, proyek, dan partai besar', active: true }
     ],
 
     expenseCategories: [

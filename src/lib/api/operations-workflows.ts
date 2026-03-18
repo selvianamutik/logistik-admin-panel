@@ -62,6 +62,7 @@ const INCIDENT_STATUS_TRANSITIONS: Record<string, string[]> = {
     CLOSED: [],
 };
 
+const SERVICE_CODE_RE = /^[A-Z0-9][A-Z0-9-]{1,11}$/;
 const VEHICLE_STATUS_VALUES = new Set(['ACTIVE', 'IN_SERVICE', 'OUT_OF_SERVICE', 'SOLD']);
 
 function hasOwnKey(value: Record<string, unknown>, key: string) {
@@ -85,6 +86,37 @@ function normalizeTirePositionKey(posisi: string) {
     return posisi.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+function normalizeServiceCode(value: unknown) {
+    return normalizeText(value)
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+}
+
+async function generateVehicleUnitCode(categoryCode: string, excludeId?: string) {
+    const rows = await getSanityClient().fetch<Array<{ _id: string; unitCode?: string }>>(
+        excludeId
+            ? `*[_type == "vehicle" && _id != $excludeId && defined(unitCode)]{ _id, unitCode }`
+            : `*[_type == "vehicle" && defined(unitCode)]{ _id, unitCode }`,
+        excludeId ? { excludeId } : {}
+    );
+
+    const prefix = `${categoryCode}-`;
+    const highestNumber = rows.reduce((max, row) => {
+        const code = normalizeText(row.unitCode).toUpperCase();
+        if (!code.startsWith(prefix)) {
+            return max;
+        }
+        const match = code.slice(prefix.length).match(/^(\d{1,6})$/);
+        if (!match) {
+            return max;
+        }
+        return Math.max(max, Number(match[1]));
+    }, 0);
+
+    return `${prefix}${String(highestNumber + 1).padStart(3, '0')}`;
+}
+
 async function findDuplicateLowerTextDoc(docType: string, fieldName: string, value: string, excludeId?: string) {
     if (!value) return null;
 
@@ -101,6 +133,36 @@ async function findDuplicateLowerTextDoc(docType: string, fieldName: string, val
 export async function normalizeServicePayload(data: Record<string, unknown>, options?: { partial?: boolean; excludeId?: string }) {
     const partial = options?.partial === true;
     const next: Record<string, unknown> = {};
+
+    if (!partial || hasOwnKey(data, 'code')) {
+        const code = normalizeServiceCode(data.code);
+        if (!code) {
+            throw new Error('Kode kategori armada wajib diisi');
+        }
+        if (!SERVICE_CODE_RE.test(code)) {
+            throw new Error('Kode kategori armada hanya boleh berisi huruf/angka singkat, misalnya CDD atau FUSO');
+        }
+        const duplicate = await findDuplicateLowerTextDoc('service', 'code', code, options?.excludeId);
+        if (duplicate) {
+            throw new Error('Kode kategori armada sudah digunakan');
+        }
+        if (options?.excludeId) {
+            const currentService = await sanityGetById<{ _id: string; code?: string; name?: string }>(options.excludeId);
+            if (currentService?.code && currentService.code !== code) {
+                const relatedVehicle = await getSanityClient().fetch<{ _id: string } | null>(
+                    `*[_type == "vehicle" && ((serviceRef == $ref || serviceRef._ref == $ref) || lower(coalesce(serviceName, "")) == $serviceName)][0]{ _id }`,
+                    {
+                        ref: options.excludeId,
+                        serviceName: normalizeText(currentService.name).toLowerCase(),
+                    }
+                );
+                if (relatedVehicle) {
+                    throw new Error('Kode kategori armada yang sudah dipakai kendaraan tidak boleh diubah');
+                }
+            }
+        }
+        next.code = code;
+    }
 
     if (!partial || hasOwnKey(data, 'name')) {
         const name = normalizeText(data.name);
@@ -226,14 +288,12 @@ export async function normalizeVehiclePayload(
     const partial = options?.partial === true;
     const next: Record<string, unknown> = {};
     const existingVehicle = options?.excludeId
-        ? await sanityGetById<{ _id: string; lastOdometer?: number }>(options.excludeId)
+        ? await sanityGetById<{ _id: string; lastOdometer?: number; serviceRef?: string; unitCode?: string }>(options.excludeId)
         : null;
 
     if (options?.excludeId && !existingVehicle) {
         throw new Error('Kendaraan tidak ditemukan');
     }
-
-    let normalizedPlateNumber: string | undefined;
 
     if (!partial || hasOwnKey(data, 'plateNumber')) {
         const plateNumber = normalizeText(data.plateNumber).toUpperCase().replace(/\s+/g, ' ');
@@ -244,21 +304,7 @@ export async function normalizeVehiclePayload(
         if (duplicate) {
             throw new Error('Plat nomor kendaraan sudah digunakan');
         }
-        normalizedPlateNumber = plateNumber;
         next.plateNumber = plateNumber;
-    }
-
-    if (!partial || hasOwnKey(data, 'unitCode')) {
-        const providedUnitCode = normalizeText(data.unitCode).toUpperCase().replace(/\s+/g, '-');
-        const fallbackUnitCode = normalizedPlateNumber?.replace(/\s+/g, '-') || '';
-        const unitCode = providedUnitCode || (!partial ? fallbackUnitCode : '');
-        if (unitCode) {
-            const duplicate = await findDuplicateLowerTextDoc('vehicle', 'unitCode', unitCode, options?.excludeId);
-            if (duplicate) {
-                throw new Error('Kode unit kendaraan sudah digunakan');
-            }
-        }
-        next.unitCode = unitCode;
     }
 
     if (!partial || hasOwnKey(data, 'vehicleType')) {
@@ -296,22 +342,49 @@ export async function normalizeVehiclePayload(
         next.capacityVolume = capacityVolume ?? 0;
     }
 
-    if (!partial || hasOwnKey(data, 'serviceRef')) {
-        const serviceRef = normalizeOptionalText(data.serviceRef);
+    let resolvedServiceCode = '';
+    if (!partial || hasOwnKey(data, 'serviceRef') || hasOwnKey(data, 'unitCode')) {
+        const serviceRef = !partial || hasOwnKey(data, 'serviceRef')
+            ? normalizeOptionalText(data.serviceRef)
+            : normalizeOptionalText(existingVehicle?.serviceRef);
         if (!serviceRef) {
-            next.serviceRef = '';
-            next.serviceName = undefined;
-        } else {
-            const service = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(serviceRef);
-            if (!service) {
-                throw new Error('Kategori armada tidak ditemukan');
-            }
-            if (service.active === false) {
-                throw new Error('Kategori armada tidak aktif');
-            }
+            throw new Error('Kategori armada kendaraan wajib dipilih');
+        }
+        const service = await sanityGetById<{ _id: string; name?: string; code?: string; active?: boolean }>(serviceRef);
+        if (!service) {
+            throw new Error('Kategori armada tidak ditemukan');
+        }
+        if (service.active === false) {
+            throw new Error('Kategori armada tidak aktif');
+        }
+        const serviceCode = normalizeServiceCode(service.code);
+        if (!serviceCode) {
+            throw new Error('Kategori armada belum punya kode yang valid');
+        }
+        resolvedServiceCode = serviceCode;
+        if (!partial || hasOwnKey(data, 'serviceRef')) {
             next.serviceRef = serviceRef;
             next.serviceName = service.name || '';
         }
+    }
+
+    if (!partial || hasOwnKey(data, 'unitCode') || hasOwnKey(data, 'serviceRef')) {
+        const providedUnitCode = normalizeText(data.unitCode).toUpperCase().replace(/\s+/g, '-');
+        let unitCode = providedUnitCode;
+        if (!unitCode) {
+            if (!resolvedServiceCode) {
+                throw new Error('Kategori armada kendaraan wajib dipilih sebelum kode unit dibuat');
+            }
+            unitCode = await generateVehicleUnitCode(resolvedServiceCode, options?.excludeId);
+        }
+        if (resolvedServiceCode && !unitCode.startsWith(`${resolvedServiceCode}-`)) {
+            throw new Error(`Kode unit harus diawali ${resolvedServiceCode}- sesuai kategori armada`);
+        }
+        const duplicate = await findDuplicateLowerTextDoc('vehicle', 'unitCode', unitCode, options?.excludeId);
+        if (duplicate) {
+            throw new Error('Kode unit kendaraan sudah digunakan');
+        }
+        next.unitCode = unitCode;
     }
 
     if (!partial || hasOwnKey(data, 'status')) {

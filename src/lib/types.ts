@@ -100,6 +100,7 @@ export interface Customer {
 export interface Service {
   _id: string;
   _type: 'service';
+  code: string;
   name: string;
   description: string;
   active: boolean;
