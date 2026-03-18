@@ -441,10 +441,10 @@ export async function handleOrderCreate(
     if (serviceRef) {
         const service = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(serviceRef);
         if (!service) {
-            return NextResponse.json({ error: 'Layanan order tidak ditemukan' }, { status: 404 });
+            return NextResponse.json({ error: 'Kategori armada order tidak ditemukan' }, { status: 404 });
         }
         if (service.active === false) {
-            return NextResponse.json({ error: 'Layanan order tidak aktif' }, { status: 409 });
+            return NextResponse.json({ error: 'Kategori armada order tidak aktif' }, { status: 409 });
         }
         serviceName = service.name || undefined;
     }
@@ -868,7 +868,13 @@ export async function handleDeliveryOrderCreate(
             : '';
 
     if (vehicleRef) {
-        const vehicle = await sanityGetById<{ _id: string; plateNumber?: string; status?: string }>(vehicleRef);
+        const vehicle = await sanityGetById<{
+            _id: string;
+            plateNumber?: string;
+            status?: string;
+            serviceRef?: string;
+            serviceName?: string;
+        }>(vehicleRef);
         if (!vehicle) {
             return NextResponse.json({ error: 'Kendaraan DO tidak ditemukan' }, { status: 404 });
         }
@@ -877,6 +883,22 @@ export async function handleDeliveryOrderCreate(
         }
         if (vehicle.status === 'OUT_OF_SERVICE') {
             return NextResponse.json({ error: 'Kendaraan yang sedang out of service tidak bisa dipakai untuk surat jalan baru' }, { status: 409 });
+        }
+        const orderServiceRef = extractRefId(order.serviceRef);
+        const vehicleServiceRef = extractRefId(vehicle.serviceRef);
+        if (orderServiceRef && !vehicleServiceRef) {
+            return NextResponse.json(
+                { error: `Kendaraan ${vehicle.plateNumber || vehicleRef} belum punya kategori armada dan tidak bisa dipakai untuk order ${order.serviceName || '-'}` },
+                { status: 409 }
+            );
+        }
+        if (orderServiceRef && vehicleServiceRef !== orderServiceRef) {
+            return NextResponse.json(
+                {
+                    error: `Kendaraan ${vehicle.plateNumber || vehicleRef} berkategori ${vehicle.serviceName || '-'} tidak sesuai dengan kategori armada order ${order.serviceName || '-'}`,
+                },
+                { status: 409 }
+            );
         }
         vehiclePlate = vehicle.plateNumber || vehiclePlate;
     }

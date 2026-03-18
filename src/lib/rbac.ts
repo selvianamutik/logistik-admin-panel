@@ -168,7 +168,7 @@ export function getSidebarMenu(role: UserRole): SidebarMenuGroup[] {
                 { label: 'Order / Resi', href: '/orders', icon: 'Package', module: 'orders' },
                 { label: 'Surat Jalan', href: '/delivery-orders', icon: 'Truck', module: 'deliveryOrders' },
                 { label: 'Customer', href: '/customers', icon: 'Users', module: 'customers' },
-                { label: 'Layanan', href: '/services', icon: 'Layers', module: 'services' },
+                { label: 'Kategori Truk', href: '/services', icon: 'Layers', module: 'services' },
             ],
         },
         {

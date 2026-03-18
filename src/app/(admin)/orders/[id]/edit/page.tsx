@@ -119,7 +119,7 @@ export default function OrderEditPage() {
                         <div className="card-body">
                             {hasDeliveryOrders && (
                                 <div className="alert alert-warning" style={{ marginBottom: '1rem' }}>
-                                    Order ini sudah punya surat jalan. Field utama dikunci agar data pengirim/penagih, layanan, dan penerima tetap konsisten dengan dokumen turunannya. Hanya catatan yang masih bisa diubah.
+                                    Order ini sudah punya surat jalan. Field utama dikunci agar data pengirim/penagih, kategori armada, dan penerima tetap konsisten dengan dokumen turunannya. Hanya catatan yang masih bisa diubah.
                                 </div>
                             )}
                             <div className="form-group">
@@ -141,14 +141,17 @@ export default function OrderEditPage() {
                                 </div>
                             </div>
                             <div className="form-group">
-                                <label className="form-label">Layanan</label>
+                                <label className="form-label">Kategori Truk / Armada</label>
                                 <select className="form-select" value={form.serviceRef} onChange={e => {
                                     const svc = services.find(s => s._id === e.target.value);
                                     setForm({ ...form, serviceRef: e.target.value, serviceName: svc?.name || '' });
                                 }} disabled={hasDeliveryOrders}>
-                                    <option value="">Pilih Layanan</option>
+                                    <option value="">Pilih kategori armada</option>
                                     {services.map(s => <option key={s._id} value={s._id}>{s.name}</option>)}
                                 </select>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                    Kategori armada ini dipakai untuk memfilter kendaraan yang boleh dipilih saat membuat surat jalan.
+                                </div>
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Alamat Pickup</label>

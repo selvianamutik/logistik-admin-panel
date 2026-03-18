@@ -2,12 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-
-import { useApp, useToast } from '../../../../layout';
 import { ArrowLeft, Save } from 'lucide-react';
 
+import { useApp, useToast } from '../../../../layout';
 import { VEHICLE_STATUS_MAP } from '@/lib/utils';
-import type { Vehicle, VehicleStatus } from '@/lib/types';
+import type { Service, Vehicle, VehicleStatus } from '@/lib/types';
 
 type VehicleForm = {
     unitCode: string;
@@ -17,6 +16,7 @@ type VehicleForm = {
     year: number;
     capacityKg: number;
     capacityVolume: number;
+    serviceRef: string;
     chassisNumber: string;
     engineNumber: string;
     base: string;
@@ -34,6 +34,7 @@ const EMPTY_FORM: VehicleForm = {
     year: new Date().getFullYear(),
     capacityKg: 0,
     capacityVolume: 0,
+    serviceRef: '',
     chassisNumber: '',
     engineNumber: '',
     base: '',
@@ -50,6 +51,7 @@ export default function VehicleEditPage() {
     const { addToast } = useToast();
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [services, setServices] = useState<Service[]>([]);
     const [form, setForm] = useState<VehicleForm>(EMPTY_FORM);
     const isOwner = user?.role === 'OWNER';
     const vehicleId = params.id as string;
@@ -57,13 +59,24 @@ export default function VehicleEditPage() {
     useEffect(() => {
         const loadVehicle = async () => {
             try {
-                const res = await fetch(`/api/data?entity=vehicles&id=${vehicleId}`);
-                const payload = await res.json();
-                if (!res.ok || !payload.data) {
-                    throw new Error(payload.error || 'Kendaraan tidak ditemukan');
+                const fetchEntity = async <T,>(url: string) => {
+                    const res = await fetch(url);
+                    const payload = await res.json();
+                    if (!res.ok) {
+                        throw new Error(payload.error || 'Kendaraan tidak ditemukan');
+                    }
+                    return payload.data as T;
+                };
+
+                const [vehicle, serviceRows] = await Promise.all([
+                    fetchEntity<Vehicle | null>(`/api/data?entity=vehicles&id=${vehicleId}`),
+                    fetchEntity<Service[]>('/api/data?entity=services'),
+                ]);
+
+                if (!vehicle) {
+                    throw new Error('Kendaraan tidak ditemukan');
                 }
 
-                const vehicle = payload.data as Vehicle;
                 setForm({
                     unitCode: vehicle.unitCode || '',
                     plateNumber: vehicle.plateNumber || '',
@@ -72,6 +85,7 @@ export default function VehicleEditPage() {
                     year: vehicle.year || new Date().getFullYear(),
                     capacityKg: vehicle.capacityKg || 0,
                     capacityVolume: vehicle.capacityVolume || 0,
+                    serviceRef: vehicle.serviceRef || '',
                     chassisNumber: vehicle.chassisNumber || '',
                     engineNumber: vehicle.engineNumber || '',
                     base: vehicle.base || '',
@@ -80,6 +94,7 @@ export default function VehicleEditPage() {
                     lastOdometer: vehicle.lastOdometer || 0,
                     lastOdometerAt: vehicle.lastOdometerAt || '',
                 });
+                setServices((serviceRows || []).filter(service => service.active !== false || service._id === vehicle.serviceRef));
             } catch (error) {
                 addToast('error', error instanceof Error ? error.message : 'Gagal memuat kendaraan');
                 router.push('/fleet/vehicles');
@@ -108,6 +123,7 @@ export default function VehicleEditPage() {
                 year: form.year,
                 capacityKg: form.capacityKg,
                 capacityVolume: form.capacityVolume,
+                serviceRef: form.serviceRef || undefined,
                 base: form.base,
                 notes: form.notes,
                 status: form.status,
@@ -165,7 +181,13 @@ export default function VehicleEditPage() {
                                 <div className="form-group"><label className="form-label">Merk/Model <span className="required">*</span></label><input className="form-input" value={form.brandModel} onChange={e => setForm({ ...form, brandModel: e.target.value })} /></div>
                             </div>
                             <div className="form-row">
-                                <div className="form-group"><label className="form-label">Tahun</label><input type="number" className="form-input" value={form.year} onChange={e => setForm({ ...form, year: Number(e.target.value) })} /></div>
+                                <div className="form-group">
+                                    <label className="form-label">Kategori Truk / Armada</label>
+                                    <select className="form-select" value={form.serviceRef} onChange={e => setForm({ ...form, serviceRef: e.target.value })}>
+                                        <option value="">Pilih kategori armada</option>
+                                        {services.map(service => <option key={service._id} value={service._id}>{service.name}</option>)}
+                                    </select>
+                                </div>
                                 <div className="form-group"><label className="form-label">Base / Lokasi</label><input className="form-input" value={form.base} onChange={e => setForm({ ...form, base: e.target.value })} /></div>
                             </div>
                             <div className="form-row">
@@ -177,6 +199,7 @@ export default function VehicleEditPage() {
                                 <div className="form-group"><label className="form-label">Tanggal Update Odometer</label><input type="date" className="form-input" value={form.lastOdometerAt} onChange={e => setForm({ ...form, lastOdometerAt: e.target.value })} /></div>
                             </div>
                             <div className="form-row">
+                                <div className="form-group"><label className="form-label">Tahun</label><input type="number" className="form-input" value={form.year} onChange={e => setForm({ ...form, year: Number(e.target.value) })} /></div>
                                 <div className="form-group"><label className="form-label">Odometer Terakhir</label><input type="number" className="form-input" value={form.lastOdometer || ''} onChange={e => setForm({ ...form, lastOdometer: Number(e.target.value) })} /></div>
                             </div>
                         </div>

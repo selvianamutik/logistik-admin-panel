@@ -485,6 +485,8 @@ export interface Vehicle {
   year: number;
   capacityKg?: number;
   capacityVolume?: number;
+  serviceRef?: string;
+  serviceName?: string;
   chassisNumber?: string;   // ownerOnly
   engineNumber?: string;    // ownerOnly
   status: VehicleStatus;

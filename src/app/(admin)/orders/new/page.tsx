@@ -169,11 +169,14 @@ export default function NewOrderPage() {
                                 </div>
                             </div>
                             <div className="form-group">
-                                <label className="form-label">Layanan</label>
+                                <label className="form-label">Kategori Truk / Armada</label>
                                 <select className="form-select" value={serviceRef} onChange={e => setServiceRef(e.target.value)}>
-                                    <option value="">Pilih layanan</option>
+                                    <option value="">Pilih kategori armada</option>
                                     {services.filter(s => s.active !== false).map(s => <option key={s._id} value={s._id}>{s.name}</option>)}
                                 </select>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                    Pilih kategori armada yang diminta customer. Kendaraan saat membuat surat jalan akan difilter mengikuti kategori ini.
+                                </div>
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Alamat Pickup (Opsional)</label>

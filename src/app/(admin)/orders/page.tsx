@@ -131,7 +131,7 @@ export default function OrdersPage() {
                                 <th>No. Resi</th>
                                 <th>Customer</th>
                                 <th>Penerima</th>
-                                <th>Layanan</th>
+                                <th>Kategori Armada</th>
                                 <th>Status</th>
                                 <th>Tanggal</th>
                                 <th>Aksi</th>
@@ -169,7 +169,7 @@ export default function OrdersPage() {
                                         </td>
                                         <td>{order.customerName}</td>
                                         <td>{order.receiverName}</td>
-                                        <td>{order.serviceName}</td>
+                                        <td>{order.serviceName || '-'}</td>
                                         <td>
                                             <span className={`badge badge-${ORDER_STATUS_MAP[order.status]?.color || 'gray'}`}>
                                                 <span className="badge-dot" />

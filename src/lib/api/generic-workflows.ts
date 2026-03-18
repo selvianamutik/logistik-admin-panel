@@ -237,7 +237,7 @@ export async function handleGenericUpdate(
             );
             if (relatedDeliveryOrder) {
                 return NextResponse.json(
-                    { error: 'Order yang sudah punya surat jalan hanya boleh mengubah catatan. Field utama dikunci agar dokumen turunan tetap konsisten.' },
+                    { error: 'Order yang sudah punya surat jalan hanya boleh mengubah catatan. Field utama seperti pengirim, kategori armada, dan penerima dikunci agar dokumen turunan tetap konsisten.' },
                     { status: 409 }
                 );
             }
@@ -267,10 +267,10 @@ export async function handleGenericUpdate(
             } else {
                 const service = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(serviceRef);
                 if (!service) {
-                    return NextResponse.json({ error: 'Layanan order tidak ditemukan' }, { status: 404 });
+                    return NextResponse.json({ error: 'Kategori armada order tidak ditemukan' }, { status: 404 });
                 }
                 if (service.active === false) {
-                    return NextResponse.json({ error: 'Layanan order tidak aktif' }, { status: 409 });
+                    return NextResponse.json({ error: 'Kategori armada order tidak aktif' }, { status: 409 });
                 }
                 updates.serviceRef = serviceRef;
                 updates.serviceName = service.name || '';

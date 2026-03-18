@@ -598,7 +598,7 @@ Ini supaya data DO tidak drift dengan slip borongan yang sudah terbentuk.
 Kalau order belum punya surat jalan:
 
 - field utama order masih boleh diedit
-- misalnya customer, layanan, penerima, dan catatan
+- misalnya customer, kategori armada, penerima, dan catatan
 
 Kalau order sudah punya minimal satu surat jalan:
 
@@ -608,7 +608,7 @@ Kalau order sudah punya minimal satu surat jalan:
 Field yang dikunci setelah ada surat jalan:
 
 - customer
-- layanan
+- kategori armada
 - nama penerima
 - telepon penerima
 - alamat penerima

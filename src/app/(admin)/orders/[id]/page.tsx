@@ -81,7 +81,7 @@ export default function OrderDetailPage() {
     const [doDriver, setDoDriver] = useState('');
     const [doNotes, setDoNotes] = useState('');
     const [selectedShipments, setSelectedShipments] = useState<SelectedShipmentMap>({});
-    const [vehicles, setVehicles] = useState<Array<Pick<Vehicle, '_id' | 'plateNumber'>>>([]);
+    const [vehicles, setVehicles] = useState<Array<Pick<Vehicle, '_id' | 'plateNumber' | 'serviceRef' | 'serviceName'>>>([]);
     const [drivers, setDrivers] = useState<Driver[]>([]);
     const [showHoldModal, setShowHoldModal] = useState(false);
     const [holdingItem, setHoldingItem] = useState<OrderItem | null>(null);
@@ -106,7 +106,7 @@ export default function OrderDetailPage() {
                 fetchEntity<Order | null>(`/api/data?entity=orders&id=${orderId}`),
                 fetchEntity<OrderItem[]>(`/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`),
                 fetchEntity<DeliveryOrder[]>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`),
-                fetchEntity<Array<Pick<Vehicle, '_id' | 'plateNumber'>>>(`/api/data?entity=vehicles&filter=${encodeURIComponent(JSON.stringify({ status: ['ACTIVE', 'IN_SERVICE'] }))}`),
+                fetchEntity<Array<Pick<Vehicle, '_id' | 'plateNumber' | 'serviceRef' | 'serviceName'>>>(`/api/data?entity=vehicles&filter=${encodeURIComponent(JSON.stringify({ status: ['ACTIVE', 'IN_SERVICE'] }))}`),
                 fetchEntity<Driver[]>('/api/data?entity=drivers'),
             ]);
             const deliveryOrderIds = (deliveryOrders || []).map(item => item._id);
@@ -140,6 +140,10 @@ export default function OrderDetailPage() {
     useEffect(() => {
         void loadOrderDetail();
     }, [loadOrderDetail]);
+
+    const matchingVehicles = !order?.serviceRef
+        ? vehicles
+        : vehicles.filter(vehicle => vehicle.serviceRef === order.serviceRef);
 
     const activeAssignmentByItemId = doItems.reduce<Record<string, DeliveryOrder | undefined>>((acc, doi) => {
         const activeDeliveryOrder = dos.find(d => d._id === doi.deliveryOrderRef && ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(d.status));
@@ -470,7 +474,7 @@ export default function OrderDetailPage() {
                         </div>
                         <div className="detail-row">
                             <div className="detail-item"><div className="detail-label">Customer / Pengirim / Penagih</div><div className="detail-value">{order.customerName}</div></div>
-                            <div className="detail-item"><div className="detail-label">Layanan</div><div className="detail-value">{order.serviceName || '-'}</div></div>
+                            <div className="detail-item"><div className="detail-label">Kategori Truk / Armada</div><div className="detail-value">{order.serviceName || '-'}</div></div>
                         </div>
                         <div className="mt-2"><div className="detail-label">Alamat Pickup</div><div className="detail-value">{order.pickupAddress || '-'}</div></div>
                         {order.notes && <div className="mt-2"><div className="detail-label">Catatan</div><div className="detail-value">{order.notes}</div></div>}
@@ -689,8 +693,18 @@ export default function OrderDetailPage() {
                                     <label className="form-label">Kendaraan</label>
                                     <select className="form-select" value={doVehicle} onChange={e => setDoVehicle(e.target.value)} disabled={creatingDO}>
                                         <option value="">Pilih kendaraan</option>
-                                        {vehicles.map(v => <option key={v._id} value={v._id}>{v.plateNumber}</option>)}
+                                        {matchingVehicles.map(v => <option key={v._id} value={v._id}>{v.plateNumber}{v.serviceName ? ` - ${v.serviceName}` : ''}</option>)}
                                     </select>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                        {order.serviceRef
+                                            ? `Hanya kendaraan dengan kategori ${order.serviceName || '-'} yang ditampilkan agar cocok dengan permintaan order.`
+                                            : 'Order ini belum punya kategori armada, jadi semua kendaraan operasional tetap tersedia.'}
+                                    </div>
+                                    {order.serviceRef && matchingVehicles.length === 0 && (
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--color-danger)' }}>
+                                            Belum ada kendaraan operasional yang cocok dengan kategori armada ini.
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                             <div className="form-group">

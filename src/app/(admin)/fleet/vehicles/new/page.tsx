@@ -1,21 +1,50 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useApp, useToast } from '../../../layout';
 import { ArrowLeft, Save } from 'lucide-react';
+
+import { useApp, useToast } from '../../../layout';
+import type { Service } from '@/lib/types';
 
 export default function VehicleNewPage() {
     const router = useRouter();
     const { user } = useApp();
     const { addToast } = useToast();
     const [saving, setSaving] = useState(false);
+    const [services, setServices] = useState<Service[]>([]);
     const [form, setForm] = useState({
-        unitCode: '', plateNumber: '', vehicleType: 'Truck', brandModel: '',
-        year: new Date().getFullYear(), capacityKg: 0, capacityVolume: 0,
-        chassisNumber: '', engineNumber: '', base: '', notes: ''
+        unitCode: '',
+        plateNumber: '',
+        vehicleType: 'Truck',
+        brandModel: '',
+        year: new Date().getFullYear(),
+        capacityKg: 0,
+        capacityVolume: 0,
+        serviceRef: '',
+        chassisNumber: '',
+        engineNumber: '',
+        base: '',
+        notes: '',
     });
     const isOwner = user?.role === 'OWNER';
+
+    useEffect(() => {
+        const loadServices = async () => {
+            try {
+                const res = await fetch('/api/data?entity=services');
+                const payload = await res.json();
+                if (!res.ok) {
+                    throw new Error(payload.error || 'Gagal memuat kategori armada');
+                }
+                setServices((payload.data || []).filter((service: Service) => service.active !== false));
+            } catch (error) {
+                addToast('error', error instanceof Error ? error.message : 'Gagal memuat kategori armada');
+            }
+        };
+
+        void loadServices();
+    }, [addToast]);
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -33,6 +62,7 @@ export default function VehicleNewPage() {
                 year: form.year,
                 capacityKg: form.capacityKg,
                 capacityVolume: form.capacityVolume,
+                serviceRef: form.serviceRef || undefined,
                 base: form.base,
                 notes: form.notes,
                 status: 'ACTIVE',
@@ -40,7 +70,8 @@ export default function VehicleNewPage() {
                 ...(isOwner ? { chassisNumber: form.chassisNumber, engineNumber: form.engineNumber } : {}),
             };
             const res = await fetch('/api/data', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ entity: 'vehicles', data: payload }),
             });
             const d = await res.json();
@@ -82,8 +113,20 @@ export default function VehicleNewPage() {
                                 <div className="form-group"><label className="form-label">Merk/Model <span className="required">*</span></label><input className="form-input" value={form.brandModel} onChange={e => setForm({ ...form, brandModel: e.target.value })} placeholder="Mitsubishi Colt Diesel FE 74" /></div>
                             </div>
                             <div className="form-row">
-                                <div className="form-group"><label className="form-label">Tahun</label><input type="number" className="form-input" value={form.year} onChange={e => setForm({ ...form, year: Number(e.target.value) })} /></div>
+                                <div className="form-group">
+                                    <label className="form-label">Kategori Truk / Armada</label>
+                                    <select className="form-select" value={form.serviceRef} onChange={e => setForm({ ...form, serviceRef: e.target.value })}>
+                                        <option value="">Pilih kategori armada</option>
+                                        {services.map(service => <option key={service._id} value={service._id}>{service.name}</option>)}
+                                    </select>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                        Kategori ini dipakai untuk mencocokkan kendaraan dengan order saat membuat surat jalan.
+                                    </div>
+                                </div>
                                 <div className="form-group"><label className="form-label">Base / Lokasi</label><input className="form-input" value={form.base} onChange={e => setForm({ ...form, base: e.target.value })} placeholder="Jakarta" /></div>
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group"><label className="form-label">Tahun</label><input type="number" className="form-input" value={form.year} onChange={e => setForm({ ...form, year: Number(e.target.value) })} /></div>
                             </div>
                         </div>
                     </div>

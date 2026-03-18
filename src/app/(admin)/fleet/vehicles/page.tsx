@@ -38,7 +38,11 @@ export default function VehiclesPage() {
     }, [addToast]);
 
     const filtered = items.filter(v => {
-        const m = !search || v.plateNumber?.toLowerCase().includes(search.toLowerCase()) || v.brandModel?.toLowerCase().includes(search.toLowerCase()) || v.unitCode?.toLowerCase().includes(search.toLowerCase());
+        const m = !search
+            || v.plateNumber?.toLowerCase().includes(search.toLowerCase())
+            || v.brandModel?.toLowerCase().includes(search.toLowerCase())
+            || v.unitCode?.toLowerCase().includes(search.toLowerCase())
+            || v.serviceName?.toLowerCase().includes(search.toLowerCase());
         const s = !statusFilter || v.status === statusFilter;
         return m && s;
     });
@@ -57,8 +61,8 @@ export default function VehiclesPage() {
                             title: 'Daftar Kendaraan',
                             company,
                             bodyHtml: `
-                            <table><thead><tr><th>Kode</th><th>Plat Nomor</th><th>Merk/Model</th><th>Tipe</th><th>Tahun</th><th>Status</th><th>Odometer</th><th>Tgl Update</th></tr></thead>
-                            <tbody>${filtered.map(v => `<tr><td class="b">${v.unitCode || '-'}</td><td>${v.plateNumber}</td><td>${v.brandModel}</td><td>${v.vehicleType}</td><td>${v.year}</td><td>${VEHICLE_STATUS_MAP[v.status]?.label || v.status}</td><td class="r">${v.lastOdometer ? `${v.lastOdometer.toLocaleString('id-ID')} km` : '-'}</td><td>${formatDate(v.lastOdometerAt)}</td></tr>`).join('')}</tbody></table>`,
+                            <table><thead><tr><th>Kode</th><th>Plat Nomor</th><th>Merk/Model</th><th>Kategori</th><th>Tipe</th><th>Tahun</th><th>Status</th><th>Odometer</th><th>Tgl Update</th></tr></thead>
+                            <tbody>${filtered.map(v => `<tr><td class="b">${v.unitCode || '-'}</td><td>${v.plateNumber}</td><td>${v.brandModel}</td><td>${v.serviceName || '-'}</td><td>${v.vehicleType}</td><td>${v.year}</td><td>${VEHICLE_STATUS_MAP[v.status]?.label || v.status}</td><td class="r">${v.lastOdometer ? `${v.lastOdometer.toLocaleString('id-ID')} km` : '-'}</td><td>${formatDate(v.lastOdometerAt)}</td></tr>`).join('')}</tbody></table>`,
                         });
                     }}>
                         <Printer size={15} /> Print
@@ -78,15 +82,16 @@ export default function VehiclesPage() {
                 </div>
                 <div className="table-wrapper">
                     <table>
-                        <thead><tr><th>Kode</th><th>Plat Nomor</th><th>Merk/Model</th><th>Tipe</th><th>Tahun</th><th>Status</th><th>Odometer</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>Kode</th><th>Plat Nomor</th><th>Merk/Model</th><th>Kategori Armada</th><th>Tipe</th><th>Tahun</th><th>Status</th><th>Odometer</th><th>Aksi</th></tr></thead>
                         <tbody>
-                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                filtered.length === 0 ? <tr><td colSpan={8}><div className="empty-state"><Car size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada kendaraan</div></div></td></tr> :
+                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
+                                filtered.length === 0 ? <tr><td colSpan={9}><div className="empty-state"><Car size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada kendaraan</div></div></td></tr> :
                                     filtered.map(v => (
                                         <tr key={v._id}>
                                             <td className="font-mono text-muted">{v.unitCode}</td>
                                             <td className="font-semibold">{v.plateNumber}</td>
                                             <td>{v.brandModel}</td>
+                                            <td>{v.serviceName || '-'}</td>
                                             <td>{v.vehicleType}</td>
                                             <td>{v.year}</td>
                                             <td><span className={`badge badge-${VEHICLE_STATUS_MAP[v.status]?.color}`}><span className="badge-dot" /> {VEHICLE_STATUS_MAP[v.status]?.label}</span></td>

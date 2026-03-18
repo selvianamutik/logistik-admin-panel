@@ -311,7 +311,7 @@ export default function DODetailPage() {
                             <tr>
                                 <td style="border:none;padding:2px 8px;font-weight:600">Telepon Penerima</td>
                                 <td style="border:none;padding:2px 8px">${doData?.receiverPhone || '-'}</td>
-                                <td style="border:none;padding:2px 8px;font-weight:600">Layanan</td>
+                                <td style="border:none;padding:2px 8px;font-weight:600">Kategori Armada</td>
                                 <td style="border:none;padding:2px 8px">${doData?.serviceName || '-'}</td>
                             </tr>
                             ${doData?.receiverCompany ? `<tr><td style="border:none;padding:2px 8px;font-weight:600">Perusahaan Penerima</td><td colspan="3" style="border:none;padding:2px 8px">${doData.receiverCompany}</td></tr>` : ''}
@@ -526,7 +526,7 @@ export default function DODetailPage() {
                             <div className="detail-item"><div className="detail-label">Customer</div><div className="detail-value">{doData.customerName || '-'}</div></div>
                         </div>
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">Layanan</div><div className="detail-value">{doData.serviceName || '-'}</div></div>
+                            <div className="detail-item"><div className="detail-label">Kategori Truk / Armada</div><div className="detail-value">{doData.serviceName || '-'}</div></div>
                             <div className="detail-item"><div className="detail-label">Telepon Penerima</div><div className="detail-value">{doData.receiverPhone || '-'}</div></div>
                         </div>
                         {doData.cargoFinalizedAt && (

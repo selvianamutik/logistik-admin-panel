@@ -105,11 +105,11 @@ export async function normalizeServicePayload(data: Record<string, unknown>, opt
     if (!partial || hasOwnKey(data, 'name')) {
         const name = normalizeText(data.name);
         if (!name) {
-            throw new Error('Nama layanan wajib diisi');
+            throw new Error('Nama kategori truk/armada wajib diisi');
         }
         const duplicate = await findDuplicateLowerTextDoc('service', 'name', name, options?.excludeId);
         if (duplicate) {
-            throw new Error('Nama layanan sudah digunakan');
+            throw new Error('Nama kategori truk/armada sudah digunakan');
         }
         next.name = name;
     }
@@ -120,7 +120,7 @@ export async function normalizeServicePayload(data: Record<string, unknown>, opt
 
     if (!partial || hasOwnKey(data, 'active')) {
         if (data.active !== undefined && typeof data.active !== 'boolean') {
-            throw new Error('Status layanan tidak valid');
+            throw new Error('Status kategori truk/armada tidak valid');
         }
         next.active = typeof data.active === 'boolean' ? data.active : true;
     }
@@ -294,6 +294,24 @@ export async function normalizeVehiclePayload(
     if (!partial || hasOwnKey(data, 'capacityVolume')) {
         const capacityVolume = normalizeOptionalNonNegativeNumber(data.capacityVolume, 'Kapasitas volume');
         next.capacityVolume = capacityVolume ?? 0;
+    }
+
+    if (!partial || hasOwnKey(data, 'serviceRef')) {
+        const serviceRef = normalizeOptionalText(data.serviceRef);
+        if (!serviceRef) {
+            next.serviceRef = '';
+            next.serviceName = undefined;
+        } else {
+            const service = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(serviceRef);
+            if (!service) {
+                throw new Error('Kategori armada tidak ditemukan');
+            }
+            if (service.active === false) {
+                throw new Error('Kategori armada tidak aktif');
+            }
+            next.serviceRef = serviceRef;
+            next.serviceName = service.name || '';
+        }
     }
 
     if (!partial || hasOwnKey(data, 'status')) {
@@ -737,12 +755,12 @@ export async function handleServiceDelete(
 ) {
     const id = typeof data.id === 'string' ? data.id : '';
     if (!id) {
-        return NextResponse.json({ error: 'Layanan tidak valid' }, { status: 400 });
+        return NextResponse.json({ error: 'Kategori truk/armada tidak valid' }, { status: 400 });
     }
 
     const service = await sanityGetById<{ _id: string; name?: string }>(id);
     if (!service) {
-        return NextResponse.json({ error: 'Layanan tidak ditemukan' }, { status: 404 });
+        return NextResponse.json({ error: 'Kategori truk/armada tidak ditemukan' }, { status: 404 });
     }
 
     const relatedOrder = await getSanityClient().fetch<{ _id: string } | null>(
@@ -750,11 +768,19 @@ export async function handleServiceDelete(
         { ref: id, serviceName: (service.name || '').toLowerCase() }
     );
     if (relatedOrder) {
-        return NextResponse.json({ error: 'Layanan yang sudah dipakai pada order tidak boleh dihapus' }, { status: 409 });
+        return NextResponse.json({ error: 'Kategori truk/armada yang sudah dipakai pada order tidak boleh dihapus' }, { status: 409 });
+    }
+
+    const relatedVehicle = await getSanityClient().fetch<{ _id: string } | null>(
+        `*[_type == "vehicle" && ((serviceRef == $ref || serviceRef._ref == $ref) || lower(coalesce(serviceName, "")) == $serviceName)][0]{ _id }`,
+        { ref: id, serviceName: (service.name || '').toLowerCase() }
+    );
+    if (relatedVehicle) {
+        return NextResponse.json({ error: 'Kategori truk/armada yang sudah dipakai pada kendaraan tidak boleh dihapus' }, { status: 409 });
     }
 
     await sanityDelete(id);
-    await addAuditLog(session, 'DELETE', 'services', id, `Deleted services ${service.name || id}`);
+    await addAuditLog(session, 'DELETE', 'services', id, `Deleted vehicle category ${service.name || id}`);
     return NextResponse.json({ success: true });
 }
 
