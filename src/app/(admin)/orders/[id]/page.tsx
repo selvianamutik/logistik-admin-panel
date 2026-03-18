@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useToast } from '../../layout';
 import { ArrowLeft, Truck, FileText, Edit, Eye } from 'lucide-react';
 import { formatDate, formatCurrency, formatNumber, ORDER_STATUS_MAP, ITEM_STATUS_MAP, DO_STATUS_MAP, INVOICE_STATUS_MAP } from '@/lib/utils';
-import { formatCargoSummary, formatVolumeDisplay, formatWeightDisplay } from '@/lib/measurement';
+import { formatCargoSummary, formatVolumeDisplay } from '@/lib/measurement';
 import { calculateWeightPortion, getOrderItemProgress, roundQuantity } from '@/lib/order-item-progress';
 import type { Order, OrderItem, DeliveryOrder, DeliveryOrderItem, Driver, FreightNota, FreightNotaItem, Vehicle } from '@/lib/types';
 
@@ -16,6 +16,44 @@ type SelectedShipmentMap = Record<string, {
     holdReason: string;
     holdLocation: string;
 }>;
+
+type CargoAggregate = {
+    qtyKoli: number;
+    weightKg: number;
+    volumeM3: number;
+};
+
+function createCargoAggregate(): CargoAggregate {
+    return {
+        qtyKoli: 0,
+        weightKg: 0,
+        volumeM3: 0,
+    };
+}
+
+function addCargoAggregate(base: CargoAggregate, next: Partial<CargoAggregate>) {
+    return {
+        qtyKoli: roundQuantity(base.qtyKoli + Number(next.qtyKoli || 0)),
+        weightKg: roundQuantity(base.weightKg + Number(next.weightKg || 0)),
+        volumeM3: roundQuantity(base.volumeM3 + Number(next.volumeM3 || 0), 3),
+    };
+}
+
+function getPlannedDoItemCargo(doItem: DeliveryOrderItem): CargoAggregate {
+    return {
+        qtyKoli: Number(doItem.orderItemQtyKoli || 0),
+        weightKg: Number(doItem.orderItemWeight || 0),
+        volumeM3: Number(doItem.orderItemVolumeM3 || 0),
+    };
+}
+
+function getActualDoItemCargo(doItem: DeliveryOrderItem): CargoAggregate {
+    return {
+        qtyKoli: Number(doItem.actualQtyKoli ?? doItem.orderItemQtyKoli ?? 0),
+        weightKg: Number(doItem.actualWeightKg ?? doItem.orderItemWeight ?? 0),
+        volumeM3: Number(doItem.actualVolumeM3 ?? doItem.orderItemVolumeM3 ?? 0),
+    };
+}
 
 function formatProgressLine(label: string, qtyKoli: number, weight: number) {
     if (qtyKoli <= 0 && weight <= 0) {
@@ -120,6 +158,24 @@ export default function OrderDetailPage() {
         acc[item._id] = getOrderItemProgress(item);
         return acc;
     }, {});
+    const deliveredActualCargoByItemId = doItems.reduce<Record<string, CargoAggregate>>((acc, doItem) => {
+        const deliveryOrder = dos.find(item => item._id === doItem.deliveryOrderRef);
+        if (!deliveryOrder || deliveryOrder.status !== 'DELIVERED' || !doItem.orderItemRef) {
+            return acc;
+        }
+        const current = acc[doItem.orderItemRef] || createCargoAggregate();
+        acc[doItem.orderItemRef] = addCargoAggregate(current, getActualDoItemCargo(doItem));
+        return acc;
+    }, {});
+    const activePlannedCargoByItemId = doItems.reduce<Record<string, CargoAggregate>>((acc, doItem) => {
+        const deliveryOrder = dos.find(item => item._id === doItem.deliveryOrderRef);
+        if (!deliveryOrder || !['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status) || !doItem.orderItemRef) {
+            return acc;
+        }
+        const current = acc[doItem.orderItemRef] || createCargoAggregate();
+        acc[doItem.orderItemRef] = addCargoAggregate(current, getPlannedDoItemCargo(doItem));
+        return acc;
+    }, {});
 
     const availableItems = items.filter(item => {
         const progress = itemProgressById[item._id];
@@ -130,6 +186,29 @@ export default function OrderDetailPage() {
     const assignedQtyKoli = items.reduce((sum, item) => sum + itemProgressById[item._id].assignedQtyKoli, 0);
     const holdQtyTotal = items.reduce((sum, item) => sum + itemProgressById[item._id].heldQtyKoli, 0);
     const pendingQtyTotal = items.reduce((sum, item) => sum + itemProgressById[item._id].pendingQtyKoli, 0);
+    const totalOrderCargo = items.reduce((sum, item) => addCargoAggregate(sum, {
+        qtyKoli: item.qtyKoli,
+        weightKg: item.weight,
+        volumeM3: item.volume,
+    }), createCargoAggregate());
+    const totalDeliveredActualCargo = Object.values(deliveredActualCargoByItemId).reduce(
+        (sum, cargo) => addCargoAggregate(sum, cargo),
+        createCargoAggregate()
+    );
+    const totalActivePlannedCargo = Object.values(activePlannedCargoByItemId).reduce(
+        (sum, cargo) => addCargoAggregate(sum, cargo),
+        createCargoAggregate()
+    );
+    const doPlannedCargoById = doItems.reduce<Record<string, CargoAggregate>>((acc, doItem) => {
+        const current = acc[doItem.deliveryOrderRef] || createCargoAggregate();
+        acc[doItem.deliveryOrderRef] = addCargoAggregate(current, getPlannedDoItemCargo(doItem));
+        return acc;
+    }, {});
+    const doActualCargoById = doItems.reduce<Record<string, CargoAggregate>>((acc, doItem) => {
+        const current = acc[doItem.deliveryOrderRef] || createCargoAggregate();
+        acc[doItem.deliveryOrderRef] = addCargoAggregate(current, getActualDoItemCargo(doItem));
+        return acc;
+    }, {});
     const deliveredDoCount = dos.filter(d => d.status === 'DELIVERED').length;
     const progress = totalQtyKoli > 0 ? Math.round((deliveredQtyKoli / totalQtyKoli) * 100) : 0;
 
@@ -312,7 +391,7 @@ export default function OrderDetailPage() {
             <div className="card mb-6">
                 <div className="card-body">
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 'var(--font-size-sm)' }}>
-                        <span className="font-semibold">Progress Pengiriman</span>
+                        <span className="font-semibold">Progress Pengiriman Aktual</span>
                         <span className="text-muted">{formatNumber(deliveredQtyKoli)}/{formatNumber(totalQtyKoli)} koli terkirim ({progress}%)</span>
                     </div>
                     <div className="progress-bar">
@@ -323,6 +402,59 @@ export default function OrderDetailPage() {
                         <span style={{ color: 'var(--color-primary)' }}>{formatNumber(assignedQtyKoli)} Dalam DO</span>
                         <span style={{ color: 'var(--color-warning)' }}>{formatNumber(holdQtyTotal)} Ditahan</span>
                         <span>{formatNumber(pendingQtyTotal)} Pending</span>
+                    </div>
+                    <div style={{ marginTop: 8, fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+                        DO aktif masih memakai muatan rencana. Begitu DO selesai, realisasi akhir mengikuti muatan aktual yang difinalkan admin.
+                    </div>
+                </div>
+            </div>
+
+            <div className="detail-grid" style={{ marginBottom: '1.5rem' }}>
+                <div className="card">
+                    <div className="card-header"><span className="card-header-title">Target Order Saat Ini</span></div>
+                    <div className="card-body">
+                        <div className="detail-value" style={{ fontSize: '1.1rem', fontWeight: 700 }}>
+                            {formatCargoSummary({
+                                qtyKoli: totalOrderCargo.qtyKoli,
+                                weightKg: totalOrderCargo.weightKg,
+                                volumeM3: totalOrderCargo.volumeM3,
+                            })}
+                        </div>
+                        <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
+                            Mengikuti target order yang tersimpan saat ini.
+                        </div>
+                    </div>
+                </div>
+                <div className="card">
+                    <div className="card-header"><span className="card-header-title">Aktual Terkirim</span></div>
+                    <div className="card-body">
+                        <div className="detail-value" style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-success)' }}>
+                            {formatCargoSummary({
+                                qtyKoli: totalDeliveredActualCargo.qtyKoli,
+                                weightKg: totalDeliveredActualCargo.weightKg,
+                                volumeM3: totalDeliveredActualCargo.volumeM3,
+                            })}
+                        </div>
+                        <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
+                            Diambil dari muatan aktual DO yang sudah `Delivered`.
+                        </div>
+                    </div>
+                </div>
+                <div className="card">
+                    <div className="card-header"><span className="card-header-title">Rencana dalam DO Aktif</span></div>
+                    <div className="card-body">
+                        <div className="detail-value" style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-primary)' }}>
+                            {assignedQtyKoli > 0
+                                ? formatCargoSummary({
+                                    qtyKoli: totalActivePlannedCargo.qtyKoli,
+                                    weightKg: totalActivePlannedCargo.weightKg,
+                                    volumeM3: totalActivePlannedCargo.volumeM3,
+                                })
+                                : '-'}
+                        </div>
+                        <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
+                            Ini masih estimasi / rencana sampai DO tersebut diselesaikan.
+                        </div>
                     </div>
                 </div>
             </div>
@@ -371,34 +503,57 @@ export default function OrderDetailPage() {
                                 const activeAssignment = activeAssignmentByItemId[item._id];
                                 const doItem = doItemByOrderItemId[item._id];
                                 const progressInfo = itemProgressById[item._id];
+                                const deliveredActualCargo = deliveredActualCargoByItemId[item._id] || createCargoAggregate();
+                                const activePlannedCargo = activePlannedCargoByItemId[item._id] || createCargoAggregate();
                                 const progressLines = [
-                                    formatProgressLine('Terkirim', progressInfo.deliveredQtyKoli, progressInfo.deliveredWeight),
-                                    formatProgressLine('Dalam DO', progressInfo.assignedQtyKoli, progressInfo.assignedWeight),
+                                    formatProgressLine('Aktual terkirim', deliveredActualCargo.qtyKoli, deliveredActualCargo.weightKg),
+                                    formatProgressLine('Rencana dalam DO', activePlannedCargo.qtyKoli, activePlannedCargo.weightKg),
                                     formatProgressLine('Hold', progressInfo.heldQtyKoli, progressInfo.heldWeight),
-                                    formatProgressLine('Siap kirim', progressInfo.pendingQtyKoli, progressInfo.pendingWeight),
+                                    formatProgressLine('Sisa siap kirim', progressInfo.pendingQtyKoli, progressInfo.pendingWeight),
                                 ].filter((line): line is string => Boolean(line));
                                 return (
                                 <tr key={item._id}>
                                     <td className="font-medium">{item.description}</td>
-                                    <td>{item.qtyKoli}</td>
                                     <td>
+                                        <div className="font-medium">{item.qtyKoli}</div>
+                                        <div className="text-muted text-sm">
+                                            Aktual terkirim: {formatNumber(deliveredActualCargo.qtyKoli)}
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div className="text-muted text-xs">Target / order</div>
                                         <div className="font-medium">
-                                            {formatWeightDisplay({
+                                            {formatCargoSummary({
+                                                qtyKoli: item.qtyKoli,
                                                 weightKg: item.weight,
                                                 weightInputValue: item.weightInputValue,
                                                 weightInputUnit: item.weightInputUnit,
-                                                includeCanonical: true,
+                                                volumeM3: item.volume,
+                                                volumeInputValue: item.volumeInputValue,
+                                                volumeInputUnit: item.volumeInputUnit,
                                             })}
                                         </div>
-                                        {((item.volumeInputValue || 0) > 0 || (item.volume || 0) > 0) && (
-                                            <div className="text-muted text-sm">
-                                                {formatVolumeDisplay({
-                                                    volumeM3: item.volume,
-                                                    volumeInputValue: item.volumeInputValue,
-                                                    volumeInputUnit: item.volumeInputUnit,
-                                                    includeCanonical: true,
-                                                })}
-                                            </div>
+                                        <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>Aktual terkirim</div>
+                                        <div className="font-medium" style={{ color: deliveredActualCargo.qtyKoli > 0 ? 'var(--color-success)' : 'var(--color-gray-500)' }}>
+                                            {deliveredActualCargo.qtyKoli > 0
+                                                ? formatCargoSummary({
+                                                    qtyKoli: deliveredActualCargo.qtyKoli,
+                                                    weightKg: deliveredActualCargo.weightKg,
+                                                    volumeM3: deliveredActualCargo.volumeM3,
+                                                })
+                                                : 'Belum ada realisasi'}
+                                        </div>
+                                        {activePlannedCargo.qtyKoli > 0 && (
+                                            <>
+                                                <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>Dalam DO aktif</div>
+                                                <div className="font-medium" style={{ color: 'var(--color-primary)' }}>
+                                                    {formatCargoSummary({
+                                                        qtyKoli: activePlannedCargo.qtyKoli,
+                                                        weightKg: activePlannedCargo.weightKg,
+                                                        volumeM3: activePlannedCargo.volumeM3,
+                                                    })}
+                                                </div>
+                                            </>
                                         )}
                                     </td>
                                     <td>
@@ -448,15 +603,35 @@ export default function OrderDetailPage() {
                 <div className="card-header"><span className="card-header-title">Surat Jalan ({dos.length})</span></div>
                 <div className="table-wrapper">
                     <table>
-                        <thead><tr><th>No. DO</th><th>Tanggal</th><th>Kendaraan</th><th>Status</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>No. DO</th><th>Tanggal</th><th>Kendaraan</th><th>Muatan</th><th>Status</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {dos.length === 0 ? (
-                                <tr><td colSpan={5} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada surat jalan</td></tr>
+                                <tr><td colSpan={6} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada surat jalan</td></tr>
                             ) : dos.map(d => (
                                 <tr key={d._id}>
                                     <td><Link href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{d.doNumber}</Link></td>
                                     <td>{formatDate(d.date)}</td>
                                     <td>{d.vehiclePlate || '-'}</td>
+                                    <td>
+                                        <div className="font-medium">
+                                            {formatCargoSummary(
+                                                d.status === 'DELIVERED'
+                                                    ? {
+                                                        qtyKoli: doActualCargoById[d._id]?.qtyKoli,
+                                                        weightKg: doActualCargoById[d._id]?.weightKg,
+                                                        volumeM3: doActualCargoById[d._id]?.volumeM3,
+                                                    }
+                                                    : {
+                                                        qtyKoli: doPlannedCargoById[d._id]?.qtyKoli,
+                                                        weightKg: doPlannedCargoById[d._id]?.weightKg,
+                                                        volumeM3: doPlannedCargoById[d._id]?.volumeM3,
+                                                    }
+                                            )}
+                                        </div>
+                                        <div className="text-muted text-sm">
+                                            {d.status === 'DELIVERED' ? 'Aktual final' : 'Rencana DO'}
+                                        </div>
+                                    </td>
                                     <td><span className={`badge badge-${DO_STATUS_MAP[d.status]?.color}`}><span className="badge-dot" /> {DO_STATUS_MAP[d.status]?.label}</span></td>
                                     <td><Link href={`/delivery-orders/${d._id}`} className="table-action-btn"><Eye size={14} /> Lihat</Link></td>
                                 </tr>
