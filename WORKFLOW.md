@@ -53,6 +53,15 @@ Artinya:
 - Sistem membuat nomor resi otomatis.
 - Status awal order: `OPEN`.
 - Item barang disimpan sebagai `orderItem`.
+- Item order sekarang bisa diinput dengan unit operasional berbeda:
+  - berat: `kg` atau `ton`
+  - volume: `m3`, `liter`, atau `kl`
+- Tetapi source of truth sistem tetap:
+  - `weight` disimpan dalam `kg`
+  - `volume` disimpan dalam `m3`
+- Snapshot unit input asli tetap disimpan supaya UI bisa tetap menampilkan format lapangan seperti:
+  - `0.24 ton (240 kg)`
+  - `800 liter (0.8 m3)`
 
 ### 3.2 Buat surat jalan
 

@@ -3,6 +3,8 @@
    ============================================================ */
 
 // ── Roles & Auth ──
+import type { VolumeInputUnit, WeightInputUnit } from './measurement';
+
 export type UserRole = 'OWNER' | 'ADMIN' | 'DRIVER';
 
 export interface User {
@@ -198,6 +200,10 @@ export interface OrderItem {
   qtyKoli: number;
   weight: number;
   volume?: number;
+  weightInputValue?: number;
+  weightInputUnit?: WeightInputUnit;
+  volumeInputValue?: number;
+  volumeInputUnit?: VolumeInputUnit;
   value?: number;
   deliveredQtyKoli?: number;
   deliveredWeight?: number;
@@ -266,6 +272,11 @@ export interface DeliveryOrderItem {
   orderItemDescription?: string;
   orderItemQtyKoli?: number;
   orderItemWeight?: number;
+  orderItemVolumeM3?: number;
+  orderItemWeightInputValue?: number;
+  orderItemWeightInputUnit?: WeightInputUnit;
+  orderItemVolumeInputValue?: number;
+  orderItemVolumeInputUnit?: VolumeInputUnit;
   shippedQtyKoli?: number;
   shippedWeight?: number;
 }

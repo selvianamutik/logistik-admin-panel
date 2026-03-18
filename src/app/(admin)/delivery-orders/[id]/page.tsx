@@ -7,6 +7,7 @@ import { useToast } from '../../layout';
 import { ArrowLeft, Printer, FileDown, Truck, Upload, Save, MapPin, Radio } from 'lucide-react';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
 import { formatDate, formatDateTime, DO_STATUS_MAP } from '@/lib/utils';
+import { formatVolumeDisplay, formatWeightDisplay } from '@/lib/measurement';
 import { generateDOPdf } from '@/lib/pdf/doTemplate';
 import type { DeliveryOrder, DeliveryOrderItem, TrackingLog, CompanyProfile, Order } from '@/lib/types';
 
@@ -261,7 +262,7 @@ export default function DODetailPage() {
                                 <th>No</th>
                                 <th>Deskripsi</th>
                                 <th class="r">Koli</th>
-                                <th class="r">Berat</th>
+                                <th>Muatan</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -270,7 +271,20 @@ export default function DODetailPage() {
                                     <td>${index + 1}</td>
                                     <td>${item.orderItemDescription || '-'}</td>
                                     <td class="r">${item.orderItemQtyKoli || 0}</td>
-                                    <td class="r">${item.orderItemWeight || 0} kg</td>
+                                    <td>${[
+                                        formatWeightDisplay({
+                                            weightKg: item.orderItemWeight,
+                                            weightInputValue: item.orderItemWeightInputValue,
+                                            weightInputUnit: item.orderItemWeightInputUnit,
+                                            includeCanonical: true,
+                                        }),
+                                        formatVolumeDisplay({
+                                            volumeM3: item.orderItemVolumeM3,
+                                            volumeInputValue: item.orderItemVolumeInputValue,
+                                            volumeInputUnit: item.orderItemVolumeInputUnit,
+                                            includeCanonical: true,
+                                        }),
+                                    ].filter(value => value !== '-').join(' / ') || '-'}</td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -558,13 +572,32 @@ export default function DODetailPage() {
                 <div className="card-header"><span className="card-header-title">Item dalam DO ({doItems.length})</span></div>
                 <div className="table-wrapper">
                     <table>
-                        <thead><tr><th>Deskripsi</th><th>Koli</th><th>Berat (kg)</th></tr></thead>
+                        <thead><tr><th>Deskripsi</th><th>Koli</th><th>Muatan</th></tr></thead>
                         <tbody>
                             {doItems.map(item => (
                                 <tr key={item._id}>
                                     <td className="font-medium">{item.orderItemDescription}</td>
                                     <td>{item.orderItemQtyKoli}</td>
-                                    <td>{item.orderItemWeight} kg</td>
+                                    <td>
+                                        <div className="font-medium">
+                                            {formatWeightDisplay({
+                                                weightKg: item.orderItemWeight,
+                                                weightInputValue: item.orderItemWeightInputValue,
+                                                weightInputUnit: item.orderItemWeightInputUnit,
+                                                includeCanonical: true,
+                                            })}
+                                        </div>
+                                        {((item.orderItemVolumeInputValue || 0) > 0 || (item.orderItemVolumeM3 || 0) > 0) && (
+                                            <div className="text-muted text-sm">
+                                                {formatVolumeDisplay({
+                                                    volumeM3: item.orderItemVolumeM3,
+                                                    volumeInputValue: item.orderItemVolumeInputValue,
+                                                    volumeInputUnit: item.orderItemVolumeInputUnit,
+                                                    includeCanonical: true,
+                                                })}
+                                            </div>
+                                        )}
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useToast } from '../../layout';
 import { ArrowLeft, Truck, FileText, Edit, Eye } from 'lucide-react';
 import { formatDate, formatCurrency, formatNumber, ORDER_STATUS_MAP, ITEM_STATUS_MAP, DO_STATUS_MAP, INVOICE_STATUS_MAP } from '@/lib/utils';
+import { formatCargoSummary, formatVolumeDisplay, formatWeightDisplay } from '@/lib/measurement';
 import { calculateWeightPortion, getOrderItemProgress, roundQuantity } from '@/lib/order-item-progress';
 import type { Order, OrderItem, DeliveryOrder, DeliveryOrderItem, Driver, FreightNota, FreightNotaItem, Vehicle } from '@/lib/types';
 
@@ -364,7 +365,7 @@ export default function OrderDetailPage() {
                 </div>
                 <div className="table-wrapper">
                     <table>
-                        <thead><tr><th>Deskripsi</th><th>Koli</th><th>Berat (kg)</th><th>Progress</th><th>Status</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>Deskripsi</th><th>Koli</th><th>Muatan</th><th>Progress</th><th>Status</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {items.map(item => {
                                 const activeAssignment = activeAssignmentByItemId[item._id];
@@ -380,7 +381,26 @@ export default function OrderDetailPage() {
                                 <tr key={item._id}>
                                     <td className="font-medium">{item.description}</td>
                                     <td>{item.qtyKoli}</td>
-                                    <td>{item.weight}</td>
+                                    <td>
+                                        <div className="font-medium">
+                                            {formatWeightDisplay({
+                                                weightKg: item.weight,
+                                                weightInputValue: item.weightInputValue,
+                                                weightInputUnit: item.weightInputUnit,
+                                                includeCanonical: true,
+                                            })}
+                                        </div>
+                                        {((item.volumeInputValue || 0) > 0 || (item.volume || 0) > 0) && (
+                                            <div className="text-muted text-sm">
+                                                {formatVolumeDisplay({
+                                                    volumeM3: item.volume,
+                                                    volumeInputValue: item.volumeInputValue,
+                                                    volumeInputUnit: item.volumeInputUnit,
+                                                    includeCanonical: true,
+                                                })}
+                                            </div>
+                                        )}
+                                    </td>
                                     <td>
                                         <div style={{ display: 'grid', gap: '0.25rem', minWidth: 220 }}>
                                             {progressLines.map(line => (
@@ -559,7 +579,15 @@ export default function OrderDetailPage() {
                                                         <td>
                                                             <div className="font-medium">{item.description}</div>
                                                             <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-                                                                Total {formatNumber(progressInfo.totalQtyKoli)} koli / {formatNumber(progressInfo.totalWeight)} kg
+                                                                Total {formatCargoSummary({
+                                                                    qtyKoli: progressInfo.totalQtyKoli,
+                                                                    weightKg: item.weight,
+                                                                    weightInputValue: item.weightInputValue,
+                                                                    weightInputUnit: item.weightInputUnit,
+                                                                    volumeM3: item.volume,
+                                                                    volumeInputValue: item.volumeInputValue,
+                                                                    volumeInputUnit: item.volumeInputUnit,
+                                                                })}
                                                             </div>
                                                         </td>
                                                         <td style={{ minWidth: 180 }}>
@@ -595,6 +623,14 @@ export default function OrderDetailPage() {
                                                             {selection && (
                                                                 <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
                                                                     Perkiraan berat kirim: {formatNumber(shippedWeightPreview)} kg
+                                                                    {((item.volumeInputValue || 0) > 0 || (item.volume || 0) > 0) && (
+                                                                        <> | Volume referensi: {formatVolumeDisplay({
+                                                                            volumeM3: item.volume,
+                                                                            volumeInputValue: item.volumeInputValue,
+                                                                            volumeInputUnit: item.volumeInputUnit,
+                                                                            includeCanonical: true,
+                                                                        })}</>
+                                                                    )}
                                                                 </div>
                                                             )}
                                                         </td>

@@ -670,11 +670,11 @@ function buildSeedDocuments() {
     );
 
     push(
-        { _id: 'oi-001', _type: 'orderItem', orderRef: 'order-001', description: 'Beras premium 25 kg', qtyKoli: 4, weight: 80, volume: 0.4, value: 7_200_000, status: 'DELIVERED' },
-        { _id: 'oi-002', _type: 'orderItem', orderRef: 'order-001', description: 'Minyak goreng kemasan', qtyKoli: 6, weight: 120, volume: 0.6, value: 9_000_000, status: 'DELIVERED' },
-        { _id: 'oi-003', _type: 'orderItem', orderRef: 'order-002', description: 'Plat baja ringan', qtyKoli: 8, weight: 240, volume: 1.2, value: 16_500_000, status: 'DELIVERED' },
+        { _id: 'oi-001', _type: 'orderItem', orderRef: 'order-001', description: 'Beras premium 25 kg', qtyKoli: 4, weight: 80, volume: 0.4, weightInputValue: 80, weightInputUnit: 'KG', volumeInputValue: 0.4, volumeInputUnit: 'M3', value: 7_200_000, status: 'DELIVERED' },
+        { _id: 'oi-002', _type: 'orderItem', orderRef: 'order-001', description: 'Minyak goreng kemasan', qtyKoli: 6, weight: 120, volume: 0.6, weightInputValue: 120, weightInputUnit: 'KG', volumeInputValue: 600, volumeInputUnit: 'LITER', value: 9_000_000, status: 'DELIVERED' },
+        { _id: 'oi-003', _type: 'orderItem', orderRef: 'order-002', description: 'Plat baja ringan', qtyKoli: 8, weight: 240, volume: 1.2, weightInputValue: 0.24, weightInputUnit: 'TON', volumeInputValue: 1.2, volumeInputUnit: 'M3', value: 16_500_000, status: 'DELIVERED' },
         { _id: 'oi-004', _type: 'orderItem', orderRef: 'order-002', description: 'Baut dan aksesoris pemasangan', qtyKoli: 4, weight: 60, volume: 0.3, value: 1_200_000, status: 'PENDING' },
-        { _id: 'oi-005', _type: 'orderItem', orderRef: 'order-003', description: 'Resin batch A', qtyKoli: 5, weight: 150, volume: 0.8, value: 12_000_000, status: 'ON_DELIVERY' },
+        { _id: 'oi-005', _type: 'orderItem', orderRef: 'order-003', description: 'Resin batch A', qtyKoli: 5, weight: 150, volume: 0.8, weightInputValue: 150, weightInputUnit: 'KG', volumeInputValue: 0.8, volumeInputUnit: 'KL', value: 12_000_000, status: 'ON_DELIVERY' },
         { _id: 'oi-006', _type: 'orderItem', orderRef: 'order-003', description: 'Dokumen QC dan sertifikat', qtyKoli: 1, weight: 5, volume: 0.03, value: 150_000, status: 'PENDING' },
         { _id: 'oi-007', _type: 'orderItem', orderRef: 'order-004', description: 'Bahan kemasan produksi', qtyKoli: 7, weight: 210, volume: 1, value: 8_750_000, status: 'ON_DELIVERY' },
         { _id: 'oi-008', _type: 'orderItem', orderRef: 'order-004', description: 'Pallet kayu', qtyKoli: 2, weight: 40, volume: 0.2, value: 600_000, status: 'PENDING' },
@@ -683,7 +683,7 @@ function buildSeedDocuments() {
         { _id: 'oi-011', _type: 'orderItem', orderRef: 'order-007', description: 'Mesin packing', qtyKoli: 2, weight: 180, volume: 0.9, value: 18_000_000, status: 'PENDING' },
         { _id: 'oi-012', _type: 'orderItem', orderRef: 'order-008', description: 'Biji plastik recycle', qtyKoli: 6, weight: 180, volume: 0.9, value: 6_500_000, status: 'DELIVERED' },
         { _id: 'oi-013', _type: 'orderItem', orderRef: 'order-009', description: 'Plat potong custom', qtyKoli: 5, weight: 140, volume: 0.7, value: 9_800_000, status: 'PENDING' },
-        { _id: 'oi-014', _type: 'orderItem', orderRef: 'order-010', description: 'Minyak goreng refill', qtyKoli: 8, weight: 160, volume: 0.8, value: 8_400_000, status: 'DELIVERED' },
+        { _id: 'oi-014', _type: 'orderItem', orderRef: 'order-010', description: 'Minyak goreng refill', qtyKoli: 8, weight: 160, volume: 0.8, weightInputValue: 160, weightInputUnit: 'KG', volumeInputValue: 800, volumeInputUnit: 'LITER', value: 8_400_000, status: 'DELIVERED' },
         { _id: 'oi-015', _type: 'orderItem', orderRef: 'order-011', description: 'Gula kemasan 1 kg', qtyKoli: 5, weight: 100, volume: 0.5, value: 4_750_000, status: 'DELIVERED' },
         {
             _id: 'oi-016',
@@ -693,6 +693,10 @@ function buildSeedDocuments() {
             qtyKoli: 100,
             weight: 2_000,
             volume: 10,
+            weightInputValue: 2,
+            weightInputUnit: 'TON',
+            volumeInputValue: 10,
+            volumeInputUnit: 'M3',
             value: 98_000_000,
             deliveredQtyKoli: 50,
             deliveredWeight: 1_000,

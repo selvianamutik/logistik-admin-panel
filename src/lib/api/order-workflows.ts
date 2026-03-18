@@ -16,6 +16,7 @@ import {
     normalizeText,
     type ApiSession,
 } from './data-helpers';
+import { convertVolumeToM3, convertWeightToKg, type VolumeInputUnit, type WeightInputUnit } from '@/lib/measurement';
 
 type AuditLogFn = (
     session: Pick<ApiSession, '_id' | 'name'>,
@@ -42,6 +43,10 @@ type NormalizedOrderItemInput = {
     qtyKoli: number;
     weight: number;
     volume?: number;
+    weightInputValue?: number;
+    weightInputUnit?: WeightInputUnit;
+    volumeInputValue?: number;
+    volumeInputUnit?: VolumeInputUnit;
     value?: number;
 };
 
@@ -59,6 +64,11 @@ type OrderItemProgressSnapshot = {
     description?: string;
     qtyKoli?: number;
     weight?: number;
+    volume?: number;
+    weightInputValue?: number;
+    weightInputUnit?: WeightInputUnit;
+    volumeInputValue?: number;
+    volumeInputUnit?: VolumeInputUnit;
     status?: string;
     deliveredQtyKoli?: number;
     deliveredWeight?: number;
@@ -336,8 +346,15 @@ export async function handleOrderCreate(
         .map<NormalizedOrderItemInput>(item => {
             const description = normalizeText(item.description);
             const qtyKoli = normalizeNumber(item.qtyKoli ?? 1);
-            const weight = normalizeNumber(item.weight ?? 0);
-            const volume = normalizeNumber(item.volume);
+            const rawWeightInputValue = normalizeNumber(item.weightInputValue ?? item.weight ?? 0);
+            const rawVolumeInputValue = normalizeNumber(item.volumeInputValue ?? item.volume);
+            const weightInputUnit: WeightInputUnit = item.weightInputUnit === 'TON' ? 'TON' : 'KG';
+            const volumeInputUnit: VolumeInputUnit =
+                item.volumeInputUnit === 'LITER' || item.volumeInputUnit === 'KL' ? item.volumeInputUnit : 'M3';
+            const weight = convertWeightToKg(rawWeightInputValue, weightInputUnit);
+            const volume = Number.isFinite(rawVolumeInputValue) && rawVolumeInputValue >= 0
+                ? convertVolumeToM3(rawVolumeInputValue, volumeInputUnit)
+                : undefined;
             const value = normalizeNumber(item.value);
 
             if (!description) {
@@ -346,15 +363,22 @@ export async function handleOrderCreate(
             if (!Number.isFinite(qtyKoli) || qtyKoli <= 0) {
                 throw new Error('Jumlah koli item order harus lebih besar dari 0');
             }
-            if (!Number.isFinite(weight) || weight < 0) {
+            if (!Number.isFinite(rawWeightInputValue) || rawWeightInputValue < 0) {
                 throw new Error('Berat item order tidak valid');
+            }
+            if (Number.isFinite(rawVolumeInputValue) && rawVolumeInputValue < 0) {
+                throw new Error('Volume item order tidak valid');
             }
 
             return {
                 description,
                 qtyKoli,
                 weight,
-                volume: Number.isFinite(volume) && volume >= 0 ? volume : undefined,
+                volume: volume !== undefined && Number.isFinite(volume) && volume >= 0 ? volume : undefined,
+                weightInputValue: Number.isFinite(rawWeightInputValue) && rawWeightInputValue > 0 ? rawWeightInputValue : undefined,
+                weightInputUnit: Number.isFinite(rawWeightInputValue) && rawWeightInputValue > 0 ? weightInputUnit : undefined,
+                volumeInputValue: Number.isFinite(rawVolumeInputValue) && rawVolumeInputValue > 0 ? rawVolumeInputValue : undefined,
+                volumeInputUnit: Number.isFinite(rawVolumeInputValue) && rawVolumeInputValue > 0 ? volumeInputUnit : undefined,
                 value: Number.isFinite(value) && value >= 0 ? value : undefined,
             };
         });
@@ -395,6 +419,10 @@ export async function handleOrderCreate(
             qtyKoli: item.qtyKoli,
             weight: item.weight,
             volume: item.volume,
+            weightInputValue: item.weightInputValue,
+            weightInputUnit: item.weightInputUnit,
+            volumeInputValue: item.volumeInputValue,
+            volumeInputUnit: item.volumeInputUnit,
             value: item.value,
             deliveredQtyKoli: 0,
             deliveredWeight: 0,
@@ -687,6 +715,11 @@ export async function handleDeliveryOrderCreate(
             description,
             qtyKoli,
             weight,
+            volume,
+            weightInputValue,
+            weightInputUnit,
+            volumeInputValue,
+            volumeInputUnit,
             status,
             deliveredQtyKoli,
             deliveredWeight,
@@ -818,6 +851,11 @@ export async function handleDeliveryOrderCreate(
             orderItemDescription: item.description,
             orderItemQtyKoli: shippedQtyKoli,
             orderItemWeight: shippedWeight,
+            orderItemVolumeM3: item.volume,
+            orderItemWeightInputValue: item.weightInputValue,
+            orderItemWeightInputUnit: item.weightInputUnit,
+            orderItemVolumeInputValue: item.volumeInputValue,
+            orderItemVolumeInputUnit: item.volumeInputUnit,
             shippedQtyKoli,
             shippedWeight,
         });

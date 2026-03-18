@@ -5,6 +5,32 @@ import { useRouter } from 'next/navigation';
 import { useToast } from '../../layout';
 import { ArrowLeft, Save, Plus, X } from 'lucide-react';
 import type { Customer, Service } from '@/lib/types';
+import {
+    VOLUME_INPUT_UNIT_OPTIONS,
+    WEIGHT_INPUT_UNIT_OPTIONS,
+    type VolumeInputUnit,
+    type WeightInputUnit,
+} from '@/lib/measurement';
+
+type OrderItemForm = {
+    description: string;
+    qtyKoli: number;
+    weightInputValue: number;
+    weightInputUnit: WeightInputUnit;
+    volumeInputValue: number;
+    volumeInputUnit: VolumeInputUnit;
+    value: number;
+};
+
+const DEFAULT_ITEM: OrderItemForm = {
+    description: '',
+    qtyKoli: 1,
+    weightInputValue: 0,
+    weightInputUnit: 'KG',
+    volumeInputValue: 0,
+    volumeInputUnit: 'M3',
+    value: 0,
+};
 
 export default function NewOrderPage() {
     const router = useRouter();
@@ -22,7 +48,7 @@ export default function NewOrderPage() {
     const [receiverCompany, setReceiverCompany] = useState('');
     const [pickupAddress, setPickupAddress] = useState('');
     const [notes, setNotes] = useState('');
-    const [items, setItems] = useState([{ description: '', qtyKoli: 1, weight: 0, volume: 0, value: 0 }]);
+    const [items, setItems] = useState<OrderItemForm[]>([{ ...DEFAULT_ITEM }]);
 
     useEffect(() => {
         const fetchEntity = async <T,>(url: string) => {
@@ -45,9 +71,9 @@ export default function NewOrderPage() {
         });
     }, [addToast]);
 
-    const addItem = () => setItems(prev => [...prev, { description: '', qtyKoli: 1, weight: 0, volume: 0, value: 0 }]);
+    const addItem = () => setItems(prev => [...prev, { ...DEFAULT_ITEM }]);
     const removeItem = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx));
-    const updateItem = (idx: number, field: string, value: string | number) => {
+    const updateItem = <K extends keyof OrderItemForm>(idx: number, field: K, value: OrderItemForm[K]) => {
         setItems(prev => prev.map((item, i) => i === idx ? { ...item, [field]: value } : item));
     };
     const handleCustomerChange = (nextCustomerRef: string) => {
@@ -203,12 +229,22 @@ export default function NewOrderPage() {
                                     <input className="form-input" type="number" min={1} value={item.qtyKoli} onChange={e => updateItem(idx, 'qtyKoli', Number(e.target.value))} />
                                 </div>
                                 <div style={{ flex: 1 }}>
-                                    <label className="form-label">Berat (kg)</label>
-                                    <input className="form-input" type="number" min={0} value={item.weight} onChange={e => updateItem(idx, 'weight', Number(e.target.value))} />
+                                    <label className="form-label">Berat</label>
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                        <input className="form-input" type="number" min={0} step="0.01" value={item.weightInputValue} onChange={e => updateItem(idx, 'weightInputValue', Number(e.target.value))} />
+                                        <select className="form-select" value={item.weightInputUnit} onChange={e => updateItem(idx, 'weightInputUnit', e.target.value as WeightInputUnit)} style={{ width: 92 }}>
+                                            {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                        </select>
+                                    </div>
                                 </div>
                                 <div style={{ flex: 1 }}>
-                                    <label className="form-label">Volume (m3)</label>
-                                    <input className="form-input" type="number" min={0} step={0.01} value={item.volume} onChange={e => updateItem(idx, 'volume', Number(e.target.value))} />
+                                    <label className="form-label">Volume</label>
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                        <input className="form-input" type="number" min={0} step="0.01" value={item.volumeInputValue} onChange={e => updateItem(idx, 'volumeInputValue', Number(e.target.value))} />
+                                        <select className="form-select" value={item.volumeInputUnit} onChange={e => updateItem(idx, 'volumeInputUnit', e.target.value as VolumeInputUnit)} style={{ width: 92 }}>
+                                            {VOLUME_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                        </select>
+                                    </div>
                                 </div>
                                 {items.length > 1 && (
                                     <button type="button" className="btn btn-ghost btn-icon-only" onClick={() => removeItem(idx)} style={{ marginBottom: 4 }}>
