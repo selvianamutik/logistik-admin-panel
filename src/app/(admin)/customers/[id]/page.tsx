@@ -19,7 +19,7 @@ export default function CustomerDetailPage() {
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(false);
     const [saving, setSaving] = useState(false);
-    const [form, setForm] = useState({ name: '', address: '', contactPerson: '', phone: '', email: '', npwp: '' });
+    const [form, setForm] = useState({ name: '', address: '', contactPerson: '', phone: '', email: '', npwp: '', deliveryOrderPrefix: 'SJ' });
 
     useEffect(() => {
         const fetchEntity = async <T,>(url: string) => {
@@ -51,6 +51,7 @@ export default function CustomerDetailPage() {
                         phone: cust.phone,
                         email: cust.email,
                         npwp: cust.npwp || '',
+                        deliveryOrderPrefix: cust.deliveryOrderPrefix || 'SJ',
                     });
                 }
             } catch (error) {
@@ -113,6 +114,10 @@ export default function CustomerDetailPage() {
                                     <div className="form-group"><label className="form-label">Email</label><input className="form-input" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
                                     <div className="form-group"><label className="form-label">NPWP</label><input className="form-input" value={form.npwp} onChange={e => setForm({ ...form, npwp: e.target.value })} /></div>
                                 </div>
+                                <div className="form-group">
+                                    <label className="form-label">Prefix Surat Jalan Customer</label>
+                                    <input className="form-input" value={form.deliveryOrderPrefix} onChange={e => setForm({ ...form, deliveryOrderPrefix: e.target.value.toUpperCase() })} />
+                                </div>
                                 <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
                                     <button className="btn btn-secondary" onClick={() => setEditing(false)} disabled={saving}>Batal</button>
                                     <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'Menyimpan...' : 'Simpan'}</button>
@@ -127,6 +132,10 @@ export default function CustomerDetailPage() {
                                 <div className="detail-row">
                                     <div className="detail-item"><div className="detail-label">Telepon</div><div className="detail-value">{customer.phone}</div></div>
                                     <div className="detail-item"><div className="detail-label">Email</div><div className="detail-value">{customer.email}</div></div>
+                                </div>
+                                <div className="detail-row">
+                                    <div className="detail-item"><div className="detail-label">Prefix Surat Jalan</div><div className="detail-value font-mono">{customer.deliveryOrderPrefix || 'SJ'}</div></div>
+                                    <div className="detail-item"><div className="detail-label">Counter SJ Saat Ini</div><div className="detail-value">{customer.deliveryOrderCounter || 0}</div></div>
                                 </div>
                                 <div className="detail-item mt-2"><div className="detail-label">Alamat</div><div className="detail-value">{customer.address}</div></div>
                                 {customer.npwp && <div className="detail-item mt-2"><div className="detail-label">NPWP</div><div className="detail-value font-mono">{customer.npwp}</div></div>}

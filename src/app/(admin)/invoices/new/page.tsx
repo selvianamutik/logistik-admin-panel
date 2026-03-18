@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft, Plus, Save, Trash2 } from 'lucide-react';
 
 import type { CompanyProfile, Customer, DeliveryOrder, DeliveryOrderItem, Order } from '@/lib/types';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
 
 import { useToast } from '../../layout';
 
@@ -163,7 +163,7 @@ export default function NewNotaPage() {
             doNumber: deliveryOrder.doNumber || '',
             vehiclePlate: deliveryOrder.vehiclePlate || '',
             date: deliveryOrder.date || new Date().toISOString().split('T')[0],
-            noSJ: deliveryOrder.doNumber || '',
+            noSJ: formatDeliveryOrderDisplayNumber(deliveryOrder),
             dari: deliveryOrder.pickupAddress || relatedOrder?.pickupAddress || '',
             tujuan: deliveryOrder.receiverAddress || relatedOrder?.receiverAddress || '',
             barang: descriptions.join(', '),
@@ -437,7 +437,7 @@ export default function NewNotaPage() {
                                     >
                                         {availableCustomerDOs.map(deliveryOrder => (
                                             <option key={deliveryOrder._id} value={deliveryOrder._id}>
-                                                {deliveryOrder.doNumber} - {deliveryOrder.vehiclePlate || '-'} - {deliveryOrder.receiverAddress || '-'}
+                                                {formatDeliveryOrderDisplayNumber(deliveryOrder)} - {deliveryOrder.vehiclePlate || '-'} - {deliveryOrder.receiverAddress || '-'}
                                             </option>
                                         ))}
                                     </optgroup>
@@ -446,7 +446,7 @@ export default function NewNotaPage() {
                                     <optgroup label={`DO Customer Lain (${availableOtherDOs.length})`}>
                                         {availableOtherDOs.map(deliveryOrder => (
                                             <option key={deliveryOrder._id} value={deliveryOrder._id}>
-                                                {deliveryOrder.doNumber} - {deliveryOrder.vehiclePlate || '-'} - {deliveryOrder.receiverAddress || '-'}
+                                                {formatDeliveryOrderDisplayNumber(deliveryOrder)} - {deliveryOrder.vehiclePlate || '-'} - {deliveryOrder.receiverAddress || '-'}
                                             </option>
                                         ))}
                                     </optgroup>

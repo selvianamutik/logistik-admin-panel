@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useToast } from '../../layout';
 import { ArrowLeft, Printer, FileDown, Truck, Upload, Save, MapPin, Radio } from 'lucide-react';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
-import { formatDate, formatDateTime, DO_STATUS_MAP } from '@/lib/utils';
+import { formatDate, formatDateTime, DO_STATUS_MAP, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
 import {
     formatCargoSummary,
     VOLUME_INPUT_UNIT_OPTIONS,
@@ -279,20 +279,26 @@ export default function DODetailPage() {
             const company = await fetchCompanyProfile();
             openBrandedPrint({
                 title: 'Surat Jalan',
-                subtitle: doData?.doNumber,
+                subtitle: formatDeliveryOrderDisplayNumber(doData || {}),
                 company,
                 bodyHtml: `
                     <div style="margin-bottom:16px">
                         <table style="width:100%;border:none"><tbody>
                             <tr>
-                                <td style="border:none;padding:2px 8px;width:140px;font-weight:600">No. DO</td>
-                                <td style="border:none;padding:2px 8px">${doData?.doNumber || '-'}</td>
+                                <td style="border:none;padding:2px 8px;width:140px;font-weight:600">No. SJ Customer</td>
+                                <td style="border:none;padding:2px 8px">${doData?.customerDoNumber || doData?.doNumber || '-'}</td>
                                 <td style="border:none;padding:2px 8px;width:140px;font-weight:600">Tanggal</td>
                                 <td style="border:none;padding:2px 8px">${formatDate(doData?.date || '')}</td>
                             </tr>
                             <tr>
+                                <td style="border:none;padding:2px 8px;font-weight:600">No. Internal</td>
+                                <td style="border:none;padding:2px 8px">${doData?.doNumber || '-'}</td>
                                 <td style="border:none;padding:2px 8px;font-weight:600">Master Resi</td>
                                 <td style="border:none;padding:2px 8px">${doData?.masterResi || '-'}</td>
+                            </tr>
+                            <tr>
+                                <td style="border:none;padding:2px 8px;font-weight:600"></td>
+                                <td style="border:none;padding:2px 8px"></td>
                                 <td style="border:none;padding:2px 8px;font-weight:600">Status</td>
                                 <td style="border:none;padding:2px 8px">${DO_STATUS_MAP[doData?.status || '']?.label || doData?.status || '-'}</td>
                             </tr>
@@ -474,7 +480,7 @@ export default function DODetailPage() {
                     </button>
                     <div>
                         <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                            {doData.doNumber}
+                            {formatDeliveryOrderDisplayNumber(doData)}
                             <span className={`badge badge-${DO_STATUS_MAP[doData.status]?.color}`}>
                                 <span className="badge-dot" /> {DO_STATUS_MAP[doData.status]?.label}
                             </span>
@@ -514,20 +520,24 @@ export default function DODetailPage() {
                     <div className="card-header"><span className="card-header-title">Informasi Surat Jalan</span></div>
                     <div className="card-body">
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">No. DO</div><div className="detail-value font-mono">{doData.doNumber}</div></div>
+                            <div className="detail-item"><div className="detail-label">No. SJ Customer</div><div className="detail-value font-mono">{formatDeliveryOrderDisplayNumber(doData)}</div></div>
                             <div className="detail-item"><div className="detail-label">Tanggal</div><div className="detail-value">{formatDate(doData.date)}</div></div>
                         </div>
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">Master Resi</div><div className="detail-value"><Link href={`/orders/${doData.orderRef}`}>{doData.masterResi}</Link></div></div>
+                            <div className="detail-item"><div className="detail-label">No. Internal</div><div className="detail-value font-mono">{doData.doNumber}</div></div>
                             <div className="detail-item"><div className="detail-label">Kendaraan</div><div className="detail-value">{doData.vehiclePlate || '-'}</div></div>
                         </div>
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">Driver</div><div className="detail-value">{doData.driverName || '-'}</div></div>
+                            <div className="detail-item"><div className="detail-label">Master Resi</div><div className="detail-value"><Link href={`/orders/${doData.orderRef}`}>{doData.masterResi}</Link></div></div>
                             <div className="detail-item"><div className="detail-label">Customer</div><div className="detail-value">{doData.customerName || '-'}</div></div>
                         </div>
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">Kategori Truk / Armada</div><div className="detail-value">{doData.serviceName || '-'}</div></div>
+                            <div className="detail-item"><div className="detail-label">Driver</div><div className="detail-value">{doData.driverName || '-'}</div></div>
                             <div className="detail-item"><div className="detail-label">Telepon Penerima</div><div className="detail-value">{doData.receiverPhone || '-'}</div></div>
+                        </div>
+                        <div className="detail-row">
+                            <div className="detail-item"><div className="detail-label">Kategori Truk / Armada</div><div className="detail-value">{doData.serviceName || '-'}</div></div>
+                            <div className="detail-item"><div className="detail-label">Penerima</div><div className="detail-value">{doData.receiverName || '-'}</div></div>
                         </div>
                         {doData.cargoFinalizedAt && (
                             <div className="detail-row">

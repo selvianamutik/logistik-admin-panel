@@ -120,6 +120,23 @@ type NormalizedActualCargoInput = {
     actualVolumeInputUnit?: VolumeInputUnit;
 };
 
+function getPeriodFromDate(value: string) {
+    const normalized = normalizeText(value);
+    const match = normalized.match(/^(\d{4})-(\d{2})-\d{2}$/);
+    if (match) {
+        return `${match[1]}${match[2]}`;
+    }
+    return new Date().toISOString().slice(0, 7).replace('-', '');
+}
+
+function normalizeCustomerDoPrefix(value: unknown) {
+    const prefix = normalizeOptionalText(value)
+        ?.toUpperCase()
+        .replace(/[^A-Z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    return prefix || 'SJ';
+}
+
 const DO_STATUS_TRANSITIONS: Record<string, string[]> = {
     CREATED: ['HEADING_TO_PICKUP', 'ON_DELIVERY', 'CANCELLED'],
     HEADING_TO_PICKUP: ['ON_DELIVERY', 'CANCELLED'],
@@ -856,6 +873,22 @@ export async function handleDeliveryOrderCreate(
         return NextResponse.json({ error: 'Order tidak ditemukan' }, { status: 404 });
     }
 
+    const orderCustomerRef = extractRefId(order.customerRef);
+    const customer = orderCustomerRef
+        ? await sanityGetById<{
+            _id: string;
+            _rev?: string;
+            name?: string;
+            active?: boolean;
+            deliveryOrderPrefix?: string;
+            deliveryOrderCounter?: number;
+            deliveryOrderPeriod?: string;
+        }>(orderCustomerRef)
+        : null;
+    if (orderCustomerRef && !customer) {
+        return NextResponse.json({ error: 'Customer order tidak ditemukan' }, { status: 404 });
+    }
+
     const vehicleRef = typeof data.vehicleRef === 'string' ? data.vehicleRef : '';
     let vehiclePlate =
         typeof data.vehiclePlate === 'string' && data.vehiclePlate.trim()
@@ -917,6 +950,14 @@ export async function handleDeliveryOrderCreate(
         typeof data.date === 'string' && data.date
             ? data.date
             : new Date().toISOString().slice(0, 10);
+    const customerDoPeriod = getPeriodFromDate(doDate);
+    const customerDoPrefix = normalizeCustomerDoPrefix(customer?.deliveryOrderPrefix);
+    const customerDoSequence = customer
+        ? customer.deliveryOrderPeriod === customerDoPeriod
+            ? (Number(customer.deliveryOrderCounter || 0) + 1)
+            : 1
+        : 1;
+    const customerDoNumber = `${customerDoPrefix}-${customerDoPeriod}-${String(customerDoSequence).padStart(3, '0')}`;
 
     const requestedItemIds = Array.from(new Set([
         ...(Array.isArray(data.itemRefs) ? data.itemRefs.filter((item): item is string => typeof item === 'string' && item.length > 0) : []),
@@ -1023,8 +1064,12 @@ export async function handleDeliveryOrderCreate(
         _type: 'deliveryOrder',
         orderRef,
         masterResi: order.masterResi,
-        customerRef: extractRefId(order.customerRef) || undefined,
+        customerRef: orderCustomerRef || undefined,
         customerName: order.customerName,
+        customerDoPrefix,
+        customerDoSequence,
+        customerDoPeriod,
+        customerDoNumber,
         receiverName: order.receiverName,
         receiverPhone: order.receiverPhone,
         receiverAddress: order.receiverAddress,
@@ -1043,6 +1088,15 @@ export async function handleDeliveryOrderCreate(
     };
 
     const transaction = getSanityClient().transaction().create(doDoc);
+    if (customer?._id && customer._rev) {
+        transaction.patch(customer._id, {
+            ifRevisionID: customer._rev,
+            set: {
+                deliveryOrderCounter: customerDoSequence,
+                deliveryOrderPeriod: customerDoPeriod,
+            },
+        });
+    }
     for (const item of selectedItems) {
         const selection = selectionByItemId.get(item._id);
         if (!selection) {
@@ -1111,7 +1165,7 @@ export async function handleDeliveryOrderCreate(
         'CREATE',
         'delivery-orders',
         doId,
-        `Created delivery-orders: ${doNumber} (${selectionSummaries.join('; ')})`
+        `Created delivery-orders: ${doNumber}${customerDoNumber ? ` / ${customerDoNumber}` : ''} (${selectionSummaries.join('; ')})`
     );
     return NextResponse.json({ data: doDoc, id: doId });
 }

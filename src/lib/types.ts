@@ -93,6 +93,9 @@ export interface Customer {
   email: string;
   defaultPaymentTerm: number;
   npwp?: string;
+  deliveryOrderPrefix?: string;
+  deliveryOrderCounter?: number;
+  deliveryOrderPeriod?: string;
   active: boolean;
 }
 
@@ -230,6 +233,10 @@ export interface DeliveryOrder {
   _id: string;
   _type: 'deliveryOrder';
   doNumber: string;
+  customerDoPrefix?: string;
+  customerDoSequence?: number;
+  customerDoPeriod?: string;
+  customerDoNumber?: string;
   orderRef: string;
   masterResi?: string;
   customerRef?: string;

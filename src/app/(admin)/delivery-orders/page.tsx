@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Search, Eye, Truck, FileDown, Printer } from 'lucide-react';
-import { formatDate, formatDateTime, DO_STATUS_MAP } from '@/lib/utils';
+import { formatDate, formatDateTime, DO_STATUS_MAP, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
 import { exportToExcel } from '@/lib/export';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
 import type { DeliveryOrder, Service } from '@/lib/types';
@@ -61,6 +61,7 @@ export default function DeliveryOrdersPage() {
         const service = services.find(item => item._id === d.serviceRef);
         const m = !search
             || d.doNumber?.toLowerCase().includes(search.toLowerCase())
+            || d.customerDoNumber?.toLowerCase().includes(search.toLowerCase())
             || d.customerName?.toLowerCase().includes(search.toLowerCase())
             || d.vehiclePlate?.toLowerCase().includes(search.toLowerCase())
             || d.driverName?.toLowerCase().includes(search.toLowerCase())
@@ -81,6 +82,7 @@ export default function DeliveryOrdersPage() {
                 <div className="page-actions" style={{ flexWrap: 'wrap' }}>
                     <button className="btn btn-secondary btn-sm" onClick={() => {
                         exportToExcel(filtered as unknown as Record<string, unknown>[], [
+                            { header: 'No. SJ Customer', key: 'customerDoNumber', width: 22 },
                             { header: 'No. DO', key: 'doNumber', width: 18 },
                             { header: 'Resi', key: 'masterResi', width: 18 },
                             { header: 'Customer', key: 'customerName', width: 25 },
@@ -94,8 +96,8 @@ export default function DeliveryOrdersPage() {
                         const co = await fetchCompanyProfile();
                         openBrandedPrint({
                             title: 'Daftar Surat Jalan', company: co, bodyHtml: `
-                            <table><thead><tr><th>No. DO</th><th>Resi</th><th>Customer</th><th>Kendaraan</th><th>Driver</th><th>Tanggal</th><th>Status</th></tr></thead>
-                            <tbody>${filtered.map(d => `<tr><td class="b">${d.doNumber}</td><td>${d.masterResi || '-'}</td><td>${d.customerName || '-'}</td><td>${d.vehiclePlate || '-'}</td><td>${d.driverName || '-'}</td><td>${formatDate(d.date)}</td><td>${DO_STATUS_MAP[d.status]?.label || d.status}</td></tr>`).join('')}</tbody></table>`
+                            <table><thead><tr><th>No. SJ Customer</th><th>No. Internal</th><th>Resi</th><th>Customer</th><th>Kendaraan</th><th>Driver</th><th>Tanggal</th><th>Status</th></tr></thead>
+                            <tbody>${filtered.map(d => `<tr><td class="b">${d.customerDoNumber || d.doNumber || '-'}</td><td>${d.doNumber}</td><td>${d.masterResi || '-'}</td><td>${d.customerName || '-'}</td><td>${d.vehiclePlate || '-'}</td><td>${d.driverName || '-'}</td><td>${formatDate(d.date)}</td><td>${DO_STATUS_MAP[d.status]?.label || d.status}</td></tr>`).join('')}</tbody></table>`
                         });
                     }}><Printer size={15} /> Print</button>
                 </div>
@@ -119,14 +121,15 @@ export default function DeliveryOrdersPage() {
                 </div>
                 <div className="table-wrapper">
                     <table>
-                        <thead><tr><th>No. DO</th><th>Resi</th><th>Customer</th><th>Kategori</th><th>Kendaraan</th><th>Tanggal</th><th>Status</th><th>Tracking</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>No. SJ Customer</th><th>No. Internal</th><th>Resi</th><th>Customer</th><th>Kategori</th><th>Kendaraan</th><th>Tanggal</th><th>Status</th><th>Tracking</th><th>Aksi</th></tr></thead>
                         <tbody>
-                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
+                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 filtered.length === 0 ? (
-                                    <tr><td colSpan={9}><div className="empty-state"><Truck size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada surat jalan</div><div className="empty-state-text">Buat surat jalan dari halaman detail order</div></div></td></tr>
+                                    <tr><td colSpan={10}><div className="empty-state"><Truck size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada surat jalan</div><div className="empty-state-text">Buat surat jalan dari halaman detail order</div></div></td></tr>
                                 ) : filtered.map(d => (
                                     <tr key={d._id}>
-                                        <td><Link href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{d.doNumber}</Link></td>
+                                        <td><Link href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{formatDeliveryOrderDisplayNumber(d)}</Link></td>
+                                        <td className="font-mono text-muted">{d.doNumber}</td>
                                         <td><Link href={`/orders/${d.orderRef}`} className="text-muted">{d.masterResi}</Link></td>
                                         <td>{d.customerName}</td>
                                         <td>{getServiceLabel(d)}</td>

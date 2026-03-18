@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '../../layout';
 import { ArrowLeft, Truck, FileText, Edit, Eye } from 'lucide-react';
-import { formatDate, formatCurrency, formatNumber, ORDER_STATUS_MAP, ITEM_STATUS_MAP, DO_STATUS_MAP, INVOICE_STATUS_MAP } from '@/lib/utils';
+import { formatDate, formatCurrency, formatNumber, ORDER_STATUS_MAP, ITEM_STATUS_MAP, DO_STATUS_MAP, INVOICE_STATUS_MAP, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
 import { formatCargoSummary, formatVolumeDisplay } from '@/lib/measurement';
 import { calculateWeightPortion, getOrderItemProgress, roundQuantity } from '@/lib/order-item-progress';
 import type { Order, OrderItem, DeliveryOrder, DeliveryOrderItem, Driver, FreightNota, FreightNotaItem, Vehicle } from '@/lib/types';
@@ -274,7 +274,7 @@ export default function OrderDetailPage() {
                 return;
             }
 
-            addToast('success', `Surat Jalan dibuat: ${doData.data?.doNumber || ''}`);
+            addToast('success', `Surat Jalan dibuat: ${formatDeliveryOrderDisplayNumber(doData.data || {})}${doData.data?.customerDoNumber ? ` (${doData.data?.doNumber || ''})` : ''}`);
             setShowDOModal(false);
             setSelectedShipments({});
             setDoVehicle('');
@@ -618,7 +618,7 @@ export default function OrderDetailPage() {
                                 <tr><td colSpan={6} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada surat jalan</td></tr>
                             ) : dos.map(d => (
                                 <tr key={d._id}>
-                                    <td><Link href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{d.doNumber}</Link></td>
+                                    <td><Link href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{formatDeliveryOrderDisplayNumber(d)}</Link><div className="text-muted text-sm font-mono">{d.doNumber}</div></td>
                                     <td>{formatDate(d.date)}</td>
                                     <td>{d.vehiclePlate || '-'}</td>
                                     <td>

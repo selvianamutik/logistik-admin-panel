@@ -105,6 +105,9 @@ const seedData: DataStore = {
             email: 'budi@majusejahtera.co.id',
             defaultPaymentTerm: 14,
             npwp: '02.345.678.9-013.000',
+            deliveryOrderPrefix: 'SJ',
+            deliveryOrderCounter: 1,
+            deliveryOrderPeriod: '202602',
             active: true
         },
         {
@@ -116,6 +119,8 @@ const seedData: DataStore = {
             phone: '082-345-6789',
             email: 'siti@berkahlogistik.com',
             defaultPaymentTerm: 30,
+            deliveryOrderPrefix: 'BK',
+            deliveryOrderCounter: 0,
             active: true
         }
     ],
@@ -199,6 +204,10 @@ const seedData: DataStore = {
             _id: 'do-001',
             _type: 'deliveryOrder',
             doNumber: 'DO-202602-0001',
+            customerDoPrefix: 'SJ',
+            customerDoSequence: 1,
+            customerDoPeriod: '202602',
+            customerDoNumber: 'SJ-202602-001',
             orderRef: 'order-001',
             masterResi: 'R-202602-0001',
             vehicleRef: 'veh-001',

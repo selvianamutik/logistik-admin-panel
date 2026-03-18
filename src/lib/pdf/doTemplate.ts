@@ -5,7 +5,7 @@
 
 import jsPDF from 'jspdf';
 import type { DeliveryOrder, DeliveryOrderItem, CompanyProfile } from '@/lib/types';
-import { formatDate } from '@/lib/utils';
+import { formatDate, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
 import { formatCargoSummary } from '@/lib/measurement';
 
 // ── Simple table drawing helper ──
@@ -93,7 +93,7 @@ export function generateDOPdf(
     y += 6;
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text(`No: ${doData.doNumber}`, pageWidth / 2, y, { align: 'center' });
+    doc.text(`No: ${formatDeliveryOrderDisplayNumber(doData)}`, pageWidth / 2, y, { align: 'center' });
     y += 10;
 
     // ─── Info Grid ───
@@ -108,13 +108,16 @@ export function generateDOPdf(
     };
 
     addRow('Tanggal', formatDate(doData.date), margin, y);
-    addRow('Resi', doData.masterResi || '-', col2X, y);
+    addRow('No. Internal', doData.doNumber || '-', col2X, y);
     y += 5;
-    addRow('Customer', doData.customerName || '-', margin, y);
-    addRow('Kendaraan', doData.vehiclePlate || '-', col2X, y);
+    addRow('Resi', doData.masterResi || '-', margin, y);
+    addRow('Customer', doData.customerName || '-', col2X, y);
     y += 5;
     addRow('Penerima', doData.receiverName || '-', margin, y);
-    addRow('Driver', doData.driverName || '-', col2X, y);
+    addRow('Kendaraan', doData.vehiclePlate || '-', col2X, y);
+    y += 5;
+    addRow('Driver', doData.driverName || '-', margin, y);
+    addRow('Kategori', doData.serviceName || '-', col2X, y);
     y += 5;
     addRow('Alamat', doData.receiverAddress || '-', margin, y);
     y += 8;
@@ -183,7 +186,7 @@ export function generateDOPdf(
     doc.setFontSize(7);
     doc.setTextColor(150);
     doc.text(`Dicetak: ${new Date().toLocaleString('id-ID')}`, margin, footerY);
-    doc.text(`${company.name} — ${doData.doNumber}`, pageWidth - margin, footerY, { align: 'right' });
+    doc.text(`${company.name} — ${formatDeliveryOrderDisplayNumber(doData)}`, pageWidth - margin, footerY, { align: 'right' });
 
-    doc.save(`Surat-Jalan-${doData.doNumber}.pdf`);
+    doc.save(`Surat-Jalan-${formatDeliveryOrderDisplayNumber(doData)}.pdf`);
 }

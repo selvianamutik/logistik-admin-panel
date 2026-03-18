@@ -19,6 +19,7 @@ import {
     isPlainObject,
     normalizeNumber,
     normalizeOptionalText,
+    normalizeText,
     sanitizeUserForClient,
     type ApiSession,
     type BankAccountSummary,
@@ -55,6 +56,85 @@ type AuditLogFn = (
     entityRef: string,
     summary: string
 ) => void | Promise<void>;
+
+const CUSTOMER_DO_PREFIX_RE = /^[A-Z0-9][A-Z0-9-]{0,7}$/;
+
+function normalizeCustomerDoPrefix(value: unknown) {
+    const prefix = normalizeOptionalText(value)
+        ?.toUpperCase()
+        .replace(/[^A-Z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    if (!prefix) {
+        return 'SJ';
+    }
+    if (!CUSTOMER_DO_PREFIX_RE.test(prefix)) {
+        throw new Error('Prefix surat jalan customer hanya boleh berisi huruf/angka singkat, misalnya SJ atau BK');
+    }
+    return prefix;
+}
+
+function normalizeCustomerPayload(data: Record<string, unknown>, existing?: Record<string, unknown>) {
+    const next: Record<string, unknown> = {};
+
+    if (Object.prototype.hasOwnProperty.call(data, 'name') || !existing) {
+        const name = normalizeText(data.name);
+        if (!name) {
+            throw new Error('Nama customer wajib diisi');
+        }
+        next.name = name;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'address') || !existing) {
+        next.address = normalizeOptionalText(data.address) || '';
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'contactPerson') || !existing) {
+        next.contactPerson = normalizeOptionalText(data.contactPerson) || '';
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'phone') || !existing) {
+        next.phone = normalizeOptionalText(data.phone) || '';
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'email') || !existing) {
+        next.email = normalizeOptionalText(data.email) || '';
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'npwp') || !existing) {
+        next.npwp = normalizeOptionalText(data.npwp);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'defaultPaymentTerm') || !existing) {
+        const defaultPaymentTerm = normalizeNumber(data.defaultPaymentTerm);
+        if (!Number.isFinite(defaultPaymentTerm) || defaultPaymentTerm < 0) {
+            throw new Error('Termin pembayaran customer tidak valid');
+        }
+        next.defaultPaymentTerm = Math.round(defaultPaymentTerm);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'deliveryOrderPrefix') || !existing) {
+        next.deliveryOrderPrefix = normalizeCustomerDoPrefix(data.deliveryOrderPrefix);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'active') || !existing) {
+        if (data.active !== undefined && typeof data.active !== 'boolean') {
+            throw new Error('Status customer tidak valid');
+        }
+        next.active = typeof data.active === 'boolean' ? data.active : true;
+    }
+
+    if (existing) {
+        next.deliveryOrderCounter =
+            typeof existing.deliveryOrderCounter === 'number' && Number.isFinite(existing.deliveryOrderCounter)
+                ? existing.deliveryOrderCounter
+                : 0;
+        next.deliveryOrderPeriod = typeof existing.deliveryOrderPeriod === 'string' ? existing.deliveryOrderPeriod : undefined;
+    } else {
+        next.deliveryOrderCounter = 0;
+    }
+
+    return next;
+}
 
 function isProtectedLedgerEntity(entity: string) {
     return entity === 'payments' || entity === 'incomes' || entity === 'expenses' || entity === 'bank-transactions';
@@ -279,6 +359,22 @@ export async function handleGenericUpdate(
 
         if (Object.prototype.hasOwnProperty.call(updates, 'notes')) {
             updates.notes = normalizeOptionalText(updates.notes);
+        }
+    }
+
+    if (entity === 'customers') {
+        const existingCustomer = await sanityGetById<Record<string, unknown>>(id);
+        if (!existingCustomer) {
+            return NextResponse.json({ error: 'Customer tidak ditemukan' }, { status: 404 });
+        }
+
+        try {
+            Object.assign(updates, normalizeCustomerPayload(updates, existingCustomer));
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Data customer tidak valid' },
+                { status: 400 }
+            );
         }
     }
 
@@ -550,6 +646,17 @@ export async function handleGenericCreate(
 
     if (entity === 'services') {
         Object.assign(newDoc, await normalizeServicePayload(data));
+    }
+
+    if (entity === 'customers') {
+        try {
+            Object.assign(newDoc, normalizeCustomerPayload(data));
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Data customer tidak valid' },
+                { status: 400 }
+            );
+        }
     }
 
     if (entity === 'expense-categories') {

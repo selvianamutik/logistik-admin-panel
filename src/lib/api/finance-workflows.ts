@@ -607,6 +607,7 @@ export async function handleFreightNotaCreate(
             status?: string;
             orderRef?: unknown;
             doNumber?: string;
+            customerDoNumber?: string;
             vehiclePlate?: string;
             pickupAddress?: string;
             receiverAddress?: string;
@@ -617,6 +618,7 @@ export async function handleFreightNotaCreate(
                 status,
                 orderRef,
                 doNumber,
+                customerDoNumber,
                 vehiclePlate,
                 pickupAddress,
                 receiverAddress,
@@ -685,7 +687,12 @@ export async function handleFreightNotaCreate(
         const itemSummary = summarizeDeliveryOrderItems(doItemMap.get(row.doRef) || []);
 
         row.doNumber = normalizeOptionalText(deliveryOrder.doNumber) || row.doNumber;
-        row.noSJ = normalizeOptionalText(deliveryOrder.doNumber) || row.doNumber || row.noSJ || '';
+        row.noSJ =
+            normalizeOptionalText(deliveryOrder.customerDoNumber) ||
+            normalizeOptionalText(deliveryOrder.doNumber) ||
+            row.noSJ ||
+            row.doNumber ||
+            '';
         row.vehiclePlate = normalizeOptionalText(deliveryOrder.vehiclePlate) || row.vehiclePlate;
         row.date = normalizeOptionalText(deliveryOrder.date) || row.date || '';
         row.dari =

@@ -16,7 +16,7 @@ export default function CustomersPage() {
     const [showModal, setShowModal] = useState(false);
     const [saving, setSaving] = useState(false);
     const [editItem, setEditItem] = useState<Customer | null>(null);
-    const [form, setForm] = useState({ name: '', address: '', contactPerson: '', phone: '', email: '', defaultPaymentTerm: 14, npwp: '' });
+    const [form, setForm] = useState({ name: '', address: '', contactPerson: '', phone: '', email: '', defaultPaymentTerm: 14, npwp: '', deliveryOrderPrefix: 'SJ' });
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -39,10 +39,15 @@ export default function CustomersPage() {
         void loadCustomers();
     }, [addToast]);
 
-    const filtered = items.filter(c => !search || c.name?.toLowerCase().includes(search.toLowerCase()) || c.contactPerson?.toLowerCase().includes(search.toLowerCase()));
+    const filtered = items.filter(c =>
+        !search ||
+        c.name?.toLowerCase().includes(search.toLowerCase()) ||
+        c.contactPerson?.toLowerCase().includes(search.toLowerCase()) ||
+        c.deliveryOrderPrefix?.toLowerCase().includes(search.toLowerCase())
+    );
 
-    const openNew = () => { setEditItem(null); setForm({ name: '', address: '', contactPerson: '', phone: '', email: '', defaultPaymentTerm: 14, npwp: '' }); setShowModal(true); };
-    const openEdit = (c: Customer) => { setEditItem(c); setForm({ name: c.name, address: c.address, contactPerson: c.contactPerson, phone: c.phone, email: c.email, defaultPaymentTerm: c.defaultPaymentTerm, npwp: c.npwp || '' }); setShowModal(true); };
+    const openNew = () => { setEditItem(null); setForm({ name: '', address: '', contactPerson: '', phone: '', email: '', defaultPaymentTerm: 14, npwp: '', deliveryOrderPrefix: 'SJ' }); setShowModal(true); };
+    const openEdit = (c: Customer) => { setEditItem(c); setForm({ name: c.name, address: c.address, contactPerson: c.contactPerson, phone: c.phone, email: c.email, defaultPaymentTerm: c.defaultPaymentTerm, npwp: c.npwp || '', deliveryOrderPrefix: c.deliveryOrderPrefix || 'SJ' }); setShowModal(true); };
 
     const handleSave = async () => {
         if (!form.name) { addToast('error', 'Nama customer wajib diisi'); return; }
@@ -99,29 +104,30 @@ export default function CustomersPage() {
                             { header: 'Telepon', key: 'phone', width: 18 },
                             { header: 'Email', key: 'email', width: 25 },
                             { header: 'Alamat', key: 'address', width: 35 },
+                            { header: 'Prefix SJ', key: 'deliveryOrderPrefix', width: 12 },
                         ], `customer-${new Date().toISOString().split('T')[0]}`, 'Customer');
                     }}><FileDown size={15} /> Excel</button>
                     <button className="btn btn-secondary btn-sm" onClick={async () => {
                         const co = await fetchCompanyProfile();
                         openBrandedPrint({
                             title: 'Daftar Customer', company: co, bodyHtml: `
-                            <table><thead><tr><th>Nama</th><th>Kontak</th><th>Telepon</th><th>Email</th><th>Alamat</th></tr></thead>
-                            <tbody>${filtered.map(c => `<tr><td class="b">${c.name}</td><td>${c.contactPerson || '-'}</td><td>${c.phone || '-'}</td><td>${c.email || '-'}</td><td>${c.address || '-'}</td></tr>`).join('')}</tbody></table>`
+                            <table><thead><tr><th>Nama</th><th>Kontak</th><th>Telepon</th><th>Email</th><th>Alamat</th><th>Prefix SJ</th></tr></thead>
+                            <tbody>${filtered.map(c => `<tr><td class="b">${c.name}</td><td>${c.contactPerson || '-'}</td><td>${c.phone || '-'}</td><td>${c.email || '-'}</td><td>${c.address || '-'}</td><td>${c.deliveryOrderPrefix || 'SJ'}</td></tr>`).join('')}</tbody></table>`
                         });
                     }}><Printer size={15} /> Print</button>
                     <button className="btn btn-primary" onClick={openNew}><Plus size={18} /> Tambah Customer</button></div>
             </div>
             <div className="table-container">
-                <div className="table-toolbar"><div className="table-toolbar-left"><div className="table-search"><Search size={16} className="table-search-icon" /><input type="text" placeholder="Cari customer..." value={search} onChange={e => setSearch(e.target.value)} /></div></div></div>
+                <div className="table-toolbar"><div className="table-toolbar-left"><div className="table-search"><Search size={16} className="table-search-icon" /><input type="text" placeholder="Cari customer, PIC, prefix SJ..." value={search} onChange={e => setSearch(e.target.value)} /></div></div></div>
                 <div className="table-wrapper">
                     <table>
-                        <thead><tr><th>Nama</th><th>PIC</th><th>Telepon</th><th>Email</th><th>Termin</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>Nama</th><th>PIC</th><th>Telepon</th><th>Email</th><th>Prefix SJ</th><th>Termin</th><th>Aksi</th></tr></thead>
                         <tbody>
-                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                filtered.length === 0 ? <tr><td colSpan={6}><div className="empty-state"><Users size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada customer</div></div></td></tr> :
+                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
+                                filtered.length === 0 ? <tr><td colSpan={7}><div className="empty-state"><Users size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada customer</div></div></td></tr> :
                                     filtered.map(c => (
                                         <tr key={c._id}>
-                                            <td className="font-semibold"><Link href={`/customers/${c._id}`} style={{ color: 'var(--color-primary)' }}>{c.name}</Link></td><td>{c.contactPerson}</td><td>{c.phone}</td><td className="text-muted">{c.email}</td><td>{c.defaultPaymentTerm} hari</td>
+                                            <td className="font-semibold"><Link href={`/customers/${c._id}`} style={{ color: 'var(--color-primary)' }}>{c.name}</Link></td><td>{c.contactPerson}</td><td>{c.phone}</td><td className="text-muted">{c.email}</td><td className="font-mono">{c.deliveryOrderPrefix || 'SJ'}</td><td>{c.defaultPaymentTerm} hari</td>
                                             <td><div className="table-actions">
                                                 <button className="table-action-btn" onClick={() => openEdit(c)}><Edit size={14} /> Edit</button>
                                                 <button className="table-action-btn danger" onClick={() => setDeleteId(c._id)}><Trash2 size={14} /> Hapus</button>
@@ -150,6 +156,13 @@ export default function CustomersPage() {
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Termin Pembayaran (hari)</label><input className="form-input" type="number" value={form.defaultPaymentTerm} onChange={e => setForm({ ...form, defaultPaymentTerm: Number(e.target.value) })} /></div>
                                 <div className="form-group"><label className="form-label">NPWP</label><input className="form-input" value={form.npwp} onChange={e => setForm({ ...form, npwp: e.target.value })} /></div>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Prefix Surat Jalan Customer</label>
+                                <input className="form-input" value={form.deliveryOrderPrefix} onChange={e => setForm({ ...form, deliveryOrderPrefix: e.target.value.toUpperCase() })} placeholder="Contoh: SJ / BK / ARW" />
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                    Nomor surat jalan customer akan terbentuk seperti `{form.deliveryOrderPrefix || 'SJ'}-202603-001`.
+                                </div>
                             </div>
                         </div>
                         <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowModal(false)} disabled={saving}>Batal</button><button className="btn btn-primary" onClick={handleSave} disabled={saving}><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}</button></div>

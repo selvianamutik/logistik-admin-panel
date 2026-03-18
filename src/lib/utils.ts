@@ -51,6 +51,13 @@ export function formatNumber(num: number | undefined): string {
     return new Intl.NumberFormat('id-ID').format(num);
 }
 
+export function formatDeliveryOrderDisplayNumber(value: {
+    customerDoNumber?: string | null;
+    doNumber?: string | null;
+}) {
+    return value.customerDoNumber || value.doNumber || '-';
+}
+
 // ── Status labels & colors ──
 export const ORDER_STATUS_MAP: Record<string, { label: string; color: string }> = {
     OPEN: { label: 'Belum Terkirim', color: 'info' },
