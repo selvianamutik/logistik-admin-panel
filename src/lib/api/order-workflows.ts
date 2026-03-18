@@ -25,6 +25,7 @@ import {
     type VolumeInputUnit,
     type WeightInputUnit,
 } from '@/lib/measurement';
+import type { DeliveryActualDropPoint, DeliveryActualDropType } from '@/lib/types';
 
 type AuditLogFn = (
     session: Pick<ApiSession, '_id' | 'name'>,
@@ -119,6 +120,24 @@ type NormalizedActualCargoInput = {
     actualVolumeInputValue?: number;
     actualVolumeInputUnit?: VolumeInputUnit;
 };
+
+type NormalizedDeliveryActualDropPoint = DeliveryActualDropPoint & {
+    _key: string;
+};
+
+type ActualCargoTotals = {
+    qtyKoli: number;
+    weightKg: number;
+    volumeM3: number;
+};
+
+const DELIVERY_ACTUAL_DROP_TYPES = new Set<DeliveryActualDropType>([
+    'DROP',
+    'HOLD',
+    'TRANSIT',
+    'EXTRA_DROP',
+    'RETURN',
+]);
 
 function getPeriodFromDate(value: string) {
     const normalized = normalizeText(value);
@@ -277,6 +296,149 @@ function normalizeDeliveryOrderActualCargoInputs(
             actualVolumeInputValue: rawVolumeInputValue > 0 ? rawVolumeInputValue : undefined,
             actualVolumeInputUnit: rawVolumeInputValue > 0 ? volumeInputUnit : undefined,
         });
+    }
+
+    return normalized;
+}
+
+function summarizeActualCargoInputs(actualCargoByDoItemId: Map<string, NormalizedActualCargoInput>): ActualCargoTotals {
+    let qtyKoli = 0;
+    let weightKg = 0;
+    let volumeM3 = 0;
+
+    for (const item of actualCargoByDoItemId.values()) {
+        qtyKoli += normalizeNumber(item.actualQtyKoli);
+        weightKg += normalizeNumber(item.actualWeightKg);
+        volumeM3 += normalizeNumber(item.actualVolumeM3 ?? 0);
+    }
+
+    return {
+        qtyKoli: roundQuantity(qtyKoli),
+        weightKg: roundQuantity(weightKg),
+        volumeM3: roundQuantity(volumeM3, 3),
+    };
+}
+
+function normalizeDeliveryDropType(value: unknown): DeliveryActualDropType {
+    const normalized = normalizeText(value).toUpperCase() as DeliveryActualDropType;
+    return DELIVERY_ACTUAL_DROP_TYPES.has(normalized) ? normalized : 'DROP';
+}
+
+function buildDefaultActualDropPoint(
+    deliveryOrder: {
+        receiverName?: string;
+        receiverCompany?: string;
+        receiverAddress?: string;
+    },
+    totals: ActualCargoTotals
+): NormalizedDeliveryActualDropPoint {
+    return {
+        _key: crypto.randomUUID(),
+        sequence: 1,
+        stopType: 'DROP',
+        locationName:
+            normalizeOptionalText(deliveryOrder.receiverCompany) ||
+            normalizeOptionalText(deliveryOrder.receiverName) ||
+            'Tujuan Tagihan',
+        locationAddress: normalizeOptionalText(deliveryOrder.receiverAddress),
+        qtyKoli: totals.qtyKoli > 0 ? totals.qtyKoli : undefined,
+        weightKg: totals.weightKg > 0 ? totals.weightKg : undefined,
+        weightInputValue: totals.weightKg > 0 ? convertKgToWeightInputValue(totals.weightKg, 'KG') : undefined,
+        weightInputUnit: totals.weightKg > 0 ? 'KG' : undefined,
+        volumeM3: totals.volumeM3 > 0 ? totals.volumeM3 : undefined,
+        volumeInputValue: totals.volumeM3 > 0 ? convertM3ToVolumeInputValue(totals.volumeM3, 'M3') : undefined,
+        volumeInputUnit: totals.volumeM3 > 0 ? 'M3' : undefined,
+    };
+}
+
+function normalizeDeliveryActualDropPoints(
+    data: Record<string, unknown>,
+    deliveryOrder: {
+        receiverName?: string;
+        receiverCompany?: string;
+        receiverAddress?: string;
+    },
+    actualCargoByDoItemId: Map<string, NormalizedActualCargoInput>
+) {
+    const actualTotals = summarizeActualCargoInputs(actualCargoByDoItemId);
+    const rawDropPoints = Array.isArray(data.actualDropPoints) ? data.actualDropPoints : [];
+
+    if (rawDropPoints.length === 0) {
+        return [buildDefaultActualDropPoint(deliveryOrder, actualTotals)];
+    }
+
+    const normalized: NormalizedDeliveryActualDropPoint[] = [];
+    rawDropPoints.forEach((rawPoint, index) => {
+        if (!isPlainObject(rawPoint)) {
+            return;
+        }
+
+        const locationName = normalizeOptionalText(rawPoint.locationName);
+        const locationAddress = normalizeOptionalText(rawPoint.locationAddress);
+        const note = normalizeOptionalText(rawPoint.note);
+        const qtyKoli = roundQuantity(normalizeNumber(rawPoint.qtyKoli));
+        const rawWeightInputValue = normalizeNumber(rawPoint.weightInputValue ?? rawPoint.weightKg ?? 0);
+        const weightInputUnit: WeightInputUnit = rawPoint.weightInputUnit === 'TON' ? 'TON' : 'KG';
+        const rawVolumeInputValue = normalizeNumber(rawPoint.volumeInputValue ?? rawPoint.volumeM3 ?? 0);
+        const volumeInputUnit: VolumeInputUnit =
+            rawPoint.volumeInputUnit === 'LITER' || rawPoint.volumeInputUnit === 'KL' ? rawPoint.volumeInputUnit : 'M3';
+        const weightKg = roundQuantity(convertWeightToKg(rawWeightInputValue, weightInputUnit));
+        const volumeM3 = roundQuantity(convertVolumeToM3(rawVolumeInputValue, volumeInputUnit), 3);
+
+        if (!locationName && !locationAddress) {
+            throw new Error(`Titik drop #${index + 1} wajib punya nama atau alamat lokasi`);
+        }
+        if (qtyKoli < 0 || !Number.isFinite(qtyKoli)) {
+            throw new Error(`Qty titik drop #${index + 1} tidak valid`);
+        }
+        if (!Number.isFinite(rawWeightInputValue) || rawWeightInputValue < 0) {
+            throw new Error(`Berat titik drop #${index + 1} tidak valid`);
+        }
+        if (!Number.isFinite(rawVolumeInputValue) || rawVolumeInputValue < 0) {
+            throw new Error(`Volume titik drop #${index + 1} tidak valid`);
+        }
+        if (qtyKoli <= 0 && weightKg <= 0 && volumeM3 <= 0) {
+            throw new Error(`Titik drop #${index + 1} wajib punya qty, berat, atau volume lebih dari 0`);
+        }
+
+        normalized.push({
+            _key: crypto.randomUUID(),
+            sequence: index + 1,
+            stopType: normalizeDeliveryDropType(rawPoint.stopType),
+            locationName: locationName || locationAddress || `Titik drop ${index + 1}`,
+            locationAddress,
+            qtyKoli: qtyKoli > 0 ? qtyKoli : undefined,
+            weightKg: weightKg > 0 ? weightKg : undefined,
+            weightInputValue: rawWeightInputValue > 0 ? rawWeightInputValue : undefined,
+            weightInputUnit: rawWeightInputValue > 0 ? weightInputUnit : undefined,
+            volumeM3: volumeM3 > 0 ? volumeM3 : undefined,
+            volumeInputValue: rawVolumeInputValue > 0 ? rawVolumeInputValue : undefined,
+            volumeInputUnit: rawVolumeInputValue > 0 ? volumeInputUnit : undefined,
+            note,
+        });
+    });
+
+    if (normalized.length === 0) {
+        return [buildDefaultActualDropPoint(deliveryOrder, actualTotals)];
+    }
+
+    const aggregated = normalized.reduce<ActualCargoTotals>(
+        (sum, point) => ({
+            qtyKoli: roundQuantity(sum.qtyKoli + normalizeNumber(point.qtyKoli ?? 0)),
+            weightKg: roundQuantity(sum.weightKg + normalizeNumber(point.weightKg ?? 0)),
+            volumeM3: roundQuantity(sum.volumeM3 + normalizeNumber(point.volumeM3 ?? 0), 3),
+        }),
+        { qtyKoli: 0, weightKg: 0, volumeM3: 0 }
+    );
+
+    if (actualTotals.qtyKoli > 0 && Math.abs(aggregated.qtyKoli - actualTotals.qtyKoli) > 0.01) {
+        throw new Error('Total qty titik drop harus sama dengan qty aktual DO');
+    }
+    if (actualTotals.weightKg > 0 && Math.abs(aggregated.weightKg - actualTotals.weightKg) > 0.01) {
+        throw new Error('Total berat titik drop harus sama dengan berat aktual DO');
+    }
+    if (actualTotals.volumeM3 > 0 && Math.abs(aggregated.volumeM3 - actualTotals.volumeM3) > 0.001) {
+        throw new Error('Total volume titik drop harus sama dengan volume aktual DO');
     }
 
     return normalized;
@@ -588,6 +750,9 @@ export async function handleDeliveryOrderStatusUpdate(
         podReceiverName?: string;
         podReceivedDate?: string;
         podNote?: string;
+        receiverName?: string;
+        receiverCompany?: string;
+        receiverAddress?: string;
     }>(id);
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
@@ -655,6 +820,10 @@ export async function handleDeliveryOrderStatusUpdate(
 
     const actualCargoByDoItemId =
         status === 'DELIVERED' ? normalizeDeliveryOrderActualCargoInputs(data, doItems) : new Map<string, NormalizedActualCargoInput>();
+    const actualDropPoints =
+        status === 'DELIVERED'
+            ? normalizeDeliveryActualDropPoints(data, deliveryOrder, actualCargoByDoItemId)
+            : undefined;
 
     const timestamp = new Date().toISOString();
     const shouldStopTracking = status === 'DELIVERED' || status === 'CANCELLED';
@@ -671,6 +840,7 @@ export async function handleDeliveryOrderStatusUpdate(
                         cargoFinalizedAt: timestamp,
                         cargoFinalizedBy: session._id,
                         cargoFinalizedByName: session.name,
+                        actualDropPoints,
                     }
                     : {}),
                 ...(shouldStopTracking
@@ -823,7 +993,7 @@ export async function handleDeliveryOrderStatusUpdate(
         'UPDATE',
         'delivery-orders',
         id,
-        `DO status ${deliveryOrder.doNumber || id}: ${deliveryOrder.status || '-'} -> ${status}${status === 'DELIVERED' ? ` (muatan aktual difinalisasi ${doItems.length} item)` : ''}`
+        `DO status ${deliveryOrder.doNumber || id}: ${deliveryOrder.status || '-'} -> ${status}${status === 'DELIVERED' ? ` (muatan aktual difinalisasi ${doItems.length} item, ${actualDropPoints?.length || 0} titik drop)` : ''}`
     );
 
     return NextResponse.json({
@@ -838,6 +1008,7 @@ export async function handleDeliveryOrderStatusUpdate(
                     cargoFinalizedAt: timestamp,
                     cargoFinalizedBy: session._id,
                     cargoFinalizedByName: session.name,
+                    actualDropPoints,
                 }
                 : {}),
             trackingState: shouldStopTracking ? 'STOPPED' : deliveryOrder.trackingState,

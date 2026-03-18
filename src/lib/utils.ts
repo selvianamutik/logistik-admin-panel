@@ -86,6 +86,14 @@ export const DO_STATUS_MAP: Record<string, { label: string; color: string }> = {
     CANCELLED: { label: 'Dibatalkan', color: 'danger' },
 };
 
+export const DO_ACTUAL_DROP_TYPE_MAP: Record<string, { label: string; color: string }> = {
+    DROP: { label: 'Drop', color: 'success' },
+    HOLD: { label: 'Hold / Inap', color: 'warning' },
+    TRANSIT: { label: 'Transit', color: 'info' },
+    EXTRA_DROP: { label: 'Extra Drop', color: 'primary' },
+    RETURN: { label: 'Retur / Kembali', color: 'danger' },
+};
+
 export const INVOICE_STATUS_MAP: Record<string, { label: string; color: string }> = {
     UNPAID: { label: 'Belum Bayar', color: 'danger' },
     PARTIAL: { label: 'Sebagian', color: 'warning' },

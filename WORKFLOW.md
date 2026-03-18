@@ -113,6 +113,21 @@ Artinya:
 - Sistem membedakan:
   - `muatan rencana` saat DO dibuat
   - `muatan aktual` saat DO selesai
+- Sistem juga membedakan:
+  - `route tagihan` = asal/tujuan kontrak yang dipakai di surat jalan dan nota
+  - `realisasi drop` = titik bongkar aktual di lapangan
+- Jadi satu DO bisa tetap ditagihkan `Surabaya -> Ponorogo`, tetapi realisasi drop-nya:
+  - sebagian di `Malang`
+  - sisanya di `Ponorogo`
+  - atau bahkan ada `extra drop` ke `Jember`
+- Tipe titik drop yang didukung:
+  - `DROP`
+  - `HOLD / INAP`
+  - `TRANSIT`
+  - `EXTRA_DROP`
+  - `RETURN`
+- Kalau admin tidak mengisi titik drop terpisah saat menyelesaikan DO, sistem otomatis membuat satu titik default ke tujuan tagihan utama.
+- Total qty / berat / volume semua titik drop harus sama dengan muatan aktual final DO, supaya realisasi lapangan, progress order, dan dokumen turunan tetap konsisten.
 - Kalau muatan aktual lebih kecil dari rencana, selisih qty kembali menjadi `pending` di item order.
 - Kalau berat aktual lebih besar dari estimasi awal, sistem menaikkan total berat item order secukupnya agar progres dan nota tidak terpotong palsu.
 - Freight Nota sekarang mengambil berat/koli dari **muatan aktual final DO**, bukan angka rencana, bila data aktual sudah tersedia.

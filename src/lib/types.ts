@@ -229,6 +229,29 @@ export type DOStatus =
     | 'DELIVERED'
     | 'CANCELLED';
 
+export type DeliveryActualDropType =
+  | 'DROP'
+  | 'HOLD'
+  | 'TRANSIT'
+  | 'EXTRA_DROP'
+  | 'RETURN';
+
+export interface DeliveryActualDropPoint {
+  _key?: string;
+  sequence: number;
+  stopType: DeliveryActualDropType;
+  locationName: string;
+  locationAddress?: string;
+  qtyKoli?: number;
+  weightKg?: number;
+  weightInputValue?: number;
+  weightInputUnit?: WeightInputUnit;
+  volumeM3?: number;
+  volumeInputValue?: number;
+  volumeInputUnit?: VolumeInputUnit;
+  note?: string;
+}
+
 export interface DeliveryOrder {
   _id: string;
   _type: 'deliveryOrder';
@@ -273,6 +296,7 @@ export interface DeliveryOrder {
   cargoFinalizedAt?: string;
   cargoFinalizedBy?: string;
   cargoFinalizedByName?: string;
+  actualDropPoints?: DeliveryActualDropPoint[];
 }
 
 export interface DeliveryOrderItem {

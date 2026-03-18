@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useToast } from '../../layout';
 import { ArrowLeft, Printer, FileDown, Truck, Upload, Save, MapPin, Radio } from 'lucide-react';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
-import { formatDate, formatDateTime, DO_STATUS_MAP, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
+import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatDate, formatDateTime, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
 import {
     formatCargoSummary,
     VOLUME_INPUT_UNIT_OPTIONS,
@@ -36,6 +36,19 @@ interface ActualCargoDraft {
     requireVolume: boolean;
 }
 
+interface ActualDropDraft {
+    draftKey: string;
+    stopType: 'DROP' | 'HOLD' | 'TRANSIT' | 'EXTRA_DROP' | 'RETURN';
+    locationName: string;
+    locationAddress: string;
+    qtyKoli: string;
+    weightInputValue: string;
+    weightInputUnit: WeightInputUnit;
+    volumeInputValue: string;
+    volumeInputUnit: VolumeInputUnit;
+    note: string;
+}
+
 function buildActualCargoDraft(item: DeliveryOrderItem): ActualCargoDraft {
     return {
         deliveryOrderItemRef: item._id,
@@ -57,6 +70,69 @@ function buildActualCargoDraft(item: DeliveryOrderItem): ActualCargoDraft {
     };
 }
 
+function summarizeActualCargoDrafts(items: ActualCargoDraft[]) {
+    const qtyKoli = items.reduce((sum, item) => sum + Number(item.actualQtyKoli || 0), 0);
+    const weightKg = items.reduce((sum, item) => {
+        const value = Number(item.actualWeightInputValue || 0);
+        if (!value) return sum;
+        return sum + (item.actualWeightInputUnit === 'TON' ? value * 1000 : value);
+    }, 0);
+    const volumeM3 = items.reduce((sum, item) => {
+        const value = Number(item.actualVolumeInputValue || 0);
+        if (!value) return sum;
+        if (item.actualVolumeInputUnit === 'LITER') return sum + value / 1000;
+        if (item.actualVolumeInputUnit === 'KL') return sum + value;
+        return sum + value;
+    }, 0);
+
+    return {
+        qtyKoli,
+        weightKg,
+        volumeM3,
+    };
+}
+
+function buildDefaultActualDropDrafts(doData: DeliveryOrder | null, cargoItems: ActualCargoDraft[]): ActualDropDraft[] {
+    if (doData?.actualDropPoints && doData.actualDropPoints.length > 0) {
+        return doData.actualDropPoints.map((point, index) => ({
+            draftKey: point._key || `${index + 1}`,
+            stopType: point.stopType,
+            locationName: point.locationName || '',
+            locationAddress: point.locationAddress || '',
+            qtyKoli: point.qtyKoli !== undefined ? String(point.qtyKoli) : '',
+            weightInputValue: point.weightInputValue !== undefined
+                ? String(point.weightInputValue)
+                : point.weightKg !== undefined
+                    ? String(point.weightKg)
+                    : '',
+            weightInputUnit: point.weightInputUnit || 'KG',
+            volumeInputValue: point.volumeInputValue !== undefined
+                ? String(point.volumeInputValue)
+                : point.volumeM3 !== undefined
+                    ? String(point.volumeM3)
+                    : '',
+            volumeInputUnit: point.volumeInputUnit || 'M3',
+            note: point.note || '',
+        }));
+    }
+
+    const totals = summarizeActualCargoDrafts(cargoItems);
+    return [
+        {
+            draftKey: crypto.randomUUID(),
+            stopType: 'DROP',
+            locationName: doData?.receiverCompany || doData?.receiverName || 'Tujuan Tagihan',
+            locationAddress: doData?.receiverAddress || '',
+            qtyKoli: totals.qtyKoli > 0 ? String(totals.qtyKoli) : '',
+            weightInputValue: totals.weightKg > 0 ? String(totals.weightKg) : '',
+            weightInputUnit: 'KG',
+            volumeInputValue: totals.volumeM3 > 0 ? String(totals.volumeM3) : '',
+            volumeInputUnit: 'M3',
+            note: '',
+        },
+    ];
+}
+
 export default function DODetailPage() {
     const params = useParams();
     const router = useRouter();
@@ -74,6 +150,7 @@ export default function DODetailPage() {
     const [podDate, setPodDate] = useState(new Date().toISOString().split('T')[0]);
     const [podNote, setPodNote] = useState('');
     const [actualCargoItems, setActualCargoItems] = useState<ActualCargoDraft[]>([]);
+    const [actualDropPoints, setActualDropPoints] = useState<ActualDropDraft[]>([]);
     const [editingTarip, setEditingTarip] = useState(false);
     const [taripBorongan, setTaripBorongan] = useState<number>(0);
     const [keteranganBorongan, setKeteranganBorongan] = useState('');
@@ -137,7 +214,9 @@ export default function DODetailPage() {
         setPodName('');
         setPodDate(new Date().toISOString().split('T')[0]);
         setPodNote('');
-        setActualCargoItems(doItems.map(buildActualCargoDraft));
+        const nextActualCargoItems = doItems.map(buildActualCargoDraft);
+        setActualCargoItems(nextActualCargoItems);
+        setActualDropPoints(buildDefaultActualDropDrafts(doData, nextActualCargoItems));
         setShowStatusModal(true);
     };
 
@@ -153,6 +232,38 @@ export default function DODetailPage() {
                     : item
             )
         );
+    };
+
+    const updateActualDropDraft = (
+        draftKey: string,
+        field: keyof Pick<ActualDropDraft, 'stopType' | 'locationName' | 'locationAddress' | 'qtyKoli' | 'weightInputValue' | 'weightInputUnit' | 'volumeInputValue' | 'volumeInputUnit' | 'note'>,
+        value: string
+    ) => {
+        setActualDropPoints(previous =>
+            previous.map(item => (item.draftKey === draftKey ? { ...item, [field]: value } : item))
+        );
+    };
+
+    const addActualDropDraft = () => {
+        setActualDropPoints(previous => [
+            ...previous,
+            {
+                draftKey: crypto.randomUUID(),
+                stopType: 'DROP',
+                locationName: '',
+                locationAddress: '',
+                qtyKoli: '',
+                weightInputValue: '',
+                weightInputUnit: 'KG',
+                volumeInputValue: '',
+                volumeInputUnit: 'M3',
+                note: '',
+            },
+        ]);
+    };
+
+    const removeActualDropDraft = (draftKey: string) => {
+        setActualDropPoints(previous => previous.filter(item => item.draftKey !== draftKey));
     };
 
     useEffect(() => {
@@ -197,6 +308,17 @@ export default function DODetailPage() {
                                         : 0,
                                     actualVolumeInputUnit: item.actualVolumeInputUnit,
                                 })),
+                                actualDropPoints: actualDropPoints.map(item => ({
+                                    stopType: item.stopType,
+                                    locationName: item.locationName,
+                                    locationAddress: item.locationAddress,
+                                    qtyKoli: item.qtyKoli.trim() ? Number(item.qtyKoli) : 0,
+                                    weightInputValue: item.weightInputValue.trim() ? Number(item.weightInputValue) : 0,
+                                    weightInputUnit: item.weightInputUnit,
+                                    volumeInputValue: item.volumeInputValue.trim() ? Number(item.volumeInputValue) : 0,
+                                    volumeInputUnit: item.volumeInputUnit,
+                                    note: item.note,
+                                })),
                             }
                             : {}),
                     },
@@ -226,6 +348,7 @@ export default function DODetailPage() {
                 setPodDate(new Date().toISOString().split('T')[0]);
                 setPodNote('');
                 setActualCargoItems([]);
+                setActualDropPoints([]);
                 addToast('success', 'Surat jalan diselesaikan dan POD tersimpan');
             } else {
                 addToast('success', `Status DO diperbarui ke ${DO_STATUS_MAP[newStatus]?.label || newStatus}`);
@@ -333,6 +456,50 @@ export default function DODetailPage() {
                             ${doData?.podReceiverName ? `<tr><td style="border:none;padding:2px 8px;font-weight:600">POD</td><td colspan="3" style="border:none;padding:2px 8px">Diterima oleh ${doData.podReceiverName} pada ${formatDate(doData.podReceivedDate || '')}${doData.podNote ? ` - ${doData.podNote}` : ''}</td></tr>` : ''}
                         </tbody></table>
                     </div>
+                    <div class="section-title">Route Tagihan & Realisasi Drop</div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Tipe</th>
+                                <th>Lokasi</th>
+                                <th>Alamat</th>
+                                <th>Muatan</th>
+                                <th>Catatan</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${(doData?.actualDropPoints || []).length > 0
+                                ? (doData?.actualDropPoints || [])
+                                    .slice()
+                                    .sort((a, b) => (a.sequence || 0) - (b.sequence || 0))
+                                    .map(point => `
+                                        <tr>
+                                            <td>${DO_ACTUAL_DROP_TYPE_MAP[point.stopType]?.label || point.stopType}</td>
+                                            <td>${point.sequence}. ${point.locationName || '-'}</td>
+                                            <td>${point.locationAddress || '-'}</td>
+                                            <td>${formatCargoSummary({
+                                                qtyKoli: point.qtyKoli,
+                                                weightKg: point.weightKg,
+                                                weightInputValue: point.weightInputValue,
+                                                weightInputUnit: point.weightInputUnit,
+                                                volumeM3: point.volumeM3,
+                                                volumeInputValue: point.volumeInputValue,
+                                                volumeInputUnit: point.volumeInputUnit,
+                                            })}</td>
+                                            <td>${point.note || '-'}</td>
+                                        </tr>
+                                    `).join('')
+                                : `
+                                    <tr>
+                                        <td>Drop</td>
+                                        <td>1. ${doData?.receiverCompany || doData?.receiverName || 'Tujuan Tagihan'}</td>
+                                        <td>${doData?.receiverAddress || '-'}</td>
+                                        <td>-</td>
+                                        <td>Realisasi drop belum dicatat terpisah.</td>
+                                    </tr>
+                                `}
+                        </tbody>
+                    </table>
                     <div class="section-title">Detail Barang</div>
                     <table>
                         <thead>
@@ -463,6 +630,16 @@ export default function DODetailPage() {
             (!item.requireVolume || (Number.isFinite(volume) && volume > 0))
         );
     });
+    const actualDropReady = actualDropPoints.length > 0 && actualDropPoints.every(item => {
+        const qty = Number(item.qtyKoli);
+        const weight = Number(item.weightInputValue);
+        const volume = Number(item.volumeInputValue);
+        return (
+            Boolean(item.locationName.trim() || item.locationAddress.trim()) &&
+            ((Number.isFinite(qty) && qty > 0) || (Number.isFinite(weight) && weight > 0) || (Number.isFinite(volume) && volume > 0))
+        );
+    });
+    const actualDropSummary = doData.actualDropPoints || [];
     const hasLiveCoordinates = typeof doData.trackingLastLat === 'number' && typeof doData.trackingLastLng === 'number';
     const trackingMapUrl = hasLiveCoordinates ? `https://www.google.com/maps?q=${doData.trackingLastLat},${doData.trackingLastLng}` : null;
     const trackingLat = hasLiveCoordinates ? doData.trackingLastLat as number : null;
@@ -573,6 +750,73 @@ export default function DODetailPage() {
                             {doData.podNote && <div className="mt-2"><div className="detail-label">Catatan</div><div className="detail-value">{doData.podNote}</div></div>}
                         </div>
                     )}
+                </div>
+            </div>
+
+            <div className="card" style={{ marginTop: '1rem' }}>
+                <div className="card-header"><span className="card-header-title">Route Tagihan & Realisasi Drop</span></div>
+                <div className="card-body">
+                    <div className="detail-row">
+                        <div className="detail-item">
+                            <div className="detail-label">Asal Tagihan</div>
+                            <div className="detail-value">{doData.pickupAddress || '-'}</div>
+                        </div>
+                        <div className="detail-item">
+                            <div className="detail-label">Tujuan Tagihan</div>
+                            <div className="detail-value">{doData.receiverAddress || '-'}</div>
+                        </div>
+                    </div>
+                    <div style={{ marginTop: '1rem' }}>
+                        <div className="detail-label" style={{ marginBottom: '0.5rem' }}>
+                            Titik Drop Aktual {actualDropSummary.length > 0 ? `(${actualDropSummary.length})` : ''}
+                        </div>
+                        {actualDropSummary.length === 0 ? (
+                            <div className="text-muted text-sm">Belum ada realisasi drop. Saat DO diselesaikan, sistem akan mencatat tujuan aktual per titik.</div>
+                        ) : (
+                            <div style={{ display: 'grid', gap: '0.75rem' }}>
+                                {actualDropSummary
+                                    .slice()
+                                    .sort((a, b) => (a.sequence || 0) - (b.sequence || 0))
+                                    .map(point => (
+                                        <div key={point._key || `${point.sequence}-${point.locationName}`} style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                                <div style={{ fontWeight: 600 }}>
+                                                    {point.sequence}. {point.locationName}
+                                                </div>
+                                                <span className={`badge badge-${DO_ACTUAL_DROP_TYPE_MAP[point.stopType]?.color || 'gray'}`}>
+                                                    {DO_ACTUAL_DROP_TYPE_MAP[point.stopType]?.label || point.stopType}
+                                                </span>
+                                            </div>
+                                            {point.locationAddress && (
+                                                <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
+                                                    {point.locationAddress}
+                                                </div>
+                                            )}
+                                            <div className="detail-row" style={{ marginTop: '0.75rem' }}>
+                                                <div className="detail-item">
+                                                    <div className="detail-label">Muatan</div>
+                                                    <div className="detail-value">
+                                                        {formatCargoSummary({
+                                                            qtyKoli: point.qtyKoli,
+                                                            weightKg: point.weightKg,
+                                                            weightInputValue: point.weightInputValue,
+                                                            weightInputUnit: point.weightInputUnit,
+                                                            volumeM3: point.volumeM3,
+                                                            volumeInputValue: point.volumeInputValue,
+                                                            volumeInputUnit: point.volumeInputUnit,
+                                                        })}
+                                                    </div>
+                                                </div>
+                                                <div className="detail-item">
+                                                    <div className="detail-label">Catatan</div>
+                                                    <div className="detail-value">{point.note || '-'}</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
 
@@ -863,6 +1107,141 @@ export default function DODetailPage() {
                                             ))}
                                         </div>
                                     </div>
+                                    <div className="form-group">
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+                                            <label className="form-label" style={{ marginBottom: 0 }}>Realisasi Titik Drop <span className="required">*</span></label>
+                                            <button type="button" className="btn btn-secondary btn-sm" onClick={addActualDropDraft} disabled={updatingStatus}>
+                                                + Tambah Titik Drop
+                                            </button>
+                                        </div>
+                                        <div style={{ background: 'var(--color-info-light)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-info)' }}>
+                                            Tujuan tagihan tetap mengikuti surat jalan ini. Di bawah ini catat realisasi bongkar aktual, termasuk multi-drop, hold/inap, atau extra drop. Total muatan semua titik harus sama dengan muatan aktual final DO.
+                                        </div>
+                                        <div style={{ display: 'grid', gap: '0.75rem' }}>
+                                            {actualDropPoints.map((item, index) => (
+                                                <div key={item.draftKey} style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+                                                        <div style={{ fontWeight: 600 }}>Titik Drop {index + 1}</div>
+                                                        {actualDropPoints.length > 1 && (
+                                                            <button type="button" className="btn btn-danger btn-sm" onClick={() => removeActualDropDraft(item.draftKey)} disabled={updatingStatus}>
+                                                                Hapus
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    <div className="form-row">
+                                                        <div className="form-group">
+                                                            <label className="form-label">Tipe Titik</label>
+                                                            <select
+                                                                className="form-select"
+                                                                value={item.stopType}
+                                                                onChange={e => updateActualDropDraft(item.draftKey, 'stopType', e.target.value)}
+                                                                disabled={updatingStatus}
+                                                            >
+                                                                {Object.entries(DO_ACTUAL_DROP_TYPE_MAP).map(([value, meta]) => (
+                                                                    <option key={value} value={value}>{meta.label}</option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                        <div className="form-group">
+                                                            <label className="form-label">Nama Lokasi <span className="required">*</span></label>
+                                                            <input
+                                                                className="form-input"
+                                                                value={item.locationName}
+                                                                onChange={e => updateActualDropDraft(item.draftKey, 'locationName', e.target.value)}
+                                                                disabled={updatingStatus}
+                                                                placeholder="Mis. Gudang Transit Malang"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    <div className="form-group">
+                                                        <label className="form-label">Alamat Lokasi</label>
+                                                        <input
+                                                            className="form-input"
+                                                            value={item.locationAddress}
+                                                            onChange={e => updateActualDropDraft(item.draftKey, 'locationAddress', e.target.value)}
+                                                            disabled={updatingStatus}
+                                                            placeholder="Opsional, isi jika berbeda dari tujuan tagihan"
+                                                        />
+                                                    </div>
+                                                    <div className="form-row">
+                                                        <div className="form-group">
+                                                            <label className="form-label">Qty Drop</label>
+                                                            <input
+                                                                type="number"
+                                                                min="0"
+                                                                step="0.01"
+                                                                className="form-input"
+                                                                value={item.qtyKoli}
+                                                                onChange={e => updateActualDropDraft(item.draftKey, 'qtyKoli', e.target.value)}
+                                                                disabled={updatingStatus}
+                                                            />
+                                                        </div>
+                                                        <div className="form-group">
+                                                            <label className="form-label">Berat Drop</label>
+                                                            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
+                                                                <input
+                                                                    type="number"
+                                                                    min="0"
+                                                                    step="0.01"
+                                                                    className="form-input"
+                                                                    value={item.weightInputValue}
+                                                                    onChange={e => updateActualDropDraft(item.draftKey, 'weightInputValue', e.target.value)}
+                                                                    disabled={updatingStatus}
+                                                                />
+                                                                <select
+                                                                    className="form-select"
+                                                                    value={item.weightInputUnit}
+                                                                    onChange={e => updateActualDropDraft(item.draftKey, 'weightInputUnit', e.target.value)}
+                                                                    disabled={updatingStatus}
+                                                                >
+                                                                    {WEIGHT_INPUT_UNIT_OPTIONS.map(option => (
+                                                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="form-row">
+                                                        <div className="form-group">
+                                                            <label className="form-label">Volume Drop</label>
+                                                            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
+                                                                <input
+                                                                    type="number"
+                                                                    min="0"
+                                                                    step="0.01"
+                                                                    className="form-input"
+                                                                    value={item.volumeInputValue}
+                                                                    onChange={e => updateActualDropDraft(item.draftKey, 'volumeInputValue', e.target.value)}
+                                                                    disabled={updatingStatus}
+                                                                />
+                                                                <select
+                                                                    className="form-select"
+                                                                    value={item.volumeInputUnit}
+                                                                    onChange={e => updateActualDropDraft(item.draftKey, 'volumeInputUnit', e.target.value)}
+                                                                    disabled={updatingStatus}
+                                                                >
+                                                                    {VOLUME_INPUT_UNIT_OPTIONS.map(option => (
+                                                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="form-group">
+                                                        <label className="form-label">Catatan Titik Drop</label>
+                                                        <textarea
+                                                            className="form-textarea"
+                                                            rows={2}
+                                                            value={item.note}
+                                                            onChange={e => updateActualDropDraft(item.draftKey, 'note', e.target.value)}
+                                                            disabled={updatingStatus}
+                                                            placeholder="Mis. 30 koli turun di Malang, sisa lanjut ke Ponorogo"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
                                 </>
                             )}
                             <div className="form-group">
@@ -872,7 +1251,7 @@ export default function DODetailPage() {
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setShowStatusModal(false)} disabled={updatingStatus}>Batal</button>
-                            <button className={`btn ${isCompletingDelivery ? 'btn-success' : 'btn-primary'}`} onClick={updateDOStatus} disabled={!newStatus || updatingStatus || (isCompletingDelivery && (!podName.trim() || !podDate || !actualCargoReady))}>
+                            <button className={`btn ${isCompletingDelivery ? 'btn-success' : 'btn-primary'}`} onClick={updateDOStatus} disabled={!newStatus || updatingStatus || (isCompletingDelivery && (!podName.trim() || !podDate || !actualCargoReady || !actualDropReady))}>
                                 <Save size={16} /> {updatingStatus ? 'Menyimpan...' : (isCompletingDelivery ? 'Selesaikan DO' : 'Simpan')}
                             </button>
                         </div>

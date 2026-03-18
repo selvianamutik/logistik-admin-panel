@@ -5,7 +5,7 @@
 
 import jsPDF from 'jspdf';
 import type { DeliveryOrder, DeliveryOrderItem, CompanyProfile } from '@/lib/types';
-import { formatDate, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
+import { DO_ACTUAL_DROP_TYPE_MAP, formatDate, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
 import { formatCargoSummary } from '@/lib/measurement';
 
 // ── Simple table drawing helper ──
@@ -123,6 +123,53 @@ export function generateDOPdf(
     y += 8;
 
     // ─── Items Table ───
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text('Route Tagihan', margin, y);
+    y += 5;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.text(`Asal: ${doData.pickupAddress || '-'}`, margin, y, { maxWidth: contentWidth });
+    y += 4.5;
+    doc.text(`Tujuan: ${doData.receiverAddress || '-'}`, margin, y, { maxWidth: contentWidth });
+    y += 6;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text('Realisasi Drop', margin, y);
+    y += 5;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    const actualDropPoints = doData.actualDropPoints || [];
+    if (actualDropPoints.length > 0) {
+        actualDropPoints
+            .slice()
+            .sort((a, b) => (a.sequence || 0) - (b.sequence || 0))
+            .forEach((point) => {
+                const line = `${point.sequence}. ${DO_ACTUAL_DROP_TYPE_MAP[point.stopType]?.label || point.stopType} - ${point.locationName || '-'} | ${formatCargoSummary({
+                    qtyKoli: point.qtyKoli,
+                    weightKg: point.weightKg,
+                    weightInputValue: point.weightInputValue,
+                    weightInputUnit: point.weightInputUnit,
+                    volumeM3: point.volumeM3,
+                    volumeInputValue: point.volumeInputValue,
+                    volumeInputUnit: point.volumeInputUnit,
+                })}${point.note ? ` | ${point.note}` : ''}`;
+                doc.text(line, margin, y, { maxWidth: contentWidth });
+                y += 4.5;
+                if (point.locationAddress) {
+                    doc.setTextColor(100, 100, 100);
+                    doc.text(point.locationAddress, margin + 4, y, { maxWidth: contentWidth - 4 });
+                    doc.setTextColor(0, 0, 0);
+                    y += 4.2;
+                }
+            });
+    } else {
+        doc.text('Belum ada realisasi drop terpisah. Tagihan mengikuti tujuan utama surat jalan.', margin, y, { maxWidth: contentWidth });
+        y += 4.5;
+    }
+    y += 4;
+
     const colWidths = [12, contentWidth - 82, 20, 50];
     const tableRows = doItems.map((item, idx) => [
         `${idx + 1}`,

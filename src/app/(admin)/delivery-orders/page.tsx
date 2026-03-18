@@ -66,6 +66,10 @@ export default function DeliveryOrdersPage() {
             || d.vehiclePlate?.toLowerCase().includes(search.toLowerCase())
             || d.driverName?.toLowerCase().includes(search.toLowerCase())
             || d.serviceName?.toLowerCase().includes(search.toLowerCase())
+            || (d.actualDropPoints || []).some(point =>
+                point.locationName?.toLowerCase().includes(search.toLowerCase())
+                || point.locationAddress?.toLowerCase().includes(search.toLowerCase())
+            )
             || service?.code?.toLowerCase().includes(search.toLowerCase());
         const s = !statusFilter || d.status === statusFilter;
         const c = !serviceFilter || d.serviceRef === serviceFilter;
@@ -96,8 +100,8 @@ export default function DeliveryOrdersPage() {
                         const co = await fetchCompanyProfile();
                         openBrandedPrint({
                             title: 'Daftar Surat Jalan', company: co, bodyHtml: `
-                            <table><thead><tr><th>No. SJ Customer</th><th>No. Internal</th><th>Resi</th><th>Customer</th><th>Kendaraan</th><th>Driver</th><th>Tanggal</th><th>Status</th></tr></thead>
-                            <tbody>${filtered.map(d => `<tr><td class="b">${d.customerDoNumber || d.doNumber || '-'}</td><td>${d.doNumber}</td><td>${d.masterResi || '-'}</td><td>${d.customerName || '-'}</td><td>${d.vehiclePlate || '-'}</td><td>${d.driverName || '-'}</td><td>${formatDate(d.date)}</td><td>${DO_STATUS_MAP[d.status]?.label || d.status}</td></tr>`).join('')}</tbody></table>`
+                            <table><thead><tr><th>No. SJ Customer</th><th>No. Internal</th><th>Resi</th><th>Customer</th><th>Kendaraan</th><th>Driver</th><th>Tanggal</th><th>Status</th><th>Drop Aktual</th></tr></thead>
+                            <tbody>${filtered.map(d => `<tr><td class="b">${d.customerDoNumber || d.doNumber || '-'}</td><td>${d.doNumber}</td><td>${d.masterResi || '-'}</td><td>${d.customerName || '-'}</td><td>${d.vehiclePlate || '-'}</td><td>${d.driverName || '-'}</td><td>${formatDate(d.date)}</td><td>${DO_STATUS_MAP[d.status]?.label || d.status}</td><td>${d.actualDropPoints?.length ? `${d.actualDropPoints.length} titik` : '-'}</td></tr>`).join('')}</tbody></table>`
                         });
                     }}><Printer size={15} /> Print</button>
                 </div>
@@ -121,11 +125,11 @@ export default function DeliveryOrdersPage() {
                 </div>
                 <div className="table-wrapper">
                     <table>
-                        <thead><tr><th>No. SJ Customer</th><th>No. Internal</th><th>Resi</th><th>Customer</th><th>Kategori</th><th>Kendaraan</th><th>Tanggal</th><th>Status</th><th>Tracking</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>No. SJ Customer</th><th>No. Internal</th><th>Resi</th><th>Customer</th><th>Kategori</th><th>Kendaraan</th><th>Tanggal</th><th>Status</th><th>Drop Aktual</th><th>Tracking</th><th>Aksi</th></tr></thead>
                         <tbody>
-                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
+                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 filtered.length === 0 ? (
-                                    <tr><td colSpan={10}><div className="empty-state"><Truck size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada surat jalan</div><div className="empty-state-text">Buat surat jalan dari halaman detail order</div></div></td></tr>
+                                    <tr><td colSpan={11}><div className="empty-state"><Truck size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada surat jalan</div><div className="empty-state-text">Buat surat jalan dari halaman detail order</div></div></td></tr>
                                 ) : filtered.map(d => (
                                     <tr key={d._id}>
                                         <td><Link href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{formatDeliveryOrderDisplayNumber(d)}</Link></td>
@@ -136,6 +140,16 @@ export default function DeliveryOrdersPage() {
                                         <td>{d.vehiclePlate || '-'}</td>
                                         <td className="text-muted">{formatDate(d.date)}</td>
                                         <td><span className={`badge badge-${DO_STATUS_MAP[d.status]?.color}`}><span className="badge-dot" /> {DO_STATUS_MAP[d.status]?.label}</span></td>
+                                        <td>
+                                            {d.actualDropPoints?.length ? (
+                                                <div>
+                                                    <div className="font-medium">{d.actualDropPoints.length} titik</div>
+                                                    <div className="text-muted text-sm">{d.actualDropPoints[0]?.locationName || '-'}</div>
+                                                </div>
+                                            ) : (
+                                                <span className="text-muted text-sm">Belum dicatat</span>
+                                            )}
+                                        </td>
                                         <td>
                                             {d.trackingState === 'ACTIVE' || d.trackingState === 'PAUSED' ? (
                                                 <div>
