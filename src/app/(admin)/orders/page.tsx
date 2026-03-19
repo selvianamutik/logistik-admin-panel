@@ -104,7 +104,7 @@ export default function OrdersPage() {
                     <h1 className="page-title">Order / Resi</h1>
                     <p className="page-subtitle">Kelola semua order pengiriman</p>
                 </div>
-                <div className="page-actions" style={{ flexWrap: 'wrap' }}>
+                <div className="page-actions">
                     <button className="btn btn-secondary btn-sm" onClick={() => exportOrders(filtered as unknown as Record<string, unknown>[])}>
                         <FileDown size={15} /> Excel
                     </button>
@@ -159,7 +159,7 @@ export default function OrdersPage() {
                     </div>
                 </div>
 
-                <div className="table-wrapper">
+                <div className="table-wrapper table-desktop-only">
                     <table>
                         <thead>
                             <tr>
@@ -231,6 +231,54 @@ export default function OrdersPage() {
                         </tbody>
                     </table>
                 </div>
+                {!loading && (
+                    <div className="mobile-record-list">
+                        {filtered.length === 0 ? (
+                            <div className="mobile-record-card">
+                                <div className="mobile-record-title">Belum ada order</div>
+                                <div className="mobile-record-subtitle">Buat order baru untuk memulai pengiriman.</div>
+                                <div className="mobile-record-actions">
+                                    <Link href="/orders/new" className="btn btn-primary">
+                                        <Plus size={16} /> Tambah Order
+                                    </Link>
+                                </div>
+                            </div>
+                        ) : filtered.map(order => (
+                            <div key={order._id} className="mobile-record-card">
+                                <div className="mobile-record-header">
+                                    <div>
+                                        <div className="mobile-record-title">{order.masterResi}</div>
+                                        <div className="mobile-record-subtitle">{order.customerName || '-'} • {formatDate(order.createdAt)}</div>
+                                    </div>
+                                    <span className={`badge badge-${ORDER_STATUS_MAP[order.status]?.color || 'gray'}`}>
+                                        <span className="badge-dot" /> {ORDER_STATUS_MAP[order.status]?.label || order.status}
+                                    </span>
+                                </div>
+                                <div className="mobile-record-meta">
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Penerima</span>
+                                        <span className="mobile-record-value">{order.receiverName || '-'}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Kategori Armada</span>
+                                        <span className="mobile-record-value">{getServiceLabel(order)}</span>
+                                    </div>
+                                </div>
+                                <div className="mobile-record-actions">
+                                    <button className="btn btn-secondary" onClick={() => router.push(`/orders/${order._id}`)}>
+                                        <Eye size={14} /> Lihat
+                                    </button>
+                                    <button className="btn btn-secondary" onClick={() => router.push(`/orders/${order._id}/edit`)}>
+                                        <Edit size={14} /> Edit
+                                    </button>
+                                    <button className="btn btn-danger" onClick={() => setDeleteId(order._id)}>
+                                        <Trash2 size={14} /> Hapus
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
 
                 {filtered.length > 0 && (
                     <div className="pagination">

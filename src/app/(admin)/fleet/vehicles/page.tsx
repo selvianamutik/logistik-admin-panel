@@ -74,7 +74,7 @@ export default function VehiclesPage() {
         <div>
             <div className="page-header">
                 <div className="page-header-left"><h1 className="page-title">Kendaraan</h1><p className="page-subtitle">Kelola armada kendaraan perusahaan</p></div>
-                <div className="page-actions" style={{ flexWrap: 'wrap' }}>
+                <div className="page-actions">
                     <button className="btn btn-secondary btn-sm" onClick={() => exportVehicles(filtered as unknown as Record<string, unknown>[])}>
                         <FileDown size={15} /> Excel
                     </button>
@@ -107,7 +107,7 @@ export default function VehiclesPage() {
                         </select>
                     </div>
                 </div>
-                <div className="table-wrapper">
+                <div className="table-wrapper table-desktop-only">
                     <table>
                         <thead><tr><th>Kode</th><th>Plat Nomor</th><th>Merk/Model</th><th>Kategori Armada</th><th>Tipe</th><th>Tahun</th><th>Status</th><th>Odometer</th><th>Aksi</th></tr></thead>
                         <tbody>
@@ -132,6 +132,58 @@ export default function VehiclesPage() {
                         </tbody>
                     </table>
                 </div>
+                {!loading && (
+                    <div className="mobile-record-list">
+                        {filtered.length === 0 ? (
+                            <div className="mobile-record-card">
+                                <div className="mobile-record-title">Belum ada kendaraan</div>
+                                <div className="mobile-record-subtitle">Tambahkan kendaraan untuk mulai mengelola armada.</div>
+                            </div>
+                        ) : filtered.map(v => (
+                            <div key={v._id} className="mobile-record-card">
+                                <div className="mobile-record-header">
+                                    <div>
+                                        <div className="mobile-record-title">{v.plateNumber}</div>
+                                        <div className="mobile-record-subtitle">{v.brandModel}</div>
+                                    </div>
+                                    <span className={`badge badge-${VEHICLE_STATUS_MAP[v.status]?.color}`}>
+                                        <span className="badge-dot" /> {VEHICLE_STATUS_MAP[v.status]?.label}
+                                    </span>
+                                </div>
+                                <div className="mobile-record-meta">
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Kode Unit</span>
+                                        <span className="mobile-record-value">{v.unitCode || '-'}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Kategori Armada</span>
+                                        <span className="mobile-record-value">{getServiceLabel(v)}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Tipe</span>
+                                        <span className="mobile-record-value">{v.vehicleType}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Tahun</span>
+                                        <span className="mobile-record-value">{v.year}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Odometer</span>
+                                        <span className="mobile-record-value">{v.lastOdometer ? `${v.lastOdometer.toLocaleString()} km` : '-'}</span>
+                                    </div>
+                                </div>
+                                <div className="mobile-record-actions">
+                                    <button className="btn btn-secondary" onClick={() => router.push(`/fleet/vehicles/${v._id}`)}>
+                                        <Eye size={14} /> Lihat
+                                    </button>
+                                    <button className="btn btn-secondary" onClick={() => router.push(`/fleet/vehicles/${v._id}/edit`)}>
+                                        <Edit size={14} /> Edit
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
                 {filtered.length > 0 && <div className="pagination"><div className="pagination-info">Menampilkan {filtered.length} kendaraan</div></div>}
             </div>
         </div>

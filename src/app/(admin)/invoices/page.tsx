@@ -350,7 +350,7 @@ export default function NotaListPage() {
                         </select>
                     </div>
                 </div>
-                <div className="table-wrapper">
+                <div className="table-wrapper table-desktop-only">
                     <table>
                         <thead><tr><th>No. Nota</th><th>Customer</th><th>Tanggal</th><th>Total Collie</th><th>Total Berat</th><th>Tagihan Netto</th><th>Status</th><th>Aksi</th></tr></thead>
                         <tbody>
@@ -391,6 +391,51 @@ export default function NotaListPage() {
                         </tbody>
                     </table>
                 </div>
+                {!loading && (
+                    <div className="mobile-record-list">
+                        {filtered.length === 0 ? (
+                            <div className="mobile-record-card">
+                                <div className="mobile-record-title">Belum ada nota</div>
+                                <div className="mobile-record-subtitle">Klik tombol Buat Nota untuk membuat nota baru.</div>
+                            </div>
+                        ) : filtered.map(n => (
+                            <div key={n._id} className="mobile-record-card">
+                                <div className="mobile-record-header">
+                                    <div>
+                                        <div className="mobile-record-title">{formatFreightNotaDisplayNumber(n, company)}</div>
+                                        <div className="mobile-record-subtitle">{n.customerName || '-'} • {formatDate(n.issueDate)}</div>
+                                    </div>
+                                    <span className={`badge badge-${STATUS_MAP[n.status]?.color}`}>
+                                        <span className="badge-dot" /> {STATUS_MAP[n.status]?.label}
+                                    </span>
+                                </div>
+                                <div className="mobile-record-meta">
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">No. Internal</span>
+                                        <span className="mobile-record-value">{n.notaNumber}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Total Collie</span>
+                                        <span className="mobile-record-value">{n.totalCollie || 0}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Total Berat</span>
+                                        <span className="mobile-record-value">{(n.totalWeightKg || 0).toLocaleString('id')} kg</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Tagihan Netto</span>
+                                        <span className="mobile-record-value" style={{ fontWeight: 700 }}>{formatCurrency(getReceivableNetAmount(n))}</span>
+                                    </div>
+                                </div>
+                                <div className="mobile-record-actions">
+                                    <button className="btn btn-secondary" onClick={() => router.push(`/invoices/${n._id}`)}>Lihat</button>
+                                    <button className="btn btn-secondary" onClick={() => void handleExportNota(n)}><FileDown size={13} /> Excel</button>
+                                    <button className="btn btn-secondary" onClick={() => void handlePrintNota(n)}><Printer size={13} /> Cetak</button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
                 {filtered.length > 0 && <div className="pagination"><div className="pagination-info">Menampilkan {filtered.length} nota | Total: <strong style={{ color: 'var(--color-danger)' }}>{formatCurrency(grandTotal)}</strong></div></div>}
             </div>
             {showReceiptModal && (

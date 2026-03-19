@@ -51,7 +51,7 @@ export default function DriverVouchersPage() {
     return (
         <div>
             <div className="page-header"><div className="page-header-left"><h1 className="page-title">Bon Supir</h1><p className="page-subtitle">Settlement per trip / DO: uang jalan awal, biaya perjalanan aktual, upah trip, dan selisih akhir</p></div>
-                <div className="page-actions" style={{ flexWrap: 'wrap' }}>
+                <div className="page-actions">
                     <button className="btn btn-secondary btn-sm" onClick={async () => {
                         const co = await fetchCompanyProfile();
                         openBrandedPrint({
@@ -77,7 +77,7 @@ export default function DriverVouchersPage() {
                         </select>
                     </div>
                 </div>
-                <div className="table-wrapper">
+                <div className="table-wrapper table-desktop-only">
                     <table>
                         <thead><tr><th>No. Bon</th><th>Supir</th><th>Tanggal</th><th>DO</th><th>Rute</th><th>Uang Jalan</th><th>Biaya</th><th>Upah Trip</th><th>Total Hak Trip</th><th>Selisih</th><th>Status</th><th>Aksi</th></tr></thead>
                         <tbody>
@@ -134,6 +134,68 @@ export default function DriverVouchersPage() {
                         </tbody>
                     </table>
                 </div>
+                {!loading && (
+                    <div className="mobile-record-list">
+                        {filtered.length === 0 ? (
+                            <div className="mobile-record-card">
+                                <div className="mobile-record-title">Belum ada bon trip</div>
+                                <div className="mobile-record-subtitle">Buat bon trip yang tertaut ke DO untuk mencatat uang jalan, biaya perjalanan, upah trip, dan settlement akhir.</div>
+                            </div>
+                        ) : filtered.map(v => {
+                            const st = STATUS_MAP[v.status] || { label: v.status, cls: 'badge-gray' };
+                            const totalClaimAmount = v.totalClaimAmount || ((v.totalSpent || 0) + (v.driverFeeAmount || 0));
+                            return (
+                                <div key={v._id} className="mobile-record-card">
+                                    <div className="mobile-record-header">
+                                        <div>
+                                            <div className="mobile-record-title">{v.bonNumber}</div>
+                                            <div className="mobile-record-subtitle">{v.driverName || '-'} • {formatDate(v.issuedDate)}</div>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                                            <span className={`badge ${st.cls}`}>{st.label}</span>
+                                            {!v.issueBankRef && <span className="badge badge-warning">Perlu Rekonsiliasi</span>}
+                                        </div>
+                                    </div>
+                                    <div className="mobile-record-meta">
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">DO</span>
+                                            <span className="mobile-record-value">{v.doNumber || '-'}</span>
+                                        </div>
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Rute</span>
+                                            <span className="mobile-record-value">{v.route || '-'}</span>
+                                        </div>
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Uang Jalan</span>
+                                            <span className="mobile-record-value">{formatCurrency(v.cashGiven)}</span>
+                                        </div>
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Biaya</span>
+                                            <span className="mobile-record-value">{formatCurrency(v.totalSpent)}</span>
+                                        </div>
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Upah Trip</span>
+                                            <span className="mobile-record-value">{formatCurrency(v.driverFeeAmount || 0)}</span>
+                                        </div>
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Selisih</span>
+                                            <span className="mobile-record-value" style={{ fontWeight: 700, color: v.balance < 0 ? '#ef4444' : v.balance > 0 ? '#16a34a' : undefined }}>{formatCurrency(v.balance)}</span>
+                                        </div>
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Total Hak Trip</span>
+                                            <span className="mobile-record-value">{formatCurrency(totalClaimAmount)}</span>
+                                        </div>
+                                    </div>
+                                    <div className="mobile-record-actions">
+                                        <button type="button" className="btn btn-secondary" onClick={() => router.push(`/driver-vouchers/${v._id}`)}>
+                                            <Eye size={14} /> Lihat
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
                 {filtered.length > 0 && <div className="pagination"><div className="pagination-info">Menampilkan {filtered.length} dari {items.length} bon</div></div>}
             </div>
         </div>

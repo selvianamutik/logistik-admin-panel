@@ -83,7 +83,7 @@ export default function DeliveryOrdersPage() {
                     <h1 className="page-title">Surat Jalan (DO)</h1>
                     <p className="page-subtitle">Kelola semua surat jalan pengiriman</p>
                 </div>
-                <div className="page-actions" style={{ flexWrap: 'wrap' }}>
+                <div className="page-actions">
                     <button className="btn btn-secondary btn-sm" onClick={() => {
                         exportToExcel(filtered as unknown as Record<string, unknown>[], [
                             { header: 'No. SJ Customer', key: 'customerDoNumber', width: 22 },
@@ -123,7 +123,7 @@ export default function DeliveryOrdersPage() {
                         </select>
                     </div>
                 </div>
-                <div className="table-wrapper">
+                <div className="table-wrapper table-desktop-only">
                     <table>
                         <thead><tr><th>No. SJ Customer</th><th>No. Internal</th><th>Resi</th><th>Customer</th><th>Kategori</th><th>Kendaraan</th><th>Tanggal</th><th>Status</th><th>Drop Aktual</th><th>Tracking</th><th>Aksi</th></tr></thead>
                         <tbody>
@@ -166,6 +166,67 @@ export default function DeliveryOrdersPage() {
                         </tbody>
                     </table>
                 </div>
+                {!loading && (
+                    <div className="mobile-record-list">
+                        {filtered.length === 0 ? (
+                            <div className="mobile-record-card">
+                                <div className="mobile-record-title">Belum ada surat jalan</div>
+                                <div className="mobile-record-subtitle">Buat surat jalan dari halaman detail order.</div>
+                            </div>
+                        ) : filtered.map(d => (
+                            <div key={d._id} className="mobile-record-card">
+                                <div className="mobile-record-header">
+                                    <div>
+                                        <div className="mobile-record-title">{formatDeliveryOrderDisplayNumber(d)}</div>
+                                        <div className="mobile-record-subtitle">{d.customerName || '-'} • {formatDate(d.date)}</div>
+                                    </div>
+                                    <span className={`badge badge-${DO_STATUS_MAP[d.status]?.color}`}>
+                                        <span className="badge-dot" /> {DO_STATUS_MAP[d.status]?.label}
+                                    </span>
+                                </div>
+                                <div className="mobile-record-meta">
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">No. Internal</span>
+                                        <span className="mobile-record-value">{d.doNumber || '-'}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Resi</span>
+                                        <span className="mobile-record-value">{d.masterResi || '-'}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Kategori</span>
+                                        <span className="mobile-record-value">{getServiceLabel(d)}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Kendaraan</span>
+                                        <span className="mobile-record-value">{d.vehiclePlate || '-'}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Tracking</span>
+                                        <span className="mobile-record-value">
+                                            {d.trackingState === 'ACTIVE' || d.trackingState === 'PAUSED'
+                                                ? `${d.trackingState} • ${d.trackingLastSeenAt ? formatDateTime(d.trackingLastSeenAt) : 'Belum ada update'}`
+                                                : 'Belum aktif'}
+                                        </span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Drop Aktual</span>
+                                        <span className="mobile-record-value">
+                                            {d.actualDropPoints?.length
+                                                ? `${d.actualDropPoints.length} titik • ${d.actualDropPoints[0]?.locationName || '-'}`
+                                                : 'Belum dicatat'}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="mobile-record-actions">
+                                    <button className="btn btn-secondary" onClick={() => router.push(`/delivery-orders/${d._id}`)}>
+                                        <Eye size={14} /> Lihat
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
                 {filtered.length > 0 && <div className="pagination"><div className="pagination-info">Menampilkan {filtered.length} surat jalan</div></div>}
             </div>
         </div>
