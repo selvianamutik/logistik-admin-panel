@@ -111,7 +111,7 @@ export default function UsersPage() {
             <div className="page-header"><div className="page-header-left"><h1 className="page-title">User Management</h1><p className="page-subtitle">Kelola user internal sistem</p></div>
                 <div className="page-actions"><button className="btn btn-primary" onClick={openNew}><Plus size={18} /> Tambah User</button></div></div>
             <div className="table-container">
-                <div className="table-wrapper">
+                <div className="table-wrapper table-desktop-only">
                     <table>
                         <thead><tr><th>Nama</th><th>Email</th><th>Role</th><th>Status</th><th>Aksi</th></tr></thead>
                         <tbody suppressHydrationWarning>
@@ -130,6 +130,40 @@ export default function UsersPage() {
                         </tbody>
                     </table>
                 </div>
+                {!loading && (
+                    <div className="mobile-record-list">
+                        {users.length === 0 ? (
+                            <div className="mobile-record-card">
+                                <div className="mobile-record-title">Belum ada user internal</div>
+                                <div className="mobile-record-subtitle">Tambahkan user admin atau owner baru untuk akses internal sistem.</div>
+                            </div>
+                        ) : users.map(u => (
+                            <div key={u._id} className="mobile-record-card">
+                                <div className="mobile-record-header">
+                                    <div>
+                                        <div className="mobile-record-title">{u.name}</div>
+                                        <div className="mobile-record-subtitle">{u.email}</div>
+                                    </div>
+                                    <span className={`badge ${u.active !== false ? 'badge-success' : 'badge-gray'}`}>{u.active !== false ? 'Aktif' : 'Non-Aktif'}</span>
+                                </div>
+                                <div className="mobile-record-meta">
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Role</span>
+                                        <span className="mobile-record-value">{u.role}</span>
+                                    </div>
+                                </div>
+                                <div className="mobile-record-actions">
+                                    <button className="btn btn-secondary" onClick={() => openEdit(u)} disabled={togglingUserId === u._id}>
+                                        <Edit size={14} /> Edit
+                                    </button>
+                                    <button className="btn btn-secondary" onClick={() => toggleActive(u)} disabled={togglingUserId === u._id}>
+                                        <RefreshCw size={14} /> {togglingUserId === u._id ? 'Menyimpan...' : (u.active !== false ? 'Nonaktifkan' : 'Aktifkan')}
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
 
             {showModal && (

@@ -96,7 +96,7 @@ export default function CustomersPage() {
                     <h1 className="page-title">Customer</h1>
                     <p className="page-subtitle">Kelola data pelanggan</p>
                 </div>
-                <div className="page-actions" style={{ flexWrap: 'wrap' }}>
+                <div className="page-actions">
                     <button className="btn btn-secondary btn-sm" onClick={() => {
                         exportToExcel(filtered as unknown as Record<string, unknown>[], [
                             { header: 'Nama', key: 'name', width: 25 },
@@ -119,7 +119,7 @@ export default function CustomersPage() {
             </div>
             <div className="table-container">
                 <div className="table-toolbar"><div className="table-toolbar-left"><div className="table-search"><Search size={16} className="table-search-icon" /><input type="text" placeholder="Cari customer, PIC, prefix SJ..." value={search} onChange={e => setSearch(e.target.value)} /></div></div></div>
-                <div className="table-wrapper">
+                <div className="table-wrapper table-desktop-only">
                     <table>
                         <thead><tr><th>Nama</th><th>PIC</th><th>Telepon</th><th>Email</th><th>Prefix SJ</th><th>Termin</th><th>Aksi</th></tr></thead>
                         <tbody>
@@ -137,6 +137,52 @@ export default function CustomersPage() {
                         </tbody>
                     </table>
                 </div>
+                {!loading && (
+                    <div className="mobile-record-list">
+                        {filtered.length === 0 ? (
+                            <div className="mobile-record-card">
+                                <div className="mobile-record-title">Belum ada customer</div>
+                                <div className="mobile-record-subtitle">Tambahkan customer baru untuk mulai membuat order dan surat jalan.</div>
+                                <div className="mobile-record-actions">
+                                    <button className="btn btn-primary" onClick={openNew}>
+                                        <Plus size={16} /> Tambah Customer
+                                    </button>
+                                </div>
+                            </div>
+                        ) : filtered.map(c => (
+                            <div key={c._id} className="mobile-record-card">
+                                <div className="mobile-record-header">
+                                    <div>
+                                        <div className="mobile-record-title">{c.name}</div>
+                                        <div className="mobile-record-subtitle">{c.contactPerson || '-'} • {c.phone || '-'}</div>
+                                    </div>
+                                    <span className="badge badge-info">{c.deliveryOrderPrefix || 'SJ'}</span>
+                                </div>
+                                <div className="mobile-record-meta">
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Email</span>
+                                        <span className="mobile-record-value">{c.email || '-'}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Termin</span>
+                                        <span className="mobile-record-value">{c.defaultPaymentTerm} hari</span>
+                                    </div>
+                                </div>
+                                <div className="mobile-record-actions">
+                                    <Link href={`/customers/${c._id}`} className="btn btn-secondary">
+                                        Detail
+                                    </Link>
+                                    <button className="btn btn-secondary" onClick={() => openEdit(c)}>
+                                        <Edit size={14} /> Edit
+                                    </button>
+                                    <button className="btn btn-danger" onClick={() => setDeleteId(c._id)}>
+                                        <Trash2 size={14} /> Hapus
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
 
             {showModal && (

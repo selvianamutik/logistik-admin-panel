@@ -116,7 +116,7 @@ export default function IncidentsPage() {
                 <div className="page-actions"><button className="btn btn-primary" onClick={() => setShowModal(true)}><Plus size={18} /> Laporkan Insiden</button></div></div>
             <div className="table-container">
                 <div className="table-toolbar"><div className="table-toolbar-left"><div className="table-search"><Search size={16} className="table-search-icon" /><input placeholder="Cari..." value={search} onChange={e => setSearch(e.target.value)} /></div></div></div>
-                <div className="table-wrapper">
+                <div className="table-wrapper table-desktop-only">
                     <table>
                         <thead><tr><th>No.</th><th>Waktu</th><th>Kendaraan</th><th>Supir</th><th>DO</th><th>Tipe</th><th>Lokasi</th><th>Urgency</th><th>Status</th><th>Aksi</th></tr></thead>
                         <tbody>
@@ -139,6 +139,55 @@ export default function IncidentsPage() {
                         </tbody>
                     </table>
                 </div>
+                {!loading && (
+                    <div className="mobile-record-list">
+                        {filtered.length === 0 ? (
+                            <div className="mobile-record-card">
+                                <div className="mobile-record-title">Tidak ada insiden</div>
+                                <div className="mobile-record-subtitle">Laporan insiden kendaraan akan muncul di sini.</div>
+                            </div>
+                        ) : filtered.map(i => (
+                            <div key={i._id} className="mobile-record-card">
+                                <div className="mobile-record-header">
+                                    <div>
+                                        <div className="mobile-record-title">{i.incidentNumber}</div>
+                                        <div className="mobile-record-subtitle">{i.vehiclePlate || '-'} • {formatDateTime(i.dateTime)}</div>
+                                    </div>
+                                    <span className={`badge badge-${INCIDENT_STATUS_MAP[i.status]?.color}`}>
+                                        <span className="badge-dot" /> {INCIDENT_STATUS_MAP[i.status]?.label}
+                                    </span>
+                                </div>
+                                <div className="mobile-record-meta">
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Supir</span>
+                                        <span className="mobile-record-value">{i.driverName || '-'}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">DO</span>
+                                        <span className="mobile-record-value">{i.relatedDONumber || '-'}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Tipe</span>
+                                        <span className="mobile-record-value">{INCIDENT_TYPE_MAP[i.incidentType] || i.incidentType}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Lokasi</span>
+                                        <span className="mobile-record-value">{i.locationText || '-'}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Urgency</span>
+                                        <span className="mobile-record-value">{URGENCY_MAP[i.urgency]?.label || i.urgency}</span>
+                                    </div>
+                                </div>
+                                <div className="mobile-record-actions">
+                                    <button className="btn btn-secondary" onClick={() => router.push(`/fleet/incidents/${i._id}`)}>
+                                        <Eye size={14} /> Lihat
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
             {showModal && (
                 <div className="modal-overlay" onClick={() => { if (!saving) setShowModal(false); }}>

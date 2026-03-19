@@ -88,7 +88,7 @@ export default function MaintenancePage() {
                 <div className="page-actions"><button className="btn btn-primary" onClick={() => setShowModal(true)}><Plus size={18} /> Jadwalkan Servis</button></div></div>
             <div className="table-container">
                 <div className="table-toolbar"><div className="table-toolbar-left"><div className="table-search"><Search size={16} className="table-search-icon" /><input placeholder="Cari..." value={search} onChange={e => setSearch(e.target.value)} /></div></div></div>
-                <div className="table-wrapper">
+                <div className="table-wrapper table-desktop-only">
                     <table>
                         <thead><tr><th>Kendaraan</th><th>Tipe Servis</th><th>Jadwal</th><th>Status</th><th>Aksi</th></tr></thead>
                         <tbody>
@@ -108,6 +108,50 @@ export default function MaintenancePage() {
                         </tbody>
                     </table>
                 </div>
+                {!loading && (
+                    <div className="mobile-record-list">
+                        {filtered.length === 0 ? (
+                            <div className="mobile-record-card">
+                                <div className="mobile-record-title">Belum ada jadwal maintenance</div>
+                                <div className="mobile-record-subtitle">Buat jadwal servis untuk mengingatkan perawatan armada.</div>
+                            </div>
+                        ) : filtered.map(m => (
+                            <div key={m._id} className="mobile-record-card">
+                                <div className="mobile-record-header">
+                                    <div>
+                                        <div className="mobile-record-title">{m.vehiclePlate || '-'}</div>
+                                        <div className="mobile-record-subtitle">{m.type}</div>
+                                    </div>
+                                    <span className={`badge badge-${MAINTENANCE_STATUS_MAP[m.status]?.color}`}>
+                                        <span className="badge-dot" /> {MAINTENANCE_STATUS_MAP[m.status]?.label}
+                                    </span>
+                                </div>
+                                <div className="mobile-record-meta">
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Jadwal</span>
+                                        <span className="mobile-record-value">{m.scheduleType === 'DATE' ? formatDate(m.plannedDate) : `${(m.plannedOdometer || 0).toLocaleString()} km`}</span>
+                                    </div>
+                                    {m.notes && (
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Catatan</span>
+                                            <span className="mobile-record-value">{m.notes}</span>
+                                        </div>
+                                    )}
+                                </div>
+                                {m.status === 'SCHEDULED' && (
+                                    <div className="mobile-record-actions">
+                                        <button className="btn btn-secondary" onClick={() => updateStatus(m._id, 'DONE')} disabled={updatingId === m._id}>
+                                            {updatingId === m._id ? 'Menyimpan...' : 'Selesai'}
+                                        </button>
+                                        <button className="btn btn-secondary" onClick={() => updateStatus(m._id, 'SKIPPED')} disabled={updatingId === m._id}>
+                                            {updatingId === m._id ? 'Menyimpan...' : 'Lewati'}
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
             {showModal && (
                 <div className="modal-overlay" onClick={() => { if (!saving) setShowModal(false); }}>

@@ -242,7 +242,7 @@ export default function DriversPage() {
                 </div></div>
             <div className="table-container">
                 <div className="table-toolbar"><div className="table-toolbar-left"><div className="table-search"><Search size={16} className="table-search-icon" /><input placeholder="Cari nama, HP, SIM..." value={search} onChange={e => setSearch(e.target.value)} /></div></div></div>
-                <div className="table-wrapper">
+                <div className="table-wrapper table-desktop-only">
                     <table>
                         <thead><tr><th>Nama</th><th>No. HP</th><th>No. SIM</th><th>SIM Berlaku</th><th>Akses Mobile</th><th>Status</th><th>Aksi</th></tr></thead>
                         <tbody>
@@ -296,6 +296,59 @@ export default function DriversPage() {
                         </tbody>
                     </table>
                 </div>
+                {!loading && (
+                    <div className="mobile-record-list">
+                        {filtered.length === 0 ? (
+                            <div className="mobile-record-card">
+                                <div className="mobile-record-title">Belum ada supir</div>
+                                <div className="mobile-record-subtitle">Tambahkan supir agar bisa dipakai di surat jalan dan tracking driver.</div>
+                            </div>
+                        ) : filtered.map(d => {
+                            const account = accountByDriverRef.get(d._id);
+                            return (
+                                <div key={d._id} className="mobile-record-card">
+                                    <div className="mobile-record-header">
+                                        <div>
+                                            <div className="mobile-record-title">{d.name}</div>
+                                            <div className="mobile-record-subtitle">{d.phone} • {d.licenseNumber || 'SIM belum diisi'}</div>
+                                        </div>
+                                        <span className={`badge ${isDriverActive(d) ? 'badge-green' : 'badge-gray'}`}>{isDriverActive(d) ? 'Aktif' : 'Non-aktif'}</span>
+                                    </div>
+                                    <div className="mobile-record-meta">
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">SIM Berlaku</span>
+                                            <span className="mobile-record-value">{d.simExpiry || '-'}</span>
+                                        </div>
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Akses Mobile</span>
+                                            <span className="mobile-record-value">
+                                                {account
+                                                    ? `${account.email} • ${isAccountActive(account) ? 'Aktif' : 'Non-aktif'}${account.lastLoginAt ? ` • Login ${formatDateTime(account.lastLoginAt)}` : ''}`
+                                                    : 'Belum ada akun mobile'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div className="mobile-record-actions">
+                                        <button className="btn btn-secondary" onClick={() => openEdit(d)}>
+                                            <Edit2 size={14} /> Edit
+                                        </button>
+                                        <button
+                                            className="btn btn-secondary"
+                                            onClick={() => openAccessModal(d)}
+                                            disabled={!isDriverActive(d) || togglingDriverId === d._id}
+                                        >
+                                            <Smartphone size={14} /> Akses Mobile
+                                        </button>
+                                        <button className="btn btn-secondary" onClick={() => toggleActive(d)} disabled={togglingDriverId === d._id}>
+                                            {isDriverActive(d) ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
+                                            {togglingDriverId === d._id ? 'Menyimpan...' : (isDriverActive(d) ? 'Nonaktifkan' : 'Aktifkan')}
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
                 {filtered.length > 0 && <div className="pagination"><div className="pagination-info">Menampilkan {filtered.length} dari {items.length} supir</div></div>}
             </div>
 
