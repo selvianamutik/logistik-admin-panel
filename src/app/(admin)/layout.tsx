@@ -195,11 +195,23 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
     const menuGroups = getSidebarMenu(user.role);
     const nonNavigableBreadcrumbs = new Set(['/fleet', '/settings']);
+    const detailSegmentParents = new Set([
+        'orders',
+        'delivery-orders',
+        'invoices',
+        'customers',
+        'borongan',
+        'driver-vouchers',
+        'bank-accounts',
+        'vehicles',
+        'incidents',
+    ]);
 
     // Breadcrumbs
     const pathParts = pathname.split('/').filter(Boolean);
     const breadcrumbs = pathParts.map((part, idx) => {
         const href = '/' + pathParts.slice(0, idx + 1).join('/');
+        const previousPart = idx > 0 ? pathParts[idx - 1] : '';
         const labels: Record<string, string> = {
             dashboard: 'Dashboard', orders: 'Order', 'delivery-orders': 'Surat Jalan',
             invoices: 'Nota Ongkos', customers: 'Customer', services: 'Kategori Truk',
@@ -208,10 +220,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             maintenance: 'Maintenance', incidents: 'Insiden', settings: 'Pengaturan',
             profile: 'Profil', password: 'Password', company: 'Perusahaan',
             users: 'User', 'audit-logs': 'Audit Log', new: 'Baru', edit: 'Edit',
-            tires: 'Ban', 'bank-accounts': 'Rekening & Kas', borongan: 'Borongan Supir', 'driver-vouchers': 'Bon Supir',
+            tires: 'Ban', 'bank-accounts': 'Rekening & Kas', borongan: 'Borongan Legacy', 'driver-vouchers': 'Bon Trip Supir',
         };
+        const resolvedLabel =
+            labels[part] ||
+            (detailSegmentParents.has(previousPart) ? 'Detail' : part);
         return {
-            label: labels[part] || part,
+            label: resolvedLabel,
             href,
             isLast: idx === pathParts.length - 1,
             isNavigable: !nonNavigableBreadcrumbs.has(href),

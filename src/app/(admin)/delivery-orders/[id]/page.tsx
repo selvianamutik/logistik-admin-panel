@@ -592,14 +592,14 @@ export default function DODetailPage() {
             });
             const result = await res.json();
             if (!res.ok) {
-                addToast('error', result.error || 'Gagal menyimpan tarip borongan');
+                addToast('error', result.error || 'Gagal menyimpan upah trip');
                 return;
             }
             setDoData(prev => prev ? { ...prev, taripBorongan, keteranganBorongan } : prev);
             setEditingTarip(false);
-            addToast('success', 'Tarip borongan disimpan');
+            addToast('success', 'Upah trip disimpan');
         } catch {
-            addToast('error', 'Gagal menyimpan tarip borongan');
+            addToast('error', 'Gagal menyimpan upah trip');
         } finally {
             setSavingTarip(false);
         }
@@ -869,19 +869,19 @@ export default function DODetailPage() {
                 </div>
             </div>
 
-            {/* Borongan Tarip - Set Sebelum Berangkat */}
+            {/* Upah Trip - Set Sebelum Berangkat */}
             <div className="card" style={{ marginTop: '1rem', border: '1.5px solid var(--color-warning-light)' }}>
                 <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--color-warning-light)' }}>
-                    <span className="card-header-title" style={{ color: 'var(--color-warning)' }}>Tarip Borongan Supir</span>
+                    <span className="card-header-title" style={{ color: 'var(--color-warning)' }}>Upah Trip Supir</span>
                     {!editingTarip && (
-                        <button className="btn btn-sm btn-secondary" onClick={() => setEditingTarip(true)}>Edit Tarip</button>
+                        <button className="btn btn-sm btn-secondary" onClick={() => setEditingTarip(true)}>Edit Upah</button>
                     )}
                 </div>
                 <div className="card-body">
                     {!editingTarip ? (
                         <div className="detail-row">
                             <div className="detail-item">
-                                <div className="detail-label">Tarif Borongan per DO</div>
+                                <div className="detail-label">Upah Trip per DO</div>
                                 <div className="detail-value font-semibold" style={{ color: doData.taripBorongan ? 'var(--color-primary)' : 'var(--color-gray-400)' }}>
                                     {doData.taripBorongan ? `Rp ${doData.taripBorongan.toLocaleString('id')}` : 'Belum diisi'}
                                 </div>
@@ -895,8 +895,8 @@ export default function DODetailPage() {
                         <div>
                             <div className="form-row">
                                 <div className="form-group">
-                                    <label className="form-label">Tarif Borongan per DO (Rp) <span className="required">*</span></label>
-                                    <CurrencyInput value={taripBorongan} onValueChange={value => setTaripBorongan(value)} placeholder="Ketik tarif borongan per DO" />
+                                    <label className="form-label">Upah Trip per DO (Rp) <span className="required">*</span></label>
+                                    <CurrencyInput value={taripBorongan} onValueChange={value => setTaripBorongan(value)} placeholder="Ketik upah trip per DO" />
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Keterangan</label>
@@ -905,7 +905,7 @@ export default function DODetailPage() {
                             </div>
                             <div style={{ display: 'flex', gap: '0.5rem' }}>
                                 <button className="btn btn-primary btn-sm" onClick={saveTaripBorongan} disabled={savingTarip}>
-                                    <Save size={14} /> {savingTarip ? 'Menyimpan...' : 'Simpan Tarip'}
+                                    <Save size={14} /> {savingTarip ? 'Menyimpan...' : 'Simpan Upah'}
                                 </button>
                                 <button className="btn btn-secondary btn-sm" onClick={() => setEditingTarip(false)}>Batal</button>
                             </div>

@@ -175,7 +175,6 @@ export function getSidebarMenu(role: UserRole): SidebarMenuGroup[] {
             label: 'Keuangan',
             items: [
                 { label: 'Nota Ongkos Angkut', href: '/invoices', icon: 'FileText', module: 'freightNotas' },
-                { label: 'Borongan Supir', href: '/borongan', icon: 'Receipt', module: 'driverBorongans' },
                 { label: 'Bon Supir', href: '/driver-vouchers', icon: 'Wallet', module: 'driverVouchers' },
                 { label: 'Pengeluaran', href: '/expenses', icon: 'Wallet', module: 'expenses' },
                 { label: 'Kategori Biaya', href: '/expense-categories', icon: 'Tags', module: 'expenseCategories' },
