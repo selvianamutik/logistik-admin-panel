@@ -296,6 +296,14 @@ export async function handleCustomerDelete(
         return NextResponse.json({ error: 'Customer yang sudah dipakai pada invoice tidak boleh dihapus' }, { status: 409 });
     }
 
+    const relatedCustomerProduct = await getSanityClient().fetch<{ _id: string } | null>(
+        `*[_type == "customerProduct" && customerRef == $ref][0]{ _id }`,
+        { ref: id }
+    );
+    if (relatedCustomerProduct) {
+        return NextResponse.json({ error: 'Hapus dulu master barang customer sebelum menghapus customer' }, { status: 409 });
+    }
+
     await sanityDelete(id);
     await addAuditLog(session, 'DELETE', 'customers', id, `Deleted customers ${customer.name || id}`);
     return NextResponse.json({ success: true });

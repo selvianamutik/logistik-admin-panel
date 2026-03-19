@@ -99,6 +99,7 @@ export function getSanityClient() {
 export const SANITY_TYPE_MAP: Record<string, string> = {
     users: 'user',
     customers: 'customer',
+    'customer-products': 'customerProduct',
     services: 'service',
     'expense-categories': 'expenseCategory',
     drivers: 'driver',

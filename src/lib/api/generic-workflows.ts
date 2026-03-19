@@ -2,6 +2,14 @@ import { NextResponse } from 'next/server';
 
 import { createSession, setSessionCookie } from '@/lib/auth';
 import {
+    convertKgToWeightInputValue,
+    convertM3ToVolumeInputValue,
+    convertVolumeToM3,
+    convertWeightToKg,
+    type VolumeInputUnit,
+    type WeightInputUnit,
+} from '@/lib/measurement';
+import {
     getSanityClient,
     sanityCreate,
     sanityDelete,
@@ -58,6 +66,7 @@ type AuditLogFn = (
 ) => void | Promise<void>;
 
 const CUSTOMER_DO_PREFIX_RE = /^[A-Z0-9][A-Z0-9-]{0,7}$/;
+const CUSTOMER_PRODUCT_CODE_RE = /^[A-Z0-9][A-Z0-9-]{0,19}$/;
 
 function normalizeCustomerDoPrefix(value: unknown) {
     const prefix = normalizeOptionalText(value)
@@ -71,6 +80,20 @@ function normalizeCustomerDoPrefix(value: unknown) {
         throw new Error('Prefix surat jalan customer hanya boleh berisi huruf/angka singkat, misalnya SJ atau BK');
     }
     return prefix;
+}
+
+function normalizeCustomerProductCode(value: unknown) {
+    const code = normalizeOptionalText(value)
+        ?.toUpperCase()
+        .replace(/[^A-Z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    if (!code) {
+        return undefined;
+    }
+    if (!CUSTOMER_PRODUCT_CODE_RE.test(code)) {
+        throw new Error('Kode barang customer hanya boleh berisi huruf/angka singkat, misalnya BRG-001');
+    }
+    return code;
 }
 
 function normalizeCustomerPayload(data: Record<string, unknown>, existing?: Record<string, unknown>) {
@@ -132,6 +155,127 @@ function normalizeCustomerPayload(data: Record<string, unknown>, existing?: Reco
     } else {
         next.deliveryOrderCounter = 0;
     }
+
+    return next;
+}
+
+async function normalizeCustomerProductPayload(data: Record<string, unknown>, existing?: Record<string, unknown>) {
+    const next: Record<string, unknown> = {};
+    const existingId = typeof existing?._id === 'string' ? existing._id : undefined;
+    const customerRef =
+        Object.prototype.hasOwnProperty.call(data, 'customerRef') || !existing
+            ? normalizeText(data.customerRef)
+            : normalizeOptionalText(existing?.customerRef) || '';
+    if (!customerRef) {
+        throw new Error('Customer barang wajib dipilih');
+    }
+
+    const customer = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(customerRef);
+    if (!customer) {
+        throw new Error('Customer barang tidak ditemukan');
+    }
+    if (customer.active === false && (!existing || customerRef !== normalizeOptionalText(existing.customerRef))) {
+        throw new Error('Customer tidak aktif dan tidak bisa dipakai untuk master barang baru');
+    }
+
+    const name =
+        Object.prototype.hasOwnProperty.call(data, 'name') || !existing
+            ? normalizeText(data.name)
+            : normalizeOptionalText(existing?.name) || '';
+    if (!name) {
+        throw new Error('Nama barang customer wajib diisi');
+    }
+
+    const code =
+        Object.prototype.hasOwnProperty.call(data, 'code') || !existing
+            ? normalizeCustomerProductCode(data.code)
+            : normalizeCustomerProductCode(existing?.code);
+    if (code) {
+        const duplicateCode = await getSanityClient().fetch<{ _id: string } | null>(
+            `*[_type == "customerProduct" && customerRef == $customerRef && code == $code && _id != $excludeId][0]{ _id }`,
+            { customerRef, code, excludeId: existingId || '' }
+        );
+        if (duplicateCode) {
+            throw new Error('Kode barang customer sudah digunakan');
+        }
+    }
+
+    const description =
+        Object.prototype.hasOwnProperty.call(data, 'description') || !existing
+            ? normalizeOptionalText(data.description)
+            : normalizeOptionalText(existing?.description);
+    const defaultQtyRaw =
+        Object.prototype.hasOwnProperty.call(data, 'defaultQtyKoli') || !existing
+            ? normalizeNumber(data.defaultQtyKoli ?? 1)
+            : normalizeNumber(existing?.defaultQtyKoli ?? 1);
+    if (!Number.isFinite(defaultQtyRaw) || defaultQtyRaw < 0) {
+        throw new Error('Default koli barang customer tidak valid');
+    }
+
+    const weightInputUnit: WeightInputUnit =
+        (Object.prototype.hasOwnProperty.call(data, 'defaultWeightInputUnit')
+            ? data.defaultWeightInputUnit
+            : existing?.defaultWeightInputUnit) === 'TON'
+            ? 'TON'
+            : 'KG';
+    const defaultWeightInputValue =
+        Object.prototype.hasOwnProperty.call(data, 'defaultWeightInputValue') ||
+        Object.prototype.hasOwnProperty.call(data, 'defaultWeight') ||
+        !existing
+            ? normalizeNumber(data.defaultWeightInputValue ?? data.defaultWeight ?? 0)
+            : normalizeNumber(
+                existing?.defaultWeightInputValue ??
+                convertKgToWeightInputValue(normalizeNumber(existing?.defaultWeight ?? 0), weightInputUnit)
+            );
+    if (!Number.isFinite(defaultWeightInputValue) || defaultWeightInputValue < 0) {
+        throw new Error('Default berat barang customer tidak valid');
+    }
+    const defaultWeight = defaultWeightInputValue > 0 ? convertWeightToKg(defaultWeightInputValue, weightInputUnit) : undefined;
+
+    const volumeInputUnit: VolumeInputUnit =
+        (Object.prototype.hasOwnProperty.call(data, 'defaultVolumeInputUnit')
+            ? data.defaultVolumeInputUnit
+            : existing?.defaultVolumeInputUnit) === 'LITER'
+            ? 'LITER'
+            : (Object.prototype.hasOwnProperty.call(data, 'defaultVolumeInputUnit')
+                ? data.defaultVolumeInputUnit
+                : existing?.defaultVolumeInputUnit) === 'KL'
+                ? 'KL'
+                : 'M3';
+    const defaultVolumeInputValue =
+        Object.prototype.hasOwnProperty.call(data, 'defaultVolumeInputValue') ||
+        Object.prototype.hasOwnProperty.call(data, 'defaultVolume') ||
+        !existing
+            ? normalizeNumber(data.defaultVolumeInputValue ?? data.defaultVolume ?? 0)
+            : normalizeNumber(
+                existing?.defaultVolumeInputValue ??
+                convertM3ToVolumeInputValue(normalizeNumber(existing?.defaultVolume ?? 0), volumeInputUnit)
+            );
+    if (!Number.isFinite(defaultVolumeInputValue) || defaultVolumeInputValue < 0) {
+        throw new Error('Default volume barang customer tidak valid');
+    }
+    const defaultVolume = defaultVolumeInputValue > 0 ? convertVolumeToM3(defaultVolumeInputValue, volumeInputUnit) : undefined;
+
+    next.customerRef = customerRef;
+    next.customerName = customer.name || '';
+    next.code = code;
+    next.name = name;
+    next.description = description || name;
+    next.defaultQtyKoli = defaultQtyRaw > 0 ? Math.round(defaultQtyRaw) : undefined;
+    next.defaultWeight = defaultWeight;
+    next.defaultWeightInputValue = defaultWeightInputValue > 0 ? defaultWeightInputValue : undefined;
+    next.defaultWeightInputUnit = defaultWeightInputValue > 0 ? weightInputUnit : undefined;
+    next.defaultVolume = defaultVolume;
+    next.defaultVolumeInputValue = defaultVolumeInputValue > 0 ? defaultVolumeInputValue : undefined;
+    next.defaultVolumeInputUnit = defaultVolumeInputValue > 0 ? volumeInputUnit : undefined;
+    next.notes =
+        Object.prototype.hasOwnProperty.call(data, 'notes') || !existing
+            ? normalizeOptionalText(data.notes)
+            : normalizeOptionalText(existing?.notes);
+    next.active =
+        Object.prototype.hasOwnProperty.call(data, 'active') || !existing
+            ? data.active === undefined ? true : Boolean(data.active)
+            : existing?.active !== false;
 
     return next;
 }
@@ -388,6 +532,22 @@ export async function handleGenericUpdate(
         }
     }
 
+    if (entity === 'customer-products') {
+        const existingCustomerProduct = await sanityGetById<Record<string, unknown>>(id);
+        if (!existingCustomerProduct) {
+            return NextResponse.json({ error: 'Barang customer tidak ditemukan' }, { status: 404 });
+        }
+
+        try {
+            Object.assign(updates, await normalizeCustomerProductPayload(updates, existingCustomerProduct));
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Data barang customer tidak valid' },
+                { status: 400 }
+            );
+        }
+    }
+
     if (entity === 'order-items' && typeof updates.status === 'string') {
         return NextResponse.json(
             { error: 'Status item order harus lewat workflow server agar qty parsial, hold, dan DO tetap sinkron' },
@@ -535,6 +695,21 @@ export async function handleGenericDelete(
         return handleCustomerDelete(session, data, addAuditLog);
     }
 
+    if (entity === 'customer-products') {
+        const id = typeof data.id === 'string' ? data.id : '';
+        if (!id) {
+            return NextResponse.json({ error: 'Barang customer tidak valid' }, { status: 400 });
+        }
+
+        const relatedOrderItem = await getSanityClient().fetch<{ _id: string } | null>(
+            `*[_type == "orderItem" && customerProductRef == $ref][0]{ _id }`,
+            { ref: id }
+        );
+        if (relatedOrderItem) {
+            return NextResponse.json({ error: 'Barang customer yang sudah dipakai order tidak boleh dihapus' }, { status: 409 });
+        }
+    }
+
     if (entity === 'services') {
         return handleServiceDelete(session, data, addAuditLog);
     }
@@ -673,6 +848,17 @@ export async function handleGenericCreate(
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Data customer tidak valid' },
+                { status: 400 }
+            );
+        }
+    }
+
+    if (entity === 'customer-products') {
+        try {
+            Object.assign(newDoc, await normalizeCustomerProductPayload(data));
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Data barang customer tidak valid' },
                 { status: 400 }
             );
         }

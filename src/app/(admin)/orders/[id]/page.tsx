@@ -522,7 +522,14 @@ export default function OrderDetailPage() {
                                 ].filter((line): line is string => Boolean(line));
                                 return (
                                 <tr key={item._id}>
-                                    <td className="font-medium">{item.description}</td>
+                                    <td>
+                                        <div className="font-medium">{item.description}</div>
+                                        {(item.customerProductCode || item.customerProductName) && (
+                                            <div className="text-muted text-sm" style={{ marginTop: '0.2rem' }}>
+                                                {item.customerProductCode ? `${item.customerProductCode} - ` : ''}{item.customerProductName || 'Master barang customer'}
+                                            </div>
+                                        )}
+                                    </td>
                                     <td>
                                         <div className="font-medium">{item.qtyKoli}</div>
                                         <div className="text-muted text-sm">
@@ -772,6 +779,11 @@ export default function OrderDetailPage() {
                                                         </td>
                                                         <td>
                                                             <div className="font-medium">{item.description}</div>
+                                                            {(item.customerProductCode || item.customerProductName) && (
+                                                                <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+                                                                    {item.customerProductCode ? `${item.customerProductCode} - ` : ''}{item.customerProductName || 'Master barang customer'}
+                                                                </div>
+                                                            )}
                                                             <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
                                                                 Total {formatCargoSummary({
                                                                     qtyKoli: progressInfo.totalQtyKoli,

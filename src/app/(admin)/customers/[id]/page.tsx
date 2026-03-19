@@ -4,9 +4,36 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '../../layout';
-import { ArrowLeft, Edit, Package, DollarSign } from 'lucide-react';
+import { ArrowLeft, Edit, Package, DollarSign, Plus, Save, Trash2, X } from 'lucide-react';
 import { formatDate, formatCurrency, getReceivableNetAmount } from '@/lib/utils';
-import type { Customer, Order, FreightNota } from '@/lib/types';
+import { formatCargoSummary, VOLUME_INPUT_UNIT_OPTIONS, WEIGHT_INPUT_UNIT_OPTIONS, type VolumeInputUnit, type WeightInputUnit } from '@/lib/measurement';
+import type { Customer, CustomerProduct, Order, FreightNota } from '@/lib/types';
+
+type CustomerProductForm = {
+    code: string;
+    name: string;
+    description: string;
+    defaultQtyKoli: number;
+    defaultWeightInputValue: number;
+    defaultWeightInputUnit: WeightInputUnit;
+    defaultVolumeInputValue: number;
+    defaultVolumeInputUnit: VolumeInputUnit;
+    notes: string;
+    active: boolean;
+};
+
+const DEFAULT_PRODUCT_FORM: CustomerProductForm = {
+    code: '',
+    name: '',
+    description: '',
+    defaultQtyKoli: 1,
+    defaultWeightInputValue: 0,
+    defaultWeightInputUnit: 'KG',
+    defaultVolumeInputValue: 0,
+    defaultVolumeInputUnit: 'M3',
+    notes: '',
+    active: true,
+};
 
 export default function CustomerDetailPage() {
     const params = useParams();
@@ -14,12 +41,18 @@ export default function CustomerDetailPage() {
     const { addToast } = useToast();
     const customerId = params.id as string;
     const [customer, setCustomer] = useState<Customer | null>(null);
+    const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
     const [orders, setOrders] = useState<Order[]>([]);
     const [notas, setNotas] = useState<FreightNota[]>([]);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [showProductModal, setShowProductModal] = useState(false);
+    const [savingProduct, setSavingProduct] = useState(false);
+    const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
+    const [editProduct, setEditProduct] = useState<CustomerProduct | null>(null);
     const [form, setForm] = useState({ name: '', address: '', contactPerson: '', phone: '', email: '', npwp: '', deliveryOrderPrefix: 'SJ' });
+    const [productForm, setProductForm] = useState<CustomerProductForm>(DEFAULT_PRODUCT_FORM);
 
     useEffect(() => {
         const fetchEntity = async <T,>(url: string) => {
@@ -34,13 +67,15 @@ export default function CustomerDetailPage() {
         const loadCustomerDetail = async () => {
             setLoading(true);
             try {
-                const [cust, customerOrders, customerNotas] = await Promise.all([
+                const [cust, productRows, customerOrders, customerNotas] = await Promise.all([
                     fetchEntity<Customer | null>(`/api/data?entity=customers&id=${customerId}`),
+                    fetchEntity<CustomerProduct[]>(`/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`),
                     fetchEntity<Order[]>(`/api/data?entity=orders&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`),
                     fetchEntity<FreightNota[]>(`/api/data?entity=freight-notas&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`),
                 ]);
 
                 setCustomer(cust);
+                setCustomerProducts(productRows || []);
                 setOrders(customerOrders || []);
                 setNotas(customerNotas || []);
                 if (cust) {
@@ -63,6 +98,93 @@ export default function CustomerDetailPage() {
 
         void loadCustomerDetail();
     }, [addToast, customerId]);
+
+    const openNewProduct = () => {
+        setEditProduct(null);
+        setProductForm(DEFAULT_PRODUCT_FORM);
+        setShowProductModal(true);
+    };
+
+    const openEditProduct = (product: CustomerProduct) => {
+        setEditProduct(product);
+        setProductForm({
+            code: product.code || '',
+            name: product.name || '',
+            description: product.description || '',
+            defaultQtyKoli: product.defaultQtyKoli || 1,
+            defaultWeightInputValue: product.defaultWeightInputValue || 0,
+            defaultWeightInputUnit: product.defaultWeightInputUnit || 'KG',
+            defaultVolumeInputValue: product.defaultVolumeInputValue || 0,
+            defaultVolumeInputUnit: product.defaultVolumeInputUnit || 'M3',
+            notes: product.notes || '',
+            active: product.active !== false,
+        });
+        setShowProductModal(true);
+    };
+
+    const handleSaveProduct = async () => {
+        if (!productForm.name.trim()) {
+            addToast('error', 'Nama barang customer wajib diisi');
+            return;
+        }
+
+        setSavingProduct(true);
+        try {
+            const payload = {
+                customerRef: customerId,
+                ...productForm,
+            };
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(
+                    editProduct
+                        ? { entity: 'customer-products', action: 'update', data: { id: editProduct._id, updates: payload } }
+                        : { entity: 'customer-products', data: payload }
+                ),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menyimpan barang customer');
+                return;
+            }
+
+            const savedProduct = result.data as CustomerProduct;
+            setCustomerProducts(prev =>
+                editProduct
+                    ? prev.map(item => item._id === editProduct._id ? savedProduct : item)
+                    : [savedProduct, ...prev]
+            );
+            setShowProductModal(false);
+            addToast('success', editProduct ? 'Barang customer diperbarui' : 'Barang customer ditambahkan');
+        } catch {
+            addToast('error', 'Gagal menyimpan barang customer');
+        } finally {
+            setSavingProduct(false);
+        }
+    };
+
+    const handleDeleteProduct = async (productId: string) => {
+        setDeletingProductId(productId);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entity: 'customer-products', action: 'delete', data: { id: productId } }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menghapus barang customer');
+                return;
+            }
+            setCustomerProducts(prev => prev.filter(item => item._id !== productId));
+            addToast('success', 'Barang customer dihapus');
+        } catch {
+            addToast('error', 'Gagal menghapus barang customer');
+        } finally {
+            setDeletingProductId(null);
+        }
+    };
 
     const handleSave = async () => {
         setSaving(true);
@@ -147,11 +269,64 @@ export default function CustomerDetailPage() {
                 <div className="card">
                     <div className="card-header"><span className="card-header-title">Statistik</span></div>
                     <div className="card-body">
-                        <div className="kpi-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
+                        <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
                             <div className="kpi-card"><div className="kpi-icon" style={{ background: 'var(--color-primary-light)' }}><Package size={20} /></div><div className="kpi-value">{orders.length}</div><div className="kpi-label">Total Order</div></div>
                             <div className="kpi-card"><div className="kpi-icon" style={{ background: 'var(--color-success-light)' }}><DollarSign size={20} /></div><div className="kpi-value">{notas.length}</div><div className="kpi-label">Total Nota</div></div>
+                            <div className="kpi-card"><div className="kpi-icon" style={{ background: 'var(--color-warning-light)' }}><Package size={20} /></div><div className="kpi-value">{customerProducts.length}</div><div className="kpi-label">Master Barang</div></div>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <div className="card mt-6">
+                <div className="card-header">
+                    <span className="card-header-title">Master Barang Customer ({customerProducts.length})</span>
+                    <button className="btn btn-primary btn-sm" onClick={openNewProduct}>
+                        <Plus size={14} /> Tambah Barang
+                    </button>
+                </div>
+                <div className="table-wrapper">
+                    <table>
+                        <thead><tr><th>Kode</th><th>Nama Barang</th><th>Default Muatan</th><th>Status</th><th>Aksi</th></tr></thead>
+                        <tbody>
+                            {customerProducts.length === 0 ? (
+                                <tr><td colSpan={5} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada master barang untuk customer ini</td></tr>
+                            ) : (
+                                customerProducts.map(product => (
+                                    <tr key={product._id}>
+                                        <td className="font-mono">{product.code || '-'}</td>
+                                        <td>
+                                            <div style={{ fontWeight: 600 }}>{product.name}</div>
+                                            {product.description && product.description !== product.name && (
+                                                <div className="text-muted" style={{ fontSize: '0.82rem', marginTop: '0.2rem' }}>{product.description}</div>
+                                            )}
+                                            {product.notes && (
+                                                <div className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>{product.notes}</div>
+                                            )}
+                                        </td>
+                                        <td>{formatCargoSummary({
+                                            qtyKoli: product.defaultQtyKoli,
+                                            weightKg: product.defaultWeight,
+                                            weightInputValue: product.defaultWeightInputValue,
+                                            weightInputUnit: product.defaultWeightInputUnit,
+                                            volumeM3: product.defaultVolume,
+                                            volumeInputValue: product.defaultVolumeInputValue,
+                                            volumeInputUnit: product.defaultVolumeInputUnit,
+                                        })}</td>
+                                        <td><span className={`badge ${product.active !== false ? 'badge-green' : 'badge-gray'}`}>{product.active !== false ? 'Aktif' : 'Nonaktif'}</span></td>
+                                        <td>
+                                            <div className="table-actions">
+                                                <button className="table-action-btn" onClick={() => openEditProduct(product)}><Edit size={14} /> Edit</button>
+                                                <button className="table-action-btn danger" onClick={() => handleDeleteProduct(product._id)} disabled={deletingProductId === product._id}>
+                                                    <Trash2 size={14} /> {deletingProductId === product._id ? 'Menghapus...' : 'Hapus'}
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
@@ -196,6 +371,74 @@ export default function CustomerDetailPage() {
                     </table>
                 </div>
             </div>
+
+            {showProductModal && (
+                <div className="modal-overlay" onClick={() => { if (!savingProduct) setShowProductModal(false); }}>
+                    <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">{editProduct ? 'Edit Barang Customer' : 'Tambah Barang Customer'}</h3>
+                            <button className="modal-close" onClick={() => setShowProductModal(false)} disabled={savingProduct}><X size={20} /></button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Kode Barang</label>
+                                    <input className="form-input" value={productForm.code} onChange={e => setProductForm(prev => ({ ...prev, code: e.target.value.toUpperCase() }))} placeholder="Contoh: KRM-4040" />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Nama Barang <span className="required">*</span></label>
+                                    <input className="form-input" value={productForm.name} onChange={e => setProductForm(prev => ({ ...prev, name: e.target.value }))} placeholder="Contoh: Keramik 40x40" />
+                                </div>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Deskripsi Default</label>
+                                <textarea className="form-textarea" rows={2} value={productForm.description} onChange={e => setProductForm(prev => ({ ...prev, description: e.target.value }))} placeholder="Deskripsi item yang akan otomatis masuk ke order" />
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Default Koli</label>
+                                    <input className="form-input" type="number" min={0} value={productForm.defaultQtyKoli} onChange={e => setProductForm(prev => ({ ...prev, defaultQtyKoli: Number(e.target.value) }))} />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Status</label>
+                                    <select className="form-select" value={productForm.active ? 'ACTIVE' : 'INACTIVE'} onChange={e => setProductForm(prev => ({ ...prev, active: e.target.value === 'ACTIVE' }))}>
+                                        <option value="ACTIVE">Aktif</option>
+                                        <option value="INACTIVE">Nonaktif</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Default Berat</label>
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                        <input className="form-input" type="number" min={0} step="0.01" value={productForm.defaultWeightInputValue} onChange={e => setProductForm(prev => ({ ...prev, defaultWeightInputValue: Number(e.target.value) }))} />
+                                        <select className="form-select" value={productForm.defaultWeightInputUnit} onChange={e => setProductForm(prev => ({ ...prev, defaultWeightInputUnit: e.target.value as WeightInputUnit }))} style={{ width: 100 }}>
+                                            {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Default Volume</label>
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                        <input className="form-input" type="number" min={0} step="0.01" value={productForm.defaultVolumeInputValue} onChange={e => setProductForm(prev => ({ ...prev, defaultVolumeInputValue: Number(e.target.value) }))} />
+                                        <select className="form-select" value={productForm.defaultVolumeInputUnit} onChange={e => setProductForm(prev => ({ ...prev, defaultVolumeInputUnit: e.target.value as VolumeInputUnit }))} style={{ width: 100 }}>
+                                            {VOLUME_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Catatan Internal</label>
+                                <textarea className="form-textarea" rows={2} value={productForm.notes} onChange={e => setProductForm(prev => ({ ...prev, notes: e.target.value }))} placeholder="Catatan handling / catatan internal" />
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setShowProductModal(false)} disabled={savingProduct}>Batal</button>
+                            <button className="btn btn-primary" onClick={handleSaveProduct} disabled={savingProduct}><Save size={16} /> {savingProduct ? 'Menyimpan...' : 'Simpan'}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

@@ -48,6 +48,9 @@ type OrderItemStatusSummary = {
 };
 
 type NormalizedOrderItemInput = {
+    customerProductRef?: string;
+    customerProductCode?: string;
+    customerProductName?: string;
     description: string;
     qtyKoli: number;
     weight: number;
@@ -57,6 +60,22 @@ type NormalizedOrderItemInput = {
     volumeInputValue?: number;
     volumeInputUnit?: VolumeInputUnit;
     value?: number;
+};
+
+type CustomerProductOrderSource = {
+    _id: string;
+    customerRef?: unknown;
+    code?: string;
+    name?: string;
+    description?: string;
+    defaultQtyKoli?: number;
+    defaultWeight?: number;
+    defaultWeightInputValue?: number;
+    defaultWeightInputUnit?: WeightInputUnit;
+    defaultVolume?: number;
+    defaultVolumeInputValue?: number;
+    defaultVolumeInputUnit?: VolumeInputUnit;
+    active?: boolean;
 };
 
 type DeliveryOrderItemSelection = {
@@ -631,26 +650,23 @@ export async function handleOrderCreate(
     const rawItems = Array.isArray(data.items) ? data.items : [];
     const items = rawItems
         .filter(isPlainObject)
-        .filter(item => normalizeText(item.description))
+        .filter(item => normalizeText(item.description) || normalizeOptionalText(item.customerProductRef))
         .map<NormalizedOrderItemInput>(item => {
-            const description = normalizeText(item.description);
-            const qtyKoli = normalizeNumber(item.qtyKoli ?? 1);
+            const description = normalizeOptionalText(item.description) || '';
+            const customerProductRef = normalizeOptionalText(item.customerProductRef);
+            const qtyKoli = normalizeNumber(item.qtyKoli);
             const rawWeightInputValue = normalizeNumber(item.weightInputValue ?? item.weight ?? 0);
             const rawVolumeInputValue = normalizeNumber(item.volumeInputValue ?? item.volume);
             const weightInputUnit: WeightInputUnit = item.weightInputUnit === 'TON' ? 'TON' : 'KG';
             const volumeInputUnit: VolumeInputUnit =
                 item.volumeInputUnit === 'LITER' || item.volumeInputUnit === 'KL' ? item.volumeInputUnit : 'M3';
-            const weight = convertWeightToKg(rawWeightInputValue, weightInputUnit);
-            const volume = Number.isFinite(rawVolumeInputValue) && rawVolumeInputValue >= 0
-                ? convertVolumeToM3(rawVolumeInputValue, volumeInputUnit)
-                : undefined;
             const value = normalizeNumber(item.value);
 
-            if (!description) {
-                throw new Error('Deskripsi item order wajib diisi');
+            if (!description && !customerProductRef) {
+                throw new Error('Pilih barang customer atau isi deskripsi item order');
             }
-            if (!Number.isFinite(qtyKoli) || qtyKoli <= 0) {
-                throw new Error('Jumlah koli item order harus lebih besar dari 0');
+            if (!Number.isFinite(qtyKoli) || qtyKoli < 0) {
+                throw new Error('Jumlah koli item order tidak valid');
             }
             if (!Number.isFinite(rawWeightInputValue) || rawWeightInputValue < 0) {
                 throw new Error('Berat item order tidak valid');
@@ -660,10 +676,11 @@ export async function handleOrderCreate(
             }
 
             return {
+                customerProductRef,
                 description,
                 qtyKoli,
-                weight,
-                volume: volume !== undefined && Number.isFinite(volume) && volume >= 0 ? volume : undefined,
+                weight: 0,
+                volume: undefined,
                 weightInputValue: Number.isFinite(rawWeightInputValue) && rawWeightInputValue > 0 ? rawWeightInputValue : undefined,
                 weightInputUnit: Number.isFinite(rawWeightInputValue) && rawWeightInputValue > 0 ? weightInputUnit : undefined,
                 volumeInputValue: Number.isFinite(rawVolumeInputValue) && rawVolumeInputValue > 0 ? rawVolumeInputValue : undefined,
@@ -674,6 +691,107 @@ export async function handleOrderCreate(
 
     if (items.length === 0) {
         return NextResponse.json({ error: 'Minimal 1 item order wajib diisi' }, { status: 400 });
+    }
+
+    const customerProductRefs = [...new Set(
+        items
+            .map(item => item.customerProductRef)
+            .filter((value): value is string => Boolean(value))
+    )];
+    const customerProducts = customerProductRefs.length > 0
+        ? await getSanityClient().fetch<CustomerProductOrderSource[]>(
+            `*[_type == "customerProduct" && _id in $ids]{
+                _id,
+                customerRef,
+                code,
+                name,
+                description,
+                defaultQtyKoli,
+                defaultWeight,
+                defaultWeightInputValue,
+                defaultWeightInputUnit,
+                defaultVolume,
+                defaultVolumeInputValue,
+                defaultVolumeInputUnit,
+                active
+            }`,
+            { ids: customerProductRefs }
+        )
+        : [];
+    const customerProductMap = new Map(customerProducts.map(item => [item._id, item]));
+
+    for (const item of items) {
+        const customerProduct = item.customerProductRef ? customerProductMap.get(item.customerProductRef) : undefined;
+        if (item.customerProductRef && !customerProduct) {
+            return NextResponse.json({ error: 'Barang customer yang dipilih tidak ditemukan' }, { status: 404 });
+        }
+        if (customerProduct) {
+            if (normalizeOptionalText(customerProduct.customerRef) !== customerRef) {
+                return NextResponse.json({ error: 'Barang customer harus sesuai dengan customer order yang dipilih' }, { status: 409 });
+            }
+            if (customerProduct.active === false) {
+                return NextResponse.json({ error: `Barang customer ${customerProduct.name || customerProduct.code || ''} tidak aktif` }, { status: 409 });
+            }
+            item.customerProductCode = normalizeOptionalText(customerProduct.code);
+            item.customerProductName = normalizeOptionalText(customerProduct.name);
+            item.description =
+                item.description ||
+                normalizeOptionalText(customerProduct.description) ||
+                normalizeOptionalText(customerProduct.name) ||
+                '';
+            if (item.qtyKoli <= 0) {
+                item.qtyKoli = normalizeNumber(customerProduct.defaultQtyKoli ?? 1);
+            }
+            if (!item.weightInputValue || item.weightInputValue <= 0) {
+                const productWeightUnit = customerProduct.defaultWeightInputUnit === 'TON' ? 'TON' : 'KG';
+                const productWeightInputValue =
+                    normalizeNumber(customerProduct.defaultWeightInputValue) > 0
+                        ? normalizeNumber(customerProduct.defaultWeightInputValue)
+                        : convertKgToWeightInputValue(normalizeNumber(customerProduct.defaultWeight ?? 0), productWeightUnit);
+                item.weightInputValue = productWeightInputValue > 0 ? productWeightInputValue : undefined;
+                item.weightInputUnit = productWeightInputValue > 0 ? productWeightUnit : undefined;
+            }
+            if (!item.volumeInputValue || item.volumeInputValue <= 0) {
+                const productVolumeUnit =
+                    customerProduct.defaultVolumeInputUnit === 'LITER'
+                        ? 'LITER'
+                        : customerProduct.defaultVolumeInputUnit === 'KL'
+                            ? 'KL'
+                            : 'M3';
+                const productVolumeInputValue =
+                    normalizeNumber(customerProduct.defaultVolumeInputValue) > 0
+                        ? normalizeNumber(customerProduct.defaultVolumeInputValue)
+                        : convertM3ToVolumeInputValue(normalizeNumber(customerProduct.defaultVolume ?? 0), productVolumeUnit);
+                item.volumeInputValue = productVolumeInputValue > 0 ? productVolumeInputValue : undefined;
+                item.volumeInputUnit = productVolumeInputValue > 0 ? productVolumeUnit : undefined;
+            }
+        }
+
+        if (!item.description) {
+            return NextResponse.json({ error: 'Deskripsi item order wajib diisi' }, { status: 400 });
+        }
+        if (!Number.isFinite(item.qtyKoli) || item.qtyKoli <= 0) {
+            return NextResponse.json({ error: 'Jumlah koli item order harus lebih besar dari 0' }, { status: 400 });
+        }
+
+        const finalWeightInputUnit = item.weightInputUnit === 'TON' ? 'TON' : 'KG';
+        const finalVolumeInputUnit =
+            item.volumeInputUnit === 'LITER' || item.volumeInputUnit === 'KL' ? item.volumeInputUnit : 'M3';
+        const finalWeightInputValue = normalizeNumber(item.weightInputValue ?? 0);
+        const finalVolumeInputValue = normalizeNumber(item.volumeInputValue ?? 0);
+        if (!Number.isFinite(finalWeightInputValue) || finalWeightInputValue < 0) {
+            return NextResponse.json({ error: 'Berat item order tidak valid' }, { status: 400 });
+        }
+        if (!Number.isFinite(finalVolumeInputValue) || finalVolumeInputValue < 0) {
+            return NextResponse.json({ error: 'Volume item order tidak valid' }, { status: 400 });
+        }
+
+        item.weight = finalWeightInputValue > 0 ? convertWeightToKg(finalWeightInputValue, finalWeightInputUnit) : 0;
+        item.volume = finalVolumeInputValue > 0 ? convertVolumeToM3(finalVolumeInputValue, finalVolumeInputUnit) : undefined;
+        item.weightInputValue = finalWeightInputValue > 0 ? finalWeightInputValue : undefined;
+        item.weightInputUnit = finalWeightInputValue > 0 ? finalWeightInputUnit : undefined;
+        item.volumeInputValue = finalVolumeInputValue > 0 ? finalVolumeInputValue : undefined;
+        item.volumeInputUnit = finalVolumeInputValue > 0 ? finalVolumeInputUnit : undefined;
     }
 
     const orderId = crypto.randomUUID();
@@ -704,6 +822,9 @@ export async function handleOrderCreate(
             _id: crypto.randomUUID(),
             _type: 'orderItem',
             orderRef: orderId,
+            customerProductRef: item.customerProductRef,
+            customerProductCode: item.customerProductCode,
+            customerProductName: item.customerProductName,
             description: item.description,
             qtyKoli: item.qtyKoli,
             weight: item.weight,

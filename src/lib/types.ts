@@ -102,6 +102,25 @@ export interface Customer {
   active: boolean;
 }
 
+export interface CustomerProduct {
+  _id: string;
+  _type: 'customerProduct';
+  customerRef: string;
+  customerName?: string;
+  code?: string;
+  name: string;
+  description?: string;
+  defaultQtyKoli?: number;
+  defaultWeight?: number;
+  defaultWeightInputValue?: number;
+  defaultWeightInputUnit?: WeightInputUnit;
+  defaultVolume?: number;
+  defaultVolumeInputValue?: number;
+  defaultVolumeInputUnit?: VolumeInputUnit;
+  notes?: string;
+  active: boolean;
+}
+
 // ── Service ──
 export interface Service {
   _id: string;
@@ -203,6 +222,9 @@ export interface OrderItem {
   _id: string;
   _type: 'orderItem';
   orderRef: string;
+  customerProductRef?: string;
+  customerProductCode?: string;
+  customerProductName?: string;
   description: string;
   qtyKoli: number;
   weight: number;

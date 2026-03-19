@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '../../layout';
 import { ArrowLeft, Save, Plus, X } from 'lucide-react';
-import type { Customer, Service } from '@/lib/types';
+import type { Customer, CustomerProduct, Service } from '@/lib/types';
 import {
     VOLUME_INPUT_UNIT_OPTIONS,
     WEIGHT_INPUT_UNIT_OPTIONS,
@@ -13,6 +13,7 @@ import {
 } from '@/lib/measurement';
 
 type OrderItemForm = {
+    customerProductRef: string;
     description: string;
     qtyKoli: number;
     weightInputValue: number;
@@ -23,6 +24,7 @@ type OrderItemForm = {
 };
 
 const DEFAULT_ITEM: OrderItemForm = {
+    customerProductRef: '',
     description: '',
     qtyKoli: 1,
     weightInputValue: 0,
@@ -36,6 +38,7 @@ export default function NewOrderPage() {
     const router = useRouter();
     const { addToast } = useToast();
     const [customers, setCustomers] = useState<Customer[]>([]);
+    const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
     const [services, setServices] = useState<Service[]>([]);
     const [loading, setLoading] = useState(false);
 
@@ -71,6 +74,37 @@ export default function NewOrderPage() {
         });
     }, [addToast]);
 
+    useEffect(() => {
+        if (!customerRef) {
+            setCustomerProducts([]);
+            return;
+        }
+
+        let cancelled = false;
+        const loadCustomerProducts = async () => {
+            try {
+                const res = await fetch(`/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef, active: true }))}`);
+                const payload = await res.json();
+                if (!res.ok) {
+                    throw new Error(payload.error || 'Gagal memuat master barang customer');
+                }
+                if (!cancelled) {
+                    setCustomerProducts(payload.data || []);
+                }
+            } catch (error) {
+                if (!cancelled) {
+                    setCustomerProducts([]);
+                    addToast('error', error instanceof Error ? error.message : 'Gagal memuat master barang customer');
+                }
+            }
+        };
+
+        void loadCustomerProducts();
+        return () => {
+            cancelled = true;
+        };
+    }, [addToast, customerRef]);
+
     const addItem = () => setItems(prev => [...prev, { ...DEFAULT_ITEM }]);
     const removeItem = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx));
     const updateItem = <K extends keyof OrderItemForm>(idx: number, field: K, value: OrderItemForm[K]) => {
@@ -82,6 +116,11 @@ export default function NewOrderPage() {
         const previousCustomerAddress = previousCustomer?.address?.trim() || '';
 
         setCustomerRef(nextCustomerRef);
+        setItems(prev => prev.map(item => (
+            item.customerProductRef
+                ? { ...DEFAULT_ITEM }
+                : item
+        )));
         setPickupAddress(previous => {
             const currentPickup = previous.trim();
             if (!currentPickup || (previousCustomerAddress && currentPickup === previousCustomerAddress)) {
@@ -89,6 +128,28 @@ export default function NewOrderPage() {
             }
             return previous;
         });
+    };
+
+    const applyCustomerProductSelection = (idx: number, nextProductRef: string) => {
+        const selectedProduct = customerProducts.find(product => product._id === nextProductRef);
+        setItems(prev => prev.map((item, i) => {
+            if (i !== idx) {
+                return item;
+            }
+            if (!selectedProduct) {
+                return { ...item, customerProductRef: '' };
+            }
+            return {
+                ...item,
+                customerProductRef: selectedProduct._id,
+                description: selectedProduct.description || selectedProduct.name || item.description,
+                qtyKoli: selectedProduct.defaultQtyKoli || item.qtyKoli || 1,
+                weightInputValue: selectedProduct.defaultWeightInputValue || item.weightInputValue || 0,
+                weightInputUnit: selectedProduct.defaultWeightInputUnit || item.weightInputUnit,
+                volumeInputValue: selectedProduct.defaultVolumeInputValue || item.volumeInputValue || 0,
+                volumeInputUnit: selectedProduct.defaultVolumeInputUnit || item.volumeInputUnit,
+            };
+        }));
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -222,16 +283,39 @@ export default function NewOrderPage() {
                     </div>
                     <div className="card-body">
                         {items.map((item, idx) => (
-                            <div key={idx} style={{ display: 'flex', gap: 12, alignItems: 'flex-end', marginBottom: 12, padding: 12, background: 'var(--color-gray-50)', borderRadius: 'var(--radius-md)' }}>
-                                <div style={{ flex: 3 }}>
+                            <div key={idx} style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 12, padding: 12, background: 'var(--color-gray-50)', borderRadius: 'var(--radius-md)' }}>
+                                <div style={{ flex: '1 1 260px' }}>
+                                    <label className="form-label">Barang Customer</label>
+                                    <select
+                                        className="form-select"
+                                        value={item.customerProductRef}
+                                        onChange={e => applyCustomerProductSelection(idx, e.target.value)}
+                                        disabled={!customerRef}
+                                    >
+                                        <option value="">{customerRef ? 'Pilih dari master barang customer (opsional)' : 'Pilih customer dulu'}</option>
+                                        {customerProducts.map(product => (
+                                            <option key={product._id} value={product._id}>
+                                                {product.code ? `${product.code} - ` : ''}{product.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                        {customerRef
+                                            ? customerProducts.length > 0
+                                                ? 'Pilih template barang customer agar deskripsi dan default muatan terisi otomatis. Tetap bisa diedit bila real lapangan berbeda.'
+                                                : 'Customer ini belum punya master barang. Kamu tetap bisa isi item manual.'
+                                            : 'Pilih customer dulu untuk menampilkan master barang per customer.'}
+                                    </div>
+                                </div>
+                                <div style={{ flex: '2 1 280px' }}>
                                     <label className="form-label">Deskripsi</label>
                                     <input className="form-input" value={item.description} onChange={e => updateItem(idx, 'description', e.target.value)} placeholder="Nama/deskripsi barang" />
                                 </div>
-                                <div style={{ flex: 1 }}>
+                                <div style={{ flex: '0 1 110px' }}>
                                     <label className="form-label">Koli</label>
                                     <input className="form-input" type="number" min={1} value={item.qtyKoli} onChange={e => updateItem(idx, 'qtyKoli', Number(e.target.value))} />
                                 </div>
-                                <div style={{ flex: 1 }}>
+                                <div style={{ flex: '1 1 180px' }}>
                                     <label className="form-label">Berat</label>
                                     <div style={{ display: 'flex', gap: 8 }}>
                                         <input className="form-input" type="number" min={0} step="0.01" value={item.weightInputValue} onChange={e => updateItem(idx, 'weightInputValue', Number(e.target.value))} />
@@ -240,7 +324,7 @@ export default function NewOrderPage() {
                                         </select>
                                     </div>
                                 </div>
-                                <div style={{ flex: 1 }}>
+                                <div style={{ flex: '1 1 180px' }}>
                                     <label className="form-label">Volume</label>
                                     <div style={{ display: 'flex', gap: 8 }}>
                                         <input className="form-input" type="number" min={0} step="0.01" value={item.volumeInputValue} onChange={e => updateItem(idx, 'volumeInputValue', Number(e.target.value))} />
