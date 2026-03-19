@@ -120,7 +120,7 @@ export default function ExpensesPage() {
     return (
         <div>
             <div className="page-header"><div className="page-header-left"><h1 className="page-title">Pengeluaran</h1><p className="page-subtitle">Kelola catatan pengeluaran</p></div>
-                <div className="page-actions" style={{ flexWrap: 'wrap' }}>
+                <div className="page-actions">
                     <button className="btn btn-secondary btn-sm" onClick={() => exportExpenses(filtered as unknown as Record<string, unknown>[])}><FileDown size={15} /> Excel</button>
                     <button className="btn btn-secondary btn-sm" onClick={async () => {
                         const co = await fetchCompanyProfile();
@@ -197,7 +197,7 @@ export default function ExpensesPage() {
 
             <div className="table-container">
                 <div className="table-toolbar"><div className="table-toolbar-left"><div className="table-search"><Search size={16} className="table-search-icon" /><input placeholder="Cari..." value={search} onChange={e => setSearch(e.target.value)} /></div></div></div>
-                <div className="table-wrapper">
+                <div className="table-wrapper table-desktop-only">
                     <table>
                         <thead><tr><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th>Jumlah</th>{isOwner && <th>Privacy</th>}</tr></thead>
                         <tbody>
@@ -249,6 +249,61 @@ export default function ExpensesPage() {
                         </tbody>
                     </table>
                 </div>
+                {!loading && (
+                    <div className="mobile-record-list">
+                        {filtered.length === 0 ? (
+                            <div className="mobile-record-card">
+                                <div className="mobile-record-title">Belum ada pengeluaran</div>
+                                <div className="mobile-record-subtitle">Catat pengeluaran pertama untuk mulai melihat rangkuman kas operasional.</div>
+                            </div>
+                        ) : (
+                            filtered.map(e => {
+                                const vehicleLabel =
+                                    e.relatedVehiclePlate ||
+                                    (e.relatedVehicleRef ? vehicleMap.get(e.relatedVehicleRef)?.plateNumber : '') ||
+                                    '';
+                                const matchedAccount = e.bankAccountRef ? accountMap.get(e.bankAccountRef) : undefined;
+                                const accountLabel = e.bankAccountName
+                                    ? `${e.bankAccountName}${e.bankAccountNumber || matchedAccount?.accountNumber ? ` - ${e.bankAccountNumber || matchedAccount?.accountNumber}` : ''}`
+                                    : matchedAccount
+                                        ? `${matchedAccount.bankName} - ${matchedAccount.accountNumber}`
+                                        : '';
+                                return (
+                                    <div key={e._id} className="mobile-record-card">
+                                        <div className="mobile-record-header">
+                                            <div>
+                                                <div className="mobile-record-title">{e.note || e.description || 'Pengeluaran tanpa catatan'}</div>
+                                                <div className="mobile-record-subtitle">{formatDate(e.date)} • {e.categoryName || 'Tanpa kategori'}</div>
+                                            </div>
+                                            <div style={{ textAlign: 'right' }}>
+                                                <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--color-danger)' }}>{formatCurrency(e.amount)}</div>
+                                                {isOwner && <span className={`badge ${e.privacyLevel === 'ownerOnly' ? 'badge-purple' : 'badge-info'}`}>{e.privacyLevel === 'ownerOnly' ? 'Owner Only' : 'Internal'}</span>}
+                                            </div>
+                                        </div>
+                                        <div className="mobile-record-meta">
+                                            <div className="mobile-record-kv">
+                                                <span className="mobile-record-label">Kategori</span>
+                                                <span className="mobile-record-value">{e.categoryName || '-'}</span>
+                                            </div>
+                                            {vehicleLabel && (
+                                                <div className="mobile-record-kv">
+                                                    <span className="mobile-record-label">Kendaraan</span>
+                                                    <span className="mobile-record-value">{vehicleLabel}</span>
+                                                </div>
+                                            )}
+                                            {accountLabel && (
+                                                <div className="mobile-record-kv">
+                                                    <span className="mobile-record-label">Dibayar dari</span>
+                                                    <span className="mobile-record-value">{accountLabel}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
+                )}
                 {filtered.length > 0 && <div className="pagination"><div className="pagination-info">Menampilkan {filtered.length} transaksi | Total: <strong style={{ color: 'var(--color-danger)' }}>{formatCurrency(grandTotal)}</strong></div></div>}
             </div>
 

@@ -354,38 +354,25 @@ export default function ReportsPage() {
           </button>
         </div>
       </div>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: "0.75rem",
-          flexWrap: "wrap",
-          marginBottom: "1rem",
-        }}
-      >
-        <div className="tabs" style={{ borderBottom: "none", marginBottom: 0 }}>
-          <button
-            className={`tab ${tab === "pnl" ? "active" : ""}`}
-            onClick={() => setTab("pnl")}
-          >
-            <DollarSign size={14} style={{ marginRight: 4 }} /> Laba Rugi
-          </button>
-          <button
-            className={`tab ${tab === "cashflow" ? "active" : ""}`}
-            onClick={() => setTab("cashflow")}
-          >
-            <Landmark size={14} style={{ marginRight: 4 }} /> Arus Kas
-          </button>
+      <div className="page-toolbar">
+        <div className="page-toolbar-main">
+          <div className="segmented-tabs" aria-label="Jenis laporan">
+            <button
+              className={`segmented-tab ${tab === "pnl" ? "active" : ""}`}
+              onClick={() => setTab("pnl")}
+            >
+              <DollarSign size={14} /> Laba Rugi
+            </button>
+            <button
+              className={`segmented-tab ${tab === "cashflow" ? "active" : ""}`}
+              onClick={() => setTab("cashflow")}
+            >
+              <Landmark size={14} /> Arus Kas
+            </button>
+          </div>
         </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "0.5rem",
-            flexWrap: "wrap",
-          }}
-        >
+        <div className="page-toolbar-side">
+          <div className="period-controls">
           <select
             className="form-select"
             value={periodMode}
@@ -411,27 +398,35 @@ export default function ReportsPage() {
             </select>
           )}
           {periodMode !== "all" && (
-            <>
-              <button className="btn btn-secondary btn-sm" onClick={prevPeriod}>
+            <div className="period-nav-group">
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={prevPeriod}
+                aria-label="Periode sebelumnya"
+                title="Periode sebelumnya"
+              >
                 <ChevronLeft size={14} />
               </button>
               <input
                 className="form-input"
-                style={{ width: 100 }}
                 type="number"
                 value={year}
                 onChange={(event) =>
                   setYear(Number(event.target.value) || now.getFullYear())
                 }
               />
-              <button className="btn btn-secondary btn-sm" onClick={nextPeriod}>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={nextPeriod}
+                aria-label="Periode berikutnya"
+                title="Periode berikutnya"
+              >
                 <ChevronRight size={14} />
               </button>
-            </>
+            </div>
           )}
-          <span style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>
-            {periodLabel}
-          </span>
+            <span className="period-label-pill">{periodLabel}</span>
+          </div>
         </div>
       </div>
 
@@ -483,14 +478,7 @@ export default function ReportsPage() {
               </div>
             </div>
           )}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: "1rem",
-              marginBottom: "1.5rem",
-            }}
-          >
+          <div className="responsive-stat-grid" style={{ marginBottom: "1.5rem" }}>
             {[
               {
                 label: "Pendapatan",
@@ -520,7 +508,7 @@ export default function ReportsPage() {
                 color: "var(--color-warning)",
               },
               {
-                label: "Bon Belum Settle",
+                label: "Bon Trip Belum Settle",
                 value: formatCurrency(openVoucherClaims),
                 note: `${openDriverVouchers.length} bon aktif`,
                 color: "var(--color-primary)",
@@ -560,14 +548,7 @@ export default function ReportsPage() {
               <span className="card-header-title">Bon Supir Belum Settle</span>
             </div>
             <div className="card-body">
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                  gap: "0.75rem",
-                  marginBottom: "1rem",
-                }}
-              >
+              <div className="responsive-stat-grid" style={{ gap: "0.75rem", marginBottom: "1rem" }}>
                 <div
                   style={{
                     background: "var(--color-gray-50)",
@@ -707,7 +688,7 @@ export default function ReportsPage() {
                   </div>
                 </div>
               </div>
-              <div className="table-wrapper" style={{ overflowX: "auto" }}>
+              <div className="table-wrapper table-desktop-only" style={{ overflowX: "auto" }}>
                 <table style={{ minWidth: 960 }}>
                   <thead>
                     <tr>
@@ -777,6 +758,86 @@ export default function ReportsPage() {
                     )}
                   </tbody>
                 </table>
+              </div>
+              <div className="mobile-record-list">
+                {openDriverVouchers.length === 0 ? (
+                  <div className="mobile-record-card">
+                    <div className="mobile-record-title">
+                      Tidak ada bon supir yang masih aktif
+                    </div>
+                    <div className="mobile-record-subtitle">
+                      Semua bon trip pada periode ini sudah diselesaikan.
+                    </div>
+                  </div>
+                ) : (
+                  openDriverVouchers.map((item) => {
+                    const totalClaimAmount =
+                      item.totalClaimAmount ||
+                      (item.totalSpent || 0) + (item.driverFeeAmount || 0);
+                    return (
+                      <div key={item._id} className="mobile-record-card">
+                        <div className="mobile-record-header">
+                          <div>
+                            <div className="mobile-record-title">
+                              {item.bonNumber}
+                            </div>
+                            <div className="mobile-record-subtitle">
+                              {item.driverName || "-"} • {formatDate(item.issuedDate)}
+                            </div>
+                          </div>
+                          <span className="badge badge-warning">Belum Settle</span>
+                        </div>
+                        <div className="mobile-record-meta">
+                          <div className="mobile-record-kv">
+                            <span className="mobile-record-label">Rekening</span>
+                            <span className="mobile-record-value">
+                              {item.issueBankName || "-"}
+                            </span>
+                          </div>
+                          <div className="mobile-record-kv">
+                            <span className="mobile-record-label">Uang Jalan</span>
+                            <span className="mobile-record-value">
+                              {formatCurrency(item.cashGiven)}
+                            </span>
+                          </div>
+                          <div className="mobile-record-kv">
+                            <span className="mobile-record-label">Biaya</span>
+                            <span className="mobile-record-value">
+                              {formatCurrency(item.totalSpent)}
+                            </span>
+                          </div>
+                          <div className="mobile-record-kv">
+                            <span className="mobile-record-label">Upah Trip</span>
+                            <span className="mobile-record-value">
+                              {formatCurrency(item.driverFeeAmount || 0)}
+                            </span>
+                          </div>
+                          <div className="mobile-record-kv">
+                            <span className="mobile-record-label">Total Hak Trip</span>
+                            <span className="mobile-record-value">
+                              {formatCurrency(totalClaimAmount)}
+                            </span>
+                          </div>
+                          <div className="mobile-record-kv">
+                            <span className="mobile-record-label">Selisih</span>
+                            <span
+                              className="mobile-record-value"
+                              style={{
+                                fontWeight: 700,
+                                color:
+                                  item.balance < 0
+                                    ? "var(--color-danger)"
+                                    : "var(--color-success)",
+                              }}
+                            >
+                              {formatCurrency(item.balance)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
           </div>
@@ -1087,7 +1148,7 @@ export default function ReportsPage() {
                 {sortedFilteredBankTx.length} transaksi
               </span>
             </div>
-            <div className="table-wrapper" style={{ overflowX: "auto" }}>
+            <div className="table-wrapper table-desktop-only" style={{ overflowX: "auto" }}>
               <table style={{ minWidth: 650 }}>
                 <thead>
                   <tr>
@@ -1173,6 +1234,67 @@ export default function ReportsPage() {
                   )}
                 </tbody>
               </table>
+            </div>
+            <div className="mobile-record-list">
+              {sortedFilteredBankTx.length === 0 ? (
+                <div className="mobile-record-card">
+                  <div className="mobile-record-title">
+                    Tidak ada transaksi dalam periode ini
+                  </div>
+                  <div className="mobile-record-subtitle">
+                    Ubah periode untuk melihat mutasi bank atau kas lainnya.
+                  </div>
+                </div>
+              ) : (
+                sortedFilteredBankTx.map((item) => {
+                  const isIn =
+                    item.type === "CREDIT" || item.type === "TRANSFER_IN";
+                  const bankName =
+                    allBankAccounts.find(
+                      (account) => account._id === item.bankAccountRef,
+                    )?.bankName || "-";
+                  return (
+                    <div key={item._id} className="mobile-record-card">
+                      <div className="mobile-record-header">
+                        <div>
+                          <div className="mobile-record-title">{bankName}</div>
+                          <div className="mobile-record-subtitle">
+                            {formatDate(item.date)} • {item.description}
+                          </div>
+                        </div>
+                        <span
+                          className={`badge badge-${isIn ? "success" : "danger"}`}
+                        >
+                          {isIn ? "Masuk" : "Keluar"}
+                        </span>
+                      </div>
+                      <div className="mobile-record-meta">
+                        <div className="mobile-record-kv">
+                          <span className="mobile-record-label">Jumlah</span>
+                          <span
+                            className="mobile-record-value"
+                            style={{
+                              fontWeight: 700,
+                              color: isIn
+                                ? "var(--color-success)"
+                                : "var(--color-danger)",
+                            }}
+                          >
+                            {isIn ? "+" : "-"}
+                            {formatCurrency(item.amount)}
+                          </span>
+                        </div>
+                        <div className="mobile-record-kv">
+                          <span className="mobile-record-label">Saldo Setelah</span>
+                          <span className="mobile-record-value">
+                            {formatCurrency(item.balanceAfter)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>

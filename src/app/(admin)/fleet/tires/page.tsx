@@ -283,7 +283,7 @@ export default function TiresPage() {
                         </select>
                     </div>
                 </div>
-                <div className="table-wrapper">
+                <div className="table-wrapper table-desktop-only">
                     <table>
                         <thead>
                             <tr>
@@ -338,6 +338,54 @@ export default function TiresPage() {
                         </tbody>
                     </table>
                 </div>
+                {!loading && (
+                    <div className="mobile-record-list">
+                        {filtered.length === 0 ? (
+                            <div className="mobile-record-card">
+                                <div className="mobile-record-title">Belum ada ban tercatat</div>
+                                <div className="mobile-record-subtitle">Tambahkan ban per kode unik agar perpindahan antar unit dan pinjam keluar bisa dilacak.</div>
+                            </div>
+                        ) : filtered.map(event => (
+                            <div key={event._id} className="mobile-record-card">
+                                <div className="mobile-record-header">
+                                    <div>
+                                        <div className="mobile-record-title">{event.tireCodeLabel}</div>
+                                        <div className="mobile-record-subtitle">{event.tireBrand} • {event.tireSize}</div>
+                                    </div>
+                                    <span className={`badge badge-${TIRE_ASSET_STATUS_MAP[event.status]?.color || 'gray'}`}>
+                                        <span className="badge-dot" /> {TIRE_ASSET_STATUS_MAP[event.status]?.label || event.status}
+                                    </span>
+                                </div>
+                                <div className="mobile-record-meta">
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Lokasi Saat Ini</span>
+                                        <span className="mobile-record-value">{event.placementLabel}</span>
+                                    </div>
+                                    {event.slotCode && (
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Slot</span>
+                                            <span className="mobile-record-value">{event.slotCode} - {event.slotLabel || formatTireSlotLabel(event.slotCode)}</span>
+                                        </div>
+                                    )}
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Tanggal Catat</span>
+                                        <span className="mobile-record-value">{formatDate(event.installDate)}</span>
+                                    </div>
+                                    {event.notes && (
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Catatan</span>
+                                            <span className="mobile-record-value">{event.notes}</span>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="mobile-record-actions">
+                                    <button className="btn btn-secondary" onClick={() => openEdit(event)} disabled={deletingId === event._id}>Edit</button>
+                                    <button className="btn btn-danger" onClick={() => handleDelete(event._id)} disabled={deletingId === event._id}>{deletingId === event._id ? 'Menghapus...' : 'Hapus'}</button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
                 {filtered.length > 0 && (
                     <div className="pagination">
                         <div className="pagination-info">{mountedCount} terpasang | {spareCount} serep | {loanedCount} dipinjam | {warehouseCount} gudang</div>
