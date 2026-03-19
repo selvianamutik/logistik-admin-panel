@@ -71,9 +71,11 @@ function printInfoSection(title, notes) {
 async function main() {
     const client = getClient();
     const data = await client.fetch(`{
-        "invoices": *[_type == "invoice"]{ _id, invoiceNumber, totalAmount, status },
-        "freightNotas": *[_type == "freightNota"]{ _id, notaNumber, totalAmount, status },
-        "payments": *[_type == "payment"]{ _id, invoiceRef, amount, date },
+        "invoices": *[_type == "invoice"]{ _id, invoiceNumber, totalAmount, totalAdjustmentAmount, netAmount, status },
+        "freightNotas": *[_type == "freightNota"]{ _id, notaNumber, totalAmount, totalAdjustmentAmount, netAmount, status },
+        "payments": *[_type == "payment"]{ _id, invoiceRef, receiptRef, amount, date },
+        "customerReceipts": *[_type == "customerReceipt"]{ _id, receiptNumber, totalAmount, allocationCount, customerRef, customerName, method, bankAccountRef },
+        "invoiceAdjustments": *[_type == "invoiceAdjustment"]{ _id, invoiceRef, amount, status },
         "borongans": *[_type == "driverBorongan"]{ _id, boronganNumber, totalAmount, status },
         "driverVouchers": *[_type == "driverVoucher"]{
             _id, bonNumber, status, issuedDate, cashGiven, totalSpent, driverFeeAmount, totalClaimAmount, balance,
@@ -91,7 +93,16 @@ async function main() {
     }`);
 
     const receivableFindings = [];
+    const customerCreditNotes = [];
     const paymentGroups = groupBy(data.payments, payment => payment.invoiceRef || '');
+    const receiptPaymentGroups = groupBy(
+        data.payments.filter(payment => payment.receiptRef),
+        payment => payment.receiptRef
+    );
+    const adjustmentGroups = groupBy(
+        data.invoiceAdjustments.filter(item => item.status === 'APPROVED'),
+        item => item.invoiceRef || ''
+    );
     const receivableDocs = [
         ...data.invoices.map(item => ({ ...item, label: item.invoiceNumber || item._id, kind: 'Invoice' })),
         ...data.freightNotas.map(item => ({ ...item, label: item.notaNumber || item._id, kind: 'Nota' })),
@@ -104,16 +115,42 @@ async function main() {
         }
     }
 
-    for (const doc of data.freightNotas.map(item => ({ ...item, label: item.notaNumber || item._id }))) {
-        const docPayments = paymentGroups.get(doc._id) || [];
-        const totalPaid = sum(docPayments, item => item.amount || 0);
-        const expectedStatus = totalPaid >= (doc.totalAmount || 0) ? 'PAID' : totalPaid > 0 ? 'PARTIAL' : 'UNPAID';
+    for (const receipt of data.customerReceipts) {
+        const allocations = receiptPaymentGroups.get(receipt._id) || [];
+        const allocatedTotal = sum(allocations, item => item.amount || 0);
+        if (allocations.length === 0) {
+            receivableFindings.push(`Receipt ${receipt.receiptNumber || receipt._id} tidak punya alokasi payment`);
+        }
+        if (allocatedTotal !== (receipt.totalAmount || 0)) {
+            receivableFindings.push(`Receipt ${receipt.receiptNumber || receipt._id} total ${fmtCurrency(receipt.totalAmount)} tidak cocok dengan alokasi ${fmtCurrency(allocatedTotal)}`);
+        }
+        if ((receipt.allocationCount || 0) !== allocations.length) {
+            receivableFindings.push(`Receipt ${receipt.receiptNumber || receipt._id} allocationCount ${receipt.allocationCount || 0} tidak cocok dengan ${allocations.length} payment`);
+        }
+        if (receipt.method === 'TRANSFER' && !receipt.bankAccountRef) {
+            receivableFindings.push(`Receipt ${receipt.receiptNumber || receipt._id} transfer tanpa rekening bank`);
+        }
+    }
 
-        if (totalPaid > (doc.totalAmount || 0)) {
-            receivableFindings.push(`Nota ${doc.label} overpaid ${fmtCurrency(totalPaid)} dari total ${fmtCurrency(doc.totalAmount)}`);
+    for (const doc of receivableDocs) {
+        const docPayments = paymentGroups.get(doc._id) || [];
+        const docAdjustments = adjustmentGroups.get(doc._id) || [];
+        const totalPaid = sum(docPayments, item => item.amount || 0);
+        const totalAdjustment = sum(docAdjustments, item => item.amount || 0);
+        const expectedNet = Math.max((doc.totalAmount || 0) - totalAdjustment, 0);
+        const expectedStatus = totalPaid >= expectedNet ? 'PAID' : totalPaid > 0 ? 'PARTIAL' : 'UNPAID';
+
+        if ((doc.totalAdjustmentAmount || 0) !== totalAdjustment) {
+            receivableFindings.push(`${doc.kind} ${doc.label} totalAdjustmentAmount ${fmtCurrency(doc.totalAdjustmentAmount)} tidak cocok dengan adjustment ${fmtCurrency(totalAdjustment)}`);
+        }
+        if ((doc.netAmount || 0) !== expectedNet) {
+            receivableFindings.push(`${doc.kind} ${doc.label} netAmount ${fmtCurrency(doc.netAmount)} tidak cocok dengan netto ${fmtCurrency(expectedNet)}`);
+        }
+        if (totalPaid > expectedNet) {
+            customerCreditNotes.push(`${doc.kind} ${doc.label} punya kelebihan bayar ${fmtCurrency(totalPaid - expectedNet)}`);
         }
         if (doc.status !== expectedStatus) {
-            receivableFindings.push(`Nota ${doc.label} status ${doc.status} tidak cocok dengan pembayaran (${expectedStatus})`);
+            receivableFindings.push(`${doc.kind} ${doc.label} status ${doc.status} tidak cocok dengan pembayaran netto (${expectedStatus})`);
         }
     }
 
@@ -254,6 +291,7 @@ async function main() {
     }
 
     printInfoSection('Legacy Invoice (Info)', legacyInvoiceNotes);
+    printInfoSection('Kelebihan Bayar Customer (Info)', customerCreditNotes);
 
     console.log(`\nTotal temuan: ${totalFindings}`);
     process.exitCode = totalFindings > 0 ? 1 : 0;

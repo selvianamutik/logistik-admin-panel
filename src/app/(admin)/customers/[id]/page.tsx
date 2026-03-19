@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '../../layout';
 import { ArrowLeft, Edit, Package, DollarSign } from 'lucide-react';
-import { formatDate, formatCurrency } from '@/lib/utils';
+import { formatDate, formatCurrency, getReceivableNetAmount } from '@/lib/utils';
 import type { Customer, Order, FreightNota } from '@/lib/types';
 
 export default function CustomerDetailPage() {
@@ -187,7 +187,7 @@ export default function CustomerDetailPage() {
                                 notas.map(nota => (
                                     <tr key={nota._id}>
                                         <td><Link href={`/invoices/${nota._id}`} style={{ color: 'var(--color-primary)' }}>{nota.notaNumber}</Link></td>
-                                        <td className="font-medium">{formatCurrency(nota.totalAmount)}</td>
+                                        <td className="font-medium">{formatCurrency(getReceivableNetAmount(nota))}</td>
                                         <td>{nota.status}</td>
                                         <td className="text-muted">{formatDate(nota.dueDate)}</td>
                                     </tr>

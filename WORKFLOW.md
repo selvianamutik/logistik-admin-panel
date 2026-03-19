@@ -163,22 +163,73 @@ Hasil akhirnya:
 - Sistem membuat nomor nota otomatis.
 - Status awal nota: `UNPAID`.
 - Detail baris perjalanan disimpan sebagai `freightNotaItem`.
+- Setiap nota sekarang menyimpan tiga angka utama:
+  - `totalAmount` = tagihan bruto
+  - `totalAdjustmentAmount` = total klaim / potongan yang disetujui
+  - `netAmount` = tagihan netto setelah potongan
 
 Nota ini yang sekarang dipakai sebagai tagihan ongkos angkut utama.
 
-### 4.2 Terima pembayaran customer
+### 4.2 Klaim / potongan invoice
 
-Saat user menambah pembayaran di detail nota:
+- Jika ada barang rusak, barang kurang, penalty, diskon, atau potongan lain:
+  1. admin membuka detail nota,
+  2. admin pilih `Klaim / Potongan`,
+  3. admin isi nominal, jenis, tanggal, dan catatan,
+  4. sistem membuat `invoiceAdjustment`,
+  5. nilai netto nota langsung berkurang.
+
+Jenis adjustment yang sekarang didukung:
+
+- `DAMAGE_CLAIM`
+- `SHORTAGE_CLAIM`
+- `PENALTY`
+- `DISCOUNT`
+- `OTHER_DEDUCTION`
+
+Rule penting:
+
+- adjustment tidak mengubah `totalAmount` bruto,
+- adjustment yang aktif mengurangi `netAmount`,
+- adjustment bisa di-void oleh admin,
+- kalau pembayaran yang sudah masuk melebihi netto baru, sistem menandai kondisi itu sebagai `kelebihan bayar customer`, bukan error data.
+
+### 4.3 Terima pembayaran untuk satu nota
+
+Saat user menambah pembayaran dari detail nota:
 
 1. Sistem membuat `payment`.
 2. Sistem membuat `income`.
-3. Sistem menghitung ulang total pembayaran untuk tagihan itu.
+3. Sistem menghitung ulang total pembayaran terhadap `netAmount`, bukan bruto.
 4. Status nota disinkronkan:
-   - belum ada bayar -> `UNPAID`
-   - bayar sebagian -> `PARTIAL`
-   - total bayar >= total tagihan -> `PAID`
+   - belum ada bayar dan belum ada adjustment -> `UNPAID`
+   - netto belum lunas -> `PARTIAL`
+   - total bayar >= netto -> `PAID`
 
-### 4.3 Kalau metode pembayaran `TRANSFER`
+### 4.4 Terima satu pembayaran untuk beberapa nota
+
+Kalau customer mentransfer satu nominal untuk beberapa nota sekaligus:
+
+1. admin membuka daftar nota,
+2. admin pilih `Terima Pembayaran`,
+3. admin memilih customer,
+4. admin mengisi tanggal, metode, rekening/kas masuk, nominal total receipt, dan catatan,
+5. admin mengalokasikan nominal itu ke beberapa nota customer yang masih terbuka,
+6. sistem membuat:
+   - satu `customerReceipt`,
+   - satu `income`,
+   - satu `bankTransaction`,
+   - beberapa `payment` allocation ke tiap nota,
+7. status tiap nota dihitung ulang berdasarkan alokasi receipt itu.
+
+Rule penting:
+
+- satu receipt hanya untuk satu customer,
+- total alokasi harus sama dengan total receipt,
+- alokasi tidak boleh melebihi sisa netto tiap nota,
+- receipt dipakai untuk kasus `1 transfer customer = bayar beberapa nota`.
+
+### 4.5 Kalau metode pembayaran `TRANSFER`
 
 - `bankAccountRef` wajib dipilih.
 - Sistem membuat `bankTransaction` tipe `CREDIT`.
@@ -190,7 +241,7 @@ Efeknya:
 - pendapatan tercatat,
 - arus kas bank juga bertambah.
 
-### 4.4 Kalau metode pembayaran `CASH`
+### 4.6 Kalau metode pembayaran `CASH`
 
 - pembayaran tetap membuat `payment`,
 - pembayaran tetap membuat `income`,
@@ -208,6 +259,23 @@ Jadi perilaku saat ini adalah:
 
 - `Tunai` = tercatat sebagai pendapatan / pelunasan,
 - `Tunai tanpa rekening pilihan` = dianggap masuk ke `Kas Tunai`.
+
+### 4.7 Rumus status nota
+
+Sistem sekarang memakai logika:
+
+- `Gross` = total tagihan awal
+- `Net` = gross - total adjustment approved
+- `Remaining` = net - total payment allocated
+
+Interpretasi:
+
+- `UNPAID`
+  belum ada pembayaran yang menutup netto
+- `PARTIAL`
+  sudah ada pembayaran, tetapi netto belum lunas
+- `PAID`
+  total pembayaran sudah sama atau lebih besar dari netto
 
 ## 5. Alur Borongan Supir
 

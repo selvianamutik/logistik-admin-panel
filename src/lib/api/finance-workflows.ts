@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { getSanityClient, sanityCreate, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
-import type { Payment } from '@/lib/types';
+import type { InvoiceAdjustmentKind, Payment, PaymentMethod } from '@/lib/types';
 
 import {
     assertIsoDate,
@@ -91,15 +91,56 @@ function isFreightNotaRowEmpty(row: Record<string, unknown>) {
     );
 }
 
-async function loadPaymentTarget(invoiceRef: string) {
-    const doc = await sanityGetById<
-        Record<string, unknown> & {
-            _id: string;
-            _rev?: string;
-            _type: 'freightNota' | 'invoice';
-            totalAmount?: number;
-        }
-    >(invoiceRef);
+type ReceivableDoc = Record<string, unknown> & {
+    _id: string;
+    _rev?: string;
+    _type: 'freightNota' | 'invoice';
+    totalAmount?: number;
+    totalAdjustmentAmount?: number;
+    netAmount?: number;
+    customerRef?: unknown;
+    customerName?: string;
+    notaNumber?: string;
+    invoiceNumber?: string;
+};
+
+type InvoiceAdjustmentDoc = {
+    _id: string;
+    _rev?: string;
+    invoiceRef?: string;
+    amount?: number;
+    status?: string;
+};
+
+type ReceivableSnapshot = {
+    doc: ReceivableDoc;
+    grossAmount: number;
+    totalAdjustmentAmount: number;
+    netAmount: number;
+    totalPaid: number;
+    remainingAmount: number;
+    creditAmount: number;
+    customerRef?: string;
+    customerName: string;
+    label: string;
+};
+
+type CustomerReceiptAllocationInput = {
+    invoiceRef: string;
+    amount: number;
+    note?: string;
+};
+
+const INVOICE_ADJUSTMENT_KIND_SET = new Set<InvoiceAdjustmentKind>([
+    'DAMAGE_CLAIM',
+    'SHORTAGE_CLAIM',
+    'DISCOUNT',
+    'PENALTY',
+    'OTHER',
+]);
+
+async function loadReceivableSnapshot(invoiceRef: string) {
+    const doc = await sanityGetById<ReceivableDoc>(invoiceRef);
     if (!doc) {
         return { error: NextResponse.json({ error: 'Dokumen tagihan tidak ditemukan' }, { status: 404 }) };
     }
@@ -112,24 +153,94 @@ async function loadPaymentTarget(invoiceRef: string) {
         };
     }
 
-    const totalAmount = typeof doc.totalAmount === 'number' ? doc.totalAmount : Number(doc.totalAmount || 0);
-    if (!Number.isFinite(totalAmount) || totalAmount <= 0) {
+    const grossAmount = typeof doc.totalAmount === 'number' ? doc.totalAmount : Number(doc.totalAmount || 0);
+    if (!Number.isFinite(grossAmount) || grossAmount <= 0) {
         return { error: NextResponse.json({ error: 'Total tagihan tidak valid' }, { status: 400 }) };
     }
 
-    const allPayments = await getSanityClient().fetch<Payment[]>(
-        `*[_type == "payment" && invoiceRef == $ref]`,
-        { ref: invoiceRef }
-    );
-    const totalPaid = allPayments.reduce((sum, item) => sum + item.amount, 0);
+    const [allPayments, approvedAdjustments] = await Promise.all([
+        getSanityClient().fetch<Payment[]>(
+            `*[_type == "payment" && invoiceRef == $ref]`,
+            { ref: invoiceRef }
+        ),
+        getSanityClient().fetch<InvoiceAdjustmentDoc[]>(
+            `*[_type == "invoiceAdjustment" && invoiceRef == $ref && status == "APPROVED"]`,
+            { ref: invoiceRef }
+        ),
+    ]);
 
-    return { doc, totalAmount, totalPaid };
+    const totalPaid = allPayments.reduce((sum, item) => sum + normalizeNumber(item.amount || 0), 0);
+    const totalAdjustmentAmount = approvedAdjustments.reduce(
+        (sum, item) => sum + normalizeNumber(item.amount || 0),
+        0
+    );
+    const netAmount = Math.max(grossAmount - totalAdjustmentAmount, 0);
+    const customerRef = extractRefId(doc.customerRef) || undefined;
+    const customerName = normalizeText(doc.customerName) || '-';
+    const label =
+        normalizeText(doc.notaNumber) ||
+        normalizeText(doc.invoiceNumber) ||
+        doc._id;
+
+    return {
+        doc,
+        grossAmount,
+        totalAdjustmentAmount,
+        netAmount,
+        totalPaid,
+        remainingAmount: Math.max(netAmount - totalPaid, 0),
+        creditAmount: Math.max(totalPaid - netAmount, 0),
+        customerRef,
+        customerName,
+        label,
+    };
 }
 
-function deriveBillingStatus(totalAmount: number, totalPaid: number) {
-    if (totalPaid >= totalAmount) return 'PAID';
+function deriveBillingStatus(netAmount: number, totalPaid: number) {
+    if (totalPaid >= netAmount) return 'PAID';
     if (totalPaid > 0) return 'PARTIAL';
     return 'UNPAID';
+}
+
+function buildReceivablePatch(
+    snapshot: Pick<ReceivableSnapshot, 'grossAmount'>,
+    totalPaid: number,
+    totalAdjustmentAmount: number
+) {
+    const nextAdjustment = Math.max(totalAdjustmentAmount, 0);
+    const nextNetAmount = Math.max(snapshot.grossAmount - nextAdjustment, 0);
+    return {
+        status: deriveBillingStatus(nextNetAmount, totalPaid),
+        totalAdjustmentAmount: nextAdjustment,
+        netAmount: nextNetAmount,
+    };
+}
+
+async function resolveReceiptBankAccount(method: PaymentMethod, selectedAccountRef?: string) {
+    let bankAcc: BankAccountSummary | null = null;
+    if (selectedAccountRef) {
+        bankAcc = await getLedgerAccount(selectedAccountRef);
+        if (!bankAcc) {
+            return { error: NextResponse.json({ error: 'Rekening bank tidak ditemukan' }, { status: 404 }) };
+        }
+    } else if (method === 'CASH') {
+        bankAcc = await ensureCashAccount();
+    }
+
+    if (method === 'TRANSFER' && bankAcc?.accountType === 'CASH') {
+        return {
+            error: NextResponse.json(
+                { error: 'Metode transfer harus memakai rekening bank, bukan akun Kas Tunai' },
+                { status: 400 }
+            ),
+        };
+    }
+
+    if (bankAcc && !bankAcc._rev) {
+        return { error: NextResponse.json({ error: 'Revisi rekening tidak tersedia' }, { status: 409 }) };
+    }
+
+    return { bankAcc };
 }
 
 export async function handlePaymentCreate(
@@ -147,7 +258,7 @@ export async function handlePaymentCreate(
         return NextResponse.json({ error: 'Referensi tagihan wajib diisi' }, { status: 400 });
     }
 
-    const paymentMethod = typeof data.method === 'string' ? data.method : 'CASH';
+    const paymentMethod = typeof data.method === 'string' ? data.method as PaymentMethod : 'CASH';
     const selectedAccountRef =
         typeof data.bankAccountRef === 'string' && data.bankAccountRef ? data.bankAccountRef : undefined;
     if (paymentMethod === 'TRANSFER' && !selectedAccountRef) {
@@ -163,41 +274,24 @@ export async function handlePaymentCreate(
     const bankTransactionId = crypto.randomUUID();
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
-        const loaded = await loadPaymentTarget(invoiceRef);
+        const loaded = await loadReceivableSnapshot(invoiceRef);
         if ('error' in loaded) return loaded.error;
         if (!loaded.doc._rev) {
             return NextResponse.json({ error: 'Revisi dokumen tagihan tidak tersedia' }, { status: 409 });
         }
 
-        const remaining = Math.max(loaded.totalAmount - loaded.totalPaid, 0);
-        if (amount > remaining) {
+        if (amount > loaded.remainingAmount) {
             return NextResponse.json(
-                { error: `Pembayaran melebihi sisa tagihan (${remaining})` },
+                { error: `Pembayaran melebihi sisa tagihan netto (${loaded.remainingAmount})` },
                 { status: 400 }
             );
         }
 
-        let bankAcc: BankAccountSummary | null = null;
-        if (selectedAccountRef) {
-            bankAcc = await getLedgerAccount(selectedAccountRef);
-            if (!bankAcc) {
-                return NextResponse.json({ error: 'Rekening bank tidak ditemukan' }, { status: 404 });
-            }
-        } else if (paymentMethod === 'CASH') {
-            bankAcc = await ensureCashAccount();
-        }
-        if (paymentMethod === 'TRANSFER' && bankAcc?.accountType === 'CASH') {
-            return NextResponse.json(
-                { error: 'Metode transfer harus memakai rekening bank, bukan akun Kas Tunai' },
-                { status: 400 }
-            );
-        }
-        if (bankAcc && !bankAcc._rev) {
-            return NextResponse.json({ error: 'Revisi rekening tidak tersedia' }, { status: 409 });
-        }
+        const resolvedBank = await resolveReceiptBankAccount(paymentMethod, selectedAccountRef);
+        if ('error' in resolvedBank) return resolvedBank.error;
+        const { bankAcc } = resolvedBank;
 
         const nextTotalPaid = loaded.totalPaid + amount;
-        const nextStatus = deriveBillingStatus(loaded.totalAmount, nextTotalPaid);
         const paymentDoc: { _id: string; _type: 'payment'; [key: string]: unknown } = {
             _id: paymentId,
             _type: 'payment',
@@ -231,7 +325,7 @@ export async function handlePaymentCreate(
             })
             .patch(invoiceRef, {
                 ifRevisionID: loaded.doc._rev,
-                set: { status: nextStatus },
+                set: buildReceivablePatch(loaded, nextTotalPaid, loaded.totalAdjustmentAmount),
             });
 
         if (bankAcc) {
@@ -277,14 +371,13 @@ export async function handlePaymentCreate(
             }
 
             if (attempt === 2) {
-                const latest = await loadPaymentTarget(invoiceRef);
+                const latest = await loadReceivableSnapshot(invoiceRef);
                 if (!('error' in latest)) {
-                    const latestRemaining = Math.max(latest.totalAmount - latest.totalPaid, 0);
                     return NextResponse.json(
                         {
                             error:
-                                latestRemaining === 0 || amount > latestRemaining
-                                    ? `Pembayaran berubah karena ada transaksi lain. Sisa tagihan sekarang ${latestRemaining}. Muat ulang lalu coba lagi.`
+                                latest.remainingAmount === 0 || amount > latest.remainingAmount
+                                    ? `Pembayaran berubah karena ada transaksi lain. Sisa tagihan sekarang ${latest.remainingAmount}. Muat ulang lalu coba lagi.`
                                     : 'Pembayaran berubah karena ada transaksi lain. Muat ulang lalu coba lagi.',
                         },
                         { status: 409 }
@@ -303,6 +396,411 @@ export async function handlePaymentCreate(
         { error: 'Pembayaran berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
         { status: 409 }
     );
+}
+
+export async function handleCustomerReceiptCreate(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const totalAmount = typeof data.totalAmount === 'number' ? data.totalAmount : Number(data.totalAmount);
+    if (!Number.isFinite(totalAmount) || totalAmount <= 0) {
+        return NextResponse.json({ error: 'Total penerimaan tidak valid' }, { status: 400 });
+    }
+
+    const receiptDate =
+        typeof data.date === 'string' && data.date ? data.date : new Date().toISOString().slice(0, 10);
+    assertIsoDate(receiptDate, 'Tanggal penerimaan');
+
+    const paymentMethod = typeof data.method === 'string' ? data.method as PaymentMethod : 'TRANSFER';
+    const selectedAccountRef =
+        typeof data.bankAccountRef === 'string' && data.bankAccountRef ? data.bankAccountRef : undefined;
+    if (paymentMethod === 'TRANSFER' && !selectedAccountRef) {
+        return NextResponse.json({ error: 'Rekening bank wajib dipilih untuk transfer' }, { status: 400 });
+    }
+
+    const rawAllocations = Array.isArray(data.allocations) ? data.allocations : [];
+    const allocations = rawAllocations
+        .filter(isPlainObject)
+        .map<CustomerReceiptAllocationInput>((row) => {
+            const invoiceRef = normalizeText(row.invoiceRef);
+            const amount = typeof row.amount === 'number' ? row.amount : Number(row.amount);
+            const note = normalizeOptionalText(row.note);
+
+            if (!invoiceRef) {
+                throw new Error('Semua alokasi penerimaan wajib memilih nota');
+            }
+            if (!Number.isFinite(amount) || amount <= 0) {
+                throw new Error('Nominal alokasi penerimaan tidak valid');
+            }
+
+            return { invoiceRef, amount, note };
+        });
+
+    if (allocations.length === 0) {
+        return NextResponse.json({ error: 'Minimal 1 nota harus dialokasikan' }, { status: 400 });
+    }
+
+    const uniqueInvoiceRefs = [...new Set(allocations.map(item => item.invoiceRef))];
+    if (uniqueInvoiceRefs.length !== allocations.length) {
+        return NextResponse.json({ error: 'Satu nota hanya boleh muncul sekali dalam 1 penerimaan' }, { status: 400 });
+    }
+
+    const totalAllocated = allocations.reduce((sum, item) => sum + item.amount, 0);
+    if (Math.abs(totalAllocated - totalAmount) > 0.00001) {
+        return NextResponse.json(
+            { error: `Total alokasi (${totalAllocated}) harus sama dengan total penerimaan (${totalAmount})` },
+            { status: 400 }
+        );
+    }
+
+    const explicitCustomerRef = typeof data.customerRef === 'string' && data.customerRef ? data.customerRef : undefined;
+    const receiptNote = normalizeOptionalText(data.note);
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        const snapshots = await Promise.all(allocations.map(item => loadReceivableSnapshot(item.invoiceRef)));
+        for (const result of snapshots) {
+            if ('error' in result) {
+                return result.error;
+            }
+        }
+
+        const loadedSnapshots = snapshots as ReceivableSnapshot[];
+        const matchedExplicitCustomerRef =
+            explicitCustomerRef && loadedSnapshots.every(snapshot => snapshot.customerRef === explicitCustomerRef)
+                ? explicitCustomerRef
+                : undefined;
+        const baseCustomerRef = matchedExplicitCustomerRef ?? loadedSnapshots[0]?.customerRef;
+        const baseCustomerName = loadedSnapshots[0]?.customerName || '-';
+
+        if (
+            loadedSnapshots.some(snapshot =>
+                (baseCustomerRef && snapshot.customerRef !== baseCustomerRef) ||
+                (!baseCustomerRef && snapshot.customerName !== baseCustomerName)
+            )
+        ) {
+            return NextResponse.json(
+                { error: 'Penerimaan customer hanya boleh dialokasikan ke nota customer yang sama' },
+                { status: 409 }
+            );
+        }
+
+        for (const snapshot of loadedSnapshots) {
+            if (!snapshot.doc._rev) {
+                return NextResponse.json({ error: 'Revisi dokumen tagihan tidak tersedia' }, { status: 409 });
+            }
+        }
+
+        for (const allocation of allocations) {
+            const snapshot = loadedSnapshots.find(item => item.doc._id === allocation.invoiceRef);
+            if (!snapshot) {
+                return NextResponse.json({ error: 'Nota alokasi tidak ditemukan' }, { status: 404 });
+            }
+            if (allocation.amount > snapshot.remainingAmount) {
+                return NextResponse.json(
+                    { error: `Alokasi ke ${snapshot.label} melebihi sisa netto (${snapshot.remainingAmount})` },
+                    { status: 400 }
+                );
+            }
+        }
+
+        const resolvedBank = await resolveReceiptBankAccount(paymentMethod, selectedAccountRef);
+        if ('error' in resolvedBank) return resolvedBank.error;
+        const { bankAcc } = resolvedBank;
+
+        const receiptId = crypto.randomUUID();
+        const incomeId = crypto.randomUUID();
+        const bankTransactionId = crypto.randomUUID();
+        const receiptNumber = await sanityGetNextNumber('receipt');
+        const customerName = loadedSnapshots[0]?.customerName || '-';
+        const transaction = getSanityClient()
+            .transaction()
+            .create({
+                _id: receiptId,
+                _type: 'customerReceipt',
+                receiptNumber,
+                customerRef: baseCustomerRef,
+                customerName,
+                date: receiptDate,
+                totalAmount,
+                allocationCount: allocations.length,
+                method: paymentMethod,
+                bankAccountRef: bankAcc?._id,
+                bankAccountName: bankAcc?.bankName,
+                bankAccountNumber: bankAcc?.accountNumber,
+                note: receiptNote,
+            })
+            .create({
+                _id: incomeId,
+                _type: 'income',
+                sourceType: 'CUSTOMER_RECEIPT',
+                receiptRef: receiptId,
+                date: receiptDate,
+                amount: totalAmount,
+                note: `Penerimaan customer ${receiptNumber}`,
+            });
+
+        if (bankAcc) {
+            const nextBankBalance = (bankAcc.currentBalance || 0) + totalAmount;
+            transaction
+                .create({
+                    _id: bankTransactionId,
+                    _type: 'bankTransaction',
+                    bankAccountRef: bankAcc._id,
+                    bankAccountName: bankAcc.bankName,
+                    bankAccountNumber: bankAcc.accountNumber,
+                    type: 'CREDIT',
+                    amount: totalAmount,
+                    date: receiptDate,
+                    description:
+                        bankAcc.accountType === 'CASH'
+                            ? `Penerimaan tunai customer ${receiptNumber}`
+                            : `Penerimaan customer ${receiptNumber}`,
+                    balanceAfter: nextBankBalance,
+                    relatedReceiptRef: receiptId,
+                })
+                .patch(bankAcc._id, {
+                    ifRevisionID: bankAcc._rev,
+                    set: { currentBalance: nextBankBalance },
+                });
+        }
+
+        const createdPaymentIds: string[] = [];
+        for (const allocation of allocations) {
+            const snapshot = loadedSnapshots.find(item => item.doc._id === allocation.invoiceRef);
+            if (!snapshot || !snapshot.doc._rev) continue;
+            const paymentId = crypto.randomUUID();
+            createdPaymentIds.push(paymentId);
+            transaction
+                .create({
+                    _id: paymentId,
+                    _type: 'payment',
+                    invoiceRef: allocation.invoiceRef,
+                    receiptRef: receiptId,
+                    receiptNumber,
+                    bankAccountRef: bankAcc?._id,
+                    bankAccountName: bankAcc?.bankName,
+                    bankAccountNumber: bankAcc?.accountNumber,
+                    date: receiptDate,
+                    amount: allocation.amount,
+                    method: paymentMethod,
+                    note: allocation.note ?? receiptNote,
+                })
+                .patch(allocation.invoiceRef, {
+                    ifRevisionID: snapshot.doc._rev,
+                    set: buildReceivablePatch(
+                        snapshot,
+                        snapshot.totalPaid + allocation.amount,
+                        snapshot.totalAdjustmentAmount,
+                    ),
+                });
+        }
+
+        try {
+            await transaction.commit();
+            await addAuditLog(
+                session,
+                'CREATE',
+                'customer-receipts',
+                receiptId,
+                `Penerimaan ${receiptNumber} dialokasikan ke ${allocations.length} nota customer ${customerName}`
+            );
+            for (const paymentId of createdPaymentIds) {
+                await addAuditLog(
+                    session,
+                    'CREATE',
+                    'payments',
+                    paymentId,
+                    `Alokasi receipt ${receiptNumber} dicatat`
+                );
+            }
+            return NextResponse.json({
+                data: {
+                    _id: receiptId,
+                    _type: 'customerReceipt',
+                    receiptNumber,
+                    customerRef: baseCustomerRef,
+                    customerName,
+                    date: receiptDate,
+                    totalAmount,
+                    allocationCount: allocations.length,
+                    method: paymentMethod,
+                    bankAccountRef: bankAcc?._id,
+                    bankAccountName: bankAcc?.bankName,
+                    bankAccountNumber: bankAcc?.accountNumber,
+                    note: receiptNote,
+                },
+                id: receiptId,
+            });
+        } catch (err) {
+            if (!isMutationConflictError(err)) {
+                throw err;
+            }
+
+            if (attempt === 2) {
+                return NextResponse.json(
+                    { error: 'Penerimaan berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+        }
+    }
+
+    return NextResponse.json(
+        { error: 'Penerimaan berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+        { status: 409 }
+    );
+}
+
+export async function handleInvoiceAdjustmentCreate(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const invoiceRef = typeof data.invoiceRef === 'string' ? data.invoiceRef : '';
+    if (!invoiceRef) {
+        return NextResponse.json({ error: 'Referensi nota wajib diisi' }, { status: 400 });
+    }
+
+    const amount = typeof data.amount === 'number' ? data.amount : Number(data.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+        return NextResponse.json({ error: 'Nominal klaim/potongan tidak valid' }, { status: 400 });
+    }
+
+    const date = typeof data.date === 'string' && data.date ? data.date : new Date().toISOString().slice(0, 10);
+    assertIsoDate(date, 'Tanggal klaim/potongan');
+
+    const kind = typeof data.kind === 'string' ? data.kind as InvoiceAdjustmentKind : 'OTHER';
+    if (!INVOICE_ADJUSTMENT_KIND_SET.has(kind)) {
+        return NextResponse.json({ error: 'Jenis klaim/potongan tidak valid' }, { status: 400 });
+    }
+
+    const note = normalizeOptionalText(data.note);
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        const snapshot = await loadReceivableSnapshot(invoiceRef);
+        if ('error' in snapshot) return snapshot.error;
+        if (!snapshot.doc._rev) {
+            return NextResponse.json({ error: 'Revisi dokumen tagihan tidak tersedia' }, { status: 409 });
+        }
+
+        const nextAdjustmentAmount = snapshot.totalAdjustmentAmount + amount;
+        if (nextAdjustmentAmount > snapshot.grossAmount) {
+            return NextResponse.json(
+                { error: `Total potongan melebihi nilai bruto tagihan (${snapshot.grossAmount})` },
+                { status: 400 }
+            );
+        }
+
+        const adjustmentId = crypto.randomUUID();
+        const transaction = getSanityClient()
+            .transaction()
+            .create({
+                _id: adjustmentId,
+                _type: 'invoiceAdjustment',
+                invoiceRef,
+                customerRef: snapshot.customerRef,
+                customerName: snapshot.customerName,
+                date,
+                amount,
+                kind,
+                status: 'APPROVED',
+                note,
+                createdBy: session._id,
+                createdByName: session.name,
+            })
+            .patch(invoiceRef, {
+                ifRevisionID: snapshot.doc._rev,
+                set: buildReceivablePatch(snapshot, snapshot.totalPaid, nextAdjustmentAmount),
+            });
+
+        try {
+            await transaction.commit();
+            await addAuditLog(
+                session,
+                'CREATE',
+                'invoice-adjustments',
+                adjustmentId,
+                `Potongan/klaim ${amount} dicatat untuk ${snapshot.label}`
+            );
+            return NextResponse.json({ data: { _id: adjustmentId }, id: adjustmentId });
+        } catch (err) {
+            if (!isMutationConflictError(err)) {
+                throw err;
+            }
+            if (attempt === 2) {
+                return NextResponse.json(
+                    { error: 'Klaim/potongan berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+        }
+    }
+
+    return NextResponse.json(
+        { error: 'Klaim/potongan berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+        { status: 409 }
+    );
+}
+
+export async function handleInvoiceAdjustmentVoid(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const adjustmentId = typeof data.id === 'string' ? data.id : '';
+    if (!adjustmentId) {
+        return NextResponse.json({ error: 'Adjustment tidak valid' }, { status: 400 });
+    }
+
+    const adjustment = await sanityGetById<InvoiceAdjustmentDoc & {
+        kind?: string;
+        note?: string;
+    }>(adjustmentId);
+    if (!adjustment || adjustment._id !== adjustmentId) {
+        return NextResponse.json({ error: 'Adjustment tidak ditemukan' }, { status: 404 });
+    }
+    if (adjustment.status === 'VOID') {
+        return NextResponse.json({ error: 'Adjustment sudah void' }, { status: 409 });
+    }
+
+    const invoiceRef = normalizeText(adjustment.invoiceRef);
+    if (!invoiceRef) {
+        return NextResponse.json({ error: 'Referensi nota pada adjustment tidak valid' }, { status: 409 });
+    }
+
+    const snapshot = await loadReceivableSnapshot(invoiceRef);
+    if ('error' in snapshot) return snapshot.error;
+    if (!snapshot.doc._rev || !adjustment._rev) {
+        return NextResponse.json({ error: 'Revisi adjustment/tagihan tidak tersedia' }, { status: 409 });
+    }
+
+    const nextAdjustmentAmount = Math.max(snapshot.totalAdjustmentAmount - normalizeNumber(adjustment.amount || 0), 0);
+    await getSanityClient()
+        .transaction()
+        .patch(adjustmentId, {
+            ifRevisionID: adjustment._rev,
+            set: {
+                status: 'VOID',
+                voidedAt: new Date().toISOString(),
+                voidedBy: session._id,
+                voidedByName: session.name,
+            },
+        })
+        .patch(invoiceRef, {
+            ifRevisionID: snapshot.doc._rev,
+            set: buildReceivablePatch(snapshot, snapshot.totalPaid, nextAdjustmentAmount),
+        })
+        .commit();
+
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'invoice-adjustments',
+        adjustmentId,
+        `Adjustment ${adjustmentId} di-void untuk ${snapshot.label}`
+    );
+    return NextResponse.json({ success: true });
 }
 
 export async function handleBankTransfer(
@@ -868,6 +1366,8 @@ export async function handleFreightNotaCreate(
         dueDate: resolvedDueDate,
         status: 'UNPAID',
         totalAmount,
+        totalAdjustmentAmount: 0,
+        netAmount: totalAmount,
         totalCollie,
         totalWeightKg,
         notes: normalizeOptionalText(data.notes),
@@ -922,6 +1422,14 @@ export async function handleFreightNotaDelete(
     );
     if (existingPayments.length > 0) {
         return NextResponse.json({ error: 'Nota yang sudah punya pembayaran tidak boleh dihapus' }, { status: 409 });
+    }
+
+    const existingAdjustments = await getSanityClient().fetch<Array<{ _id: string }>>(
+        `*[_type == "invoiceAdjustment" && invoiceRef == $ref && status == "APPROVED"]{ _id }`,
+        { ref: id }
+    );
+    if (existingAdjustments.length > 0) {
+        return NextResponse.json({ error: 'Nota yang sudah punya klaim/potongan tidak boleh dihapus' }, { status: 409 });
     }
 
     const itemIds = await getSanityClient().fetch<string[]>(

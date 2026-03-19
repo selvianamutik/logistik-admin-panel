@@ -228,6 +228,8 @@ export async function handleInvoiceCreate(
         invoiceNumber,
         status: 'UNPAID',
         totalAmount,
+        totalAdjustmentAmount: 0,
+        netAmount: totalAmount,
     };
 
     const transaction = getSanityClient().transaction().create(invoiceDoc);

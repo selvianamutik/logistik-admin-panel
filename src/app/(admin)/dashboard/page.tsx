@@ -6,7 +6,7 @@ import {
     Package, Truck, FileText, AlertTriangle, Wrench, DollarSign,
     TrendingUp, Clock, ArrowUpRight
 } from 'lucide-react';
-import { formatCurrency, ORDER_STATUS_MAP, INVOICE_STATUS_MAP } from '@/lib/utils';
+import { formatCurrency, getReceivableNetAmount, ORDER_STATUS_MAP, INVOICE_STATUS_MAP } from '@/lib/utils';
 import Link from 'next/link';
 
 interface DashboardData {
@@ -17,7 +17,7 @@ interface DashboardData {
     voucherStats: { unsettled: number; totalIssued: number };
     fleetStats: { openIncidents: number; maintenanceDue: number };
     recentOrders: Array<{ _id: string; masterResi: string; customerName: string; status: string; createdAt: string }>;
-    recentNotas: Array<{ _id: string; notaNumber: string; customerName: string; status: string; totalAmount: number }>;
+    recentNotas: Array<{ _id: string; notaNumber: string; customerName: string; status: string; totalAmount: number; totalAdjustmentAmount?: number; netAmount?: number }>;
 }
 
 export default function DashboardPage() {
@@ -218,7 +218,7 @@ export default function DashboardPage() {
                                                     {INVOICE_STATUS_MAP[nota.status]?.label || nota.status}
                                                 </span>
                                             </td>
-                                            {isOwner && <td className="font-medium">{formatCurrency(nota.totalAmount)}</td>}
+                                            {isOwner && <td className="font-medium">{formatCurrency(getReceivableNetAmount(nota))}</td>}
                                         </tr>
                                     ))
                                 )}

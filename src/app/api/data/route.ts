@@ -24,8 +24,11 @@ import {
 } from '@/lib/api/driver-workflows';
 import {
     handleBankTransfer,
+    handleCustomerReceiptCreate,
     handleExpenseCreate,
     handleFreightNotaCreate,
+    handleInvoiceAdjustmentCreate,
+    handleInvoiceAdjustmentVoid,
     handlePaymentCreate,
 } from '@/lib/api/finance-workflows';
 import {
@@ -64,7 +67,15 @@ type DashboardSummary = {
     voucherStats: { unsettled: number; totalIssued: number };
     fleetStats: { openIncidents: number; maintenanceDue: number };
     recentOrders: Array<{ _id: string; masterResi?: string; customerName?: string; status?: string; createdAt?: string }>;
-    recentNotas: Array<{ _id: string; notaNumber?: string; customerName?: string; status?: string; totalAmount?: number }>;
+    recentNotas: Array<{
+        _id: string;
+        notaNumber?: string;
+        customerName?: string;
+        status?: string;
+        totalAmount?: number;
+        totalAdjustmentAmount?: number;
+        netAmount?: number;
+    }>;
 };
 
 const OWNER_ONLY_READ_ENTITIES = new Set(['audit-logs']);
@@ -128,7 +139,9 @@ async function getDashboardSummary(session: Session): Promise<DashboardSummary> 
             "total": count(*[_type == "deliveryOrder"]),
             "onDelivery": count(*[_type == "deliveryOrder" && status == "ON_DELIVERY"])
         }`),
-        client.fetch<Array<{ totalAmount?: number }>>(`*[_type == "freightNota" && status != "PAID"]{ totalAmount }`),
+        client.fetch<Array<{ totalAmount?: number; totalAdjustmentAmount?: number; netAmount?: number }>>(
+            `*[_type == "freightNota" && status != "PAID"]{ totalAmount, totalAdjustmentAmount, netAmount }`
+        ),
         client.fetch<Array<{ totalAmount?: number }>>(`*[_type == "driverBorongan" && status != "PAID"]{ totalAmount }`),
         client.fetch<Array<{ cashGiven?: number }>>(`*[_type == "driverVoucher" && status != "SETTLED"]{ cashGiven }`),
         client.fetch<DashboardSummary['fleetStats']>(`{
@@ -147,12 +160,19 @@ async function getDashboardSummary(session: Session): Promise<DashboardSummary> 
             notaNumber,
             customerName,
             status,
-            totalAmount
+            totalAmount,
+            totalAdjustmentAmount,
+            netAmount
         }`),
     ]);
 
     const notaOutstanding = unpaidNotas.reduce(
-        (sum, nota) => sum + (typeof nota.totalAmount === 'number' ? nota.totalAmount : 0),
+        (sum, nota) => {
+            const grossAmount = typeof nota.totalAmount === 'number' ? nota.totalAmount : 0;
+            const adjustmentAmount = typeof nota.totalAdjustmentAmount === 'number' ? nota.totalAdjustmentAmount : 0;
+            const netAmount = typeof nota.netAmount === 'number' ? nota.netAmount : grossAmount - adjustmentAmount;
+            return sum + Math.max(netAmount, 0);
+        },
         0
     );
     const boronganOutstanding = unpaidBorongans.reduce(
@@ -413,6 +433,18 @@ export async function POST(request: Request) {
 
         if (entity === 'payments') {
             return handlePaymentCreate(session, data, addAuditLog);
+        }
+
+        if (entity === 'customer-receipts') {
+            return handleCustomerReceiptCreate(session, data, addAuditLog);
+        }
+
+        if (entity === 'invoice-adjustments' && action === 'void') {
+            return handleInvoiceAdjustmentVoid(session, data, addAuditLog);
+        }
+
+        if (entity === 'invoice-adjustments') {
+            return handleInvoiceAdjustmentCreate(session, data, addAuditLog);
         }
 
         if (entity === 'expenses') {

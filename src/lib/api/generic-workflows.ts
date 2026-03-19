@@ -137,7 +137,14 @@ function normalizeCustomerPayload(data: Record<string, unknown>, existing?: Reco
 }
 
 function isProtectedLedgerEntity(entity: string) {
-    return entity === 'payments' || entity === 'incomes' || entity === 'expenses' || entity === 'bank-transactions';
+    return (
+        entity === 'payments' ||
+        entity === 'customer-receipts' ||
+        entity === 'invoice-adjustments' ||
+        entity === 'incomes' ||
+        entity === 'expenses' ||
+        entity === 'bank-transactions'
+    );
 }
 
 function isWorkflowManagedCreateEntity(entity: string) {
@@ -147,6 +154,8 @@ function isWorkflowManagedCreateEntity(entity: string) {
         entity === 'invoices' ||
         entity === 'freight-notas' ||
         entity === 'driver-borongans' ||
+        entity === 'customer-receipts' ||
+        entity === 'invoice-adjustments' ||
         entity === 'incomes' ||
         entity === 'bank-transactions'
     );

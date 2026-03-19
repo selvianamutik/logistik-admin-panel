@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useToast } from "../layout";
 import { openBrandedPrint } from "@/lib/print";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, getReceivableNetAmount } from "@/lib/utils";
 import { exportToExcel } from "@/lib/export";
 import type {
   BankAccount,
@@ -147,7 +147,7 @@ export default function ReportsPage() {
     .reduce((sum, item) => sum + item.totalAmount, 0);
   const totalNotaOutstanding = freightNotas
     .filter((item) => item.status !== "PAID" && inPeriod(item.issueDate))
-    .reduce((sum, item) => sum + item.totalAmount, 0);
+    .reduce((sum, item) => sum + getReceivableNetAmount(item), 0);
   const openDriverVouchers = driverVouchers
     .filter((item) => item.status !== "SETTLED")
     .sort((a, b) => b.issuedDate.localeCompare(a.issuedDate));

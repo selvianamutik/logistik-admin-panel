@@ -58,6 +58,30 @@ export function formatDeliveryOrderDisplayNumber(value: {
     return value.customerDoNumber || value.doNumber || '-';
 }
 
+export function getReceivableNetAmount(value: {
+    totalAmount?: number | null;
+    totalAdjustmentAmount?: number | null;
+    netAmount?: number | null;
+}) {
+    const grossAmount =
+        typeof value.totalAmount === 'number' && Number.isFinite(value.totalAmount)
+            ? value.totalAmount
+            : 0;
+    const adjustmentAmount =
+        typeof value.totalAdjustmentAmount === 'number' && Number.isFinite(value.totalAdjustmentAmount)
+            ? Math.max(value.totalAdjustmentAmount, 0)
+            : 0;
+    const storedNetAmount =
+        typeof value.netAmount === 'number' && Number.isFinite(value.netAmount)
+            ? value.netAmount
+            : undefined;
+
+    return Math.max(
+        storedNetAmount ?? grossAmount - adjustmentAmount,
+        0,
+    );
+}
+
 // ── Status labels & colors ──
 export const ORDER_STATUS_MAP: Record<string, { label: string; color: string }> = {
     OPEN: { label: 'Belum Terkirim', color: 'info' },
@@ -161,6 +185,14 @@ export const PAYMENT_METHOD_MAP: Record<string, string> = {
     TRANSFER: 'Transfer',
     CASH: 'Tunai',
     OTHER: 'Lainnya',
+};
+
+export const INVOICE_ADJUSTMENT_KIND_MAP: Record<string, string> = {
+    DAMAGE_CLAIM: 'Klaim Barang Rusak',
+    SHORTAGE_CLAIM: 'Klaim Barang Kurang',
+    DISCOUNT: 'Diskon',
+    PENALTY: 'Penalty',
+    OTHER: 'Potongan Lainnya',
 };
 
 // ── Terbilang (number to Indonesian words) ──

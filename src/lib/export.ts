@@ -6,6 +6,7 @@
 import ExcelJS from 'exceljs';
 import { fetchCompanyProfile, fmtDate, fmtNumber, formatFreightNotaDisplayNumber } from './print';
 import type { CompanyProfile, FreightNota, FreightNotaItem } from './types';
+import { getReceivableNetAmount } from './utils';
 
 type ExportValue = string | number | boolean | Date | null | undefined;
 
@@ -343,6 +344,11 @@ export async function exportInvoices(invoices: Record<string, unknown>[]) {
                 },
                 company,
             ),
+            netAmount: getReceivableNetAmount({
+                totalAmount: Number(invoice.totalAmount || 0),
+                totalAdjustmentAmount: Number(invoice.totalAdjustmentAmount || 0),
+                netAmount: typeof invoice.netAmount === 'number' ? invoice.netAmount : Number(invoice.netAmount || 0),
+            }),
         })),
         [
             { header: 'No. Cetak Nota', key: 'notaDisplayNumber', width: 22 },
@@ -352,7 +358,7 @@ export async function exportInvoices(invoices: Record<string, unknown>[]) {
             { header: 'Jatuh Tempo', key: 'dueDate', width: 18, formatter: (value) => value ? fmtDate(String(value)) : '-' },
             { header: 'Total Collie', key: 'totalCollie', width: 14 },
             { header: 'Total Berat (Kg)', key: 'totalWeightKg', width: 16 },
-            { header: 'Total Ongkos', key: 'totalAmount', width: 18 },
+            { header: 'Tagihan Netto', key: 'netAmount', width: 18 },
             { header: 'Status', key: 'status', width: 14 },
         ],
         `nota-ongkos-${new Date().toISOString().split('T')[0]}`,
@@ -365,7 +371,11 @@ export async function exportInvoices(invoices: Record<string, unknown>[]) {
                 values: {
                     totalCollie: invoices.reduce((sum, item) => sum + Number(item.totalCollie || 0), 0),
                     totalWeightKg: invoices.reduce((sum, item) => sum + Number(item.totalWeightKg || 0), 0),
-                    totalAmount: invoices.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0),
+                    netAmount: invoices.reduce((sum, item) => sum + getReceivableNetAmount({
+                        totalAmount: Number(item.totalAmount || 0),
+                        totalAdjustmentAmount: Number(item.totalAdjustmentAmount || 0),
+                        netAmount: typeof item.netAmount === 'number' ? item.netAmount : Number(item.netAmount || 0),
+                    }), 0),
                 },
             },
         },

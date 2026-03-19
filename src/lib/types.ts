@@ -60,6 +60,9 @@ export interface CompanyProfile {
     notaCounter?: number;
     notaPeriod?: string;
     notaSeriesCode?: string;
+    receiptPrefix?: string;
+    receiptCounter?: number;
+    receiptPeriod?: string;
     boronganPrefix?: string;
     boronganCounter?: number;
     boronganPeriod?: string;
@@ -355,6 +358,8 @@ export interface FreightNota {
   dueDate?: string;
   status: NotaStatus;
   totalAmount: number;
+  totalAdjustmentAmount?: number;
+  netAmount?: number;
   totalCollie: number;
   totalWeightKg: number;
   bankAccountRef?: string;
@@ -438,6 +443,8 @@ export interface Invoice {
   dueDate: string;
   status: InvoiceStatus;
   totalAmount: number;
+  totalAdjustmentAmount?: number;
+  netAmount?: number;
   notes?: string;
 }
 
@@ -458,6 +465,8 @@ export interface Payment {
   _id: string;
   _type: 'payment';
   invoiceRef: string;
+  receiptRef?: string;
+  receiptNumber?: string;
   bankAccountRef?: string;
   bankAccountName?: string;
   bankAccountNumber?: string;
@@ -468,12 +477,56 @@ export interface Payment {
   attachmentUrl?: string;
 }
 
+export interface CustomerReceipt {
+  _id: string;
+  _type: 'customerReceipt';
+  receiptNumber: string;
+  customerRef?: string;
+  customerName: string;
+  date: string;
+  totalAmount: number;
+  allocationCount: number;
+  method: PaymentMethod;
+  bankAccountRef?: string;
+  bankAccountName?: string;
+  bankAccountNumber?: string;
+  note?: string;
+}
+
+export type InvoiceAdjustmentKind =
+  | 'DAMAGE_CLAIM'
+  | 'SHORTAGE_CLAIM'
+  | 'DISCOUNT'
+  | 'PENALTY'
+  | 'OTHER';
+
+export type InvoiceAdjustmentStatus = 'APPROVED' | 'VOID';
+
+export interface InvoiceAdjustment {
+  _id: string;
+  _type: 'invoiceAdjustment';
+  invoiceRef: string;
+  customerRef?: string;
+  customerName?: string;
+  date: string;
+  amount: number;
+  kind: InvoiceAdjustmentKind;
+  status: InvoiceAdjustmentStatus;
+  note?: string;
+  createdBy?: string;
+  createdByName?: string;
+  voidedAt?: string;
+  voidedBy?: string;
+  voidedByName?: string;
+}
+
 // ── Income ──
 export interface Income {
   _id: string;
   _type: 'income';
-  sourceType: 'INVOICE_PAYMENT' | 'OTHER';
+  sourceType: 'INVOICE_PAYMENT' | 'CUSTOMER_RECEIPT' | 'OTHER';
   paymentRef?: string;
+  receiptRef?: string;
   date: string;
   amount: number;
   note?: string;
@@ -662,6 +715,7 @@ export interface BankTransaction {
   description: string;
   balanceAfter: number;
   relatedPaymentRef?: string;
+  relatedReceiptRef?: string;
   relatedExpenseRef?: string;
   relatedTransferRef?: string;
   relatedVoucherRef?: string;
