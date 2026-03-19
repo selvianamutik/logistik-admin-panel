@@ -3,8 +3,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useToast } from '../../layout';
-import { ArrowLeft, Printer, DollarSign, Landmark, Trash2, FileDown } from 'lucide-react';
+import { Printer, DollarSign, Landmark, Trash2, FileDown } from 'lucide-react';
 import CurrencyInput from '@/components/CurrencyInput';
+import PageBackButton from '@/components/PageBackButton';
 import { buildFreightNotaPrintDocument, fetchCompanyProfile, formatFreightNotaDisplayNumber, openBrandedPrint } from '@/lib/print';
 import { exportFreightNotaDetail } from '@/lib/export';
 import { formatDate, formatCurrency, getReceivableNetAmount, INVOICE_ADJUSTMENT_KIND_MAP, PAYMENT_METHOD_MAP } from '@/lib/utils';
@@ -244,8 +245,9 @@ export default function NotaDetailPage() {
 
     return (
         <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
-                <button className="btn-back" onClick={() => router.push('/invoices')}><ArrowLeft size={16} /></button>
+            <div className="page-header" style={{ marginBottom: '0.5rem' }}>
+                <div className="page-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, flexWrap: 'wrap' }}>
+                    <PageBackButton href="/invoices" />
                 <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
                         <h1 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>{displayNotaNumber}</h1>
@@ -255,7 +257,8 @@ export default function NotaDetailPage() {
                         Nomor sistem: {nota.notaNumber}
                     </div>
                 </div>
-                <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                </div>
+                <div className="page-actions" style={{ gap: '0.4rem' }}>
                     {nota.status !== 'PAID' && <button className="btn btn-success btn-sm" onClick={() => setShowPayModal(true)}><DollarSign size={14} /> Bayar</button>}
                     {grossAmount > totalAdjustmentAmount && <button className="btn btn-secondary btn-sm" onClick={() => setShowAdjustmentModal(true)}>Klaim / Potongan</button>}
                     <button className="btn btn-secondary btn-sm" onClick={handleExportExcel}><FileDown size={14} /> Excel</button>

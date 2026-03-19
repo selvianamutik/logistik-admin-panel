@@ -2,11 +2,12 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, CheckCircle, Printer, Trash2 } from 'lucide-react';
+import { CheckCircle, Printer, Trash2 } from 'lucide-react';
 import { useToast } from '../../layout';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
 import type { BankAccount, DriverBorongan, DriverBoronganItem } from '@/lib/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import PageBackButton from '@/components/PageBackButton';
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
     UNPAID: { label: 'Belum Dibayar', color: 'danger' },
@@ -185,9 +186,7 @@ export default function BoronganDetailPage() {
     return (
         <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
-                <button className="btn-back" onClick={() => router.push('/borongan')}>
-                    <ArrowLeft size={16} />
-                </button>
+                <PageBackButton href="/borongan" />
                 <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
                         <h1 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>{borong.boronganNumber}</h1>

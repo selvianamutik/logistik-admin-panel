@@ -3,10 +3,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useApp, useToast } from '../../../layout';
-import { ArrowLeft, Car, Wrench, AlertTriangle, Truck, Edit } from 'lucide-react';
+import { Car, Wrench, AlertTriangle, Truck, Edit } from 'lucide-react';
 import { VEHICLE_STATUS_MAP, MAINTENANCE_STATUS_MAP, INCIDENT_STATUS_MAP, DO_STATUS_MAP, TIRE_ASSET_STATUS_MAP, formatDate, formatCurrency } from '@/lib/utils';
 import { formatTireSlotLabel, resolveTireAssetStatus, resolveTirePlacementLabel, resolveTireSlotCode } from '@/lib/tire-slots';
 import type { Vehicle, Maintenance, Incident, DeliveryOrder, TireEvent, Expense } from '@/lib/types';
+import PageBackButton from '@/components/PageBackButton';
 
 export default function VehicleDetailPage() {
     const params = useParams();
@@ -73,7 +74,7 @@ export default function VehicleDetailPage() {
         <div>
             <div className="page-header">
                 <div className="page-header-left">
-                    <button className="btn-back" onClick={() => router.push('/fleet/vehicles')}><ArrowLeft size={16} /></button>
+                    <PageBackButton href="/fleet/vehicles" />
                     <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                         {vehicle.plateNumber}
                         <span className={`badge badge-${VEHICLE_STATUS_MAP[vehicle.status]?.color}`}><span className="badge-dot" /> {VEHICLE_STATUS_MAP[vehicle.status]?.label}</span>

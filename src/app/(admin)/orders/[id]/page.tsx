@@ -4,11 +4,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '../../layout';
-import { ArrowLeft, Truck, FileText, Edit, Eye } from 'lucide-react';
+import { Truck, FileText, Edit, Eye } from 'lucide-react';
 import { formatDate, formatCurrency, formatNumber, getReceivableNetAmount, ORDER_STATUS_MAP, ITEM_STATUS_MAP, DO_STATUS_MAP, INVOICE_STATUS_MAP, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
 import { formatCargoSummary, formatVolumeDisplay } from '@/lib/measurement';
 import { calculateWeightPortion, getOrderItemProgress, roundQuantity } from '@/lib/order-item-progress';
 import type { Order, OrderItem, DeliveryOrder, DeliveryOrderItem, Driver, FreightNota, FreightNotaItem, Vehicle } from '@/lib/types';
+import PageBackButton from '@/components/PageBackButton';
 
 type SelectedShipmentMap = Record<string, {
     qtyKoli: string;
@@ -367,8 +368,8 @@ export default function OrderDetailPage() {
     return (
         <div>
             <div className="page-header">
-                <div className="page-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <button className="btn-back" onClick={() => router.push('/orders')}><ArrowLeft size={16} /></button>
+                <div className="page-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <PageBackButton href="/orders" />
                     <div>
                         <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             {order.masterResi}

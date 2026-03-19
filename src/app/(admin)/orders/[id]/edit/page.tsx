@@ -3,8 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useToast } from '../../../layout';
-import { ArrowLeft, Save } from 'lucide-react';
+import { Save } from 'lucide-react';
 import type { Order, Customer, Service, DeliveryOrder } from '@/lib/types';
+import PageBackButton from '@/components/PageBackButton';
 
 export default function OrderEditPage() {
     const params = useParams();
@@ -107,7 +108,7 @@ export default function OrderEditPage() {
         <div>
             <div className="page-header">
                 <div className="page-header-left">
-                    <button className="btn-back" onClick={() => router.push(`/orders/${params.id}`)}><ArrowLeft size={16} /></button>
+                    <PageBackButton href={`/orders/${params.id}`} />
                     <h1 className="page-title">Edit Order</h1>
                 </div>
             </div>

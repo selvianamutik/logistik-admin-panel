@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '../../layout';
-import { ArrowLeft, Save, Plus, X } from 'lucide-react';
+import { Save, Plus, X } from 'lucide-react';
+import PageBackButton from '@/components/PageBackButton';
 import type { Customer, CustomerProduct, Service } from '@/lib/types';
 import {
     VOLUME_INPUT_UNIT_OPTIONS,
@@ -205,9 +206,7 @@ export default function NewOrderPage() {
         <div>
             <div className="page-header">
                 <div className="page-header-left">
-                    <button className="btn-back" onClick={() => router.push('/orders')}>
-                        <ArrowLeft size={16} />
-                    </button>
+                    <PageBackButton href="/orders" />
                     <h1 className="page-title">Buat Order Baru</h1>
                     <p className="page-subtitle">Isi data pengirim, penerima, dan item barang</p>
                 </div>

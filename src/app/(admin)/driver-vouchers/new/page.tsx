@@ -3,8 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '../../layout';
-import { ArrowLeft, Save } from 'lucide-react';
+import { Save } from 'lucide-react';
 import CurrencyInput from '@/components/CurrencyInput';
+import PageBackButton from '@/components/PageBackButton';
 import type { BankAccount, Driver, DeliveryOrder, DriverVoucher, Order } from '@/lib/types';
 
 export default function NewDriverVoucherPage() {
@@ -154,7 +155,7 @@ export default function NewDriverVoucherPage() {
         <div>
             <div className="page-header">
                 <div className="page-header-left">
-                    <button type="button" className="btn-back" onClick={() => router.push('/driver-vouchers')}><ArrowLeft size={16} /></button>
+                    <PageBackButton href="/driver-vouchers" />
                     <h1 className="page-title">Buat Bon Supir Baru</h1>
                 </div>
             </div>

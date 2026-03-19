@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, ArrowRightLeft, FileDown, Printer, TrendingDown, TrendingUp } from 'lucide-react';
+import { useParams } from 'next/navigation';
+import { ArrowRightLeft, FileDown, Printer, TrendingDown, TrendingUp } from 'lucide-react';
 
+import PageBackButton from '@/components/PageBackButton';
 import { useToast } from '../../layout';
 import { exportToExcel } from '@/lib/export';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
@@ -50,7 +51,6 @@ function BankDetailLogo({ name, size = 48 }: { name: string; size?: number }) {
 
 export default function BankAccountDetailPage() {
     const params = useParams();
-    const router = useRouter();
     const { addToast } = useToast();
     const accountId = params.id as string;
     const [account, setAccount] = useState<BankAccount | null>(null);
@@ -173,8 +173,8 @@ export default function BankAccountDetailPage() {
     return (
         <div>
             <div className="page-header">
-                <div className="page-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <button className="btn-back" onClick={() => router.push('/bank-accounts')}><ArrowLeft size={16} /></button>
+                <div className="page-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <PageBackButton href="/bank-accounts" />
                     <BankDetailLogo name={account.bankName} size={44} />
                     <div>
                         <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>

@@ -6,7 +6,7 @@ import Link from 'next/link';
 import {
     LayoutDashboard, Package, Truck, Users, Layers, FileText, Wallet, Tags,
     BarChart3, Car, Wrench, AlertTriangle, User, Lock, Building2, UserCog,
-    ScrollText, ChevronLeft, Menu, LogOut, X, CheckCircle, XCircle, Info, AlertCircle, Landmark,
+    ScrollText, PanelLeftClose, PanelLeftOpen, Menu, LogOut, X, CheckCircle, XCircle, Info, AlertCircle, Landmark,
     UserCircle, Receipt
 } from 'lucide-react';
 import { matchesPathSegment } from '@/lib/pathname';
@@ -194,6 +194,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
 
     const menuGroups = getSidebarMenu(user.role);
+    const sidebarToggleLabel = isMobile
+        ? (mobileOpen ? 'Tutup menu navigasi' : 'Buka menu navigasi')
+        : (sidebarCollapsed ? 'Buka menu samping' : 'Ciutkan menu samping');
     const nonNavigableBreadcrumbs = new Set(['/fleet', '/settings']);
     const detailSegmentParents = new Set([
         'orders',
@@ -308,9 +311,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                                             setSidebarCollapsed(!sidebarCollapsed);
                                         }
                                     }}
-                                    aria-label="Toggle sidebar"
+                                    aria-label={sidebarToggleLabel}
+                                    title={sidebarToggleLabel}
                                 >
-                                    {isMobile ? (mobileOpen ? <X size={20} /> : <Menu size={20} />) : (sidebarCollapsed ? <Menu size={20} /> : <ChevronLeft size={20} />)}
+                                    {isMobile ? (mobileOpen ? <X size={20} /> : <Menu size={20} />) : (sidebarCollapsed ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />)}
+                                    {!isMobile && (
+                                        <span className="topbar-toggle-label">
+                                            {sidebarCollapsed ? 'Buka Menu' : 'Ciutkan Menu'}
+                                        </span>
+                                    )}
                                 </button>
 
                                 <nav className="breadcrumbs">

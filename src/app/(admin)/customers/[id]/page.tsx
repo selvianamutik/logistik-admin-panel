@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '../../layout';
-import { ArrowLeft, Edit, Package, DollarSign, Plus, Save, Trash2, X } from 'lucide-react';
+import { Edit, Package, DollarSign, Plus, Save, Trash2, X } from 'lucide-react';
 import { formatDate, formatCurrency, getReceivableNetAmount } from '@/lib/utils';
 import { formatCargoSummary, VOLUME_INPUT_UNIT_OPTIONS, WEIGHT_INPUT_UNIT_OPTIONS, type VolumeInputUnit, type WeightInputUnit } from '@/lib/measurement';
 import type { Customer, CustomerProduct, Order, FreightNota } from '@/lib/types';
+import PageBackButton from '@/components/PageBackButton';
 
 type CustomerProductForm = {
     code: string;
@@ -37,7 +38,6 @@ const DEFAULT_PRODUCT_FORM: CustomerProductForm = {
 
 export default function CustomerDetailPage() {
     const params = useParams();
-    const router = useRouter();
     const { addToast } = useToast();
     const customerId = params.id as string;
     const [customer, setCustomer] = useState<Customer | null>(null);
@@ -211,8 +211,8 @@ export default function CustomerDetailPage() {
     return (
         <div>
             <div className="page-header">
-                <div className="page-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <button className="btn-back" onClick={() => router.push('/customers')}><ArrowLeft size={16} /></button>
+                <div className="page-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <PageBackButton href="/customers" />
                     <h1 className="page-title">{customer.name}</h1>
                 </div>
                 <div className="page-actions">

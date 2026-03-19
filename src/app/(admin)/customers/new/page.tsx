@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '../../layout';
-import { ArrowLeft, Save } from 'lucide-react';
+import { Save } from 'lucide-react';
+import PageBackButton from '@/components/PageBackButton';
 
 export default function CustomerNewPage() {
     const router = useRouter();
@@ -43,7 +44,7 @@ export default function CustomerNewPage() {
         <div>
             <div className="page-header">
                 <div className="page-header-left">
-                    <button className="btn-back" onClick={() => router.push('/customers')}><ArrowLeft size={16} /></button>
+                    <PageBackButton href="/customers" />
                     <h1 className="page-title">Tambah Customer Baru</h1>
                 </div>
             </div>

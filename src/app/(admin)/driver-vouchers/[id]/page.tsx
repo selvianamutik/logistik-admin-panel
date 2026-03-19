@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, CheckCircle, Plus, Printer, Save, Trash2, X } from 'lucide-react';
+import { useParams } from 'next/navigation';
+import { CheckCircle, Plus, Printer, Save, Trash2, X } from 'lucide-react';
 
 import CurrencyInput from '@/components/CurrencyInput';
+import PageBackButton from '@/components/PageBackButton';
 import { useToast } from '../../layout';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
 import type { BankAccount, DriverVoucher, DriverVoucherItem } from '@/lib/types';
@@ -19,7 +20,6 @@ const STATUS_MAP: Record<string, { label: string; cls: string }> = {
 const EXPENSE_CATEGORIES = ['BBM / Solar', 'Tol & Parkir', 'Parkir', 'Makan', 'Menginap', 'Bongkar Muat', 'Perbaikan', 'Lain-lain'];
 
 export default function DriverVoucherDetailPage() {
-    const router = useRouter();
     const params = useParams();
     const { addToast } = useToast();
     const [voucher, setVoucher] = useState<DriverVoucher | null>(null);
@@ -280,8 +280,8 @@ export default function DriverVoucherDetailPage() {
     return (
         <div>
             <div className="page-header">
-                <div className="page-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <button className="btn-back" onClick={() => router.push('/driver-vouchers')}><ArrowLeft size={16} /></button>
+                <div className="page-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <PageBackButton href="/driver-vouchers" />
                     <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
                             <h1 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>{voucher.bonNumber}</h1>

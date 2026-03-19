@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Plus, Save, Trash2 } from 'lucide-react';
+import { Plus, Save, Trash2 } from 'lucide-react';
 
 import CurrencyInput from '@/components/CurrencyInput';
+import PageBackButton from '@/components/PageBackButton';
 import type { CompanyProfile, Customer, DeliveryOrder, DeliveryOrderItem, Order } from '@/lib/types';
 import { formatCurrency, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
 
@@ -315,11 +316,11 @@ export default function NewNotaPage() {
 
     return (
         <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
-                <button className="btn-back" onClick={() => router.push('/invoices')}>
-                    <ArrowLeft size={16} />
-                </button>
-                <h1 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>Buat Nota Ongkos Angkut</h1>
+            <div className="page-header">
+                <div className="page-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <PageBackButton href="/invoices" />
+                    <h1 className="page-title" style={{ margin: 0 }}>Buat Nota Ongkos Angkut</h1>
+                </div>
             </div>
 
             <div className="detail-grid">

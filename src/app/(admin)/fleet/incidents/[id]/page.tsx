@@ -1,16 +1,16 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { useToast } from '../../../layout';
-import { ArrowLeft, Printer, Save } from 'lucide-react';
+import { Printer, Save } from 'lucide-react';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
 import { formatDateTime, INCIDENT_STATUS_MAP, URGENCY_MAP, INCIDENT_TYPE_MAP } from '@/lib/utils';
 import type { Incident, IncidentActionLog } from '@/lib/types';
+import PageBackButton from '@/components/PageBackButton';
 
 export default function IncidentDetailPage() {
     const params = useParams();
-    const router = useRouter();
     const { addToast } = useToast();
     const incidentId = params.id as string;
     const [incident, setIncident] = useState<Incident | null>(null);
@@ -165,7 +165,7 @@ export default function IncidentDetailPage() {
         <div>
             <div className="page-header">
                 <div className="page-header-left">
-                    <button className="btn-back" onClick={() => router.push('/fleet/incidents')}><ArrowLeft size={16} /></button>
+                    <PageBackButton href="/fleet/incidents" />
                     <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                         {incident.incidentNumber}
                         <span className={`badge badge-${INCIDENT_STATUS_MAP[incident.status]?.color}`}><span className="badge-dot" /> {INCIDENT_STATUS_MAP[incident.status]?.label}</span>

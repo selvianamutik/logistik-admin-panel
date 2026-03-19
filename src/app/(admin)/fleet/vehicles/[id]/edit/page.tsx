@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Save } from 'lucide-react';
+import { Save } from 'lucide-react';
 
+import PageBackButton from '@/components/PageBackButton';
 import { useApp, useToast } from '../../../../layout';
 import { VEHICLE_STATUS_MAP } from '@/lib/utils';
 import type { Service, Vehicle, VehicleStatus } from '@/lib/types';
@@ -167,7 +168,7 @@ export default function VehicleEditPage() {
         <div>
             <div className="page-header">
                 <div className="page-header-left">
-                    <button className="btn-back" onClick={() => router.push(`/fleet/vehicles/${vehicleId}`)}><ArrowLeft size={16} /></button>
+                    <PageBackButton href={`/fleet/vehicles/${vehicleId}`} />
                     <h1 className="page-title">Edit Kendaraan</h1>
                 </div>
             </div>

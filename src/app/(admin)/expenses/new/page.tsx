@@ -3,8 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '../../layout';
-import { ArrowLeft, Save } from 'lucide-react';
+import { Save } from 'lucide-react';
 import CurrencyInput from '@/components/CurrencyInput';
+import PageBackButton from '@/components/PageBackButton';
 import type { ExpenseCategory, BankAccount, Vehicle } from '@/lib/types';
 
 export default function ExpenseNewPage() {
@@ -76,7 +77,7 @@ export default function ExpenseNewPage() {
         <div>
             <div className="page-header">
                 <div className="page-header-left">
-                    <button className="btn-back" onClick={() => router.push('/expenses')}><ArrowLeft size={16} /></button>
+                    <PageBackButton href="/expenses" />
                     <h1 className="page-title">Tambah Pengeluaran</h1>
                 </div>
             </div>

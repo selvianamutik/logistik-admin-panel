@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '../../layout';
-import { ArrowLeft, Printer, FileDown, Truck, Upload, Save, MapPin, Radio } from 'lucide-react';
+import { Printer, FileDown, Truck, Upload, Save, MapPin, Radio } from 'lucide-react';
 import CurrencyInput from '@/components/CurrencyInput';
+import PageBackButton from '@/components/PageBackButton';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
 import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatDate, formatDateTime, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
 import {
@@ -136,7 +137,6 @@ function buildDefaultActualDropDrafts(doData: DeliveryOrder | null, cargoItems: 
 
 export default function DODetailPage() {
     const params = useParams();
-    const router = useRouter();
     const { addToast } = useToast();
     const doId = params.id as string;
     const [doData, setDoData] = useState<DeliveryOrder | null>(null);
@@ -652,10 +652,8 @@ export default function DODetailPage() {
     return (
         <div>
             <div className="page-header">
-                <div className="page-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <button className="btn-back" onClick={() => router.push('/delivery-orders')}>
-                        <ArrowLeft size={16} />
-                    </button>
+                <div className="page-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <PageBackButton href="/delivery-orders" />
                     <div>
                         <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                             {formatDeliveryOrderDisplayNumber(doData)}
