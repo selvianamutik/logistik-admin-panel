@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Plus, Save, Trash2 } from 'lucide-react';
 
+import CurrencyInput from '@/components/CurrencyInput';
 import type { CompanyProfile, Customer, DeliveryOrder, DeliveryOrderItem, Order } from '@/lib/types';
 import { formatCurrency, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
 
@@ -608,11 +609,10 @@ export default function NewNotaPage() {
                                         />
                                     </td>
                                     <td>
-                                        <input
-                                            type="number"
-                                            className="form-input"
-                                            value={row.tarip || ''}
-                                            onChange={event => updateRow(row.id, 'tarip', Number(event.target.value))}
+                                        <CurrencyInput
+                                            value={row.tarip}
+                                            onValueChange={value => updateRow(row.id, 'tarip', value)}
+                                            placeholder="Ketik tarif"
                                         />
                                     </td>
                                     <td style={{ fontWeight: 600, color: 'var(--color-primary)' }}>{formatCurrency(row.uangRp)}</td>

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '../../layout';
 import { ArrowLeft, Save } from 'lucide-react';
+import CurrencyInput from '@/components/CurrencyInput';
 import type { BankAccount, Driver, DeliveryOrder, DriverVoucher, Order } from '@/lib/types';
 
 export default function NewDriverVoucherPage() {
@@ -216,15 +217,14 @@ export default function NewDriverVoucherPage() {
                     <div className="form-row">
                         <div className="form-group">
                             <label className="form-label">Uang Jalan Awal <span className="required">*</span></label>
-                            <input type="number" className="form-input" placeholder="0" value={form.cashGiven || ''} onChange={e => setForm({ ...form, cashGiven: Number(e.target.value) })} />
+                            <CurrencyInput value={form.cashGiven} onValueChange={value => setForm({ ...form, cashGiven: value })} placeholder="Ketik uang jalan awal" />
                         </div>
                         <div className="form-group">
                             <label className="form-label">Upah Trip</label>
-                            <input
-                                type="number"
-                                className="form-input"
+                            <CurrencyInput
                                 placeholder="Pilih DO"
-                                value={selectedTripFee || ''}
+                                value={selectedTripFee}
+                                onValueChange={() => {}}
                                 readOnly
                             />
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>

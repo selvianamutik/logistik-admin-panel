@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Search, Plus, FileText, Printer, FileDown } from 'lucide-react';
+import CurrencyInput from '@/components/CurrencyInput';
 import { formatDate, formatCurrency, getReceivableNetAmount, PAYMENT_METHOD_MAP } from '@/lib/utils';
 import { buildFreightNotaPrintDocument, openBrandedPrint, fetchCompanyProfile, formatFreightNotaDisplayNumber } from '@/lib/print';
 import { exportFreightNotaDetail, exportInvoices } from '@/lib/export';
@@ -431,7 +432,7 @@ export default function NotaListPage() {
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Total Penerimaan (Rp)</label>
-                                    <input type="number" className="form-input" value={receiptAmount || ''} onChange={e => setReceiptAmount(Number(e.target.value))} disabled={receiving} />
+                                    <CurrencyInput value={receiptAmount} onValueChange={value => setReceiptAmount(value)} disabled={receiving} placeholder="Ketik total receipt" />
                                 </div>
                                 <div className="form-group" style={{ alignSelf: 'end' }}>
                                     <button className="btn btn-secondary" type="button" onClick={() => setReceiptAmount(totalAllocated)} disabled={receiving || totalAllocated <= 0}>Samakan Dengan Total Alokasi</button>
@@ -464,7 +465,7 @@ export default function NotaListPage() {
                                                         <div className="font-semibold">{formatCurrency(item.remainingAmount)}</div>
                                                         <button className="table-action-btn" type="button" onClick={() => updateReceiptAllocation(item.nota._id, item.remainingAmount)} disabled={receiving}>Isi penuh</button>
                                                     </td>
-                                                    <td><input type="number" className="form-input" value={receiptAllocations[item.nota._id] || ''} onChange={e => updateReceiptAllocation(item.nota._id, Number(e.target.value))} disabled={receiving} /></td>
+                                                    <td><CurrencyInput value={receiptAllocations[item.nota._id] || 0} onValueChange={value => updateReceiptAllocation(item.nota._id, value)} disabled={receiving} placeholder="Alokasi" /></td>
                                                 </tr>
                                             ))
                                         ) : (

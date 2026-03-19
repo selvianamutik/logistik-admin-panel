@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, CheckCircle, Plus, Printer, Save, Trash2, X } from 'lucide-react';
 
+import CurrencyInput from '@/components/CurrencyInput';
 import { useToast } from '../../layout';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
 import type { BankAccount, DriverVoucher, DriverVoucherItem } from '@/lib/types';
@@ -410,7 +411,7 @@ export default function DriverVoucherDetailPage() {
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Jumlah <span className="required">*</span></label>
-                                <input type="number" className="form-input" value={itemForm.amount || ''} onChange={event => setItemForm({ ...itemForm, amount: Number(event.target.value) })} placeholder="0" />
+                                <CurrencyInput value={itemForm.amount} onValueChange={value => setItemForm({ ...itemForm, amount: value })} placeholder="Ketik nominal biaya" />
                             </div>
                         </div>
                         <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowAddItem(false)} disabled={savingItem}>Batal</button><button className="btn btn-primary" onClick={handleAddItem} disabled={savingItem}><Save size={16} /> {savingItem ? 'Menyimpan...' : 'Simpan'}</button></div>

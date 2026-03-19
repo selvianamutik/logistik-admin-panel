@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useToast } from '../../layout';
 import { ArrowLeft, Printer, DollarSign, Landmark, Trash2, FileDown } from 'lucide-react';
+import CurrencyInput from '@/components/CurrencyInput';
 import { buildFreightNotaPrintDocument, fetchCompanyProfile, formatFreightNotaDisplayNumber, openBrandedPrint } from '@/lib/print';
 import { exportFreightNotaDetail } from '@/lib/export';
 import { formatDate, formatCurrency, getReceivableNetAmount, INVOICE_ADJUSTMENT_KIND_MAP, PAYMENT_METHOD_MAP } from '@/lib/utils';
@@ -441,7 +442,7 @@ export default function NotaDetailPage() {
                                 <button className="btn btn-sm btn-ghost" onClick={() => setPayAmount(remaining)} style={{ fontSize: '0.72rem' }} disabled={paying}>Bayar penuh</button>
                             </div>
                             <div className="form-group"><label className="form-label">Tanggal</label><input type="date" className="form-input" value={payDate} onChange={e => setPayDate(e.target.value)} disabled={paying} /></div>
-                            <div className="form-group"><label className="form-label">Nominal (Rp)</label><input type="number" className="form-input" value={payAmount || ''} onChange={e => setPayAmount(Number(e.target.value))} disabled={paying} /></div>
+                            <div className="form-group"><label className="form-label">Nominal (Rp)</label><CurrencyInput value={payAmount} onValueChange={value => setPayAmount(value)} disabled={paying} placeholder="Ketik nominal pembayaran" /></div>
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Metode</label>
                                     <select className="form-select" value={payMethod} onChange={e => setPayMethod(e.target.value)} disabled={paying}>
@@ -487,7 +488,7 @@ export default function NotaDetailPage() {
                                         {Object.entries(INVOICE_ADJUSTMENT_KIND_MAP).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                                     </select>
                                 </div>
-                                <div className="form-group"><label className="form-label">Nominal (Rp)</label><input type="number" className="form-input" value={adjustAmount || ''} onChange={e => setAdjustAmount(Number(e.target.value))} disabled={adjusting} /></div>
+                                <div className="form-group"><label className="form-label">Nominal (Rp)</label><CurrencyInput value={adjustAmount} onValueChange={value => setAdjustAmount(value)} disabled={adjusting} placeholder="Ketik nominal potongan" /></div>
                             </div>
                             <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--color-gray-600)', marginBottom: '1rem' }}>
                                 Klaim/potongan akan mengurangi nilai netto tagihan. Ini bukan pembayaran masuk dan tidak membuat mutasi kas/bank.

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Plus, Save, Trash2 } from 'lucide-react';
 
+import CurrencyInput from '@/components/CurrencyInput';
 import type { DeliveryOrder, DeliveryOrderItem, Driver } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
 
@@ -493,12 +494,10 @@ export default function NewBoronganPage() {
                                         />
                                     </td>
                                     <td>
-                                        <input
-                                            type="number"
-                                            className="form-input"
-                                            value={row.tarip || ''}
-                                            onChange={event => updateRow(row.id, 'tarip', Number(event.target.value))}
-                                            placeholder="Upah per DO"
+                                        <CurrencyInput
+                                            value={row.tarip}
+                                            onValueChange={value => updateRow(row.id, 'tarip', value)}
+                                            placeholder="Ketik upah trip"
                                         />
                                     </td>
                                     <td style={{ fontWeight: 600, color: 'var(--color-primary)' }}>{formatCurrency(row.uangRp)}</td>

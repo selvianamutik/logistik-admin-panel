@@ -11,6 +11,7 @@ import {
   Printer,
   Trash2,
 } from "lucide-react";
+import CurrencyInput from "@/components/CurrencyInput";
 import { exportToExcel } from "@/lib/export";
 import { openBrandedPrint } from "@/lib/print";
 import type { BankAccount, CompanyProfile } from "@/lib/types";
@@ -812,16 +813,15 @@ export default function BankAccountsPage() {
               {!editAccount && (
                 <div className="form-group">
                   <label className="form-label">Saldo Awal (Rp)</label>
-                  <input
-                    className="form-input"
-                    type="number"
-                    value={form.initialBalance || ""}
-                    onChange={(event) =>
+                  <CurrencyInput
+                    value={form.initialBalance}
+                    onValueChange={(value) =>
                       setForm({
                         ...form,
-                        initialBalance: Number(event.target.value),
+                        initialBalance: value,
                       })
                     }
+                    placeholder="Ketik saldo awal"
                   />
                 </div>
               )}
@@ -938,17 +938,16 @@ export default function BankAccountsPage() {
                   <label className="form-label">
                     Jumlah (Rp) <span className="required">*</span>
                   </label>
-                  <input
-                    className="form-input"
-                    type="number"
-                    value={transferForm.amount || ""}
+                  <CurrencyInput
+                    value={transferForm.amount}
                     disabled={transferring}
-                    onChange={(event) =>
+                    onValueChange={(value) =>
                       setTransferForm({
                         ...transferForm,
-                        amount: Number(event.target.value),
+                        amount: value,
                       })
                     }
+                    placeholder="Ketik nominal transfer"
                   />
                 </div>
                 <div className="form-group">

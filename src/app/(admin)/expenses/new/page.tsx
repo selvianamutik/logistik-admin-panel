@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '../../layout';
 import { ArrowLeft, Save } from 'lucide-react';
+import CurrencyInput from '@/components/CurrencyInput';
 import type { ExpenseCategory, BankAccount, Vehicle } from '@/lib/types';
 
 export default function ExpenseNewPage() {
@@ -102,7 +103,7 @@ export default function ExpenseNewPage() {
                         <div className="form-row">
                             <div className="form-group">
                                 <label className="form-label">Jumlah (Rp) <span className="required">*</span></label>
-                                <input type="number" className="form-input" value={form.amount || ''} onChange={e => setForm({ ...form, amount: Number(e.target.value) })} placeholder="0" />
+                                <CurrencyInput value={form.amount} onValueChange={value => setForm({ ...form, amount: value })} placeholder="Ketik nominal pengeluaran" />
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Privacy Level</label>

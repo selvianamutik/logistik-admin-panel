@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useToast, useApp } from '../layout';
 import { Plus, Search, Wallet, Save, X, FileDown, Printer } from 'lucide-react';
+import CurrencyInput from '@/components/CurrencyInput';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { exportExpenses } from '@/lib/export';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
@@ -264,7 +265,7 @@ export default function ExpensesPage() {
                             </div>
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Tanggal</label><input type="date" className="form-input" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} disabled={saving} /></div>
-                                <div className="form-group"><label className="form-label">Nominal <span className="required">*</span></label><input type="number" className="form-input" value={form.amount || ''} onChange={e => setForm({ ...form, amount: Number(e.target.value) })} disabled={saving} /></div>
+                                <div className="form-group"><label className="form-label">Nominal <span className="required">*</span></label><CurrencyInput value={form.amount} onValueChange={value => setForm({ ...form, amount: value })} disabled={saving} placeholder="Ketik nominal pengeluaran" /></div>
                             </div>
                             <div className="form-group"><label className="form-label">Catatan/Deskripsi</label><textarea className="form-textarea" rows={2} value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} disabled={saving} /></div>
                             <div className="form-group"><label className="form-label">Kendaraan Terkait</label>

@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '../../layout';
 import { ArrowLeft, Printer, FileDown, Truck, Upload, Save, MapPin, Radio } from 'lucide-react';
+import CurrencyInput from '@/components/CurrencyInput';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
 import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatDate, formatDateTime, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
 import {
@@ -895,7 +896,7 @@ export default function DODetailPage() {
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Tarif Borongan per DO (Rp) <span className="required">*</span></label>
-                                    <input type="number" className="form-input" value={taripBorongan || ''} onChange={e => setTaripBorongan(Number(e.target.value))} placeholder="Contoh: 50" />
+                                    <CurrencyInput value={taripBorongan} onValueChange={value => setTaripBorongan(value)} placeholder="Ketik tarif borongan per DO" />
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Keterangan</label>

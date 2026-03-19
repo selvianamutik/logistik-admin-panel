@@ -1078,6 +1078,11 @@ tbody td {
   color: var(--color-gray-400);
 }
 
+.currency-input {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .form-input.error,
 .form-select.error {
   border-color: var(--color-danger);
