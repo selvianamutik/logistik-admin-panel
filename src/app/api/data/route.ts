@@ -16,7 +16,6 @@ import {
 import { ensureSameOriginRequest } from '@/lib/api/request-security';
 import {
     handleBoronganPayment,
-    handleDriverBoronganCreate,
     handleDriverVoucherCreate,
     handleDriverVoucherIssueRepair,
     handleDriverVoucherItemCreate,
@@ -424,7 +423,10 @@ export async function POST(request: Request) {
         }
 
         if (entity === 'driver-borongans' && action === 'create-with-items') {
-            return handleDriverBoronganCreate(session, data, addAuditLog);
+            return NextResponse.json(
+                { error: 'Slip borongan baru sudah dinonaktifkan. Gunakan Bon Supir per DO/trip untuk settlement aktif.' },
+                { status: 409 }
+            );
         }
 
         if (entity === 'driver-vouchers' && action === 'settle') {

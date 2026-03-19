@@ -131,13 +131,13 @@ export default function DashboardPage() {
                     </div>
                 </Link>
 
-                <Link href="/borongan" style={{ textDecoration: 'none' }}>
+                <Link href="/driver-vouchers" style={{ textDecoration: 'none' }}>
                     <div className="kpi-card">
                         <div className="kpi-icon success"><DollarSign size={24} /></div>
                         <div className="kpi-content">
-                            <div className="kpi-label">Borongan Belum Dibayar</div>
-                            <div className="kpi-value">{data.boronganStats.unpaid}</div>
-                            {isOwner && <div className="kpi-sub">{formatCurrency(data.boronganStats.totalOutstanding)} outstanding</div>}
+                            <div className="kpi-label">Bon Trip Belum Settle</div>
+                            <div className="kpi-value">{data.voucherStats.unsettled}</div>
+                            {isOwner && <div className="kpi-sub">{formatCurrency(data.voucherStats.totalIssued)} kas keluar</div>}
                         </div>
                     </div>
                 </Link>
@@ -252,14 +252,6 @@ export default function DashboardPage() {
                                     </div>
                                 </li>
                             )}
-                            {data.boronganStats.unpaid > 0 && (
-                                <li className="reminder-item">
-                                    <div className="reminder-icon warning"><DollarSign size={16} /></div>
-                                    <div>
-                                        <strong>{data.boronganStats.unpaid} slip borongan</strong> belum dibayar ({formatCurrency(data.boronganStats.totalOutstanding)})
-                                    </div>
-                                </li>
-                            )}
                             {data.voucherStats.unsettled > 0 && (
                                 <li className="reminder-item">
                                     <div className="reminder-icon info"><DollarSign size={16} /></div>
@@ -286,7 +278,6 @@ export default function DashboardPage() {
                             )}
                             {data.orderStats.onHold === 0 &&
                                 data.notaStats.unpaid === 0 &&
-                                data.boronganStats.unpaid === 0 &&
                                 data.voucherStats.unsettled === 0 &&
                                 data.fleetStats.maintenanceDue === 0 &&
                                 data.fleetStats.openIncidents === 0 && (

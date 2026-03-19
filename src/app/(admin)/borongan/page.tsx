@@ -58,8 +58,8 @@ export default function BoronganListPage() {
                     <p className="page-subtitle">Modul lama. Workflow aktif gaji trip sekarang dipusatkan di Bon Supir / settlement trip.</p>
                 </div>
                 <div className="page-actions">
-                    <button type="button" className="btn btn-primary" onClick={() => router.push('/borongan/new')}>
-                        <Plus size={18} /> Buat Slip Legacy
+                    <button type="button" className="btn btn-primary" onClick={() => router.push('/driver-vouchers/new')}>
+                        <Plus size={18} /> Buka Bon Trip
                     </button>
                 </div>
             </div>
