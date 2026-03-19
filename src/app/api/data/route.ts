@@ -122,6 +122,7 @@ async function getDashboardSummary(session: Session): Promise<DashboardSummary> 
         orderStats,
         doStats,
         unpaidNotas,
+        notaPayments,
         unpaidBorongans,
         openVouchers,
         fleetStats,
@@ -139,8 +140,11 @@ async function getDashboardSummary(session: Session): Promise<DashboardSummary> 
             "total": count(*[_type == "deliveryOrder"]),
             "onDelivery": count(*[_type == "deliveryOrder" && status == "ON_DELIVERY"])
         }`),
-        client.fetch<Array<{ totalAmount?: number; totalAdjustmentAmount?: number; netAmount?: number }>>(
-            `*[_type == "freightNota" && status != "PAID"]{ totalAmount, totalAdjustmentAmount, netAmount }`
+        client.fetch<Array<{ _id: string; totalAmount?: number; totalAdjustmentAmount?: number; netAmount?: number }>>(
+            `*[_type == "freightNota" && status != "PAID"]{ _id, totalAmount, totalAdjustmentAmount, netAmount }`
+        ),
+        client.fetch<Array<{ invoiceRef?: string; amount?: number }>>(
+            `*[_type == "payment" && defined(invoiceRef)]{ invoiceRef, amount }`
         ),
         client.fetch<Array<{ totalAmount?: number }>>(`*[_type == "driverBorongan" && status != "PAID"]{ totalAmount }`),
         client.fetch<Array<{ cashGiven?: number }>>(`*[_type == "driverVoucher" && status != "SETTLED"]{ cashGiven }`),
@@ -166,15 +170,19 @@ async function getDashboardSummary(session: Session): Promise<DashboardSummary> 
         }`),
     ]);
 
-    const notaOutstanding = unpaidNotas.reduce(
-        (sum, nota) => {
-            const grossAmount = typeof nota.totalAmount === 'number' ? nota.totalAmount : 0;
-            const adjustmentAmount = typeof nota.totalAdjustmentAmount === 'number' ? nota.totalAdjustmentAmount : 0;
-            const netAmount = typeof nota.netAmount === 'number' ? nota.netAmount : grossAmount - adjustmentAmount;
-            return sum + Math.max(netAmount, 0);
-        },
-        0
-    );
+    const notaPaymentTotals = notaPayments.reduce<Record<string, number>>((acc, payment) => {
+        if (typeof payment.invoiceRef === 'string' && payment.invoiceRef) {
+            acc[payment.invoiceRef] = (acc[payment.invoiceRef] || 0) + (typeof payment.amount === 'number' ? payment.amount : 0);
+        }
+        return acc;
+    }, {});
+    const notaOutstanding = unpaidNotas.reduce((sum, nota) => {
+        const grossAmount = typeof nota.totalAmount === 'number' ? nota.totalAmount : 0;
+        const adjustmentAmount = typeof nota.totalAdjustmentAmount === 'number' ? nota.totalAdjustmentAmount : 0;
+        const netAmount = typeof nota.netAmount === 'number' ? nota.netAmount : grossAmount - adjustmentAmount;
+        const paidAmount = notaPaymentTotals[nota._id] || 0;
+        return sum + Math.max(netAmount - paidAmount, 0);
+    }, 0);
     const boronganOutstanding = unpaidBorongans.reduce(
         (sum, borongan) => sum + (typeof borongan.totalAmount === 'number' ? borongan.totalAmount : 0),
         0

@@ -82,6 +82,22 @@ export function getReceivableNetAmount(value: {
     );
 }
 
+export function getReceivableRemainingAmount(
+    value: {
+        totalAmount?: number | null;
+        totalAdjustmentAmount?: number | null;
+        netAmount?: number | null;
+    },
+    totalPaid?: number | null
+) {
+    const paidAmount =
+        typeof totalPaid === 'number' && Number.isFinite(totalPaid)
+            ? Math.max(totalPaid, 0)
+            : 0;
+
+    return Math.max(getReceivableNetAmount(value) - paidAmount, 0);
+}
+
 // ── Status labels & colors ──
 export const ORDER_STATUS_MAP: Record<string, { label: string; color: string }> = {
     OPEN: { label: 'Belum Terkirim', color: 'info' },

@@ -11,7 +11,11 @@ import {
 } from "lucide-react";
 import { useToast } from "../layout";
 import { openBrandedPrint } from "@/lib/print";
-import { formatCurrency, formatDate, getReceivableNetAmount } from "@/lib/utils";
+import {
+  formatCurrency,
+  formatDate,
+  getReceivableRemainingAmount,
+} from "@/lib/utils";
 import { exportToExcel } from "@/lib/export";
 import type {
   BankAccount,
@@ -136,18 +140,35 @@ export default function ReportsPage() {
     0,
   );
   const netProfit = totalRevenue - totalExpense;
+  const paymentTotalsByInvoice = payments.reduce<Record<string, number>>(
+    (acc, payment) => {
+      acc[payment.invoiceRef] = (acc[payment.invoiceRef] || 0) + payment.amount;
+      return acc;
+    },
+    {},
+  );
   const legacyInvoicesInPeriod = invoices.filter((item) =>
     inPeriod(item.issueDate),
   );
   const legacyInvoiceOutstanding = legacyInvoicesInPeriod
     .filter((item) => item.status !== "PAID")
-    .reduce((sum, item) => sum + item.totalAmount, 0);
+    .reduce(
+      (sum, item) =>
+        sum +
+        getReceivableRemainingAmount(item, paymentTotalsByInvoice[item._id]),
+      0,
+    );
   const totalNotaIssued = freightNotas
     .filter((item) => inPeriod(item.issueDate))
     .reduce((sum, item) => sum + item.totalAmount, 0);
   const totalNotaOutstanding = freightNotas
     .filter((item) => item.status !== "PAID" && inPeriod(item.issueDate))
-    .reduce((sum, item) => sum + getReceivableNetAmount(item), 0);
+    .reduce(
+      (sum, item) =>
+        sum +
+        getReceivableRemainingAmount(item, paymentTotalsByInvoice[item._id]),
+      0,
+    );
   const openDriverVouchers = driverVouchers
     .filter((item) => item.status !== "SETTLED")
     .sort((a, b) => b.issuedDate.localeCompare(a.issuedDate));
