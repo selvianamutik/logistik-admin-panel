@@ -77,13 +77,25 @@ async function main() {
         "customerReceipts": *[_type == "customerReceipt"]{ _id, receiptNumber, totalAmount, allocationCount, customerRef, customerName, method, bankAccountRef },
         "invoiceAdjustments": *[_type == "invoiceAdjustment"]{ _id, invoiceRef, amount, status },
         "borongans": *[_type == "driverBorongan"]{ _id, boronganNumber, totalAmount, status },
+        "driverBoronganItems": *[_type == "driverBoronganItem"]{ _id, boronganRef, doRef, doNumber },
         "driverVouchers": *[_type == "driverVoucher"]{
             _id, bonNumber, status, issuedDate, cashGiven, totalSpent, driverFeeAmount, totalClaimAmount, balance,
-            issueBankRef, settlementBankRef
+            issueBankRef, settlementBankRef,
+            "deliveryOrderRef": coalesce(deliveryOrderRef._ref, deliveryOrderRef),
+            doNumber,
+            "driverRef": coalesce(driverRef._ref, driverRef),
+            "vehicleRef": coalesce(vehicleRef._ref, vehicleRef)
         },
         "driverVoucherItems": *[_type == "driverVoucherItem"]{ _id, voucherRef, category, amount, expenseDate },
         "expenses": *[_type == "expense"]{
             _id, amount, date, bankAccountRef, boronganRef, voucherRef, categoryName
+        },
+        "deliveryOrders": *[_type == "deliveryOrder"]{
+            _id,
+            doNumber,
+            "driverRef": coalesce(driverRef._ref, driverRef),
+            "vehicleRef": coalesce(vehicleRef._ref, vehicleRef),
+            taripBorongan
         },
         "bankAccounts": *[_type == "bankAccount"]{ _id, bankName, initialBalance, currentBalance, active },
         "bankTransactions": *[_type == "bankTransaction"]{
@@ -196,6 +208,12 @@ async function main() {
         data.bankTransactions.filter(tx => tx.relatedVoucherRef),
         tx => tx.relatedVoucherRef
     );
+    const deliveryOrderMap = new Map(data.deliveryOrders.map(item => [item._id, item]));
+    const boronganDoRefs = new Set(
+        data.driverBoronganItems
+            .map(item => item.doRef)
+            .filter(Boolean)
+    );
 
     for (const voucher of data.driverVouchers) {
         const items = voucherItemGroups.get(voucher._id) || [];
@@ -208,6 +226,27 @@ async function main() {
 
         if (!voucher.issueBankRef) {
             voucherFindings.push(`Bon ${voucher.bonNumber} tidak punya rekening sumber`);
+        }
+        if (!voucher.deliveryOrderRef) {
+            voucherFindings.push(`Bon ${voucher.bonNumber} tidak tertaut ke DO / trip`);
+        }
+        const relatedDeliveryOrder = voucher.deliveryOrderRef ? deliveryOrderMap.get(voucher.deliveryOrderRef) : null;
+        if (voucher.deliveryOrderRef && !relatedDeliveryOrder) {
+            voucherFindings.push(`Bon ${voucher.bonNumber} mengarah ke DO yang tidak ada (${voucher.deliveryOrderRef})`);
+        }
+        if (relatedDeliveryOrder) {
+            if (voucher.driverRef && relatedDeliveryOrder.driverRef && voucher.driverRef !== relatedDeliveryOrder.driverRef) {
+                voucherFindings.push(`Bon ${voucher.bonNumber} punya supir berbeda dari DO ${relatedDeliveryOrder.doNumber || voucher.deliveryOrderRef}`);
+            }
+            if (voucher.vehicleRef && relatedDeliveryOrder.vehicleRef && voucher.vehicleRef !== relatedDeliveryOrder.vehicleRef) {
+                voucherFindings.push(`Bon ${voucher.bonNumber} punya kendaraan berbeda dari DO ${relatedDeliveryOrder.doNumber || voucher.deliveryOrderRef}`);
+            }
+            if ((voucher.driverFeeAmount || 0) !== (relatedDeliveryOrder.taripBorongan || 0)) {
+                voucherFindings.push(`Bon ${voucher.bonNumber} upah trip ${fmtCurrency(voucher.driverFeeAmount)} tidak cocok dengan tarif DO ${fmtCurrency(relatedDeliveryOrder.taripBorongan)}`);
+            }
+        }
+        if (voucher.deliveryOrderRef && boronganDoRefs.has(voucher.deliveryOrderRef)) {
+            voucherFindings.push(`Bon ${voucher.bonNumber} masih bentrok dengan slip borongan pada DO yang sama`);
         }
         if ((voucher.totalSpent || 0) !== computedSpent) {
             voucherFindings.push(`Bon ${voucher.bonNumber} totalSpent ${fmtCurrency(voucher.totalSpent)} tidak cocok dengan item ${fmtCurrency(computedSpent)}`);

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '../../layout';
 import { ArrowLeft, Save } from 'lucide-react';
-import type { BankAccount, Driver, DeliveryOrder, Order, Vehicle } from '@/lib/types';
+import type { BankAccount, Driver, DeliveryOrder, DriverVoucher, Order } from '@/lib/types';
 
 export default function NewDriverVoucherPage() {
     const router = useRouter();
@@ -12,19 +12,16 @@ export default function NewDriverVoucherPage() {
     const [drivers, setDrivers] = useState<Driver[]>([]);
     const [dos, setDos] = useState<DeliveryOrder[]>([]);
     const [orders, setOrders] = useState<Order[]>([]);
-    const [vehicles, setVehicles] = useState<Vehicle[]>([]);
     const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+    const [usedVoucherDoRefs, setUsedVoucherDoRefs] = useState<string[]>([]);
+    const [usedBoronganDoRefs, setUsedBoronganDoRefs] = useState<string[]>([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [form, setForm] = useState({
-        driverRef: '',
         deliveryOrderRef: '',
-        vehicleRef: '',
-        route: '',
         issueBankRef: '',
         issuedDate: new Date().toISOString().split('T')[0],
         cashGiven: 0,
-        driverFeeAmount: 0,
         notes: '',
     });
 
@@ -42,14 +39,24 @@ export default function NewDriverVoucherPage() {
             fetchEntity<Driver[]>('/api/data?entity=drivers'),
             fetchEntity<DeliveryOrder[]>('/api/data?entity=delivery-orders'),
             fetchEntity<Order[]>('/api/data?entity=orders'),
-            fetchEntity<Vehicle[]>('/api/data?entity=vehicles'),
             fetchEntity<BankAccount[]>('/api/data?entity=bank-accounts'),
-        ]).then(([driverRows, deliveryOrders, orderRows, vehicleRows, accountRows]) => {
+            fetchEntity<DriverVoucher[]>('/api/data?entity=driver-vouchers'),
+            fetchEntity<Array<{ doRef?: string }>>('/api/data?entity=driver-borongan-items'),
+        ]).then(([driverRows, deliveryOrders, orderRows, accountRows, voucherRows, boronganItemRows]) => {
             setDrivers((driverRows || []).filter((driver) => driver.active !== false));
             setDos((deliveryOrders || []).filter((deliveryOrder) => ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status)));
             setOrders(orderRows || []);
-            setVehicles((vehicleRows || []).filter((vehicle) => vehicle.status !== 'SOLD' && vehicle.status !== 'OUT_OF_SERVICE'));
             setBankAccounts((accountRows || []).filter((account) => account.active !== false));
+            setUsedVoucherDoRefs(
+                (voucherRows || [])
+                    .map(voucher => voucher.deliveryOrderRef)
+                    .filter((value): value is string => Boolean(value))
+            );
+            setUsedBoronganDoRefs(
+                (boronganItemRows || [])
+                    .map(item => item.doRef)
+                    .filter((value): value is string => Boolean(value))
+            );
         }).catch(error => {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat form bon supir');
         }).finally(() => {
@@ -57,51 +64,36 @@ export default function NewDriverVoucherPage() {
         });
     }, [addToast]);
 
-    const handleDOChange = (doId: string) => {
-        const doItem = dos.find((deliveryOrder) => deliveryOrder._id === doId);
-        const sourceOrder = orders.find((order) => order._id === doItem?.orderRef);
-        const inferredRoute = [
-            doItem?.pickupAddress || sourceOrder?.pickupAddress,
-            doItem?.receiverAddress || sourceOrder?.receiverAddress,
-        ].filter(Boolean).join(' -> ');
-        setForm(prev => ({
-            ...prev,
-            deliveryOrderRef: doId,
-            vehicleRef: doId ? (doItem?.vehicleRef || '') : '',
-            driverRef: doItem?.driverRef || prev.driverRef,
-            route: doId ? inferredRoute : '',
-            driverFeeAmount: doId ? Number(doItem?.taripBorongan || 0) : 0,
-        }));
-    };
+    const eligibleDos = dos
+        .filter(deliveryOrder =>
+            Boolean(deliveryOrder.driverRef) &&
+            Boolean(deliveryOrder.vehicleRef || deliveryOrder.vehiclePlate) &&
+            Number(deliveryOrder.taripBorongan || 0) > 0 &&
+            !usedVoucherDoRefs.includes(deliveryOrder._id) &&
+            !usedBoronganDoRefs.includes(deliveryOrder._id)
+        )
+        .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
-    const handleDriverChange = (driverRef: string) => {
-        setForm(prev => {
-            const selectedDo = dos.find((deliveryOrder) => deliveryOrder._id === prev.deliveryOrderRef);
-            if (selectedDo?.driverRef && selectedDo.driverRef !== driverRef) {
-                return {
-                    ...prev,
-                    driverRef,
-                    deliveryOrderRef: '',
-                    vehicleRef: '',
-                    route: '',
-                    driverFeeAmount: 0,
-                };
-            }
-
-            return {
-                ...prev,
-                driverRef,
-            };
-        });
-    };
-
-    const filteredDos = form.driverRef
-        ? dos.filter((deliveryOrder) => !deliveryOrder.driverRef || deliveryOrder.driverRef === form.driverRef)
-        : dos;
+    const selectedDo = eligibleDos.find((deliveryOrder) => deliveryOrder._id === form.deliveryOrderRef)
+        || dos.find((deliveryOrder) => deliveryOrder._id === form.deliveryOrderRef)
+        || null;
+    const selectedOrder = selectedDo?.orderRef
+        ? orders.find((order) => order._id === selectedDo.orderRef)
+        : null;
+    const selectedDriver = selectedDo?.driverRef
+        ? drivers.find((driver) => driver._id === selectedDo.driverRef)
+        : null;
+    const selectedDriverName = selectedDo?.driverName || selectedDriver?.name || '-';
+    const selectedVehicleLabel = selectedDo?.vehiclePlate || '-';
+    const selectedRoute = [
+        selectedDo?.pickupAddress || selectedOrder?.pickupAddress,
+        selectedDo?.receiverAddress || selectedOrder?.receiverAddress,
+    ].filter(Boolean).join(' -> ') || '-';
+    const selectedTripFee = Number(selectedDo?.taripBorongan || 0);
 
     const handleSave = async () => {
-        if (!form.driverRef) {
-            addToast('error', 'Pilih supir terlebih dahulu');
+        if (!form.deliveryOrderRef) {
+            addToast('error', 'Pilih DO / trip terlebih dahulu');
             return;
         }
         if (!form.cashGiven || form.cashGiven <= 0) {
@@ -112,31 +104,22 @@ export default function NewDriverVoucherPage() {
             addToast('error', 'Pilih rekening sumber bon');
             return;
         }
+        if (!selectedDo) {
+            addToast('error', 'DO trip tidak valid atau sudah tidak bisa dipakai');
+            return;
+        }
+        if (selectedTripFee <= 0) {
+            addToast('error', 'Isi upah trip pada DO dulu sebelum membuat bon');
+            return;
+        }
 
         setSaving(true);
 
-        const driver = drivers.find((item) => item._id === form.driverRef);
-        const doItem = dos.find((item) => item._id === form.deliveryOrderRef);
-        const vehicle = vehicles.find((item) => item._id === form.vehicleRef);
-        const issueBank = bankAccounts.find((item) => item._id === form.issueBankRef);
-
         const voucherData = {
-            driverRef: form.driverRef,
-            driverName: driver?.name || '',
-            deliveryOrderRef: form.deliveryOrderRef || undefined,
-            doNumber: doItem?.doNumber || undefined,
-            vehicleRef: form.vehicleRef || undefined,
-            vehiclePlate: vehicle?.plateNumber || doItem?.vehiclePlate || undefined,
-            route: form.route || undefined,
+            deliveryOrderRef: form.deliveryOrderRef,
             issuedDate: form.issuedDate,
             cashGiven: form.cashGiven,
-            driverFeeAmount: form.driverFeeAmount,
             issueBankRef: form.issueBankRef,
-            issueBankName: issueBank?.bankName || undefined,
-            totalSpent: 0,
-            totalClaimAmount: form.driverFeeAmount,
-            balance: form.cashGiven - form.driverFeeAmount,
-            status: 'ISSUED',
             notes: form.notes || undefined,
         };
 
@@ -180,11 +163,27 @@ export default function NewDriverVoucherPage() {
                     <div className="form-section-title">Informasi Bon</div>
                     <div className="form-row">
                         <div className="form-group">
-                            <label className="form-label">Supir <span className="required">*</span></label>
-                            <select className="form-select" value={form.driverRef} onChange={e => handleDriverChange(e.target.value)}>
-                                <option value="">Pilih supir</option>
-                                {drivers.map(driver => <option key={driver._id} value={driver._id}>{driver.name} - {driver.phone}</option>)}
+                            <label className="form-label">Surat Jalan / Trip <span className="required">*</span></label>
+                            <select className="form-select" value={form.deliveryOrderRef} onChange={e => setForm({ ...form, deliveryOrderRef: e.target.value })}>
+                                <option value="">Pilih DO trip operasional</option>
+                                {eligibleDos.map(deliveryOrder => {
+                                    const order = deliveryOrder.orderRef
+                                        ? orders.find(item => item._id === deliveryOrder.orderRef)
+                                        : null;
+                                    const route = [
+                                        deliveryOrder.pickupAddress || order?.pickupAddress,
+                                        deliveryOrder.receiverAddress || order?.receiverAddress,
+                                    ].filter(Boolean).join(' -> ');
+                                    return (
+                                        <option key={deliveryOrder._id} value={deliveryOrder._id}>
+                                            {deliveryOrder.doNumber} | {deliveryOrder.driverName || drivers.find(driver => driver._id === deliveryOrder.driverRef)?.name || '-'} | {deliveryOrder.vehiclePlate || '-'}{route ? ` | ${route}` : ''}
+                                        </option>
+                                    );
+                                })}
                             </select>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                Bon trip wajib tertaut ke 1 DO. Hanya DO operasional yang sudah punya supir, kendaraan, tarif trip, dan belum dipakai bon/borongan yang muncul di sini.
+                            </div>
                         </div>
                         <div className="form-group">
                             <label className="form-label">Tanggal</label>
@@ -193,32 +192,18 @@ export default function NewDriverVoucherPage() {
                     </div>
                     <div className="form-row">
                         <div className="form-group">
-                            <label className="form-label">Surat Jalan (DO)</label>
-                            <select className="form-select" value={form.deliveryOrderRef} onChange={e => handleDOChange(e.target.value)}>
-                                <option value="">-- Opsional --</option>
-                                {filteredDos.map(deliveryOrder => <option key={deliveryOrder._id} value={deliveryOrder._id}>{deliveryOrder.doNumber} {deliveryOrder.driverName ? `(${deliveryOrder.driverName})` : ''}</option>)}
-                            </select>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                Hanya DO yang masih operasional yang bisa dipakai untuk bon supir, dan satu DO hanya boleh punya satu bon aktif.
-                            </div>
+                            <label className="form-label">Supir Trip</label>
+                            <input className="form-input" value={selectedDriverName} readOnly placeholder="Pilih DO untuk mengisi supir" />
                         </div>
                         <div className="form-group">
                             <label className="form-label">Kendaraan</label>
-                            <select className="form-select" value={form.vehicleRef} onChange={e => setForm({ ...form, vehicleRef: e.target.value })} disabled={Boolean(form.deliveryOrderRef)}>
-                                <option value="">-- Opsional --</option>
-                                {vehicles.map(vehicle => <option key={vehicle._id} value={vehicle._id}>{vehicle.plateNumber} - {vehicle.brandModel}</option>)}
-                            </select>
-                            {form.deliveryOrderRef && (
-                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                    Kendaraan mengikuti DO terpilih. Hapus pilihan DO dulu jika ingin mengganti kendaraan manual.
-                                </div>
-                            )}
+                            <input className="form-input" value={selectedVehicleLabel} readOnly placeholder="Pilih DO untuk mengisi kendaraan" />
                         </div>
                     </div>
                     <div className="form-row">
                         <div className="form-group">
                             <label className="form-label">Rute</label>
-                            <input className="form-input" placeholder="Contoh: Jakarta -> Surabaya" value={form.route} onChange={e => setForm({ ...form, route: e.target.value })} />
+                            <input className="form-input" value={selectedRoute} readOnly placeholder="Pilih DO untuk mengisi rute" />
                         </div>
                         <div className="form-group">
                             <label className="form-label">Rekening / Kas Sumber <span className="required">*</span></label>
@@ -234,16 +219,16 @@ export default function NewDriverVoucherPage() {
                             <input type="number" className="form-input" placeholder="0" value={form.cashGiven || ''} onChange={e => setForm({ ...form, cashGiven: Number(e.target.value) })} />
                         </div>
                         <div className="form-group">
-                            <label className="form-label">Upah Supir / Borongan</label>
+                            <label className="form-label">Upah Trip</label>
                             <input
                                 type="number"
                                 className="form-input"
-                                placeholder="0"
-                                value={form.driverFeeAmount || ''}
-                                onChange={e => setForm({ ...form, driverFeeAmount: Number(e.target.value) })}
+                                placeholder="Pilih DO"
+                                value={selectedTripFee || ''}
+                                readOnly
                             />
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                Jika pilih DO, nilai ini otomatis mengikuti tarif borongan DO dan ikut dihitung saat settlement akhir.
+                                Upah trip mengikuti tarif pada DO dan tidak diisi manual dari bon. Jika nilainya 0, isi dulu tarif trip di detail DO.
                             </div>
                         </div>
                     </div>
@@ -252,11 +237,11 @@ export default function NewDriverVoucherPage() {
                             <div style={{ fontWeight: 700, marginBottom: '0.5rem' }}>Ringkasan Settlement</div>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem' }}>
                                 <div><div className="text-muted" style={{ fontSize: '0.75rem' }}>Uang Jalan Awal</div><div style={{ fontWeight: 700 }}>Rp {form.cashGiven.toLocaleString('id-ID')}</div></div>
-                                <div><div className="text-muted" style={{ fontSize: '0.75rem' }}>Upah Supir</div><div style={{ fontWeight: 700 }}>Rp {form.driverFeeAmount.toLocaleString('id-ID')}</div></div>
-                                <div><div className="text-muted" style={{ fontSize: '0.75rem' }}>Estimasi Selisih Awal</div><div style={{ fontWeight: 700, color: form.cashGiven - form.driverFeeAmount >= 0 ? '#16a34a' : '#ef4444' }}>Rp {Math.abs(form.cashGiven - form.driverFeeAmount).toLocaleString('id-ID')} {form.cashGiven - form.driverFeeAmount >= 0 ? 'sisa' : 'kurang bayar'}</div></div>
+                                <div><div className="text-muted" style={{ fontSize: '0.75rem' }}>Upah Trip</div><div style={{ fontWeight: 700 }}>Rp {selectedTripFee.toLocaleString('id-ID')}</div></div>
+                                <div><div className="text-muted" style={{ fontSize: '0.75rem' }}>Estimasi Selisih Awal</div><div style={{ fontWeight: 700, color: form.cashGiven - selectedTripFee >= 0 ? '#16a34a' : '#ef4444' }}>Rp {Math.abs(form.cashGiven - selectedTripFee).toLocaleString('id-ID')} {form.cashGiven - selectedTripFee >= 0 ? 'sisa' : 'kurang bayar'}</div></div>
                             </div>
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.75rem' }}>
-                                Biaya perjalanan aktual akan ditambahkan satu per satu setelah supir kembali. Settlement akhir = uang jalan awal dibanding total biaya aktual + upah supir.
+                                Settlement trip dihitung dari uang jalan awal dibanding total biaya perjalanan aktual + upah trip DO.
                             </div>
                         </div>
                     </div>

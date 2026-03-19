@@ -628,7 +628,7 @@ export default function ReportsPage() {
                       textTransform: "uppercase",
                     }}
                   >
-                    Upah Supir Pending
+                    Upah Trip Pending
                   </div>
                   <div style={{ fontSize: "1.05rem", fontWeight: 700 }}>
                     {formatCurrency(openVoucherDriverFees)}
@@ -648,7 +648,7 @@ export default function ReportsPage() {
                       textTransform: "uppercase",
                     }}
                   >
-                    Total Hak Pending
+                    Total Hak Trip Pending
                   </div>
                   <div style={{ fontSize: "1.05rem", fontWeight: 700 }}>
                     {formatCurrency(openVoucherClaims)}
@@ -717,8 +717,8 @@ export default function ReportsPage() {
                       <th>Rekening</th>
                       <th style={{ textAlign: "right" }}>Uang Jalan</th>
                       <th style={{ textAlign: "right" }}>Biaya</th>
-                      <th style={{ textAlign: "right" }}>Upah</th>
-                      <th style={{ textAlign: "right" }}>Total Hak</th>
+                      <th style={{ textAlign: "right" }}>Upah Trip</th>
+                      <th style={{ textAlign: "right" }}>Total Hak Trip</th>
                       <th style={{ textAlign: "right" }}>Selisih</th>
                     </tr>
                   </thead>

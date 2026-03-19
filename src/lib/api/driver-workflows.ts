@@ -329,22 +329,21 @@ export async function handleDriverBoronganCreate(
             );
         }
 
-        const existingVoucherWages = await getSanityClient().fetch<Array<{ doNumber?: string; bonNumber?: string }>>(
+        const existingVoucherTrips = await getSanityClient().fetch<Array<{ doNumber?: string; bonNumber?: string }>>(
             `*[
                 _type == "driverVoucher" &&
-                (deliveryOrderRef in $ids || deliveryOrderRef._ref in $ids) &&
-                coalesce(driverFeeAmount, 0) > 0
+                (deliveryOrderRef in $ids || deliveryOrderRef._ref in $ids)
             ]{
                 doNumber,
                 bonNumber
             }`,
             { ids: uniqueDoRefs }
         );
-        if (existingVoucherWages.length > 0) {
-            const duplicateVoucher = existingVoucherWages[0];
+        if (existingVoucherTrips.length > 0) {
+            const duplicateVoucher = existingVoucherTrips[0];
             return NextResponse.json(
                 {
-                    error: `DO ${duplicateVoucher.doNumber || ''} sudah memakai upah supir di bon ${duplicateVoucher.bonNumber || ''}. Jangan dobel lewat slip borongan.`,
+                    error: `DO ${duplicateVoucher.doNumber || ''} sudah memakai settlement trip di bon ${duplicateVoucher.bonNumber || ''}. Jangan dobel lewat slip borongan.`,
                 },
                 { status: 409 }
             );
@@ -708,9 +707,9 @@ export async function handleDriverVoucherCreate(
         return NextResponse.json({ error: 'Nominal bon supir tidak valid' }, { status: 400 });
     }
 
-    const driverRef = typeof data.driverRef === 'string' ? data.driverRef : '';
-    if (!driverRef) {
-        return NextResponse.json({ error: 'Supir wajib dipilih' }, { status: 400 });
+    const deliveryOrderRef = typeof data.deliveryOrderRef === 'string' ? data.deliveryOrderRef : '';
+    if (!deliveryOrderRef) {
+        return NextResponse.json({ error: 'Bon supir wajib dikaitkan ke 1 surat jalan / trip' }, { status: 400 });
     }
 
     const issueBankRef = typeof data.issueBankRef === 'string' ? data.issueBankRef : '';
@@ -726,19 +725,56 @@ export async function handleDriverVoucherCreate(
 
     const requestedDriverFeeAmount = normalizeNumber(data.driverFeeAmount ?? 0);
     if (!Number.isFinite(requestedDriverFeeAmount) || requestedDriverFeeAmount < 0) {
-        return NextResponse.json({ error: 'Upah supir pada bon tidak valid' }, { status: 400 });
+        return NextResponse.json({ error: 'Upah trip pada bon tidak valid' }, { status: 400 });
+    }
+
+    const deliveryOrder = await sanityGetById<{
+        _id: string;
+        doNumber?: string;
+        status?: string;
+        driverRef?: unknown;
+        driverName?: string;
+        vehicleRef?: string;
+        vehiclePlate?: string;
+        receiverAddress?: string;
+        pickupAddress?: string;
+        taripBorongan?: number;
+        orderRef?: unknown;
+    }>(deliveryOrderRef);
+    if (!deliveryOrder) {
+        return NextResponse.json({ error: 'Surat jalan bon tidak ditemukan' }, { status: 404 });
+    }
+    if (deliveryOrder.status && !['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status)) {
+        return NextResponse.json(
+            { error: `Bon trip hanya boleh dikaitkan ke DO yang masih operasional. Status DO ${deliveryOrder.doNumber || deliveryOrderRef} sekarang ${deliveryOrder.status}.` },
+            { status: 409 }
+        );
+    }
+
+    const driverRef = extractRefId(deliveryOrder.driverRef);
+    if (!driverRef) {
+        return NextResponse.json(
+            { error: `Tetapkan supir pada DO ${deliveryOrder.doNumber || deliveryOrderRef} dulu sebelum menerbitkan bon trip.` },
+            { status: 409 }
+        );
     }
 
     const driver = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(driverRef);
     if (!driver) {
-        return NextResponse.json({ error: 'Supir bon tidak ditemukan' }, { status: 404 });
+        return NextResponse.json({ error: 'Supir trip tidak ditemukan' }, { status: 404 });
     }
     if (driver.active === false) {
-        return NextResponse.json({ error: 'Supir bon tidak aktif' }, { status: 409 });
+        return NextResponse.json({ error: 'Supir trip tidak aktif' }, { status: 409 });
     }
 
-    const deliveryOrderRef = typeof data.deliveryOrderRef === 'string' ? data.deliveryOrderRef : '';
-    const canonicalDriverName = driver.name || (typeof data.driverName === 'string' ? data.driverName : '');
+    if (!deliveryOrder.vehicleRef && !deliveryOrder.vehiclePlate) {
+        return NextResponse.json(
+            { error: `Tetapkan kendaraan pada DO ${deliveryOrder.doNumber || deliveryOrderRef} dulu sebelum menerbitkan bon trip.` },
+            { status: 409 }
+        );
+    }
+
+    const canonicalDriverName = driver.name || deliveryOrder.driverName || '';
     let canonicalDoNumber =
         typeof data.doNumber === 'string' && data.doNumber.trim()
             ? data.doNumber.trim()
@@ -756,94 +792,67 @@ export async function handleDriverVoucherCreate(
             ? data.route.trim()
             : undefined;
 
-    if (deliveryOrderRef) {
-        const deliveryOrder = await sanityGetById<{
-            _id: string;
-            doNumber?: string;
-            status?: string;
-            driverRef?: unknown;
-            vehicleRef?: string;
-            vehiclePlate?: string;
-            receiverAddress?: string;
-            pickupAddress?: string;
-            taripBorongan?: number;
-            orderRef?: unknown;
-        }>(deliveryOrderRef);
-        if (!deliveryOrder) {
-            return NextResponse.json({ error: 'Surat jalan bon tidak ditemukan' }, { status: 404 });
-        }
-        if (deliveryOrder.status && !['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status)) {
-            return NextResponse.json(
-                { error: `Bon supir hanya boleh dikaitkan ke DO yang masih operasional. Status DO ${deliveryOrder.doNumber || deliveryOrderRef} sekarang ${deliveryOrder.status}.` },
-                { status: 409 }
-            );
-        }
-
-        const deliveryOrderDriverRef = extractRefId(deliveryOrder.driverRef);
-        if (deliveryOrderDriverRef && deliveryOrderDriverRef !== driverRef) {
-            return NextResponse.json({ error: 'DO yang dipilih bukan milik supir bon ini' }, { status: 409 });
-        }
-
-        if (
-            canonicalVehicleRef &&
-            deliveryOrder.vehicleRef &&
-            canonicalVehicleRef !== deliveryOrder.vehicleRef
-        ) {
-            return NextResponse.json(
-                { error: 'Kendaraan bon tidak cocok dengan kendaraan pada surat jalan' },
-                { status: 409 }
-            );
-        }
-
-        canonicalDoNumber = deliveryOrder.doNumber || canonicalDoNumber;
-        canonicalVehicleRef = deliveryOrder.vehicleRef || canonicalVehicleRef || undefined;
-        canonicalVehiclePlate = deliveryOrder.vehiclePlate || canonicalVehiclePlate || undefined;
-
-        const orderRef = extractRefId(deliveryOrder.orderRef);
-        const order = orderRef
-            ? await sanityGetById<{ _id: string; pickupAddress?: string; receiverAddress?: string }>(orderRef)
-            : null;
-        canonicalRoute = canonicalRoute || buildRouteLabel(
-            deliveryOrder.pickupAddress || order?.pickupAddress,
-            deliveryOrder.receiverAddress || order?.receiverAddress,
+    if (
+        canonicalVehicleRef &&
+        deliveryOrder.vehicleRef &&
+        canonicalVehicleRef !== deliveryOrder.vehicleRef
+    ) {
+        return NextResponse.json(
+            { error: 'Kendaraan bon tidak cocok dengan kendaraan pada surat jalan' },
+            { status: 409 }
         );
-
-        const existingVoucher = await getSanityClient().fetch<{ bonNumber?: string; status?: string } | null>(
-            `*[
-                _type == "driverVoucher" &&
-                (deliveryOrderRef == $ref || deliveryOrderRef._ref == $ref)
-            ][0]{
-                bonNumber,
-                status
-            }`,
-            { ref: deliveryOrderRef }
-        );
-        if (existingVoucher) {
-            return NextResponse.json(
-                { error: `DO ${deliveryOrder.doNumber || deliveryOrderRef} sudah punya bon ${existingVoucher.bonNumber || ''}. Gunakan satu bon per perjalanan agar settlement tidak bercampur.` },
-                { status: 409 }
-            );
-        }
-
-        const effectiveDriverFeeAmount =
-            requestedDriverFeeAmount > 0
-                ? requestedDriverFeeAmount
-                : normalizeNumber(deliveryOrder.taripBorongan || 0);
-        if (effectiveDriverFeeAmount > 0) {
-            const existingBoronganItem = await getSanityClient().fetch<{ doNumber?: string } | null>(
-                `*[_type == "driverBoronganItem" && doRef == $ref][0]{ doNumber }`,
-                { ref: deliveryOrderRef }
-            );
-            if (existingBoronganItem) {
-                return NextResponse.json(
-                    { error: `DO ${deliveryOrder.doNumber || deliveryOrderRef} sudah tercantum di slip borongan. Upah supir tidak boleh dobel.` },
-                    { status: 409 }
-                );
-            }
-        }
-
-        data.driverFeeAmount = effectiveDriverFeeAmount;
     }
+
+    canonicalDoNumber = deliveryOrder.doNumber || canonicalDoNumber;
+    canonicalVehicleRef = deliveryOrder.vehicleRef || canonicalVehicleRef || undefined;
+    canonicalVehiclePlate = deliveryOrder.vehiclePlate || canonicalVehiclePlate || undefined;
+
+    const orderRef = extractRefId(deliveryOrder.orderRef);
+    const order = orderRef
+        ? await sanityGetById<{ _id: string; pickupAddress?: string; receiverAddress?: string }>(orderRef)
+        : null;
+    canonicalRoute = buildRouteLabel(
+        deliveryOrder.pickupAddress || order?.pickupAddress,
+        deliveryOrder.receiverAddress || order?.receiverAddress,
+    ) || canonicalRoute;
+
+    const existingVoucher = await getSanityClient().fetch<{ bonNumber?: string; status?: string } | null>(
+        `*[
+            _type == "driverVoucher" &&
+            (deliveryOrderRef == $ref || deliveryOrderRef._ref == $ref)
+        ][0]{
+            bonNumber,
+            status
+        }`,
+        { ref: deliveryOrderRef }
+    );
+    if (existingVoucher) {
+        return NextResponse.json(
+            { error: `DO ${deliveryOrder.doNumber || deliveryOrderRef} sudah punya bon ${existingVoucher.bonNumber || ''}. Gunakan satu bon per perjalanan agar settlement tidak bercampur.` },
+            { status: 409 }
+        );
+    }
+
+    const existingBoronganItem = await getSanityClient().fetch<{ doNumber?: string } | null>(
+        `*[_type == "driverBoronganItem" && doRef == $ref][0]{ doNumber }`,
+        { ref: deliveryOrderRef }
+    );
+    if (existingBoronganItem) {
+        return NextResponse.json(
+            { error: `DO ${deliveryOrder.doNumber || deliveryOrderRef} sudah tercantum di slip borongan. Trip ini harus settle lewat bon supir, bukan dobel.` },
+            { status: 409 }
+        );
+    }
+
+    const effectiveDriverFeeAmount = normalizeNumber(deliveryOrder.taripBorongan || 0);
+    if (!Number.isFinite(effectiveDriverFeeAmount) || effectiveDriverFeeAmount <= 0) {
+        return NextResponse.json(
+            { error: `Isi upah trip pada DO ${deliveryOrder.doNumber || deliveryOrderRef} dulu sebelum menerbitkan bon.` },
+            { status: 409 }
+        );
+    }
+
+    data.driverFeeAmount = effectiveDriverFeeAmount;
 
     if (canonicalVehicleRef && !canonicalVehiclePlate) {
         const vehicle = await sanityGetById<{ _id: string; plateNumber?: string }>(canonicalVehicleRef);
@@ -873,7 +882,7 @@ export async function handleDriverVoucherCreate(
             _type: 'driverVoucher',
             driverRef,
             driverName: canonicalDriverName,
-            deliveryOrderRef: deliveryOrderRef || undefined,
+            deliveryOrderRef,
             doNumber: canonicalDoNumber,
             vehicleRef: canonicalVehicleRef,
             vehiclePlate: canonicalVehiclePlate,
@@ -914,7 +923,13 @@ export async function handleDriverVoucherCreate(
 
         try {
             await transaction.commit();
-            await addAuditLog(session, 'CREATE', 'driver-vouchers', voucherId, `Bon supir diterbitkan: ${bonNumber}`);
+            await addAuditLog(
+                session,
+                'CREATE',
+                'driver-vouchers',
+                voucherId,
+                `Bon trip diterbitkan: ${bonNumber} untuk DO ${canonicalDoNumber || deliveryOrderRef}`
+            );
             return NextResponse.json({ data: voucherDoc, id: voucherId });
         } catch (err) {
             if (!isMutationConflictError(err)) {
@@ -1158,14 +1173,14 @@ export async function handleDriverVoucherSettlement(
             return NextResponse.json({ error: 'Bon supir ini sudah pernah diposting ke pengeluaran' }, { status: 409 });
         }
 
-        if (state.voucher.deliveryOrderRef && driverFeeAmount > 0) {
+        if (state.voucher.deliveryOrderRef) {
             const existingBoronganItem = await getSanityClient().fetch<{ doNumber?: string } | null>(
                 `*[_type == "driverBoronganItem" && doRef == $ref][0]{ doNumber }`,
                 { ref: state.voucher.deliveryOrderRef }
             );
             if (existingBoronganItem) {
                 return NextResponse.json(
-                    { error: `DO ${existingBoronganItem.doNumber || state.voucher.deliveryOrderRef} sudah ada di slip borongan. Upah supir tidak boleh dobel.` },
+                    { error: `DO ${existingBoronganItem.doNumber || state.voucher.deliveryOrderRef} sudah ada di slip borongan. Trip ini tidak boleh settle di dua workflow.` },
                     { status: 409 }
                 );
             }

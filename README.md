@@ -14,8 +14,8 @@ Stack utama:
 - `/orders` untuk order/resi
 - `/delivery-orders` untuk surat jalan dan tracking per DO
 - `/invoices` untuk nota ongkos angkut
-- `/borongan` untuk slip borongan supir
-- `/driver-vouchers` untuk bon supir
+- `/borongan` untuk slip borongan supir alternatif / legacy
+- `/driver-vouchers` untuk settlement trip per DO
 - `/expenses` untuk pengeluaran umum
 - `/bank-accounts` untuk rekening bank dan kas tunai
 - `/reports` untuk laba rugi dan arus kas
@@ -31,8 +31,8 @@ Stack utama:
 5. DO yang selesai bisa ditagihkan ke customer lewat Nota Ongkos.
 6. Nota sekarang mendukung klaim / potongan dan satu receipt customer bisa dialokasikan ke beberapa nota sekaligus.
 7. Pembayaran nota atau receipt customer otomatis mem-posting income dan mutasi rekening/kas.
-8. DO yang selesai bisa dipakai untuk borongan supir.
-9. Bon supir dipakai untuk uang jalan awal, biaya perjalanan aktual, dan bisa sekaligus memuat upah supir saat settlement akhir.
+8. DO yang selesai bisa dipakai untuk slip borongan bila perusahaan memang memakai workflow itu.
+9. Workflow utama trip driver memakai Bon Supir yang tertaut ke 1 DO untuk uang jalan awal, biaya perjalanan aktual, upah trip, dan settlement akhir.
 
 Dokumen alur lengkap ada di:
 - [WORKFLOW.md](C:\LOGISTIK\app\WORKFLOW.md)

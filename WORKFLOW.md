@@ -12,9 +12,9 @@ Fokusnya bukan teori bisnis umum, tetapi perilaku aplikasi yang sekarang benar-b
 - `Freight Nota / Nota Ongkos`
   Tagihan ongkos angkut ke customer.
 - `Driver Borongan`
-  Slip upah supir berdasarkan hasil pengiriman.
+  Slip upah supir alternatif / legacy untuk perjalanan yang memang tidak disettle lewat bon trip.
 - `Driver Voucher / Bon Supir`
-  Uang jalan yang diberikan ke supir sebelum/selama perjalanan.
+  Settlement trip per DO: uang jalan awal, biaya perjalanan aktual, upah trip, dan selisih akhir.
 - `Payment`
   Pencatatan pembayaran dari customer.
 - `Income`
@@ -316,17 +316,25 @@ Efeknya:
 
 ## 6. Alur Bon Supir
 
-Bon supir berbeda dari borongan murni.
-Bon dipakai untuk uang jalan di depan, lalu di-settle bersama biaya perjalanan aktual dan, jika dipakai, upah supir per perjalanan.
+Bon supir sekarang diperlakukan sebagai settlement utama per trip / per DO.
+
+Artinya:
+
+- `1 bon = 1 DO / 1 trip`
+- bon wajib tertaut ke DO
+- supir, kendaraan, rute, dan upah trip diturunkan dari DO
+- trip yang sudah memakai bon tidak boleh dobel masuk slip borongan
 
 ### 6.1 Terbitkan bon
 
 Saat bon dibuat:
 
-1. user wajib memilih rekening sumber,
-2. sistem membuat `driverVoucher`,
-3. sistem langsung membuat `bankTransaction` tipe `DEBIT`,
-4. saldo rekening sumber langsung berkurang.
+1. user wajib memilih `DO / trip`,
+2. user wajib memilih rekening sumber,
+3. sistem mengambil supir, kendaraan, rute, dan `taripBorongan` dari DO,
+4. sistem membuat `driverVoucher`,
+5. sistem langsung membuat `bankTransaction` tipe `DEBIT`,
+6. saldo rekening sumber langsung berkurang.
 
 Jadi bon supir selalu punya konsekuensi kas/bank sejak awal.
 
@@ -343,8 +351,8 @@ Jadi bon supir selalu punya konsekuensi kas/bank sejak awal.
 Saat bon diselesaikan:
 
 1. setiap item biaya perjalanan diposting menjadi `expense`,
-2. jika bon memuat `driverFeeAmount`, sistem juga membuat expense `Borongan Supir`,
-3. sistem menghitung selisih antara uang jalan awal vs total biaya perjalanan + upah supir,
+2. sistem membuat expense `Borongan Supir` untuk upah trip DO,
+3. sistem menghitung selisih antara uang jalan awal vs total biaya perjalanan + upah trip,
 3. jika ada sisa:
    - sistem membuat `bankTransaction` `CREDIT`,
    - artinya uang kembali ke rekening,
@@ -661,20 +669,22 @@ Kalau ada salah input, perbaikannya harus lewat workflow/admin patch yang diseng
 
 ### 15.2 Tarip Borongan DO
 
-Tarip borongan pada DO boleh diisi untuk kebutuhan pembuatan slip borongan.
+Tarip borongan pada DO sekarang menjadi source of truth untuk upah trip.
 
 Maknanya saat ini:
 
 - itu adalah `tarif upah per DO / per perjalanan`
 - bukan tarif per kg
-- saat DO dimasukkan ke slip borongan, nilai ini menjadi `upah` baris tersebut
+- saat bon trip dibuat, nilai ini otomatis menjadi `upah trip`
+- kalau trip memang tidak disettle lewat bon dan memakai slip borongan, nilai ini juga menjadi `upah` baris tersebut
 
 Tetapi:
 
 - DO yang `CANCELLED` tidak boleh diubah taripnya
 - kalau DO sudah masuk ke slip borongan, tarip dan keterangannya tidak boleh diubah lagi
+- kalau DO sudah punya bon trip, DO itu tidak boleh dimasukkan lagi ke slip borongan
 
-Ini supaya data DO tidak drift dengan slip borongan yang sudah terbentuk.
+Ini supaya data DO tidak drift dengan workflow settlement trip yang sudah terbentuk.
 
 ## 16. Guard penting pada Order
 
