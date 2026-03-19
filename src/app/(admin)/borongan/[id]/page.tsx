@@ -49,7 +49,7 @@ export default function BoronganDetailPage() {
         try {
             const [boronganData, boronganItems, accounts] = await Promise.all([
                 fetchEntity<DriverBorongan | null>(`/api/data?entity=driver-borongans&id=${boronganId}`),
-                fetchEntity<DriverBoronganItem[]>(`/api/data?entity=driver-borogan-items&filter=${encodeURIComponent(JSON.stringify({ boronganRef: boronganId }))}`),
+                fetchEntity<DriverBoronganItem[]>(`/api/data?entity=driver-borongan-items&filter=${encodeURIComponent(JSON.stringify({ boronganRef: boronganId }))}`),
                 fetchEntity<BankAccount[]>('/api/data?entity=bank-accounts'),
             ]);
 

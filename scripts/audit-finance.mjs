@@ -270,6 +270,9 @@ async function main() {
         if (expectedBalance !== (account.currentBalance || 0)) {
             bankFindings.push(`Saldo ${account.bankName} mismatch. expected ${fmtCurrency(expectedBalance)} aktual ${fmtCurrency(account.currentBalance)}`);
         }
+        if (account.active === false && (account.currentBalance || 0) !== 0) {
+            bankFindings.push(`Rekening nonaktif ${account.bankName} masih menyimpan saldo ${fmtCurrency(account.currentBalance)}`);
+        }
     }
 
     const allSections = [

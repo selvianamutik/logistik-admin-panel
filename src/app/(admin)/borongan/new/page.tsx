@@ -91,7 +91,7 @@ export default function NewBoronganPage() {
                     fetchEntity<Driver[]>('/api/data?entity=drivers', 'Gagal memuat supir'),
                     fetchEntity<DeliveryOrder[]>('/api/data?entity=delivery-orders', 'Gagal memuat surat jalan'),
                     fetchEntity<DeliveryOrderItem[]>('/api/data?entity=delivery-order-items', 'Gagal memuat item DO'),
-                    fetchEntity<Array<{ doRef?: string }>>('/api/data?entity=driver-borogan-items', 'Gagal memuat pemakaian DO borongan'),
+                    fetchEntity<Array<{ doRef?: string }>>('/api/data?entity=driver-borongan-items', 'Gagal memuat pemakaian DO borongan'),
                 ]);
                 setDrivers((driverResponse || []).filter(driver => driver.active !== false));
                 setDeliveryOrders((deliveryOrderResponse || []).filter((item: DeliveryOrder) => item.status === 'DELIVERED'));

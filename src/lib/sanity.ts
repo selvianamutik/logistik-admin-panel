@@ -128,6 +128,7 @@ export const SANITY_TYPE_MAP: Record<string, string> = {
     'freight-nota-items': 'freightNotaItem',
     'driver-borongans': 'driverBorongan',
     'driver-borogan-items': 'driverBoronganItem',
+    'driver-borongan-items': 'driverBoronganItem',
     company: 'companyProfile',
 };
 

@@ -169,6 +169,7 @@ function isWorkflowManagedDeleteEntity(entity: string) {
         entity === 'invoice-items' ||
         entity === 'freight-nota-items' ||
         entity === 'driver-borogan-items' ||
+        entity === 'driver-borongan-items' ||
         entity === 'tracking-logs'
     );
 }
@@ -442,6 +443,15 @@ export async function handleGenericUpdate(
         const existingAccount = await sanityGetById<BankAccountSummary>(id);
         if (!existingAccount) {
             return NextResponse.json({ error: 'Rekening tidak ditemukan' }, { status: 404 });
+        }
+        if ('active' in updates && updates.active === false) {
+            const currentBalance = typeof existingAccount.currentBalance === 'number' ? existingAccount.currentBalance : 0;
+            if (currentBalance !== 0) {
+                return NextResponse.json(
+                    { error: 'Rekening dengan saldo berjalan tidak boleh dinonaktifkan. Kosongkan atau transfer dulu saldonya.' },
+                    { status: 409 }
+                );
+            }
         }
         if (existingAccount.systemKey === CASH_ACCOUNT_SYSTEM_KEY) {
             if ('active' in updates && updates.active === false) {
