@@ -19,6 +19,34 @@ function getOriginFromHeader(value: string | null) {
     }
 }
 
+function getDefaultPort(protocol: string) {
+    if (protocol === 'http:') return '80';
+    if (protocol === 'https:') return '443';
+    return '';
+}
+
+function normalizeOriginForComparison(origin: string | null) {
+    if (!origin) return null;
+    try {
+        const url = new URL(origin);
+        const hostname = url.hostname.toLowerCase();
+        const port = url.port || getDefaultPort(url.protocol);
+        const isLoopback = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '[::1]';
+
+        if (isLoopback) {
+            return `${url.protocol}//loopback:${port}`;
+        }
+
+        return `${url.protocol}//${hostname}:${port}`;
+    } catch {
+        return origin;
+    }
+}
+
+function isEquivalentOrigin(left: string | null, right: string | null) {
+    return normalizeOriginForComparison(left) === normalizeOriginForComparison(right);
+}
+
 export function ensureSameOriginRequest(request: Request) {
     if (SAFE_METHODS.has(request.method.toUpperCase())) {
         return null;
@@ -31,7 +59,7 @@ export function ensureSameOriginRequest(request: Request) {
 
     const originHeader = getOriginFromHeader(request.headers.get('origin'));
     if (originHeader) {
-        if (originHeader !== requestOrigin) {
+        if (!isEquivalentOrigin(originHeader, requestOrigin)) {
             return NextResponse.json({ error: 'Origin request ditolak' }, { status: 403 });
         }
         return null;
@@ -39,7 +67,7 @@ export function ensureSameOriginRequest(request: Request) {
 
     const refererOrigin = getOriginFromHeader(request.headers.get('referer'));
     if (refererOrigin) {
-        if (refererOrigin !== requestOrigin) {
+        if (!isEquivalentOrigin(refererOrigin, requestOrigin)) {
             return NextResponse.json({ error: 'Referer request ditolak' }, { status: 403 });
         }
         return null;
