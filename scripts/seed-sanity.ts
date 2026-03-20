@@ -340,8 +340,6 @@ function buildSeedDocuments() {
             description: 'Set baut dan aksesoris pemasangan',
             defaultQtyKoli: 1,
             defaultWeight: 60,
-            defaultWeightInputValue: 60,
-            defaultWeightInputUnit: 'KG',
             active: true,
         },
         {

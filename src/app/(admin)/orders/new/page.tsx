@@ -7,6 +7,8 @@ import { Save, Plus, X } from 'lucide-react';
 import PageBackButton from '@/components/PageBackButton';
 import type { Customer, CustomerProduct, Service } from '@/lib/types';
 import {
+    convertKgToWeightInputValue,
+    convertM3ToVolumeInputValue,
     VOLUME_INPUT_UNIT_OPTIONS,
     WEIGHT_INPUT_UNIT_OPTIONS,
     type VolumeInputUnit,
@@ -140,15 +142,29 @@ export default function NewOrderPage() {
             if (!selectedProduct) {
                 return { ...item, customerProductRef: '' };
             }
+            const nextWeightUnit = selectedProduct.defaultWeightInputUnit || item.weightInputUnit || 'KG';
+            const nextVolumeUnit = selectedProduct.defaultVolumeInputUnit || item.volumeInputUnit || 'M3';
+            const nextWeightValue =
+                typeof selectedProduct.defaultWeightInputValue === 'number' && selectedProduct.defaultWeightInputValue > 0
+                    ? selectedProduct.defaultWeightInputValue
+                    : typeof selectedProduct.defaultWeight === 'number' && selectedProduct.defaultWeight > 0
+                        ? convertKgToWeightInputValue(selectedProduct.defaultWeight, nextWeightUnit)
+                        : 0;
+            const nextVolumeValue =
+                typeof selectedProduct.defaultVolumeInputValue === 'number' && selectedProduct.defaultVolumeInputValue > 0
+                    ? selectedProduct.defaultVolumeInputValue
+                    : typeof selectedProduct.defaultVolume === 'number' && selectedProduct.defaultVolume > 0
+                        ? convertM3ToVolumeInputValue(selectedProduct.defaultVolume, nextVolumeUnit)
+                        : 0;
             return {
                 ...item,
                 customerProductRef: selectedProduct._id,
                 description: selectedProduct.description || selectedProduct.name || item.description,
                 qtyKoli: selectedProduct.defaultQtyKoli || item.qtyKoli || 1,
-                weightInputValue: selectedProduct.defaultWeightInputValue || item.weightInputValue || 0,
-                weightInputUnit: selectedProduct.defaultWeightInputUnit || item.weightInputUnit,
-                volumeInputValue: selectedProduct.defaultVolumeInputValue || item.volumeInputValue || 0,
-                volumeInputUnit: selectedProduct.defaultVolumeInputUnit || item.volumeInputUnit,
+                weightInputValue: nextWeightValue,
+                weightInputUnit: nextWeightUnit,
+                volumeInputValue: nextVolumeValue,
+                volumeInputUnit: nextVolumeUnit,
             };
         }));
     };
