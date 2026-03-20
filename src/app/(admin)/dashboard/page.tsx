@@ -6,7 +6,7 @@ import {
     Package, Truck, FileText, AlertTriangle, Wrench, DollarSign,
     TrendingUp, Clock, ArrowUpRight
 } from 'lucide-react';
-import { formatCurrency, getReceivableNetAmount, ORDER_STATUS_MAP, INVOICE_STATUS_MAP } from '@/lib/utils';
+import { formatCurrency, formatDate, getReceivableNetAmount, ORDER_STATUS_MAP, INVOICE_STATUS_MAP } from '@/lib/utils';
 import Link from 'next/link';
 
 interface DashboardData {
@@ -70,7 +70,7 @@ export default function DashboardPage() {
             <div className="page-header">
                 <div className="page-header-left">
                     <h1 className="page-title">Dashboard</h1>
-                    <p className="page-subtitle">Selamat datang, {user?.name}</p>
+                    <p className="page-subtitle">Pantau order, pengiriman, piutang, armada, dan kas yang perlu ditindaklanjuti hari ini.</p>
                 </div>
             </div>
 
@@ -82,7 +82,7 @@ export default function DashboardPage() {
                         <div className="kpi-content">
                             <div className="kpi-label">Total Order</div>
                             <div className="kpi-value">{data.orderStats.total}</div>
-                            <div className="kpi-sub">{data.orderStats.open} open, {data.orderStats.partial} partial</div>
+                            <div className="kpi-sub">{data.orderStats.open} belum terkirim, {data.orderStats.partial} sebagian terkirim</div>
                         </div>
                     </div>
                 </Link>
@@ -104,7 +104,7 @@ export default function DashboardPage() {
                         <div className="kpi-content">
                             <div className="kpi-label">Nota Belum Lunas</div>
                             <div className="kpi-value">{data.notaStats.unpaid}</div>
-                            {isOwner && <div className="kpi-sub">{formatCurrency(data.notaStats.totalOutstanding)} outstanding</div>}
+                            {isOwner && <div className="kpi-sub">{formatCurrency(data.notaStats.totalOutstanding)} piutang aktif</div>}
                         </div>
                     </div>
                 </Link>
@@ -137,7 +137,7 @@ export default function DashboardPage() {
                         <div className="kpi-content">
                             <div className="kpi-label">Bon Trip Belum Settle</div>
                             <div className="kpi-value">{data.voucherStats.unsettled}</div>
-                            {isOwner && <div className="kpi-sub">{formatCurrency(data.voucherStats.totalIssued)} kas keluar</div>}
+                            {isOwner && <div className="kpi-sub">{formatCurrency(data.voucherStats.totalIssued)} uang jalan dicairkan</div>}
                         </div>
                     </div>
                 </Link>
@@ -153,7 +153,7 @@ export default function DashboardPage() {
                             Lihat Semua <ArrowUpRight size={14} />
                         </Link>
                     </div>
-                    <div className="table-wrapper">
+                    <div className="table-wrapper table-desktop-only">
                         <table>
                             <thead>
                                 <tr>
@@ -183,6 +183,33 @@ export default function DashboardPage() {
                             </tbody>
                         </table>
                     </div>
+                    <div className="mobile-record-list">
+                        {data.recentOrders.length === 0 ? (
+                            <div className="mobile-record-card">
+                                <div className="mobile-record-title">Belum ada order</div>
+                                <div className="mobile-record-subtitle">Order baru akan muncul di sini untuk dipantau cepat.</div>
+                            </div>
+                        ) : (
+                            data.recentOrders.map(order => (
+                                <div key={order._id} className="mobile-record-card">
+                                    <div className="mobile-record-header">
+                                        <div>
+                                            <div className="mobile-record-title">{order.masterResi}</div>
+                                            <div className="mobile-record-subtitle">{order.customerName} | {formatDate(order.createdAt)}</div>
+                                        </div>
+                                        <span className={`badge badge-${ORDER_STATUS_MAP[order.status]?.color || 'gray'}`}>
+                                            {ORDER_STATUS_MAP[order.status]?.label || order.status}
+                                        </span>
+                                    </div>
+                                    <div className="mobile-record-actions">
+                                        <Link href={`/orders/${order._id}`} className="btn btn-sm btn-secondary">
+                                            Lihat Detail
+                                        </Link>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
                 </div>
 
                 {/* Recent Notas */}
@@ -193,7 +220,7 @@ export default function DashboardPage() {
                             Lihat Semua <ArrowUpRight size={14} />
                         </Link>
                     </div>
-                    <div className="table-wrapper">
+                    <div className="table-wrapper table-desktop-only">
                         <table>
                             <thead>
                                 <tr>
@@ -225,6 +252,41 @@ export default function DashboardPage() {
                             </tbody>
                         </table>
                     </div>
+                    <div className="mobile-record-list">
+                        {data.recentNotas.length === 0 ? (
+                            <div className="mobile-record-card">
+                                <div className="mobile-record-title">Belum ada nota</div>
+                                <div className="mobile-record-subtitle">Nota ongkos terbaru akan muncul di sini.</div>
+                            </div>
+                        ) : (
+                            data.recentNotas.map(nota => (
+                                <div key={nota._id} className="mobile-record-card">
+                                    <div className="mobile-record-header">
+                                        <div>
+                                            <div className="mobile-record-title">{nota.notaNumber}</div>
+                                            <div className="mobile-record-subtitle">{nota.customerName}</div>
+                                        </div>
+                                        <span className={`badge badge-${INVOICE_STATUS_MAP[nota.status]?.color || 'gray'}`}>
+                                            {INVOICE_STATUS_MAP[nota.status]?.label || nota.status}
+                                        </span>
+                                    </div>
+                                    {isOwner && (
+                                        <div className="mobile-record-meta">
+                                            <div className="mobile-record-kv">
+                                                <span className="mobile-record-label">Tagihan Netto</span>
+                                                <span className="mobile-record-value">{formatCurrency(getReceivableNetAmount(nota))}</span>
+                                            </div>
+                                        </div>
+                                    )}
+                                    <div className="mobile-record-actions">
+                                        <Link href={`/invoices/${nota._id}`} className="btn btn-sm btn-secondary">
+                                            Lihat Detail
+                                        </Link>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
                 </div>
             </div>
 
@@ -232,7 +294,7 @@ export default function DashboardPage() {
             {isOwner && (
                 <div className="card mt-6">
                     <div className="card-header">
-                        <span className="card-header-title">Pengingat</span>
+                        <span className="card-header-title">Tindak Lanjut Hari Ini</span>
                     </div>
                     <div className="card-body">
                         <ul className="reminder-list">
@@ -240,7 +302,7 @@ export default function DashboardPage() {
                                 <li className="reminder-item">
                                     <div className="reminder-icon warning"><Clock size={16} /></div>
                                     <div>
-                                        <strong>{data.orderStats.onHold} order</strong> dengan status ON HOLD
+                                        <strong>{data.orderStats.onHold} order</strong> masih tertahan dan perlu keputusan lanjut
                                     </div>
                                 </li>
                             )}
@@ -248,7 +310,7 @@ export default function DashboardPage() {
                                 <li className="reminder-item">
                                     <div className="reminder-icon danger"><FileText size={16} /></div>
                                     <div>
-                                        <strong>{data.notaStats.unpaid} nota</strong> belum lunas ({formatCurrency(data.notaStats.totalOutstanding)})
+                                        <strong>{data.notaStats.unpaid} nota</strong> masih menunggu pelunasan ({formatCurrency(data.notaStats.totalOutstanding)})
                                     </div>
                                 </li>
                             )}
@@ -256,7 +318,7 @@ export default function DashboardPage() {
                                 <li className="reminder-item">
                                     <div className="reminder-icon info"><DollarSign size={16} /></div>
                                     <div>
-                                        <strong>{data.voucherStats.unsettled} bon supir</strong> belum settle{isOwner ? ` (${formatCurrency(data.voucherStats.totalIssued)} kas keluar)` : ''}
+                                        <strong>{data.voucherStats.unsettled} bon trip</strong> masih menunggu settlement{isOwner ? ` (${formatCurrency(data.voucherStats.totalIssued)} uang jalan dicairkan)` : ''}
                                     </div>
                                 </li>
                             )}
@@ -285,7 +347,7 @@ export default function DashboardPage() {
                                     <div className="reminder-icon" style={{ background: 'var(--color-success-light)', color: 'var(--color-success)' }}>
                                         <TrendingUp size={16} />
                                     </div>
-                                    <div>Semua dalam kondisi baik. Tidak ada pengingat.</div>
+                                    <div>Operasional cukup aman. Tidak ada tindak lanjut mendesak saat ini.</div>
                                 </li>
                             )}
                         </ul>

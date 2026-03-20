@@ -79,12 +79,15 @@ async function main() {
         "borongans": *[_type == "driverBorongan"]{ _id, boronganNumber, totalAmount, status },
         "driverBoronganItems": *[_type == "driverBoronganItem"]{ _id, boronganRef, doRef, doNumber },
         "driverVouchers": *[_type == "driverVoucher"]{
-            _id, bonNumber, status, issuedDate, cashGiven, totalSpent, driverFeeAmount, totalClaimAmount, balance,
+            _id, bonNumber, status, issuedDate, cashGiven, initialCashGiven, totalIssuedAmount, topUpCount, totalSpent, driverFeeAmount, totalClaimAmount, balance,
             issueBankRef, settlementBankRef,
             "deliveryOrderRef": coalesce(deliveryOrderRef._ref, deliveryOrderRef),
             doNumber,
             "driverRef": coalesce(driverRef._ref, driverRef),
             "vehicleRef": coalesce(vehicleRef._ref, vehicleRef)
+        },
+        "driverVoucherDisbursements": *[_type == "driverVoucherDisbursement"]{
+            _id, voucherRef, kind, amount, date, bankAccountRef, bankTransactionRef
         },
         "driverVoucherItems": *[_type == "driverVoucherItem"]{ _id, voucherRef, category, amount, expenseDate },
         "expenses": *[_type == "expense"]{
@@ -204,6 +207,7 @@ async function main() {
         expense => expense.voucherRef
     );
     const voucherItemGroups = groupBy(data.driverVoucherItems, item => item.voucherRef);
+    const voucherDisbursementGroups = groupBy(data.driverVoucherDisbursements, item => item.voucherRef);
     const voucherBankTxGroups = groupBy(
         data.bankTransactions.filter(tx => tx.relatedVoucherRef),
         tx => tx.relatedVoucherRef
@@ -217,12 +221,18 @@ async function main() {
 
     for (const voucher of data.driverVouchers) {
         const items = voucherItemGroups.get(voucher._id) || [];
+        const disbursements = voucherDisbursementGroups.get(voucher._id) || [];
         const expenses = voucherExpenseGroups.get(voucher._id) || [];
         const bankTx = voucherBankTxGroups.get(voucher._id) || [];
         const computedSpent = sum(items, item => item.amount || 0);
         const computedDriverFee = voucher.driverFeeAmount || 0;
         const computedClaim = computedSpent + computedDriverFee;
-        const computedBalance = (voucher.cashGiven || 0) - computedClaim;
+        const computedIssued = disbursements.length > 0
+            ? sum(disbursements, item => item.amount || 0)
+            : (voucher.totalIssuedAmount || voucher.cashGiven || 0);
+        const computedInitial = disbursements.find(item => item.kind === 'INITIAL')?.amount || voucher.initialCashGiven || voucher.cashGiven || 0;
+        const computedTopUpCount = disbursements.filter(item => item.kind === 'TOP_UP').length;
+        const computedBalance = computedIssued - computedClaim;
 
         if (!voucher.issueBankRef) {
             voucherFindings.push(`Bon ${voucher.bonNumber} tidak punya rekening sumber`);
@@ -248,6 +258,15 @@ async function main() {
         if (voucher.deliveryOrderRef && boronganDoRefs.has(voucher.deliveryOrderRef)) {
             voucherFindings.push(`Bon ${voucher.bonNumber} masih bentrok dengan slip borongan pada DO yang sama`);
         }
+        if ((voucher.initialCashGiven || voucher.cashGiven || 0) !== computedInitial) {
+            voucherFindings.push(`Bon ${voucher.bonNumber} initialCashGiven ${fmtCurrency(voucher.initialCashGiven || voucher.cashGiven)} tidak cocok dengan histori pencairan ${fmtCurrency(computedInitial)}`);
+        }
+        if ((voucher.totalIssuedAmount || voucher.cashGiven || 0) !== computedIssued) {
+            voucherFindings.push(`Bon ${voucher.bonNumber} totalIssuedAmount ${fmtCurrency(voucher.totalIssuedAmount || voucher.cashGiven)} tidak cocok dengan histori pencairan ${fmtCurrency(computedIssued)}`);
+        }
+        if ((voucher.topUpCount || 0) !== computedTopUpCount) {
+            voucherFindings.push(`Bon ${voucher.bonNumber} topUpCount ${voucher.topUpCount || 0} tidak cocok dengan histori ${computedTopUpCount}`);
+        }
         if ((voucher.totalSpent || 0) !== computedSpent) {
             voucherFindings.push(`Bon ${voucher.bonNumber} totalSpent ${fmtCurrency(voucher.totalSpent)} tidak cocok dengan item ${fmtCurrency(computedSpent)}`);
         }
@@ -256,6 +275,12 @@ async function main() {
         }
         if ((voucher.balance || 0) !== computedBalance) {
             voucherFindings.push(`Bon ${voucher.bonNumber} balance ${fmtCurrency(voucher.balance)} tidak cocok dengan perhitungan ${fmtCurrency(computedBalance)}`);
+        }
+        if (disbursements.length > 0) {
+            const initialCount = disbursements.filter(item => item.kind === 'INITIAL').length;
+            if (initialCount !== 1) {
+                voucherFindings.push(`Bon ${voucher.bonNumber} harus punya tepat 1 pencairan awal, sekarang ${initialCount}`);
+            }
         }
         if (voucher.status === 'SETTLED') {
             const expectedExpenseCount = items.length + (computedDriverFee > 0 ? 1 : 0);
@@ -317,7 +342,7 @@ async function main() {
     const allSections = [
         ['Tagihan Aktif (Nota)', receivableFindings],
         ['Borongan', boronganFindings],
-        ['Bon Supir', voucherFindings],
+        ['Bon Trip', voucherFindings],
         ['Expense', expenseFindings],
         ['Bank', bankFindings],
     ];

@@ -171,6 +171,9 @@ export interface DriverVoucher {
   route?: string;
   issuedDate: string;
   cashGiven: number;
+  initialCashGiven?: number;
+  totalIssuedAmount?: number;
+  topUpCount?: number;
   driverFeeAmount?: number;
   totalClaimAmount?: number;
   issueBankRef?: string;
@@ -183,6 +186,24 @@ export interface DriverVoucher {
   settledBy?: string;
   settlementBankRef?: string;
   settlementBankName?: string;
+}
+
+export type DriverVoucherDisbursementKind = 'INITIAL' | 'TOP_UP';
+
+export interface DriverVoucherDisbursement {
+  _id: string;
+  _type: 'driverVoucherDisbursement';
+  voucherRef: string;
+  date: string;
+  amount: number;
+  kind: DriverVoucherDisbursementKind;
+  bankAccountRef?: string;
+  bankAccountName?: string;
+  bankAccountNumber?: string;
+  bankTransactionRef?: string;
+  note?: string;
+  createdBy?: string;
+  createdByName?: string;
 }
 
 export interface DriverVoucherItem {

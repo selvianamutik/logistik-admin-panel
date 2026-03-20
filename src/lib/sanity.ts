@@ -124,6 +124,7 @@ export const SANITY_TYPE_MAP: Record<string, string> = {
     'bank-accounts': 'bankAccount',
     'bank-transactions': 'bankTransaction',
     'driver-vouchers': 'driverVoucher',
+    'driver-voucher-disbursements': 'driverVoucherDisbursement',
     'driver-voucher-items': 'driverVoucherItem',
     'freight-notas': 'freightNota',
     'freight-nota-items': 'freightNotaItem',

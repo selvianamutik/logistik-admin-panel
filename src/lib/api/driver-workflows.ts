@@ -51,6 +51,32 @@ function computeDriverVoucherTotals(
     };
 }
 
+function getDriverVoucherIssuedAmount(value: {
+    totalIssuedAmount?: number | null;
+    cashGiven?: number | null;
+}) {
+    if (typeof value.totalIssuedAmount === 'number' && Number.isFinite(value.totalIssuedAmount)) {
+        return Math.max(value.totalIssuedAmount, 0);
+    }
+    if (typeof value.cashGiven === 'number' && Number.isFinite(value.cashGiven)) {
+        return Math.max(value.cashGiven, 0);
+    }
+    return 0;
+}
+
+function getDriverVoucherInitialCash(value: {
+    initialCashGiven?: number | null;
+    cashGiven?: number | null;
+}) {
+    if (typeof value.initialCashGiven === 'number' && Number.isFinite(value.initialCashGiven)) {
+        return Math.max(value.initialCashGiven, 0);
+    }
+    if (typeof value.cashGiven === 'number' && Number.isFinite(value.cashGiven)) {
+        return Math.max(value.cashGiven, 0);
+    }
+    return 0;
+}
+
 type NormalizedDriverBoronganRow = {
     doRef?: string;
     doNumber?: string;
@@ -674,6 +700,9 @@ async function getDriverVoucherState(voucherId: string) {
         bonNumber: string;
         status: string;
         cashGiven: number;
+        initialCashGiven?: number;
+        totalIssuedAmount?: number;
+        topUpCount?: number;
         driverFeeAmount?: number;
         totalClaimAmount?: number;
         issuedDate: string;
@@ -685,7 +714,7 @@ async function getDriverVoucherState(voucherId: string) {
         deliveryOrderRef?: string;
     }>(voucherId);
 
-    if (!voucher) {
+        if (!voucher) {
         return { error: NextResponse.json({ error: 'Bon supir tidak ditemukan' }, { status: 404 }) };
     }
 
@@ -694,7 +723,32 @@ async function getDriverVoucherState(voucherId: string) {
         { ref: voucherId }
     );
 
-    return { voucher, items };
+    const disbursements = await getSanityClient().fetch<Array<{
+        _id: string;
+        kind: 'INITIAL' | 'TOP_UP';
+        date: string;
+        amount: number;
+        bankAccountRef?: string;
+        bankAccountName?: string;
+        bankAccountNumber?: string;
+        bankTransactionRef?: string;
+        note?: string;
+    }>>(
+        `*[_type == "driverVoucherDisbursement" && voucherRef == $ref] | order(date asc, _createdAt asc){
+            _id,
+            kind,
+            date,
+            amount,
+            bankAccountRef,
+            bankAccountName,
+            bankAccountNumber,
+            bankTransactionRef,
+            note
+        }`,
+        { ref: voucherId }
+    );
+
+    return { voucher, items, disbursements };
 }
 
 export async function handleDriverVoucherCreate(
@@ -864,6 +918,8 @@ export async function handleDriverVoucherCreate(
 
     const bonNumber = await sanityGetNextNumber('bon');
     const voucherId = crypto.randomUUID();
+    const initialDisbursementId = crypto.randomUUID();
+    const issueTransactionId = crypto.randomUUID();
     const driverFeeAmount = normalizeNumber(data.driverFeeAmount ?? requestedDriverFeeAmount);
     const voucherTotals = computeDriverVoucherTotals(cashGiven, 0, driverFeeAmount);
 
@@ -890,6 +946,9 @@ export async function handleDriverVoucherCreate(
             bonNumber,
             issuedDate: issueDate,
             cashGiven,
+            initialCashGiven: cashGiven,
+            totalIssuedAmount: cashGiven,
+            topUpCount: 0,
             driverFeeAmount: voucherTotals.driverFeeAmount,
             totalClaimAmount: voucherTotals.totalClaimAmount,
             issueBankRef,
@@ -904,7 +963,21 @@ export async function handleDriverVoucherCreate(
             .transaction()
             .create(voucherDoc)
             .create({
-                _id: crypto.randomUUID(),
+                _id: initialDisbursementId,
+                _type: 'driverVoucherDisbursement',
+                voucherRef: voucherId,
+                date: issueDate,
+                amount: cashGiven,
+                kind: 'INITIAL',
+                bankAccountRef: issueBankRef,
+                bankAccountName: issueBank.bankName,
+                bankAccountNumber: issueBank.accountNumber,
+                bankTransactionRef: issueTransactionId,
+                createdBy: session._id,
+                createdByName: session.name,
+            })
+            .create({
+                _id: issueTransactionId,
                 _type: 'bankTransaction',
                 bankAccountRef: issueBankRef,
                 bankAccountName: issueBank.bankName,
@@ -951,6 +1024,166 @@ export async function handleDriverVoucherCreate(
     );
 }
 
+export async function handleDriverVoucherTopUp(
+    session: Pick<ApiSession, '_id' | 'name'>,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const voucherId = typeof data.id === 'string' ? data.id : '';
+    if (!voucherId) {
+        return NextResponse.json({ error: 'Bon supir tidak valid' }, { status: 400 });
+    }
+
+    const amount = typeof data.amount === 'number' ? data.amount : Number(data.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+        return NextResponse.json({ error: 'Nominal tambahan bon tidak valid' }, { status: 400 });
+    }
+
+    const bankAccountRef = typeof data.bankAccountRef === 'string' ? data.bankAccountRef : '';
+    if (!bankAccountRef) {
+        return NextResponse.json({ error: 'Rekening sumber tambahan bon wajib dipilih' }, { status: 400 });
+    }
+
+    const topUpDate =
+        typeof data.date === 'string' && data.date
+            ? data.date
+            : new Date().toISOString().slice(0, 10);
+    assertIsoDate(topUpDate, 'Tanggal tambahan bon');
+
+    const note = normalizeOptionalText(data.note);
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        const state = await getDriverVoucherState(voucherId);
+        if ('error' in state) return state.error;
+        if (state.voucher.status === 'SETTLED') {
+            return NextResponse.json({ error: 'Bon yang sudah settle tidak bisa ditambah lagi' }, { status: 409 });
+        }
+        if (!state.voucher._rev) {
+            return NextResponse.json({ error: 'Revisi bon tidak tersedia' }, { status: 409 });
+        }
+
+        const bank = await getLedgerAccount(bankAccountRef);
+        if (!bank) {
+            return NextResponse.json({ error: 'Rekening sumber tambahan bon tidak ditemukan' }, { status: 404 });
+        }
+        if (!bank._rev) {
+            return NextResponse.json({ error: 'Revisi rekening sumber tidak tersedia' }, { status: 409 });
+        }
+
+        const nextIssuedAmount = getDriverVoucherIssuedAmount(state.voucher) + amount;
+        const nextTopUpCount = Math.max(state.voucher.topUpCount || 0, 0) + 1;
+        const totals = computeDriverVoucherTotals(
+            nextIssuedAmount,
+            state.items.reduce((sum, item) => sum + item.amount, 0),
+            normalizeNumber(state.voucher.driverFeeAmount || 0)
+        );
+        const transactionId = crypto.randomUUID();
+        const disbursementId = crypto.randomUUID();
+        const nextBankBalance = (bank.currentBalance || 0) - amount;
+
+        try {
+            await getSanityClient()
+                .transaction()
+                .create({
+                    _id: disbursementId,
+                    _type: 'driverVoucherDisbursement',
+                    voucherRef: voucherId,
+                    date: topUpDate,
+                    amount,
+                    kind: 'TOP_UP',
+                    bankAccountRef,
+                    bankAccountName: bank.bankName,
+                    bankAccountNumber: bank.accountNumber,
+                    bankTransactionRef: transactionId,
+                    note,
+                    createdBy: session._id,
+                    createdByName: session.name,
+                })
+                .create({
+                    _id: transactionId,
+                    _type: 'bankTransaction',
+                    bankAccountRef,
+                    bankAccountName: bank.bankName,
+                    bankAccountNumber: bank.accountNumber,
+                    type: 'DEBIT',
+                    amount,
+                    date: topUpDate,
+                    description: `Tambahan bon ${state.voucher.bonNumber}`,
+                    balanceAfter: nextBankBalance,
+                    relatedVoucherRef: voucherId,
+                })
+                .patch(bankAccountRef, {
+                    ifRevisionID: bank._rev,
+                    set: { currentBalance: nextBankBalance },
+                })
+                .patch(voucherId, {
+                    ifRevisionID: state.voucher._rev,
+                    set: {
+                        totalIssuedAmount: nextIssuedAmount,
+                        topUpCount: nextTopUpCount,
+                        totalSpent: totals.totalSpent,
+                        totalClaimAmount: totals.totalClaimAmount,
+                        balance: totals.balance,
+                    },
+                })
+                .commit();
+
+            const updatedVoucher = {
+                ...state.voucher,
+                totalIssuedAmount: nextIssuedAmount,
+                topUpCount: nextTopUpCount,
+                totalSpent: totals.totalSpent,
+                totalClaimAmount: totals.totalClaimAmount,
+                balance: totals.balance,
+            };
+            const disbursementDoc = {
+                _id: disbursementId,
+                _type: 'driverVoucherDisbursement' as const,
+                voucherRef: voucherId,
+                date: topUpDate,
+                amount,
+                kind: 'TOP_UP' as const,
+                bankAccountRef,
+                bankAccountName: bank.bankName,
+                bankAccountNumber: bank.accountNumber,
+                bankTransactionRef: transactionId,
+                note,
+                createdBy: session._id,
+                createdByName: session.name,
+            };
+
+            await addAuditLog(
+                session,
+                'UPDATE',
+                'driver-vouchers',
+                voucherId,
+                `Tambah bon ${state.voucher.bonNumber}: ${amount} dari ${bank.bankName}`
+            );
+
+            return NextResponse.json({
+                data: disbursementDoc,
+                voucher: updatedVoucher,
+            });
+        } catch (err) {
+            if (!isMutationConflictError(err)) {
+                throw err;
+            }
+
+            if (attempt === 2) {
+                return NextResponse.json(
+                    { error: 'Tambahan bon berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+        }
+    }
+
+    return NextResponse.json(
+        { error: 'Tambahan bon berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+        { status: 409 }
+    );
+}
+
 export async function handleDriverVoucherItemCreate(
     session: Pick<ApiSession, '_id' | 'name'>,
     data: Record<string, unknown>,
@@ -985,7 +1218,7 @@ export async function handleDriverVoucherItemCreate(
         const itemId = crypto.randomUUID();
         const nextOperationalSpent = state.items.reduce((sum, item) => sum + item.amount, 0) + amount;
         const nextTotals = computeDriverVoucherTotals(
-            state.voucher.cashGiven || 0,
+            getDriverVoucherIssuedAmount(state.voucher),
             nextOperationalSpent,
             normalizeNumber(state.voucher.driverFeeAmount || 0)
         );
@@ -1078,7 +1311,7 @@ export async function handleDriverVoucherItemDelete(
             .filter(existing => existing._id !== itemId)
             .reduce((sum, existing) => sum + existing.amount, 0);
         const nextTotals = computeDriverVoucherTotals(
-            state.voucher.cashGiven || 0,
+            getDriverVoucherIssuedAmount(state.voucher),
             nextOperationalSpent,
             normalizeNumber(state.voucher.driverFeeAmount || 0)
         );
@@ -1130,6 +1363,132 @@ export async function handleDriverVoucherItemDelete(
 
     return NextResponse.json(
         { error: 'Bon berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+        { status: 409 }
+    );
+}
+
+export async function handleDriverVoucherDisbursementDelete(
+    session: Pick<ApiSession, '_id' | 'name'>,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const disbursementId = typeof data.id === 'string' ? data.id : '';
+    if (!disbursementId) {
+        return NextResponse.json({ error: 'Tambahan bon tidak valid' }, { status: 400 });
+    }
+
+    const disbursement = await sanityGetById<{
+        _id: string;
+        _rev?: string;
+        voucherRef?: string;
+        amount?: number;
+        kind?: 'INITIAL' | 'TOP_UP';
+        bankAccountRef?: string;
+        bankTransactionRef?: string;
+        note?: string;
+    }>(disbursementId);
+    if (!disbursement?.voucherRef) {
+        return NextResponse.json({ error: 'Tambahan bon tidak ditemukan' }, { status: 404 });
+    }
+    if (disbursement.kind !== 'TOP_UP') {
+        return NextResponse.json({ error: 'Bon awal tidak bisa dihapus dari riwayat pencairan' }, { status: 409 });
+    }
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        const state = await getDriverVoucherState(disbursement.voucherRef);
+        if ('error' in state) return state.error;
+        if (state.voucher.status === 'SETTLED') {
+            return NextResponse.json({ error: 'Bon yang sudah settle tidak bisa dikoreksi' }, { status: 409 });
+        }
+        if (!state.voucher._rev) {
+            return NextResponse.json({ error: 'Revisi bon tidak tersedia' }, { status: 409 });
+        }
+
+        const amount = normalizeNumber(disbursement.amount || 0);
+        if (amount <= 0) {
+            return NextResponse.json({ error: 'Nominal tambahan bon tidak valid' }, { status: 409 });
+        }
+
+        let bank: BankAccountSummary | null = null;
+        if (disbursement.bankAccountRef) {
+            bank = await getLedgerAccount(disbursement.bankAccountRef);
+            if (!bank) {
+                return NextResponse.json({ error: 'Rekening tambahan bon tidak ditemukan' }, { status: 404 });
+            }
+            if (!bank._rev) {
+                return NextResponse.json({ error: 'Revisi rekening tambahan bon tidak tersedia' }, { status: 409 });
+            }
+        }
+
+        const nextIssuedAmount = Math.max(getDriverVoucherIssuedAmount(state.voucher) - amount, getDriverVoucherInitialCash(state.voucher));
+        const nextTopUpCount = Math.max((state.voucher.topUpCount || 0) - 1, 0);
+        const totals = computeDriverVoucherTotals(
+            nextIssuedAmount,
+            state.items.reduce((sum, item) => sum + item.amount, 0),
+            normalizeNumber(state.voucher.driverFeeAmount || 0)
+        );
+
+        const transaction = getSanityClient().transaction().delete(disbursementId);
+        if (disbursement.bankTransactionRef) {
+            transaction.delete(disbursement.bankTransactionRef);
+        }
+        if (bank && disbursement.bankAccountRef) {
+            transaction.patch(disbursement.bankAccountRef, {
+                ifRevisionID: bank._rev,
+                set: { currentBalance: (bank.currentBalance || 0) + amount },
+            });
+        }
+        transaction.patch(disbursement.voucherRef, {
+            ifRevisionID: state.voucher._rev,
+            set: {
+                totalIssuedAmount: nextIssuedAmount,
+                topUpCount: nextTopUpCount,
+                totalSpent: totals.totalSpent,
+                totalClaimAmount: totals.totalClaimAmount,
+                balance: totals.balance,
+            },
+        });
+
+        try {
+            await transaction.commit();
+
+            const updatedVoucher = {
+                ...state.voucher,
+                totalIssuedAmount: nextIssuedAmount,
+                topUpCount: nextTopUpCount,
+                totalSpent: totals.totalSpent,
+                totalClaimAmount: totals.totalClaimAmount,
+                balance: totals.balance,
+            };
+
+            await addAuditLog(
+                session,
+                'DELETE',
+                'driver-voucher-disbursements',
+                disbursementId,
+                `Menghapus tambahan bon ${state.voucher.bonNumber}${disbursement.note ? ` - ${disbursement.note}` : ''}`
+            );
+
+            return NextResponse.json({
+                success: true,
+                voucher: updatedVoucher,
+            });
+        } catch (err) {
+            if (!isMutationConflictError(err)) {
+                throw err;
+            }
+
+            if (attempt === 2) {
+                return NextResponse.json(
+                    { error: 'Tambahan bon berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+        }
+    }
+
+    return NextResponse.json(
+        { error: 'Tambahan bon berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
         { status: 409 }
     );
 }
@@ -1188,7 +1547,7 @@ export async function handleDriverVoucherSettlement(
 
         const totalSpent = state.items.reduce((sum, item) => sum + item.amount, 0);
         const totals = computeDriverVoucherTotals(
-            state.voucher.cashGiven || 0,
+            getDriverVoucherIssuedAmount(state.voucher),
             totalSpent,
             driverFeeAmount
         );
@@ -1348,6 +1707,8 @@ export async function handleDriverVoucherIssueRepair(
             bonNumber: string;
             issuedDate: string;
             cashGiven: number;
+            initialCashGiven?: number;
+            totalIssuedAmount?: number;
             issueBankRef?: string;
         }>(voucherId);
         if (!voucher) {
@@ -1368,6 +1729,11 @@ export async function handleDriverVoucherIssueRepair(
             return NextResponse.json({ error: 'Bon ini sudah punya mutasi bank terkait' }, { status: 409 });
         }
 
+        const existingInitialDisbursement = await getSanityClient().fetch<{ _id: string } | null>(
+            `*[_type == "driverVoucherDisbursement" && voucherRef == $ref && kind == "INITIAL"][0]{ _id }`,
+            { ref: voucherId }
+        );
+
         const bank = await getLedgerAccount(issueBankRef);
         if (!bank) {
             return NextResponse.json({ error: 'Rekening sumber tidak ditemukan' }, { status: 404 });
@@ -1376,18 +1742,20 @@ export async function handleDriverVoucherIssueRepair(
             return NextResponse.json({ error: 'Revisi rekening sumber tidak tersedia' }, { status: 409 });
         }
 
-        const newBalance = (bank.currentBalance || 0) - (voucher.cashGiven || 0);
+        const initialAmount = getDriverVoucherInitialCash(voucher);
+        const newBalance = (bank.currentBalance || 0) - initialAmount;
+        const repairTransactionId = crypto.randomUUID();
         try {
-            await getSanityClient()
+            const transaction = getSanityClient()
                 .transaction()
                 .create({
-                    _id: crypto.randomUUID(),
+                    _id: repairTransactionId,
                     _type: 'bankTransaction',
                     bankAccountRef: issueBankRef,
                     bankAccountName: bank.bankName,
                     bankAccountNumber: bank.accountNumber,
                     type: 'DEBIT',
-                    amount: voucher.cashGiven || 0,
+                    amount: initialAmount,
                     date: voucher.issuedDate,
                     description: `Rekonsiliasi pencairan bon ${voucher.bonNumber}`,
                     balanceAfter: newBalance,
@@ -1402,14 +1770,34 @@ export async function handleDriverVoucherIssueRepair(
                     set: {
                         issueBankRef,
                         issueBankName: bank.bankName,
+                        initialCashGiven: initialAmount,
+                        totalIssuedAmount: getDriverVoucherIssuedAmount(voucher),
                     },
-                })
-                .commit();
+                });
+            if (!existingInitialDisbursement) {
+                transaction.create({
+                    _id: crypto.randomUUID(),
+                    _type: 'driverVoucherDisbursement',
+                    voucherRef: voucherId,
+                    date: voucher.issuedDate,
+                    amount: initialAmount,
+                    kind: 'INITIAL',
+                    bankAccountRef: issueBankRef,
+                    bankAccountName: bank.bankName,
+                    bankAccountNumber: bank.accountNumber,
+                    bankTransactionRef: repairTransactionId,
+                    createdBy: session._id,
+                    createdByName: session.name,
+                });
+            }
+            await transaction.commit();
 
             const updatedVoucher = {
                 ...voucher,
                 issueBankRef,
                 issueBankName: bank.bankName,
+                initialCashGiven: initialAmount,
+                totalIssuedAmount: getDriverVoucherIssuedAmount(voucher),
             };
 
             await addAuditLog(session, 'UPDATE', 'driver-vouchers', voucherId, `Rekonsiliasi pencairan bon: ${voucher.bonNumber}`);

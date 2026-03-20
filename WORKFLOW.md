@@ -13,7 +13,7 @@ Fokusnya bukan teori bisnis umum, tetapi perilaku aplikasi yang sekarang benar-b
   Tagihan ongkos angkut ke customer.
 - `Driver Borongan`
   Slip upah supir alternatif / legacy untuk perjalanan yang memang tidak disettle lewat bon trip.
-- `Driver Voucher / Bon Supir`
+- `Driver Voucher / Bon Trip`
   Settlement trip per DO: uang jalan awal, biaya perjalanan aktual, upah trip, dan selisih akhir.
 - `Payment`
   Pencatatan pembayaran dari customer.
@@ -53,6 +53,16 @@ Artinya:
 - Sistem membuat nomor resi otomatis.
 - Status awal order: `OPEN`.
 - Item barang disimpan sebagai `orderItem`.
+- Setiap customer sekarang bisa punya `master barang customer`.
+- Saat customer dipilih di form order, dropdown barang akan difilter sesuai customer itu.
+- Jika operator memilih barang dari master customer:
+  - deskripsi
+  - default koli
+  - default berat
+  - default volume
+  akan terisi otomatis sebagai template.
+- Operator tetap boleh mengubah angka/deskripsi di transaksi nyata bila muatan lapangan berbeda.
+- Order item tetap menyimpan snapshot transaksi, jadi perubahan master barang customer di kemudian hari tidak mengubah order lama.
 - Item order sekarang bisa diinput dengan unit operasional berbeda:
   - berat: `kg` atau `ton`
   - volume: `m3`, `liter`, atau `kl`
@@ -314,9 +324,9 @@ Efeknya:
 - muncul di `Laba Rugi` sebagai pengeluaran,
 - muncul juga di `Arus Kas` sebagai mutasi kas tunai.
 
-## 6. Alur Bon Supir
+## 6. Alur Bon Trip
 
-Bon supir sekarang diperlakukan sebagai settlement utama per trip / per DO.
+Bon trip sekarang diperlakukan sebagai settlement utama per trip / per DO.
 
 Artinya:
 
@@ -336,7 +346,7 @@ Saat bon dibuat:
 5. sistem langsung membuat `bankTransaction` tipe `DEBIT`,
 6. saldo rekening sumber langsung berkurang.
 
-Jadi bon supir selalu punya konsekuensi kas/bank sejak awal.
+Jadi bon trip selalu punya konsekuensi kas/bank sejak awal.
 
 ### 6.2 Tambah biaya perjalanan
 
@@ -395,8 +405,8 @@ Modul ini sekarang merepresentasikan:
 - pembayaran borongan yang diarahkan ke rekening,
 - pembayaran borongan tunai yang otomatis masuk ke `Kas Tunai`,
 - expense yang diarahkan ke rekening,
-- terbit bon supir,
-- settlement bon supir,
+- terbit bon trip,
+- settlement bon trip,
 - transfer antar rekening.
 
 ### 8.3 Apa yang tidak mengubah saldo rekening / kas

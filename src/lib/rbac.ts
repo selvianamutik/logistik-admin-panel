@@ -175,7 +175,7 @@ export function getSidebarMenu(role: UserRole): SidebarMenuGroup[] {
             label: 'Keuangan',
             items: [
                 { label: 'Nota Ongkos Angkut', href: '/invoices', icon: 'FileText', module: 'freightNotas' },
-                { label: 'Bon Supir', href: '/driver-vouchers', icon: 'Wallet', module: 'driverVouchers' },
+                { label: 'Bon Trip Supir', href: '/driver-vouchers', icon: 'Wallet', module: 'driverVouchers' },
                 { label: 'Pengeluaran', href: '/expenses', icon: 'Wallet', module: 'expenses' },
                 { label: 'Kategori Biaya', href: '/expense-categories', icon: 'Tags', module: 'expenseCategories' },
                 { label: 'Rekening & Kas', href: '/bank-accounts', icon: 'Landmark', module: 'bankAccounts' },
@@ -199,8 +199,8 @@ export function getSidebarMenu(role: UserRole): SidebarMenuGroup[] {
                 { label: 'Ubah Password', href: '/settings/password', icon: 'Lock', module: 'profile' },
                 ...(role === 'OWNER' ? [
                     { label: 'Perusahaan', href: '/settings/company', icon: 'Building2', module: 'companySettings' },
-                    { label: 'User Management', href: '/settings/users', icon: 'UserCog', module: 'userManagement' },
-                    { label: 'Audit Log', href: '/settings/audit-logs', icon: 'ScrollText', module: 'auditLogs' },
+                    { label: 'Pengguna', href: '/settings/users', icon: 'UserCog', module: 'userManagement' },
+                    { label: 'Audit Aktivitas', href: '/settings/audit-logs', icon: 'ScrollText', module: 'auditLogs' },
                 ] : []),
             ],
         },

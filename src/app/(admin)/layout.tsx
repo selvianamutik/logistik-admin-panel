@@ -148,7 +148,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                     setCompany(co.data);
                     if (co.data.themeColor) applyTheme(co.data.themeColor);
                     if (co.data.name) {
-                        document.title = `Sistem Manajemen - ${co.data.name}`;
+                        document.title = `Operasional - ${co.data.name}`;
                     }
                 }
             } catch {
@@ -222,8 +222,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             reports: 'Laporan', fleet: 'Armada', vehicles: 'Kendaraan',
             maintenance: 'Maintenance', incidents: 'Insiden', settings: 'Pengaturan',
             profile: 'Profil', password: 'Password', company: 'Perusahaan',
-            users: 'User', 'audit-logs': 'Audit Log', new: 'Baru', edit: 'Edit',
-            tires: 'Ban', 'bank-accounts': 'Rekening & Kas', borongan: 'Borongan Legacy', 'driver-vouchers': 'Bon Trip Supir',
+            users: 'Pengguna', 'audit-logs': 'Audit Aktivitas', new: 'Baru', edit: 'Edit',
+            tires: 'Ban', 'bank-accounts': 'Rekening & Kas', borongan: 'Riwayat Borongan', 'driver-vouchers': 'Bon Trip Supir',
         };
         const resolvedLabel =
             labels[part] ||
@@ -257,7 +257,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                             )}
                             <div className="sidebar-logo-text-wrap">
                                 <span className="sidebar-logo-text">{company?.name || 'Gading Mas Surya'}</span>
-                                <span className="sidebar-logo-subtitle">Sistem Manajemen</span>
+                                <span className="sidebar-logo-subtitle">Operasional &amp; Keuangan</span>
                             </div>
                         </div>
 

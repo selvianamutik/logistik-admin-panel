@@ -17,9 +17,11 @@ import { ensureSameOriginRequest } from '@/lib/api/request-security';
 import {
     handleBoronganPayment,
     handleDriverVoucherCreate,
+    handleDriverVoucherDisbursementDelete,
     handleDriverVoucherIssueRepair,
     handleDriverVoucherItemCreate,
     handleDriverVoucherSettlement,
+    handleDriverVoucherTopUp,
 } from '@/lib/api/driver-workflows';
 import {
     handleBankTransfer,
@@ -58,6 +60,7 @@ import {
     sanityGetCompanyProfile,
 } from '@/lib/sanity';
 import type { Expense, User, Vehicle } from '@/lib/types';
+import { getDriverVoucherIssuedAmount } from '@/lib/utils';
 type DashboardSummary = {
     orderStats: { total: number; open: number; partial: number; complete: number; onHold: number };
     doStats: { total: number; onDelivery: number };
@@ -146,7 +149,9 @@ async function getDashboardSummary(session: Session): Promise<DashboardSummary> 
             `*[_type == "payment" && defined(invoiceRef)]{ invoiceRef, amount }`
         ),
         client.fetch<Array<{ totalAmount?: number }>>(`*[_type == "driverBorongan" && status != "PAID"]{ totalAmount }`),
-        client.fetch<Array<{ cashGiven?: number }>>(`*[_type == "driverVoucher" && status != "SETTLED"]{ cashGiven }`),
+        client.fetch<Array<{ cashGiven?: number; totalIssuedAmount?: number }>>(
+            `*[_type == "driverVoucher" && status != "SETTLED"]{ cashGiven, totalIssuedAmount }`
+        ),
         client.fetch<DashboardSummary['fleetStats']>(`{
             "openIncidents": count(*[_type == "incident" && (status == "OPEN" || status == "IN_PROGRESS")]),
             "maintenanceDue": count(*[_type == "maintenance" && status == "SCHEDULED"])
@@ -187,7 +192,7 @@ async function getDashboardSummary(session: Session): Promise<DashboardSummary> 
         0
     );
     const voucherIssued = openVouchers.reduce(
-        (sum, voucher) => sum + (typeof voucher.cashGiven === 'number' ? voucher.cashGiven : 0),
+        (sum, voucher) => sum + getDriverVoucherIssuedAmount(voucher),
         0
     );
 
@@ -424,7 +429,7 @@ export async function POST(request: Request) {
 
         if (entity === 'driver-borongans' && action === 'create-with-items') {
             return NextResponse.json(
-                { error: 'Slip borongan baru sudah dinonaktifkan. Gunakan Bon Supir per DO/trip untuk settlement aktif.' },
+                { error: 'Slip borongan baru sudah dinonaktifkan. Gunakan Bon Trip per DO/trip untuk settlement aktif.' },
                 { status: 409 }
             );
         }
@@ -433,8 +438,16 @@ export async function POST(request: Request) {
             return handleDriverVoucherSettlement(session, data, addAuditLog);
         }
 
+        if (entity === 'driver-vouchers' && action === 'top-up') {
+            return handleDriverVoucherTopUp(session, data, addAuditLog);
+        }
+
         if (entity === 'driver-vouchers' && action === 'repair-issue-ledger') {
             return handleDriverVoucherIssueRepair(session, data, addAuditLog);
+        }
+
+        if (entity === 'driver-voucher-disbursements' && action === 'delete') {
+            return handleDriverVoucherDisbursementDelete(session, data, addAuditLog);
         }
 
         if (entity === 'bank-transactions' && action === 'transfer') {

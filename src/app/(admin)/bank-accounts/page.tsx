@@ -320,7 +320,7 @@ export default function BankAccountsPage() {
       }
 
       setDeleteConfirm(null);
-      addToast("success", "Rekening dihapus");
+      addToast("success", "Rekening dinonaktifkan");
       await refreshAccounts();
     } catch {
       addToast("error", "Gagal menonaktifkan rekening");
@@ -409,6 +409,12 @@ export default function BankAccountsPage() {
     (sum, account) => sum + (account.initialBalance || 0),
     0,
   );
+  const cashBalance = accounts
+    .filter((account) => isCashAccount(account))
+    .reduce((sum, account) => sum + (account.currentBalance || 0), 0);
+  const bankBalance = accounts
+    .filter((account) => !isCashAccount(account))
+    .reduce((sum, account) => sum + (account.currentBalance || 0), 0);
 
   const handleBrandedPrint = () => {
     const change = totalBalance - totalInitial;
@@ -446,10 +452,10 @@ export default function BankAccountsPage() {
         <div className="page-header-left">
           <h1 className="page-title">Rekening &amp; Kas</h1>
           <p className="page-subtitle">
-            Kelola rekening bank, Kas Tunai, dan tracking saldo real-time
+            Pantau posisi uang operasional di rekening bank dan kas tunai.
           </p>
         </div>
-        <div className="page-actions" style={{ flexWrap: "wrap" }}>
+        <div className="page-actions">
           <button
             className="btn btn-secondary btn-sm"
             onClick={handleExportExcel}
@@ -469,19 +475,12 @@ export default function BankAccountsPage() {
             <ArrowRightLeft size={16} /> Transfer
           </button>
           <button className="btn btn-primary" onClick={openNew}>
-            <Plus size={18} /> Tambah
+            <Plus size={18} /> Tambah Rekening
           </button>
         </div>
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          gap: "1rem",
-          marginBottom: "1.5rem",
-        }}
-      >
+      <div className="responsive-stat-grid" style={{ marginBottom: "1rem" }}>
         <div className="card">
           <div className="card-body">
             <div
@@ -501,10 +500,10 @@ export default function BankAccountsPage() {
               className="text-muted"
               style={{ fontSize: "0.75rem", textTransform: "uppercase" }}
             >
-              Saldo Awal
+              Saldo Bank
             </div>
             <div style={{ fontSize: "1.6rem", fontWeight: 700 }}>
-              {fmt(totalInitial)}
+              {fmt(bankBalance)}
             </div>
           </div>
         </div>
@@ -514,7 +513,20 @@ export default function BankAccountsPage() {
               className="text-muted"
               style={{ fontSize: "0.75rem", textTransform: "uppercase" }}
             >
-              Perubahan
+              Saldo Kas Tunai
+            </div>
+            <div style={{ fontSize: "1.6rem", fontWeight: 700 }}>
+              {fmt(cashBalance)}
+            </div>
+          </div>
+        </div>
+        <div className="card">
+          <div className="card-body">
+            <div
+              className="text-muted"
+              style={{ fontSize: "0.75rem", textTransform: "uppercase" }}
+            >
+              Perubahan dari Saldo Awal
             </div>
             <div
               style={{
@@ -529,6 +541,20 @@ export default function BankAccountsPage() {
               {totalBalance - totalInitial >= 0 ? "+" : ""}
               {fmt(totalBalance - totalInitial)}
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div
+        className="card"
+        style={{ marginBottom: "1.5rem", background: "var(--color-gray-25)" }}
+      >
+        <div className="card-body" style={{ padding: "0.9rem 1rem" }}>
+          <div style={{ fontWeight: 700, marginBottom: "0.25rem" }}>
+            Ringkasan Kas &amp; Bank
+          </div>
+          <div style={{ fontSize: "0.82rem", color: "var(--color-gray-600)" }}>
+            Halaman ini menunjukkan posisi uang yang benar-benar tercatat di rekening bank dan kas tunai. Transfer antar rekening tidak mengubah total uang, hanya memindahkan posisinya.
           </div>
         </div>
       </div>
@@ -694,9 +720,9 @@ export default function BankAccountsPage() {
                 size={32}
                 style={{ marginBottom: "0.5rem", opacity: 0.5 }}
               />
-              <div style={{ fontSize: "0.85rem", fontWeight: 500 }}>
-                Tambah Rekening
-              </div>
+                <div style={{ fontSize: "0.85rem", fontWeight: 500 }}>
+                Tambah Rekening Bank
+                </div>
             </div>
           </div>
         )}

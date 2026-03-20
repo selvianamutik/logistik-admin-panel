@@ -14,6 +14,7 @@ import { openBrandedPrint } from "@/lib/print";
 import {
   formatCurrency,
   formatDate,
+  getDriverVoucherIssuedAmount,
   getReceivableRemainingAmount,
 } from "@/lib/utils";
 import { exportToExcel } from "@/lib/export";
@@ -173,7 +174,7 @@ export default function ReportsPage() {
     .filter((item) => item.status !== "SETTLED")
     .sort((a, b) => b.issuedDate.localeCompare(a.issuedDate));
   const openVoucherCash = openDriverVouchers.reduce(
-    (sum, item) => sum + (item.cashGiven || 0),
+    (sum, item) => sum + getDriverVoucherIssuedAmount(item),
     0,
   );
   const openVoucherOperationalSpent = openDriverVouchers.reduce(
@@ -337,9 +338,9 @@ export default function ReportsPage() {
       <div className="page-header">
         <div className="page-header-left">
           <h1 className="page-title">Laporan Keuangan</h1>
-          <p className="page-subtitle">Laba rugi, arus kas, dan tagihan aktif per periode</p>
+          <p className="page-subtitle">Lihat laba rugi, arus kas, piutang aktif, dan bon trip yang masih berjalan.</p>
         </div>
-        <div className="page-actions" style={{ flexWrap: "wrap" }}>
+        <div className="page-actions">
           <button
             className="btn btn-secondary btn-sm"
             onClick={handleExportExcel}
@@ -440,11 +441,7 @@ export default function ReportsPage() {
               Catatan Arus Kas
             </div>
             <div style={{ fontSize: "0.82rem", color: "var(--color-gray-600)" }}>
-              Tab ini menampilkan mutasi dari{" "}
-              <code style={{ margin: "0 0.25rem" }}>bankTransaction</code>,
-              termasuk rekening bank dan akun <strong>Kas Tunai</strong>.
-              Transaksi tunai baru akan muncul di sini jika diposting ke akun
-              kas tersebut.
+              Tab ini menampilkan semua mutasi uang yang benar-benar tercatat di rekening bank dan akun <strong>Kas Tunai</strong>. Pengeluaran tunai baru terlihat di sini setelah diposting ke akun kas yang dipakai.
             </div>
           </div>
         </div>
@@ -463,17 +460,12 @@ export default function ReportsPage() {
             >
               <div className="card-body" style={{ padding: "0.9rem 1rem" }}>
                 <div style={{ fontWeight: 700, marginBottom: "0.25rem" }}>
-                  Catatan Legacy Invoice
+                  Catatan Tagihan Lama
                 </div>
                 <div
                   style={{ fontSize: "0.82rem", color: "var(--color-gray-700)" }}
                 >
-                  Ada {invoices.length} invoice legacy di dataset. Ringkasan
-                  tagihan pada halaman ini hanya menghitung{" "}
-                  <strong>Nota Ongkos aktif</strong>. Dalam periode ini ada{" "}
-                  {legacyInvoicesInPeriod.length} invoice legacy dengan
-                  outstanding {formatCurrency(legacyInvoiceOutstanding)} untuk
-                  referensi historis.
+                  Masih ada {invoices.length} tagihan lama dari sistem sebelumnya. Ringkasan utama halaman ini tetap menghitung <strong>Nota Ongkos aktif</strong>. Pada periode ini, sisa tagihan lama yang masih terbaca adalah {formatCurrency(legacyInvoiceOutstanding)} dari {legacyInvoicesInPeriod.length} dokumen untuk referensi historis.
                 </div>
               </div>
             </div>
@@ -502,7 +494,7 @@ export default function ReportsPage() {
                     : "var(--color-danger)",
               },
               {
-                label: "Nota Outstanding",
+                label: "Piutang Nota Aktif",
                 value: formatCurrency(totalNotaOutstanding),
                 note: `Nota terbit ${formatCurrency(totalNotaIssued)}`,
                 color: "var(--color-warning)",
@@ -545,7 +537,7 @@ export default function ReportsPage() {
           </div>
           <div className="card" style={{ marginBottom: "1.5rem" }}>
             <div className="card-header">
-              <span className="card-header-title">Bon Supir Belum Settle</span>
+                <span className="card-header-title">Bon Trip yang Masih Berjalan</span>
             </div>
             <div className="card-body">
               <div className="responsive-stat-grid" style={{ gap: "0.75rem", marginBottom: "1rem" }}>
@@ -563,7 +555,7 @@ export default function ReportsPage() {
                       textTransform: "uppercase",
                     }}
                   >
-                    Uang Jalan Dicairkan
+                    Total Uang Diberikan
                   </div>
                   <div style={{ fontSize: "1.05rem", fontWeight: 700 }}>
                     {formatCurrency(openVoucherCash)}
@@ -696,7 +688,7 @@ export default function ReportsPage() {
                       <th>Tanggal</th>
                       <th>Supir</th>
                       <th>Rekening</th>
-                      <th style={{ textAlign: "right" }}>Uang Jalan</th>
+                      <th style={{ textAlign: "right" }}>Total Diberikan</th>
                       <th style={{ textAlign: "right" }}>Biaya</th>
                       <th style={{ textAlign: "right" }}>Upah Trip</th>
                       <th style={{ textAlign: "right" }}>Total Hak Trip</th>
@@ -714,7 +706,7 @@ export default function ReportsPage() {
                             color: "var(--text-muted)",
                           }}
                         >
-                          Tidak ada bon supir yang masih aktif
+                          Tidak ada bon trip yang masih aktif
                         </td>
                       </tr>
                     ) : (
@@ -729,7 +721,7 @@ export default function ReportsPage() {
                             <td>{item.driverName || "-"}</td>
                             <td>{item.issueBankName || "-"}</td>
                             <td style={{ textAlign: "right", fontWeight: 600 }}>
-                              {formatCurrency(item.cashGiven)}
+                              {formatCurrency(getDriverVoucherIssuedAmount(item))}
                             </td>
                             <td style={{ textAlign: "right" }}>
                               {formatCurrency(item.totalSpent)}
@@ -763,7 +755,7 @@ export default function ReportsPage() {
                 {openDriverVouchers.length === 0 ? (
                   <div className="mobile-record-card">
                     <div className="mobile-record-title">
-                      Tidak ada bon supir yang masih aktif
+                      Tidak ada bon trip yang masih aktif
                     </div>
                     <div className="mobile-record-subtitle">
                       Semua bon trip pada periode ini sudah diselesaikan.
@@ -782,7 +774,7 @@ export default function ReportsPage() {
                               {item.bonNumber}
                             </div>
                             <div className="mobile-record-subtitle">
-                              {item.driverName || "-"} • {formatDate(item.issuedDate)}
+                              {item.driverName || "-"} | {formatDate(item.issuedDate)}
                             </div>
                           </div>
                           <span className="badge badge-warning">Belum Settle</span>
@@ -795,9 +787,9 @@ export default function ReportsPage() {
                             </span>
                           </div>
                           <div className="mobile-record-kv">
-                            <span className="mobile-record-label">Uang Jalan</span>
+                            <span className="mobile-record-label">Total Diberikan</span>
                             <span className="mobile-record-value">
-                              {formatCurrency(item.cashGiven)}
+                              {formatCurrency(getDriverVoucherIssuedAmount(item))}
                             </span>
                           </div>
                           <div className="mobile-record-kv">

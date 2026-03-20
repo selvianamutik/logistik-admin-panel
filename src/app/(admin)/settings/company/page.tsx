@@ -97,7 +97,7 @@ export default function CompanyPage() {
 
     return (
         <div>
-            <div className="page-header"><div className="page-header-left"><h1 className="page-title">Pengaturan Perusahaan</h1><p className="page-subtitle">Kelola profil, branding, dan dokumen aktif perusahaan</p></div>
+            <div className="page-header"><div className="page-header-left"><h1 className="page-title">Perusahaan &amp; Dokumen</h1><p className="page-subtitle">Kelola identitas perusahaan, branding aplikasi, dan nomor dokumen harian.</p></div>
                 <div className="page-actions"><button className="btn btn-primary" onClick={handleSave} disabled={saving}><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}</button></div></div>
 
             <div className="detail-grid">
@@ -202,11 +202,10 @@ export default function CompanyPage() {
 
                 <div>
                     <div className="card mb-6">
-                        <div className="card-header"><span className="card-header-title">Workflow Tagihan Aktif</span></div>
+                        <div className="card-header"><span className="card-header-title">Catatan Tagihan Harian</span></div>
                         <div className="card-body">
                             <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                                Tagihan operasional yang aktif di aplikasi ini adalah <strong>Nota Ongkos</strong> pada modul <code>/invoices</code>.
-                                Pengaturan invoice legacy tetap disimpan untuk kompatibilitas data lama, tetapi tidak lagi dipakai di workflow harian.
+                                Tagihan harian yang dipakai saat ini adalah <strong>Nota Ongkos</strong>. Pengaturan tagihan lama tetap disimpan hanya untuk membaca data historis lama dan tidak lagi dipakai di operasional harian.
                             </p>
                         </div>
                     </div>
@@ -230,6 +229,14 @@ export default function CompanyPage() {
                                 <div className="form-group" style={{ alignSelf: 'end' }}>
                                     <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                                         Dipakai untuk nomor cetak nota model client, misalnya <strong>26/II/3/001</strong>. Nomor sistem internal tetap memakai format aplikasi.
+                                    </p>
+                                </div>
+                                <div className="form-group" />
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group" style={{ alignSelf: 'end' }}>
+                                    <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                                        Perubahan prefix hanya berlaku untuk dokumen baru dan tidak mengubah nomor dokumen yang sudah terbit.
                                     </p>
                                 </div>
                                 <div className="form-group" />

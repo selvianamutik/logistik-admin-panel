@@ -98,6 +98,43 @@ export function getReceivableRemainingAmount(
     return Math.max(getReceivableNetAmount(value) - paidAmount, 0);
 }
 
+export function getDriverVoucherInitialCash(value: {
+    initialCashGiven?: number | null;
+    cashGiven?: number | null;
+}) {
+    if (typeof value.initialCashGiven === 'number' && Number.isFinite(value.initialCashGiven)) {
+        return Math.max(value.initialCashGiven, 0);
+    }
+    if (typeof value.cashGiven === 'number' && Number.isFinite(value.cashGiven)) {
+        return Math.max(value.cashGiven, 0);
+    }
+    return 0;
+}
+
+export function getDriverVoucherIssuedAmount(value: {
+    totalIssuedAmount?: number | null;
+    cashGiven?: number | null;
+}) {
+    if (typeof value.totalIssuedAmount === 'number' && Number.isFinite(value.totalIssuedAmount)) {
+        return Math.max(value.totalIssuedAmount, 0);
+    }
+    if (typeof value.cashGiven === 'number' && Number.isFinite(value.cashGiven)) {
+        return Math.max(value.cashGiven, 0);
+    }
+    return 0;
+}
+
+export function getDriverVoucherTopUpAmount(value: {
+    initialCashGiven?: number | null;
+    totalIssuedAmount?: number | null;
+    cashGiven?: number | null;
+}) {
+    return Math.max(
+        getDriverVoucherIssuedAmount(value) - getDriverVoucherInitialCash(value),
+        0,
+    );
+}
+
 // ── Status labels & colors ──
 export const ORDER_STATUS_MAP: Record<string, { label: string; color: string }> = {
     OPEN: { label: 'Belum Terkirim', color: 'info' },
