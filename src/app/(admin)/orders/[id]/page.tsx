@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '../../layout';
 import { Truck, FileText, Edit, Eye } from 'lucide-react';
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { formatDate, formatCurrency, formatNumber, getReceivableNetAmount, ORDER_STATUS_MAP, ITEM_STATUS_MAP, DO_STATUS_MAP, INVOICE_STATUS_MAP, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
 import { formatCargoSummary, formatVolumeDisplay } from '@/lib/measurement';
 import { calculateWeightPortion, getOrderItemProgress, roundQuantity } from '@/lib/order-item-progress';
@@ -805,15 +806,12 @@ export default function OrderDetailPage() {
                                                             </div>
                                                         </td>
                                                         <td style={{ minWidth: 180 }}>
-                                                            <input
-                                                                type="number"
-                                                                min="0"
-                                                                step="0.01"
-                                                                className="form-input"
-                                                                value={selection?.qtyKoli || ''}
+                                                            <FormattedNumberInput
+                                                                min={0}
+                                                                maxFractionDigits={2}
+                                                                value={Number(selection?.qtyKoli || 0)}
                                                                 disabled={!selection || creatingDO}
-                                                                onChange={e => {
-                                                                    const value = e.target.value;
+                                                                onValueChange={value => {
                                                                     setSelectedShipments(prev => ({
                                                                         ...prev,
                                                                         [item._id]: {
@@ -822,7 +820,7 @@ export default function OrderDetailPage() {
                                                                                 holdReason: '',
                                                                                 holdLocation: '',
                                                                             }),
-                                                                            qtyKoli: value,
+                                                                            qtyKoli: String(value),
                                                                         },
                                                                     }));
                                                                 }}
@@ -934,13 +932,11 @@ export default function OrderDetailPage() {
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Qty hold (koli)</label>
-                                <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    className="form-input"
-                                    value={holdQtyKoli}
-                                    onChange={e => setHoldQtyKoli(e.target.value)}
+                                <FormattedNumberInput
+                                    min={0}
+                                    maxFractionDigits={2}
+                                    value={Number(holdQtyKoli || 0)}
+                                    onValueChange={value => setHoldQtyKoli(String(value))}
                                     disabled={savingHold}
                                 />
                             </div>

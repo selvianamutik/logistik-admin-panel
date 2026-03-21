@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useToast } from '../../layout';
 import { Plus, Search, Eye, AlertTriangle, X } from 'lucide-react';
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { formatDateTime, INCIDENT_STATUS_MAP, URGENCY_MAP, INCIDENT_TYPE_MAP } from '@/lib/utils';
 import type { Incident, Vehicle, DeliveryOrder } from '@/lib/types';
 
@@ -217,7 +218,7 @@ export default function IncidentsPage() {
                             </div>
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Lokasi</label><input className="form-input" value={form.locationText} onChange={e => setForm({ ...form, locationText: e.target.value })} placeholder="Tol Cikampek KM 45..." /></div>
-                                <div className="form-group"><label className="form-label">Odometer</label><input type="number" className="form-input" value={form.odometer || ''} onChange={e => setForm({ ...form, odometer: Number(e.target.value) })} /></div>
+                                <div className="form-group"><label className="form-label">Odometer</label><FormattedNumberInput allowDecimal={false} value={form.odometer} onValueChange={value => setForm({ ...form, odometer: value })} /></div>
                             </div>
                             <div className="form-group"><label className="form-label">DO Terkait (Opsional)</label>
                                 <select className="form-select" value={form.relatedDeliveryOrderRef} onChange={e => handleRelatedDOChange(e.target.value)}><option value="">- Tidak ada -</option>{filteredDos.map(d => <option key={d._id} value={d._id}>{d.doNumber}</option>)}</select></div>

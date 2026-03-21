@@ -47,6 +47,7 @@ import {
     handleOrderItemHoldSet,
     handleDeliveryOrderStatusUpdate,
     handleOrderCreate,
+    handleOrderUpdateWithItems,
 } from '@/lib/api/order-workflows';
 import { handleInvoiceCreate } from '@/lib/api/support-workflows';
 import { filterExpensesByRole, sanitizeVehicleForRole } from '@/lib/rbac';
@@ -401,6 +402,10 @@ export async function POST(request: Request) {
 
         if (entity === 'orders' && action === 'create-with-items') {
             return handleOrderCreate(session, data, addAuditLog);
+        }
+
+        if (entity === 'orders' && action === 'update-with-items') {
+            return handleOrderUpdateWithItems(session, data, addAuditLog);
         }
 
         if (entity === 'delivery-orders' && action === 'create-with-items') {

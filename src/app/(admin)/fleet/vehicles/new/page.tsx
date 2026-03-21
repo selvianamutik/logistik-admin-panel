@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Save } from 'lucide-react';
 
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { useApp, useToast } from '../../../layout';
 import type { Service } from '@/lib/types';
@@ -139,8 +140,8 @@ export default function VehicleNewPage() {
                         <div className="card-header"><span className="card-header-title">Spesifikasi</span></div>
                         <div className="card-body">
                             <div className="form-row">
-                                <div className="form-group"><label className="form-label">Kapasitas (kg)</label><input type="number" className="form-input" value={form.capacityKg || ''} onChange={e => setForm({ ...form, capacityKg: Number(e.target.value) })} /></div>
-                                <div className="form-group"><label className="form-label">Volume (m3)</label><input type="number" className="form-input" value={form.capacityVolume || ''} onChange={e => setForm({ ...form, capacityVolume: Number(e.target.value) })} /></div>
+                                <div className="form-group"><label className="form-label">Kapasitas (kg)</label><FormattedNumberInput allowDecimal={false} value={form.capacityKg} onValueChange={value => setForm({ ...form, capacityKg: value })} /></div>
+                                <div className="form-group"><label className="form-label">Volume (m3)</label><FormattedNumberInput maxFractionDigits={2} value={form.capacityVolume} onValueChange={value => setForm({ ...form, capacityVolume: value })} /></div>
                             </div>
                             {isOwner && <div className="form-row">
                                 <div className="form-group"><label className="form-label">No. Rangka</label><input className="form-input" value={form.chassisNumber} onChange={e => setForm({ ...form, chassisNumber: e.target.value })} placeholder="MHMFE74P..." /></div>

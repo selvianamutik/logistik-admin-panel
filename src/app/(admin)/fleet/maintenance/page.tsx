@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useToast } from '../../layout';
 import { Plus, Search, Wrench, Save, X } from 'lucide-react';
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { formatDate, MAINTENANCE_STATUS_MAP } from '@/lib/utils';
 import type { Maintenance, Vehicle } from '@/lib/types';
 
@@ -169,7 +170,7 @@ export default function MaintenancePage() {
                                     <option value="DATE">Tanggal</option><option value="ODOMETER">Odometer</option>
                                 </select></div>
                             {form.scheduleType === 'DATE' ? <div className="form-group"><label className="form-label">Tanggal</label><input type="date" className="form-input" value={form.plannedDate} onChange={e => setForm({ ...form, plannedDate: e.target.value })} disabled={saving} /></div> :
-                                <div className="form-group"><label className="form-label">Odometer (km)</label><input type="number" className="form-input" value={form.plannedOdometer || ''} onChange={e => setForm({ ...form, plannedOdometer: Number(e.target.value) })} disabled={saving} /></div>}
+                                <div className="form-group"><label className="form-label">Odometer (km)</label><FormattedNumberInput allowDecimal={false} value={form.plannedOdometer} onValueChange={value => setForm({ ...form, plannedOdometer: value })} disabled={saving} /></div>}
                             <div className="form-group"><label className="form-label">Catatan</label><textarea className="form-textarea" rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} disabled={saving} /></div>
                         </div>
                         <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowModal(false)} disabled={saving}>Batal</button><button className="btn btn-primary" onClick={handleSave} disabled={saving}><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}</button></div>

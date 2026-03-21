@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '../../layout';
 import { Save } from 'lucide-react';
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 
 export default function CustomerNewPage() {
@@ -70,7 +71,7 @@ export default function CustomerNewPage() {
                         </div>
                         <div className="form-group" style={{ maxWidth: 200 }}>
                             <label className="form-label">Default Payment Term (hari)</label>
-                            <input type="number" className="form-input" value={form.defaultPaymentTerm} onChange={e => setForm({ ...form, defaultPaymentTerm: Number(e.target.value) })} />
+                            <FormattedNumberInput allowDecimal={false} value={form.defaultPaymentTerm} onValueChange={value => setForm({ ...form, defaultPaymentTerm: value })} />
                         </div>
                     </div>
                 </div>

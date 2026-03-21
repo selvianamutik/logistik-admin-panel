@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Save } from 'lucide-react';
 
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { useApp, useToast } from '../../../../layout';
 import { VEHICLE_STATUS_MAP } from '@/lib/utils';
@@ -208,7 +209,7 @@ export default function VehicleEditPage() {
                             </div>
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Tahun</label><input type="number" className="form-input" value={form.year} onChange={e => setForm({ ...form, year: Number(e.target.value) })} /></div>
-                                <div className="form-group"><label className="form-label">Odometer Terakhir</label><input type="number" className="form-input" value={form.lastOdometer || ''} onChange={e => setForm({ ...form, lastOdometer: Number(e.target.value) })} /></div>
+                                <div className="form-group"><label className="form-label">Odometer Terakhir</label><FormattedNumberInput allowDecimal={false} value={form.lastOdometer} onValueChange={value => setForm({ ...form, lastOdometer: value })} /></div>
                             </div>
                         </div>
                     </div>
@@ -216,8 +217,8 @@ export default function VehicleEditPage() {
                         <div className="card-header"><span className="card-header-title">Spesifikasi</span></div>
                         <div className="card-body">
                             <div className="form-row">
-                                <div className="form-group"><label className="form-label">Kapasitas (kg)</label><input type="number" className="form-input" value={form.capacityKg || ''} onChange={e => setForm({ ...form, capacityKg: Number(e.target.value) })} /></div>
-                                <div className="form-group"><label className="form-label">Volume (m3)</label><input type="number" className="form-input" value={form.capacityVolume || ''} onChange={e => setForm({ ...form, capacityVolume: Number(e.target.value) })} /></div>
+                                <div className="form-group"><label className="form-label">Kapasitas (kg)</label><FormattedNumberInput allowDecimal={false} value={form.capacityKg} onValueChange={value => setForm({ ...form, capacityKg: value })} /></div>
+                                <div className="form-group"><label className="form-label">Volume (m3)</label><FormattedNumberInput maxFractionDigits={2} value={form.capacityVolume} onValueChange={value => setForm({ ...form, capacityVolume: value })} /></div>
                             </div>
                             {isOwner && <div className="form-row">
                                 <div className="form-group"><label className="form-label">No. Rangka</label><input className="form-input" value={form.chassisNumber} onChange={e => setForm({ ...form, chassisNumber: e.target.value })} /></div>

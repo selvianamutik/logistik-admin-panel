@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '../../layout';
 import { Save, Plus, X } from 'lucide-react';
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import type { Customer, CustomerProduct, Service } from '@/lib/types';
 import {
@@ -240,9 +241,6 @@ export default function NewOrderPage() {
                                     <option value="">Pilih customer</option>
                                     {customers.filter(c => c.active !== false).map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
                                 </select>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                    Ini adalah pihak pengirim atau perusahaan yang order jasa dan nantinya ditagih pada nota.
-                                </div>
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Kategori Truk / Armada</label>
@@ -250,16 +248,10 @@ export default function NewOrderPage() {
                                     <option value="">Pilih kategori armada</option>
                                     {services.filter(s => s.active !== false).map(s => <option key={s._id} value={s._id}>{s.code} - {s.name}</option>)}
                                 </select>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                    Pilih kategori armada yang diminta customer. Kendaraan saat membuat surat jalan akan difilter mengikuti kategori ini.
-                                </div>
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Alamat Pickup (Opsional)</label>
                                 <input className="form-input" value={pickupAddress} onChange={e => setPickupAddress(e.target.value)} placeholder="Alamat pengambilan barang" />
-                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                    Otomatis diisi dari alamat customer saat customer dipilih, tapi masih bisa kamu ubah bila titik pickup berbeda.
-                                </div>
                             </div>
                         </div>
                     </div>
@@ -314,13 +306,6 @@ export default function NewOrderPage() {
                                             </option>
                                         ))}
                                     </select>
-                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                        {customerRef
-                                            ? customerProducts.length > 0
-                                                ? 'Pilih template barang customer agar deskripsi dan default muatan terisi otomatis. Tetap bisa diedit bila real lapangan berbeda.'
-                                                : 'Customer ini belum punya master barang. Kamu tetap bisa isi item manual.'
-                                            : 'Pilih customer dulu untuk menampilkan master barang per customer.'}
-                                    </div>
                                 </div>
                                 <div style={{ flex: '2 1 280px' }}>
                                     <label className="form-label">Deskripsi</label>
@@ -328,12 +313,22 @@ export default function NewOrderPage() {
                                 </div>
                                 <div style={{ flex: '0 1 110px' }}>
                                     <label className="form-label">Koli</label>
-                                    <input className="form-input" type="number" min={1} value={item.qtyKoli} onChange={e => updateItem(idx, 'qtyKoli', Number(e.target.value))} />
+                                    <FormattedNumberInput
+                                        min={1}
+                                        allowDecimal={false}
+                                        value={item.qtyKoli}
+                                        onValueChange={value => updateItem(idx, 'qtyKoli', value)}
+                                    />
                                 </div>
                                 <div style={{ flex: '1 1 180px' }}>
                                     <label className="form-label">Berat</label>
                                     <div style={{ display: 'flex', gap: 8 }}>
-                                        <input className="form-input" type="number" min={0} step="0.01" value={item.weightInputValue} onChange={e => updateItem(idx, 'weightInputValue', Number(e.target.value))} />
+                                        <FormattedNumberInput
+                                            min={0}
+                                            maxFractionDigits={2}
+                                            value={item.weightInputValue}
+                                            onValueChange={value => updateItem(idx, 'weightInputValue', value)}
+                                        />
                                         <select className="form-select" value={item.weightInputUnit} onChange={e => updateItem(idx, 'weightInputUnit', e.target.value as WeightInputUnit)} style={{ width: 92 }}>
                                             {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                         </select>
@@ -342,7 +337,12 @@ export default function NewOrderPage() {
                                 <div style={{ flex: '1 1 180px' }}>
                                     <label className="form-label">Volume</label>
                                     <div style={{ display: 'flex', gap: 8 }}>
-                                        <input className="form-input" type="number" min={0} step="0.01" value={item.volumeInputValue} onChange={e => updateItem(idx, 'volumeInputValue', Number(e.target.value))} />
+                                        <FormattedNumberInput
+                                            min={0}
+                                            maxFractionDigits={2}
+                                            value={item.volumeInputValue}
+                                            onValueChange={value => updateItem(idx, 'volumeInputValue', value)}
+                                        />
                                         <select className="form-select" value={item.volumeInputUnit} onChange={e => updateItem(idx, 'volumeInputUnit', e.target.value as VolumeInputUnit)} style={{ width: 92 }}>
                                             {VOLUME_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                         </select>

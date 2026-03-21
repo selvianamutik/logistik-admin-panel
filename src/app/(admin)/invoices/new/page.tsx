@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Plus, Save, Trash2 } from 'lucide-react';
 
 import CurrencyInput from '@/components/CurrencyInput';
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import type { CompanyProfile, Customer, DeliveryOrder, DeliveryOrderItem, Order } from '@/lib/types';
 import { formatCurrency, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
@@ -594,19 +595,17 @@ export default function NewNotaPage() {
                                         />
                                     </td>
                                     <td>
-                                        <input
-                                            type="number"
-                                            className="form-input"
-                                            value={row.collie || ''}
-                                            onChange={event => updateRow(row.id, 'collie', Number(event.target.value))}
+                                        <FormattedNumberInput
+                                            allowDecimal={false}
+                                            value={row.collie}
+                                            onValueChange={value => updateRow(row.id, 'collie', value)}
                                         />
                                     </td>
                                     <td>
-                                        <input
-                                            type="number"
-                                            className="form-input"
-                                            value={row.beratKg || ''}
-                                            onChange={event => updateRow(row.id, 'beratKg', Number(event.target.value))}
+                                        <FormattedNumberInput
+                                            maxFractionDigits={2}
+                                            value={row.beratKg}
+                                            onValueChange={value => updateRow(row.id, 'beratKg', value)}
                                         />
                                     </td>
                                     <td>

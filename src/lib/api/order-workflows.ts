@@ -48,6 +48,7 @@ type OrderItemStatusSummary = {
 };
 
 type NormalizedOrderItemInput = {
+    id?: string;
     customerProductRef?: string;
     customerProductCode?: string;
     customerProductName?: string;
@@ -76,6 +77,11 @@ type CustomerProductOrderSource = {
     defaultVolumeInputValue?: number;
     defaultVolumeInputUnit?: VolumeInputUnit;
     active?: boolean;
+};
+
+type ResolvedOrderPartyData = {
+    customer: { _id: string; name?: string; address?: string; active?: boolean };
+    serviceName?: string;
 };
 
 type DeliveryOrderItemSelection = {
@@ -467,6 +473,184 @@ function summarizeSelection(selection: DeliveryOrderItemSelection, description?:
     return `${description || selection.orderItemRef}: ${roundQuantity(selection.qtyKoli)} koli${selection.holdRemaining ? ' + sisa hold' : ''}`;
 }
 
+async function resolveOrderPartyData(customerRef: string, serviceRef?: string) {
+    const customer = await sanityGetById<{ _id: string; name?: string; address?: string; active?: boolean }>(customerRef);
+    if (!customer) {
+        throw new Error('Customer order tidak ditemukan');
+    }
+    if (customer.active === false) {
+        throw new Error('Customer order tidak aktif');
+    }
+
+    let serviceName: string | undefined;
+    if (serviceRef) {
+        const service = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(serviceRef);
+        if (!service) {
+            throw new Error('Kategori armada order tidak ditemukan');
+        }
+        if (service.active === false) {
+            throw new Error('Kategori armada order tidak aktif');
+        }
+        serviceName = service.name || undefined;
+    }
+
+    return {
+        customer,
+        serviceName,
+    } satisfies ResolvedOrderPartyData;
+}
+
+async function normalizeOrderItemsInput(customerRef: string, rawItems: unknown[]) {
+    const items = rawItems
+        .filter(isPlainObject)
+        .filter(item => normalizeText(item.description) || normalizeOptionalText(item.customerProductRef))
+        .map<NormalizedOrderItemInput>(item => {
+            const description = normalizeOptionalText(item.description) || '';
+            const customerProductRef = normalizeOptionalText(item.customerProductRef);
+            const qtyKoli = normalizeNumber(item.qtyKoli);
+            const rawWeightInputValue = normalizeNumber(item.weightInputValue ?? item.weight ?? 0);
+            const rawVolumeInputValue = normalizeNumber(item.volumeInputValue ?? item.volume);
+            const weightInputUnit: WeightInputUnit = item.weightInputUnit === 'TON' ? 'TON' : 'KG';
+            const volumeInputUnit: VolumeInputUnit =
+                item.volumeInputUnit === 'LITER' || item.volumeInputUnit === 'KL' ? item.volumeInputUnit : 'M3';
+            const value = normalizeNumber(item.value);
+
+            if (!description && !customerProductRef) {
+                throw new Error('Pilih barang customer atau isi deskripsi item order');
+            }
+            if (!Number.isFinite(qtyKoli) || qtyKoli < 0) {
+                throw new Error('Jumlah koli item order tidak valid');
+            }
+            if (!Number.isFinite(rawWeightInputValue) || rawWeightInputValue < 0) {
+                throw new Error('Berat item order tidak valid');
+            }
+            if (Number.isFinite(rawVolumeInputValue) && rawVolumeInputValue < 0) {
+                throw new Error('Volume item order tidak valid');
+            }
+
+            return {
+                id: normalizeOptionalText(item.id),
+                customerProductRef,
+                description,
+                qtyKoli,
+                weight: 0,
+                volume: undefined,
+                weightInputValue: Number.isFinite(rawWeightInputValue) && rawWeightInputValue > 0 ? rawWeightInputValue : undefined,
+                weightInputUnit: Number.isFinite(rawWeightInputValue) && rawWeightInputValue > 0 ? weightInputUnit : undefined,
+                volumeInputValue: Number.isFinite(rawVolumeInputValue) && rawVolumeInputValue > 0 ? rawVolumeInputValue : undefined,
+                volumeInputUnit: Number.isFinite(rawVolumeInputValue) && rawVolumeInputValue > 0 ? volumeInputUnit : undefined,
+                value: Number.isFinite(value) && value >= 0 ? value : undefined,
+            };
+        });
+
+    if (items.length === 0) {
+        throw new Error('Minimal 1 item order wajib diisi');
+    }
+
+    const customerProductRefs = [...new Set(
+        items
+            .map(item => item.customerProductRef)
+            .filter((value): value is string => Boolean(value))
+    )];
+    const customerProducts = customerProductRefs.length > 0
+        ? await getSanityClient().fetch<CustomerProductOrderSource[]>(
+            `*[_type == "customerProduct" && _id in $ids]{
+                _id,
+                customerRef,
+                code,
+                name,
+                description,
+                defaultQtyKoli,
+                defaultWeight,
+                defaultWeightInputValue,
+                defaultWeightInputUnit,
+                defaultVolume,
+                defaultVolumeInputValue,
+                defaultVolumeInputUnit,
+                active
+            }`,
+            { ids: customerProductRefs }
+        )
+        : [];
+    const customerProductMap = new Map(customerProducts.map(item => [item._id, item]));
+
+    for (const item of items) {
+        const customerProduct = item.customerProductRef ? customerProductMap.get(item.customerProductRef) : undefined;
+        if (item.customerProductRef && !customerProduct) {
+            throw new Error('Barang customer yang dipilih tidak ditemukan');
+        }
+        if (customerProduct) {
+            if (normalizeOptionalText(customerProduct.customerRef) !== customerRef) {
+                throw new Error('Barang customer harus sesuai dengan customer order yang dipilih');
+            }
+            if (customerProduct.active === false) {
+                throw new Error(`Barang customer ${customerProduct.name || customerProduct.code || ''} tidak aktif`);
+            }
+            item.customerProductCode = normalizeOptionalText(customerProduct.code);
+            item.customerProductName = normalizeOptionalText(customerProduct.name);
+            item.description =
+                item.description ||
+                normalizeOptionalText(customerProduct.description) ||
+                normalizeOptionalText(customerProduct.name) ||
+                '';
+            if (item.qtyKoli <= 0) {
+                item.qtyKoli = normalizeNumber(customerProduct.defaultQtyKoli ?? 1);
+            }
+            if (!item.weightInputValue || item.weightInputValue <= 0) {
+                const productWeightUnit = customerProduct.defaultWeightInputUnit === 'TON' ? 'TON' : 'KG';
+                const productWeightInputValue =
+                    normalizeNumber(customerProduct.defaultWeightInputValue) > 0
+                        ? normalizeNumber(customerProduct.defaultWeightInputValue)
+                        : convertKgToWeightInputValue(normalizeNumber(customerProduct.defaultWeight ?? 0), productWeightUnit);
+                item.weightInputValue = productWeightInputValue > 0 ? productWeightInputValue : undefined;
+                item.weightInputUnit = productWeightInputValue > 0 ? productWeightUnit : undefined;
+            }
+            if (!item.volumeInputValue || item.volumeInputValue <= 0) {
+                const productVolumeUnit =
+                    customerProduct.defaultVolumeInputUnit === 'LITER'
+                        ? 'LITER'
+                        : customerProduct.defaultVolumeInputUnit === 'KL'
+                            ? 'KL'
+                            : 'M3';
+                const productVolumeInputValue =
+                    normalizeNumber(customerProduct.defaultVolumeInputValue) > 0
+                        ? normalizeNumber(customerProduct.defaultVolumeInputValue)
+                        : convertM3ToVolumeInputValue(normalizeNumber(customerProduct.defaultVolume ?? 0), productVolumeUnit);
+                item.volumeInputValue = productVolumeInputValue > 0 ? productVolumeInputValue : undefined;
+                item.volumeInputUnit = productVolumeInputValue > 0 ? productVolumeUnit : undefined;
+            }
+        }
+
+        if (!item.description) {
+            throw new Error('Deskripsi item order wajib diisi');
+        }
+        if (!Number.isFinite(item.qtyKoli) || item.qtyKoli <= 0) {
+            throw new Error('Jumlah koli item order harus lebih besar dari 0');
+        }
+
+        const finalWeightInputUnit = item.weightInputUnit === 'TON' ? 'TON' : 'KG';
+        const finalVolumeInputUnit =
+            item.volumeInputUnit === 'LITER' || item.volumeInputUnit === 'KL' ? item.volumeInputUnit : 'M3';
+        const finalWeightInputValue = normalizeNumber(item.weightInputValue ?? 0);
+        const finalVolumeInputValue = normalizeNumber(item.volumeInputValue ?? 0);
+        if (!Number.isFinite(finalWeightInputValue) || finalWeightInputValue < 0) {
+            throw new Error('Berat item order tidak valid');
+        }
+        if (!Number.isFinite(finalVolumeInputValue) || finalVolumeInputValue < 0) {
+            throw new Error('Volume item order tidak valid');
+        }
+
+        item.weight = finalWeightInputValue > 0 ? convertWeightToKg(finalWeightInputValue, finalWeightInputUnit) : 0;
+        item.volume = finalVolumeInputValue > 0 ? convertVolumeToM3(finalVolumeInputValue, finalVolumeInputUnit) : undefined;
+        item.weightInputValue = finalWeightInputValue > 0 ? finalWeightInputValue : undefined;
+        item.weightInputUnit = finalWeightInputValue > 0 ? finalWeightInputUnit : undefined;
+        item.volumeInputValue = finalVolumeInputValue > 0 ? finalVolumeInputValue : undefined;
+        item.volumeInputUnit = finalVolumeInputValue > 0 ? finalVolumeInputUnit : undefined;
+    }
+
+    return items;
+}
+
 export async function syncOrderStatusFromItems(orderRef: string, session: ApiSession, addAuditLog: AuditLogFn) {
     const order = await sanityGetById<{ _id: string; status?: string }>(orderRef);
     if (!order || order.status === 'CANCELLED') {
@@ -627,171 +811,18 @@ export async function handleOrderCreate(
         return NextResponse.json({ error: 'Customer, penerima, dan alamat tujuan wajib diisi' }, { status: 400 });
     }
 
-    const customer = await sanityGetById<{ _id: string; name?: string; address?: string; active?: boolean }>(customerRef);
-    if (!customer) {
-        return NextResponse.json({ error: 'Customer order tidak ditemukan' }, { status: 404 });
-    }
-    if (customer.active === false) {
-        return NextResponse.json({ error: 'Customer order tidak aktif' }, { status: 409 });
-    }
-
+    let customer: ResolvedOrderPartyData['customer'];
     let serviceName: string | undefined;
-    if (serviceRef) {
-        const service = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(serviceRef);
-        if (!service) {
-            return NextResponse.json({ error: 'Kategori armada order tidak ditemukan' }, { status: 404 });
-        }
-        if (service.active === false) {
-            return NextResponse.json({ error: 'Kategori armada order tidak aktif' }, { status: 409 });
-        }
-        serviceName = service.name || undefined;
-    }
-
-    const rawItems = Array.isArray(data.items) ? data.items : [];
-    const items = rawItems
-        .filter(isPlainObject)
-        .filter(item => normalizeText(item.description) || normalizeOptionalText(item.customerProductRef))
-        .map<NormalizedOrderItemInput>(item => {
-            const description = normalizeOptionalText(item.description) || '';
-            const customerProductRef = normalizeOptionalText(item.customerProductRef);
-            const qtyKoli = normalizeNumber(item.qtyKoli);
-            const rawWeightInputValue = normalizeNumber(item.weightInputValue ?? item.weight ?? 0);
-            const rawVolumeInputValue = normalizeNumber(item.volumeInputValue ?? item.volume);
-            const weightInputUnit: WeightInputUnit = item.weightInputUnit === 'TON' ? 'TON' : 'KG';
-            const volumeInputUnit: VolumeInputUnit =
-                item.volumeInputUnit === 'LITER' || item.volumeInputUnit === 'KL' ? item.volumeInputUnit : 'M3';
-            const value = normalizeNumber(item.value);
-
-            if (!description && !customerProductRef) {
-                throw new Error('Pilih barang customer atau isi deskripsi item order');
-            }
-            if (!Number.isFinite(qtyKoli) || qtyKoli < 0) {
-                throw new Error('Jumlah koli item order tidak valid');
-            }
-            if (!Number.isFinite(rawWeightInputValue) || rawWeightInputValue < 0) {
-                throw new Error('Berat item order tidak valid');
-            }
-            if (Number.isFinite(rawVolumeInputValue) && rawVolumeInputValue < 0) {
-                throw new Error('Volume item order tidak valid');
-            }
-
-            return {
-                customerProductRef,
-                description,
-                qtyKoli,
-                weight: 0,
-                volume: undefined,
-                weightInputValue: Number.isFinite(rawWeightInputValue) && rawWeightInputValue > 0 ? rawWeightInputValue : undefined,
-                weightInputUnit: Number.isFinite(rawWeightInputValue) && rawWeightInputValue > 0 ? weightInputUnit : undefined,
-                volumeInputValue: Number.isFinite(rawVolumeInputValue) && rawVolumeInputValue > 0 ? rawVolumeInputValue : undefined,
-                volumeInputUnit: Number.isFinite(rawVolumeInputValue) && rawVolumeInputValue > 0 ? volumeInputUnit : undefined,
-                value: Number.isFinite(value) && value >= 0 ? value : undefined,
-            };
-        });
-
-    if (items.length === 0) {
-        return NextResponse.json({ error: 'Minimal 1 item order wajib diisi' }, { status: 400 });
-    }
-
-    const customerProductRefs = [...new Set(
-        items
-            .map(item => item.customerProductRef)
-            .filter((value): value is string => Boolean(value))
-    )];
-    const customerProducts = customerProductRefs.length > 0
-        ? await getSanityClient().fetch<CustomerProductOrderSource[]>(
-            `*[_type == "customerProduct" && _id in $ids]{
-                _id,
-                customerRef,
-                code,
-                name,
-                description,
-                defaultQtyKoli,
-                defaultWeight,
-                defaultWeightInputValue,
-                defaultWeightInputUnit,
-                defaultVolume,
-                defaultVolumeInputValue,
-                defaultVolumeInputUnit,
-                active
-            }`,
-            { ids: customerProductRefs }
-        )
-        : [];
-    const customerProductMap = new Map(customerProducts.map(item => [item._id, item]));
-
-    for (const item of items) {
-        const customerProduct = item.customerProductRef ? customerProductMap.get(item.customerProductRef) : undefined;
-        if (item.customerProductRef && !customerProduct) {
-            return NextResponse.json({ error: 'Barang customer yang dipilih tidak ditemukan' }, { status: 404 });
-        }
-        if (customerProduct) {
-            if (normalizeOptionalText(customerProduct.customerRef) !== customerRef) {
-                return NextResponse.json({ error: 'Barang customer harus sesuai dengan customer order yang dipilih' }, { status: 409 });
-            }
-            if (customerProduct.active === false) {
-                return NextResponse.json({ error: `Barang customer ${customerProduct.name || customerProduct.code || ''} tidak aktif` }, { status: 409 });
-            }
-            item.customerProductCode = normalizeOptionalText(customerProduct.code);
-            item.customerProductName = normalizeOptionalText(customerProduct.name);
-            item.description =
-                item.description ||
-                normalizeOptionalText(customerProduct.description) ||
-                normalizeOptionalText(customerProduct.name) ||
-                '';
-            if (item.qtyKoli <= 0) {
-                item.qtyKoli = normalizeNumber(customerProduct.defaultQtyKoli ?? 1);
-            }
-            if (!item.weightInputValue || item.weightInputValue <= 0) {
-                const productWeightUnit = customerProduct.defaultWeightInputUnit === 'TON' ? 'TON' : 'KG';
-                const productWeightInputValue =
-                    normalizeNumber(customerProduct.defaultWeightInputValue) > 0
-                        ? normalizeNumber(customerProduct.defaultWeightInputValue)
-                        : convertKgToWeightInputValue(normalizeNumber(customerProduct.defaultWeight ?? 0), productWeightUnit);
-                item.weightInputValue = productWeightInputValue > 0 ? productWeightInputValue : undefined;
-                item.weightInputUnit = productWeightInputValue > 0 ? productWeightUnit : undefined;
-            }
-            if (!item.volumeInputValue || item.volumeInputValue <= 0) {
-                const productVolumeUnit =
-                    customerProduct.defaultVolumeInputUnit === 'LITER'
-                        ? 'LITER'
-                        : customerProduct.defaultVolumeInputUnit === 'KL'
-                            ? 'KL'
-                            : 'M3';
-                const productVolumeInputValue =
-                    normalizeNumber(customerProduct.defaultVolumeInputValue) > 0
-                        ? normalizeNumber(customerProduct.defaultVolumeInputValue)
-                        : convertM3ToVolumeInputValue(normalizeNumber(customerProduct.defaultVolume ?? 0), productVolumeUnit);
-                item.volumeInputValue = productVolumeInputValue > 0 ? productVolumeInputValue : undefined;
-                item.volumeInputUnit = productVolumeInputValue > 0 ? productVolumeUnit : undefined;
-            }
-        }
-
-        if (!item.description) {
-            return NextResponse.json({ error: 'Deskripsi item order wajib diisi' }, { status: 400 });
-        }
-        if (!Number.isFinite(item.qtyKoli) || item.qtyKoli <= 0) {
-            return NextResponse.json({ error: 'Jumlah koli item order harus lebih besar dari 0' }, { status: 400 });
-        }
-
-        const finalWeightInputUnit = item.weightInputUnit === 'TON' ? 'TON' : 'KG';
-        const finalVolumeInputUnit =
-            item.volumeInputUnit === 'LITER' || item.volumeInputUnit === 'KL' ? item.volumeInputUnit : 'M3';
-        const finalWeightInputValue = normalizeNumber(item.weightInputValue ?? 0);
-        const finalVolumeInputValue = normalizeNumber(item.volumeInputValue ?? 0);
-        if (!Number.isFinite(finalWeightInputValue) || finalWeightInputValue < 0) {
-            return NextResponse.json({ error: 'Berat item order tidak valid' }, { status: 400 });
-        }
-        if (!Number.isFinite(finalVolumeInputValue) || finalVolumeInputValue < 0) {
-            return NextResponse.json({ error: 'Volume item order tidak valid' }, { status: 400 });
-        }
-
-        item.weight = finalWeightInputValue > 0 ? convertWeightToKg(finalWeightInputValue, finalWeightInputUnit) : 0;
-        item.volume = finalVolumeInputValue > 0 ? convertVolumeToM3(finalVolumeInputValue, finalVolumeInputUnit) : undefined;
-        item.weightInputValue = finalWeightInputValue > 0 ? finalWeightInputValue : undefined;
-        item.weightInputUnit = finalWeightInputValue > 0 ? finalWeightInputUnit : undefined;
-        item.volumeInputValue = finalVolumeInputValue > 0 ? finalVolumeInputValue : undefined;
-        item.volumeInputUnit = finalVolumeInputValue > 0 ? finalVolumeInputUnit : undefined;
+    let items: NormalizedOrderItemInput[];
+    try {
+        const party = await resolveOrderPartyData(customerRef, serviceRef);
+        customer = party.customer;
+        serviceName = party.serviceName;
+        items = await normalizeOrderItemsInput(customerRef, Array.isArray(data.items) ? data.items : []);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Data order tidak valid';
+        const status = message.includes('tidak ditemukan') ? 404 : message.includes('tidak aktif') ? 409 : 400;
+        return NextResponse.json({ error: message }, { status });
     }
 
     const orderId = crypto.randomUUID();
@@ -847,6 +878,133 @@ export async function handleOrderCreate(
     await transaction.commit();
     await addAuditLog(session, 'CREATE', 'orders', orderId, `Created orders: ${masterResi}`);
     return NextResponse.json({ data: orderDoc, id: orderId });
+}
+
+export async function handleOrderUpdateWithItems(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const id = normalizeText(data.id);
+    const customerRef = normalizeText(data.customerRef);
+    const serviceRef = normalizeOptionalText(data.serviceRef);
+    const receiverName = normalizeText(data.receiverName);
+    const receiverAddress = normalizeText(data.receiverAddress);
+
+    if (!id || !customerRef || !receiverName || !receiverAddress) {
+        return NextResponse.json({ error: 'Order, customer, penerima, dan alamat tujuan wajib diisi' }, { status: 400 });
+    }
+
+    const order = await sanityGetById<{ _id: string; masterResi?: string }>(id);
+    if (!order) {
+        return NextResponse.json({ error: 'Order tidak ditemukan' }, { status: 404 });
+    }
+
+    const relatedDeliveryOrder = await getSanityClient().fetch<{ _id: string } | null>(
+        `*[_type == "deliveryOrder" && orderRef == $ref][0]{ _id }`,
+        { ref: id }
+    );
+    if (relatedDeliveryOrder) {
+        return NextResponse.json({ error: 'Order yang sudah punya surat jalan tidak boleh mengubah item atau koli lagi' }, { status: 409 });
+    }
+
+    const existingItems = await getSanityClient().fetch<Array<{
+        _id: string;
+        deliveredQtyKoli?: number;
+        assignedQtyKoli?: number;
+        heldQtyKoli?: number;
+    }>>(
+        `*[_type == "orderItem" && orderRef == $ref]{
+            _id,
+            deliveredQtyKoli,
+            assignedQtyKoli,
+            heldQtyKoli
+        }`,
+        { ref: id }
+    );
+    const hasOperationalProgress = existingItems.some(item =>
+        normalizeNumber(item.deliveredQtyKoli) > 0 ||
+        normalizeNumber(item.assignedQtyKoli) > 0 ||
+        normalizeNumber(item.heldQtyKoli) > 0
+    );
+    if (hasOperationalProgress) {
+        return NextResponse.json(
+            { error: 'Order yang sudah punya progress parsial/hold harus diedit lewat workflow item order, bukan edit massal' },
+            { status: 409 }
+        );
+    }
+
+    let customer: ResolvedOrderPartyData['customer'];
+    let serviceName: string | undefined;
+    let items: NormalizedOrderItemInput[];
+    try {
+        const party = await resolveOrderPartyData(customerRef, serviceRef);
+        customer = party.customer;
+        serviceName = party.serviceName;
+        items = await normalizeOrderItemsInput(customerRef, Array.isArray(data.items) ? data.items : []);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Data order tidak valid';
+        const status = message.includes('tidak ditemukan') ? 404 : message.includes('tidak aktif') ? 409 : 400;
+        return NextResponse.json({ error: message }, { status });
+    }
+
+    const transaction = getSanityClient()
+        .transaction()
+        .patch(id, patch => patch.set({
+            customerRef,
+            customerName: customer.name,
+            receiverName,
+            receiverPhone: normalizeText(data.receiverPhone),
+            receiverAddress,
+            receiverCompany: normalizeOptionalText(data.receiverCompany),
+            pickupAddress: normalizeOptionalText(data.pickupAddress) || customer.address || undefined,
+            serviceRef: serviceRef || '',
+            serviceName,
+            notes: normalizeOptionalText(data.notes),
+        }));
+
+    for (const item of existingItems) {
+        transaction.delete(item._id);
+    }
+
+    for (const item of items) {
+        transaction.create({
+            _id: crypto.randomUUID(),
+            _type: 'orderItem',
+            orderRef: id,
+            customerProductRef: item.customerProductRef,
+            customerProductCode: item.customerProductCode,
+            customerProductName: item.customerProductName,
+            description: item.description,
+            qtyKoli: item.qtyKoli,
+            weight: item.weight,
+            volume: item.volume,
+            weightInputValue: item.weightInputValue,
+            weightInputUnit: item.weightInputUnit,
+            volumeInputValue: item.volumeInputValue,
+            volumeInputUnit: item.volumeInputUnit,
+            value: item.value,
+            deliveredQtyKoli: 0,
+            deliveredWeight: 0,
+            assignedQtyKoli: 0,
+            assignedWeight: 0,
+            heldQtyKoli: 0,
+            heldWeight: 0,
+            status: 'PENDING',
+        });
+    }
+
+    await transaction.commit();
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'orders',
+        id,
+        `Update order ${order.masterResi || id} dengan ${items.length} item`
+    );
+
+    const updatedOrder = await sanityGetById(id);
+    return NextResponse.json({ data: updatedOrder, id });
 }
 
 export async function handleDeliveryOrderStatusUpdate(

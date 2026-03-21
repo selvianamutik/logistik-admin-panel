@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useToast } from '../layout';
 import { Plus, Search, Edit, Trash2, Users, Save, X, FileDown, Printer } from 'lucide-react';
 
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { exportToExcel } from '@/lib/export';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
 import type { Customer, CustomerProduct } from '@/lib/types';
@@ -377,7 +378,7 @@ export default function CustomersPage() {
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Termin Pembayaran (hari)</label>
-                                    <input className="form-input" type="number" value={form.defaultPaymentTerm} onChange={event => setForm({ ...form, defaultPaymentTerm: Number(event.target.value) })} />
+                                    <FormattedNumberInput allowDecimal={false} value={form.defaultPaymentTerm} onValueChange={value => setForm({ ...form, defaultPaymentTerm: value })} />
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">NPWP</label>

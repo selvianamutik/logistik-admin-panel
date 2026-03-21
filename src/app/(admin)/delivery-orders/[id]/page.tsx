@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useToast } from '../../layout';
 import { Printer, FileDown, Truck, Upload, Save, MapPin, Radio } from 'lucide-react';
 import CurrencyInput from '@/components/CurrencyInput';
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
 import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatDate, formatDateTime, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
@@ -1041,26 +1042,22 @@ export default function DODetailPage() {
                                                     <div className="form-row">
                                                         <div className="form-group">
                                                             <label className="form-label">Koli Aktual <span className="required">*</span></label>
-                                                            <input
-                                                                type="number"
-                                                                min="0"
-                                                                step="0.01"
-                                                                className="form-input"
-                                                                value={item.actualQtyKoli}
-                                                                onChange={e => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualQtyKoli', e.target.value)}
+                                                            <FormattedNumberInput
+                                                                min={0}
+                                                                maxFractionDigits={2}
+                                                                value={Number(item.actualQtyKoli || 0)}
+                                                                onValueChange={value => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualQtyKoli', String(value))}
                                                                 disabled={updatingStatus}
                                                             />
                                                         </div>
                                                         <div className="form-group">
                                                             <label className="form-label">Berat Aktual {item.requireWeight && <span className="required">*</span>}</label>
                                                             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
-                                                                <input
-                                                                    type="number"
-                                                                    min="0"
-                                                                    step="0.01"
-                                                                    className="form-input"
-                                                                    value={item.actualWeightInputValue}
-                                                                    onChange={e => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualWeightInputValue', e.target.value)}
+                                                                <FormattedNumberInput
+                                                                    min={0}
+                                                                    maxFractionDigits={2}
+                                                                    value={Number(item.actualWeightInputValue || 0)}
+                                                                    onValueChange={value => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualWeightInputValue', String(value))}
                                                                     disabled={updatingStatus}
                                                                 />
                                                                 <select
@@ -1080,13 +1077,11 @@ export default function DODetailPage() {
                                                         <div className="form-group">
                                                             <label className="form-label">Volume Aktual {item.requireVolume && <span className="required">*</span>}</label>
                                                             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
-                                                                <input
-                                                                    type="number"
-                                                                    min="0"
-                                                                    step="0.01"
-                                                                    className="form-input"
-                                                                    value={item.actualVolumeInputValue}
-                                                                    onChange={e => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualVolumeInputValue', e.target.value)}
+                                                                <FormattedNumberInput
+                                                                    min={0}
+                                                                    maxFractionDigits={2}
+                                                                    value={Number(item.actualVolumeInputValue || 0)}
+                                                                    onValueChange={value => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualVolumeInputValue', String(value))}
                                                                     disabled={updatingStatus}
                                                                 />
                                                                 <select
@@ -1165,26 +1160,22 @@ export default function DODetailPage() {
                                                     <div className="form-row">
                                                         <div className="form-group">
                                                             <label className="form-label">Qty Drop</label>
-                                                            <input
-                                                                type="number"
-                                                                min="0"
-                                                                step="0.01"
-                                                                className="form-input"
-                                                                value={item.qtyKoli}
-                                                                onChange={e => updateActualDropDraft(item.draftKey, 'qtyKoli', e.target.value)}
+                                                            <FormattedNumberInput
+                                                                min={0}
+                                                                maxFractionDigits={2}
+                                                                value={Number(item.qtyKoli || 0)}
+                                                                onValueChange={value => updateActualDropDraft(item.draftKey, 'qtyKoli', String(value))}
                                                                 disabled={updatingStatus}
                                                             />
                                                         </div>
                                                         <div className="form-group">
                                                             <label className="form-label">Berat Drop</label>
                                                             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
-                                                                <input
-                                                                    type="number"
-                                                                    min="0"
-                                                                    step="0.01"
-                                                                    className="form-input"
-                                                                    value={item.weightInputValue}
-                                                                    onChange={e => updateActualDropDraft(item.draftKey, 'weightInputValue', e.target.value)}
+                                                                <FormattedNumberInput
+                                                                    min={0}
+                                                                    maxFractionDigits={2}
+                                                                    value={Number(item.weightInputValue || 0)}
+                                                                    onValueChange={value => updateActualDropDraft(item.draftKey, 'weightInputValue', String(value))}
                                                                     disabled={updatingStatus}
                                                                 />
                                                                 <select
@@ -1204,13 +1195,11 @@ export default function DODetailPage() {
                                                         <div className="form-group">
                                                             <label className="form-label">Volume Drop</label>
                                                             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
-                                                                <input
-                                                                    type="number"
-                                                                    min="0"
-                                                                    step="0.01"
-                                                                    className="form-input"
-                                                                    value={item.volumeInputValue}
-                                                                    onChange={e => updateActualDropDraft(item.draftKey, 'volumeInputValue', e.target.value)}
+                                                                <FormattedNumberInput
+                                                                    min={0}
+                                                                    maxFractionDigits={2}
+                                                                    value={Number(item.volumeInputValue || 0)}
+                                                                    onValueChange={value => updateActualDropDraft(item.draftKey, 'volumeInputValue', String(value))}
                                                                     disabled={updatingStatus}
                                                                 />
                                                                 <select

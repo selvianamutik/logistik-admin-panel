@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '../../layout';
 import { Edit, Package, DollarSign, Plus, Save, Trash2, X } from 'lucide-react';
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { formatDate, formatCurrency, getReceivableNetAmount } from '@/lib/utils';
 import { formatCargoSummary, VOLUME_INPUT_UNIT_OPTIONS, WEIGHT_INPUT_UNIT_OPTIONS, type VolumeInputUnit, type WeightInputUnit } from '@/lib/measurement';
 import type { Customer, CustomerProduct, Order, FreightNota } from '@/lib/types';
@@ -220,7 +221,14 @@ export default function CustomerDetailPage() {
                 </div>
             </div>
 
-            <div className="detail-grid">
+            <div style={{ display: 'grid', gap: 'var(--space-6)' }}>
+            <div
+                className="detail-grid"
+                style={{
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+                    alignItems: 'start',
+                }}
+            >
                 <div className="card">
                     <div className="card-header"><span className="card-header-title">Informasi Customer</span></div>
                     <div className="card-body">
@@ -240,7 +248,7 @@ export default function CustomerDetailPage() {
                                     <label className="form-label">Prefix Surat Jalan Customer</label>
                                     <input className="form-input" value={form.deliveryOrderPrefix} onChange={e => setForm({ ...form, deliveryOrderPrefix: e.target.value.toUpperCase() })} />
                                 </div>
-                                <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+                                <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
                                     <button className="btn btn-secondary" onClick={() => setEditing(false)} disabled={saving}>Batal</button>
                                     <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'Menyimpan...' : 'Simpan'}</button>
                                 </div>
@@ -269,7 +277,7 @@ export default function CustomerDetailPage() {
                 <div className="card">
                     <div className="card-header"><span className="card-header-title">Statistik</span></div>
                     <div className="card-body">
-                        <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
+                        <div className="responsive-stat-grid">
                             <div className="kpi-card"><div className="kpi-icon" style={{ background: 'var(--color-primary-light)' }}><Package size={20} /></div><div className="kpi-value">{orders.length}</div><div className="kpi-label">Total Order</div></div>
                             <div className="kpi-card"><div className="kpi-icon" style={{ background: 'var(--color-success-light)' }}><DollarSign size={20} /></div><div className="kpi-value">{notas.length}</div><div className="kpi-label">Total Nota</div></div>
                             <div className="kpi-card"><div className="kpi-icon" style={{ background: 'var(--color-warning-light)' }}><Package size={20} /></div><div className="kpi-value">{customerProducts.length}</div><div className="kpi-label">Master Barang</div></div>
@@ -278,14 +286,14 @@ export default function CustomerDetailPage() {
                 </div>
             </div>
 
-            <div className="card mt-6">
-                <div className="card-header">
+            <div className="card">
+                <div className="card-header" style={{ flexWrap: 'wrap' }}>
                     <span className="card-header-title">Master Barang Customer ({customerProducts.length})</span>
                     <button className="btn btn-primary btn-sm" onClick={openNewProduct}>
                         <Plus size={14} /> Tambah Barang
                     </button>
                 </div>
-                <div className="table-wrapper">
+                <div className="table-wrapper table-desktop-only">
                     <table>
                         <thead><tr><th>Kode</th><th>Nama Barang</th><th>Default Muatan</th><th>Status</th><th>Aksi</th></tr></thead>
                         <tbody>
@@ -328,12 +336,61 @@ export default function CustomerDetailPage() {
                         </tbody>
                     </table>
                 </div>
+                <div className="mobile-record-list">
+                    {customerProducts.length === 0 ? (
+                        <div className="mobile-record-card">
+                            <div className="mobile-record-title">Belum ada master barang</div>
+                            <div className="mobile-record-subtitle">Tambahkan barang langganan customer ini agar form order bisa autofill lebih cepat.</div>
+                            <div className="mobile-record-actions">
+                                <button className="btn btn-primary" onClick={openNewProduct}>
+                                    <Plus size={16} /> Tambah Barang
+                                </button>
+                            </div>
+                        </div>
+                    ) : customerProducts.map(product => (
+                        <div key={product._id} className="mobile-record-card">
+                            <div className="mobile-record-header">
+                                <div>
+                                    <div className="mobile-record-title">{product.name}</div>
+                                    <div className="mobile-record-subtitle">{product.code || 'Tanpa kode'}</div>
+                                </div>
+                                <span className={`badge ${product.active !== false ? 'badge-green' : 'badge-gray'}`}>{product.active !== false ? 'Aktif' : 'Nonaktif'}</span>
+                            </div>
+                            <div className="mobile-record-meta">
+                                <div className="mobile-record-kv">
+                                    <span className="mobile-record-label">Muatan Default</span>
+                                    <span className="mobile-record-value">{formatCargoSummary({
+                                        qtyKoli: product.defaultQtyKoli,
+                                        weightKg: product.defaultWeight,
+                                        weightInputValue: product.defaultWeightInputValue,
+                                        weightInputUnit: product.defaultWeightInputUnit,
+                                        volumeM3: product.defaultVolume,
+                                        volumeInputValue: product.defaultVolumeInputValue,
+                                        volumeInputUnit: product.defaultVolumeInputUnit,
+                                    })}</span>
+                                </div>
+                                <div className="mobile-record-kv">
+                                    <span className="mobile-record-label">Catatan</span>
+                                    <span className="mobile-record-value">{product.notes || product.description || '-'}</span>
+                                </div>
+                            </div>
+                            <div className="mobile-record-actions">
+                                <button className="btn btn-secondary" onClick={() => openEditProduct(product)}>
+                                    <Edit size={14} /> Edit
+                                </button>
+                                <button className="btn btn-danger" onClick={() => handleDeleteProduct(product._id)} disabled={deletingProductId === product._id}>
+                                    <Trash2 size={14} /> {deletingProductId === product._id ? 'Menghapus...' : 'Hapus'}
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
             </div>
 
             {/* Recent Orders */}
-            <div className="card mt-6">
+            <div className="card">
                 <div className="card-header"><span className="card-header-title">Order Terbaru ({orders.length})</span></div>
-                <div className="table-wrapper">
+                <div className="table-wrapper table-desktop-only">
                     <table>
                         <thead><tr><th>Resi</th><th>Penerima</th><th>Status</th><th>Tanggal</th></tr></thead>
                         <tbody>
@@ -349,12 +406,39 @@ export default function CustomerDetailPage() {
                         </tbody>
                     </table>
                 </div>
+                <div className="mobile-record-list">
+                    {orders.length === 0 ? (
+                        <div className="mobile-record-card">
+                            <div className="mobile-record-title">Belum ada order</div>
+                            <div className="mobile-record-subtitle">Customer ini belum punya order yang tercatat.</div>
+                        </div>
+                    ) : orders.slice(0, 10).map(order => (
+                        <div key={order._id} className="mobile-record-card">
+                            <div className="mobile-record-header">
+                                <div>
+                                    <div className="mobile-record-title">{order.masterResi}</div>
+                                    <div className="mobile-record-subtitle">{order.receiverName}</div>
+                                </div>
+                                <span className="badge badge-info">{order.status}</span>
+                            </div>
+                            <div className="mobile-record-meta">
+                                <div className="mobile-record-kv">
+                                    <span className="mobile-record-label">Tanggal</span>
+                                    <span className="mobile-record-value">{formatDate(order.createdAt)}</span>
+                                </div>
+                            </div>
+                            <div className="mobile-record-actions">
+                                <Link href={`/orders/${order._id}`} className="btn btn-secondary">Lihat Order</Link>
+                            </div>
+                        </div>
+                    ))}
+                </div>
             </div>
 
             {/* Recent Notas */}
-            <div className="card mt-6">
+            <div className="card">
                 <div className="card-header"><span className="card-header-title">Nota Ongkos ({notas.length})</span></div>
-                <div className="table-wrapper">
+                <div className="table-wrapper table-desktop-only">
                     <table>
                         <thead><tr><th>No. Nota</th><th>Total</th><th>Status</th><th>Jatuh Tempo</th></tr></thead>
                         <tbody>
@@ -370,6 +454,34 @@ export default function CustomerDetailPage() {
                         </tbody>
                     </table>
                 </div>
+                <div className="mobile-record-list">
+                    {notas.length === 0 ? (
+                        <div className="mobile-record-card">
+                            <div className="mobile-record-title">Belum ada nota</div>
+                            <div className="mobile-record-subtitle">Tagihan customer ini akan muncul di sini setelah DO selesai dan nota dibuat.</div>
+                        </div>
+                    ) : notas.map(nota => (
+                        <div key={nota._id} className="mobile-record-card">
+                            <div className="mobile-record-header">
+                                <div>
+                                    <div className="mobile-record-title">{nota.notaNumber}</div>
+                                    <div className="mobile-record-subtitle">Jatuh tempo {formatDate(nota.dueDate)}</div>
+                                </div>
+                                <span className="badge badge-info">{nota.status}</span>
+                            </div>
+                            <div className="mobile-record-meta">
+                                <div className="mobile-record-kv">
+                                    <span className="mobile-record-label">Tagihan Netto</span>
+                                    <span className="mobile-record-value">{formatCurrency(getReceivableNetAmount(nota))}</span>
+                                </div>
+                            </div>
+                            <div className="mobile-record-actions">
+                                <Link href={`/invoices/${nota._id}`} className="btn btn-secondary">Lihat Nota</Link>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
             </div>
 
             {showProductModal && (
@@ -394,11 +506,11 @@ export default function CustomerDetailPage() {
                                 <label className="form-label">Deskripsi Default</label>
                                 <textarea className="form-textarea" rows={2} value={productForm.description} onChange={e => setProductForm(prev => ({ ...prev, description: e.target.value }))} placeholder="Deskripsi item yang akan otomatis masuk ke order" />
                             </div>
-                            <div className="form-row">
-                                <div className="form-group">
-                                    <label className="form-label">Default Koli</label>
-                                    <input className="form-input" type="number" min={0} value={productForm.defaultQtyKoli} onChange={e => setProductForm(prev => ({ ...prev, defaultQtyKoli: Number(e.target.value) }))} />
-                                </div>
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Default Koli</label>
+                                        <FormattedNumberInput min={0} allowDecimal={false} value={productForm.defaultQtyKoli} onValueChange={value => setProductForm(prev => ({ ...prev, defaultQtyKoli: value }))} />
+                                    </div>
                                 <div className="form-group">
                                     <label className="form-label">Status</label>
                                     <select className="form-select" value={productForm.active ? 'ACTIVE' : 'INACTIVE'} onChange={e => setProductForm(prev => ({ ...prev, active: e.target.value === 'ACTIVE' }))}>
@@ -407,20 +519,20 @@ export default function CustomerDetailPage() {
                                     </select>
                                 </div>
                             </div>
-                            <div className="form-row">
-                                <div className="form-group">
-                                    <label className="form-label">Default Berat</label>
-                                    <div style={{ display: 'flex', gap: 8 }}>
-                                        <input className="form-input" type="number" min={0} step="0.01" value={productForm.defaultWeightInputValue} onChange={e => setProductForm(prev => ({ ...prev, defaultWeightInputValue: Number(e.target.value) }))} />
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Default Berat</label>
+                                        <div style={{ display: 'flex', gap: 8 }}>
+                                        <FormattedNumberInput min={0} maxFractionDigits={2} value={productForm.defaultWeightInputValue} onValueChange={value => setProductForm(prev => ({ ...prev, defaultWeightInputValue: value }))} />
                                         <select className="form-select" value={productForm.defaultWeightInputUnit} onChange={e => setProductForm(prev => ({ ...prev, defaultWeightInputUnit: e.target.value as WeightInputUnit }))} style={{ width: 100 }}>
                                             {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                         </select>
                                     </div>
                                 </div>
-                                <div className="form-group">
-                                    <label className="form-label">Default Volume</label>
-                                    <div style={{ display: 'flex', gap: 8 }}>
-                                        <input className="form-input" type="number" min={0} step="0.01" value={productForm.defaultVolumeInputValue} onChange={e => setProductForm(prev => ({ ...prev, defaultVolumeInputValue: Number(e.target.value) }))} />
+                                    <div className="form-group">
+                                        <label className="form-label">Default Volume</label>
+                                        <div style={{ display: 'flex', gap: 8 }}>
+                                        <FormattedNumberInput min={0} maxFractionDigits={2} value={productForm.defaultVolumeInputValue} onValueChange={value => setProductForm(prev => ({ ...prev, defaultVolumeInputValue: value }))} />
                                         <select className="form-select" value={productForm.defaultVolumeInputUnit} onChange={e => setProductForm(prev => ({ ...prev, defaultVolumeInputUnit: e.target.value as VolumeInputUnit }))} style={{ width: 100 }}>
                                             {VOLUME_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                         </select>
