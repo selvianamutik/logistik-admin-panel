@@ -28,6 +28,11 @@ export const INTERNAL_TIRE_SLOT_CODES = [
 
 export type InternalTireSlotCode = typeof INTERNAL_TIRE_SLOT_CODES[number];
 
+const LIGHT_TIRE_LAYOUT: InternalTireSlotCode[] = ['1L', '1R', '2L', '2R'];
+const MEDIUM_TIRE_LAYOUT: InternalTireSlotCode[] = ['1L', '1R', '2LI', '2LO', '2RI', '2RO'];
+const HEAVY_TIRE_LAYOUT: InternalTireSlotCode[] = ['1L', '1R', '2LI', '2LO', '2RI', '2RO', '3LI', '3LO', '3RI', '3RO'];
+const DEFAULT_SPARE_SLOTS: InternalTireSlotCode[] = ['SP1'];
+
 const LEGACY_TIRE_POSITION_SLOT_MAP: Record<string, InternalTireSlotCode> = {
   FRONT_LEFT: '1L',
   FRONT_RIGHT: '1R',
@@ -71,8 +76,75 @@ export function normalizeTireSlotCode(value: string) {
   return value.trim().toUpperCase().replace(/\s+/g, '');
 }
 
+export function compareTireSlotCodes(left: string, right: string) {
+  const normalizedLeft = normalizeTireSlotCode(left);
+  const normalizedRight = normalizeTireSlotCode(right);
+  const leftIndex = INTERNAL_TIRE_SLOT_CODES.indexOf(normalizedLeft as InternalTireSlotCode);
+  const rightIndex = INTERNAL_TIRE_SLOT_CODES.indexOf(normalizedRight as InternalTireSlotCode);
+  if (leftIndex === -1 && rightIndex === -1) {
+    return normalizedLeft.localeCompare(normalizedRight, 'id');
+  }
+  if (leftIndex === -1) return 1;
+  if (rightIndex === -1) return -1;
+  return leftIndex - rightIndex;
+}
+
 export function isKnownInternalTireSlotCode(value: string) {
   return INTERNAL_TIRE_SLOT_CODES.includes(value as InternalTireSlotCode);
+}
+
+function pickBaseRoadLayout(vehicleType?: string, serviceName?: string): InternalTireSlotCode[] {
+  const hint = `${vehicleType || ''} ${serviceName || ''}`.trim().toLowerCase();
+  if (!hint) {
+    return LIGHT_TIRE_LAYOUT;
+  }
+  if (hint.includes('trailer') || hint.includes('tronton')) {
+    return HEAVY_TIRE_LAYOUT;
+  }
+  if (
+    hint.includes('truck') ||
+    hint.includes('fuso') ||
+    hint.includes('wingbox') ||
+    hint.includes('cdd')
+  ) {
+    return MEDIUM_TIRE_LAYOUT;
+  }
+  return LIGHT_TIRE_LAYOUT;
+}
+
+export function getSuggestedVehicleTireLayout(
+  vehicleType?: string,
+  serviceName?: string,
+  existingSlotCodes: string[] = []
+) {
+  const normalizedExisting = Array.from(
+    new Set(
+      existingSlotCodes
+        .map(slotCode => normalizeTireSlotCode(slotCode))
+        .filter(slotCode => isKnownInternalTireSlotCode(slotCode))
+    )
+  ).sort(compareTireSlotCodes);
+
+  const baseRoadSlots = pickBaseRoadLayout(vehicleType, serviceName);
+  const roadSlots = Array.from(
+    new Set([
+      ...baseRoadSlots,
+      ...normalizedExisting.filter(slotCode => !slotCode.startsWith('SP')),
+    ])
+  ).sort(compareTireSlotCodes) as InternalTireSlotCode[];
+
+  const spareSlots = Array.from(
+    new Set([
+      ...DEFAULT_SPARE_SLOTS,
+      ...normalizedExisting.filter(slotCode => slotCode.startsWith('SP')),
+    ])
+  ).sort(compareTireSlotCodes) as InternalTireSlotCode[];
+
+  return {
+    roadSlots,
+    spareSlots,
+    allSlots: [...roadSlots, ...spareSlots],
+  };
 }
 
 export function getLegacyTirePositionLabel(posisi?: string) {

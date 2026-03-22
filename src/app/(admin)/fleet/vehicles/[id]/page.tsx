@@ -3,11 +3,50 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useApp, useToast } from '../../../layout';
-import { Car, Wrench, AlertTriangle, Truck, Edit } from 'lucide-react';
-import { VEHICLE_STATUS_MAP, MAINTENANCE_STATUS_MAP, INCIDENT_STATUS_MAP, DO_STATUS_MAP, TIRE_ASSET_STATUS_MAP, formatDate, formatCurrency } from '@/lib/utils';
-import { formatTireSlotLabel, resolveTireAssetStatus, resolveTirePlacementLabel, resolveTireSlotCode } from '@/lib/tire-slots';
+import { Car, Wrench, AlertTriangle, Truck, Edit, Plus, Disc3, Warehouse, ExternalLink, Save } from 'lucide-react';
+import {
+    VEHICLE_STATUS_MAP,
+    MAINTENANCE_STATUS_MAP,
+    INCIDENT_STATUS_MAP,
+    DO_STATUS_MAP,
+    TIRE_ASSET_STATUS_MAP,
+    formatDate,
+    formatCurrency,
+} from '@/lib/utils';
+import {
+    compareTireSlotCodes,
+    formatTireSlotLabel,
+    getSuggestedVehicleTireLayout,
+    resolveTireAssetStatus,
+    resolveTirePlacementLabel,
+    resolveTireSlotCode,
+} from '@/lib/tire-slots';
 import type { Vehicle, Maintenance, Incident, DeliveryOrder, TireEvent, Expense } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
+
+type VehicleTireFormState = {
+    tireCode: string;
+    slotCode: string;
+    tireType: 'Tubeless' | 'Tube Type' | 'Solid';
+    tireBrand: string;
+    tireSize: string;
+    installDate: string;
+    notes: string;
+};
+
+const TIRE_TYPE_OPTIONS: VehicleTireFormState['tireType'][] = ['Tubeless', 'Tube Type', 'Solid'];
+
+function createDefaultTireForm(slotCode = '1L'): VehicleTireFormState {
+    return {
+        tireCode: '',
+        slotCode,
+        tireType: 'Tubeless',
+        tireBrand: '',
+        tireSize: '',
+        installDate: new Date().toISOString().split('T')[0],
+        notes: '',
+    };
+}
 
 export default function VehicleDetailPage() {
     const params = useParams();
@@ -23,6 +62,11 @@ export default function VehicleDetailPage() {
     const [expenses, setExpenses] = useState<Expense[]>([]);
     const [loading, setLoading] = useState(true);
     const [tab, setTab] = useState('profil');
+    const [showTireModal, setShowTireModal] = useState(false);
+    const [tireForm, setTireForm] = useState<VehicleTireFormState>(createDefaultTireForm());
+    const [editingTire, setEditingTire] = useState<TireEvent | null>(null);
+    const [savingTire, setSavingTire] = useState(false);
+    const [deletingTireId, setDeletingTireId] = useState<string | null>(null);
     const isOwner = user?.role === 'OWNER';
 
     const loadVehicleDetail = useCallback(async () => {
@@ -69,6 +113,191 @@ export default function VehicleDetailPage() {
     if (!vehicle) return <div className="empty-state"><div className="empty-state-title">Kendaraan tidak ditemukan</div></div>;
 
     const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
+    const normalizedTireRows = tireEvents
+        .map(event => {
+            const status = resolveTireAssetStatus(event);
+            const slotCode = resolveTireSlotCode(event);
+            return {
+                ...event,
+                status,
+                tireCodeLabel: event.tireCode?.trim() || 'Belum dikodekan',
+                slotCode,
+                slotLabel: slotCode ? formatTireSlotLabel(slotCode) : undefined,
+                placementLabel: resolveTirePlacementLabel(event),
+            };
+        })
+        .sort((left, right) => {
+            const leftSlot = left.slotCode || left.posisi || '';
+            const rightSlot = right.slotCode || right.posisi || '';
+            return compareTireSlotCodes(leftSlot, rightSlot);
+        });
+    const internalUnitTires = normalizedTireRows.filter(row => Boolean(row.slotCode) && ['IN_USE', 'SPARE'].includes(row.status));
+    const layout = getSuggestedVehicleTireLayout(
+        vehicle.vehicleType,
+        vehicle.serviceName,
+        internalUnitTires.map(row => row.slotCode || '').filter(Boolean)
+    );
+    const tireBySlot = new Map(internalUnitTires.map(row => [row.slotCode || '', row]));
+    const mountedSlots = layout.roadSlots.map(slotCode => ({ slotCode, event: tireBySlot.get(slotCode) }));
+    const spareSlots = layout.spareSlots.map(slotCode => ({ slotCode, event: tireBySlot.get(slotCode) }));
+    const filledSlotCount = [...mountedSlots, ...spareSlots].filter(slot => Boolean(slot.event)).length;
+    const emptySlotCount = layout.allSlots.length - filledSlotCount;
+    const externalAuditTires = normalizedTireRows.filter(row => !row.slotCode || !layout.allSlots.includes(row.slotCode as (typeof layout.allSlots)[number]));
+
+    const updateTireForm = <K extends keyof VehicleTireFormState>(key: K, value: VehicleTireFormState[K]) => {
+        setTireForm(prev => ({ ...prev, [key]: value }));
+    };
+
+    const closeTireModal = () => {
+        if (savingTire) return;
+        setShowTireModal(false);
+        setEditingTire(null);
+        setTireForm(createDefaultTireForm(layout.allSlots[0] || '1L'));
+    };
+
+    const openNewTire = (slotCode: string) => {
+        setEditingTire(null);
+        setTireForm(createDefaultTireForm(slotCode));
+        setShowTireModal(true);
+    };
+
+    const openEditTire = (event: TireEvent) => {
+        const resolvedSlot = resolveTireSlotCode(event) || layout.allSlots[0] || '1L';
+        setEditingTire(event);
+        setTireForm({
+            tireCode: event.tireCode || '',
+            slotCode: resolvedSlot,
+            tireType: event.tireType,
+            tireBrand: event.tireBrand,
+            tireSize: event.tireSize,
+            installDate: event.installDate,
+            notes: event.notes || '',
+        });
+        setShowTireModal(true);
+    };
+
+    const handleSaveTire = async () => {
+        if (!tireForm.tireCode.trim()) { addToast('error', 'Isi kode ban'); return; }
+        if (!tireForm.tireBrand.trim()) { addToast('error', 'Isi merk/tipe ban'); return; }
+        if (!tireForm.tireSize.trim()) { addToast('error', 'Isi ukuran ban'); return; }
+        if (!tireForm.slotCode.trim()) { addToast('error', 'Pilih slot ban'); return; }
+
+        const normalizedSlotCode = tireForm.slotCode.trim().toUpperCase();
+        const payload = {
+            tireCode: tireForm.tireCode.trim().toUpperCase().replace(/\s+/g, '-'),
+            holderType: 'INTERNAL_VEHICLE',
+            status: normalizedSlotCode.startsWith('SP') ? 'SPARE' : 'IN_USE',
+            vehicleRef: vehicle._id,
+            slotCode: normalizedSlotCode,
+            tireType: tireForm.tireType,
+            tireBrand: tireForm.tireBrand.trim(),
+            tireSize: tireForm.tireSize.trim(),
+            installDate: tireForm.installDate,
+            notes: tireForm.notes.trim() || undefined,
+        };
+
+        setSavingTire(true);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(
+                    editingTire
+                        ? { entity: 'tire-events', action: 'update', data: { id: editingTire._id, updates: payload } }
+                        : { entity: 'tire-events', data: payload }
+                ),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menyimpan ban');
+                return;
+            }
+            addToast('success', editingTire ? 'Ban pada unit berhasil diperbarui' : 'Ban berhasil dipasang ke unit');
+            closeTireModal();
+            await loadVehicleDetail();
+        } catch {
+            addToast('error', 'Gagal menyimpan ban');
+        } finally {
+            setSavingTire(false);
+        }
+    };
+
+    const handleDeleteTire = async (id: string) => {
+        if (!confirm('Hapus catatan ban pada unit ini?')) return;
+        setDeletingTireId(id);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entity: 'tire-events', action: 'delete', data: { id } }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menghapus ban');
+                return;
+            }
+            addToast('success', 'Catatan ban pada unit berhasil dihapus');
+            if (editingTire?._id === id) {
+                closeTireModal();
+            }
+            await loadVehicleDetail();
+        } catch {
+            addToast('error', 'Gagal menghapus ban');
+        } finally {
+            setDeletingTireId(current => current === id ? null : current);
+        }
+    };
+
+    const renderSlotCard = (slotCode: string, event?: (typeof normalizedTireRows)[number]) => (
+        <div
+            key={slotCode}
+            style={{
+                border: '1px solid var(--color-gray-200)',
+                borderRadius: '0.9rem',
+                padding: '1rem',
+                display: 'grid',
+                gap: '0.65rem',
+                background: event ? 'var(--color-white)' : 'var(--color-gray-50)',
+            }}
+        >
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'flex-start' }}>
+                <div>
+                    <div style={{ fontWeight: 700 }}>{slotCode}</div>
+                    <div className="text-muted text-sm">{formatTireSlotLabel(slotCode)}</div>
+                </div>
+                <span className={`badge badge-${event ? (TIRE_ASSET_STATUS_MAP[event.status]?.color || 'gray') : 'gray'}`}>
+                    <span className="badge-dot" /> {event ? (TIRE_ASSET_STATUS_MAP[event.status]?.label || event.status) : 'Belum Diisi'}
+                </span>
+            </div>
+
+            {event ? (
+                <>
+                    <div>
+                        <div className="font-medium">{event.tireCodeLabel}</div>
+                        <div className="text-muted text-sm">{event.tireBrand} • {event.tireSize}</div>
+                        <div className="text-muted text-sm">{event.tireType} • dicatat {formatDate(event.installDate)}</div>
+                    </div>
+                    <div className="text-muted text-sm">{event.notes || 'Belum ada catatan tambahan.'}</div>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <button className="btn btn-secondary" type="button" onClick={() => openEditTire(event)}>
+                            <Edit size={14} /> Edit Ban
+                        </button>
+                    </div>
+                </>
+            ) : (
+                <>
+                    <div className="text-muted text-sm">
+                        Slot ini belum terisi. Lengkapi ban kendaraan ini dari depan kiri sampai serep supaya kondisi unit mudah dicek staff lapangan.
+                    </div>
+                    <div>
+                        <button className="btn btn-primary" type="button" onClick={() => openNewTire(slotCode)}>
+                            <Plus size={14} /> Isi Slot
+                        </button>
+                    </div>
+                </>
+            )}
+        </div>
+    );
 
     return (
         <div>
@@ -114,6 +343,7 @@ export default function VehicleDetailPage() {
                                     <div className="kpi-card"><div className="kpi-icon info"><Truck size={20} /></div><div className="kpi-content"><div className="kpi-label">Total DO</div><div className="kpi-value">{dos.length}</div></div></div>
                                     <div className="kpi-card"><div className="kpi-icon warning"><Wrench size={20} /></div><div className="kpi-content"><div className="kpi-label">Maintenance</div><div className="kpi-value">{maints.length}</div></div></div>
                                     <div className="kpi-card"><div className="kpi-icon danger"><AlertTriangle size={20} /></div><div className="kpi-content"><div className="kpi-label">Insiden</div><div className="kpi-value">{incidents.length}</div></div></div>
+                                    <div className="kpi-card"><div className="kpi-icon success"><Disc3 size={20} /></div><div className="kpi-content"><div className="kpi-label">Slot Ban Terisi</div><div className="kpi-value">{filledSlotCount}/{layout.allSlots.length}</div></div></div>
                                     {isOwner && <div className="kpi-card"><div className="kpi-icon primary"><Car size={20} /></div><div className="kpi-content"><div className="kpi-label">Total Biaya</div><div className="kpi-value" style={{ fontSize: '1rem' }}>{formatCurrency(totalExpenses)}</div></div></div>}
                                 </div>
                             </div>
@@ -140,78 +370,78 @@ export default function VehicleDetailPage() {
                 </table></div></div>
             )}
 
-            {tab === 'ban' && (() => {
-                const tireRows = tireEvents.map(event => {
-                    const status = resolveTireAssetStatus(event);
-                    const slotCode = resolveTireSlotCode(event);
-                    return {
-                        ...event,
-                        status,
-                        tireCodeLabel: event.tireCode?.trim() || 'Belum dikodekan',
-                        slotCode,
-                        slotLabel: slotCode ? formatTireSlotLabel(slotCode) : undefined,
-                        placementLabel: resolveTirePlacementLabel(event),
-                    };
-                });
-                const mountedTires = tireRows.filter(row => row.status === 'IN_USE');
-                const spareTires = tireRows.filter(row => row.status === 'SPARE');
-                const otherTires = tireRows.filter(row => row.status !== 'IN_USE' && row.status !== 'SPARE');
-                return (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                        <div className="card">
-                            <div className="card-body">
-                                <div className="kpi-grid" style={{ gridTemplateColumns: '1fr 1fr 1fr', marginBottom: '1rem' }}>
-                                    <div className="kpi-card"><div className="kpi-icon success"><Truck size={20} /></div><div className="kpi-content"><div className="kpi-label">Terpasang</div><div className="kpi-value">{mountedTires.length}</div></div></div>
-                                    <div className="kpi-card"><div className="kpi-icon info"><Car size={20} /></div><div className="kpi-content"><div className="kpi-label">Serep Unit</div><div className="kpi-value">{spareTires.length}</div></div></div>
-                                    <div className="kpi-card"><div className="kpi-icon warning"><AlertTriangle size={20} /></div><div className="kpi-content"><div className="kpi-label">Lainnya</div><div className="kpi-value">{otherTires.length}</div></div></div>
-                                </div>
-                                {tireRows.length === 0 ? (
-                                    <p className="text-center text-muted">Belum ada catatan ban pada unit ini</p>
-                                ) : (
-                                    <div className="table-wrapper">
-                                        <table>
-                                            <thead><tr><th>Kode Ban</th><th>Lokasi</th><th>Status</th><th>Merk & Ukuran</th><th>Tgl Catat</th><th>Catatan</th></tr></thead>
-                                            <tbody>
-                                                {tireRows.map(te => (
-                                                    <tr key={te._id}>
-                                                        <td>
-                                                            <div className="font-medium">{te.tireCodeLabel}</div>
-                                                            <div className="text-muted text-sm">{te.tireType}</div>
-                                                        </td>
-                                                        <td>
-                                                            <div className="font-medium">{te.placementLabel}</div>
-                                                            {te.slotCode && <div className="text-muted text-sm">{te.slotCode} - {te.slotLabel}</div>}
-                                                        </td>
-                                                        <td>
-                                                            <span className={`badge badge-${TIRE_ASSET_STATUS_MAP[te.status]?.color || 'gray'}`}>
-                                                                {TIRE_ASSET_STATUS_MAP[te.status]?.label || te.status}
-                                                            </span>
-                                                        </td>
-                                                        <td>
-                                                            <div className="font-medium">{te.tireBrand}</div>
-                                                            <div className="font-mono text-sm">{te.tireSize}</div>
-                                                        </td>
-                                                        <td className="text-muted">{formatDate(te.installDate)}</td>
-                                                        <td className="text-muted">{te.notes || '-'}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
+            {tab === 'ban' && (
+                <div style={{ display: 'grid', gap: '1rem' }}>
+                    <div className="card">
+                        <div className="card-body">
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                                <div style={{ display: 'grid', gap: '0.35rem' }}>
+                                    <div className="form-section-title" style={{ marginBottom: 0 }}>Layout Ban Unit</div>
+                                    <div className="text-muted">
+                                        Lengkapi ban kendaraan ini per slot mulai dari depan kiri, kanan, lalu as berikutnya. Halaman audit ban global tetap dipakai untuk ban gudang, pinjam keluar, atau histori lintas unit.
                                     </div>
-                                )}
+                                </div>
+                                <button className="btn btn-secondary" type="button" onClick={() => router.push('/fleet/tires')}>
+                                    <ExternalLink size={14} /> Audit Semua Ban
+                                </button>
                             </div>
                         </div>
-                        {otherTires.length > 0 && (
-                            <div className="card">
-                                <div className="card-body">
-                                    <h3 style={{ fontWeight: 600, marginBottom: '0.5rem', fontSize: '0.95rem' }}>Catatan Tambahan</h3>
-                                    <p className="text-muted">Status selain terpasang atau serep pada unit ini tetap ditampilkan di tabel utama agar perpindahan ban mudah diaudit.</p>
+                    </div>
+
+                    <div className="kpi-grid">
+                        <div className="kpi-card"><div className="kpi-icon success"><Disc3 size={20} /></div><div className="kpi-content"><div className="kpi-label">Slot Terisi</div><div className="kpi-value">{filledSlotCount}</div></div></div>
+                        <div className="kpi-card"><div className="kpi-icon warning"><AlertTriangle size={20} /></div><div className="kpi-content"><div className="kpi-label">Slot Belum Diisi</div><div className="kpi-value">{emptySlotCount}</div></div></div>
+                        <div className="kpi-card"><div className="kpi-icon info"><Car size={20} /></div><div className="kpi-content"><div className="kpi-label">Serep Unit</div><div className="kpi-value">{spareSlots.filter(slot => Boolean(slot.event)).length}</div></div></div>
+                        <div className="kpi-card"><div className="kpi-icon primary"><Warehouse size={20} /></div><div className="kpi-content"><div className="kpi-label">Catatan Audit Lain</div><div className="kpi-value">{externalAuditTires.length}</div></div></div>
+                    </div>
+
+                    <div className="card">
+                        <div className="card-header"><span className="card-header-title">Posisi Jalan</span></div>
+                        <div className="card-body">
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+                                {mountedSlots.map(slot => renderSlotCard(slot.slotCode, slot.event))}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="card">
+                        <div className="card-header"><span className="card-header-title">Serep Unit</span></div>
+                        <div className="card-body">
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+                                {spareSlots.map(slot => renderSlotCard(slot.slotCode, slot.event))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {externalAuditTires.length > 0 && (
+                        <div className="card">
+                            <div className="card-header"><span className="card-header-title">Catatan Audit Ban di Luar Slot Unit</span></div>
+                            <div className="card-body">
+                                <div className="table-wrapper">
+                                    <table>
+                                        <thead><tr><th>Kode Ban</th><th>Lokasi Saat Ini</th><th>Status</th><th>Merk & Ukuran</th><th>Tanggal</th><th>Catatan</th></tr></thead>
+                                        <tbody>
+                                            {externalAuditTires.map(te => (
+                                                <tr key={te._id}>
+                                                    <td>
+                                                        <div className="font-medium">{te.tireCodeLabel}</div>
+                                                        <div className="text-muted text-sm">{te.tireType}</div>
+                                                    </td>
+                                                    <td>{te.placementLabel}</td>
+                                                    <td><span className={`badge badge-${TIRE_ASSET_STATUS_MAP[te.status]?.color || 'gray'}`}>{TIRE_ASSET_STATUS_MAP[te.status]?.label || te.status}</span></td>
+                                                    <td><div className="font-medium">{te.tireBrand}</div><div className="font-mono text-sm">{te.tireSize}</div></td>
+                                                    <td>{formatDate(te.installDate)}</td>
+                                                    <td>{te.notes || '-'}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
                                 </div>
                             </div>
-                        )}
-                    </div>
-                );
-            })()}
+                        </div>
+                    )}
+                </div>
+            )}
 
             {tab === 'insiden' && (
                 <div className="card"><div className="table-wrapper"><table>
@@ -229,6 +459,92 @@ export default function VehicleDetailPage() {
                         <tr key={e._id}><td>{formatDate(e.date)}</td><td>{e.categoryName}</td><td>{e.note || e.description}</td><td className="font-medium">{formatCurrency(e.amount)}</td></tr>
                     ))}</tbody>
                 </table></div></div>
+            )}
+
+            {showTireModal && (
+                <div className="modal-overlay" onClick={closeTireModal}>
+                    <div className="modal modal-lg" onClick={event => event.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">{editingTire ? `Edit Ban ${tireForm.slotCode}` : `Isi Slot ${tireForm.slotCode}`}</h3>
+                            <button className="modal-close" onClick={closeTireModal} disabled={savingTire}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <div style={{ display: 'grid', gap: '1rem' }}>
+                                <div style={{ padding: '0.85rem 1rem', borderRadius: '0.75rem', background: 'var(--color-gray-50)', border: '1px solid var(--color-gray-200)' }}>
+                                    <div className="text-muted text-sm">Unit</div>
+                                    <div className="font-medium">{vehicle.plateNumber} • {vehicle.unitCode}</div>
+                                    <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
+                                        Slot SP* otomatis dianggap serep unit. Slot lainnya dianggap ban terpasang.
+                                    </div>
+                                </div>
+
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Slot Ban</label>
+                                        <select className="form-select" value={tireForm.slotCode} onChange={e => updateTireForm('slotCode', e.target.value)} disabled={savingTire}>
+                                            {layout.allSlots.map(slotCode => (
+                                                <option key={slotCode} value={slotCode}>{slotCode} - {formatTireSlotLabel(slotCode)}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Kode Ban</label>
+                                        <input className="form-input" value={tireForm.tireCode} onChange={e => updateTireForm('tireCode', e.target.value.toUpperCase())} placeholder="cth: BAN-0012" disabled={savingTire} />
+                                    </div>
+                                </div>
+
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Jenis Ban</label>
+                                        <select className="form-select" value={tireForm.tireType} onChange={e => updateTireForm('tireType', e.target.value as VehicleTireFormState['tireType'])} disabled={savingTire}>
+                                            {TIRE_TYPE_OPTIONS.map(type => <option key={type} value={type}>{type}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Tanggal Catat</label>
+                                        <input type="date" className="form-input" value={tireForm.installDate} onChange={e => updateTireForm('installDate', e.target.value)} disabled={savingTire} />
+                                    </div>
+                                </div>
+
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Merk / Model Ban</label>
+                                        <input className="form-input" value={tireForm.tireBrand} onChange={e => updateTireForm('tireBrand', e.target.value)} placeholder="cth: Bridgestone R150" disabled={savingTire} />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Ukuran</label>
+                                        <input className="form-input" value={tireForm.tireSize} onChange={e => updateTireForm('tireSize', e.target.value)} placeholder="cth: 11.00-20 / 295-80R22.5" disabled={savingTire} />
+                                    </div>
+                                </div>
+
+                                <div className="form-group">
+                                    <label className="form-label">Catatan</label>
+                                    <textarea className="form-textarea" rows={3} value={tireForm.notes} onChange={e => updateTireForm('notes', e.target.value)} placeholder="Mis. ban baru, hasil rotasi, kondisi khusus, atau alasan pindah slot." disabled={savingTire} />
+                                </div>
+                            </div>
+                        </div>
+                        <div className="modal-footer" style={{ justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap' }}>
+                            <div>
+                                {editingTire && (
+                                    <button
+                                        type="button"
+                                        className="btn btn-danger"
+                                        onClick={() => void handleDeleteTire(editingTire._id)}
+                                        disabled={savingTire || deletingTireId === editingTire._id}
+                                    >
+                                        {deletingTireId === editingTire._id ? 'Menghapus...' : 'Hapus Ban'}
+                                    </button>
+                                )}
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                <button type="button" className="btn btn-secondary" onClick={closeTireModal} disabled={savingTire}>Batal</button>
+                                <button type="button" className="btn btn-primary" onClick={handleSaveTire} disabled={savingTire}>
+                                    <Save size={16} /> {savingTire ? 'Menyimpan...' : editingTire ? 'Simpan Perubahan' : 'Pasang Ban'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

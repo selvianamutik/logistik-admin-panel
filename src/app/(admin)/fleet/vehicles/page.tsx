@@ -8,13 +8,15 @@ import { useToast } from '../../layout';
 import { VEHICLE_STATUS_MAP, formatDate } from '@/lib/utils';
 import { exportVehicles } from '@/lib/export';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
-import type { Service, Vehicle } from '@/lib/types';
+import { getSuggestedVehicleTireLayout, resolveTireAssetStatus, resolveTireSlotCode } from '@/lib/tire-slots';
+import type { Service, TireEvent, Vehicle } from '@/lib/types';
 
 export default function VehiclesPage() {
     const router = useRouter();
     const { addToast } = useToast();
     const [items, setItems] = useState<Vehicle[]>([]);
     const [services, setServices] = useState<Service[]>([]);
+    const [tireEvents, setTireEvents] = useState<TireEvent[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
@@ -28,13 +30,18 @@ export default function VehiclesPage() {
                 if (!res.ok) {
                     throw new Error(payload.error || 'Gagal memuat data kendaraan');
                 }
-                setItems(payload.data || []);
                 const serviceRes = await fetch('/api/data?entity=services');
-                const servicePayload = await serviceRes.json();
+                const tireRes = await fetch('/api/data?entity=tire-events');
+                const [servicePayload, tirePayload] = await Promise.all([serviceRes.json(), tireRes.json()]);
                 if (!serviceRes.ok) {
                     throw new Error(servicePayload.error || 'Gagal memuat kategori armada');
                 }
+                if (!tireRes.ok) {
+                    throw new Error(tirePayload.error || 'Gagal memuat ringkasan ban');
+                }
+                setItems(payload.data || []);
                 setServices(servicePayload.data || []);
+                setTireEvents(tirePayload.data || []);
             } catch (error) {
                 addToast('error', error instanceof Error ? error.message : 'Gagal memuat data kendaraan');
             } finally {
@@ -68,6 +75,22 @@ export default function VehiclesPage() {
         const s = !statusFilter || v.status === statusFilter;
         const c = !serviceFilter || v.serviceRef === serviceFilter;
         return m && s && c;
+    });
+
+    const tireSummaryByVehicle = new Map<string, { filled: number; expected: number; missing: number }>();
+    filtered.forEach(vehicle => {
+        const activeSlotCodes = tireEvents
+            .filter(event => event.vehicleRef === vehicle._id && ['IN_USE', 'SPARE'].includes(resolveTireAssetStatus(event)))
+            .map(event => resolveTireSlotCode(event) || '')
+            .filter(Boolean);
+        const layout = getSuggestedVehicleTireLayout(vehicle.vehicleType, vehicle.serviceName, activeSlotCodes);
+        const filled = new Set(activeSlotCodes).size;
+        const expected = layout.allSlots.length;
+        tireSummaryByVehicle.set(vehicle._id, {
+            filled,
+            expected,
+            missing: Math.max(expected - filled, 0),
+        });
     });
 
     return (
@@ -108,11 +131,11 @@ export default function VehiclesPage() {
                     </div>
                 </div>
                 <div className="table-wrapper table-desktop-only">
-                    <table>
-                        <thead><tr><th>Kode</th><th>Plat Nomor</th><th>Merk/Model</th><th>Kategori Armada</th><th>Tipe</th><th>Tahun</th><th>Status</th><th>Odometer</th><th>Aksi</th></tr></thead>
+                            <table>
+                                <thead><tr><th>Kode</th><th>Plat Nomor</th><th>Merk/Model</th><th>Kategori Armada</th><th>Tipe</th><th>Ban Unit</th><th>Tahun</th><th>Status</th><th>Odometer</th><th>Aksi</th></tr></thead>
                         <tbody>
-                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                filtered.length === 0 ? <tr><td colSpan={9}><div className="empty-state"><Car size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada kendaraan</div></div></td></tr> :
+                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
+                                filtered.length === 0 ? <tr><td colSpan={10}><div className="empty-state"><Car size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada kendaraan</div></div></td></tr> :
                                     filtered.map(v => (
                                         <tr key={v._id}>
                                             <td className="font-mono text-muted">{v.unitCode}</td>
@@ -120,6 +143,20 @@ export default function VehiclesPage() {
                                             <td>{v.brandModel}</td>
                                             <td>{getServiceLabel(v)}</td>
                                             <td>{v.vehicleType}</td>
+                                            <td>
+                                                {(() => {
+                                                    const summary = tireSummaryByVehicle.get(v._id);
+                                                    if (!summary) return '-';
+                                                    return (
+                                                        <div>
+                                                            <div className="font-medium">{summary.filled}/{summary.expected} slot</div>
+                                                            <div className="text-muted text-sm">
+                                                                {summary.missing > 0 ? `Kurang ${summary.missing}` : 'Lengkap'}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })()}
+                                            </td>
                                             <td>{v.year}</td>
                                             <td><span className={`badge badge-${VEHICLE_STATUS_MAP[v.status]?.color}`}><span className="badge-dot" /> {VEHICLE_STATUS_MAP[v.status]?.label}</span></td>
                                             <td>{v.lastOdometer ? `${v.lastOdometer.toLocaleString()} km` : '-'}</td>
@@ -162,6 +199,15 @@ export default function VehiclesPage() {
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Tipe</span>
                                         <span className="mobile-record-value">{v.vehicleType}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Ban Unit</span>
+                                        <span className="mobile-record-value">
+                                            {(() => {
+                                                const summary = tireSummaryByVehicle.get(v._id);
+                                                return summary ? `${summary.filled}/${summary.expected} slot${summary.missing > 0 ? ` • kurang ${summary.missing}` : ' • lengkap'}` : '-';
+                                            })()}
+                                        </span>
                                     </div>
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Tahun</span>
