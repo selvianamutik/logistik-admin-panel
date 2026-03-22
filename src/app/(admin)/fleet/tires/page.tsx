@@ -65,7 +65,6 @@ export default function TiresPage() {
     const [showModal, setShowModal] = useState(false);
     const [editTarget, setEditTarget] = useState<TireEvent | null>(null);
     const [saving, setSaving] = useState(false);
-    const [deletingId, setDeletingId] = useState<string | null>(null);
     const [form, setForm] = useState<TireFormState>(DEFAULT_FORM);
 
     const loadData = useCallback(async () => {
@@ -204,29 +203,6 @@ export default function TiresPage() {
         }
     };
 
-    const handleDelete = async (id: string) => {
-        if (!confirm('Hapus catatan ban ini?')) return;
-        setDeletingId(id);
-        try {
-            const res = await fetch('/api/data', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ entity: 'tire-events', action: 'delete', data: { id } }),
-            });
-            const result = await res.json();
-            if (!res.ok) {
-                addToast('error', result.error || 'Gagal menghapus ban');
-                return;
-            }
-            addToast('success', 'Data ban dihapus');
-            await loadData();
-        } catch {
-            addToast('error', 'Gagal menghapus ban');
-        } finally {
-            setDeletingId(current => current === id ? null : current);
-        }
-    };
-
     const filtered = resolvedEvents.filter(event => {
         const text = [
             event.tireCodeLabel,
@@ -269,7 +245,7 @@ export default function TiresPage() {
             <div className="card" style={{ marginBottom: '1.5rem' }}>
                 <div className="card-body">
                     <div className="text-muted">
-                        Untuk melengkapi ban per unit secara berurutan seperti depan kiri, kanan, dan serep, buka dulu halaman detail kendaraan. Halaman ini dipakai untuk audit seluruh ban, termasuk gudang dan pinjam keluar.
+                        Untuk melengkapi ban per unit secara berurutan seperti depan kiri, kanan, dan serep, buka dulu halaman detail kendaraan. Halaman ini dipakai untuk audit seluruh ban, termasuk gudang dan pinjam keluar. Riwayat ban tidak dihapus; ubah lokasi atau statusnya jika ban pindah.
                     </div>
                 </div>
             </div>
@@ -336,10 +312,7 @@ export default function TiresPage() {
                                         <td className="text-muted">{formatDate(event.installDate)}</td>
                                         <td className="text-muted">{event.notes || '-'}</td>
                                         <td>
-                                            <div style={{ display: 'flex', gap: 4 }}>
-                                                <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => openEdit(event)} disabled={deletingId === event._id}>Edit</button>
-                                                <button className="btn" style={{ padding: '4px 10px', fontSize: '0.75rem', background: 'var(--color-danger)', color: 'white' }} onClick={() => handleDelete(event._id)} disabled={deletingId === event._id}>{deletingId === event._id ? 'Menghapus...' : 'Hapus'}</button>
-                                            </div>
+                                            <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => openEdit(event)}>Edit</button>
                                         </td>
                                     </tr>
                                 ))}
@@ -387,8 +360,7 @@ export default function TiresPage() {
                                     )}
                                 </div>
                                 <div className="mobile-record-actions">
-                                    <button className="btn btn-secondary" onClick={() => openEdit(event)} disabled={deletingId === event._id}>Edit</button>
-                                    <button className="btn btn-danger" onClick={() => handleDelete(event._id)} disabled={deletingId === event._id}>{deletingId === event._id ? 'Menghapus...' : 'Hapus'}</button>
+                                    <button className="btn btn-secondary" onClick={() => openEdit(event)}>Edit</button>
                                 </div>
                             </div>
                         ))}

@@ -710,6 +710,15 @@ export async function handleGenericDelete(
         }
     }
 
+    if (entity === 'tire-events') {
+        return NextResponse.json(
+            {
+                error: 'Ban tidak boleh dihapus langsung karena histori aset harus tetap utuh. Edit lokasi atau status ban untuk memindahkan ke slot lain, gudang, pinjam keluar, atau afkir.',
+            },
+            { status: 409 }
+        );
+    }
+
     if (entity === 'services') {
         return handleServiceDelete(session, data, addAuditLog);
     }

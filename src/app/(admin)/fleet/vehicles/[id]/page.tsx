@@ -66,7 +66,6 @@ export default function VehicleDetailPage() {
     const [tireForm, setTireForm] = useState<VehicleTireFormState>(createDefaultTireForm());
     const [editingTire, setEditingTire] = useState<TireEvent | null>(null);
     const [savingTire, setSavingTire] = useState(false);
-    const [deletingTireId, setDeletingTireId] = useState<string | null>(null);
     const isOwner = user?.role === 'OWNER';
 
     const loadVehicleDetail = useCallback(async () => {
@@ -222,32 +221,6 @@ export default function VehicleDetailPage() {
         }
     };
 
-    const handleDeleteTire = async (id: string) => {
-        if (!confirm('Hapus catatan ban pada unit ini?')) return;
-        setDeletingTireId(id);
-        try {
-            const res = await fetch('/api/data', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ entity: 'tire-events', action: 'delete', data: { id } }),
-            });
-            const result = await res.json();
-            if (!res.ok) {
-                addToast('error', result.error || 'Gagal menghapus ban');
-                return;
-            }
-            addToast('success', 'Catatan ban pada unit berhasil dihapus');
-            if (editingTire?._id === id) {
-                closeTireModal();
-            }
-            await loadVehicleDetail();
-        } catch {
-            addToast('error', 'Gagal menghapus ban');
-        } finally {
-            setDeletingTireId(current => current === id ? null : current);
-        }
-    };
-
     const renderSlotCard = (slotCode: string, event?: (typeof normalizedTireRows)[number]) => (
         <div
             key={slotCode}
@@ -378,7 +351,7 @@ export default function VehicleDetailPage() {
                                 <div style={{ display: 'grid', gap: '0.35rem' }}>
                                     <div className="form-section-title" style={{ marginBottom: 0 }}>Layout Ban Unit</div>
                                     <div className="text-muted">
-                                        Lengkapi ban kendaraan ini per slot mulai dari depan kiri, kanan, lalu as berikutnya. Halaman audit ban global tetap dipakai untuk ban gudang, pinjam keluar, atau histori lintas unit.
+                                        Lengkapi ban kendaraan ini per slot mulai dari depan kiri, kanan, lalu as berikutnya. Halaman audit ban global tetap dipakai untuk ban gudang, pinjam keluar, atau histori lintas unit. Ban tidak dihapus dari sini agar histori aset tetap utuh.
                                     </div>
                                 </div>
                                 <button className="btn btn-secondary" type="button" onClick={() => router.push('/fleet/tires')}>
@@ -474,7 +447,7 @@ export default function VehicleDetailPage() {
                                     <div className="text-muted text-sm">Unit</div>
                                     <div className="font-medium">{vehicle.plateNumber} • {vehicle.unitCode}</div>
                                     <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
-                                        Slot SP* otomatis dianggap serep unit. Slot lainnya dianggap ban terpasang.
+                                        Slot SP* otomatis dianggap serep unit. Slot lainnya dianggap ban terpasang. Untuk melepas ban dari unit ini, ubah slot atau statusnya lewat form edit.
                                     </div>
                                 </div>
 
@@ -524,17 +497,8 @@ export default function VehicleDetailPage() {
                             </div>
                         </div>
                         <div className="modal-footer" style={{ justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap' }}>
-                            <div>
-                                {editingTire && (
-                                    <button
-                                        type="button"
-                                        className="btn btn-danger"
-                                        onClick={() => void handleDeleteTire(editingTire._id)}
-                                        disabled={savingTire || deletingTireId === editingTire._id}
-                                    >
-                                        {deletingTireId === editingTire._id ? 'Menghapus...' : 'Hapus Ban'}
-                                    </button>
-                                )}
+                            <div className="text-muted text-sm">
+                                Histori ban disimpan permanen. Untuk pindah ke gudang, pinjam keluar, atau afkir, ubah lokasi/status ban dari halaman audit ban.
                             </div>
                             <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
                                 <button type="button" className="btn btn-secondary" onClick={closeTireModal} disabled={savingTire}>Batal</button>
