@@ -314,20 +314,20 @@ function normalizeDeliveryOrderActualCargoInputs(
         const actualQtyKoli = roundQuantity(
             normalizeNumber(rawItem?.actualQtyKoli ?? item.actualQtyKoli ?? plannedQtyKoli)
         );
-        const rawWeightInputValue = normalizeNumber(
+        const rawWeightInputValue = roundQuantity(normalizeNumber(
             rawItem?.actualWeightInputValue ??
             item.actualWeightInputValue ??
             (item.actualWeightKg !== undefined
                 ? convertKgToWeightInputValue(normalizeNumber(item.actualWeightKg), weightInputUnit)
                 : item.orderItemWeightInputValue ?? convertKgToWeightInputValue(plannedWeightKg, weightInputUnit))
-        );
-        const rawVolumeInputValue = normalizeNumber(
+        ), weightInputUnit === 'TON' ? 3 : 2);
+        const rawVolumeInputValue = roundQuantity(normalizeNumber(
             rawItem?.actualVolumeInputValue ??
             item.actualVolumeInputValue ??
             (item.actualVolumeM3 !== undefined
                 ? convertM3ToVolumeInputValue(normalizeNumber(item.actualVolumeM3), volumeInputUnit)
                 : item.orderItemVolumeInputValue ?? convertM3ToVolumeInputValue(plannedVolumeM3, volumeInputUnit))
-        );
+        ), volumeInputUnit === 'LITER' ? 0 : 3);
         const actualWeightKg = roundQuantity(convertWeightToKg(rawWeightInputValue, weightInputUnit));
         const actualVolumeM3 = roundQuantity(convertVolumeToM3(rawVolumeInputValue, volumeInputUnit), 3);
 
@@ -422,11 +422,17 @@ function normalizeDeliveryActualDropPoints(
         const locationAddress = normalizeOptionalText(rawPoint.locationAddress);
         const note = normalizeOptionalText(rawPoint.note);
         const qtyKoli = roundQuantity(normalizeNumber(rawPoint.qtyKoli));
-        const rawWeightInputValue = normalizeNumber(rawPoint.weightInputValue ?? rawPoint.weightKg ?? 0);
         const weightInputUnit: WeightInputUnit = rawPoint.weightInputUnit === 'TON' ? 'TON' : 'KG';
-        const rawVolumeInputValue = normalizeNumber(rawPoint.volumeInputValue ?? rawPoint.volumeM3 ?? 0);
+        const rawWeightInputValue = roundQuantity(
+            normalizeNumber(rawPoint.weightInputValue ?? rawPoint.weightKg ?? 0),
+            weightInputUnit === 'TON' ? 3 : 2
+        );
         const volumeInputUnit: VolumeInputUnit =
             rawPoint.volumeInputUnit === 'LITER' || rawPoint.volumeInputUnit === 'KL' ? rawPoint.volumeInputUnit : 'M3';
+        const rawVolumeInputValue = roundQuantity(
+            normalizeNumber(rawPoint.volumeInputValue ?? rawPoint.volumeM3 ?? 0),
+            volumeInputUnit === 'LITER' ? 0 : 3
+        );
         const weightKg = roundQuantity(convertWeightToKg(rawWeightInputValue, weightInputUnit));
         const volumeM3 = roundQuantity(convertVolumeToM3(rawVolumeInputValue, volumeInputUnit), 3);
 
@@ -651,8 +657,8 @@ async function normalizeOrderItemsInput(customerRef: string, rawItems: unknown[]
         const finalWeightInputUnit = item.weightInputUnit === 'TON' ? 'TON' : 'KG';
         const finalVolumeInputUnit =
             item.volumeInputUnit === 'LITER' || item.volumeInputUnit === 'KL' ? item.volumeInputUnit : 'M3';
-        const finalWeightInputValue = normalizeNumber(item.weightInputValue ?? 0);
-        const finalVolumeInputValue = normalizeNumber(item.volumeInputValue ?? 0);
+        const finalWeightInputValue = roundQuantity(normalizeNumber(item.weightInputValue ?? 0), finalWeightInputUnit === 'TON' ? 3 : 2);
+        const finalVolumeInputValue = roundQuantity(normalizeNumber(item.volumeInputValue ?? 0), finalVolumeInputUnit === 'LITER' ? 0 : 3);
         if (!Number.isFinite(finalWeightInputValue) || finalWeightInputValue < 0) {
             throw new Error('Berat item order tidak valid');
         }

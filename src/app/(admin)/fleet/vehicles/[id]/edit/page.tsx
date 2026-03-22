@@ -218,7 +218,7 @@ export default function VehicleEditPage() {
                         <div className="card-body">
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Kapasitas (kg)</label><FormattedNumberInput allowDecimal={false} value={form.capacityKg} onValueChange={value => setForm({ ...form, capacityKg: value })} /></div>
-                                <div className="form-group"><label className="form-label">Volume (m3)</label><FormattedNumberInput maxFractionDigits={2} value={form.capacityVolume} onValueChange={value => setForm({ ...form, capacityVolume: value })} /></div>
+                                <div className="form-group"><label className="form-label">Volume (m3)</label><FormattedNumberInput maxFractionDigits={3} value={form.capacityVolume} onValueChange={value => setForm({ ...form, capacityVolume: value })} /></div>
                             </div>
                             {isOwner && <div className="form-row">
                                 <div className="form-group"><label className="form-label">No. Rangka</label><input className="form-input" value={form.chassisNumber} onChange={e => setForm({ ...form, chassisNumber: e.target.value })} /></div>

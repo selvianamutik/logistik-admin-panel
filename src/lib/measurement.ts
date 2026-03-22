@@ -34,7 +34,7 @@ function formatWeightValue(value: number, unit: WeightInputUnit | 'KG' = 'KG') {
 
 function formatVolumeValue(value: number, unit: VolumeInputUnit | 'M3' = 'M3') {
   return formatNumber(value, {
-    maximumFractionDigits: unit === 'LITER' ? 2 : 3,
+    maximumFractionDigits: unit === 'LITER' ? 0 : 3,
   });
 }
 

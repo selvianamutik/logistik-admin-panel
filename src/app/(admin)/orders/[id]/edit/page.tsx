@@ -31,7 +31,7 @@ type OrderItemForm = {
 const DEFAULT_ITEM: OrderItemForm = {
     customerProductRef: '',
     description: '',
-    qtyKoli: 1,
+    qtyKoli: 0,
     weightInputValue: 0,
     weightInputUnit: 'KG',
     volumeInputValue: 0,
@@ -110,7 +110,7 @@ export default function OrderEditPage() {
                 id: item._id,
                 customerProductRef: item.customerProductRef || '',
                 description: item.description || '',
-                qtyKoli: item.qtyKoli || 1,
+                qtyKoli: typeof item.qtyKoli === 'number' ? item.qtyKoli : 0,
                 weightInputValue:
                     typeof item.weightInputValue === 'number' && item.weightInputValue > 0
                         ? item.weightInputValue
@@ -135,7 +135,13 @@ export default function OrderEditPage() {
             setHasOperationalProgress((orderItems || []).some(item =>
                 Number(item.deliveredQtyKoli || 0) > 0 ||
                 Number(item.assignedQtyKoli || 0) > 0 ||
-                Number(item.heldQtyKoli || 0) > 0
+                Number(item.heldQtyKoli || 0) > 0 ||
+                Number(item.deliveredWeight || 0) > 0 ||
+                Number(item.assignedWeight || 0) > 0 ||
+                Number(item.heldWeight || 0) > 0 ||
+                Number(item.deliveredVolume || 0) > 0 ||
+                Number(item.assignedVolume || 0) > 0 ||
+                Number(item.heldVolume || 0) > 0
             ));
         }).catch(error => {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat form edit order');
@@ -230,7 +236,7 @@ export default function OrderEditPage() {
                 ...item,
                 customerProductRef: selectedProduct._id,
                 description: selectedProduct.description || selectedProduct.name || item.description,
-                qtyKoli: selectedProduct.defaultQtyKoli || item.qtyKoli || 1,
+                qtyKoli: selectedProduct.defaultQtyKoli ?? item.qtyKoli ?? 0,
                 weightInputValue: nextWeightValue,
                 weightInputUnit: nextWeightUnit,
                 volumeInputValue: nextVolumeValue,
@@ -417,13 +423,13 @@ export default function OrderEditPage() {
                                     <input className="form-input" value={item.description} onChange={e => updateItem(idx, 'description', e.target.value)} placeholder="Nama/deskripsi barang" disabled={isRevisionMode} />
                                 </div>
                                 <div style={{ flex: '0 1 110px' }}>
-                                    <label className="form-label">{isRevisionMode ? 'Target Koli' : 'Koli'}</label>
-                                    <FormattedNumberInput min={1} allowDecimal={false} value={item.qtyKoli} onValueChange={value => updateItem(idx, 'qtyKoli', value)} disabled={false} />
+                                    <label className="form-label">{isRevisionMode ? 'Target Koli (Opsional)' : 'Koli (Opsional)'}</label>
+                                    <FormattedNumberInput min={0} allowDecimal={false} value={item.qtyKoli} onValueChange={value => updateItem(idx, 'qtyKoli', value)} disabled={false} />
                                 </div>
                                 <div style={{ flex: '1 1 180px' }}>
                                     <label className="form-label">{isRevisionMode ? 'Target Berat' : 'Berat'}</label>
                                     <div style={{ display: 'flex', gap: 8 }}>
-                                        <FormattedNumberInput min={0} maxFractionDigits={2} value={item.weightInputValue} onValueChange={value => updateItem(idx, 'weightInputValue', value)} disabled={false} />
+                                        <FormattedNumberInput min={0} maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2} value={item.weightInputValue} onValueChange={value => updateItem(idx, 'weightInputValue', value)} disabled={false} />
                                         <select className="form-select" value={item.weightInputUnit} onChange={e => updateItem(idx, 'weightInputUnit', e.target.value as WeightInputUnit)} style={{ width: 92 }} disabled={false}>
                                             {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                         </select>
@@ -432,7 +438,7 @@ export default function OrderEditPage() {
                                 <div style={{ flex: '1 1 180px' }}>
                                     <label className="form-label">{isRevisionMode ? 'Target Volume' : 'Volume'}</label>
                                     <div style={{ display: 'flex', gap: 8 }}>
-                                        <FormattedNumberInput min={0} maxFractionDigits={2} value={item.volumeInputValue} onValueChange={value => updateItem(idx, 'volumeInputValue', value)} disabled={false} />
+                                        <FormattedNumberInput min={0} maxFractionDigits={item.volumeInputUnit === 'LITER' ? 0 : 3} value={item.volumeInputValue} onValueChange={value => updateItem(idx, 'volumeInputValue', value)} disabled={false} />
                                         <select className="form-select" value={item.volumeInputUnit} onChange={e => updateItem(idx, 'volumeInputUnit', e.target.value as VolumeInputUnit)} style={{ width: 92 }} disabled={false}>
                                             {VOLUME_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                         </select>

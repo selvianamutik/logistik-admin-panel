@@ -1236,7 +1236,7 @@ export default function DODetailPage() {
                                                             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
                                                                 <FormattedNumberInput
                                                                     min={0}
-                                                                    maxFractionDigits={item.actualVolumeInputUnit === 'LITER' ? 2 : 3}
+                                                                    maxFractionDigits={item.actualVolumeInputUnit === 'LITER' ? 0 : 3}
                                                                     value={Number(item.actualVolumeInputValue || 0)}
                                                                     onValueChange={value => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualVolumeInputValue', String(value))}
                                                                     disabled={updatingStatus}
@@ -1373,12 +1373,12 @@ export default function DODetailPage() {
                                                                 <div className="form-group">
                                                                     <label className="form-label">Volume Drop</label>
                                                                     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
-                                                                        <FormattedNumberInput
-                                                                            min={0}
-                                                                            maxFractionDigits={item.volumeInputUnit === 'LITER' ? 2 : 3}
-                                                                            value={Number(item.volumeInputValue || 0)}
-                                                                            onValueChange={value => updateActualDropDraft(item.draftKey, 'volumeInputValue', String(value))}
-                                                                            disabled={updatingStatus}
+                                                                    <FormattedNumberInput
+                                                                        min={0}
+                                                                        maxFractionDigits={item.volumeInputUnit === 'LITER' ? 0 : 3}
+                                                                        value={Number(item.volumeInputValue || 0)}
+                                                                        onValueChange={value => updateActualDropDraft(item.draftKey, 'volumeInputValue', String(value))}
+                                                                        disabled={updatingStatus}
                                                                         />
                                                                         <select
                                                                             className="form-select"

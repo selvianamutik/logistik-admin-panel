@@ -326,7 +326,7 @@ export default function NewOrderPage() {
                                     <div style={{ display: 'flex', gap: 8 }}>
                                         <FormattedNumberInput
                                             min={0}
-                                            maxFractionDigits={2}
+                                            maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
                                             value={item.weightInputValue}
                                             onValueChange={value => updateItem(idx, 'weightInputValue', value)}
                                         />
@@ -340,7 +340,7 @@ export default function NewOrderPage() {
                                     <div style={{ display: 'flex', gap: 8 }}>
                                         <FormattedNumberInput
                                             min={0}
-                                            maxFractionDigits={2}
+                                            maxFractionDigits={item.volumeInputUnit === 'LITER' ? 0 : 3}
                                             value={item.volumeInputValue}
                                             onValueChange={value => updateItem(idx, 'volumeInputValue', value)}
                                         />
