@@ -1149,7 +1149,7 @@ export default function DODetailPage() {
                                     <div className="form-group">
                                         <label className="form-label">Muatan Aktual per Item <span className="required">*</span></label>
                                         <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-gray-600)' }}>
-                                            Untuk trip normal, cukup cek angka aktual tiap item. Jika realisasi sama dengan rencana, biarkan nilainya seperti yang sudah terisi.
+                                            Untuk trip normal, cukup cek angka aktual tiap item. Qty aktual boleh lebih kecil atau lebih besar dari rencana trip selama total order/resi belum terlampaui. Jika total barang fisik memang bertambah dari order awal, revisi order/resi dulu.
                                         </div>
                                         <div style={{ display: 'grid', gap: '0.75rem' }}>
                                             {actualCargoItems.map(item => (

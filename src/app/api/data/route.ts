@@ -48,6 +48,7 @@ import {
     handleOrderItemHoldSet,
     handleDeliveryOrderStatusUpdate,
     handleOrderCreate,
+    handleOrderTargetRevision,
     handleOrderUpdateWithItems,
 } from '@/lib/api/order-workflows';
 import { handleInvoiceCreate } from '@/lib/api/support-workflows';
@@ -407,6 +408,10 @@ export async function POST(request: Request) {
 
         if (entity === 'orders' && action === 'update-with-items') {
             return handleOrderUpdateWithItems(session, data, addAuditLog);
+        }
+
+        if (entity === 'orders' && action === 'revise-targets') {
+            return handleOrderTargetRevision(session, data, addAuditLog);
         }
 
         if (entity === 'delivery-orders' && action === 'create-with-items') {

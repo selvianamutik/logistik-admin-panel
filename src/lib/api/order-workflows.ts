@@ -1020,6 +1020,193 @@ export async function handleOrderUpdateWithItems(
     return NextResponse.json({ data: updatedOrder, id });
 }
 
+export async function handleOrderTargetRevision(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const id = normalizeText(data.id);
+    const revisionReason = normalizeOptionalText(data.revisionReason);
+    if (!id) {
+        return NextResponse.json({ error: 'Order tidak valid' }, { status: 400 });
+    }
+    if (!revisionReason) {
+        return NextResponse.json({ error: 'Alasan revisi order wajib diisi' }, { status: 400 });
+    }
+
+    const order = await sanityGetById<{ _id: string; masterResi?: string; notes?: string }>(id);
+    if (!order) {
+        return NextResponse.json({ error: 'Order tidak ditemukan' }, { status: 404 });
+    }
+
+    const existingItems = await getSanityClient().fetch<OrderItemProgressSnapshot[]>(
+        `*[_type == "orderItem" && orderRef == $ref]{
+            _id,
+            orderRef,
+            description,
+            qtyKoli,
+            weight,
+            volume,
+            weightInputValue,
+            weightInputUnit,
+            volumeInputValue,
+            volumeInputUnit,
+            status,
+            deliveredQtyKoli,
+            deliveredWeight,
+            assignedQtyKoli,
+            assignedWeight,
+            heldQtyKoli,
+            heldWeight,
+            holdReason,
+            holdLocation
+        }`,
+        { ref: id }
+    );
+    if (existingItems.length === 0) {
+        return NextResponse.json({ error: 'Order belum punya item yang bisa direvisi' }, { status: 409 });
+    }
+
+    const rawItems = Array.isArray(data.items) ? data.items.filter(isPlainObject) : [];
+    if (rawItems.length !== existingItems.length) {
+        return NextResponse.json(
+            { error: 'Revisi order hanya boleh mengubah target item yang sudah ada, tanpa menambah atau menghapus item' },
+            { status: 409 }
+        );
+    }
+
+    const rawItemById = new Map<string, Record<string, unknown>>();
+    for (const rawItem of rawItems) {
+        const itemId = normalizeText(rawItem.id);
+        if (itemId) {
+            rawItemById.set(itemId, rawItem);
+        }
+    }
+    if (rawItemById.size !== existingItems.length) {
+        return NextResponse.json({ error: 'Data item revisi tidak lengkap' }, { status: 400 });
+    }
+
+    const transaction = getSanityClient().transaction();
+    const revisionSummaries: string[] = [];
+
+    for (const existingItem of existingItems) {
+        const rawItem = rawItemById.get(existingItem._id);
+        if (!rawItem) {
+            return NextResponse.json({ error: 'Ada item order yang belum ikut direvisi' }, { status: 400 });
+        }
+
+        const qtyKoli = roundQuantity(normalizeNumber(rawItem.qtyKoli));
+        if (!Number.isFinite(qtyKoli) || qtyKoli <= 0) {
+            return NextResponse.json(
+                { error: `Target koli untuk ${existingItem.description || 'item order'} harus lebih besar dari 0` },
+                { status: 400 }
+            );
+        }
+
+        const weightInputUnit: WeightInputUnit = rawItem.weightInputUnit === 'TON' ? 'TON' : 'KG';
+        const weightInputValue = roundQuantity(normalizeNumber(rawItem.weightInputValue), weightInputUnit === 'TON' ? 3 : 2);
+        if (!Number.isFinite(weightInputValue) || weightInputValue < 0) {
+            return NextResponse.json(
+                { error: `Target berat untuk ${existingItem.description || 'item order'} tidak valid` },
+                { status: 400 }
+            );
+        }
+        const weight = roundQuantity(convertWeightToKg(weightInputValue, weightInputUnit));
+
+        const volumeInputUnit: VolumeInputUnit =
+            rawItem.volumeInputUnit === 'LITER'
+                ? 'LITER'
+                : rawItem.volumeInputUnit === 'KL'
+                    ? 'KL'
+                    : 'M3';
+        const volumeInputValue = roundQuantity(normalizeNumber(rawItem.volumeInputValue), volumeInputUnit === 'LITER' ? 0 : 3);
+        if (!Number.isFinite(volumeInputValue) || volumeInputValue < 0) {
+            return NextResponse.json(
+                { error: `Target volume untuk ${existingItem.description || 'item order'} tidak valid` },
+                { status: 400 }
+            );
+        }
+        const volume = roundQuantity(convertVolumeToM3(volumeInputValue, volumeInputUnit), 3);
+
+        const progress = getOrderItemProgress(existingItem);
+        const committedQtyKoli = roundQuantity(progress.deliveredQtyKoli + progress.assignedQtyKoli + progress.heldQtyKoli);
+        const committedWeight = roundQuantity(progress.deliveredWeight + progress.assignedWeight + progress.heldWeight);
+
+        if (qtyKoli < committedQtyKoli) {
+            return NextResponse.json(
+                {
+                    error: `Target koli ${existingItem.description || 'item order'} tidak boleh lebih kecil dari progress yang sudah terkomit (${committedQtyKoli} koli).`,
+                },
+                { status: 409 }
+            );
+        }
+        if (weight < committedWeight) {
+            return NextResponse.json(
+                {
+                    error: `Target berat ${existingItem.description || 'item order'} tidak boleh lebih kecil dari progress yang sudah terkomit (${committedWeight} kg).`,
+                },
+                { status: 409 }
+            );
+        }
+
+        const nextProgress = getOrderItemProgress({
+            ...existingItem,
+            qtyKoli,
+            weight,
+        });
+        const nextStatus =
+            progress.assignedQtyKoli > 0
+                ? deriveOrderItemStatusFromProgress(nextProgress, 'in-transit')
+                : deriveOrderItemStatusFromProgress(nextProgress);
+
+        transaction.patch(existingItem._id, {
+            set: {
+                qtyKoli,
+                weight,
+                volume: volume > 0 ? volume : undefined,
+                weightInputValue: weightInputValue > 0 ? weightInputValue : undefined,
+                weightInputUnit: weightInputValue > 0 ? weightInputUnit : undefined,
+                volumeInputValue: volumeInputValue > 0 ? volumeInputValue : undefined,
+                volumeInputUnit: volumeInputValue > 0 ? volumeInputUnit : undefined,
+                status: nextStatus,
+            },
+        });
+
+        const itemChanges: string[] = [];
+        if (roundQuantity(normalizeNumber(existingItem.qtyKoli)) !== qtyKoli) {
+            itemChanges.push(`koli ${roundQuantity(normalizeNumber(existingItem.qtyKoli))} -> ${qtyKoli}`);
+        }
+        if (roundQuantity(normalizeNumber(existingItem.weight)) !== weight) {
+            itemChanges.push(`berat ${roundQuantity(normalizeNumber(existingItem.weight))} kg -> ${weight} kg`);
+        }
+        if (roundQuantity(normalizeNumber(existingItem.volume ?? 0), 3) !== volume) {
+            itemChanges.push(`volume ${roundQuantity(normalizeNumber(existingItem.volume ?? 0), 3)} m3 -> ${volume} m3`);
+        }
+        if (itemChanges.length > 0) {
+            revisionSummaries.push(`${existingItem.description || existingItem._id}: ${itemChanges.join(', ')}`);
+        }
+    }
+
+    transaction.patch(id, {
+        set: {
+            notes: normalizeOptionalText(data.notes),
+        },
+    });
+
+    await transaction.commit();
+    await syncOrderStatusFromItems(id, session, addAuditLog);
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'orders',
+        id,
+        `Revisi order ${order.masterResi || id}: ${revisionReason}${revisionSummaries.length > 0 ? ` | ${revisionSummaries.join('; ')}` : ''}`
+    );
+
+    const updatedOrder = await sanityGetById(id);
+    return NextResponse.json({ data: updatedOrder, id });
+}
+
 export async function handleDeliveryOrderStatusUpdate(
     session: ApiSession,
     data: Record<string, unknown>,
@@ -1189,10 +1376,14 @@ export async function handleDeliveryOrderStatusUpdate(
                         { status: 400 }
                     );
                 }
-                if (actualCargo.actualQtyKoli > plannedQtyKoli) {
+                const otherReservedQtyKoli = roundQuantity(
+                    Math.max(progress.deliveredQtyKoli + progress.assignedQtyKoli + progress.heldQtyKoli - plannedQtyKoli, 0)
+                );
+                const maxActualQtyKoli = roundQuantity(Math.max(progress.totalQtyKoli - otherReservedQtyKoli, 0));
+                if (actualCargo.actualQtyKoli > maxActualQtyKoli) {
                     return NextResponse.json(
                         {
-                            error: `Qty aktual untuk ${orderItem.description || 'item order'} tidak boleh melebihi rencana DO. Ubah rencana DO terlebih dahulu bila muatan aktual lebih besar.`,
+                            error: `Qty aktual untuk ${orderItem.description || 'item order'} melebihi sisa target order/resi (${maxActualQtyKoli} koli). Revisi order/resi dulu jika total barang fisik memang bertambah.`,
                         },
                         { status: 409 }
                     );
@@ -1227,7 +1418,7 @@ export async function handleDeliveryOrderStatusUpdate(
                     totalWeight: nextTotalWeight,
                     assignedQtyKoli: roundQuantity(Math.max(progress.assignedQtyKoli - plannedQtyKoli, 0)),
                     assignedWeight: roundQuantity(Math.max(progress.assignedWeight - plannedWeight, 0)),
-                    deliveredQtyKoli: roundQuantity(Math.min(progress.deliveredQtyKoli + actualQtyKoli, progress.totalQtyKoli)),
+                    deliveredQtyKoli: roundQuantity(progress.deliveredQtyKoli + actualQtyKoli),
                     deliveredWeight: roundQuantity(progress.deliveredWeight + actualWeight),
                 };
                 transaction.patch(orderItemRef, {

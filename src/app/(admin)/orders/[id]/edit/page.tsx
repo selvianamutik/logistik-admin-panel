@@ -50,6 +50,8 @@ export default function OrderEditPage() {
     const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
     const [services, setServices] = useState<Service[]>([]);
     const [hasDeliveryOrders, setHasDeliveryOrders] = useState(false);
+    const [hasOperationalProgress, setHasOperationalProgress] = useState(false);
+    const [revisionReason, setRevisionReason] = useState('');
     const [form, setForm] = useState({
         customerRef: '', customerName: '',
         receiverName: '', receiverPhone: '', receiverAddress: '', receiverCompany: '',
@@ -130,6 +132,11 @@ export default function OrderEditPage() {
             setCustomers((customerRows || []).filter(customer => customer.active !== false || customer._id === order?.customerRef));
             setServices((serviceRows || []).filter(service => service.active !== false || service._id === order?.serviceRef));
             setHasDeliveryOrders((deliveryOrders || []).length > 0);
+            setHasOperationalProgress((orderItems || []).some(item =>
+                Number(item.deliveredQtyKoli || 0) > 0 ||
+                Number(item.assignedQtyKoli || 0) > 0 ||
+                Number(item.heldQtyKoli || 0) > 0
+            ));
         }).catch(error => {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat form edit order');
         }).finally(() => {
@@ -234,22 +241,39 @@ export default function OrderEditPage() {
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
+        const isRevisionMode = hasDeliveryOrders || hasOperationalProgress;
         if (!form.receiverName || !form.receiverAddress) {
             addToast('error', 'Nama dan alamat penerima wajib');
             return;
         }
 
         const validItems = items.filter(item => item.description.trim() || item.customerProductRef);
-        if (!hasDeliveryOrders && validItems.length === 0) {
+        if (!isRevisionMode && validItems.length === 0) {
             addToast('error', 'Minimal 1 item order wajib diisi');
+            return;
+        }
+        if (isRevisionMode && !revisionReason.trim()) {
+            addToast('error', 'Alasan revisi order wajib diisi');
             return;
         }
 
         setSaving(true);
         try {
-            const action = hasDeliveryOrders ? 'update' : 'update-with-items';
-            const payloadData = hasDeliveryOrders
-                ? { id: orderId, updates: form }
+            const action = isRevisionMode ? 'revise-targets' : 'update-with-items';
+            const payloadData = isRevisionMode
+                ? {
+                    id: orderId,
+                    notes: form.notes,
+                    revisionReason,
+                    items: items.map(item => ({
+                        id: item.id,
+                        qtyKoli: item.qtyKoli,
+                        weightInputValue: item.weightInputValue,
+                        weightInputUnit: item.weightInputUnit,
+                        volumeInputValue: item.volumeInputValue,
+                        volumeInputUnit: item.volumeInputUnit,
+                    })),
+                }
                 : { id: orderId, ...form, items: validItems };
 
             const res = await fetch('/api/data', {
@@ -265,7 +289,7 @@ export default function OrderEditPage() {
             if (!res.ok) {
                 throw new Error(payload.error || 'Gagal menyimpan perubahan order');
             }
-            addToast('success', 'Order berhasil diperbarui');
+            addToast('success', isRevisionMode ? 'Target order berhasil direvisi' : 'Order berhasil diperbarui');
             router.push(`/orders/${orderId}`);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal menyimpan');
@@ -276,12 +300,14 @@ export default function OrderEditPage() {
 
     if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 300 }} /></div>;
 
+    const isRevisionMode = hasDeliveryOrders || hasOperationalProgress;
+
     return (
         <div>
             <div className="page-header">
                 <div className="page-header-left">
                     <PageBackButton href={`/orders/${orderId}`} />
-                    <h1 className="page-title">Edit Order</h1>
+                    <h1 className="page-title">{isRevisionMode ? 'Revisi Order / Resi' : 'Edit Order'}</h1>
                 </div>
             </div>
 
@@ -290,14 +316,14 @@ export default function OrderEditPage() {
                     <div className="card">
                         <div className="card-header"><span className="card-header-title">Informasi Order</span></div>
                         <div className="card-body">
-                            {hasDeliveryOrders && (
+                            {isRevisionMode && (
                                 <div className="alert alert-warning" style={{ marginBottom: '1rem' }}>
-                                    Order ini sudah punya surat jalan. Field utama dan item dikunci agar data pengirim, penerima, dan muatan tetap konsisten dengan dokumen turunannya. Hanya catatan yang masih bisa diubah.
+                                    Order ini sudah punya progress operasional. Data utama dan identitas item tetap dikunci. Yang bisa direvisi di sini hanya target koli, berat, volume, dan catatan order agar histori trip yang sudah terjadi tidak ikut berubah diam-diam.
                                 </div>
                             )}
                             <div className="form-group">
                                 <label className="form-label">Customer / Pengirim / Penagih</label>
-                                <select className="form-select" value={form.customerRef} onChange={e => handleCustomerChange(e.target.value)} disabled={hasDeliveryOrders}>
+                                <select className="form-select" value={form.customerRef} onChange={e => handleCustomerChange(e.target.value)} disabled={isRevisionMode}>
                                     <option value="">Pilih Customer</option>
                                     {customers.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
                                 </select>
@@ -307,19 +333,31 @@ export default function OrderEditPage() {
                                 <select className="form-select" value={form.serviceRef} onChange={e => {
                                     const svc = services.find(s => s._id === e.target.value);
                                     setForm(prev => ({ ...prev, serviceRef: e.target.value, serviceName: svc?.name || '' }));
-                                }} disabled={hasDeliveryOrders}>
+                                }} disabled={isRevisionMode}>
                                     <option value="">Pilih kategori armada</option>
                                     {services.map(s => <option key={s._id} value={s._id}>{s.code} - {s.name}</option>)}
                                 </select>
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Alamat Pickup</label>
-                                <textarea className="form-textarea" rows={2} value={form.pickupAddress} onChange={e => setForm(prev => ({ ...prev, pickupAddress: e.target.value }))} disabled={hasDeliveryOrders} />
+                                <textarea className="form-textarea" rows={2} value={form.pickupAddress} onChange={e => setForm(prev => ({ ...prev, pickupAddress: e.target.value }))} disabled={isRevisionMode} />
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Catatan</label>
                                 <textarea className="form-textarea" rows={3} value={form.notes} onChange={e => setForm(prev => ({ ...prev, notes: e.target.value }))} />
                             </div>
+                            {isRevisionMode && (
+                                <div className="form-group">
+                                    <label className="form-label">Alasan Revisi <span className="required">*</span></label>
+                                    <textarea
+                                        className="form-textarea"
+                                        rows={3}
+                                        value={revisionReason}
+                                        onChange={e => setRevisionReason(e.target.value)}
+                                        placeholder="Mis. hasil loading aktual berbeda, salah input target awal, atau hasil timbang final berubah"
+                                    />
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -329,20 +367,20 @@ export default function OrderEditPage() {
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Nama Penerima <span className="required">*</span></label>
-                                    <input className="form-input" value={form.receiverName} onChange={e => setForm(prev => ({ ...prev, receiverName: e.target.value }))} disabled={hasDeliveryOrders} />
+                                    <input className="form-input" value={form.receiverName} onChange={e => setForm(prev => ({ ...prev, receiverName: e.target.value }))} disabled={isRevisionMode} />
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Telepon</label>
-                                    <input className="form-input" value={form.receiverPhone} onChange={e => setForm(prev => ({ ...prev, receiverPhone: e.target.value }))} disabled={hasDeliveryOrders} />
+                                    <input className="form-input" value={form.receiverPhone} onChange={e => setForm(prev => ({ ...prev, receiverPhone: e.target.value }))} disabled={isRevisionMode} />
                                 </div>
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Perusahaan Penerima</label>
-                                <input className="form-input" value={form.receiverCompany} onChange={e => setForm(prev => ({ ...prev, receiverCompany: e.target.value }))} disabled={hasDeliveryOrders} />
+                                <input className="form-input" value={form.receiverCompany} onChange={e => setForm(prev => ({ ...prev, receiverCompany: e.target.value }))} disabled={isRevisionMode} />
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Alamat Penerima <span className="required">*</span></label>
-                                <textarea className="form-textarea" rows={3} value={form.receiverAddress} onChange={e => setForm(prev => ({ ...prev, receiverAddress: e.target.value }))} disabled={hasDeliveryOrders} />
+                                <textarea className="form-textarea" rows={3} value={form.receiverAddress} onChange={e => setForm(prev => ({ ...prev, receiverAddress: e.target.value }))} disabled={isRevisionMode} />
                             </div>
                         </div>
                     </div>
@@ -350,8 +388,8 @@ export default function OrderEditPage() {
 
                 <div className="card mt-6">
                     <div className="card-header">
-                        <span className="card-header-title">Item / Koli</span>
-                        <button type="button" className="btn btn-secondary btn-sm" onClick={addItem} disabled={hasDeliveryOrders}>
+                        <span className="card-header-title">{isRevisionMode ? 'Target Item / Koli / Muatan' : 'Item / Koli'}</span>
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={addItem} disabled={isRevisionMode}>
                             <Plus size={14} /> Tambah Item
                         </button>
                     </div>
@@ -364,7 +402,7 @@ export default function OrderEditPage() {
                                         className="form-select"
                                         value={item.customerProductRef}
                                         onChange={e => applyCustomerProductSelection(idx, e.target.value)}
-                                        disabled={hasDeliveryOrders || !form.customerRef}
+                                        disabled={isRevisionMode || !form.customerRef}
                                     >
                                         <option value="">{form.customerRef ? 'Pilih dari master barang customer (opsional)' : 'Pilih customer dulu'}</option>
                                         {customerProducts.map(product => (
@@ -376,32 +414,32 @@ export default function OrderEditPage() {
                                 </div>
                                 <div style={{ flex: '2 1 280px' }}>
                                     <label className="form-label">Deskripsi</label>
-                                    <input className="form-input" value={item.description} onChange={e => updateItem(idx, 'description', e.target.value)} placeholder="Nama/deskripsi barang" disabled={hasDeliveryOrders} />
+                                    <input className="form-input" value={item.description} onChange={e => updateItem(idx, 'description', e.target.value)} placeholder="Nama/deskripsi barang" disabled={isRevisionMode} />
                                 </div>
                                 <div style={{ flex: '0 1 110px' }}>
-                                    <label className="form-label">Koli</label>
-                                    <FormattedNumberInput min={1} allowDecimal={false} value={item.qtyKoli} onValueChange={value => updateItem(idx, 'qtyKoli', value)} disabled={hasDeliveryOrders} />
+                                    <label className="form-label">{isRevisionMode ? 'Target Koli' : 'Koli'}</label>
+                                    <FormattedNumberInput min={1} allowDecimal={false} value={item.qtyKoli} onValueChange={value => updateItem(idx, 'qtyKoli', value)} disabled={false} />
                                 </div>
                                 <div style={{ flex: '1 1 180px' }}>
-                                    <label className="form-label">Berat</label>
+                                    <label className="form-label">{isRevisionMode ? 'Target Berat' : 'Berat'}</label>
                                     <div style={{ display: 'flex', gap: 8 }}>
-                                        <FormattedNumberInput min={0} maxFractionDigits={2} value={item.weightInputValue} onValueChange={value => updateItem(idx, 'weightInputValue', value)} disabled={hasDeliveryOrders} />
-                                        <select className="form-select" value={item.weightInputUnit} onChange={e => updateItem(idx, 'weightInputUnit', e.target.value as WeightInputUnit)} style={{ width: 92 }} disabled={hasDeliveryOrders}>
+                                        <FormattedNumberInput min={0} maxFractionDigits={2} value={item.weightInputValue} onValueChange={value => updateItem(idx, 'weightInputValue', value)} disabled={false} />
+                                        <select className="form-select" value={item.weightInputUnit} onChange={e => updateItem(idx, 'weightInputUnit', e.target.value as WeightInputUnit)} style={{ width: 92 }} disabled={false}>
                                             {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                         </select>
                                     </div>
                                 </div>
                                 <div style={{ flex: '1 1 180px' }}>
-                                    <label className="form-label">Volume</label>
+                                    <label className="form-label">{isRevisionMode ? 'Target Volume' : 'Volume'}</label>
                                     <div style={{ display: 'flex', gap: 8 }}>
-                                        <FormattedNumberInput min={0} maxFractionDigits={2} value={item.volumeInputValue} onValueChange={value => updateItem(idx, 'volumeInputValue', value)} disabled={hasDeliveryOrders} />
-                                        <select className="form-select" value={item.volumeInputUnit} onChange={e => updateItem(idx, 'volumeInputUnit', e.target.value as VolumeInputUnit)} style={{ width: 92 }} disabled={hasDeliveryOrders}>
+                                        <FormattedNumberInput min={0} maxFractionDigits={2} value={item.volumeInputValue} onValueChange={value => updateItem(idx, 'volumeInputValue', value)} disabled={false} />
+                                        <select className="form-select" value={item.volumeInputUnit} onChange={e => updateItem(idx, 'volumeInputUnit', e.target.value as VolumeInputUnit)} style={{ width: 92 }} disabled={false}>
                                             {VOLUME_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                         </select>
                                     </div>
                                 </div>
                                 {items.length > 1 && (
-                                    <button type="button" className="btn btn-ghost btn-icon-only" onClick={() => removeItem(idx)} style={{ marginBottom: 4 }} disabled={hasDeliveryOrders}>
+                                    <button type="button" className="btn btn-ghost btn-icon-only" onClick={() => removeItem(idx)} style={{ marginBottom: 4 }} disabled={isRevisionMode}>
                                         <X size={18} />
                                     </button>
                                 )}
@@ -412,7 +450,7 @@ export default function OrderEditPage() {
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 24 }}>
                     <button type="button" className="btn btn-secondary" onClick={() => router.push(`/orders/${orderId}`)}>Batal</button>
-                    <button type="submit" className="btn btn-primary" disabled={saving}><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan Perubahan'}</button>
+                    <button type="submit" className="btn btn-primary" disabled={saving}><Save size={16} /> {saving ? 'Menyimpan...' : (isRevisionMode ? 'Simpan Revisi' : 'Simpan Perubahan')}</button>
                 </div>
             </form>
         </div>

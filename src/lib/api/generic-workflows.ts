@@ -548,9 +548,9 @@ export async function handleGenericUpdate(
         }
     }
 
-    if (entity === 'order-items' && typeof updates.status === 'string') {
+    if (entity === 'order-items') {
         return NextResponse.json(
-            { error: 'Status item order harus lewat workflow server agar qty parsial, hold, dan DO tetap sinkron' },
+            { error: 'Item order harus diubah lewat workflow order/revisi resmi agar progres DO, hold, dan resi tetap sinkron' },
             { status: 409 }
         );
     }
