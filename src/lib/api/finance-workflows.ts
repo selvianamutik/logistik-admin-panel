@@ -131,6 +131,12 @@ type CustomerReceiptAllocationInput = {
     note?: string;
 };
 
+type ReceiptCustomerSource = {
+    _id: string;
+    name?: string;
+    active?: boolean;
+};
+
 const INVOICE_ADJUSTMENT_KIND_SET = new Set<InvoiceAdjustmentKind>([
     'DAMAGE_CLAIM',
     'SHORTAGE_CLAIM',
@@ -437,52 +443,73 @@ export async function handleCustomerReceiptCreate(
             return { invoiceRef, amount, note };
         });
 
-    if (allocations.length === 0) {
-        return NextResponse.json({ error: 'Minimal 1 nota harus dialokasikan' }, { status: 400 });
-    }
-
     const uniqueInvoiceRefs = [...new Set(allocations.map(item => item.invoiceRef))];
     if (uniqueInvoiceRefs.length !== allocations.length) {
         return NextResponse.json({ error: 'Satu nota hanya boleh muncul sekali dalam 1 penerimaan' }, { status: 400 });
     }
 
     const totalAllocated = allocations.reduce((sum, item) => sum + item.amount, 0);
-    if (Math.abs(totalAllocated - totalAmount) > 0.00001) {
+    if (totalAllocated - totalAmount > 0.00001) {
         return NextResponse.json(
-            { error: `Total alokasi (${totalAllocated}) harus sama dengan total penerimaan (${totalAmount})` },
+            { error: `Total alokasi (${totalAllocated}) tidak boleh melebihi total penerimaan (${totalAmount})` },
             { status: 400 }
         );
     }
+    const unappliedAmount = Math.max(totalAmount - totalAllocated, 0);
 
     const explicitCustomerRef = typeof data.customerRef === 'string' && data.customerRef ? data.customerRef : undefined;
     const receiptNote = normalizeOptionalText(data.note);
+    if (!explicitCustomerRef && allocations.length === 0) {
+        return NextResponse.json({ error: 'Customer wajib dipilih untuk menyimpan kredit customer' }, { status: 400 });
+    }
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
-        const snapshots = await Promise.all(allocations.map(item => loadReceivableSnapshot(item.invoiceRef)));
-        for (const result of snapshots) {
-            if ('error' in result) {
-                return result.error;
+        let loadedSnapshots: ReceivableSnapshot[] = [];
+        if (allocations.length > 0) {
+            const snapshots = await Promise.all(allocations.map(item => loadReceivableSnapshot(item.invoiceRef)));
+            for (const result of snapshots) {
+                if ('error' in result) {
+                    return result.error;
+                }
             }
+
+            loadedSnapshots = snapshots as ReceivableSnapshot[];
         }
 
-        const loadedSnapshots = snapshots as ReceivableSnapshot[];
-        const matchedExplicitCustomerRef =
-            explicitCustomerRef && loadedSnapshots.every(snapshot => snapshot.customerRef === explicitCustomerRef)
-                ? explicitCustomerRef
-                : undefined;
-        const baseCustomerRef = matchedExplicitCustomerRef ?? loadedSnapshots[0]?.customerRef;
-        const baseCustomerName = loadedSnapshots[0]?.customerName || '-';
+        let baseCustomerRef = explicitCustomerRef;
+        let customerName = '-';
+        if (loadedSnapshots.length > 0) {
+            const matchedExplicitCustomerRef =
+                explicitCustomerRef && loadedSnapshots.every(snapshot => snapshot.customerRef === explicitCustomerRef)
+                    ? explicitCustomerRef
+                    : undefined;
+            const derivedCustomerRef = matchedExplicitCustomerRef ?? loadedSnapshots[0]?.customerRef;
+            const baseCustomerName = loadedSnapshots[0]?.customerName || '-';
 
-        if (
-            loadedSnapshots.some(snapshot =>
-                (baseCustomerRef && snapshot.customerRef !== baseCustomerRef) ||
-                (!baseCustomerRef && snapshot.customerName !== baseCustomerName)
-            )
-        ) {
-            return NextResponse.json(
-                { error: 'Penerimaan customer hanya boleh dialokasikan ke nota customer yang sama' },
-                { status: 409 }
-            );
+            if (
+                loadedSnapshots.some(snapshot =>
+                    (derivedCustomerRef && snapshot.customerRef !== derivedCustomerRef) ||
+                    (!derivedCustomerRef && snapshot.customerName !== baseCustomerName)
+                )
+            ) {
+                return NextResponse.json(
+                    { error: 'Penerimaan customer hanya boleh dialokasikan ke nota customer yang sama' },
+                    { status: 409 }
+                );
+            }
+
+            baseCustomerRef = derivedCustomerRef;
+            customerName = baseCustomerName;
+        } else if (explicitCustomerRef) {
+            const customer = await sanityGetById<ReceiptCustomerSource>(explicitCustomerRef);
+            if (!customer) {
+                return NextResponse.json({ error: 'Customer tidak ditemukan' }, { status: 404 });
+            }
+            if (customer.active === false) {
+                return NextResponse.json({ error: 'Customer tidak aktif' }, { status: 409 });
+            }
+            baseCustomerRef = customer._id;
+            customerName = normalizeText(customer.name) || '-';
         }
 
         for (const snapshot of loadedSnapshots) {
@@ -512,7 +539,6 @@ export async function handleCustomerReceiptCreate(
         const incomeId = crypto.randomUUID();
         const bankTransactionId = crypto.randomUUID();
         const receiptNumber = await sanityGetNextNumber('receipt');
-        const customerName = loadedSnapshots[0]?.customerName || '-';
         const transaction = getSanityClient()
             .transaction()
             .create({
@@ -523,6 +549,8 @@ export async function handleCustomerReceiptCreate(
                 customerName,
                 date: receiptDate,
                 totalAmount,
+                allocatedAmount: totalAllocated,
+                unappliedAmount: unappliedAmount > 0 ? unappliedAmount : undefined,
                 allocationCount: allocations.length,
                 method: paymentMethod,
                 bankAccountRef: bankAcc?._id,
@@ -603,7 +631,7 @@ export async function handleCustomerReceiptCreate(
                 'CREATE',
                 'customer-receipts',
                 receiptId,
-                `Penerimaan ${receiptNumber} dialokasikan ke ${allocations.length} nota customer ${customerName}`
+                `Penerimaan ${receiptNumber} diterima untuk customer ${customerName}${allocations.length > 0 ? `, dialokasikan ke ${allocations.length} nota` : ''}${unappliedAmount > 0 ? `, kredit tersisa ${unappliedAmount}` : ''}`
             );
             for (const paymentId of createdPaymentIds) {
                 await addAuditLog(
@@ -623,6 +651,8 @@ export async function handleCustomerReceiptCreate(
                     customerName,
                     date: receiptDate,
                     totalAmount,
+                    allocatedAmount: totalAllocated,
+                    unappliedAmount: unappliedAmount > 0 ? unappliedAmount : undefined,
                     allocationCount: allocations.length,
                     method: paymentMethod,
                     bankAccountRef: bankAcc?._id,

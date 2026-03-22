@@ -536,6 +536,8 @@ export interface CustomerReceipt {
   customerName: string;
   date: string;
   totalAmount: number;
+  allocatedAmount?: number;
+  unappliedAmount?: number;
   allocationCount: number;
   method: PaymentMethod;
   bankAccountRef?: string;

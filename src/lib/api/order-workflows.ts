@@ -1412,7 +1412,20 @@ export async function handleDeliveryOrderStatusUpdate(
                 const otherReservedWeight = roundQuantity(
                     Math.max(progress.deliveredWeight + progress.assignedWeight + progress.heldWeight - plannedWeight, 0)
                 );
-                const nextTotalWeight = roundQuantity(Math.max(progress.totalWeight, otherReservedWeight + actualWeight));
+                if (progress.totalWeight > 0) {
+                    const maxActualWeight = roundQuantity(Math.max(progress.totalWeight - otherReservedWeight, 0));
+                    if (actualWeight - maxActualWeight > 0.00001) {
+                        return NextResponse.json(
+                            {
+                                error: `Berat aktual untuk ${orderItem.description || 'item order'} melebihi sisa target order/resi (${maxActualWeight} kg). Revisi target berat order/resi dulu jika total muatan fisik memang bertambah.`,
+                            },
+                            { status: 409 }
+                        );
+                    }
+                }
+                const nextTotalWeight = progress.totalWeight > 0
+                    ? progress.totalWeight
+                    : roundQuantity(Math.max(progress.totalWeight, otherReservedWeight + actualWeight));
                 const nextProgress = {
                     ...progress,
                     totalWeight: nextTotalWeight,
