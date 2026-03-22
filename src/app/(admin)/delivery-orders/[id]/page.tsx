@@ -879,8 +879,11 @@ export default function DODetailPage() {
             <div style={{ display: 'grid', gap: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
             <CollapsibleCard
                 title="Muatan & Realisasi Trip"
-                subtitle="Buka jika perlu cek tujuan tagihan, titik drop aktual, dan detail muatan lapangan"
+                subtitle="Buka jika perlu cek rencana trip, realisasi aktual, dan titik drop lapangan"
             >
+                    <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '0.85rem 1rem', color: 'var(--text-muted)', fontSize: '0.82rem', marginBottom: '1rem' }}>
+                        Muatan <strong>Rencana Trip</strong> di bawah ini masih estimasi proporsional dari target order/resi. Angka operasional yang dipakai sebagai sumber kebenaran akhir baru ditetapkan saat admin mengisi <strong>Muatan Aktual Final</strong> ketika DO diselesaikan.
+                    </div>
                     <div className="detail-row">
                         <div className="detail-item">
                             <div className="detail-label">Asal Tagihan</div>
@@ -1045,15 +1048,15 @@ export default function DODetailPage() {
                                 <tr key={item._id}>
                                     <td className="font-medium">{item.orderItemDescription}</td>
                                     <td>
-                                        <div className="text-muted text-xs">Rencana</div>
+                                        <div className="text-muted text-xs">Rencana Trip (Estimasi)</div>
                                         <div className="font-medium">{item.orderItemQtyKoli || 0} koli</div>
-                                        <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>Aktual</div>
+                                        <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>Aktual Final</div>
                                         <div className="font-medium" style={{ color: item.actualQtyKoli !== undefined ? 'var(--color-success)' : 'var(--color-gray-500)' }}>
                                             {item.actualQtyKoli !== undefined ? `${item.actualQtyKoli} koli` : 'Belum final'}
                                         </div>
                                     </td>
                                     <td>
-                                        <div className="text-muted text-xs">Rencana</div>
+                                        <div className="text-muted text-xs">Rencana Trip (Estimasi)</div>
                                         <div className="font-medium">
                                             {formatCargoSummary({
                                                 qtyKoli: item.orderItemQtyKoli,
@@ -1065,7 +1068,7 @@ export default function DODetailPage() {
                                                 volumeInputUnit: item.orderItemVolumeInputUnit,
                                             })}
                                         </div>
-                                        <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>Aktual</div>
+                                        <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>Aktual Final</div>
                                         <div className="font-medium" style={{ color: item.actualQtyKoli !== undefined ? 'var(--color-success)' : 'var(--color-gray-500)' }}>
                                             {item.actualQtyKoli !== undefined || item.actualWeightKg !== undefined || item.actualVolumeM3 !== undefined
                                                 ? formatCargoSummary({
@@ -1143,7 +1146,7 @@ export default function DODetailPage() {
                             {isCompletingDelivery && (
                                 <>
                                     <div style={{ background: 'var(--color-success-light)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: '0.8rem', color: 'var(--color-success)' }}>
-                                        Status selesai ditetapkan oleh admin. Isi POD dan muatan aktual di bawah ini. Sistem akan memakai muatan aktual sebagai realisasi akhir DO, mengembalikan selisih rencana ke pending bila perlu, lalu menandai DO sebagai <strong>Delivered</strong>.
+                                        Status selesai ditetapkan oleh admin. Isi POD dan muatan aktual di bawah ini. Muatan <strong>Rencana Trip</strong> pada DO ini hanya estimasi. Sistem akan memakai <strong>Muatan Aktual</strong> sebagai realisasi akhir DO, mengembalikan selisih rencana ke pending bila perlu, lalu menandai DO sebagai <strong>Delivered</strong>.
                                     </div>
                                     <div className="form-group">
                                         <label className="form-label">Nama Penerima POD <span className="required">*</span></label>
@@ -1160,14 +1163,14 @@ export default function DODetailPage() {
                                     <div className="form-group">
                                         <label className="form-label">Muatan Aktual per Item <span className="required">*</span></label>
                                         <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-gray-600)' }}>
-                                            Untuk trip normal, cukup cek angka aktual tiap item. Qty aktual boleh lebih kecil atau lebih besar dari rencana trip selama total order/resi belum terlampaui. Jika total barang fisik memang bertambah dari order awal, revisi order/resi dulu.
+                                            Untuk trip normal, cukup isi realisasi lapangan tiap item. <strong>Rencana Trip</strong> di DO ini masih estimasi proporsional dari target order/resi. Qty aktual boleh lebih kecil atau lebih besar dari rencana trip selama total order/resi belum terlampaui. Jika total barang fisik memang bertambah dari order awal, revisi order/resi dulu.
                                         </div>
                                         <div style={{ display: 'grid', gap: '0.75rem' }}>
                                             {actualCargoItems.map(item => (
                                                 <div key={item.deliveryOrderItemRef} style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)' }}>
                                                     <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>{item.description}</div>
                                                     <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
-                                                        Rencana: {formatCargoSummary({
+                                                        Rencana Trip (estimasi): {formatCargoSummary({
                                                             qtyKoli: item.plannedQtyKoli,
                                                             weightKg: item.plannedWeightKg,
                                                             weightInputValue: item.plannedWeightInputValue,
@@ -1193,7 +1196,7 @@ export default function DODetailPage() {
                                                             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
                                                                 <FormattedNumberInput
                                                                     min={0}
-                                                                    maxFractionDigits={2}
+                                                                    maxFractionDigits={item.actualWeightInputUnit === 'TON' ? 3 : 2}
                                                                     value={Number(item.actualWeightInputValue || 0)}
                                                                     onValueChange={value => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualWeightInputValue', String(value))}
                                                                     disabled={updatingStatus}
@@ -1217,7 +1220,7 @@ export default function DODetailPage() {
                                                             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
                                                                 <FormattedNumberInput
                                                                     min={0}
-                                                                    maxFractionDigits={2}
+                                                                    maxFractionDigits={item.actualVolumeInputUnit === 'LITER' ? 2 : 3}
                                                                     value={Number(item.actualVolumeInputValue || 0)}
                                                                     onValueChange={value => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualVolumeInputValue', String(value))}
                                                                     disabled={updatingStatus}
@@ -1332,7 +1335,7 @@ export default function DODetailPage() {
                                                                     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
                                                                         <FormattedNumberInput
                                                                             min={0}
-                                                                            maxFractionDigits={2}
+                                                                            maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
                                                                             value={Number(item.weightInputValue || 0)}
                                                                             onValueChange={value => updateActualDropDraft(item.draftKey, 'weightInputValue', String(value))}
                                                                             disabled={updatingStatus}
@@ -1356,7 +1359,7 @@ export default function DODetailPage() {
                                                                     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
                                                                         <FormattedNumberInput
                                                                             min={0}
-                                                                            maxFractionDigits={2}
+                                                                            maxFractionDigits={item.volumeInputUnit === 'LITER' ? 2 : 3}
                                                                             value={Number(item.volumeInputValue || 0)}
                                                                             onValueChange={value => updateActualDropDraft(item.draftKey, 'volumeInputValue', String(value))}
                                                                             disabled={updatingStatus}

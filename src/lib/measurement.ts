@@ -14,9 +14,28 @@ export const VOLUME_INPUT_UNIT_OPTIONS: Array<{ value: VolumeInputUnit; label: s
 
 function formatNumber(value: number, options?: Intl.NumberFormatOptions) {
   return new Intl.NumberFormat('id-ID', {
+    minimumFractionDigits: 0,
     maximumFractionDigits: 2,
     ...options,
   }).format(value);
+}
+
+function formatQuantityValue(value: number) {
+  return formatNumber(value, {
+    maximumFractionDigits: 2,
+  });
+}
+
+function formatWeightValue(value: number, unit: WeightInputUnit | 'KG' = 'KG') {
+  return formatNumber(value, {
+    maximumFractionDigits: unit === 'TON' ? 3 : 2,
+  });
+}
+
+function formatVolumeValue(value: number, unit: VolumeInputUnit | 'M3' = 'M3') {
+  return formatNumber(value, {
+    maximumFractionDigits: unit === 'LITER' ? 2 : 3,
+  });
 }
 
 export function convertWeightToKg(value: number, unit: WeightInputUnit) {
@@ -52,9 +71,9 @@ export function formatWeightDisplay(input: {
   const unit = input.weightInputUnit || 'KG';
 
   if (inputValue > 0) {
-    const inputLabel = `${formatNumber(inputValue)} ${unit === 'TON' ? 'ton' : 'kg'}`;
+    const inputLabel = `${formatWeightValue(inputValue, unit)} ${unit === 'TON' ? 'ton' : 'kg'}`;
     if (input.includeCanonical && unit === 'TON') {
-      return `${inputLabel} (${formatNumber(weightKg)} kg)`;
+      return `${inputLabel} (${formatWeightValue(weightKg, 'KG')} kg)`;
     }
     return inputLabel;
   }
@@ -63,7 +82,7 @@ export function formatWeightDisplay(input: {
     return '-';
   }
 
-  return `${formatNumber(weightKg)} kg`;
+  return `${formatWeightValue(weightKg, 'KG')} kg`;
 }
 
 export function formatVolumeDisplay(input: {
@@ -78,9 +97,9 @@ export function formatVolumeDisplay(input: {
 
   if (inputValue > 0) {
     const unitLabel = unit === 'M3' ? 'm3' : unit === 'KL' ? 'KL' : 'liter';
-    const inputLabel = `${formatNumber(inputValue)} ${unitLabel}`;
+    const inputLabel = `${formatVolumeValue(inputValue, unit)} ${unitLabel}`;
     if (input.includeCanonical && unit !== 'M3') {
-      return `${inputLabel} (${formatNumber(volumeM3)} m3)`;
+      return `${inputLabel} (${formatVolumeValue(volumeM3, 'M3')} m3)`;
     }
     return inputLabel;
   }
@@ -89,7 +108,7 @@ export function formatVolumeDisplay(input: {
     return '-';
   }
 
-  return `${formatNumber(volumeM3)} m3`;
+  return `${formatVolumeValue(volumeM3, 'M3')} m3`;
 }
 
 export function formatCargoSummary(input: {
@@ -104,7 +123,7 @@ export function formatCargoSummary(input: {
   const segments: string[] = [];
   const qtyKoli = Number(input.qtyKoli || 0);
   if (qtyKoli > 0) {
-    segments.push(`${formatNumber(qtyKoli)} koli`);
+    segments.push(`${formatQuantityValue(qtyKoli)} koli`);
   }
 
   const weightLabel = formatWeightDisplay({

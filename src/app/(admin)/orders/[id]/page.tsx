@@ -497,7 +497,7 @@ export default function OrderDetailPage() {
                                 : '-'}
                         </div>
                         <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
-                            Ini masih estimasi / rencana sampai DO tersebut diselesaikan.
+                            Ini masih estimasi proporsional dari target order sampai DO tersebut diselesaikan.
                         </div>
                     </div>
                 </div>
@@ -680,7 +680,7 @@ export default function OrderDetailPage() {
                                             )}
                                         </div>
                                         <div className="text-muted text-sm">
-                                            {d.status === 'DELIVERED' ? 'Aktual final' : 'Rencana DO'}
+                                            {d.status === 'DELIVERED' ? 'Aktual final' : 'Rencana Trip (estimasi)'}
                                         </div>
                                     </td>
                                     <td><span className={`badge badge-${DO_STATUS_MAP[d.status]?.color}`}><span className="badge-dot" /> {DO_STATUS_MAP[d.status]?.label}</span></td>
