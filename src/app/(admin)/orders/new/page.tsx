@@ -225,7 +225,7 @@ export default function NewOrderPage() {
                 <div className="page-header-left">
                     <PageBackButton href="/orders" />
                     <h1 className="page-title">Buat Order Baru</h1>
-                    <p className="page-subtitle">Isi data pengirim, penerima, dan item barang</p>
+                    <p className="page-subtitle">Pilih customer, isi tujuan, lalu tambah barang yang akan dikirim</p>
                 </div>
             </div>
 
@@ -283,7 +283,7 @@ export default function NewOrderPage() {
                 {/* Items */}
                 <div className="card mt-6">
                     <div className="card-header">
-                        <span className="card-header-title">Item / Koli</span>
+                        <span className="card-header-title">Barang yang Dikirim</span>
                         <button type="button" className="btn btn-secondary btn-sm" onClick={addItem}>
                             <Plus size={14} /> Tambah Item
                         </button>
@@ -291,22 +291,23 @@ export default function NewOrderPage() {
                     <div className="card-body">
                         {items.map((item, idx) => (
                             <div key={idx} style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 12, padding: 12, background: 'var(--color-gray-50)', borderRadius: 'var(--radius-md)' }}>
-                                <div style={{ flex: '1 1 260px' }}>
-                                    <label className="form-label">Barang Customer</label>
-                                    <select
-                                        className="form-select"
-                                        value={item.customerProductRef}
-                                        onChange={e => applyCustomerProductSelection(idx, e.target.value)}
-                                        disabled={!customerRef}
-                                    >
-                                        <option value="">{customerRef ? 'Pilih dari master barang customer (opsional)' : 'Pilih customer dulu'}</option>
-                                        {customerProducts.map(product => (
-                                            <option key={product._id} value={product._id}>
-                                                {product.code ? `${product.code} - ` : ''}{product.name}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
+                                {customerRef && customerProducts.length > 0 && (
+                                    <div style={{ flex: '1 1 260px' }}>
+                                        <label className="form-label">Barang Customer</label>
+                                        <select
+                                            className="form-select"
+                                            value={item.customerProductRef}
+                                            onChange={e => applyCustomerProductSelection(idx, e.target.value)}
+                                        >
+                                            <option value="">Pilih dari master barang customer (opsional)</option>
+                                            {customerProducts.map(product => (
+                                                <option key={product._id} value={product._id}>
+                                                    {product.code ? `${product.code} - ` : ''}{product.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
                                 <div style={{ flex: '2 1 280px' }}>
                                     <label className="form-label">Deskripsi</label>
                                     <input className="form-input" value={item.description} onChange={e => updateItem(idx, 'description', e.target.value)} placeholder="Nama/deskripsi barang" />

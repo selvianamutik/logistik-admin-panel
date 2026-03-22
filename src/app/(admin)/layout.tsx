@@ -217,13 +217,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         const previousPart = idx > 0 ? pathParts[idx - 1] : '';
         const labels: Record<string, string> = {
             dashboard: 'Dashboard', orders: 'Order', 'delivery-orders': 'Surat Jalan',
-            invoices: 'Nota Ongkos', customers: 'Customer', services: 'Kategori Truk',
+            invoices: 'Tagihan / Nota', customers: 'Customer', services: 'Jenis Armada',
             'expense-categories': 'Kategori Biaya', expenses: 'Pengeluaran',
             reports: 'Laporan', fleet: 'Armada', vehicles: 'Kendaraan',
             maintenance: 'Maintenance', incidents: 'Insiden', settings: 'Pengaturan',
             profile: 'Profil', password: 'Password', company: 'Perusahaan',
             users: 'Pengguna', 'audit-logs': 'Audit Aktivitas', new: 'Baru', edit: 'Edit',
-            tires: 'Ban', 'bank-accounts': 'Rekening & Kas', borongan: 'Riwayat Borongan', 'driver-vouchers': 'Bon Trip Supir',
+            tires: 'Ban', 'bank-accounts': 'Rekening & Kas', borongan: 'Riwayat Borongan', 'driver-vouchers': 'Bon Trip',
         };
         const resolvedLabel =
             labels[part] ||

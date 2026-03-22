@@ -7,6 +7,7 @@ import { Save } from 'lucide-react';
 import CurrencyInput from '@/components/CurrencyInput';
 import PageBackButton from '@/components/PageBackButton';
 import type { BankAccount, Driver, DeliveryOrder, DriverVoucher, Order } from '@/lib/types';
+import { formatCurrency } from '@/lib/utils';
 
 export default function NewDriverVoucherPage() {
     const router = useRouter();
@@ -85,12 +86,12 @@ export default function NewDriverVoucherPage() {
     const selectedDriver = selectedDo?.driverRef
         ? drivers.find((driver) => driver._id === selectedDo.driverRef)
         : null;
-    const selectedDriverName = selectedDo?.driverName || selectedDriver?.name || '-';
-    const selectedVehicleLabel = selectedDo?.vehiclePlate || '-';
+    const selectedDriverName = selectedDo?.driverName || selectedDriver?.name || '';
+    const selectedVehicleLabel = selectedDo?.vehiclePlate || '';
     const selectedRoute = [
         selectedDo?.pickupAddress || selectedOrder?.pickupAddress,
         selectedDo?.receiverAddress || selectedOrder?.receiverAddress,
-    ].filter(Boolean).join(' -> ') || '-';
+    ].filter(Boolean).join(' -> ') || '';
     const selectedTripFee = Number(selectedDo?.taripBorongan || 0);
 
     const handleSave = async () => {
@@ -156,13 +157,14 @@ export default function NewDriverVoucherPage() {
             <div className="page-header">
                 <div className="page-header-left">
                     <PageBackButton href="/driver-vouchers" />
-                    <h1 className="page-title">Buat Bon Trip Baru</h1>
+                    <h1 className="page-title">Terbitkan Bon Trip</h1>
+                    <p className="page-subtitle">Pilih trip, sumber dana, lalu keluarkan uang jalan awal</p>
                 </div>
             </div>
 
             <div className="card">
                 <div className="card-body">
-                    <div className="form-section-title">Informasi Bon</div>
+                    <div className="form-section-title">Bon Awal Trip</div>
                     <div className="form-row">
                         <div className="form-group">
                             <label className="form-label">Surat Jalan / Trip <span className="required">*</span></label>
@@ -183,30 +185,38 @@ export default function NewDriverVoucherPage() {
                                     );
                                 })}
                             </select>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                Bon trip wajib tertaut ke 1 DO. Hanya DO operasional yang sudah punya supir, kendaraan, tarif trip, dan belum dipakai bon/borongan yang muncul di sini.
-                            </div>
                         </div>
                         <div className="form-group">
                             <label className="form-label">Tanggal</label>
                             <input type="date" className="form-input" value={form.issuedDate} onChange={e => setForm({ ...form, issuedDate: e.target.value })} />
                         </div>
                     </div>
-                    <div className="form-row">
-                        <div className="form-group">
-                            <label className="form-label">Supir Trip</label>
-                            <input className="form-input" value={selectedDriverName} readOnly placeholder="Pilih DO untuk mengisi supir" />
+                    {selectedDo && (
+                        <div className="card" style={{ marginTop: 'var(--space-4)', background: 'var(--color-bg-secondary)' }}>
+                            <div className="card-body" style={{ padding: 'var(--space-4)' }}>
+                                <div style={{ fontWeight: 700, marginBottom: '0.75rem' }}>Trip Terpilih</div>
+                                <div className="responsive-stat-grid">
+                                    <div>
+                                        <div className="detail-label">Supir</div>
+                                        <div className="detail-value">{selectedDriverName || '-'}</div>
+                                    </div>
+                                    <div>
+                                        <div className="detail-label">Kendaraan</div>
+                                        <div className="detail-value">{selectedVehicleLabel || '-'}</div>
+                                    </div>
+                                    <div>
+                                        <div className="detail-label">Rute</div>
+                                        <div className="detail-value">{selectedRoute || '-'}</div>
+                                    </div>
+                                    <div>
+                                        <div className="detail-label">Upah Trip</div>
+                                        <div className="detail-value">{formatCurrency(selectedTripFee)}</div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <div className="form-group">
-                            <label className="form-label">Kendaraan</label>
-                            <input className="form-input" value={selectedVehicleLabel} readOnly placeholder="Pilih DO untuk mengisi kendaraan" />
-                        </div>
-                    </div>
-                    <div className="form-row">
-                        <div className="form-group">
-                            <label className="form-label">Rute</label>
-                            <input className="form-input" value={selectedRoute} readOnly placeholder="Pilih DO untuk mengisi rute" />
-                        </div>
+                    )}
+                    <div className="form-row" style={{ marginTop: 'var(--space-4)' }}>
                         <div className="form-group">
                             <label className="form-label">Rekening / Kas Sumber <span className="required">*</span></label>
                             <select className="form-select" value={form.issueBankRef} onChange={e => setForm({ ...form, issueBankRef: e.target.value })}>
@@ -214,46 +224,27 @@ export default function NewDriverVoucherPage() {
                                 {bankAccounts.map(account => <option key={account._id} value={account._id}>{account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''}</option>)}
                             </select>
                         </div>
-                    </div>
-                    <div className="form-row">
                         <div className="form-group">
                             <label className="form-label">Uang Jalan Awal <span className="required">*</span></label>
                             <CurrencyInput value={form.cashGiven} onValueChange={value => setForm({ ...form, cashGiven: value })} placeholder="Ketik uang jalan awal" />
-                        </div>
-                        <div className="form-group">
-                            <label className="form-label">Upah Trip</label>
-                            <CurrencyInput
-                                placeholder="Pilih DO"
-                                value={selectedTripFee}
-                                onValueChange={() => {}}
-                                readOnly
-                            />
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                Upah trip mengikuti tarif pada DO dan tidak diisi manual dari bon. Jika nilainya 0, isi dulu tarif trip di detail DO.
-                            </div>
-                        </div>
-                    </div>
-                    <div className="card" style={{ marginTop: 'var(--space-4)', background: 'var(--color-bg-secondary)' }}>
-                        <div className="card-body" style={{ padding: 'var(--space-4)' }}>
-                            <div style={{ fontWeight: 700, marginBottom: '0.5rem' }}>Ringkasan Settlement</div>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem' }}>
-                                <div><div className="text-muted" style={{ fontSize: '0.75rem' }}>Uang Jalan Awal</div><div style={{ fontWeight: 700 }}>Rp {form.cashGiven.toLocaleString('id-ID')}</div></div>
-                                <div><div className="text-muted" style={{ fontSize: '0.75rem' }}>Upah Trip</div><div style={{ fontWeight: 700 }}>Rp {selectedTripFee.toLocaleString('id-ID')}</div></div>
-                                <div><div className="text-muted" style={{ fontSize: '0.75rem' }}>Estimasi Selisih Awal</div><div style={{ fontWeight: 700, color: form.cashGiven - selectedTripFee >= 0 ? '#16a34a' : '#ef4444' }}>Rp {Math.abs(form.cashGiven - selectedTripFee).toLocaleString('id-ID')} {form.cashGiven - selectedTripFee >= 0 ? 'sisa' : 'kurang bayar'}</div></div>
-                            </div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.75rem' }}>
-                                Settlement trip dihitung dari uang jalan awal dibanding total biaya perjalanan aktual + upah trip DO.
-                            </div>
                         </div>
                     </div>
                     <div className="form-group">
                         <label className="form-label">Catatan</label>
                         <textarea className="form-textarea" rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Catatan tambahan..." />
                     </div>
+                    <div className="card" style={{ marginTop: 'var(--space-4)', background: 'var(--color-bg-secondary)' }}>
+                        <div className="card-body" style={{ padding: 'var(--space-4)' }}>
+                            <div style={{ fontWeight: 700, marginBottom: '0.35rem' }}>Langkah berikutnya</div>
+                            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                                Setelah bon awal diterbitkan, tambahan bon, biaya perjalanan aktual, dan settlement akhir dikerjakan di detail bon trip.
+                            </div>
+                        </div>
+                    </div>
 
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: 'var(--space-4)' }}>
                         <button type="button" className="btn btn-secondary" onClick={() => router.push('/driver-vouchers')}>Batal</button>
-                        <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saving}><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan & Terbitkan'}</button>
+                        <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saving}><Save size={16} /> {saving ? 'Menyimpan...' : 'Terbitkan Bon Awal'}</button>
                     </div>
                 </div>
             </div>

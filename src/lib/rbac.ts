@@ -163,23 +163,28 @@ export function getSidebarMenu(role: UserRole): SidebarMenuGroup[] {
             ],
         },
         {
-            label: 'Operasional',
+            label: 'Kerja Harian',
             items: [
                 { label: 'Order / Resi', href: '/orders', icon: 'Package', module: 'orders' },
                 { label: 'Surat Jalan', href: '/delivery-orders', icon: 'Truck', module: 'deliveryOrders' },
-                { label: 'Customer', href: '/customers', icon: 'Users', module: 'customers' },
-                { label: 'Kategori Truk', href: '/services', icon: 'Layers', module: 'services' },
+                { label: 'Bon Trip', href: '/driver-vouchers', icon: 'Wallet', module: 'driverVouchers' },
+                { label: 'Pengeluaran', href: '/expenses', icon: 'Wallet', module: 'expenses' },
             ],
         },
         {
-            label: 'Keuangan',
+            label: 'Tagihan & Kas',
             items: [
-                { label: 'Nota Ongkos Angkut', href: '/invoices', icon: 'FileText', module: 'freightNotas' },
-                { label: 'Bon Trip Supir', href: '/driver-vouchers', icon: 'Wallet', module: 'driverVouchers' },
-                { label: 'Pengeluaran', href: '/expenses', icon: 'Wallet', module: 'expenses' },
-                { label: 'Kategori Biaya', href: '/expense-categories', icon: 'Tags', module: 'expenseCategories' },
+                { label: 'Tagihan / Nota', href: '/invoices', icon: 'FileText', module: 'freightNotas' },
                 { label: 'Rekening & Kas', href: '/bank-accounts', icon: 'Landmark', module: 'bankAccounts' },
                 ...(role === 'OWNER' ? [{ label: 'Laporan', href: '/reports', icon: 'BarChart3', module: 'reports' }] : []),
+            ],
+        },
+        {
+            label: 'Master Data',
+            items: [
+                { label: 'Customer', href: '/customers', icon: 'Users', module: 'customers' },
+                { label: 'Jenis Armada', href: '/services', icon: 'Layers', module: 'services' },
+                { label: 'Kategori Biaya', href: '/expense-categories', icon: 'Tags', module: 'expenseCategories' },
             ],
         },
         {

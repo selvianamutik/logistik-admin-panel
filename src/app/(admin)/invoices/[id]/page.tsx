@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useToast } from '../../layout';
 import { Printer, DollarSign, Landmark, Trash2, FileDown } from 'lucide-react';
+import CollapsibleCard from '@/components/CollapsibleCard';
 import CurrencyInput from '@/components/CurrencyInput';
 import PageBackButton from '@/components/PageBackButton';
 import { buildFreightNotaPrintDocument, fetchCompanyProfile, formatFreightNotaDisplayNumber, openBrandedPrint } from '@/lib/print';
@@ -256,11 +257,12 @@ export default function NotaDetailPage() {
                     <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
                         Nomor sistem: {nota.notaNumber}
                     </div>
+                    <p className="page-subtitle">Lihat sisa tagihan, catat pembayaran, dan tambahkan potongan bila memang ada</p>
                 </div>
                 </div>
                 <div className="page-actions" style={{ gap: '0.4rem' }}>
-                    {nota.status !== 'PAID' && <button className="btn btn-success btn-sm" onClick={() => setShowPayModal(true)}><DollarSign size={14} /> Bayar</button>}
-                    {grossAmount > totalAdjustmentAmount && <button className="btn btn-secondary btn-sm" onClick={() => setShowAdjustmentModal(true)}>Klaim / Potongan</button>}
+                    {nota.status !== 'PAID' && <button className="btn btn-success btn-sm" onClick={() => setShowPayModal(true)}><DollarSign size={14} /> Tambah Pembayaran</button>}
+                    {grossAmount > totalAdjustmentAmount && <button className="btn btn-secondary btn-sm" onClick={() => setShowAdjustmentModal(true)}>Tambah Potongan</button>}
                     <button className="btn btn-secondary btn-sm" onClick={handleExportExcel}><FileDown size={14} /> Excel</button>
                     <button className="btn btn-secondary btn-sm" onClick={handlePrint}><Printer size={14} /> Cetak Nota</button>
                     <button className="btn btn-secondary btn-sm" onClick={handleDelete}><Trash2 size={14} /></button>
@@ -269,168 +271,178 @@ export default function NotaDetailPage() {
 
             <div className="detail-grid">
                 <div>
-                    {/* Info Nota */}
-                    <div className="card">
-                        <div className="card-header"><span className="card-header-title">Detail Nota</span></div>
-                        <div className="card-body">
-                            <div className="detail-row">
-                                <div className="detail-item"><div className="detail-label">No. Cetak Nota</div><div className="detail-value font-mono">{displayNotaNumber}</div></div>
-                                <div className="detail-item"><div className="detail-label">Tanggal</div><div className="detail-value">{formatDate(nota.issueDate)}</div></div>
-                            </div>
-                            <div className="detail-row">
-                                <div className="detail-item"><div className="detail-label">Customer</div><div className="detail-value font-semibold">{nota.customerName}</div></div>
-                                <div className="detail-item"><div className="detail-label">Jatuh Tempo</div><div className="detail-value">{nota.dueDate ? formatDate(nota.dueDate) : '-'}</div></div>
-                            </div>
-                            <div className="detail-row">
-                                <div className="detail-item"><div className="detail-label">No. Sistem</div><div className="detail-value font-mono">{nota.notaNumber}</div></div>
-                                <div className="detail-item"><div className="detail-label">Total Collie</div><div className="detail-value">{nota.totalCollie || 0}</div></div>
-                            </div>
-                            <div className="detail-row">
-                                <div className="detail-item"><div className="detail-label">Total Berat</div><div className="detail-value">{(nota.totalWeightKg || 0).toLocaleString('id')} kg</div></div>
-                                <div className="detail-item"><div className="detail-label">Tagihan Netto</div><div className="detail-value font-semibold">{formatCurrency(netAmount)}</div></div>
+                    <div style={{ display: 'grid', gap: 'var(--space-4)' }}>
+                        {/* Info Nota */}
+                        <div className="card">
+                            <div className="card-header"><span className="card-header-title">Detail Nota</span></div>
+                            <div className="card-body">
+                                <div className="detail-row">
+                                    <div className="detail-item"><div className="detail-label">No. Cetak Nota</div><div className="detail-value font-mono">{displayNotaNumber}</div></div>
+                                    <div className="detail-item"><div className="detail-label">Tanggal</div><div className="detail-value">{formatDate(nota.issueDate)}</div></div>
+                                </div>
+                                <div className="detail-row">
+                                    <div className="detail-item"><div className="detail-label">Customer</div><div className="detail-value font-semibold">{nota.customerName}</div></div>
+                                    <div className="detail-item"><div className="detail-label">Jatuh Tempo</div><div className="detail-value">{nota.dueDate ? formatDate(nota.dueDate) : '-'}</div></div>
+                                </div>
+                                <div className="detail-row">
+                                    <div className="detail-item"><div className="detail-label">No. Sistem</div><div className="detail-value font-mono">{nota.notaNumber}</div></div>
+                                    <div className="detail-item"><div className="detail-label">Total Collie</div><div className="detail-value">{nota.totalCollie || 0}</div></div>
+                                </div>
+                                <div className="detail-row">
+                                    <div className="detail-item"><div className="detail-label">Total Berat</div><div className="detail-value">{(nota.totalWeightKg || 0).toLocaleString('id')} kg</div></div>
+                                    <div className="detail-item"><div className="detail-label">Tagihan Netto</div><div className="detail-value font-semibold">{formatCurrency(netAmount)}</div></div>
+                                </div>
                             </div>
                         </div>
-                    </div>
 
-                    {/* Items Table */}
-                    <div className="card" style={{ marginTop: '1rem' }}>
-                        <div className="card-header"><span className="card-header-title">Perincian Ongkos Angkut</span></div>
-                        <div className="table-wrapper" style={{ overflowX: 'auto' }}>
-                            <table style={{ minWidth: 800 }}>
-                                <thead><tr><th>NO.TRUCK</th><th>TGL</th><th>NO.SJ</th><th>DARI</th><th>TUJUAN</th><th>BARANG</th><th>COLLIE</th><th>BERAT KG</th><th>TARIP</th><th style={{ textAlign: 'right' }}>UANG RP</th><th>KET</th></tr></thead>
-                                <tbody>
-                                    {items.map(it => (
-                                        <tr key={it._id}>
-                                            <td className="font-mono">{it.vehiclePlate || '-'}</td>
-                                            <td className="text-muted">{formatDate(it.date)}</td>
-                                            <td>{it.noSJ}</td>
-                                            <td>{it.dari}</td>
-                                            <td>{it.tujuan}</td>
-                                            <td>{it.barang || '-'}</td>
-                                            <td>{it.collie || '-'}</td>
-                                            <td>{(it.beratKg || 0).toLocaleString('id')}</td>
-                                            <td>{(it.tarip || 0).toLocaleString('id')}</td>
-                                            <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatCurrency(it.uangRp)}</td>
-                                            <td className="text-muted">{it.ket || '-'}</td>
+                        <CollapsibleCard
+                            title="Rincian Perjalanan"
+                            subtitle="Buka jika perlu cek detail baris perjalanan yang membentuk nota ini"
+                        >
+                            <div className="table-wrapper" style={{ overflowX: 'auto' }}>
+                                <table style={{ minWidth: 800 }}>
+                                    <thead><tr><th>NO.TRUCK</th><th>TGL</th><th>NO.SJ</th><th>DARI</th><th>TUJUAN</th><th>BARANG</th><th>COLLIE</th><th>BERAT KG</th><th>TARIP</th><th style={{ textAlign: 'right' }}>UANG RP</th><th>KET</th></tr></thead>
+                                    <tbody>
+                                        {items.map(it => (
+                                            <tr key={it._id}>
+                                                <td className="font-mono">{it.vehiclePlate || '-'}</td>
+                                                <td className="text-muted">{formatDate(it.date)}</td>
+                                                <td>{it.noSJ}</td>
+                                                <td>{it.dari}</td>
+                                                <td>{it.tujuan}</td>
+                                                <td>{it.barang || '-'}</td>
+                                                <td>{it.collie || '-'}</td>
+                                                <td>{(it.beratKg || 0).toLocaleString('id')}</td>
+                                                <td>{(it.tarip || 0).toLocaleString('id')}</td>
+                                                <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatCurrency(it.uangRp)}</td>
+                                                <td className="text-muted">{it.ket || '-'}</td>
+                                            </tr>
+                                        ))}
+                                        <tr style={{ background: 'var(--color-bg-secondary)', fontWeight: 700, borderTop: '2px solid var(--color-border)' }}>
+                                            <td colSpan={6} style={{ textAlign: 'right' }}>Jumlah</td>
+                                            <td>{nota.totalCollie || 0}</td>
+                                            <td>{(nota.totalWeightKg || 0).toLocaleString('id')}</td>
+                                            <td></td>
+                                            <td style={{ textAlign: 'right', color: 'var(--color-danger)' }}>{formatCurrency(nota.totalAmount)}</td>
+                                            <td></td>
                                         </tr>
-                                    ))}
-                                    <tr style={{ background: 'var(--color-bg-secondary)', fontWeight: 700, borderTop: '2px solid var(--color-border)' }}>
-                                        <td colSpan={6} style={{ textAlign: 'right' }}>Jumlah</td>
-                                        <td>{nota.totalCollie || 0}</td>
-                                        <td>{(nota.totalWeightKg || 0).toLocaleString('id')}</td>
-                                        <td></td>
-                                        <td style={{ textAlign: 'right', color: 'var(--color-danger)' }}>{formatCurrency(nota.totalAmount)}</td>
-                                        <td></td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </CollapsibleCard>
                     </div>
                 </div>
 
                 {/* Right: payment */}
                 <div>
-                    <div className="card" style={{ overflow: 'hidden' }}>
-                        <div style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, #7c3aed 100%)', color: '#fff', padding: '1.25rem' }}>
-                            <div style={{ fontSize: '0.72rem', opacity: 0.8, textTransform: 'uppercase', marginBottom: '0.25rem' }}>Tagihan Netto</div>
-                            <div style={{ fontSize: '1.75rem', fontWeight: 700 }}>{formatCurrency(netAmount)}</div>
-                            {totalAdjustmentAmount > 0 && (
-                                <div style={{ fontSize: '0.78rem', opacity: 0.85, marginTop: '0.25rem' }}>
-                                    Bruto {formatCurrency(grossAmount)} | Potongan {formatCurrency(totalAdjustmentAmount)}
-                                </div>
-                            )}
-                        </div>
-                        <div className="card-body">
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.75rem', marginBottom: '0.75rem' }}>
-                                <div><div style={{ fontSize: '0.7rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Bruto</div><div style={{ fontSize: '1rem', fontWeight: 700 }}>{formatCurrency(grossAmount)}</div></div>
-                                <div style={{ textAlign: 'right' }}><div style={{ fontSize: '0.7rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Potongan</div><div style={{ fontSize: '1rem', fontWeight: 700, color: totalAdjustmentAmount > 0 ? 'var(--color-warning)' : 'var(--color-gray-600)' }}>-{formatCurrency(totalAdjustmentAmount)}</div></div>
-                                <div><div style={{ fontSize: '0.7rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Sudah Dibayar</div><div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-success)' }}>{formatCurrency(totalPaid)}</div></div>
-                                <div style={{ textAlign: 'right' }}><div style={{ fontSize: '0.7rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>{creditAmount > 0 ? 'Kelebihan Bayar' : 'Sisa'}</div><div style={{ fontSize: '1.1rem', fontWeight: 700, color: creditAmount > 0 ? 'var(--color-primary)' : remaining > 0 ? 'var(--color-danger)' : 'var(--color-success)' }}>{formatCurrency(creditAmount > 0 ? creditAmount : remaining)}</div></div>
+                    <div style={{ display: 'grid', gap: 'var(--space-4)' }}>
+                        <div className="card" style={{ overflow: 'hidden' }}>
+                            <div style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, #7c3aed 100%)', color: '#fff', padding: '1.25rem' }}>
+                                <div style={{ fontSize: '0.72rem', opacity: 0.8, textTransform: 'uppercase', marginBottom: '0.25rem' }}>Tagihan Netto</div>
+                                <div style={{ fontSize: '1.75rem', fontWeight: 700 }}>{formatCurrency(netAmount)}</div>
+                                {totalAdjustmentAmount > 0 && (
+                                    <div style={{ fontSize: '0.78rem', opacity: 0.85, marginTop: '0.25rem' }}>
+                                        Bruto {formatCurrency(grossAmount)} | Potongan {formatCurrency(totalAdjustmentAmount)}
+                                    </div>
+                                )}
                             </div>
-                            <div className="progress-bar" style={{ marginBottom: '0.5rem' }}>
-                                <div className={`progress-bar-fill ${paidPercent >= 100 ? 'success' : ''}`} style={{ width: `${paidPercent}%` }} />
+                            <div className="card-body">
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                                    <div><div style={{ fontSize: '0.7rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Bruto</div><div style={{ fontSize: '1rem', fontWeight: 700 }}>{formatCurrency(grossAmount)}</div></div>
+                                    <div style={{ textAlign: 'right' }}><div style={{ fontSize: '0.7rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Potongan</div><div style={{ fontSize: '1rem', fontWeight: 700, color: totalAdjustmentAmount > 0 ? 'var(--color-warning)' : 'var(--color-gray-600)' }}>-{formatCurrency(totalAdjustmentAmount)}</div></div>
+                                    <div><div style={{ fontSize: '0.7rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Sudah Dibayar</div><div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-success)' }}>{formatCurrency(totalPaid)}</div></div>
+                                    <div style={{ textAlign: 'right' }}><div style={{ fontSize: '0.7rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>{creditAmount > 0 ? 'Kelebihan Bayar' : 'Sisa'}</div><div style={{ fontSize: '1.1rem', fontWeight: 700, color: creditAmount > 0 ? 'var(--color-primary)' : remaining > 0 ? 'var(--color-danger)' : 'var(--color-success)' }}>{formatCurrency(creditAmount > 0 ? creditAmount : remaining)}</div></div>
+                                </div>
+                                <div className="progress-bar" style={{ marginBottom: '0.5rem' }}>
+                                    <div className={`progress-bar-fill ${paidPercent >= 100 ? 'success' : ''}`} style={{ width: `${paidPercent}%` }} />
+                                </div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--color-gray-400)', marginBottom: '1rem' }}>{paidPercent.toFixed(0)}% terbayar</div>
+                                {nota.status !== 'PAID' && <button className="btn btn-success" style={{ width: '100%' }} onClick={() => setShowPayModal(true)}><DollarSign size={16} /> Tambah Pembayaran</button>}
                             </div>
-                            <div style={{ fontSize: '0.72rem', color: 'var(--color-gray-400)', marginBottom: '1rem' }}>{paidPercent.toFixed(0)}% terbayar</div>
-                            {nota.status !== 'PAID' && <button className="btn btn-success" style={{ width: '100%' }} onClick={() => setShowPayModal(true)}><DollarSign size={16} /> Tambah Pembayaran</button>}
                         </div>
-                    </div>
 
-                    {/* Payment history */}
-                    <div className="card" style={{ marginTop: '1rem' }}>
-                        <div className="card-header"><span className="card-header-title">Riwayat Pembayaran</span></div>
-                        <div className="card-body" style={{ padding: payments.length === 0 ? '2rem 1.5rem' : 0 }}>
-                            {payments.length === 0 ? (
-                                <div style={{ textAlign: 'center', color: 'var(--color-gray-400)' }}>
-                                    <div
-                                        style={{
-                                            fontSize: '1.5rem',
-                                            opacity: 0.3,
-                                            marginBottom: '0.25rem',
-                                            display: 'flex',
-                                            justifyContent: 'center',
-                                        }}
-                                    >
-                                        <DollarSign size={22} />
+                        <CollapsibleCard
+                            title="Riwayat Pembayaran"
+                            subtitle="Buka jika perlu audit pembayaran yang sudah masuk"
+                            defaultOpen={payments.length > 0}
+                        >
+                            <div style={{ padding: payments.length === 0 ? '2rem 1.5rem' : 0 }}>
+                                {payments.length === 0 ? (
+                                    <div style={{ textAlign: 'center', color: 'var(--color-gray-400)' }}>
+                                        <div
+                                            style={{
+                                                fontSize: '1.5rem',
+                                                opacity: 0.3,
+                                                marginBottom: '0.25rem',
+                                                display: 'flex',
+                                                justifyContent: 'center',
+                                            }}
+                                        >
+                                            <DollarSign size={22} />
+                                        </div>
+                                        <div style={{ fontSize: '0.82rem' }}>Belum ada pembayaran</div>
                                     </div>
-                                    <div style={{ fontSize: '0.82rem' }}>Belum ada pembayaran</div>
-                                </div>
-                            ) : payments.map((p, i) => (
-                                (() => {
-                                    const matchedAccount = p.bankAccountRef ? accountMap.get(p.bankAccountRef) : undefined;
-                                    const accountLabel = p.bankAccountName
-                                        ? `${p.bankAccountName}${p.bankAccountNumber || matchedAccount?.accountNumber ? ` - ${p.bankAccountNumber || matchedAccount?.accountNumber}` : ''}`
-                                        : matchedAccount
-                                            ? `${matchedAccount.bankName} - ${matchedAccount.accountNumber}`
-                                            : p.method === 'CASH'
-                                                ? 'Kas / rekening tidak tercatat'
-                                                : '';
-                                    return (
-                                <div key={p._id} style={{ padding: '0.75rem 1rem', borderBottom: i < payments.length - 1 ? '1px solid var(--color-gray-100)' : 'none' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
-                                        <div style={{ fontSize: '0.82rem', fontWeight: 600 }}>{formatDate(p.date)}</div>
-                                        <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--color-success)' }}>+{formatCurrency(p.amount)}</div>
-                                    </div>
-                                    <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.72rem', color: 'var(--color-gray-400)' }}>
-                                        <span className={`badge badge-${p.method === 'CASH' ? 'warning' : 'info'}`} style={{ fontSize: '0.62rem' }}>{PAYMENT_METHOD_MAP[p.method] || p.method}</span>
-                                        {p.receiptNumber && <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>Receipt {p.receiptNumber}</span>}
-                                        {accountLabel && <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Landmark size={10} /> {accountLabel}</span>}
-                                        {p.note && <span>| {p.note}</span>}
-                                    </div>
-                                </div>
-                                    );
-                                })()
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="card" style={{ marginTop: '1rem' }}>
-                        <div className="card-header"><span className="card-header-title">Riwayat Klaim / Potongan</span></div>
-                        <div className="card-body" style={{ padding: adjustments.length === 0 ? '2rem 1.5rem' : 0 }}>
-                            {adjustments.length === 0 ? (
-                                <div style={{ textAlign: 'center', color: 'var(--color-gray-400)' }}>
-                                    <div style={{ fontSize: '0.82rem' }}>Belum ada klaim atau potongan</div>
-                                </div>
-                            ) : adjustments.map((adjustment, index) => (
-                                <div key={adjustment._id} style={{ padding: '0.85rem 1rem', borderBottom: index < adjustments.length - 1 ? '1px solid var(--color-gray-100)' : 'none' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
-                                        <div style={{ fontSize: '0.82rem', fontWeight: 600 }}>{formatDate(adjustment.date)}</div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                            <span className={`badge badge-${adjustment.status === 'VOID' ? 'secondary' : 'warning'}`}><span className="badge-dot" /> {adjustment.status === 'VOID' ? 'Void' : 'Disetujui'}</span>
-                                            <span style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--color-warning)' }}>-{formatCurrency(adjustment.amount)}</span>
+                                ) : payments.map((p, i) => (
+                                    (() => {
+                                        const matchedAccount = p.bankAccountRef ? accountMap.get(p.bankAccountRef) : undefined;
+                                        const accountLabel = p.bankAccountName
+                                            ? `${p.bankAccountName}${p.bankAccountNumber || matchedAccount?.accountNumber ? ` - ${p.bankAccountNumber || matchedAccount?.accountNumber}` : ''}`
+                                            : matchedAccount
+                                                ? `${matchedAccount.bankName} - ${matchedAccount.accountNumber}`
+                                                : p.method === 'CASH'
+                                                    ? 'Kas / rekening tidak tercatat'
+                                                    : '';
+                                        return (
+                                    <div key={p._id} style={{ padding: '0.75rem 1rem', borderBottom: i < payments.length - 1 ? '1px solid var(--color-gray-100)' : 'none' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
+                                            <div style={{ fontSize: '0.82rem', fontWeight: 600 }}>{formatDate(p.date)}</div>
+                                            <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--color-success)' }}>+{formatCurrency(p.amount)}</div>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.72rem', color: 'var(--color-gray-400)' }}>
+                                            <span className={`badge badge-${p.method === 'CASH' ? 'warning' : 'info'}`} style={{ fontSize: '0.62rem' }}>{PAYMENT_METHOD_MAP[p.method] || p.method}</span>
+                                            {p.receiptNumber && <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>Receipt {p.receiptNumber}</span>}
+                                            {accountLabel && <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Landmark size={10} /> {accountLabel}</span>}
+                                            {p.note && <span>| {p.note}</span>}
                                         </div>
                                     </div>
-                                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', fontSize: '0.72rem', color: 'var(--color-gray-400)' }}>
-                                        <span>{INVOICE_ADJUSTMENT_KIND_MAP[adjustment.kind] || adjustment.kind}</span>
-                                        {adjustment.note && <span>| {adjustment.note}</span>}
+                                        );
+                                    })()
+                                ))}
+                            </div>
+                        </CollapsibleCard>
+
+                        <CollapsibleCard
+                            title="Riwayat Klaim / Potongan"
+                            subtitle="Buka jika perlu cek potongan netto karena klaim atau penalti"
+                            defaultOpen={adjustments.length > 0}
+                        >
+                            <div style={{ padding: adjustments.length === 0 ? '2rem 1.5rem' : 0 }}>
+                                {adjustments.length === 0 ? (
+                                    <div style={{ textAlign: 'center', color: 'var(--color-gray-400)' }}>
+                                        <div style={{ fontSize: '0.82rem' }}>Belum ada klaim atau potongan</div>
                                     </div>
-                                    {adjustment.status !== 'VOID' && (
-                                        <div style={{ marginTop: '0.5rem' }}>
-                                            <button className="table-action-btn" onClick={() => void handleVoidAdjustment(adjustment._id)}>Void</button>
+                                ) : adjustments.map((adjustment, index) => (
+                                    <div key={adjustment._id} style={{ padding: '0.85rem 1rem', borderBottom: index < adjustments.length - 1 ? '1px solid var(--color-gray-100)' : 'none' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
+                                            <div style={{ fontSize: '0.82rem', fontWeight: 600 }}>{formatDate(adjustment.date)}</div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                                <span className={`badge badge-${adjustment.status === 'VOID' ? 'secondary' : 'warning'}`}><span className="badge-dot" /> {adjustment.status === 'VOID' ? 'Void' : 'Disetujui'}</span>
+                                                <span style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--color-warning)' }}>-{formatCurrency(adjustment.amount)}</span>
+                                            </div>
                                         </div>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
+                                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', fontSize: '0.72rem', color: 'var(--color-gray-400)' }}>
+                                            <span>{INVOICE_ADJUSTMENT_KIND_MAP[adjustment.kind] || adjustment.kind}</span>
+                                            {adjustment.note && <span>| {adjustment.note}</span>}
+                                        </div>
+                                        {adjustment.status !== 'VOID' && (
+                                            <div style={{ marginTop: '0.5rem' }}>
+                                                <button className="table-action-btn" onClick={() => void handleVoidAdjustment(adjustment._id)}>Void</button>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </CollapsibleCard>
                     </div>
                 </div>
             </div>

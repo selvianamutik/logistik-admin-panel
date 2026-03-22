@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useToast } from '../../layout';
 import { Printer, FileDown, Truck, Upload, Save, MapPin, Radio } from 'lucide-react';
 import CurrencyInput from '@/components/CurrencyInput';
+import CollapsibleCard from '@/components/CollapsibleCard';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
@@ -662,6 +663,7 @@ export default function DODetailPage() {
                                 <span className="badge-dot" /> {DO_STATUS_MAP[doData.status]?.label}
                             </span>
                         </h1>
+                        <p className="page-subtitle">Pantau trip, lanjutkan status, dan selesaikan POD bila pengiriman sudah selesai</p>
                     </div>
                 </div>
                 <div className="page-actions">
@@ -753,9 +755,11 @@ export default function DODetailPage() {
                 </div>
             </div>
 
-            <div className="card" style={{ marginTop: '1rem' }}>
-                <div className="card-header"><span className="card-header-title">Route Tagihan & Realisasi Drop</span></div>
-                <div className="card-body">
+            <div style={{ display: 'grid', gap: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
+            <CollapsibleCard
+                title="Muatan & Realisasi Trip"
+                subtitle="Buka jika perlu cek tujuan tagihan, titik drop aktual, dan detail muatan lapangan"
+            >
                     <div className="detail-row">
                         <div className="detail-item">
                             <div className="detail-label">Asal Tagihan</div>
@@ -817,17 +821,19 @@ export default function DODetailPage() {
                             </div>
                         )}
                     </div>
-                </div>
-            </div>
+            </CollapsibleCard>
 
-            <div className="card" style={{ marginTop: '1rem' }}>
-                <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span className="card-header-title">Live Tracking Driver</span>
-                    <span className={`badge ${doData.trackingState === 'ACTIVE' ? 'badge-info' : doData.trackingState === 'PAUSED' ? 'badge-warning' : 'badge-gray'}`}>
-                        <Radio size={12} /> {doData.trackingState || 'IDLE'}
-                    </span>
-                </div>
-                <div className="card-body">
+            <CollapsibleCard
+                title="Tracking Driver"
+                subtitle="Buka jika perlu cek posisi driver, peta, dan riwayat tracking"
+                defaultOpen={doData.trackingState === 'ACTIVE'}
+            >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+                        <div className="detail-label" style={{ marginBottom: 0 }}>Status Tracking</div>
+                        <span className={`badge ${doData.trackingState === 'ACTIVE' ? 'badge-info' : doData.trackingState === 'PAUSED' ? 'badge-warning' : 'badge-gray'}`}>
+                            <Radio size={12} /> {doData.trackingState || 'IDLE'}
+                        </span>
+                    </div>
                     <div className="detail-row">
                         <div className="detail-item">
                             <div className="detail-label">Posisi terakhir</div>
@@ -865,18 +871,13 @@ export default function DODetailPage() {
                             )}
                         </div>
                     )}
-                </div>
-            </div>
+            </CollapsibleCard>
 
-            {/* Upah Trip - Set Sebelum Berangkat */}
-            <div className="card" style={{ marginTop: '1rem', border: '1.5px solid var(--color-warning-light)' }}>
-                <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--color-warning-light)' }}>
-                    <span className="card-header-title" style={{ color: 'var(--color-warning)' }}>Upah Trip Supir</span>
-                    {!editingTarip && (
-                        <button className="btn btn-sm btn-secondary" onClick={() => setEditingTarip(true)}>Edit Upah</button>
-                    )}
-                </div>
-                <div className="card-body">
+            <CollapsibleCard
+                title="Upah Trip Driver"
+                subtitle={doData.taripBorongan ? 'Buka jika perlu cek atau ubah upah trip' : 'Upah trip belum diisi. Buka bagian ini untuk melengkapinya.'}
+                defaultOpen={!doData.taripBorongan}
+            >
                     {!editingTarip ? (
                         <div className="detail-row">
                             <div className="detail-item">
@@ -910,11 +911,10 @@ export default function DODetailPage() {
                             </div>
                         </div>
                     )}
-                </div>
-            </div>
+            </CollapsibleCard>
 
             {/* Items */}
-            <div className="card mt-6">
+            <div className="card">
                 <div className="card-header"><span className="card-header-title">Item dalam DO ({doItems.length})</span></div>
                 <div className="table-wrapper">
                     <table>
@@ -966,10 +966,10 @@ export default function DODetailPage() {
                 </div>
             </div>
 
-            {/* Tracking Timeline */}
-            <div className="card mt-6">
-                <div className="card-header"><span className="card-header-title">Tracking Log</span></div>
-                <div className="card-body">
+            <CollapsibleCard
+                title="Riwayat Tracking"
+                subtitle="Buka jika perlu audit urutan status dan update perjalanan"
+            >
                     {trackingLogs.length === 0 ? (
                         <p className="text-muted text-sm text-center" style={{ padding: '1rem' }}>Belum ada tracking log</p>
                     ) : (
@@ -986,7 +986,7 @@ export default function DODetailPage() {
                             ))}
                         </div>
                     )}
-                </div>
+            </CollapsibleCard>
             </div>
 
             {/* Status Modal */}
