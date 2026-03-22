@@ -135,7 +135,7 @@ export default function DashboardPage() {
                     <div className="kpi-card">
                         <div className="kpi-icon success"><DollarSign size={24} /></div>
                         <div className="kpi-content">
-                            <div className="kpi-label">Bon Trip Belum Settle</div>
+                            <div className="kpi-label">Uang Jalan Trip Belum Settle</div>
                             <div className="kpi-value">{data.voucherStats.unsettled}</div>
                             {isOwner && <div className="kpi-sub">{formatCurrency(data.voucherStats.totalIssued)} uang jalan dicairkan</div>}
                         </div>
@@ -318,7 +318,7 @@ export default function DashboardPage() {
                                 <li className="reminder-item">
                                     <div className="reminder-icon info"><DollarSign size={16} /></div>
                                     <div>
-                                        <strong>{data.voucherStats.unsettled} bon trip</strong> masih menunggu settlement{isOwner ? ` (${formatCurrency(data.voucherStats.totalIssued)} uang jalan dicairkan)` : ''}
+                                        <strong>{data.voucherStats.unsettled} trip</strong> masih menunggu settlement uang jalan{isOwner ? ` (${formatCurrency(data.voucherStats.totalIssued)} sudah dicairkan)` : ''}
                                     </div>
                                 </li>
                             )}

@@ -34,7 +34,7 @@ export default function NewDriverVoucherPage() {
             const res = await fetch(url);
             const payload = await res.json();
             if (!res.ok) {
-                throw new Error(payload.error || 'Gagal memuat form bon trip');
+                throw new Error(payload.error || 'Gagal memuat form uang jalan trip');
             }
             return payload.data as T;
         };
@@ -62,7 +62,7 @@ export default function NewDriverVoucherPage() {
                     .filter((value): value is string => Boolean(value))
             );
         }).catch(error => {
-            addToast('error', error instanceof Error ? error.message : 'Gagal memuat form bon trip');
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat form uang jalan trip');
         }).finally(() => {
             setLoading(false);
         });
@@ -136,7 +136,7 @@ export default function NewDriverVoucherPage() {
             });
             const result = await res.json();
             if (!res.ok) {
-                addToast('error', result.error || 'Gagal membuat bon trip');
+                addToast('error', result.error || 'Gagal membuat uang jalan trip');
                 setSaving(false);
                 return;
             }
@@ -144,7 +144,7 @@ export default function NewDriverVoucherPage() {
             addToast('success', `Bon ${result.data?.bonNumber || ''} berhasil dibuat`);
             router.push(`/driver-vouchers/${result.data._id}`);
         } catch {
-            addToast('error', 'Gagal membuat bon trip');
+            addToast('error', 'Gagal membuat uang jalan trip');
             setSaving(false);
             return;
         }
@@ -159,14 +159,14 @@ export default function NewDriverVoucherPage() {
             <div className="page-header">
                 <div className="page-header-left">
                     <PageBackButton href="/driver-vouchers" />
-                    <h1 className="page-title">Terbitkan Bon Trip</h1>
-                    <p className="page-subtitle">Pilih trip, sumber dana, lalu keluarkan uang jalan awal</p>
+                    <h1 className="page-title">Terbitkan Uang Jalan Trip</h1>
+                    <p className="page-subtitle">Pilih trip, tentukan sumber dana, lalu keluarkan uang jalan awal untuk driver</p>
                 </div>
             </div>
 
             <div className="card">
                 <div className="card-body">
-                    <div className="form-section-title">Bon Awal Trip</div>
+                    <div className="form-section-title">Uang Jalan Awal Trip</div>
                     <div className="form-row">
                         <div className="form-group">
                             <label className="form-label">Surat Jalan / Trip <span className="required">*</span></label>
@@ -264,14 +264,14 @@ export default function NewDriverVoucherPage() {
                         <div className="card-body" style={{ padding: 'var(--space-4)' }}>
                             <div style={{ fontWeight: 700, marginBottom: '0.35rem' }}>Langkah berikutnya</div>
                             <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-                                Setelah bon awal diterbitkan, tambahan bon, biaya perjalanan aktual, dan settlement akhir dikerjakan di detail bon trip.
+                                Setelah uang jalan awal diterbitkan, top up, biaya perjalanan aktual, dan settlement akhir dikerjakan di detail trip ini.
                             </div>
                         </div>
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: 'var(--space-4)' }}>
                         <button type="button" className="btn btn-secondary" onClick={() => router.push('/driver-vouchers')}>Batal</button>
-                        <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saving}><Save size={16} /> {saving ? 'Menyimpan...' : 'Terbitkan Bon Awal'}</button>
+                        <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saving}><Save size={16} /> {saving ? 'Menyimpan...' : 'Terbitkan Uang Jalan Awal'}</button>
                     </div>
                 </div>
             </div>

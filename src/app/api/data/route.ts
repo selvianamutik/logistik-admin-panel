@@ -439,7 +439,7 @@ export async function POST(request: Request) {
 
         if (entity === 'driver-borongans' && action === 'create-with-items') {
             return NextResponse.json(
-                { error: 'Slip borongan baru sudah dinonaktifkan. Gunakan Bon Trip per DO/trip untuk settlement aktif.' },
+                { error: 'Slip borongan baru sudah dinonaktifkan. Gunakan Uang Jalan Trip per DO/trip untuk settlement aktif.' },
                 { status: 409 }
             );
         }

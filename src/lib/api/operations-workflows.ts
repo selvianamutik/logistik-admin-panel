@@ -925,7 +925,7 @@ export async function handleDriverDelete(
         { ref: id, driverName: (driver.name || '').toLowerCase() }
     );
     if (relatedVoucher) {
-        return NextResponse.json({ error: 'Supir yang sudah dipakai pada bon supir tidak boleh dihapus' }, { status: 409 });
+        return NextResponse.json({ error: 'Supir yang sudah dipakai pada uang jalan trip tidak boleh dihapus' }, { status: 409 });
     }
 
     const relatedDriverUser = await getSanityClient().fetch<{ _id: string } | null>(
@@ -1139,7 +1139,7 @@ export async function handleVehicleDelete(
         { ref: id, plate: (vehicle.plateNumber || '').toLowerCase() }
     );
     if (relatedVoucher) {
-        return NextResponse.json({ error: 'Kendaraan yang sudah dipakai pada bon supir tidak boleh dihapus' }, { status: 409 });
+        return NextResponse.json({ error: 'Kendaraan yang sudah dipakai pada uang jalan trip tidak boleh dihapus' }, { status: 409 });
     }
 
     const relatedExpense = await getSanityClient().fetch<{ _id: string } | null>(

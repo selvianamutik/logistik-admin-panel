@@ -55,11 +55,11 @@ export default function BoronganListPage() {
             <div className="page-header">
                 <div className="page-header-left">
                     <h1 className="page-title">Borongan Supir Legacy</h1>
-                    <p className="page-subtitle">Modul lama. Workflow aktif gaji trip sekarang dipusatkan di Bon Supir / settlement trip.</p>
+                    <p className="page-subtitle">Modul lama. Workflow aktif gaji trip sekarang dipusatkan di Uang Jalan Trip / settlement trip.</p>
                 </div>
                 <div className="page-actions">
                     <button type="button" className="btn btn-primary" onClick={() => router.push('/driver-vouchers/new')}>
-                        <Plus size={18} /> Buka Bon Trip
+                        <Plus size={18} /> Buka Uang Jalan Trip
                     </button>
                 </div>
             </div>
@@ -68,7 +68,7 @@ export default function BoronganListPage() {
                 <div className="card-body" style={{ padding: '1rem' }}>
                     <div style={{ fontWeight: 700, color: 'var(--color-warning)', marginBottom: '0.35rem' }}>Modul legacy</div>
                     <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                        Untuk workflow utama client yang sekarang, gunakan <strong>Bon Supir</strong> karena di sana uang jalan, biaya aktual, upah trip, dan settlement akhir sudah digabung per DO/trip.
+                        Untuk workflow utama client yang sekarang, gunakan <strong>Uang Jalan Trip</strong> karena di sana uang jalan, biaya aktual, upah trip, dan settlement akhir sudah digabung per DO/trip.
                     </div>
                 </div>
             </div>

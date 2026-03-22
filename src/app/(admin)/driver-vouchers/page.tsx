@@ -35,11 +35,11 @@ export default function DriverVouchersPage() {
                 const res = await fetch('/api/data?entity=driver-vouchers');
                 const payload = await res.json();
                 if (!res.ok) {
-                    throw new Error(payload.error || 'Gagal memuat bon trip');
+                    throw new Error(payload.error || 'Gagal memuat uang jalan trip');
                 }
                 setItems(payload.data || []);
             } catch (error) {
-                addToast('error', error instanceof Error ? error.message : 'Gagal memuat bon trip');
+                addToast('error', error instanceof Error ? error.message : 'Gagal memuat uang jalan trip');
             } finally {
                 setLoading(false);
             }
@@ -75,8 +75,8 @@ export default function DriverVouchersPage() {
         <div>
             <div className="page-header">
                 <div className="page-header-left">
-                    <h1 className="page-title">Bon Trip Supir</h1>
-                    <p className="page-subtitle">Antrian bon trip yang masih berjalan tampil lebih dulu. Fokus utamanya: uang yang sudah diberikan, biaya aktual, dan settlement trip.</p>
+                    <h1 className="page-title">Uang Jalan Trip</h1>
+                    <p className="page-subtitle">Antrian trip yang masih berjalan tampil lebih dulu. Modul ini dipakai untuk uang jalan awal, top up, biaya aktual, upah trip, dan settlement akhir.</p>
                 </div>
                 <div className="page-actions">
                     <button
@@ -84,7 +84,7 @@ export default function DriverVouchersPage() {
                         onClick={async () => {
                             const company = await fetchCompanyProfile();
                             openBrandedPrint({
-                                title: 'Daftar Bon Trip Supir',
+                                title: 'Daftar Uang Jalan Trip',
                                 company,
                                 bodyHtml: `
                                 <table>
@@ -131,7 +131,7 @@ export default function DriverVouchersPage() {
                         <Printer size={15} /> Print
                     </button>
                     <button className="btn btn-primary" onClick={() => router.push('/driver-vouchers/new')}>
-                        <Plus size={18} /> Buat Bon Trip
+                        <Plus size={18} /> Terbitkan Uang Jalan
                     </button>
                 </div>
             </div>
@@ -212,8 +212,8 @@ export default function DriverVouchersPage() {
                                     <td colSpan={14}>
                                         <div className="empty-state">
                                             <Receipt size={48} className="empty-state-icon" />
-                                            <div className="empty-state-title">Belum ada bon trip</div>
-                                            <div className="empty-state-text">Buat bon trip yang tertaut ke DO untuk mencatat bon awal, tambahan bon, biaya perjalanan, upah trip, dan settlement akhir</div>
+                                            <div className="empty-state-title">Belum ada uang jalan trip</div>
+                                            <div className="empty-state-text">Terbitkan uang jalan yang tertaut ke DO untuk mencatat uang jalan awal, top up, biaya perjalanan, upah trip, dan settlement akhir</div>
                                         </div>
                                     </td>
                                 </tr>
@@ -286,8 +286,8 @@ export default function DriverVouchersPage() {
                     <div className="mobile-record-list">
                         {filtered.length === 0 ? (
                             <div className="mobile-record-card">
-                                <div className="mobile-record-title">Belum ada bon trip</div>
-                                <div className="mobile-record-subtitle">Buat bon trip yang tertaut ke DO untuk mencatat bon awal, tambahan bon, biaya perjalanan, upah trip, dan settlement akhir.</div>
+                                <div className="mobile-record-title">Belum ada uang jalan trip</div>
+                                <div className="mobile-record-subtitle">Terbitkan uang jalan yang tertaut ke DO untuk mencatat uang jalan awal, top up, biaya perjalanan, upah trip, dan settlement akhir.</div>
                             </div>
                         ) : filtered.map(v => {
                             const status = STATUS_MAP[v.status] || { label: v.status, cls: 'badge-gray' };
@@ -361,7 +361,7 @@ export default function DriverVouchersPage() {
 
                 {filtered.length > 0 && (
                     <div className="pagination">
-                        <div className="pagination-info">Menampilkan {filtered.length} dari {items.length} bon</div>
+                        <div className="pagination-info">Menampilkan {filtered.length} dari {items.length} trip</div>
                     </div>
                 )}
             </div>

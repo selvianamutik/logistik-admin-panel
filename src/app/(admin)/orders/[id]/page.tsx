@@ -741,7 +741,7 @@ export default function OrderDetailPage() {
                                     disabled={creatingDO}
                                 />
                                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                    Isi kalau nominal upah trip sudah diketahui supaya DO bisa langsung muncul saat terbitkan Bon Trip. Kalau belum, tetap bisa diisi nanti dari form Bon Trip.
+                                    Isi kalau nominal upah trip sudah diketahui supaya DO bisa langsung muncul saat terbitkan Uang Jalan Trip. Kalau belum, tetap bisa diisi nanti dari form Uang Jalan Trip.
                                 </div>
                             </div>
                             <div className="form-group">

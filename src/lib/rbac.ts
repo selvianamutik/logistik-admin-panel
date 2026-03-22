@@ -167,7 +167,7 @@ export function getSidebarMenu(role: UserRole): SidebarMenuGroup[] {
             items: [
                 { label: 'Order / Resi', href: '/orders', icon: 'Package', module: 'orders' },
                 { label: 'Surat Jalan', href: '/delivery-orders', icon: 'Truck', module: 'deliveryOrders' },
-                { label: 'Bon Trip', href: '/driver-vouchers', icon: 'Wallet', module: 'driverVouchers' },
+                { label: 'Uang Jalan Trip', href: '/driver-vouchers', icon: 'Wallet', module: 'driverVouchers' },
                 { label: 'Pengeluaran', href: '/expenses', icon: 'Wallet', module: 'expenses' },
             ],
         },

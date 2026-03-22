@@ -58,7 +58,7 @@ export default function DriverVoucherDetailPage() {
             const res = await fetch(url);
             const payload = await res.json();
             if (!res.ok) {
-                throw new Error(payload.error || 'Gagal memuat detail bon trip');
+                throw new Error(payload.error || 'Gagal memuat detail uang jalan trip');
             }
             return payload.data as T;
         };
@@ -77,7 +77,7 @@ export default function DriverVoucherDetailPage() {
             setBankAccounts((accounts || []).filter((account) => account.active !== false));
             setIssueBankRepairRef(voucherData?.issueBankRef || '');
         } catch (error) {
-            addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail bon trip');
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail uang jalan trip');
         } finally {
             setLoading(false);
         }
@@ -345,13 +345,13 @@ export default function DriverVoucherDetailPage() {
 
         setVoucher(result.data);
         setShowSettleModal(false);
-        addToast('success', 'Bon trip telah diselesaikan');
+        addToast('success', 'Settlement trip selesai');
     };
 
     const handlePrint = async () => {
         const company = await fetchCompanyProfile();
         openBrandedPrint({
-            title: `Bon Trip ${voucher?.bonNumber}`,
+            title: `Uang Jalan Trip ${voucher?.bonNumber}`,
             company,
             bodyHtml: `
             <div style="margin-bottom:16px">
@@ -363,7 +363,7 @@ export default function DriverVoucherDetailPage() {
                 <tr><td style="border:none;padding:2px 8px;font-weight:600">DO</td><td style="border:none;padding:2px 8px">${voucher?.doNumber || '-'}</td>
                     <td style="border:none;padding:2px 8px;font-weight:600">Rute</td><td style="border:none;padding:2px 8px">${voucher?.route || '-'}</td></tr>
                 <tr><td style="border:none;padding:2px 8px;font-weight:600">Uang Jalan Awal</td><td style="border:none;padding:2px 8px;font-weight:700;font-size:1.05em">${formatCurrency(initialCashGiven)}</td>
-                    <td style="border:none;padding:2px 8px;font-weight:600">Tambahan Bon</td><td style="border:none;padding:2px 8px">${formatCurrency(topUpAmount)}</td></tr>
+                    <td style="border:none;padding:2px 8px;font-weight:600">Top Up Uang Jalan</td><td style="border:none;padding:2px 8px">${formatCurrency(topUpAmount)}</td></tr>
                 <tr><td style="border:none;padding:2px 8px;font-weight:600">Total Uang Diberikan</td><td style="border:none;padding:2px 8px;font-weight:700">${formatCurrency(totalIssuedAmount)}</td>
                     <td style="border:none;padding:2px 8px;font-weight:600">Rekening Sumber</td><td style="border:none;padding:2px 8px">${voucher?.issueBankName || '-'}</td></tr>
                 <tr><td style="border:none;padding:2px 8px;font-weight:600">Upah Trip</td><td style="border:none;padding:2px 8px">${formatCurrency(driverFeeAmount)}</td>
@@ -372,14 +372,14 @@ export default function DriverVoucherDetailPage() {
                     <td style="border:none;padding:2px 8px;font-weight:600">Rekening Settlement</td><td style="border:none;padding:2px 8px">${voucher?.settlementBankName || '-'}</td></tr>
                 </tbody></table>
             </div>
-            ${disbursements.length > 0 ? `<div style="margin-bottom:16px"><div style="font-weight:700;margin-bottom:8px">Riwayat Pencairan Bon</div><table><thead><tr><th>No</th><th>Tanggal</th><th>Jenis</th><th>Sumber Dana</th><th>Catatan</th><th class="r">Jumlah</th></tr></thead><tbody>${disbursements.map((item, index) => `<tr><td>${index + 1}</td><td>${formatDate(item.date)}</td><td>${item.kind === 'INITIAL' ? 'Bon Awal' : 'Tambahan Bon'}</td><td>${item.bankAccountName || '-'}</td><td>${item.note || '-'}</td><td class="r">${formatCurrency(item.amount)}</td></tr>`).join('')}</tbody></table></div>` : ''}
+            ${disbursements.length > 0 ? `<div style="margin-bottom:16px"><div style="font-weight:700;margin-bottom:8px">Riwayat Pencairan Uang Jalan</div><table><thead><tr><th>No</th><th>Tanggal</th><th>Jenis</th><th>Sumber Dana</th><th>Catatan</th><th class="r">Jumlah</th></tr></thead><tbody>${disbursements.map((item, index) => `<tr><td>${index + 1}</td><td>${formatDate(item.date)}</td><td>${item.kind === 'INITIAL' ? 'Uang Jalan Awal' : 'Top Up Uang Jalan'}</td><td>${item.bankAccountName || '-'}</td><td>${item.note || '-'}</td><td class="r">${formatCurrency(item.amount)}</td></tr>`).join('')}</tbody></table></div>` : ''}
             <table><thead><tr><th>No</th><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th class="r">Jumlah</th></tr></thead>
             <tbody>${items.map((item, index) => `<tr><td>${index + 1}</td><td>${item.expenseDate ? formatDate(item.expenseDate) : '-'}</td><td class="b">${item.category}</td><td>${item.description || '-'}</td><td class="r">${formatCurrency(item.amount)}</td></tr>`).join('')}
             <tr style="border-top:2px solid #1e293b"><td colspan="4" class="r b">Total Biaya Perjalanan</td><td class="r b">${formatCurrency(operationalSpent)}</td></tr>
             <tr><td colspan="4" class="r b">Upah Trip</td><td class="r">${formatCurrency(driverFeeAmount)}</td></tr>
             <tr><td colspan="4" class="r b">Total Hak Trip</td><td class="r">${formatCurrency(totalClaimAmount)}</td></tr>
             <tr><td colspan="4" class="r b">Uang Jalan Awal</td><td class="r">${formatCurrency(initialCashGiven)}</td></tr>
-            <tr><td colspan="4" class="r b">Tambahan Bon</td><td class="r">${formatCurrency(topUpAmount)}</td></tr>
+            <tr><td colspan="4" class="r b">Top Up Uang Jalan</td><td class="r">${formatCurrency(topUpAmount)}</td></tr>
             <tr><td colspan="4" class="r b">Total Uang Diberikan</td><td class="r">${formatCurrency(totalIssuedAmount)}</td></tr>
             <tr style="border-top:2px solid #1e293b"><td colspan="4" class="r b">${balance >= 0 ? 'Sisa Dikembalikan' : 'Tambahan Bayar ke Supir'}</td><td class="r b" style="color:${balance < 0 ? '#ef4444' : '#16a34a'}">${formatCurrency(Math.abs(balance))}</td></tr>
             </tbody></table>
@@ -407,7 +407,7 @@ export default function DriverVoucherDetailPage() {
                             <h1 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>{voucher.bonNumber}</h1>
                             <span className={`badge ${statusConfig.cls}`}>{statusConfig.label}</span>
                         </div>
-                        <p className="page-subtitle" style={{ margin: 0 }}>{voucher.driverName} | {formatDate(voucher.issuedDate)} | Trip {voucher.doNumber || '-'}</p>
+                        <p className="page-subtitle" style={{ margin: 0 }}>{voucher.driverName} | {formatDate(voucher.issuedDate)} | Trip {voucher.doNumber || '-'} | Uang jalan & settlement</p>
                     </div>
                 </div>
                 <div className="page-actions">
@@ -494,12 +494,12 @@ export default function DriverVoucherDetailPage() {
             </CollapsibleCard>
 
             <CollapsibleCard
-                title={`Riwayat Pencairan Bon (${disbursements.length})`}
-                subtitle="Buka jika perlu cek bon awal dan tambahan bon yang pernah dicairkan."
+                title={`Riwayat Uang Jalan (${disbursements.length})`}
+                subtitle="Buka jika perlu cek uang jalan awal dan top up yang pernah dicairkan."
             >
                 {!isSettled && (
                     <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
-                        <button className="btn btn-secondary btn-sm" onClick={openTopUpModal}><Plus size={14} /> Tambah Bon</button>
+                        <button className="btn btn-secondary btn-sm" onClick={openTopUpModal}><Plus size={14} /> Top Up Uang Jalan</button>
                     </div>
                 )}
                 <div className="card-body" style={{ padding: 0 }}>
@@ -508,12 +508,12 @@ export default function DriverVoucherDetailPage() {
                             <thead><tr><th>No</th><th>Tanggal</th><th>Jenis</th><th>Sumber Dana</th><th>Catatan</th><th>Jumlah</th>{!isSettled && <th>Aksi</th>}</tr></thead>
                             <tbody>
                                 {disbursements.length === 0 ? (
-                                    <tr><td colSpan={isSettled ? 6 : 7} style={{ textAlign: 'center', padding: 'var(--space-8)', color: 'var(--text-muted)' }}>Belum ada riwayat pencairan bon</td></tr>
+                                    <tr><td colSpan={isSettled ? 6 : 7} style={{ textAlign: 'center', padding: 'var(--space-8)', color: 'var(--text-muted)' }}>Belum ada riwayat pencairan uang jalan</td></tr>
                                 ) : disbursements.map((item, index) => (
                                     <tr key={item._id}>
                                         <td>{index + 1}</td>
                                         <td>{formatDate(item.date)}</td>
-                                        <td><span className={`badge ${item.kind === 'INITIAL' ? 'badge-blue' : 'badge-warning'}`}>{item.kind === 'INITIAL' ? 'Bon Awal' : 'Tambahan Bon'}</span></td>
+                                        <td><span className={`badge ${item.kind === 'INITIAL' ? 'badge-blue' : 'badge-warning'}`}>{item.kind === 'INITIAL' ? 'Uang Jalan Awal' : 'Top Up Uang Jalan'}</span></td>
                                         <td>{item.bankAccountName || '-'}</td>
                                         <td>{item.note || '-'}</td>
                                         <td className="font-medium">{formatCurrency(item.amount)}</td>
@@ -536,14 +536,14 @@ export default function DriverVoucherDetailPage() {
                     <div className="mobile-record-list">
                         {disbursements.length === 0 ? (
                             <div className="mobile-record-card">
-                                <div className="mobile-record-title">Belum ada riwayat pencairan bon</div>
-                                <div className="mobile-record-subtitle">Tambahan bon akan muncul di sini agar histori pencairan uang tetap rapi.</div>
+                                <div className="mobile-record-title">Belum ada riwayat pencairan uang jalan</div>
+                                <div className="mobile-record-subtitle">Top up akan muncul di sini agar histori pencairan uang tetap rapi.</div>
                             </div>
                         ) : disbursements.map(item => (
                             <div key={item._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
-                                        <div className="mobile-record-title">{item.kind === 'INITIAL' ? 'Bon Awal' : 'Tambahan Bon'}</div>
+                                        <div className="mobile-record-title">{item.kind === 'INITIAL' ? 'Uang Jalan Awal' : 'Top Up Uang Jalan'}</div>
                                         <div className="mobile-record-subtitle">{formatDate(item.date)} | {item.bankAccountName || '-'}</div>
                                     </div>
                                     <span className={`badge ${item.kind === 'INITIAL' ? 'badge-blue' : 'badge-warning'}`}>{formatCurrency(item.amount)}</span>
@@ -557,7 +557,7 @@ export default function DriverVoucherDetailPage() {
                                 {!isSettled && item.kind === 'TOP_UP' && (
                                     <div className="mobile-record-actions">
                                         <button className="btn btn-secondary" onClick={() => handleDeleteDisbursement(item._id)} disabled={deletingDisbursementId === item._id}>
-                                            <Trash2 size={14} /> Hapus Tambahan
+                                            <Trash2 size={14} /> Hapus Top Up
                                         </button>
                                     </div>
                                 )}
@@ -630,7 +630,7 @@ export default function DriverVoucherDetailPage() {
             {showTopUpModal && (
                 <div className="modal-overlay" onClick={() => { if (!toppingUp) setShowTopUpModal(false); }}>
                     <div className="modal" onClick={event => event.stopPropagation()}>
-                        <div className="modal-header"><h3 className="modal-title">Tambah Bon Trip</h3><button className="modal-close" onClick={() => setShowTopUpModal(false)} disabled={toppingUp}><X size={20} /></button></div>
+                        <div className="modal-header"><h3 className="modal-title">Top Up Uang Jalan</h3><button className="modal-close" onClick={() => setShowTopUpModal(false)} disabled={toppingUp}><X size={20} /></button></div>
                         <div className="modal-body">
                             <div className="form-group">
                                 <label className="form-label">Tanggal Tambahan</label>
@@ -660,14 +660,14 @@ export default function DriverVoucherDetailPage() {
             {showSettleModal && (
                 <div className="modal-overlay" onClick={() => { if (!settling) setShowSettleModal(false); }}>
                     <div className="modal" onClick={event => event.stopPropagation()}>
-                        <div className="modal-header"><h3 className="modal-title">Settlement Bon Trip</h3><button className="modal-close" onClick={() => setShowSettleModal(false)} disabled={settling}><X size={20} /></button></div>
+                        <div className="modal-header"><h3 className="modal-title">Settlement Uang Jalan Trip</h3><button className="modal-close" onClick={() => setShowSettleModal(false)} disabled={settling}><X size={20} /></button></div>
                         <div className="modal-body">
                             <div className="form-group">
-                                <label className="form-label">Tanggal Settlement</label>
+                                <label className="form-label">Tanggal Selesaikan Trip</label>
                                 <input type="date" className="form-input" value={settlementDate} onChange={event => setSettlementDate(event.target.value)} disabled={settling} />
                             </div>
                             <div className="form-group">
-                                <label className="form-label">Rekening / Kas Settlement {balance !== 0 ? <span className="required">*</span> : null}</label>
+                                <label className="form-label">Rekening / Kas Penyelesaian {balance !== 0 ? <span className="required">*</span> : null}</label>
                                 <select className="form-select" value={settlementBankRef} onChange={event => setSettlementBankRef(event.target.value)} disabled={settling}>
                                     <option value="">Pilih rekening atau kas</option>
                                     {bankAccounts.map(account => <option key={account._id} value={account._id}>{account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''}</option>)}
@@ -676,7 +676,7 @@ export default function DriverVoucherDetailPage() {
                             </div>
                             <div style={{ background: 'var(--color-bg-secondary)', borderRadius: '0.6rem', padding: '0.85rem 1rem' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Uang Jalan Awal</span><strong>{formatCurrency(initialCashGiven)}</strong></div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Tambahan Bon</span><strong>{formatCurrency(topUpAmount)}</strong></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Top Up Uang Jalan</span><strong>{formatCurrency(topUpAmount)}</strong></div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Total Uang Diberikan</span><strong>{formatCurrency(totalIssuedAmount)}</strong></div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Biaya Perjalanan</span><strong>{formatCurrency(operationalSpent)}</strong></div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Upah Trip</span><strong>{formatCurrency(driverFeeAmount)}</strong></div>
@@ -686,7 +686,7 @@ export default function DriverVoucherDetailPage() {
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setShowSettleModal(false)} disabled={settling}>Batal</button>
-                            <button className="btn btn-primary" onClick={handleSettle} disabled={settling}><CheckCircle size={16} /> {settling ? 'Memproses...' : 'Selesaikan Bon'}</button>
+                            <button className="btn btn-primary" onClick={handleSettle} disabled={settling}><CheckCircle size={16} /> {settling ? 'Memproses...' : 'Selesaikan Settlement'}</button>
                         </div>
                     </div>
                 </div>

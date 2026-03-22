@@ -758,7 +758,7 @@ export async function handleDriverVoucherCreate(
 ) {
     const cashGiven = typeof data.cashGiven === 'number' ? data.cashGiven : Number(data.cashGiven);
     if (!Number.isFinite(cashGiven) || cashGiven <= 0) {
-        return NextResponse.json({ error: 'Nominal bon supir tidak valid' }, { status: 400 });
+        return NextResponse.json({ error: 'Nominal uang jalan trip tidak valid' }, { status: 400 });
     }
 
     const deliveryOrderRef = typeof data.deliveryOrderRef === 'string' ? data.deliveryOrderRef : '';
@@ -809,7 +809,7 @@ export async function handleDriverVoucherCreate(
     const driverRef = extractRefId(deliveryOrder.driverRef);
     if (!driverRef) {
         return NextResponse.json(
-            { error: `Tetapkan supir pada DO ${deliveryOrder.doNumber || deliveryOrderRef} dulu sebelum menerbitkan bon trip.` },
+            { error: `Tetapkan supir pada DO ${deliveryOrder.doNumber || deliveryOrderRef} dulu sebelum menerbitkan uang jalan trip.` },
             { status: 409 }
         );
     }
@@ -824,7 +824,7 @@ export async function handleDriverVoucherCreate(
 
     if (!deliveryOrder.vehicleRef && !deliveryOrder.vehiclePlate) {
         return NextResponse.json(
-            { error: `Tetapkan kendaraan pada DO ${deliveryOrder.doNumber || deliveryOrderRef} dulu sebelum menerbitkan bon trip.` },
+            { error: `Tetapkan kendaraan pada DO ${deliveryOrder.doNumber || deliveryOrderRef} dulu sebelum menerbitkan uang jalan trip.` },
             { status: 409 }
         );
     }
@@ -894,7 +894,7 @@ export async function handleDriverVoucherCreate(
     );
     if (existingBoronganItem) {
         return NextResponse.json(
-            { error: `DO ${deliveryOrder.doNumber || deliveryOrderRef} sudah tercantum di slip borongan. Trip ini harus settle lewat bon supir, bukan dobel.` },
+            { error: `DO ${deliveryOrder.doNumber || deliveryOrderRef} sudah tercantum di slip borongan. Trip ini harus settle lewat uang jalan trip, bukan dobel.` },
             { status: 409 }
         );
     }
@@ -991,7 +991,7 @@ export async function handleDriverVoucherCreate(
                 type: 'DEBIT',
                 amount: cashGiven,
                 date: issueDate,
-                description: `Pencairan bon supir ${bonNumber}`,
+                description: `Pencairan uang jalan trip ${bonNumber}`,
                 balanceAfter: newBalance,
                 relatedVoucherRef: voucherId,
             })
@@ -1593,8 +1593,8 @@ export async function handleDriverVoucherSettlement(
                 categoryName: item.category,
                 date: item.expenseDate || settledDate,
                 amount: item.amount,
-                description: item.description || `Pengeluaran bon supir ${state.voucher.bonNumber}`,
-                note: `Bon supir ${state.voucher.bonNumber}`,
+                description: item.description || `Pengeluaran uang jalan trip ${state.voucher.bonNumber}`,
+                note: `Uang jalan trip ${state.voucher.bonNumber}`,
                 privacyLevel: 'internal',
                 relatedVehicleRef: state.voucher.vehicleRef,
                 relatedVehiclePlate: state.voucher.vehiclePlate,
@@ -1611,7 +1611,7 @@ export async function handleDriverVoucherSettlement(
                 date: settledDate,
                 amount: driverFeeAmount,
                 description: `Upah supir ${state.voucher.driverName || '-'} - ${state.voucher.bonNumber}`,
-                note: `Settlement bon supir ${state.voucher.bonNumber}`,
+                note: `Settlement uang jalan trip ${state.voucher.bonNumber}`,
                 privacyLevel: 'internal',
                 relatedVehicleRef: state.voucher.vehicleRef,
                 relatedVehiclePlate: state.voucher.vehiclePlate,

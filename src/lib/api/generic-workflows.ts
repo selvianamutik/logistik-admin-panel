@@ -368,7 +368,7 @@ export async function handleGenericUpdate(
             'settlementBankName',
         ]);
         if (Object.keys(updates).some(key => protectedFields.has(key))) {
-            return NextResponse.json({ error: 'Field bon supir sensitif harus lewat workflow server' }, { status: 400 });
+            return NextResponse.json({ error: 'Field uang jalan trip yang sensitif harus lewat workflow server' }, { status: 400 });
         }
     }
 

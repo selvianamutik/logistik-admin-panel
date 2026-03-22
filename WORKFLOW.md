@@ -12,9 +12,9 @@ Fokusnya bukan teori bisnis umum, tetapi perilaku aplikasi yang sekarang benar-b
 - `Freight Nota / Nota Ongkos`
   Tagihan ongkos angkut ke customer.
 - `Driver Borongan`
-  Slip upah supir alternatif / legacy untuk perjalanan yang memang tidak disettle lewat bon trip.
-- `Driver Voucher / Bon Trip`
-  Settlement trip per DO: uang jalan awal, biaya perjalanan aktual, upah trip, dan selisih akhir.
+  Slip upah supir alternatif / legacy untuk perjalanan yang memang tidak disettle lewat uang jalan trip.
+- `Driver Voucher / Uang Jalan Trip`
+  Settlement trip per DO: uang jalan awal, top up, biaya perjalanan aktual, upah trip, dan selisih akhir.
 - `Payment`
   Pencatatan pembayaran dari customer.
 - `Income`
@@ -324,20 +324,20 @@ Efeknya:
 - muncul di `Laba Rugi` sebagai pengeluaran,
 - muncul juga di `Arus Kas` sebagai mutasi kas tunai.
 
-## 6. Alur Bon Trip
+## 6. Alur Uang Jalan Trip
 
-Bon trip sekarang diperlakukan sebagai settlement utama per trip / per DO.
+Uang jalan trip sekarang diperlakukan sebagai settlement utama per trip / per DO.
 
 Artinya:
 
-- `1 bon = 1 DO / 1 trip`
-- bon wajib tertaut ke DO
+- `1 uang jalan = 1 DO / 1 trip`
+- uang jalan wajib tertaut ke DO
 - supir, kendaraan, rute, dan upah trip diturunkan dari DO
-- trip yang sudah memakai bon tidak boleh dobel masuk slip borongan
+- trip yang sudah memakai uang jalan tidak boleh dobel masuk slip borongan
 
-### 6.1 Terbitkan bon
+### 6.1 Terbitkan uang jalan
 
-Saat bon dibuat:
+Saat uang jalan dibuat:
 
 1. user wajib memilih `DO / trip`,
 2. user wajib memilih rekening sumber,
@@ -346,17 +346,17 @@ Saat bon dibuat:
 5. sistem langsung membuat `bankTransaction` tipe `DEBIT`,
 6. saldo rekening sumber langsung berkurang.
 
-Jadi bon trip selalu punya konsekuensi kas/bank sejak awal.
+Jadi uang jalan trip selalu punya konsekuensi kas/bank sejak awal.
 
 ### 6.2 Tambah biaya perjalanan
 
-- User menambah item biaya perjalanan per bon, misalnya BBM, tol, parkir, makan, atau menginap.
+- User menambah item biaya perjalanan per trip, misalnya BBM, tol, parkir, makan, atau menginap.
 - Sistem menyimpan item lalu menghitung ulang:
   - `totalSpent`
   - `totalClaimAmount`
   - `balance`
 
-### 6.3 Settlement bon
+### 6.3 Settlement uang jalan
 
 Saat bon diselesaikan:
 
@@ -405,8 +405,8 @@ Modul ini sekarang merepresentasikan:
 - pembayaran borongan yang diarahkan ke rekening,
 - pembayaran borongan tunai yang otomatis masuk ke `Kas Tunai`,
 - expense yang diarahkan ke rekening,
-- terbit bon trip,
-- settlement bon trip,
+- terbit uang jalan trip,
+- settlement uang jalan trip,
 - transfer antar rekening.
 
 ### 8.3 Apa yang tidak mengubah saldo rekening / kas
@@ -685,14 +685,14 @@ Maknanya saat ini:
 
 - itu adalah `tarif upah per DO / per perjalanan`
 - bukan tarif per kg
-- saat bon trip dibuat, nilai ini otomatis menjadi `upah trip`
-- kalau trip memang tidak disettle lewat bon dan memakai slip borongan, nilai ini juga menjadi `upah` baris tersebut
+- saat uang jalan trip dibuat, nilai ini otomatis menjadi `upah trip`
+- kalau trip memang tidak disettle lewat uang jalan dan memakai slip borongan, nilai ini juga menjadi `upah` baris tersebut
 
 Tetapi:
 
 - DO yang `CANCELLED` tidak boleh diubah taripnya
 - kalau DO sudah masuk ke slip borongan, tarip dan keterangannya tidak boleh diubah lagi
-- kalau DO sudah punya bon trip, DO itu tidak boleh dimasukkan lagi ke slip borongan
+- kalau DO sudah punya uang jalan trip, DO itu tidak boleh dimasukkan lagi ke slip borongan
 
 Ini supaya data DO tidak drift dengan workflow settlement trip yang sudah terbentuk.
 

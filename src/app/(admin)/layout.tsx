@@ -266,7 +266,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             maintenance: 'Maintenance', incidents: 'Insiden', settings: 'Pengaturan',
             profile: 'Profil', password: 'Password', company: 'Perusahaan',
             users: 'Pengguna', 'audit-logs': 'Audit Aktivitas', new: 'Baru', edit: 'Edit',
-            tires: 'Ban', 'bank-accounts': 'Rekening & Kas', borongan: 'Riwayat Borongan', 'driver-vouchers': 'Bon Trip',
+            tires: 'Ban', 'bank-accounts': 'Rekening & Kas', borongan: 'Riwayat Borongan', 'driver-vouchers': 'Uang Jalan Trip',
         };
         const resolvedLabel =
             labels[part] ||

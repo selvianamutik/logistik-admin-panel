@@ -338,7 +338,7 @@ export default function ReportsPage() {
       <div className="page-header">
         <div className="page-header-left">
           <h1 className="page-title">Laporan Keuangan</h1>
-          <p className="page-subtitle">Lihat laba rugi, arus kas, piutang aktif, dan bon trip yang masih berjalan.</p>
+          <p className="page-subtitle">Lihat laba rugi, arus kas, piutang aktif, dan uang jalan trip yang masih berjalan.</p>
         </div>
         <div className="page-actions">
           <button
@@ -500,9 +500,9 @@ export default function ReportsPage() {
                 color: "var(--color-warning)",
               },
               {
-                label: "Bon Trip Belum Settle",
+                label: "Uang Jalan Trip Belum Settle",
                 value: formatCurrency(openVoucherClaims),
-                note: `${openDriverVouchers.length} bon aktif`,
+                note: `${openDriverVouchers.length} trip aktif`,
                 color: "var(--color-primary)",
               },
             ].map((item) => (
@@ -537,7 +537,7 @@ export default function ReportsPage() {
           </div>
           <div className="card" style={{ marginBottom: "1.5rem" }}>
             <div className="card-header">
-                <span className="card-header-title">Bon Trip yang Masih Berjalan</span>
+                <span className="card-header-title">Uang Jalan Trip yang Masih Berjalan</span>
             </div>
             <div className="card-body">
               <div className="responsive-stat-grid" style={{ gap: "0.75rem", marginBottom: "1rem" }}>
@@ -706,7 +706,7 @@ export default function ReportsPage() {
                             color: "var(--text-muted)",
                           }}
                         >
-                          Tidak ada bon trip yang masih aktif
+                          Tidak ada uang jalan trip yang masih aktif
                         </td>
                       </tr>
                     ) : (
@@ -755,10 +755,10 @@ export default function ReportsPage() {
                 {openDriverVouchers.length === 0 ? (
                   <div className="mobile-record-card">
                     <div className="mobile-record-title">
-                      Tidak ada bon trip yang masih aktif
+                      Tidak ada uang jalan trip yang masih aktif
                     </div>
                     <div className="mobile-record-subtitle">
-                      Semua bon trip pada periode ini sudah diselesaikan.
+                      Semua uang jalan trip pada periode ini sudah diselesaikan.
                     </div>
                   </div>
                 ) : (
