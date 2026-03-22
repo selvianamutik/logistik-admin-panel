@@ -83,6 +83,7 @@ export default function OrderDetailPage() {
     const [doVehicle, setDoVehicle] = useState('');
     const [doDriver, setDoDriver] = useState('');
     const [doTripFee, setDoTripFee] = useState(0);
+    const [doVehicleOverrideReason, setDoVehicleOverrideReason] = useState('');
     const [doNotes, setDoNotes] = useState('');
     const [selectedShipments, setSelectedShipments] = useState<SelectedShipmentMap>({});
     const [vehicles, setVehicles] = useState<Array<Pick<Vehicle, '_id' | 'unitCode' | 'plateNumber' | 'serviceRef' | 'serviceName'>>>([]);
@@ -145,14 +146,36 @@ export default function OrderDetailPage() {
         void loadOrderDetail();
     }, [loadOrderDetail]);
 
-    const matchingVehicles = (!order?.serviceRef
-        ? vehicles
-        : vehicles.filter(vehicle => vehicle.serviceRef === order.serviceRef))
+    const sortedVehicles = vehicles
+        .slice()
         .sort((left, right) => {
+            const leftMatches = order?.serviceRef && left.serviceRef === order.serviceRef ? 1 : 0;
+            const rightMatches = order?.serviceRef && right.serviceRef === order.serviceRef ? 1 : 0;
+            if (leftMatches !== rightMatches) {
+                return rightMatches - leftMatches;
+            }
             const leftLabel = `${left.unitCode || ''} ${left.plateNumber || ''}`.trim();
             const rightLabel = `${right.unitCode || ''} ${right.plateNumber || ''}`.trim();
             return leftLabel.localeCompare(rightLabel, 'id');
         });
+    const selectedVehicleData = vehicles.find(vehicle => vehicle._id === doVehicle);
+    const vehicleCategoryMismatch = Boolean(
+        order?.serviceRef &&
+        selectedVehicleData &&
+        selectedVehicleData.serviceRef !== order.serviceRef
+    );
+    const vehicleMissingCategory = Boolean(
+        order?.serviceRef &&
+        selectedVehicleData &&
+        !selectedVehicleData.serviceRef
+    );
+    const requiresVehicleOverrideReason = vehicleCategoryMismatch || vehicleMissingCategory;
+
+    useEffect(() => {
+        if (!requiresVehicleOverrideReason && doVehicleOverrideReason) {
+            setDoVehicleOverrideReason('');
+        }
+    }, [requiresVehicleOverrideReason, doVehicleOverrideReason]);
 
     const activeAssignmentByItemId = doItems.reduce<Record<string, DeliveryOrder | undefined>>((acc, doi) => {
         const activeDeliveryOrder = dos.find(d => d._id === doi.deliveryOrderRef && ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(d.status));
@@ -246,6 +269,10 @@ export default function OrderDetailPage() {
             addToast('error', 'Pilih minimal 1 item untuk surat jalan');
             return;
         }
+        if (requiresVehicleOverrideReason && !doVehicleOverrideReason.trim()) {
+            addToast('error', 'Isi alasan override armada jika trip ini memakai kendaraan dengan kategori berbeda');
+            return;
+        }
         setCreatingDO(true);
         try {
             const selVeh = vehicles.find(v => v._id === doVehicle);
@@ -262,6 +289,7 @@ export default function OrderDetailPage() {
                         masterResi: order?.masterResi,
                         vehicleRef: doVehicle || undefined,
                         vehiclePlate: selVeh?.plateNumber || '',
+                        vehicleCategoryOverrideReason: requiresVehicleOverrideReason ? doVehicleOverrideReason.trim() : undefined,
                         driverRef: doDriver || undefined,
                         driverName: selDriver?.name || '',
                         taripBorongan: doTripFee > 0 ? doTripFee : undefined,
@@ -285,6 +313,7 @@ export default function OrderDetailPage() {
             setDoVehicle('');
             setDoDriver('');
             setDoTripFee(0);
+            setDoVehicleOverrideReason('');
             setDoNotes('');
             setDoDate(new Date().toISOString().split('T')[0]);
             await loadOrderDetail();
@@ -711,20 +740,45 @@ export default function OrderDetailPage() {
                                     <label className="form-label">Kendaraan</label>
                                     <select className="form-select" value={doVehicle} onChange={e => setDoVehicle(e.target.value)} disabled={creatingDO}>
                                         <option value="">Pilih kendaraan</option>
-                                        {matchingVehicles.map(v => <option key={v._id} value={v._id}>{v.unitCode ? `${v.unitCode} - ` : ''}{v.plateNumber}{v.serviceName ? ` (${v.serviceName})` : ''}</option>)}
+                                        {sortedVehicles.map(v => <option key={v._id} value={v._id}>{v.unitCode ? `${v.unitCode} - ` : ''}{v.plateNumber}{v.serviceName ? ` (${v.serviceName})` : ' (Kategori belum diisi)'}</option>)}
                                     </select>
                                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
                                         {order.serviceRef
-                                            ? `Hanya kendaraan dengan kategori ${order.serviceName || '-'} yang ditampilkan agar cocok dengan permintaan order.`
+                                            ? `Kendaraan yang cocok dengan kategori ${order.serviceName || '-'} ditampilkan lebih dulu. Trip parsial tetap boleh memakai armada lain jika memang diperlukan, tapi alasannya wajib dicatat.`
                                             : 'Order ini belum punya kategori armada, jadi semua kendaraan operasional tetap tersedia.'}
                                     </div>
-                                    {order.serviceRef && matchingVehicles.length === 0 && (
-                                        <div style={{ fontSize: '0.75rem', color: 'var(--color-danger)' }}>
-                                            Belum ada kendaraan operasional yang cocok dengan kategori armada ini.
-                                        </div>
-                                    )}
                                 </div>
                             </div>
+                            {requiresVehicleOverrideReason && (
+                                <div
+                                    style={{
+                                        background: 'var(--color-warning-light)',
+                                        border: '1px solid rgba(234, 179, 8, 0.35)',
+                                        borderRadius: '0.75rem',
+                                        padding: '0.85rem 1rem',
+                                        marginBottom: '1rem',
+                                    }}
+                                >
+                                    <div style={{ fontWeight: 600, color: 'var(--color-warning-dark)', marginBottom: '0.35rem' }}>
+                                        Armada aktual berbeda dari armada order
+                                    </div>
+                                    <div style={{ fontSize: '0.8rem', color: 'var(--color-warning-dark)', marginBottom: '0.75rem' }}>
+                                        Order meminta <strong>{order.serviceName || '-'}</strong>, tetapi trip ini memakai <strong>{selectedVehicleData?.serviceName || 'kendaraan tanpa kategori'}</strong>.
+                                        Ini boleh untuk pengiriman parsial, asalkan alasannya dicatat.
+                                    </div>
+                                    <div className="form-group" style={{ marginBottom: 0 }}>
+                                        <label className="form-label">Alasan Override Armada</label>
+                                        <textarea
+                                            className="form-textarea"
+                                            rows={2}
+                                            value={doVehicleOverrideReason}
+                                            onChange={e => setDoVehicleOverrideReason(e.target.value)}
+                                            placeholder="Mis. sisa muatan lebih besar, armada awal tidak tersedia, atau permintaan customer berubah"
+                                            disabled={creatingDO}
+                                        />
+                                    </div>
+                                </div>
+                            )}
                             <div className="form-group">
                                 <label className="form-label">Supir</label>
                                 <select className="form-select" value={doDriver} onChange={e => setDoDriver(e.target.value)} disabled={creatingDO}>

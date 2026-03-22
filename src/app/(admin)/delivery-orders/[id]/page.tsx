@@ -511,9 +511,16 @@ export default function DODetailPage() {
                             <tr>
                                 <td style="border:none;padding:2px 8px;font-weight:600">Telepon Penerima</td>
                                 <td style="border:none;padding:2px 8px">${doData?.receiverPhone || '-'}</td>
-                                <td style="border:none;padding:2px 8px;font-weight:600">Kategori Armada</td>
+                                <td style="border:none;padding:2px 8px;font-weight:600">Armada Diminta</td>
                                 <td style="border:none;padding:2px 8px">${doData?.serviceName || '-'}</td>
                             </tr>
+                            <tr>
+                                <td style="border:none;padding:2px 8px;font-weight:600">Armada Aktual</td>
+                                <td style="border:none;padding:2px 8px">${doData?.vehicleServiceName || doData?.serviceName || '-'}</td>
+                                <td style="border:none;padding:2px 8px;font-weight:600">Kendaraan</td>
+                                <td style="border:none;padding:2px 8px">${doData?.vehiclePlate || '-'}</td>
+                            </tr>
+                            ${doData?.vehicleCategoryOverrideReason ? `<tr><td style="border:none;padding:2px 8px;font-weight:600">Alasan Override Armada</td><td colspan="3" style="border:none;padding:2px 8px">${doData.vehicleCategoryOverrideReason}</td></tr>` : ''}
                             ${doData?.receiverCompany ? `<tr><td style="border:none;padding:2px 8px;font-weight:600">Perusahaan Penerima</td><td colspan="3" style="border:none;padding:2px 8px">${doData.receiverCompany}</td></tr>` : ''}
                             <tr>
                                 <td style="border:none;padding:2px 8px;font-weight:600">Alamat Pickup</td>
@@ -825,8 +832,12 @@ export default function DODetailPage() {
                             <div className="detail-item"><div className="detail-label">Telepon Penerima</div><div className="detail-value">{doData.receiverPhone || '-'}</div></div>
                         </div>
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">Kategori Truk / Armada</div><div className="detail-value">{doData.serviceName || '-'}</div></div>
+                            <div className="detail-item"><div className="detail-label">Armada Diminta</div><div className="detail-value">{doData.serviceName || '-'}</div></div>
                             <div className="detail-item"><div className="detail-label">Penerima</div><div className="detail-value">{doData.receiverName || '-'}</div></div>
+                        </div>
+                        <div className="detail-row">
+                            <div className="detail-item"><div className="detail-label">Armada Aktual</div><div className="detail-value">{doData.vehicleServiceName || doData.serviceName || '-'}</div></div>
+                            <div className="detail-item"><div className="detail-label">Alasan Override Armada</div><div className="detail-value">{doData.vehicleCategoryOverrideReason || '-'}</div></div>
                         </div>
                         {doData.cargoFinalizedAt && (
                             <div className="detail-row">

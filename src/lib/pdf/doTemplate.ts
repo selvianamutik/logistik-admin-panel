@@ -117,8 +117,15 @@ export function generateDOPdf(
     addRow('Kendaraan', doData.vehiclePlate || '-', col2X, y);
     y += 5;
     addRow('Driver', doData.driverName || '-', margin, y);
-    addRow('Kategori', doData.serviceName || '-', col2X, y);
+    addRow('Armada Diminta', doData.serviceName || '-', col2X, y);
     y += 5;
+    addRow('Armada Aktual', doData.vehicleServiceName || doData.serviceName || '-', margin, y);
+    addRow('Kendaraan', doData.vehiclePlate || '-', col2X, y);
+    y += 5;
+    if (doData.vehicleCategoryOverrideReason) {
+        addRow('Override Armada', doData.vehicleCategoryOverrideReason, margin, y);
+        y += 5;
+    }
     addRow('Alamat', doData.receiverAddress || '-', margin, y);
     y += 8;
 

@@ -54,12 +54,31 @@ export default function DeliveryOrdersPage() {
         void loadDeliveryOrders();
     }, [addToast]);
 
-    const getServiceLabel = (deliveryOrder: DeliveryOrder) => {
+    const getRequestedServiceLabel = (deliveryOrder: DeliveryOrder) => {
         const service = services.find(item => item._id === deliveryOrder.serviceRef);
         if (service) {
             return `${service.code} - ${service.name}`;
         }
         return deliveryOrder.serviceName || '-';
+    };
+
+    const getActualServiceLabel = (deliveryOrder: DeliveryOrder) => {
+        if (deliveryOrder.vehicleServiceRef) {
+            const service = services.find(item => item._id === deliveryOrder.vehicleServiceRef);
+            if (service) {
+                return `${service.code} - ${service.name}`;
+            }
+        }
+        return deliveryOrder.vehicleServiceName || getRequestedServiceLabel(deliveryOrder);
+    };
+
+    const getServiceLabel = (deliveryOrder: DeliveryOrder) => {
+        const requested = getRequestedServiceLabel(deliveryOrder);
+        const actual = getActualServiceLabel(deliveryOrder);
+        if (deliveryOrder.vehicleCategoryOverrideReason && actual !== requested) {
+            return `${requested} -> ${actual}`;
+        }
+        return requested;
     };
 
     const availableServiceOptions = services.filter(service =>
@@ -75,13 +94,15 @@ export default function DeliveryOrdersPage() {
             || d.vehiclePlate?.toLowerCase().includes(search.toLowerCase())
             || d.driverName?.toLowerCase().includes(search.toLowerCase())
             || d.serviceName?.toLowerCase().includes(search.toLowerCase())
+            || d.vehicleServiceName?.toLowerCase().includes(search.toLowerCase())
+            || d.vehicleCategoryOverrideReason?.toLowerCase().includes(search.toLowerCase())
             || (d.actualDropPoints || []).some(point =>
                 point.locationName?.toLowerCase().includes(search.toLowerCase())
                 || point.locationAddress?.toLowerCase().includes(search.toLowerCase())
             )
             || service?.code?.toLowerCase().includes(search.toLowerCase());
         const s = !statusFilter || d.status === statusFilter;
-        const c = !serviceFilter || d.serviceRef === serviceFilter;
+        const c = !serviceFilter || d.serviceRef === serviceFilter || d.vehicleServiceRef === serviceFilter;
         return m && s && c;
     });
 
@@ -192,7 +213,12 @@ export default function DeliveryOrdersPage() {
                                         <td className="font-mono text-muted">{d.doNumber}</td>
                                         <td><Link href={`/orders/${d.orderRef}`} className="text-muted">{d.masterResi}</Link></td>
                                         <td>{d.customerName}</td>
-                                        <td>{getServiceLabel(d)}</td>
+                                        <td>
+                                            <div>{getServiceLabel(d)}</div>
+                                            {d.vehicleCategoryOverrideReason && (
+                                                <div className="text-muted text-sm">Override tercatat</div>
+                                            )}
+                                        </td>
                                         <td>{d.vehiclePlate || '-'}</td>
                                         <td className="text-muted">{formatDate(d.date)}</td>
                                         <td><span className={`badge badge-${DO_STATUS_MAP[d.status]?.color}`}><span className="badge-dot" /> {DO_STATUS_MAP[d.status]?.label}</span></td>
@@ -263,7 +289,10 @@ export default function DeliveryOrdersPage() {
                                     </div>
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Kategori</span>
-                                        <span className="mobile-record-value">{getServiceLabel(d)}</span>
+                                        <span className="mobile-record-value">
+                                            {getServiceLabel(d)}
+                                            {d.vehicleCategoryOverrideReason ? ' • Override tercatat' : ''}
+                                        </span>
                                     </div>
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Kendaraan</span>

@@ -1732,11 +1732,15 @@ export async function handleDeliveryOrderCreate(
         typeof data.vehiclePlate === 'string' && data.vehiclePlate.trim()
             ? data.vehiclePlate.trim()
             : '';
+    const vehicleCategoryOverrideReason = normalizeOptionalText(data.vehicleCategoryOverrideReason);
     const driverRef = typeof data.driverRef === 'string' ? data.driverRef : '';
     let driverName =
         typeof data.driverName === 'string' && data.driverName.trim()
             ? data.driverName.trim()
             : '';
+    let vehicleServiceRef: string | undefined;
+    let vehicleServiceName: string | undefined;
+    let vehicleCategoryOverrideReasonToStore: string | undefined;
 
     if (vehicleRef) {
         const vehicle = await sanityGetById<{
@@ -1756,20 +1760,26 @@ export async function handleDeliveryOrderCreate(
             return NextResponse.json({ error: 'Kendaraan yang sedang out of service tidak bisa dipakai untuk surat jalan baru' }, { status: 409 });
         }
         const orderServiceRef = extractRefId(order.serviceRef);
-        const vehicleServiceRef = extractRefId(vehicle.serviceRef);
-        if (orderServiceRef && !vehicleServiceRef) {
+        vehicleServiceRef = extractRefId(vehicle.serviceRef) || undefined;
+        vehicleServiceName = vehicle.serviceName || undefined;
+        if (orderServiceRef && !vehicleServiceRef && !vehicleCategoryOverrideReason) {
             return NextResponse.json(
-                { error: `Kendaraan ${vehicle.plateNumber || vehicleRef} belum punya kategori armada dan tidak bisa dipakai untuk order ${order.serviceName || '-'}` },
-                { status: 409 }
+                {
+                    error: `Kendaraan ${vehicle.plateNumber || vehicleRef} belum punya kategori armada yang cocok. Isi alasan override jika trip ini memang harus jalan dengan armada berbeda.`,
+                },
+                { status: 400 }
+            );
+        }
+        if (orderServiceRef && vehicleServiceRef !== orderServiceRef && !vehicleCategoryOverrideReason) {
+            return NextResponse.json(
+                {
+                    error: `Kendaraan ${vehicle.plateNumber || vehicleRef} berkategori ${vehicle.serviceName || '-'} tidak sama dengan armada order ${order.serviceName || '-'}. Isi alasan override bila trip parsial ini memang memakai armada lain.`,
+                },
+                { status: 400 }
             );
         }
         if (orderServiceRef && vehicleServiceRef !== orderServiceRef) {
-            return NextResponse.json(
-                {
-                    error: `Kendaraan ${vehicle.plateNumber || vehicleRef} berkategori ${vehicle.serviceName || '-'} tidak sesuai dengan kategori armada order ${order.serviceName || '-'}`,
-                },
-                { status: 409 }
-            );
+            vehicleCategoryOverrideReasonToStore = vehicleCategoryOverrideReason || undefined;
         }
         vehiclePlate = vehicle.plateNumber || vehiclePlate;
     }
@@ -1919,6 +1929,9 @@ export async function handleDeliveryOrderCreate(
         pickupAddress: order.pickupAddress,
         serviceRef: order.serviceRef,
         serviceName: order.serviceName,
+        vehicleServiceRef,
+        vehicleServiceName,
+        vehicleCategoryOverrideReason: vehicleCategoryOverrideReasonToStore,
         vehicleRef: vehicleRef || undefined,
         vehiclePlate: vehiclePlate || undefined,
         driverRef: driverRef || undefined,
@@ -2008,7 +2021,7 @@ export async function handleDeliveryOrderCreate(
         'CREATE',
         'delivery-orders',
         doId,
-        `Created delivery-orders: ${doNumber}${customerDoNumber ? ` / ${customerDoNumber}` : ''} (${selectionSummaries.join('; ')})`
+        `Created delivery-orders: ${doNumber}${customerDoNumber ? ` / ${customerDoNumber}` : ''} (${selectionSummaries.join('; ')})${vehicleCategoryOverrideReasonToStore ? ` | override armada: ${order.serviceName || '-'} -> ${vehicleServiceName || vehiclePlate || '-'} | alasan: ${vehicleCategoryOverrideReasonToStore}` : ''}`
     );
     return NextResponse.json({ data: doDoc, id: doId });
 }

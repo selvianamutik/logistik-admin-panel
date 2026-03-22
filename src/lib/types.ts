@@ -328,6 +328,9 @@ export interface DeliveryOrder {
   pickupAddress?: string;
   serviceRef?: string;
   serviceName?: string;
+  vehicleServiceRef?: string;
+  vehicleServiceName?: string;
+  vehicleCategoryOverrideReason?: string;
   taripBorongan?: number;       // Tarif upah supir per DO/perjalanan
   keteranganBorongan?: string;  // Keterangan upah borongan
   trackingState?: 'IDLE' | 'ACTIVE' | 'PAUSED' | 'STOPPED';
