@@ -257,10 +257,13 @@ export interface OrderItem {
   value?: number;
   deliveredQtyKoli?: number;
   deliveredWeight?: number;
+  deliveredVolume?: number;
   assignedQtyKoli?: number;
   assignedWeight?: number;
+  assignedVolume?: number;
   heldQtyKoli?: number;
   heldWeight?: number;
+  heldVolume?: number;
   holdReason?: string;
   holdLocation?: string;
   status: OrderItemStatus;

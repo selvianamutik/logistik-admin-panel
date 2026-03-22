@@ -30,7 +30,7 @@ type OrderItemForm = {
 const DEFAULT_ITEM: OrderItemForm = {
     customerProductRef: '',
     description: '',
-    qtyKoli: 1,
+    qtyKoli: 0,
     weightInputValue: 0,
     weightInputUnit: 'KG',
     volumeInputValue: 0,
@@ -161,7 +161,7 @@ export default function NewOrderPage() {
                 ...item,
                 customerProductRef: selectedProduct._id,
                 description: selectedProduct.description || selectedProduct.name || item.description,
-                qtyKoli: selectedProduct.defaultQtyKoli || item.qtyKoli || 1,
+                qtyKoli: selectedProduct.defaultQtyKoli ?? item.qtyKoli ?? 0,
                 weightInputValue: nextWeightValue,
                 weightInputUnit: nextWeightUnit,
                 volumeInputValue: nextVolumeValue,
@@ -313,9 +313,9 @@ export default function NewOrderPage() {
                                     <input className="form-input" value={item.description} onChange={e => updateItem(idx, 'description', e.target.value)} placeholder="Nama/deskripsi barang" />
                                 </div>
                                 <div style={{ flex: '0 1 110px' }}>
-                                    <label className="form-label">Koli</label>
+                                    <label className="form-label">Koli (Opsional)</label>
                                     <FormattedNumberInput
-                                        min={1}
+                                        min={0}
                                         allowDecimal={false}
                                         value={item.qtyKoli}
                                         onValueChange={value => updateItem(idx, 'qtyKoli', value)}

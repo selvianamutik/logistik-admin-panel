@@ -36,6 +36,7 @@ interface ActualCargoDraft {
     actualWeightInputUnit: WeightInputUnit;
     actualVolumeInputValue: string;
     actualVolumeInputUnit: VolumeInputUnit;
+    requireQty: boolean;
     requireWeight: boolean;
     requireVolume: boolean;
 }
@@ -54,21 +55,23 @@ interface ActualDropDraft {
 }
 
 function buildActualCargoDraft(item: DeliveryOrderItem): ActualCargoDraft {
+    const plannedQtyKoli = Number(item.orderItemQtyKoli || item.shippedQtyKoli || 0);
     return {
         deliveryOrderItemRef: item._id,
         description: item.orderItemDescription || '-',
-        plannedQtyKoli: Number(item.orderItemQtyKoli || item.shippedQtyKoli || 0),
+        plannedQtyKoli,
         plannedWeightKg: Number(item.orderItemWeight || item.shippedWeight || 0),
         plannedWeightInputValue: item.orderItemWeightInputValue,
         plannedWeightInputUnit: item.orderItemWeightInputUnit,
         plannedVolumeM3: item.orderItemVolumeM3,
         plannedVolumeInputValue: item.orderItemVolumeInputValue,
         plannedVolumeInputUnit: item.orderItemVolumeInputUnit,
-        actualQtyKoli: String(item.actualQtyKoli ?? item.orderItemQtyKoli ?? item.shippedQtyKoli ?? 0),
+        actualQtyKoli: plannedQtyKoli > 0 ? String(item.actualQtyKoli ?? item.orderItemQtyKoli ?? item.shippedQtyKoli ?? 0) : '',
         actualWeightInputValue: String(item.actualWeightInputValue ?? item.orderItemWeightInputValue ?? item.actualWeightKg ?? item.orderItemWeight ?? item.shippedWeight ?? ''),
         actualWeightInputUnit: item.actualWeightInputUnit || item.orderItemWeightInputUnit || 'KG',
         actualVolumeInputValue: String(item.actualVolumeInputValue ?? item.orderItemVolumeInputValue ?? item.actualVolumeM3 ?? item.orderItemVolumeM3 ?? ''),
         actualVolumeInputUnit: item.actualVolumeInputUnit || item.orderItemVolumeInputUnit || 'M3',
+        requireQty: plannedQtyKoli > 0,
         requireWeight: Number(item.orderItemWeight || item.shippedWeight || 0) > 0,
         requireVolume: Number(item.orderItemVolumeM3 || 0) > 0,
     };
@@ -706,10 +709,14 @@ export default function DODetailPage() {
         const weight = Number(item.actualWeightInputValue);
         const volume = Number(item.actualVolumeInputValue);
         return (
-            Number.isFinite(qty) &&
-            qty > 0 &&
+            (!item.requireQty || (Number.isFinite(qty) && qty > 0)) &&
             (!item.requireWeight || (Number.isFinite(weight) && weight > 0)) &&
-            (!item.requireVolume || (Number.isFinite(volume) && volume > 0))
+            (!item.requireVolume || (Number.isFinite(volume) && volume > 0)) &&
+            (
+                (item.requireQty && Number.isFinite(qty) && qty > 0) ||
+                (Number.isFinite(weight) && weight > 0) ||
+                (Number.isFinite(volume) && volume > 0)
+            )
         );
     });
     const actualDropReady = effectiveActualDropPoints.length > 0 && effectiveActualDropPoints.every(item => {
@@ -1049,10 +1056,14 @@ export default function DODetailPage() {
                                     <td className="font-medium">{item.orderItemDescription}</td>
                                     <td>
                                         <div className="text-muted text-xs">Rencana Trip (Estimasi)</div>
-                                        <div className="font-medium">{item.orderItemQtyKoli || 0} koli</div>
+                                        <div className="font-medium">{item.orderItemQtyKoli && item.orderItemQtyKoli > 0 ? `${item.orderItemQtyKoli} koli` : '-'}</div>
                                         <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>Aktual Final</div>
                                         <div className="font-medium" style={{ color: item.actualQtyKoli !== undefined ? 'var(--color-success)' : 'var(--color-gray-500)' }}>
-                                            {item.actualQtyKoli !== undefined ? `${item.actualQtyKoli} koli` : 'Belum final'}
+                                            {item.actualQtyKoli !== undefined
+                                                ? `${item.actualQtyKoli} koli`
+                                                : item.orderItemQtyKoli && item.orderItemQtyKoli > 0
+                                                    ? 'Belum final'
+                                                    : '-'}
                                         </div>
                                     </td>
                                     <td>
@@ -1180,15 +1191,20 @@ export default function DODetailPage() {
                                                             volumeInputUnit: item.plannedVolumeInputUnit,
                                                         })}
                                                     </div>
+                                                    {!item.requireQty && (
+                                                        <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+                                                            Item ini tidak memakai basis koli. Isi realisasi berat dan/atau volume aktual lapangan.
+                                                        </div>
+                                                    )}
                                                     <div className="form-row">
                                                         <div className="form-group">
-                                                            <label className="form-label">Koli Aktual <span className="required">*</span></label>
+                                                            <label className="form-label">Koli Aktual {item.requireQty && <span className="required">*</span>}</label>
                                                             <FormattedNumberInput
                                                                 min={0}
                                                                 maxFractionDigits={2}
                                                                 value={Number(item.actualQtyKoli || 0)}
                                                                 onValueChange={value => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualQtyKoli', String(value))}
-                                                                disabled={updatingStatus}
+                                                                disabled={updatingStatus || !item.requireQty}
                                                             />
                                                         </div>
                                                         <div className="form-group">

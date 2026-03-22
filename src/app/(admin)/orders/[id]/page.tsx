@@ -58,11 +58,29 @@ function getActualDoItemCargo(doItem: DeliveryOrderItem): CargoAggregate {
     };
 }
 
-function formatProgressLine(label: string, qtyKoli: number, weight: number) {
-    if (qtyKoli <= 0 && weight <= 0) {
+function hasCargoAggregate(cargo: CargoAggregate) {
+    return cargo.qtyKoli > 0 || cargo.weightKg > 0 || cargo.volumeM3 > 0;
+}
+
+function getCargoBasisValue(cargo: CargoAggregate) {
+    if (cargo.qtyKoli > 0) {
+        return cargo.qtyKoli;
+    }
+    if (cargo.weightKg > 0) {
+        return cargo.weightKg;
+    }
+    return cargo.volumeM3;
+}
+
+function formatProgressLine(label: string, cargo: CargoAggregate) {
+    if (!hasCargoAggregate(cargo)) {
         return null;
     }
-    return `${label}: ${formatNumber(qtyKoli)} koli / ${formatNumber(roundQuantity(weight))} kg`;
+    return `${label}: ${formatCargoSummary({
+        qtyKoli: cargo.qtyKoli > 0 ? cargo.qtyKoli : undefined,
+        weightKg: cargo.weightKg > 0 ? cargo.weightKg : undefined,
+        volumeM3: cargo.volumeM3 > 0 ? cargo.volumeM3 : undefined,
+    })}`;
 }
 
 export default function OrderDetailPage() {
@@ -215,18 +233,29 @@ export default function OrderDetailPage() {
 
     const availableItems = items.filter(item => {
         const progress = itemProgressById[item._id];
-        return progress.pendingQtyKoli > 0 && progress.assignedQtyKoli <= 0;
+        return (progress.pendingQtyKoli > 0 || progress.pendingWeight > 0 || progress.pendingVolume > 0) && !activeAssignmentByItemId[item._id];
     });
-    const totalQtyKoli = items.reduce((sum, item) => sum + itemProgressById[item._id].totalQtyKoli, 0);
-    const deliveredQtyKoli = items.reduce((sum, item) => sum + itemProgressById[item._id].deliveredQtyKoli, 0);
-    const assignedQtyKoli = items.reduce((sum, item) => sum + itemProgressById[item._id].assignedQtyKoli, 0);
-    const holdQtyTotal = items.reduce((sum, item) => sum + itemProgressById[item._id].heldQtyKoli, 0);
-    const pendingQtyTotal = items.reduce((sum, item) => sum + itemProgressById[item._id].pendingQtyKoli, 0);
     const totalOrderCargo = items.reduce((sum, item) => addCargoAggregate(sum, {
         qtyKoli: item.qtyKoli,
         weightKg: item.weight,
         volumeM3: item.volume,
     }), createCargoAggregate());
+    const totalHeldCargo = items.reduce((sum, item) => {
+        const progress = itemProgressById[item._id];
+        return addCargoAggregate(sum, {
+            qtyKoli: progress.heldQtyKoli,
+            weightKg: progress.heldWeight,
+            volumeM3: progress.heldVolume,
+        });
+    }, createCargoAggregate());
+    const totalPendingCargo = items.reduce((sum, item) => {
+        const progress = itemProgressById[item._id];
+        return addCargoAggregate(sum, {
+            qtyKoli: progress.pendingQtyKoli,
+            weightKg: progress.pendingWeight,
+            volumeM3: progress.pendingVolume,
+        });
+    }, createCargoAggregate());
     const totalDeliveredActualCargo = Object.values(deliveredActualCargoByItemId).reduce(
         (sum, cargo) => addCargoAggregate(sum, cargo),
         createCargoAggregate()
@@ -246,7 +275,9 @@ export default function OrderDetailPage() {
         return acc;
     }, {});
     const deliveredDoCount = dos.filter(d => d.status === 'DELIVERED').length;
-    const progress = totalQtyKoli > 0 ? Math.round((deliveredQtyKoli / totalQtyKoli) * 100) : 0;
+    const totalProgressBasis = getCargoBasisValue(totalOrderCargo);
+    const deliveredProgressBasis = getCargoBasisValue(totalDeliveredActualCargo);
+    const progress = totalProgressBasis > 0 ? Math.min(100, Math.round((deliveredProgressBasis / totalProgressBasis) * 100)) : 0;
 
     const handleCreateDO = async () => {
         const selectedItems = availableItems
@@ -258,12 +289,25 @@ export default function OrderDetailPage() {
                 return {
                     orderItemRef: item._id,
                     qtyKoli,
+                    usesQtyBasis: progress.totalQtyKoli > 0,
+                    pendingWeight: progress.pendingWeight,
+                    pendingVolume: progress.pendingVolume,
                     holdRemaining: selection.holdRemaining && qtyKoli < progress.pendingQtyKoli,
                     holdReason: selection.holdReason.trim(),
                     holdLocation: selection.holdLocation.trim(),
                 };
             })
-            .filter(item => Number.isFinite(item.qtyKoli) && item.qtyKoli > 0);
+            .filter(item => item.usesQtyBasis
+                ? Number.isFinite(item.qtyKoli) && item.qtyKoli > 0
+                : item.pendingWeight > 0 || item.pendingVolume > 0
+            )
+            .map(item => ({
+                orderItemRef: item.orderItemRef,
+                qtyKoli: item.qtyKoli,
+                holdRemaining: item.holdRemaining,
+                holdReason: item.holdReason,
+                holdLocation: item.holdLocation,
+            }));
 
         if (selectedItems.length === 0) {
             addToast('error', 'Pilih minimal 1 item untuk surat jalan');
@@ -436,16 +480,53 @@ export default function OrderDetailPage() {
                 <div className="card-body">
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 'var(--font-size-sm)' }}>
                         <span className="font-semibold">Progress Pengiriman Aktual</span>
-                        <span className="text-muted">{formatNumber(deliveredQtyKoli)}/{formatNumber(totalQtyKoli)} koli terkirim ({progress}%)</span>
+                        <span className="text-muted">
+                            {formatCargoSummary({
+                                qtyKoli: totalDeliveredActualCargo.qtyKoli,
+                                weightKg: totalDeliveredActualCargo.weightKg,
+                                volumeM3: totalDeliveredActualCargo.volumeM3,
+                            })}
+                            {' / '}
+                            {formatCargoSummary({
+                                qtyKoli: totalOrderCargo.qtyKoli,
+                                weightKg: totalOrderCargo.weightKg,
+                                volumeM3: totalOrderCargo.volumeM3,
+                            })}{' '}
+                            ({progress}%)
+                        </span>
                     </div>
                     <div className="progress-bar">
                         <div className={`progress-bar-fill ${progress === 100 ? 'success' : ''}`} style={{ width: `${progress}%` }} />
                     </div>
                     <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 'var(--font-size-xs)', color: 'var(--color-gray-500)' }}>
-                        <span style={{ color: 'var(--color-success)' }}>{formatNumber(deliveredQtyKoli)} Terkirim</span>
-                        <span style={{ color: 'var(--color-primary)' }}>{formatNumber(assignedQtyKoli)} Dalam DO</span>
-                        <span style={{ color: 'var(--color-warning)' }}>{formatNumber(holdQtyTotal)} Ditahan</span>
-                        <span>{formatNumber(pendingQtyTotal)} Pending</span>
+                        <span style={{ color: 'var(--color-success)' }}>
+                            {formatCargoSummary({
+                                qtyKoli: totalDeliveredActualCargo.qtyKoli,
+                                weightKg: totalDeliveredActualCargo.weightKg,
+                                volumeM3: totalDeliveredActualCargo.volumeM3,
+                            })} terkirim
+                        </span>
+                        <span style={{ color: 'var(--color-primary)' }}>
+                            {formatCargoSummary({
+                                qtyKoli: totalActivePlannedCargo.qtyKoli,
+                                weightKg: totalActivePlannedCargo.weightKg,
+                                volumeM3: totalActivePlannedCargo.volumeM3,
+                            })} dalam DO
+                        </span>
+                        <span style={{ color: 'var(--color-warning)' }}>
+                            {formatCargoSummary({
+                                qtyKoli: totalHeldCargo.qtyKoli,
+                                weightKg: totalHeldCargo.weightKg,
+                                volumeM3: totalHeldCargo.volumeM3,
+                            })} ditahan
+                        </span>
+                        <span>
+                            {formatCargoSummary({
+                                qtyKoli: totalPendingCargo.qtyKoli,
+                                weightKg: totalPendingCargo.weightKg,
+                                volumeM3: totalPendingCargo.volumeM3,
+                            })} pending
+                        </span>
                     </div>
                     <div style={{ marginTop: 8, fontSize: '0.76rem', color: 'var(--text-muted)' }}>
                         DO aktif masih memakai muatan rencana. Begitu DO selesai, realisasi akhir mengikuti muatan aktual yang difinalkan admin.
@@ -488,7 +569,7 @@ export default function OrderDetailPage() {
                     <div className="card-header"><span className="card-header-title">Rencana dalam DO Aktif</span></div>
                     <div className="card-body">
                         <div className="detail-value" style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-primary)' }}>
-                            {assignedQtyKoli > 0
+                            {hasCargoAggregate(totalActivePlannedCargo)
                                 ? formatCargoSummary({
                                     qtyKoli: totalActivePlannedCargo.qtyKoli,
                                     weightKg: totalActivePlannedCargo.weightKg,
@@ -549,11 +630,20 @@ export default function OrderDetailPage() {
                                 const progressInfo = itemProgressById[item._id];
                                 const deliveredActualCargo = deliveredActualCargoByItemId[item._id] || createCargoAggregate();
                                 const activePlannedCargo = activePlannedCargoByItemId[item._id] || createCargoAggregate();
+                                const usesQtyBasis = progressInfo.totalQtyKoli > 0;
                                 const progressLines = [
-                                    formatProgressLine('Aktual terkirim', deliveredActualCargo.qtyKoli, deliveredActualCargo.weightKg),
-                                    formatProgressLine('Rencana dalam DO', activePlannedCargo.qtyKoli, activePlannedCargo.weightKg),
-                                    formatProgressLine('Hold', progressInfo.heldQtyKoli, progressInfo.heldWeight),
-                                    formatProgressLine('Sisa siap kirim', progressInfo.pendingQtyKoli, progressInfo.pendingWeight),
+                                    formatProgressLine('Aktual terkirim', deliveredActualCargo),
+                                    formatProgressLine('Rencana dalam DO', activePlannedCargo),
+                                    formatProgressLine('Hold', {
+                                        qtyKoli: progressInfo.heldQtyKoli,
+                                        weightKg: progressInfo.heldWeight,
+                                        volumeM3: progressInfo.heldVolume,
+                                    }),
+                                    formatProgressLine('Sisa siap kirim', {
+                                        qtyKoli: progressInfo.pendingQtyKoli,
+                                        weightKg: progressInfo.pendingWeight,
+                                        volumeM3: progressInfo.pendingVolume,
+                                    }),
                                 ].filter((line): line is string => Boolean(line));
                                 return (
                                 <tr key={item._id}>
@@ -566,9 +656,9 @@ export default function OrderDetailPage() {
                                         )}
                                     </td>
                                     <td>
-                                        <div className="font-medium">{item.qtyKoli}</div>
+                                        <div className="font-medium">{item.qtyKoli > 0 ? item.qtyKoli : '-'}</div>
                                         <div className="text-muted text-sm">
-                                            Aktual terkirim: {formatNumber(deliveredActualCargo.qtyKoli)}
+                                            Aktual terkirim: {deliveredActualCargo.qtyKoli > 0 ? formatNumber(deliveredActualCargo.qtyKoli) : '-'}
                                         </div>
                                     </td>
                                     <td>
@@ -585,8 +675,8 @@ export default function OrderDetailPage() {
                                             })}
                                         </div>
                                         <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>Aktual terkirim</div>
-                                        <div className="font-medium" style={{ color: deliveredActualCargo.qtyKoli > 0 ? 'var(--color-success)' : 'var(--color-gray-500)' }}>
-                                            {deliveredActualCargo.qtyKoli > 0
+                                        <div className="font-medium" style={{ color: hasCargoAggregate(deliveredActualCargo) ? 'var(--color-success)' : 'var(--color-gray-500)' }}>
+                                            {hasCargoAggregate(deliveredActualCargo)
                                                 ? formatCargoSummary({
                                                     qtyKoli: deliveredActualCargo.qtyKoli,
                                                     weightKg: deliveredActualCargo.weightKg,
@@ -594,7 +684,7 @@ export default function OrderDetailPage() {
                                                 })
                                                 : 'Belum ada realisasi'}
                                         </div>
-                                        {activePlannedCargo.qtyKoli > 0 && (
+                                        {hasCargoAggregate(activePlannedCargo) && (
                                             <>
                                                 <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>Dalam DO aktif</div>
                                                 <div className="font-medium" style={{ color: 'var(--color-primary)' }}>
@@ -626,12 +716,12 @@ export default function OrderDetailPage() {
                                     </td>
                                     <td>
                                         <div className="table-actions">
-                                            {progressInfo.pendingQtyKoli > 0 && (
+                                            {usesQtyBasis && progressInfo.pendingQtyKoli > 0 && (
                                                 <button className="table-action-btn" onClick={() => openHoldModal(item)}>
                                                     {activeAssignment ? 'Tahan Sisa' : 'Set Hold'}
                                                 </button>
                                             )}
-                                            {progressInfo.heldQtyKoli > 0 && (
+                                            {usesQtyBasis && progressInfo.heldQtyKoli > 0 && (
                                                 <button className="table-action-btn" onClick={() => void releaseHoldQuantity(item)}>Lepas Hold</button>
                                             )}
                                             {activeAssignment && (
@@ -816,10 +906,16 @@ export default function OrderDetailPage() {
                                             {availableItems.map(item => {
                                                 const selection = selectedShipments[item._id];
                                                 const progressInfo = itemProgressById[item._id];
+                                                const usesQtyBasis = progressInfo.totalQtyKoli > 0;
                                                 const selectedQty = Number(selection?.qtyKoli || 0);
                                                 const shippedWeightPreview = selectedQty > 0
                                                     ? calculateWeightPortion(progressInfo.totalWeight, progressInfo.totalQtyKoli, selectedQty)
                                                     : 0;
+                                                const plannedNonKoliCargo = {
+                                                    qtyKoli: 0,
+                                                    weightKg: progressInfo.pendingWeight,
+                                                    volumeM3: progressInfo.pendingVolume,
+                                                };
                                                 const remainingAfterShipment = roundQuantity(Math.max(progressInfo.pendingQtyKoli - selectedQty, 0));
                                                 return (
                                                     <tr key={item._id}>
@@ -833,7 +929,7 @@ export default function OrderDetailPage() {
                                                                         setSelectedShipments(prev => ({
                                                                             ...prev,
                                                                             [item._id]: {
-                                                                                qtyKoli: String(progressInfo.pendingQtyKoli),
+                                                                                qtyKoli: usesQtyBasis ? String(progressInfo.pendingQtyKoli) : '0',
                                                                                 holdRemaining: false,
                                                                                 holdReason: '',
                                                                                 holdLocation: '',
@@ -870,103 +966,145 @@ export default function OrderDetailPage() {
                                                         </td>
                                                         <td style={{ minWidth: 180 }}>
                                                             <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', display: 'grid', gap: '0.2rem' }}>
-                                                                <div>Terkirim: {formatNumber(progressInfo.deliveredQtyKoli)} koli</div>
-                                                                <div>Ditahan: {formatNumber(progressInfo.heldQtyKoli)} koli</div>
-                                                                <div>Siap kirim: {formatNumber(progressInfo.pendingQtyKoli)} koli</div>
+                                                                <div>
+                                                                    Terkirim:{' '}
+                                                                    {formatCargoSummary({
+                                                                        qtyKoli: progressInfo.deliveredQtyKoli,
+                                                                        weightKg: progressInfo.deliveredWeight,
+                                                                        volumeM3: progressInfo.deliveredVolume,
+                                                                    })}
+                                                                </div>
+                                                                <div>
+                                                                    Ditahan:{' '}
+                                                                    {formatCargoSummary({
+                                                                        qtyKoli: progressInfo.heldQtyKoli,
+                                                                        weightKg: progressInfo.heldWeight,
+                                                                        volumeM3: progressInfo.heldVolume,
+                                                                    })}
+                                                                </div>
+                                                                <div>
+                                                                    Siap kirim:{' '}
+                                                                    {formatCargoSummary({
+                                                                        qtyKoli: progressInfo.pendingQtyKoli,
+                                                                        weightKg: progressInfo.pendingWeight,
+                                                                        volumeM3: progressInfo.pendingVolume,
+                                                                    })}
+                                                                </div>
                                                             </div>
                                                         </td>
                                                         <td style={{ minWidth: 180 }}>
-                                                            <FormattedNumberInput
-                                                                min={0}
-                                                                maxFractionDigits={2}
-                                                                value={Number(selection?.qtyKoli || 0)}
-                                                                disabled={!selection || creatingDO}
-                                                                onValueChange={value => {
-                                                                    setSelectedShipments(prev => ({
-                                                                        ...prev,
-                                                                        [item._id]: {
-                                                                            ...(prev[item._id] || {
-                                                                                holdRemaining: false,
-                                                                                holdReason: '',
-                                                                                holdLocation: '',
-                                                                            }),
-                                                                            qtyKoli: String(value),
-                                                                        },
-                                                                    }));
-                                                                }}
-                                                            />
-                                                            {selection && (
-                                                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                                                                    Perkiraan berat kirim: {formatNumber(shippedWeightPreview)} kg
-                                                                    {((item.volumeInputValue || 0) > 0 || (item.volume || 0) > 0) && (
-                                                                        <> | Volume referensi: {formatVolumeDisplay({
-                                                                            volumeM3: item.volume,
-                                                                            volumeInputValue: item.volumeInputValue,
-                                                                            volumeInputUnit: item.volumeInputUnit,
-                                                                            includeCanonical: true,
-                                                                        })}</>
+                                                            {usesQtyBasis ? (
+                                                                <>
+                                                                    <FormattedNumberInput
+                                                                        min={0}
+                                                                        maxFractionDigits={2}
+                                                                        value={Number(selection?.qtyKoli || 0)}
+                                                                        disabled={!selection || creatingDO}
+                                                                        onValueChange={value => {
+                                                                            setSelectedShipments(prev => ({
+                                                                                ...prev,
+                                                                                [item._id]: {
+                                                                                    ...(prev[item._id] || {
+                                                                                        holdRemaining: false,
+                                                                                        holdReason: '',
+                                                                                        holdLocation: '',
+                                                                                    }),
+                                                                                    qtyKoli: String(value),
+                                                                                },
+                                                                            }));
+                                                                        }}
+                                                                    />
+                                                                    {selection && (
+                                                                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                                                                            Perkiraan berat kirim: {formatNumber(shippedWeightPreview)} kg
+                                                                            {((item.volumeInputValue || 0) > 0 || (item.volume || 0) > 0) && (
+                                                                                <> | Volume referensi: {formatVolumeDisplay({
+                                                                                    volumeM3: item.volume,
+                                                                                    volumeInputValue: item.volumeInputValue,
+                                                                                    volumeInputUnit: item.volumeInputUnit,
+                                                                                    includeCanonical: true,
+                                                                                })}</>
+                                                                            )}
+                                                                        </div>
                                                                     )}
+                                                                </>
+                                                            ) : (
+                                                                <div style={{ display: 'grid', gap: '0.35rem' }}>
+                                                                    <div className="detail-value" style={{ color: selection ? 'var(--color-primary)' : 'var(--text-color)' }}>
+                                                                        {selection
+                                                                            ? `Seluruh sisa akan ikut trip ini: ${formatCargoSummary(plannedNonKoliCargo)}`
+                                                                            : 'Centang item untuk mengirim seluruh sisa berat/volume'}
+                                                                    </div>
+                                                                    <div className="text-muted text-sm">
+                                                                        Item ini tidak memakai basis koli, jadi sistem mengirim penuh sisa berat/volume yang masih pending.
+                                                                    </div>
                                                                 </div>
                                                             )}
                                                         </td>
                                                         <td style={{ minWidth: 220 }}>
                                                             {selection ? (
                                                                 <div style={{ display: 'grid', gap: '0.4rem' }}>
-                                                                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.82rem' }}>
-                                                                        <input
-                                                                            type="checkbox"
-                                                                            checked={selection.holdRemaining}
-                                                                            disabled={creatingDO || remainingAfterShipment <= 0}
-                                                                            onChange={e => {
-                                                                                setSelectedShipments(prev => ({
-                                                                                    ...prev,
-                                                                                    [item._id]: {
-                                                                                        ...prev[item._id],
-                                                                                        holdRemaining: e.target.checked,
-                                                                                    },
-                                                                                }));
-                                                                            }}
-                                                                        />
-                                                                        Tahan sisa {formatNumber(remainingAfterShipment)} koli
-                                                                    </label>
-                                                                    {selection.holdRemaining && remainingAfterShipment > 0 && (
+                                                                    {usesQtyBasis ? (
                                                                         <>
-                                                                            <input
-                                                                                className="form-input"
-                                                                                placeholder="Alasan hold, mis. gudang tujuan penuh"
-                                                                                value={selection.holdReason}
-                                                                                disabled={creatingDO}
-                                                                                onChange={e => {
-                                                                                    const value = e.target.value;
-                                                                                    setSelectedShipments(prev => ({
-                                                                                        ...prev,
-                                                                                        [item._id]: {
-                                                                                            ...prev[item._id],
-                                                                                            holdReason: value,
-                                                                                        },
-                                                                                    }));
-                                                                                }}
-                                                                            />
-                                                                            <input
-                                                                                className="form-input"
-                                                                                placeholder="Lokasi hold, mis. gudang transit"
-                                                                                value={selection.holdLocation}
-                                                                                disabled={creatingDO}
-                                                                                onChange={e => {
-                                                                                    const value = e.target.value;
-                                                                                    setSelectedShipments(prev => ({
-                                                                                        ...prev,
-                                                                                        [item._id]: {
-                                                                                            ...prev[item._id],
-                                                                                            holdLocation: value,
-                                                                                        },
-                                                                                    }));
-                                                                                }}
-                                                                            />
+                                                                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.82rem' }}>
+                                                                                <input
+                                                                                    type="checkbox"
+                                                                                    checked={selection.holdRemaining}
+                                                                                    disabled={creatingDO || remainingAfterShipment <= 0}
+                                                                                    onChange={e => {
+                                                                                        setSelectedShipments(prev => ({
+                                                                                            ...prev,
+                                                                                            [item._id]: {
+                                                                                                ...prev[item._id],
+                                                                                                holdRemaining: e.target.checked,
+                                                                                            },
+                                                                                        }));
+                                                                                    }}
+                                                                                />
+                                                                                Tahan sisa {formatNumber(remainingAfterShipment)} koli
+                                                                            </label>
+                                                                            {selection.holdRemaining && remainingAfterShipment > 0 && (
+                                                                                <>
+                                                                                    <input
+                                                                                        className="form-input"
+                                                                                        placeholder="Alasan hold, mis. gudang tujuan penuh"
+                                                                                        value={selection.holdReason}
+                                                                                        disabled={creatingDO}
+                                                                                        onChange={e => {
+                                                                                            const value = e.target.value;
+                                                                                            setSelectedShipments(prev => ({
+                                                                                                ...prev,
+                                                                                                [item._id]: {
+                                                                                                    ...prev[item._id],
+                                                                                                    holdReason: value,
+                                                                                                },
+                                                                                            }));
+                                                                                        }}
+                                                                                    />
+                                                                                    <input
+                                                                                        className="form-input"
+                                                                                        placeholder="Lokasi hold, mis. gudang transit"
+                                                                                        value={selection.holdLocation}
+                                                                                        disabled={creatingDO}
+                                                                                        onChange={e => {
+                                                                                            const value = e.target.value;
+                                                                                            setSelectedShipments(prev => ({
+                                                                                                ...prev,
+                                                                                                [item._id]: {
+                                                                                                    ...prev[item._id],
+                                                                                                    holdLocation: value,
+                                                                                                },
+                                                                                            }));
+                                                                                        }}
+                                                                                    />
+                                                                                </>
+                                                                            )}
+                                                                            {!selection.holdRemaining && remainingAfterShipment > 0 && (
+                                                                                <span className="text-muted text-sm">Biarkan kosong kalau seluruh sisa bisa lanjut di trip berikutnya tanpa hold.</span>
+                                                                            )}
                                                                         </>
-                                                                    )}
-                                                                    {!selection.holdRemaining && remainingAfterShipment > 0 && (
-                                                                        <span className="text-muted text-sm">Biarkan kosong kalau seluruh sisa bisa lanjut di trip berikutnya tanpa hold.</span>
+                                                                    ) : (
+                                                                        <span className="text-muted text-sm">Hold sisa item non-koli belum didukung di flow ini.</span>
                                                                     )}
                                                                 </div>
                                                             ) : (
