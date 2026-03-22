@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '../../layout';
 import { Edit, Package, DollarSign, Plus, Save, Trash2, X } from 'lucide-react';
+import CollapsibleCard from '@/components/CollapsibleCard';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { formatDate, formatCurrency, getReceivableNetAmount } from '@/lib/utils';
 import { formatCargoSummary, VOLUME_INPUT_UNIT_OPTIONS, WEIGHT_INPUT_UNIT_OPTIONS, type VolumeInputUnit, type WeightInputUnit } from '@/lib/measurement';
@@ -209,19 +210,33 @@ export default function CustomerDetailPage() {
     if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 200 }} /></div>;
     if (!customer) return <div className="empty-state"><div className="empty-state-title">Customer tidak ditemukan</div></div>;
 
+    const activeOrderCount = orders.filter(order => !['COMPLETE', 'CANCELLED'].includes(order.status)).length;
+    const activeNotaCount = notas.filter(nota => nota.status !== 'PAID').length;
+    const totalNotaNetAmount = notas.reduce((sum, nota) => sum + getReceivableNetAmount(nota), 0);
+
     return (
         <div>
             <div className="page-header">
                 <div className="page-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                     <PageBackButton href="/customers" />
-                    <h1 className="page-title">{customer.name}</h1>
+                    <div>
+                        <h1 className="page-title">{customer.name}</h1>
+                        <p className="page-subtitle">Kelola profil customer, barang langganan, dan cek histori singkat order serta nota.</p>
+                    </div>
                 </div>
                 <div className="page-actions">
+                    {!editing && <button className="btn btn-secondary" onClick={openNewProduct}><Plus size={16} /> Tambah Barang</button>}
                     {!editing && <button className="btn btn-primary" onClick={() => setEditing(true)}><Edit size={16} /> Edit</button>}
                 </div>
             </div>
 
             <div style={{ display: 'grid', gap: 'var(--space-6)' }}>
+            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)' }}>
+                <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Yang paling sering dipakai di halaman ini</div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                    Untuk kerja harian, bagian utama biasanya hanya <strong>Master Barang Customer</strong>. Histori order dan nota di bawah cukup dibuka saat perlu cek cepat.
+                </div>
+            </div>
             <div
                 className="detail-grid"
                 style={{
@@ -275,20 +290,26 @@ export default function CustomerDetailPage() {
                 </div>
 
                 <div className="card">
-                    <div className="card-header"><span className="card-header-title">Statistik</span></div>
+                    <div className="card-header"><span className="card-header-title">Ringkasan Kerja</span></div>
                     <div className="card-body">
                         <div className="responsive-stat-grid">
-                            <div className="kpi-card"><div className="kpi-icon" style={{ background: 'var(--color-primary-light)' }}><Package size={20} /></div><div className="kpi-value">{orders.length}</div><div className="kpi-label">Total Order</div></div>
-                            <div className="kpi-card"><div className="kpi-icon" style={{ background: 'var(--color-success-light)' }}><DollarSign size={20} /></div><div className="kpi-value">{notas.length}</div><div className="kpi-label">Total Nota</div></div>
+                            <div className="kpi-card"><div className="kpi-icon" style={{ background: 'var(--color-primary-light)' }}><Package size={20} /></div><div className="kpi-value">{activeOrderCount}</div><div className="kpi-label">Order Aktif</div></div>
+                            <div className="kpi-card"><div className="kpi-icon" style={{ background: 'var(--color-success-light)' }}><DollarSign size={20} /></div><div className="kpi-value">{activeNotaCount}</div><div className="kpi-label">Nota Belum Lunas</div></div>
                             <div className="kpi-card"><div className="kpi-icon" style={{ background: 'var(--color-warning-light)' }}><Package size={20} /></div><div className="kpi-value">{customerProducts.length}</div><div className="kpi-label">Master Barang</div></div>
+                        </div>
+                        <div style={{ marginTop: '0.85rem', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                            Total nilai nota customer ini saat ini: <strong style={{ color: 'var(--color-gray-800)' }}>{formatCurrency(totalNotaNetAmount)}</strong>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div className="card">
-                <div className="card-header" style={{ flexWrap: 'wrap' }}>
-                    <span className="card-header-title">Master Barang Customer ({customerProducts.length})</span>
+            <CollapsibleCard
+                title={`Master Barang Customer (${customerProducts.length})`}
+                subtitle="Bagian ini paling sering dipakai untuk mempercepat input order customer ini."
+                defaultOpen
+            >
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
                     <button className="btn btn-primary btn-sm" onClick={openNewProduct}>
                         <Plus size={14} /> Tambah Barang
                     </button>
@@ -385,11 +406,12 @@ export default function CustomerDetailPage() {
                         </div>
                     ))}
                 </div>
-            </div>
+            </CollapsibleCard>
 
-            {/* Recent Orders */}
-            <div className="card">
-                <div className="card-header"><span className="card-header-title">Order Terbaru ({orders.length})</span></div>
+            <CollapsibleCard
+                title={`Order Terbaru (${orders.length})`}
+                subtitle="Buka jika perlu cek cepat order customer ini tanpa masuk ke menu order."
+            >
                 <div className="table-wrapper table-desktop-only">
                     <table>
                         <thead><tr><th>Resi</th><th>Penerima</th><th>Status</th><th>Tanggal</th></tr></thead>
@@ -433,11 +455,12 @@ export default function CustomerDetailPage() {
                         </div>
                     ))}
                 </div>
-            </div>
+            </CollapsibleCard>
 
-            {/* Recent Notas */}
-            <div className="card">
-                <div className="card-header"><span className="card-header-title">Nota Ongkos ({notas.length})</span></div>
+            <CollapsibleCard
+                title={`Nota Ongkos (${notas.length})`}
+                subtitle="Buka jika perlu cek tagihan customer ini tanpa masuk ke menu tagihan."
+            >
                 <div className="table-wrapper table-desktop-only">
                     <table>
                         <thead><tr><th>No. Nota</th><th>Total</th><th>Status</th><th>Jatuh Tempo</th></tr></thead>
@@ -481,7 +504,7 @@ export default function CustomerDetailPage() {
                         </div>
                     ))}
                 </div>
-            </div>
+            </CollapsibleCard>
             </div>
 
             {showProductModal && (

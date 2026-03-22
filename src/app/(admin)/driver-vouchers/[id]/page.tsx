@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { CheckCircle, Plus, Printer, Save, Trash2, X } from 'lucide-react';
 
+import CollapsibleCard from '@/components/CollapsibleCard';
 import CurrencyInput from '@/components/CurrencyInput';
 import PageBackButton from '@/components/PageBackButton';
 import { useToast } from '../../layout';
@@ -406,13 +407,20 @@ export default function DriverVoucherDetailPage() {
                             <h1 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>{voucher.bonNumber}</h1>
                             <span className={`badge ${statusConfig.cls}`}>{statusConfig.label}</span>
                         </div>
-                        <p className="page-subtitle" style={{ margin: 0 }}>{voucher.driverName} | {formatDate(voucher.issuedDate)}</p>
+                        <p className="page-subtitle" style={{ margin: 0 }}>{voucher.driverName} | {formatDate(voucher.issuedDate)} | Trip {voucher.doNumber || '-'}</p>
                     </div>
                 </div>
                 <div className="page-actions">
                     {!isSettled && <button className="btn btn-secondary btn-sm" onClick={openTopUpModal}><Plus size={15} /> Tambah Bon</button>}
                     {!isSettled && (items.length > 0 || driverFeeAmount > 0) && <button className="btn btn-primary" onClick={openSettleModal}><CheckCircle size={16} /> Selesaikan Bon</button>}
                     <button className="btn btn-secondary btn-sm" onClick={handlePrint}><Printer size={15} /> Print Bon</button>
+                </div>
+            </div>
+
+            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)' }}>
+                <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Alur kerja halaman ini</div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                    Fokus harian di halaman ini hanya tiga langkah: cek uang yang sudah diberikan, catat biaya perjalanan aktual, lalu selesaikan bon saat trip sudah beres. Riwayat pencairan dan detail lain cukup dibuka jika memang perlu audit.
                 </div>
             </div>
 
@@ -441,16 +449,11 @@ export default function DriverVoucherDetailPage() {
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-4)', marginBottom: 'var(--space-6)' }}>
                 <div className="card"><div className="card-body" style={{ padding: 'var(--space-4)' }}>
-                    <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>Uang Jalan Awal</div>
-                    <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{formatCurrency(initialCashGiven)}</div>
-                </div></div>
-                <div className="card"><div className="card-body" style={{ padding: 'var(--space-4)' }}>
-                    <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>Tambahan Bon</div>
-                    <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{formatCurrency(topUpAmount)}</div>
-                </div></div>
-                <div className="card"><div className="card-body" style={{ padding: 'var(--space-4)' }}>
                     <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>Total Uang Diberikan</div>
                     <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{formatCurrency(totalIssuedAmount)}</div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                        Bon awal {formatCurrency(initialCashGiven)} {topUpAmount > 0 ? `| tambahan ${formatCurrency(topUpAmount)}` : ''}
+                    </div>
                 </div></div>
                 <div className="card"><div className="card-body" style={{ padding: 'var(--space-4)' }}>
                     <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>Biaya Perjalanan</div>
@@ -461,17 +464,18 @@ export default function DriverVoucherDetailPage() {
                     <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{formatCurrency(driverFeeAmount)}</div>
                 </div></div>
                 <div className="card"><div className="card-body" style={{ padding: 'var(--space-4)' }}>
-                    <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>Total Hak Trip</div>
-                    <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{formatCurrency(totalClaimAmount)}</div>
-                </div></div>
-                <div className="card"><div className="card-body" style={{ padding: 'var(--space-4)' }}>
                     <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>{balance >= 0 ? 'Sisa (Dikembalikan)' : 'Tambahan Bayar'}</div>
                     <div style={{ fontSize: '1.3rem', fontWeight: 700, color: balance >= 0 ? '#16a34a' : '#ef4444' }}>{formatCurrency(Math.abs(balance))}</div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                        Total hak trip {formatCurrency(totalClaimAmount)}
+                    </div>
                 </div></div>
             </div>
 
-            <div className="card" style={{ marginBottom: 'var(--space-6)' }}>
-                <div className="card-header"><h3 className="card-title">Informasi Bon</h3></div>
+            <CollapsibleCard
+                title="Informasi Trip"
+                subtitle="Buka jika perlu cek detail supir, kendaraan, rute, dan rekening bon."
+            >
                 <div className="card-body">
                     <div className="detail-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-4)' }}>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>SUPIR</div><div className="font-medium">{voucher.driverName || '-'}</div></div>
@@ -487,13 +491,17 @@ export default function DriverVoucherDetailPage() {
                         {isSettled && <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>REKENING SETTLEMENT</div><div>{voucher.settlementBankName || '-'}</div></div>}
                     </div>
                 </div>
-            </div>
+            </CollapsibleCard>
 
-            <div className="card" style={{ marginBottom: 'var(--space-6)' }}>
-                <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h3 className="card-title">Riwayat Pencairan Bon ({disbursements.length})</h3>
-                    {!isSettled && <button className="btn btn-secondary btn-sm" onClick={openTopUpModal}><Plus size={14} /> Tambah Bon</button>}
-                </div>
+            <CollapsibleCard
+                title={`Riwayat Pencairan Bon (${disbursements.length})`}
+                subtitle="Buka jika perlu cek bon awal dan tambahan bon yang pernah dicairkan."
+            >
+                {!isSettled && (
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
+                        <button className="btn btn-secondary btn-sm" onClick={openTopUpModal}><Plus size={14} /> Tambah Bon</button>
+                    </div>
+                )}
                 <div className="card-body" style={{ padding: 0 }}>
                     <div className="table-wrapper table-desktop-only">
                         <table>
@@ -557,11 +565,11 @@ export default function DriverVoucherDetailPage() {
                         ))}
                     </div>
                 </div>
-            </div>
+            </CollapsibleCard>
 
             <div className="card">
                 <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h3 className="card-title">Biaya Perjalanan Aktual ({items.length})</h3>
+                    <h3 className="card-title">Catat Biaya Perjalanan ({items.length})</h3>
                     {!isSettled && <button className="btn btn-primary btn-sm" onClick={() => setShowAddItem(true)}><Plus size={14} /> Tambah Biaya</button>}
                 </div>
                 <div className="card-body" style={{ padding: 0 }}>

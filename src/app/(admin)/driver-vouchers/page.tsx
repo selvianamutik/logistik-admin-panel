@@ -15,6 +15,12 @@ const STATUS_MAP: Record<string, { label: string; cls: string }> = {
     SETTLED: { label: 'Selesai', cls: 'badge-green' },
 };
 
+const VOUCHER_ACTION_PRIORITY: Record<string, number> = {
+    ISSUED: 0,
+    DRAFT: 1,
+    SETTLED: 2,
+};
+
 export default function DriverVouchersPage() {
     const router = useRouter();
     const { addToast } = useToast();
@@ -51,14 +57,26 @@ export default function DriverVouchersPage() {
             v.driverName?.toLowerCase().includes(s) ||
             v.doNumber?.toLowerCase().includes(s)
         );
-    }).sort((a, b) => b.issuedDate.localeCompare(a.issuedDate));
+    }).sort((a, b) => {
+        const priorityDiff = (VOUCHER_ACTION_PRIORITY[a.status] ?? 99) - (VOUCHER_ACTION_PRIORITY[b.status] ?? 99);
+        if (priorityDiff !== 0) {
+            return priorityDiff;
+        }
+        return b.issuedDate.localeCompare(a.issuedDate);
+    });
+
+    const queueCounts = {
+        issued: items.filter(item => item.status === 'ISSUED').length,
+        draft: items.filter(item => item.status === 'DRAFT').length,
+        settled: items.filter(item => item.status === 'SETTLED').length,
+    };
 
     return (
         <div>
             <div className="page-header">
                 <div className="page-header-left">
                     <h1 className="page-title">Bon Trip Supir</h1>
-                    <p className="page-subtitle">Settlement per trip / DO: bon awal, tambahan bon, biaya perjalanan aktual, upah trip, dan selisih akhir</p>
+                    <p className="page-subtitle">Antrian bon trip yang masih berjalan tampil lebih dulu. Fokus utamanya: uang yang sudah diberikan, biaya aktual, dan settlement trip.</p>
                 </div>
                 <div className="page-actions">
                     <button
@@ -115,6 +133,30 @@ export default function DriverVouchersPage() {
                     <button className="btn btn-primary" onClick={() => router.push('/driver-vouchers/new')}>
                         <Plus size={18} /> Buat Bon Trip
                     </button>
+                </div>
+            </div>
+
+            <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
+                <div className="kpi-card">
+                    <div className="kpi-icon warning"><Receipt size={20} /></div>
+                    <div className="kpi-content">
+                        <div className="kpi-label">Belum Settle</div>
+                        <div className="kpi-value">{queueCounts.issued}</div>
+                    </div>
+                </div>
+                <div className="kpi-card">
+                    <div className="kpi-icon"><Receipt size={20} /></div>
+                    <div className="kpi-content">
+                        <div className="kpi-label">Draft</div>
+                        <div className="kpi-value">{queueCounts.draft}</div>
+                    </div>
+                </div>
+                <div className="kpi-card">
+                    <div className="kpi-icon success"><Receipt size={20} /></div>
+                    <div className="kpi-content">
+                        <div className="kpi-label">Selesai</div>
+                        <div className="kpi-value">{queueCounts.settled}</div>
+                    </div>
                 </div>
             </div>
 
