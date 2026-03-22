@@ -10,6 +10,14 @@ import { exportOrders } from '@/lib/export';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
 import type { Order, Service } from '@/lib/types';
 
+const ORDER_ACTION_PRIORITY: Record<string, number> = {
+    OPEN: 0,
+    PARTIAL: 1,
+    ON_HOLD: 2,
+    COMPLETE: 3,
+    CANCELLED: 4,
+};
+
 export default function OrdersPage() {
     const router = useRouter();
     const { addToast } = useToast();
@@ -72,6 +80,20 @@ export default function OrdersPage() {
         return matchSearch && matchStatus && matchService;
     });
 
+    const prioritizedOrders = filtered
+        .slice()
+        .sort((a, b) => {
+            const priorityDiff = (ORDER_ACTION_PRIORITY[a.status] ?? 99) - (ORDER_ACTION_PRIORITY[b.status] ?? 99);
+            if (priorityDiff !== 0) return priorityDiff;
+            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        });
+
+    const queueCounts = {
+        needDispatch: orders.filter(order => order.status === 'OPEN').length,
+        inProgress: orders.filter(order => order.status === 'PARTIAL').length,
+        onHold: orders.filter(order => order.status === 'ON_HOLD').length,
+    };
+
     const handleDelete = async (id: string) => {
         setDeletingId(id);
         try {
@@ -102,7 +124,7 @@ export default function OrdersPage() {
             <div className="page-header">
                 <div className="page-header-left">
                     <h1 className="page-title">Order / Resi</h1>
-                    <p className="page-subtitle">Kelola semua order pengiriman</p>
+                    <p className="page-subtitle">Antrian order customer. Yang perlu dibuatkan trip atau ditindaklanjuti tampil lebih dulu.</p>
                 </div>
                 <div className="page-actions">
                     <button className="btn btn-secondary btn-sm" onClick={() => exportOrders(filtered as unknown as Record<string, unknown>[])}>
@@ -117,8 +139,32 @@ export default function OrdersPage() {
                         });
                     }}><Printer size={15} /> Print</button>
                     <Link href="/orders/new" className="btn btn-primary">
-                        <Plus size={18} className="btn-icon" /> Tambah Order
+                        <Plus size={18} className="btn-icon" /> Buat Order Baru
                     </Link>
+                </div>
+            </div>
+
+            <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
+                <div className="kpi-card">
+                    <div className="kpi-icon info"><Package size={20} /></div>
+                    <div className="kpi-content">
+                        <div className="kpi-label">Perlu Buat Trip</div>
+                        <div className="kpi-value">{queueCounts.needDispatch}</div>
+                    </div>
+                </div>
+                <div className="kpi-card">
+                    <div className="kpi-icon warning"><Package size={20} /></div>
+                    <div className="kpi-content">
+                        <div className="kpi-label">Sedang Berjalan</div>
+                        <div className="kpi-value">{queueCounts.inProgress}</div>
+                    </div>
+                </div>
+                <div className="kpi-card">
+                    <div className="kpi-icon danger"><Package size={20} /></div>
+                    <div className="kpi-content">
+                        <div className="kpi-label">Masih Hold</div>
+                        <div className="kpi-value">{queueCounts.onHold}</div>
+                    </div>
                 </div>
             </div>
 
@@ -181,7 +227,7 @@ export default function OrdersPage() {
                                         ))}
                                     </tr>
                                 ))
-                            ) : filtered.length === 0 ? (
+                            ) : prioritizedOrders.length === 0 ? (
                                 <tr>
                                     <td colSpan={7}>
                                         <div className="empty-state">
@@ -189,13 +235,13 @@ export default function OrdersPage() {
                                             <div className="empty-state-title">Belum ada order</div>
                                             <div className="empty-state-text">Buat order baru untuk memulai pengiriman</div>
                                             <Link href="/orders/new" className="btn btn-primary">
-                                                <Plus size={16} /> Tambah Order
+                                                <Plus size={16} /> Buat Order Baru
                                             </Link>
                                         </div>
                                     </td>
                                 </tr>
                             ) : (
-                                filtered.map(order => (
+                                prioritizedOrders.map(order => (
                                     <tr key={order._id}>
                                         <td>
                                             <Link href={`/orders/${order._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>
@@ -215,7 +261,7 @@ export default function OrdersPage() {
                                         <td>
                                             <div className="table-actions">
                                                 <button className="table-action-btn" onClick={() => router.push(`/orders/${order._id}`)}>
-                                                    <Eye size={14} /> Lihat
+                                                    <Eye size={14} /> Buka
                                                 </button>
                                                 <button className="table-action-btn" onClick={() => router.push(`/orders/${order._id}/edit`)}>
                                                     <Edit size={14} /> Edit
@@ -233,17 +279,17 @@ export default function OrdersPage() {
                 </div>
                 {!loading && (
                     <div className="mobile-record-list">
-                        {filtered.length === 0 ? (
+                        {prioritizedOrders.length === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada order</div>
                                 <div className="mobile-record-subtitle">Buat order baru untuk memulai pengiriman.</div>
                                 <div className="mobile-record-actions">
                                     <Link href="/orders/new" className="btn btn-primary">
-                                        <Plus size={16} /> Tambah Order
+                                        <Plus size={16} /> Buat Order Baru
                                     </Link>
                                 </div>
                             </div>
-                        ) : filtered.map(order => (
+                        ) : prioritizedOrders.map(order => (
                             <div key={order._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
@@ -266,7 +312,7 @@ export default function OrdersPage() {
                                 </div>
                                 <div className="mobile-record-actions">
                                     <button className="btn btn-secondary" onClick={() => router.push(`/orders/${order._id}`)}>
-                                        <Eye size={14} /> Lihat
+                                        <Eye size={14} /> Buka
                                     </button>
                                     <button className="btn btn-secondary" onClick={() => router.push(`/orders/${order._id}/edit`)}>
                                         <Edit size={14} /> Edit
@@ -280,9 +326,9 @@ export default function OrdersPage() {
                     </div>
                 )}
 
-                {filtered.length > 0 && (
+                {prioritizedOrders.length > 0 && (
                     <div className="pagination">
-                        <div className="pagination-info">Menampilkan {filtered.length} dari {orders.length} order</div>
+                        <div className="pagination-info">Menampilkan {prioritizedOrders.length} dari {orders.length} order. Urutan dimulai dari yang paling perlu tindakan.</div>
                     </div>
                 )}
             </div>

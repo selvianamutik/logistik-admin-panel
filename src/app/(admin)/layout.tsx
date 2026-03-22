@@ -167,6 +167,49 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         return () => mobileQuery.removeEventListener('change', checkMobile);
     }, [router, applyTheme]);
 
+    useEffect(() => {
+        const reloadKey = `__chunk_reload__:${pathname}`;
+        const markHealthy = () => {
+            window.sessionStorage.removeItem(reloadKey);
+        };
+        const reloadOnce = () => {
+            if (window.sessionStorage.getItem(reloadKey) === '1') return;
+            window.sessionStorage.setItem(reloadKey, '1');
+            window.location.reload();
+        };
+        const isChunkScript = (target: EventTarget | null) =>
+            target instanceof HTMLScriptElement && target.src.includes('/_next/static/chunks/');
+
+        const handleWindowError = (event: Event) => {
+            const typedEvent = event as ErrorEvent;
+            if (isChunkScript(typedEvent.target) || typedEvent.message?.includes('Loading chunk')) {
+                event.preventDefault();
+                reloadOnce();
+            }
+        };
+
+        const handleRejection = (event: PromiseRejectionEvent) => {
+            const reason = event.reason;
+            const message = typeof reason === 'string'
+                ? reason
+                : reason instanceof Error
+                    ? reason.message
+                    : '';
+            if (message.includes('ChunkLoadError') || message.includes('Loading chunk')) {
+                event.preventDefault();
+                reloadOnce();
+            }
+        };
+
+        markHealthy();
+        window.addEventListener('error', handleWindowError, true);
+        window.addEventListener('unhandledrejection', handleRejection);
+        return () => {
+            window.removeEventListener('error', handleWindowError, true);
+            window.removeEventListener('unhandledrejection', handleRejection);
+        };
+    }, [pathname]);
+
     const addToast = useCallback((type: ToastMessage['type'], message: string) => {
         const id = Math.random().toString(36).substring(7);
         setToasts(prev => [...prev, { id, type, message }]);

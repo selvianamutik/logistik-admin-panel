@@ -10,6 +10,15 @@ import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
 import type { DeliveryOrder, Service } from '@/lib/types';
 import { useToast } from '../layout';
 
+const DO_ACTION_PRIORITY: Record<string, number> = {
+    ARRIVED: 0,
+    ON_DELIVERY: 1,
+    HEADING_TO_PICKUP: 2,
+    CREATED: 3,
+    DELIVERED: 4,
+    CANCELLED: 5,
+};
+
 export default function DeliveryOrdersPage() {
     const router = useRouter();
     const { addToast } = useToast();
@@ -76,12 +85,26 @@ export default function DeliveryOrdersPage() {
         return m && s && c;
     });
 
+    const prioritizedDeliveryOrders = filtered
+        .slice()
+        .sort((a, b) => {
+            const priorityDiff = (DO_ACTION_PRIORITY[a.status] ?? 99) - (DO_ACTION_PRIORITY[b.status] ?? 99);
+            if (priorityDiff !== 0) return priorityDiff;
+            return new Date(b.date).getTime() - new Date(a.date).getTime();
+        });
+
+    const queueCounts = {
+        needCompletion: items.filter(item => item.status === 'ARRIVED').length,
+        onRoad: items.filter(item => ['HEADING_TO_PICKUP', 'ON_DELIVERY'].includes(item.status)).length,
+        waitingStart: items.filter(item => item.status === 'CREATED').length,
+    };
+
     return (
         <div>
             <div className="page-header">
                 <div className="page-header-left">
-                    <h1 className="page-title">Surat Jalan (DO)</h1>
-                    <p className="page-subtitle">Kelola semua surat jalan pengiriman</p>
+                    <h1 className="page-title">Surat Jalan</h1>
+                    <p className="page-subtitle">Antrian trip pengiriman. Trip yang perlu dipantau atau diselesaikan tampil lebih dulu.</p>
                 </div>
                 <div className="page-actions">
                     <button className="btn btn-secondary btn-sm" onClick={() => {
@@ -106,6 +129,29 @@ export default function DeliveryOrdersPage() {
                     }}><Printer size={15} /> Print</button>
                 </div>
             </div>
+            <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
+                <div className="kpi-card">
+                    <div className="kpi-icon warning"><Truck size={20} /></div>
+                    <div className="kpi-content">
+                        <div className="kpi-label">Perlu Diselesaikan</div>
+                        <div className="kpi-value">{queueCounts.needCompletion}</div>
+                    </div>
+                </div>
+                <div className="kpi-card">
+                    <div className="kpi-icon info"><Truck size={20} /></div>
+                    <div className="kpi-content">
+                        <div className="kpi-label">Sedang Berjalan</div>
+                        <div className="kpi-value">{queueCounts.onRoad}</div>
+                    </div>
+                </div>
+                <div className="kpi-card">
+                    <div className="kpi-icon success"><Truck size={20} /></div>
+                    <div className="kpi-content">
+                        <div className="kpi-label">Siap Berangkat</div>
+                        <div className="kpi-value">{queueCounts.waitingStart}</div>
+                    </div>
+                </div>
+            </div>
             <div className="table-container">
                 <div className="table-toolbar">
                     <div className="table-toolbar-left">
@@ -128,9 +174,9 @@ export default function DeliveryOrdersPage() {
                         <thead><tr><th>No. SJ Customer</th><th>No. Internal</th><th>Resi</th><th>Customer</th><th>Kategori</th><th>Kendaraan</th><th>Tanggal</th><th>Status</th><th>Drop Aktual</th><th>Tracking</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                filtered.length === 0 ? (
+                                prioritizedDeliveryOrders.length === 0 ? (
                                     <tr><td colSpan={11}><div className="empty-state"><Truck size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada surat jalan</div><div className="empty-state-text">Buat surat jalan dari halaman detail order</div></div></td></tr>
-                                ) : filtered.map(d => (
+                                ) : prioritizedDeliveryOrders.map(d => (
                                     <tr key={d._id}>
                                         <td><Link href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{formatDeliveryOrderDisplayNumber(d)}</Link></td>
                                         <td className="font-mono text-muted">{d.doNumber}</td>
@@ -160,7 +206,7 @@ export default function DeliveryOrdersPage() {
                                                 <span className="text-muted text-sm">Belum aktif</span>
                                             )}
                                         </td>
-                                        <td><button className="table-action-btn" onClick={() => router.push(`/delivery-orders/${d._id}`)}><Eye size={14} /> Lihat</button></td>
+                                        <td><button className="table-action-btn" onClick={() => router.push(`/delivery-orders/${d._id}`)}><Eye size={14} /> Buka Trip</button></td>
                                     </tr>
                                 ))}
                         </tbody>
@@ -168,12 +214,12 @@ export default function DeliveryOrdersPage() {
                 </div>
                 {!loading && (
                     <div className="mobile-record-list">
-                        {filtered.length === 0 ? (
+                        {prioritizedDeliveryOrders.length === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada surat jalan</div>
                                 <div className="mobile-record-subtitle">Buat surat jalan dari halaman detail order.</div>
                             </div>
-                        ) : filtered.map(d => (
+                        ) : prioritizedDeliveryOrders.map(d => (
                             <div key={d._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
@@ -220,14 +266,14 @@ export default function DeliveryOrdersPage() {
                                 </div>
                                 <div className="mobile-record-actions">
                                     <button className="btn btn-secondary" onClick={() => router.push(`/delivery-orders/${d._id}`)}>
-                                        <Eye size={14} /> Lihat
+                                        <Eye size={14} /> Buka Trip
                                     </button>
                                 </div>
                             </div>
                         ))}
                     </div>
                 )}
-                {filtered.length > 0 && <div className="pagination"><div className="pagination-info">Menampilkan {filtered.length} surat jalan</div></div>}
+                {prioritizedDeliveryOrders.length > 0 && <div className="pagination"><div className="pagination-info">Menampilkan {prioritizedDeliveryOrders.length} surat jalan. Urutan dimulai dari trip yang paling perlu tindakan.</div></div>}
             </div>
         </div>
     );

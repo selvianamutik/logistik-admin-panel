@@ -17,6 +17,12 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
     PAID: { label: 'Lunas', color: 'success' },
 };
 
+const INVOICE_ACTION_PRIORITY: Record<string, number> = {
+    UNPAID: 0,
+    PARTIAL: 1,
+    PAID: 2,
+};
+
 export default function NotaListPage() {
     const router = useRouter();
     const { addToast } = useToast();
@@ -239,7 +245,21 @@ export default function NotaListPage() {
         return m && s;
     });
 
+    const prioritizedNotas = filtered
+        .slice()
+        .sort((a, b) => {
+            const priorityDiff = (INVOICE_ACTION_PRIORITY[a.status] ?? 99) - (INVOICE_ACTION_PRIORITY[b.status] ?? 99);
+            if (priorityDiff !== 0) return priorityDiff;
+            return new Date(a.issueDate).getTime() - new Date(b.issueDate).getTime();
+        });
+
     const grandTotal = filtered.reduce((sum, nota) => sum + getReceivableNetAmount(nota), 0);
+    const outstandingTotal = prioritizedNotas.reduce((sum, nota) => sum + getNotaRemaining(nota), 0);
+    const queueCounts = {
+        needPayment: items.filter(nota => nota.status === 'UNPAID').length,
+        partialPayment: items.filter(nota => nota.status === 'PARTIAL').length,
+        paid: items.filter(nota => nota.status === 'PAID').length,
+    };
 
     const fetchNotaItems = async (notaId: string) => {
         const response = await fetch(`/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ notaRef: notaId }))}`);
@@ -291,7 +311,7 @@ export default function NotaListPage() {
             <div className="page-header">
                 <div className="page-header-left">
                     <h1 className="page-title">Nota Ongkos Angkut</h1>
-                    <p className="page-subtitle">Tagihan ongkos angkut ke customer. Satu nota dapat memuat beberapa SJ/DO untuk customer yang sama, bisa dipotong klaim, dan bisa dibayar lewat 1 receipt untuk beberapa nota.</p>
+                    <p className="page-subtitle">Antrian tagihan customer. Nota yang masih perlu ditagih atau difollow up pembayaran tampil lebih dulu.</p>
                 </div>
                 <div className="page-actions">
                     <button className="btn btn-success" onClick={openReceiptModal}><Plus size={18} /> Terima Pembayaran</button>
@@ -307,11 +327,11 @@ export default function NotaListPage() {
                         openBrandedPrint({
                             title: 'Daftar Nota Ongkos Angkut', company: co, bodyHtml: `
                             <table><thead><tr><th>No. Nota</th><th>Customer</th><th>Tanggal</th><th>Total Collie</th><th>Total Berat</th><th class="r">Tagihan Netto</th><th>Status</th></tr></thead>
-                            <tbody>${filtered.map(n => `<tr><td><div class="b">${formatFreightNotaDisplayNumber(n, co)}</div><div style="font-size:11px;color:#64748b">${n.notaNumber}</div></td><td>${n.customerName}</td><td>${formatDate(n.issueDate)}</td><td>${n.totalCollie || 0}</td><td>${n.totalWeightKg || 0} kg</td><td class="r b">${formatCurrency(getReceivableNetAmount(n))}</td><td>${STATUS_MAP[n.status]?.label || n.status}</td></tr>`).join('')}
+                            <tbody>${prioritizedNotas.map(n => `<tr><td><div class="b">${formatFreightNotaDisplayNumber(n, co)}</div><div style="font-size:11px;color:#64748b">${n.notaNumber}</div></td><td>${n.customerName}</td><td>${formatDate(n.issueDate)}</td><td>${n.totalCollie || 0}</td><td>${n.totalWeightKg || 0} kg</td><td class="r b">${formatCurrency(getReceivableNetAmount(n))}</td><td>${STATUS_MAP[n.status]?.label || n.status}</td></tr>`).join('')}
                             <tr style="border-top:2px solid #1e293b"><td colspan="5" class="r b">TOTAL</td><td class="r b">${formatCurrency(grandTotal)}</td><td></td></tr></tbody></table>`
                         });
                     }}><Printer size={15} /> Print</button>
-                    <button className="btn btn-primary" onClick={() => router.push('/invoices/new')}><Plus size={18} /> Buat Nota</button>
+                    <button className="btn btn-primary" onClick={() => router.push('/invoices/new')}><Plus size={18} /> Buat Nota Baru</button>
                 </div>
             </div>
 
@@ -320,22 +340,22 @@ export default function NotaListPage() {
                 <div className="kpi-card">
                     <div className="kpi-icon danger"><FileText size={20} /></div>
                     <div className="kpi-content">
-                        <div className="kpi-label">Total Netto</div>
-                        <div className="kpi-value" style={{ fontSize: '1.05rem', color: 'var(--color-danger)' }}>{formatCurrency(grandTotal)}</div>
+                        <div className="kpi-label">Sisa Piutang</div>
+                        <div className="kpi-value" style={{ fontSize: '1.05rem', color: 'var(--color-danger)' }}>{formatCurrency(outstandingTotal)}</div>
                     </div>
                 </div>
                 <div className="kpi-card">
                     <div className="kpi-icon warning"><FileText size={20} /></div>
                     <div className="kpi-content">
-                        <div className="kpi-label">Belum Lunas</div>
-                        <div className="kpi-value">{filtered.filter(n => n.status !== 'PAID').length}</div>
+                        <div className="kpi-label">Perlu Ditagih</div>
+                        <div className="kpi-value">{queueCounts.needPayment}</div>
                     </div>
                 </div>
                 <div className="kpi-card">
                     <div className="kpi-icon success"><FileText size={20} /></div>
                     <div className="kpi-content">
-                        <div className="kpi-label">Lunas</div>
-                        <div className="kpi-value">{filtered.filter(n => n.status === 'PAID').length}</div>
+                        <div className="kpi-label">Follow Up Parsial</div>
+                        <div className="kpi-value">{queueCounts.partialPayment}</div>
                     </div>
                 </div>
             </div>
@@ -355,9 +375,9 @@ export default function NotaListPage() {
                         <thead><tr><th>No. Nota</th><th>Customer</th><th>Tanggal</th><th>Total Collie</th><th>Total Berat</th><th>Tagihan Netto</th><th>Status</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                filtered.length === 0 ? (
+                                prioritizedNotas.length === 0 ? (
                                     <tr><td colSpan={8}><div className="empty-state"><FileText size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada nota</div><div className="empty-state-text">Klik tombol &quot;Buat Nota&quot; untuk membuat nota baru</div></div></td></tr>
-                                ) : filtered.map(n => (
+                                ) : prioritizedNotas.map(n => (
                                     <tr key={n._id}>
                                         <td>
                                             <button
@@ -381,7 +401,7 @@ export default function NotaListPage() {
                                         <td><span className={`badge badge-${STATUS_MAP[n.status]?.color}`}><span className="badge-dot" /> {STATUS_MAP[n.status]?.label}</span></td>
                                         <td>
                                             <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-                                                <button className="table-action-btn" onClick={() => router.push(`/invoices/${n._id}`)}>Lihat</button>
+                                                <button className="table-action-btn" onClick={() => router.push(`/invoices/${n._id}`)}>Buka</button>
                                                 <button className="table-action-btn" onClick={() => void handleExportNota(n)}><FileDown size={13} /> Excel</button>
                                                 <button className="table-action-btn" onClick={() => void handlePrintNota(n)}><Printer size={13} /> Cetak</button>
                                             </div>
@@ -393,12 +413,12 @@ export default function NotaListPage() {
                 </div>
                 {!loading && (
                     <div className="mobile-record-list">
-                        {filtered.length === 0 ? (
+                        {prioritizedNotas.length === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada nota</div>
                                 <div className="mobile-record-subtitle">Klik tombol Buat Nota untuk membuat nota baru.</div>
                             </div>
-                        ) : filtered.map(n => (
+                        ) : prioritizedNotas.map(n => (
                             <div key={n._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
@@ -428,7 +448,7 @@ export default function NotaListPage() {
                                     </div>
                                 </div>
                                 <div className="mobile-record-actions">
-                                    <button className="btn btn-secondary" onClick={() => router.push(`/invoices/${n._id}`)}>Lihat</button>
+                                    <button className="btn btn-secondary" onClick={() => router.push(`/invoices/${n._id}`)}>Buka</button>
                                     <button className="btn btn-secondary" onClick={() => void handleExportNota(n)}><FileDown size={13} /> Excel</button>
                                     <button className="btn btn-secondary" onClick={() => void handlePrintNota(n)}><Printer size={13} /> Cetak</button>
                                 </div>
@@ -436,7 +456,7 @@ export default function NotaListPage() {
                         ))}
                     </div>
                 )}
-                {filtered.length > 0 && <div className="pagination"><div className="pagination-info">Menampilkan {filtered.length} nota | Total: <strong style={{ color: 'var(--color-danger)' }}>{formatCurrency(grandTotal)}</strong></div></div>}
+                {prioritizedNotas.length > 0 && <div className="pagination"><div className="pagination-info">Menampilkan {prioritizedNotas.length} nota. Urutan dimulai dari tagihan yang paling perlu ditindaklanjuti. Total netto terfilter: <strong style={{ color: 'var(--color-danger)' }}>{formatCurrency(grandTotal)}</strong></div></div>}
             </div>
             {showReceiptModal && (
                 <div className="modal-overlay" onClick={() => { if (!receiving) setShowReceiptModal(false); }}>
