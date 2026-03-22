@@ -727,21 +727,21 @@ export default function OrderDetailPage() {
                                     <option value="">-- Opsional, pilih supir --</option>
                                     {drivers.map(driver => <option key={driver._id} value={driver._id}>{driver.name}{driver.phone ? ` - ${driver.phone}` : ''}</option>)}
                                 </select>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                    Pilih supir kalau DO ini akan dipakai untuk tracking driver, borongan, atau bon operasional.
-                                </div>
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Catatan</label>
                                 <textarea className="form-textarea" rows={2} value={doNotes} onChange={e => setDoNotes(e.target.value)} placeholder="Catatan opsional..." disabled={creatingDO} />
                             </div>
                             <div className="form-section-title">Pilih Item untuk DO</div>
+                            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: '0.8rem', color: 'var(--color-gray-600)' }}>
+                                Untuk pengiriman normal, cukup pilih kendaraan, supir, centang item yang jalan, lalu cek koli kirim. Opsi tahan sisa hanya dipakai kalau ada barang yang belum bisa lanjut.
+                            </div>
                             {availableItems.length === 0 ? (
                                 <p className="text-muted text-sm">Semua item sudah masuk surat jalan</p>
                             ) : (
                                 <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
                                     <table>
-                                        <thead><tr><th style={{ width: 40 }}></th><th>Item</th><th>Progress</th><th>Kirim Koli</th><th>Hold Sisa</th></tr></thead>
+                                        <thead><tr><th style={{ width: 40 }}></th><th>Item</th><th>Progress</th><th>Kirim Koli</th><th>Tahan Sisa (Opsional)</th></tr></thead>
                                         <tbody>
                                             {availableItems.map(item => {
                                                 const selection = selectedShipments[item._id];
@@ -895,9 +895,12 @@ export default function OrderDetailPage() {
                                                                             />
                                                                         </>
                                                                     )}
+                                                                    {!selection.holdRemaining && remainingAfterShipment > 0 && (
+                                                                        <span className="text-muted text-sm">Biarkan kosong kalau seluruh sisa bisa lanjut di trip berikutnya tanpa hold.</span>
+                                                                    )}
                                                                 </div>
                                                             ) : (
-                                                                <span className="text-muted text-sm">Pilih item dulu</span>
+                                                                <span className="text-muted text-sm">-</span>
                                                             )}
                                                         </td>
                                                     </tr>

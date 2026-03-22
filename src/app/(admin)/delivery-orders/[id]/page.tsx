@@ -137,6 +137,34 @@ function buildDefaultActualDropDrafts(doData: DeliveryOrder | null, cargoItems: 
     ];
 }
 
+function buildAutoActualDropDraft(doData: DeliveryOrder | null, cargoItems: ActualCargoDraft[]): ActualDropDraft {
+    const totals = summarizeActualCargoDrafts(cargoItems);
+    return {
+        draftKey: 'auto-default-drop',
+        stopType: 'DROP',
+        locationName: doData?.receiverCompany || doData?.receiverName || 'Tujuan Tagihan',
+        locationAddress: doData?.receiverAddress || '',
+        qtyKoli: totals.qtyKoli > 0 ? String(totals.qtyKoli) : '',
+        weightInputValue: totals.weightKg > 0 ? String(totals.weightKg) : '',
+        weightInputUnit: 'KG',
+        volumeInputValue: totals.volumeM3 > 0 ? String(totals.volumeM3) : '',
+        volumeInputUnit: 'M3',
+        note: '',
+    };
+}
+
+function shouldOpenAdvancedDropEditor(doData: DeliveryOrder | null, dropDrafts: ActualDropDraft[]) {
+    const defaultLocationName = doData?.receiverCompany || doData?.receiverName || 'Tujuan Tagihan';
+    const defaultLocationAddress = doData?.receiverAddress || '';
+
+    return dropDrafts.length > 1 || dropDrafts.some(point =>
+        point.stopType !== 'DROP' ||
+        (point.locationName || '') !== defaultLocationName ||
+        (point.locationAddress || '') !== defaultLocationAddress ||
+        point.note.trim().length > 0
+    );
+}
+
 export default function DODetailPage() {
     const params = useParams();
     const { addToast } = useToast();
@@ -154,6 +182,7 @@ export default function DODetailPage() {
     const [podNote, setPodNote] = useState('');
     const [actualCargoItems, setActualCargoItems] = useState<ActualCargoDraft[]>([]);
     const [actualDropPoints, setActualDropPoints] = useState<ActualDropDraft[]>([]);
+    const [showAdvancedDropEditor, setShowAdvancedDropEditor] = useState(false);
     const [editingTarip, setEditingTarip] = useState(false);
     const [taripBorongan, setTaripBorongan] = useState<number>(0);
     const [keteranganBorongan, setKeteranganBorongan] = useState('');
@@ -218,8 +247,10 @@ export default function DODetailPage() {
         setPodDate(new Date().toISOString().split('T')[0]);
         setPodNote('');
         const nextActualCargoItems = doItems.map(buildActualCargoDraft);
+        const nextActualDropPoints = buildDefaultActualDropDrafts(doData, nextActualCargoItems);
         setActualCargoItems(nextActualCargoItems);
-        setActualDropPoints(buildDefaultActualDropDrafts(doData, nextActualCargoItems));
+        setActualDropPoints(nextActualDropPoints);
+        setShowAdvancedDropEditor(shouldOpenAdvancedDropEditor(doData, nextActualDropPoints));
         setShowStatusModal(true);
     };
 
@@ -311,7 +342,7 @@ export default function DODetailPage() {
                                         : 0,
                                     actualVolumeInputUnit: item.actualVolumeInputUnit,
                                 })),
-                                actualDropPoints: actualDropPoints.map(item => ({
+                                actualDropPoints: effectiveActualDropPoints.map(item => ({
                                     stopType: item.stopType,
                                     locationName: item.locationName,
                                     locationAddress: item.locationAddress,
@@ -622,6 +653,9 @@ export default function DODetailPage() {
 
     const nextStatuses = getNextStatuses(doData.status);
     const isCompletingDelivery = newStatus === 'DELIVERED';
+    const actualCargoTotals = summarizeActualCargoDrafts(actualCargoItems);
+    const autoActualDropDraft = buildAutoActualDropDraft(doData, actualCargoItems);
+    const effectiveActualDropPoints = showAdvancedDropEditor ? actualDropPoints : [autoActualDropDraft];
     const actualCargoReady = actualCargoItems.every(item => {
         const qty = Number(item.actualQtyKoli);
         const weight = Number(item.actualWeightInputValue);
@@ -633,7 +667,7 @@ export default function DODetailPage() {
             (!item.requireVolume || (Number.isFinite(volume) && volume > 0))
         );
     });
-    const actualDropReady = actualDropPoints.length > 0 && actualDropPoints.every(item => {
+    const actualDropReady = effectiveActualDropPoints.length > 0 && effectiveActualDropPoints.every(item => {
         const qty = Number(item.qtyKoli);
         const weight = Number(item.weightInputValue);
         const volume = Number(item.volumeInputValue);
@@ -1024,6 +1058,9 @@ export default function DODetailPage() {
                                     </div>
                                     <div className="form-group">
                                         <label className="form-label">Muatan Aktual per Item <span className="required">*</span></label>
+                                        <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-gray-600)' }}>
+                                            Untuk trip normal, cukup cek angka aktual tiap item. Jika realisasi sama dengan rencana, biarkan nilainya seperti yang sudah terisi.
+                                        </div>
                                         <div style={{ display: 'grid', gap: '0.75rem' }}>
                                             {actualCargoItems.map(item => (
                                                 <div key={item.deliveryOrderItemRef} style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)' }}>
@@ -1104,131 +1141,154 @@ export default function DODetailPage() {
                                     <div className="form-group">
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
                                             <label className="form-label" style={{ marginBottom: 0 }}>Realisasi Titik Drop <span className="required">*</span></label>
-                                            <button type="button" className="btn btn-secondary btn-sm" onClick={addActualDropDraft} disabled={updatingStatus}>
-                                                + Tambah Titik Drop
+                                            <button
+                                                type="button"
+                                                className="btn btn-secondary btn-sm"
+                                                onClick={() => setShowAdvancedDropEditor(previous => !previous)}
+                                                disabled={updatingStatus}
+                                            >
+                                                {showAdvancedDropEditor ? 'Tutup Detail Drop' : 'Ada Multi-drop / Hold / Extra Drop'}
                                             </button>
                                         </div>
                                         <div style={{ background: 'var(--color-info-light)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-info)' }}>
-                                            Tujuan tagihan tetap mengikuti surat jalan ini. Di bawah ini catat realisasi bongkar aktual, termasuk multi-drop, hold/inap, atau extra drop. Total muatan semua titik harus sama dengan muatan aktual final DO.
+                                            Untuk trip normal, sistem otomatis menganggap semua muatan aktual turun di tujuan tagihan: <strong>{autoActualDropDraft.locationName || 'Tujuan Tagihan'}</strong>. Buka detail ini hanya jika ada multi-drop, hold/inap, return, atau extra drop.
                                         </div>
-                                        <div style={{ display: 'grid', gap: '0.75rem' }}>
-                                            {actualDropPoints.map((item, index) => (
-                                                <div key={item.draftKey} style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)' }}>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
-                                                        <div style={{ fontWeight: 600 }}>Titik Drop {index + 1}</div>
-                                                        {actualDropPoints.length > 1 && (
-                                                            <button type="button" className="btn btn-danger btn-sm" onClick={() => removeActualDropDraft(item.draftKey)} disabled={updatingStatus}>
-                                                                Hapus
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                    <div className="form-row">
-                                                        <div className="form-group">
-                                                            <label className="form-label">Tipe Titik</label>
-                                                            <select
-                                                                className="form-select"
-                                                                value={item.stopType}
-                                                                onChange={e => updateActualDropDraft(item.draftKey, 'stopType', e.target.value)}
-                                                                disabled={updatingStatus}
-                                                            >
-                                                                {Object.entries(DO_ACTUAL_DROP_TYPE_MAP).map(([value, meta]) => (
-                                                                    <option key={value} value={value}>{meta.label}</option>
-                                                                ))}
-                                                            </select>
-                                                        </div>
-                                                        <div className="form-group">
-                                                            <label className="form-label">Nama Lokasi <span className="required">*</span></label>
-                                                            <input
-                                                                className="form-input"
-                                                                value={item.locationName}
-                                                                onChange={e => updateActualDropDraft(item.draftKey, 'locationName', e.target.value)}
-                                                                disabled={updatingStatus}
-                                                                placeholder="Mis. Gudang Transit Malang"
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                    <div className="form-group">
-                                                        <label className="form-label">Alamat Lokasi</label>
-                                                        <input
-                                                            className="form-input"
-                                                            value={item.locationAddress}
-                                                            onChange={e => updateActualDropDraft(item.draftKey, 'locationAddress', e.target.value)}
-                                                            disabled={updatingStatus}
-                                                            placeholder="Opsional, isi jika berbeda dari tujuan tagihan"
-                                                        />
-                                                    </div>
-                                                    <div className="form-row">
-                                                        <div className="form-group">
-                                                            <label className="form-label">Qty Drop</label>
-                                                            <FormattedNumberInput
-                                                                min={0}
-                                                                maxFractionDigits={2}
-                                                                value={Number(item.qtyKoli || 0)}
-                                                                onValueChange={value => updateActualDropDraft(item.draftKey, 'qtyKoli', String(value))}
-                                                                disabled={updatingStatus}
-                                                            />
-                                                        </div>
-                                                        <div className="form-group">
-                                                            <label className="form-label">Berat Drop</label>
-                                                            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
-                                                                <FormattedNumberInput
-                                                                    min={0}
-                                                                    maxFractionDigits={2}
-                                                                    value={Number(item.weightInputValue || 0)}
-                                                                    onValueChange={value => updateActualDropDraft(item.draftKey, 'weightInputValue', String(value))}
-                                                                    disabled={updatingStatus}
-                                                                />
-                                                                <select
-                                                                    className="form-select"
-                                                                    value={item.weightInputUnit}
-                                                                    onChange={e => updateActualDropDraft(item.draftKey, 'weightInputUnit', e.target.value)}
-                                                                    disabled={updatingStatus}
-                                                                >
-                                                                    {WEIGHT_INPUT_UNIT_OPTIONS.map(option => (
-                                                                        <option key={option.value} value={option.value}>{option.label}</option>
-                                                                    ))}
-                                                                </select>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div className="form-row">
-                                                        <div className="form-group">
-                                                            <label className="form-label">Volume Drop</label>
-                                                            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
-                                                                <FormattedNumberInput
-                                                                    min={0}
-                                                                    maxFractionDigits={2}
-                                                                    value={Number(item.volumeInputValue || 0)}
-                                                                    onValueChange={value => updateActualDropDraft(item.draftKey, 'volumeInputValue', String(value))}
-                                                                    disabled={updatingStatus}
-                                                                />
-                                                                <select
-                                                                    className="form-select"
-                                                                    value={item.volumeInputUnit}
-                                                                    onChange={e => updateActualDropDraft(item.draftKey, 'volumeInputUnit', e.target.value)}
-                                                                    disabled={updatingStatus}
-                                                                >
-                                                                    {VOLUME_INPUT_UNIT_OPTIONS.map(option => (
-                                                                        <option key={option.value} value={option.value}>{option.label}</option>
-                                                                    ))}
-                                                                </select>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div className="form-group">
-                                                        <label className="form-label">Catatan Titik Drop</label>
-                                                        <textarea
-                                                            className="form-textarea"
-                                                            rows={2}
-                                                            value={item.note}
-                                                            onChange={e => updateActualDropDraft(item.draftKey, 'note', e.target.value)}
-                                                            disabled={updatingStatus}
-                                                            placeholder="Mis. 30 koli turun di Malang, sisa lanjut ke Ponorogo"
-                                                        />
-                                                    </div>
+                                        {!showAdvancedDropEditor ? (
+                                            <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)' }}>
+                                                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Realisasi Default</div>
+                                                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', display: 'grid', gap: '0.2rem' }}>
+                                                    <div>Lokasi: {autoActualDropDraft.locationName || 'Tujuan Tagihan'}</div>
+                                                    {autoActualDropDraft.locationAddress && <div>Alamat: {autoActualDropDraft.locationAddress}</div>}
+                                                    <div>Muatan: {formatCargoSummary({ qtyKoli: actualCargoTotals.qtyKoli, weightKg: actualCargoTotals.weightKg, volumeM3: actualCargoTotals.volumeM3 })}</div>
                                                 </div>
-                                            ))}
-                                        </div>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
+                                                    <button type="button" className="btn btn-secondary btn-sm" onClick={addActualDropDraft} disabled={updatingStatus}>
+                                                        + Tambah Titik Drop
+                                                    </button>
+                                                </div>
+                                                <div style={{ display: 'grid', gap: '0.75rem' }}>
+                                                    {actualDropPoints.map((item, index) => (
+                                                        <div key={item.draftKey} style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)' }}>
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+                                                                <div style={{ fontWeight: 600 }}>Titik Drop {index + 1}</div>
+                                                                {actualDropPoints.length > 1 && (
+                                                                    <button type="button" className="btn btn-danger btn-sm" onClick={() => removeActualDropDraft(item.draftKey)} disabled={updatingStatus}>
+                                                                        Hapus
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                            <div className="form-row">
+                                                                <div className="form-group">
+                                                                    <label className="form-label">Tipe Titik</label>
+                                                                    <select
+                                                                        className="form-select"
+                                                                        value={item.stopType}
+                                                                        onChange={e => updateActualDropDraft(item.draftKey, 'stopType', e.target.value)}
+                                                                        disabled={updatingStatus}
+                                                                    >
+                                                                        {Object.entries(DO_ACTUAL_DROP_TYPE_MAP).map(([value, meta]) => (
+                                                                            <option key={value} value={value}>{meta.label}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                </div>
+                                                                <div className="form-group">
+                                                                    <label className="form-label">Nama Lokasi <span className="required">*</span></label>
+                                                                    <input
+                                                                        className="form-input"
+                                                                        value={item.locationName}
+                                                                        onChange={e => updateActualDropDraft(item.draftKey, 'locationName', e.target.value)}
+                                                                        disabled={updatingStatus}
+                                                                        placeholder="Mis. Gudang Transit Malang"
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                            <div className="form-group">
+                                                                <label className="form-label">Alamat Lokasi</label>
+                                                                <input
+                                                                    className="form-input"
+                                                                    value={item.locationAddress}
+                                                                    onChange={e => updateActualDropDraft(item.draftKey, 'locationAddress', e.target.value)}
+                                                                    disabled={updatingStatus}
+                                                                    placeholder="Opsional, isi jika berbeda dari tujuan tagihan"
+                                                                />
+                                                            </div>
+                                                            <div className="form-row">
+                                                                <div className="form-group">
+                                                                    <label className="form-label">Qty Drop</label>
+                                                                    <FormattedNumberInput
+                                                                        min={0}
+                                                                        maxFractionDigits={2}
+                                                                        value={Number(item.qtyKoli || 0)}
+                                                                        onValueChange={value => updateActualDropDraft(item.draftKey, 'qtyKoli', String(value))}
+                                                                        disabled={updatingStatus}
+                                                                    />
+                                                                </div>
+                                                                <div className="form-group">
+                                                                    <label className="form-label">Berat Drop</label>
+                                                                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
+                                                                        <FormattedNumberInput
+                                                                            min={0}
+                                                                            maxFractionDigits={2}
+                                                                            value={Number(item.weightInputValue || 0)}
+                                                                            onValueChange={value => updateActualDropDraft(item.draftKey, 'weightInputValue', String(value))}
+                                                                            disabled={updatingStatus}
+                                                                        />
+                                                                        <select
+                                                                            className="form-select"
+                                                                            value={item.weightInputUnit}
+                                                                            onChange={e => updateActualDropDraft(item.draftKey, 'weightInputUnit', e.target.value)}
+                                                                            disabled={updatingStatus}
+                                                                        >
+                                                                            {WEIGHT_INPUT_UNIT_OPTIONS.map(option => (
+                                                                                <option key={option.value} value={option.value}>{option.label}</option>
+                                                                            ))}
+                                                                        </select>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="form-row">
+                                                                <div className="form-group">
+                                                                    <label className="form-label">Volume Drop</label>
+                                                                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px', gap: '0.5rem' }}>
+                                                                        <FormattedNumberInput
+                                                                            min={0}
+                                                                            maxFractionDigits={2}
+                                                                            value={Number(item.volumeInputValue || 0)}
+                                                                            onValueChange={value => updateActualDropDraft(item.draftKey, 'volumeInputValue', String(value))}
+                                                                            disabled={updatingStatus}
+                                                                        />
+                                                                        <select
+                                                                            className="form-select"
+                                                                            value={item.volumeInputUnit}
+                                                                            onChange={e => updateActualDropDraft(item.draftKey, 'volumeInputUnit', e.target.value)}
+                                                                            disabled={updatingStatus}
+                                                                        >
+                                                                            {VOLUME_INPUT_UNIT_OPTIONS.map(option => (
+                                                                                <option key={option.value} value={option.value}>{option.label}</option>
+                                                                            ))}
+                                                                        </select>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="form-group">
+                                                                <label className="form-label">Catatan Titik Drop</label>
+                                                                <textarea
+                                                                    className="form-textarea"
+                                                                    rows={2}
+                                                                    value={item.note}
+                                                                    onChange={e => updateActualDropDraft(item.draftKey, 'note', e.target.value)}
+                                                                    disabled={updatingStatus}
+                                                                    placeholder="Mis. 30 koli turun di Malang, sisa lanjut ke Ponorogo"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </>
+                                        )}
                                     </div>
                                 </>
                             )}

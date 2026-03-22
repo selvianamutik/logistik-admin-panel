@@ -118,8 +118,30 @@ export default function NotaListPage() {
         }))
         .filter(item => item.remainingAmount > 0)
         .sort((a, b) => a.nota.issueDate.localeCompare(b.nota.issueDate));
+    const singleOpenNota = receiptOpenNotas.length === 1 ? receiptOpenNotas[0] : null;
+    const hasSingleOpenNota = Boolean(singleOpenNota);
 
     const totalAllocated = Object.values(receiptAllocations).reduce((sum, amount) => sum + amount, 0);
+
+    useEffect(() => {
+        if (!singleOpenNota) {
+            return;
+        }
+
+        const maxAllowed = singleOpenNota.remainingAmount;
+        const nextAmount = receiptAmount > 0 ? Math.min(receiptAmount, maxAllowed) : maxAllowed;
+        const currentAmount = receiptAllocations[singleOpenNota.nota._id] || 0;
+        const allocationKeys = Object.keys(receiptAllocations);
+
+        if (receiptAmount !== nextAmount) {
+            setReceiptAmount(nextAmount);
+            return;
+        }
+
+        if (currentAmount !== nextAmount || allocationKeys.length !== 1 || allocationKeys[0] !== singleOpenNota.nota._id) {
+            setReceiptAllocations(nextAmount > 0 ? { [singleOpenNota.nota._id]: nextAmount } : {});
+        }
+    }, [singleOpenNota, receiptAmount, receiptAllocations]);
 
     const resetReceiptModal = () => {
         setReceiptCustomerRef('');
@@ -499,9 +521,11 @@ export default function NotaListPage() {
                                     <label className="form-label">Total Penerimaan (Rp)</label>
                                     <CurrencyInput value={receiptAmount} onValueChange={value => setReceiptAmount(value)} disabled={receiving} placeholder="Ketik total receipt" />
                                 </div>
-                                <div className="form-group" style={{ alignSelf: 'end' }}>
-                                    <button className="btn btn-secondary" type="button" onClick={() => setReceiptAmount(totalAllocated)} disabled={receiving || totalAllocated <= 0}>Samakan Dengan Total Alokasi</button>
-                                </div>
+                                {!hasSingleOpenNota && (
+                                    <div className="form-group" style={{ alignSelf: 'end' }}>
+                                        <button className="btn btn-secondary" type="button" onClick={() => setReceiptAmount(totalAllocated)} disabled={receiving || totalAllocated <= 0}>Samakan Dengan Total Alokasi</button>
+                                    </div>
+                                )}
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Catatan</label>
@@ -510,14 +534,32 @@ export default function NotaListPage() {
                             <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--color-gray-600)', marginBottom: '1rem' }}>
                                 Satu receipt mewakili satu uang masuk nyata di bank/kas. Setelah itu jumlah receipt dialokasikan ke beberapa nota customer yang sama.
                             </div>
-                            <div className="table-wrapper" style={{ overflowX: 'auto' }}>
-                                <table style={{ minWidth: 720 }}>
-                                    <thead><tr><th>No. Nota</th><th>Tgl</th><th>Netto</th><th>Sudah Dibayar</th><th>Sisa</th><th>Alokasi Receipt</th></tr></thead>
-                                    <tbody>
-                                        {receiptCustomerRef ? (
-                                            receiptOpenNotas.length === 0 ? (
-                                                <tr><td colSpan={6}><div className="empty-state"><div className="empty-state-title">Tidak ada nota terbuka</div><div className="empty-state-text">Customer ini tidak punya sisa tagihan netto.</div></div></td></tr>
-                                            ) : receiptOpenNotas.map(item => (
+                            {!receiptCustomerRef ? (
+                                <div className="empty-state">
+                                    <div className="empty-state-title">Pilih customer</div>
+                                    <div className="empty-state-text">Daftar nota akan muncul setelah customer dipilih.</div>
+                                </div>
+                            ) : receiptOpenNotas.length === 0 ? (
+                                <div className="empty-state">
+                                    <div className="empty-state-title">Tidak ada nota terbuka</div>
+                                    <div className="empty-state-text">Customer ini tidak punya sisa tagihan netto.</div>
+                                </div>
+                            ) : hasSingleOpenNota && singleOpenNota ? (
+                                <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)' }}>
+                                    <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Alokasi Otomatis ke Satu Nota</div>
+                                    <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', display: 'grid', gap: '0.25rem' }}>
+                                        <div>Nota: <strong>{formatFreightNotaDisplayNumber(singleOpenNota.nota, company)}</strong></div>
+                                        <div>No. Internal: {singleOpenNota.nota.notaNumber}</div>
+                                        <div>Sisa tagihan: <strong>{formatCurrency(singleOpenNota.remainingAmount)}</strong></div>
+                                        <div>Pembayaran yang kamu isi di atas akan langsung dialokasikan ke nota ini.</div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="table-wrapper" style={{ overflowX: 'auto' }}>
+                                    <table style={{ minWidth: 720 }}>
+                                        <thead><tr><th>No. Nota</th><th>Tgl</th><th>Netto</th><th>Sudah Dibayar</th><th>Sisa</th><th>Alokasi Receipt</th></tr></thead>
+                                        <tbody>
+                                            {receiptOpenNotas.map(item => (
                                                 <tr key={item.nota._id}>
                                                     <td>
                                                         <div className="font-semibold">{formatFreightNotaDisplayNumber(item.nota, company)}</div>
@@ -532,13 +574,11 @@ export default function NotaListPage() {
                                                     </td>
                                                     <td><CurrencyInput value={receiptAllocations[item.nota._id] || 0} onValueChange={value => updateReceiptAllocation(item.nota._id, value)} disabled={receiving} placeholder="Alokasi" /></td>
                                                 </tr>
-                                            ))
-                                        ) : (
-                                            <tr><td colSpan={6}><div className="empty-state"><div className="empty-state-title">Pilih customer</div><div className="empty-state-text">Daftar nota akan muncul setelah customer dipilih.</div></div></td></tr>
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem', gap: '1rem', flexWrap: 'wrap' }}>
                                 <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Total alokasi: <strong>{formatCurrency(totalAllocated)}</strong></div>
                                 <div style={{ fontSize: '0.85rem', color: Math.abs(totalAllocated - receiptAmount) <= 0.00001 ? 'var(--color-success)' : 'var(--color-danger)' }}>
