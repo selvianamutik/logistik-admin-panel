@@ -1400,6 +1400,10 @@ export async function handleDeliveryOrderCreate(
         typeof data.date === 'string' && data.date
             ? data.date
             : new Date().toISOString().slice(0, 10);
+    const taripBorongan = normalizeNumber(data.taripBorongan ?? 0);
+    if (!Number.isFinite(taripBorongan) || taripBorongan < 0) {
+        return NextResponse.json({ error: 'Upah trip pada surat jalan tidak valid' }, { status: 400 });
+    }
     const customerDoPeriod = getPeriodFromDate(doDate);
     const customerDoPrefix = normalizeCustomerDoPrefix(customer?.deliveryOrderPrefix);
     const customerDoSequence = customer
@@ -1531,6 +1535,7 @@ export async function handleDeliveryOrderCreate(
         vehiclePlate: vehiclePlate || undefined,
         driverRef: driverRef || undefined,
         driverName: driverName || undefined,
+        taripBorongan: taripBorongan > 0 ? taripBorongan : undefined,
         date: doDate,
         notes: normalizeOptionalText(data.notes),
         doNumber,

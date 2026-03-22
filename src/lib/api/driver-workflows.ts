@@ -784,6 +784,7 @@ export async function handleDriverVoucherCreate(
 
     const deliveryOrder = await sanityGetById<{
         _id: string;
+        _rev?: string;
         doNumber?: string;
         status?: string;
         driverRef?: unknown;
@@ -898,15 +899,20 @@ export async function handleDriverVoucherCreate(
         );
     }
 
-    const effectiveDriverFeeAmount = normalizeNumber(deliveryOrder.taripBorongan || 0);
+    const deliveryOrderTripFee = normalizeNumber(deliveryOrder.taripBorongan || 0);
+    const effectiveDriverFeeAmount =
+        requestedDriverFeeAmount > 0
+            ? requestedDriverFeeAmount
+            : deliveryOrderTripFee;
     if (!Number.isFinite(effectiveDriverFeeAmount) || effectiveDriverFeeAmount <= 0) {
         return NextResponse.json(
-            { error: `Isi upah trip pada DO ${deliveryOrder.doNumber || deliveryOrderRef} dulu sebelum menerbitkan bon.` },
+            { error: `Isi upah trip saat membuat bon untuk DO ${deliveryOrder.doNumber || deliveryOrderRef}.` },
             { status: 409 }
         );
     }
 
     data.driverFeeAmount = effectiveDriverFeeAmount;
+    const shouldSyncDriverFeeToDo = Math.abs(deliveryOrderTripFee - effectiveDriverFeeAmount) > 0.01;
 
     if (canonicalVehicleRef && !canonicalVehiclePlate) {
         const vehicle = await sanityGetById<{ _id: string; plateNumber?: string }>(canonicalVehicleRef);
@@ -993,6 +999,12 @@ export async function handleDriverVoucherCreate(
                 ifRevisionID: issueBank._rev,
                 set: { currentBalance: newBalance },
             });
+
+        if (shouldSyncDriverFeeToDo) {
+            transaction.patch(deliveryOrderRef, {
+                set: { taripBorongan: effectiveDriverFeeAmount },
+            });
+        }
 
         try {
             await transaction.commit();

@@ -25,6 +25,7 @@ export default function NewDriverVoucherPage() {
         issueBankRef: '',
         issuedDate: new Date().toISOString().split('T')[0],
         cashGiven: 0,
+        driverFeeAmount: 0,
         notes: '',
     });
 
@@ -71,7 +72,6 @@ export default function NewDriverVoucherPage() {
         .filter(deliveryOrder =>
             Boolean(deliveryOrder.driverRef) &&
             Boolean(deliveryOrder.vehicleRef || deliveryOrder.vehiclePlate) &&
-            Number(deliveryOrder.taripBorongan || 0) > 0 &&
             !usedVoucherDoRefs.includes(deliveryOrder._id) &&
             !usedBoronganDoRefs.includes(deliveryOrder._id)
         )
@@ -93,6 +93,7 @@ export default function NewDriverVoucherPage() {
         selectedDo?.receiverAddress || selectedOrder?.receiverAddress,
     ].filter(Boolean).join(' -> ') || '';
     const selectedTripFee = Number(selectedDo?.taripBorongan || 0);
+    const effectiveTripFee = Number(form.driverFeeAmount || 0);
 
     const handleSave = async () => {
         if (!form.deliveryOrderRef) {
@@ -111,8 +112,8 @@ export default function NewDriverVoucherPage() {
             addToast('error', 'DO trip tidak valid atau sudah tidak bisa dipakai');
             return;
         }
-        if (selectedTripFee <= 0) {
-            addToast('error', 'Isi upah trip pada DO dulu sebelum membuat bon');
+        if (effectiveTripFee <= 0) {
+            addToast('error', 'Isi upah trip terlebih dahulu');
             return;
         }
 
@@ -123,6 +124,7 @@ export default function NewDriverVoucherPage() {
             issuedDate: form.issuedDate,
             cashGiven: form.cashGiven,
             issueBankRef: form.issueBankRef,
+            driverFeeAmount: effectiveTripFee,
             notes: form.notes || undefined,
         };
 
@@ -168,7 +170,19 @@ export default function NewDriverVoucherPage() {
                     <div className="form-row">
                         <div className="form-group">
                             <label className="form-label">Surat Jalan / Trip <span className="required">*</span></label>
-                            <select className="form-select" value={form.deliveryOrderRef} onChange={e => setForm({ ...form, deliveryOrderRef: e.target.value })}>
+                            <select
+                                className="form-select"
+                                value={form.deliveryOrderRef}
+                                onChange={e => {
+                                    const deliveryOrderRef = e.target.value;
+                                    const nextSelectedDo = dos.find(deliveryOrder => deliveryOrder._id === deliveryOrderRef) || null;
+                                    setForm(previous => ({
+                                        ...previous,
+                                        deliveryOrderRef,
+                                        driverFeeAmount: Number(nextSelectedDo?.taripBorongan || 0),
+                                    }));
+                                }}
+                            >
                                 <option value="">Pilih DO trip operasional</option>
                                 {eligibleDos.map(deliveryOrder => {
                                     const order = deliveryOrder.orderRef
@@ -210,7 +224,7 @@ export default function NewDriverVoucherPage() {
                                     </div>
                                     <div>
                                         <div className="detail-label">Upah Trip</div>
-                                        <div className="detail-value">{formatCurrency(selectedTripFee)}</div>
+                                        <div className="detail-value">{effectiveTripFee > 0 ? formatCurrency(effectiveTripFee) : 'Belum diisi'}</div>
                                     </div>
                                 </div>
                             </div>
@@ -227,6 +241,19 @@ export default function NewDriverVoucherPage() {
                         <div className="form-group">
                             <label className="form-label">Uang Jalan Awal <span className="required">*</span></label>
                             <CurrencyInput value={form.cashGiven} onValueChange={value => setForm({ ...form, cashGiven: value })} placeholder="Ketik uang jalan awal" />
+                        </div>
+                    </div>
+                    <div className="form-group">
+                        <label className="form-label">Upah Trip <span className="required">*</span></label>
+                        <CurrencyInput
+                            value={form.driverFeeAmount}
+                            onValueChange={value => setForm({ ...form, driverFeeAmount: value })}
+                            placeholder="Ketik upah trip"
+                        />
+                        <div className="form-helper">
+                            {selectedTripFee > 0
+                                ? 'Nilai ini mengikuti upah trip pada DO. Jika perlu koreksi, ubah di sini saat bon diterbitkan.'
+                                : 'Trip ini belum punya upah. Isi di sini, lalu sistem akan menyimpannya ke DO saat bon diterbitkan.'}
                         </div>
                     </div>
                     <div className="form-group">

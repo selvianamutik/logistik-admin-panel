@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '../../layout';
 import { Truck, FileText, Edit, Eye } from 'lucide-react';
+import CurrencyInput from '@/components/CurrencyInput';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { formatDate, formatCurrency, formatNumber, getReceivableNetAmount, ORDER_STATUS_MAP, ITEM_STATUS_MAP, DO_STATUS_MAP, INVOICE_STATUS_MAP, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
 import { formatCargoSummary, formatVolumeDisplay } from '@/lib/measurement';
@@ -81,6 +82,7 @@ export default function OrderDetailPage() {
     const [doDate, setDoDate] = useState(new Date().toISOString().split('T')[0]);
     const [doVehicle, setDoVehicle] = useState('');
     const [doDriver, setDoDriver] = useState('');
+    const [doTripFee, setDoTripFee] = useState(0);
     const [doNotes, setDoNotes] = useState('');
     const [selectedShipments, setSelectedShipments] = useState<SelectedShipmentMap>({});
     const [vehicles, setVehicles] = useState<Array<Pick<Vehicle, '_id' | 'unitCode' | 'plateNumber' | 'serviceRef' | 'serviceName'>>>([]);
@@ -262,6 +264,7 @@ export default function OrderDetailPage() {
                         vehiclePlate: selVeh?.plateNumber || '',
                         driverRef: doDriver || undefined,
                         driverName: selDriver?.name || '',
+                        taripBorongan: doTripFee > 0 ? doTripFee : undefined,
                         date: doDate,
                         notes: doNotes,
                         customerName: order?.customerName,
@@ -281,6 +284,7 @@ export default function OrderDetailPage() {
             setSelectedShipments({});
             setDoVehicle('');
             setDoDriver('');
+            setDoTripFee(0);
             setDoNotes('');
             setDoDate(new Date().toISOString().split('T')[0]);
             await loadOrderDetail();
@@ -727,6 +731,18 @@ export default function OrderDetailPage() {
                                     <option value="">-- Opsional, pilih supir --</option>
                                     {drivers.map(driver => <option key={driver._id} value={driver._id}>{driver.name}{driver.phone ? ` - ${driver.phone}` : ''}</option>)}
                                 </select>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Upah Trip</label>
+                                <CurrencyInput
+                                    value={doTripFee}
+                                    onValueChange={setDoTripFee}
+                                    placeholder="Ketik upah trip bila sudah diketahui"
+                                    disabled={creatingDO}
+                                />
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                    Isi kalau nominal upah trip sudah diketahui supaya DO bisa langsung muncul saat terbitkan Bon Trip. Kalau belum, tetap bisa diisi nanti dari form Bon Trip.
+                                </div>
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Catatan</label>
