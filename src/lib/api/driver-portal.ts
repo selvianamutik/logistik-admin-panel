@@ -93,7 +93,11 @@ export async function getDriverAssignedDeliveryOrders(driverRef: string) {
             trackingLastLat,
             trackingLastLng,
             trackingLastAccuracyM,
-            trackingLastSpeedKph
+            trackingLastSpeedKph,
+            pendingDriverStatus,
+            pendingDriverStatusRequestedAt,
+            pendingDriverStatusRequestedByName,
+            pendingDriverStatusNote
         }`,
         { driverRef }
     );

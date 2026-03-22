@@ -88,12 +88,15 @@ export default function DeliveryOrdersPage() {
     const prioritizedDeliveryOrders = filtered
         .slice()
         .sort((a, b) => {
+            if (a.pendingDriverStatus && !b.pendingDriverStatus) return -1;
+            if (!a.pendingDriverStatus && b.pendingDriverStatus) return 1;
             const priorityDiff = (DO_ACTION_PRIORITY[a.status] ?? 99) - (DO_ACTION_PRIORITY[b.status] ?? 99);
             if (priorityDiff !== 0) return priorityDiff;
             return new Date(b.date).getTime() - new Date(a.date).getTime();
         });
 
     const queueCounts = {
+        needApproval: items.filter(item => Boolean(item.pendingDriverStatus)).length,
         needCompletion: items.filter(item => item.status === 'ARRIVED').length,
         onRoad: items.filter(item => ['HEADING_TO_PICKUP', 'ON_DELIVERY'].includes(item.status)).length,
         waitingStart: items.filter(item => item.status === 'CREATED').length,
@@ -130,6 +133,13 @@ export default function DeliveryOrdersPage() {
                 </div>
             </div>
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
+                <div className="kpi-card">
+                    <div className="kpi-icon warning"><Truck size={20} /></div>
+                    <div className="kpi-content">
+                        <div className="kpi-label">Menunggu Approval</div>
+                        <div className="kpi-value">{queueCounts.needApproval}</div>
+                    </div>
+                </div>
                 <div className="kpi-card">
                     <div className="kpi-icon warning"><Truck size={20} /></div>
                     <div className="kpi-content">
@@ -171,11 +181,11 @@ export default function DeliveryOrdersPage() {
                 </div>
                 <div className="table-wrapper table-desktop-only">
                     <table>
-                        <thead><tr><th>No. SJ Customer</th><th>No. Internal</th><th>Resi</th><th>Customer</th><th>Kategori</th><th>Kendaraan</th><th>Tanggal</th><th>Status</th><th>Drop Aktual</th><th>Tracking</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>No. SJ Customer</th><th>No. Internal</th><th>Resi</th><th>Customer</th><th>Kategori</th><th>Kendaraan</th><th>Tanggal</th><th>Status</th><th>Approval Driver</th><th>Drop Aktual</th><th>Tracking</th><th>Aksi</th></tr></thead>
                         <tbody>
-                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
+                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 prioritizedDeliveryOrders.length === 0 ? (
-                                    <tr><td colSpan={11}><div className="empty-state"><Truck size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada surat jalan</div><div className="empty-state-text">Buat surat jalan dari halaman detail order</div></div></td></tr>
+                                    <tr><td colSpan={12}><div className="empty-state"><Truck size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada surat jalan</div><div className="empty-state-text">Buat surat jalan dari halaman detail order</div></div></td></tr>
                                 ) : prioritizedDeliveryOrders.map(d => (
                                     <tr key={d._id}>
                                         <td><Link href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{formatDeliveryOrderDisplayNumber(d)}</Link></td>
@@ -186,6 +196,18 @@ export default function DeliveryOrdersPage() {
                                         <td>{d.vehiclePlate || '-'}</td>
                                         <td className="text-muted">{formatDate(d.date)}</td>
                                         <td><span className={`badge badge-${DO_STATUS_MAP[d.status]?.color}`}><span className="badge-dot" /> {DO_STATUS_MAP[d.status]?.label}</span></td>
+                                        <td>
+                                            {d.pendingDriverStatus ? (
+                                                <div>
+                                                    <span className={`badge badge-${DO_STATUS_MAP[d.pendingDriverStatus]?.color || 'warning'}`}>
+                                                        <span className="badge-dot" /> {DO_STATUS_MAP[d.pendingDriverStatus]?.label || d.pendingDriverStatus}
+                                                    </span>
+                                                    <div className="text-muted text-sm">{d.pendingDriverStatusRequestedAt ? formatDateTime(d.pendingDriverStatusRequestedAt) : 'Menunggu approval'}</div>
+                                                </div>
+                                            ) : (
+                                                <span className="text-muted text-sm">-</span>
+                                            )}
+                                        </td>
                                         <td>
                                             {d.actualDropPoints?.length ? (
                                                 <div>
@@ -261,6 +283,16 @@ export default function DeliveryOrdersPage() {
                                             {d.actualDropPoints?.length
                                                 ? `${d.actualDropPoints.length} titik • ${d.actualDropPoints[0]?.locationName || '-'}`
                                                 : 'Belum dicatat'}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="mobile-record-meta">
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Approval Driver</span>
+                                        <span className="mobile-record-value">
+                                            {d.pendingDriverStatus
+                                                ? `${DO_STATUS_MAP[d.pendingDriverStatus]?.label || d.pendingDriverStatus} • ${d.pendingDriverStatusRequestedAt ? formatDateTime(d.pendingDriverStatusRequestedAt) : 'Menunggu approval'}`
+                                                : 'Tidak ada'}
                                         </span>
                                     </div>
                                 </div>

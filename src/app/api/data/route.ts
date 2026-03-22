@@ -43,6 +43,7 @@ import {
 } from '@/lib/api/operations-workflows';
 import {
     handleDeliveryOrderCreate,
+    handleDeliveryOrderDriverStatusRequestReject,
     handleOrderItemHoldRelease,
     handleOrderItemHoldSet,
     handleDeliveryOrderStatusUpdate,
@@ -430,6 +431,10 @@ export async function POST(request: Request) {
 
         if (entity === 'delivery-orders' && action === 'set-status') {
             return handleDeliveryOrderStatusUpdate(session, data, addAuditLog);
+        }
+
+        if (entity === 'delivery-orders' && action === 'reject-driver-status-request') {
+            return handleDeliveryOrderDriverStatusRequestReject(session, data, addAuditLog);
         }
 
         if (entity === 'driver-borongans' && action === 'create-with-items') {

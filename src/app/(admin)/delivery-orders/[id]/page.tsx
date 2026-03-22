@@ -175,8 +175,11 @@ export default function DODetailPage() {
     const [loading, setLoading] = useState(true);
     const [showStatusModal, setShowStatusModal] = useState(false);
     const [showPODModal, setShowPODModal] = useState(false);
+    const [showRejectRequestModal, setShowRejectRequestModal] = useState(false);
     const [newStatus, setNewStatus] = useState('');
     const [statusNote, setStatusNote] = useState('');
+    const [reviewingDriverRequest, setReviewingDriverRequest] = useState(false);
+    const [rejectRequestNote, setRejectRequestNote] = useState('');
     const [podName, setPodName] = useState('');
     const [podDate, setPodDate] = useState(new Date().toISOString().split('T')[0]);
     const [podNote, setPodNote] = useState('');
@@ -189,6 +192,7 @@ export default function DODetailPage() {
     const [updatingStatus, setUpdatingStatus] = useState(false);
     const [savingPOD, setSavingPOD] = useState(false);
     const [savingTarip, setSavingTarip] = useState(false);
+    const [rejectingRequest, setRejectingRequest] = useState(false);
 
     const fetchEntity = useCallback(async <T,>(url: string) => {
         const res = await fetch(url);
@@ -240,9 +244,10 @@ export default function DODetailPage() {
         }
     }, [addToast, doId, fetchEntity]);
 
-    const openStatusModal = () => {
-        setNewStatus('');
-        setStatusNote('');
+    const openStatusModal = (requestedStatus?: string, fromDriverRequest: boolean = false) => {
+        setNewStatus(requestedStatus || '');
+        setStatusNote(fromDriverRequest ? (doData?.pendingDriverStatusNote || '') : '');
+        setReviewingDriverRequest(fromDriverRequest);
         setPodName('');
         setPodDate(new Date().toISOString().split('T')[0]);
         setPodNote('');
@@ -252,6 +257,37 @@ export default function DODetailPage() {
         setActualDropPoints(nextActualDropPoints);
         setShowAdvancedDropEditor(shouldOpenAdvancedDropEditor(doData, nextActualDropPoints));
         setShowStatusModal(true);
+    };
+
+    const rejectDriverStatusRequest = async () => {
+        setRejectingRequest(true);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'delivery-orders',
+                    action: 'reject-driver-status-request',
+                    data: {
+                        id: doData?._id,
+                        note: rejectRequestNote,
+                    },
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menolak permintaan driver');
+                return;
+            }
+            await loadDO();
+            setShowRejectRequestModal(false);
+            setRejectRequestNote('');
+            addToast('success', 'Permintaan driver ditolak');
+        } catch {
+            addToast('error', 'Gagal menolak permintaan driver');
+        } finally {
+            setRejectingRequest(false);
+        }
     };
 
     const updateActualCargoDraft = (
@@ -377,6 +413,7 @@ export default function DODetailPage() {
             setShowStatusModal(false);
             setNewStatus('');
             setStatusNote('');
+            setReviewingDriverRequest(false);
             if (completingDelivery) {
                 setPodName('');
                 setPodDate(new Date().toISOString().split('T')[0]);
@@ -653,6 +690,7 @@ export default function DODetailPage() {
 
     const nextStatuses = getNextStatuses(doData.status);
     const isCompletingDelivery = newStatus === 'DELIVERED';
+    const pendingDriverStatusMeta = doData.pendingDriverStatus ? DO_STATUS_MAP[doData.pendingDriverStatus] : null;
     const actualCargoTotals = summarizeActualCargoDrafts(actualCargoItems);
     const autoActualDropDraft = buildAutoActualDropDraft(doData, actualCargoItems);
     const effectiveActualDropPoints = showAdvancedDropEditor ? actualDropPoints : [autoActualDropDraft];
@@ -702,7 +740,7 @@ export default function DODetailPage() {
                 </div>
                 <div className="page-actions">
                     {nextStatuses.length > 0 && (
-                        <button className="btn btn-primary" onClick={openStatusModal}>
+                        <button className="btn btn-primary" onClick={() => openStatusModal()}>
                             <Truck size={16} /> {nextStatuses.includes('DELIVERED') ? 'Lanjut / Selesaikan DO' : 'Ubah Status'}
                         </button>
                     )}
@@ -727,6 +765,44 @@ export default function DODetailPage() {
                     </button>
                 </div>
             </div>
+
+            {doData.pendingDriverStatus && (
+                <div className="card" style={{ marginBottom: 'var(--space-4)', border: '1px solid var(--color-warning-light)', background: 'var(--color-warning-soft)' }}>
+                    <div className="card-body">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
+                            <div style={{ display: 'grid', gap: '0.35rem' }}>
+                                <div className="form-section-title" style={{ marginBottom: 0 }}>Permintaan Driver Menunggu Approval</div>
+                                <div className="detail-value">
+                                    Driver mengajukan status{' '}
+                                    <span className={`badge badge-${pendingDriverStatusMeta?.color || 'warning'}`}>
+                                        <span className="badge-dot" /> {pendingDriverStatusMeta?.label || doData.pendingDriverStatus}
+                                    </span>
+                                </div>
+                                <div className="text-muted text-sm">
+                                    {doData.pendingDriverStatusRequestedByName || 'Driver'} · {formatDateTime(doData.pendingDriverStatusRequestedAt)}
+                                </div>
+                                {doData.pendingDriverStatusNote && (
+                                    <div className="text-muted text-sm">Catatan driver: {doData.pendingDriverStatusNote}</div>
+                                )}
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                <button className="btn btn-success" onClick={() => openStatusModal(doData.pendingDriverStatus, true)}>
+                                    <Save size={16} /> Review & Approve
+                                </button>
+                                <button
+                                    className="btn btn-secondary"
+                                    onClick={() => {
+                                        setRejectRequestNote('');
+                                        setShowRejectRequestModal(true);
+                                    }}
+                                >
+                                    Tolak
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div className="detail-grid">
                 <div className="card">
@@ -1028,17 +1104,31 @@ export default function DODetailPage() {
                 <div className="modal-overlay" onClick={() => { if (!updatingStatus) setShowStatusModal(false); }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
-                            <h3 className="modal-title">{isCompletingDelivery ? 'Selesaikan Surat Jalan' : 'Ubah Status DO'}</h3>
-                            <button className="modal-close" onClick={() => setShowStatusModal(false)} disabled={updatingStatus}>&times;</button>
+                            <h3 className="modal-title">{isCompletingDelivery ? (reviewingDriverRequest ? 'Review Permintaan Selesai Driver' : 'Selesaikan Surat Jalan') : 'Ubah Status DO'}</h3>
+                            <button className="modal-close" onClick={() => { setShowStatusModal(false); setReviewingDriverRequest(false); }} disabled={updatingStatus}>&times;</button>
                         </div>
                         <div className="modal-body">
                             <div className="form-group">
                                 <label className="form-label">Status Baru</label>
-                                <select className="form-select" value={newStatus} onChange={e => setNewStatus(e.target.value)} disabled={updatingStatus}>
-                                    <option value="">Pilih status</option>
-                                    {nextStatuses.map(s => <option key={s} value={s}>{DO_STATUS_MAP[s]?.label || s}</option>)}
-                                </select>
+                                {reviewingDriverRequest && doData.pendingDriverStatus ? (
+                                    <div className="detail-value">
+                                        <span className={`badge badge-${pendingDriverStatusMeta?.color || 'warning'}`}>
+                                            <span className="badge-dot" /> {pendingDriverStatusMeta?.label || doData.pendingDriverStatus}
+                                        </span>
+                                    </div>
+                                ) : (
+                                    <select className="form-select" value={newStatus} onChange={e => setNewStatus(e.target.value)} disabled={updatingStatus}>
+                                        <option value="">Pilih status</option>
+                                        {nextStatuses.map(s => <option key={s} value={s}>{DO_STATUS_MAP[s]?.label || s}</option>)}
+                                    </select>
+                                )}
                             </div>
+                            {reviewingDriverRequest && doData.pendingDriverStatusNote && (
+                                <div className="form-group">
+                                    <label className="form-label">Catatan Driver</label>
+                                    <div className="detail-value">{doData.pendingDriverStatusNote}</div>
+                                </div>
+                            )}
                             {isCompletingDelivery && (
                                 <>
                                     <div style={{ background: 'var(--color-success-light)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: '0.8rem', color: 'var(--color-success)' }}>
@@ -1298,9 +1388,39 @@ export default function DODetailPage() {
                             </div>
                         </div>
                         <div className="modal-footer">
-                            <button className="btn btn-secondary" onClick={() => setShowStatusModal(false)} disabled={updatingStatus}>Batal</button>
+                            <button className="btn btn-secondary" onClick={() => { setShowStatusModal(false); setReviewingDriverRequest(false); }} disabled={updatingStatus}>Batal</button>
                             <button className={`btn ${isCompletingDelivery ? 'btn-success' : 'btn-primary'}`} onClick={updateDOStatus} disabled={!newStatus || updatingStatus || (isCompletingDelivery && (!podName.trim() || !podDate || !actualCargoReady || !actualDropReady))}>
-                                <Save size={16} /> {updatingStatus ? 'Menyimpan...' : (isCompletingDelivery ? 'Selesaikan DO' : 'Simpan')}
+                                <Save size={16} /> {updatingStatus ? 'Menyimpan...' : (reviewingDriverRequest ? 'Approve & Selesaikan' : (isCompletingDelivery ? 'Selesaikan DO' : 'Simpan'))}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showRejectRequestModal && (
+                <div className="modal-overlay" onClick={() => { if (!rejectingRequest) setShowRejectRequestModal(false); }}>
+                    <div className="modal" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Tolak Permintaan Driver</h3>
+                            <button className="modal-close" onClick={() => setShowRejectRequestModal(false)} disabled={rejectingRequest}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="form-group">
+                                <label className="form-label">Alasan Penolakan <span className="required">*</span></label>
+                                <textarea
+                                    className="form-textarea"
+                                    rows={3}
+                                    value={rejectRequestNote}
+                                    onChange={e => setRejectRequestNote(e.target.value)}
+                                    disabled={rejectingRequest}
+                                    placeholder="Mis. POD belum lengkap atau barang belum benar-benar diterima."
+                                />
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setShowRejectRequestModal(false)} disabled={rejectingRequest}>Batal</button>
+                            <button className="btn btn-danger" onClick={rejectDriverStatusRequest} disabled={rejectingRequest || !rejectRequestNote.trim()}>
+                                <Save size={16} /> {rejectingRequest ? 'Menyimpan...' : 'Tolak Permintaan'}
                             </button>
                         </div>
                     </div>

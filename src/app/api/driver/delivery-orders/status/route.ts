@@ -2,12 +2,16 @@ import { NextResponse } from 'next/server';
 
 import { requireDriverSessionContext } from '@/lib/api/driver-portal';
 import { extractRefId } from '@/lib/api/data-helpers';
-import { handleDeliveryOrderStatusUpdate } from '@/lib/api/order-workflows';
+import {
+    handleDeliveryOrderDriverStatusRequest,
+    handleDeliveryOrderStatusUpdate,
+} from '@/lib/api/order-workflows';
 import { ensureSameOriginRequest } from '@/lib/api/request-security';
 import { sanityCreate, sanityGetById } from '@/lib/sanity';
 import type { DeliveryOrder } from '@/lib/types';
 
 const DRIVER_ALLOWED_STATUS_UPDATES = new Set(['HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED']);
+const DRIVER_APPROVAL_REQUEST_STATUSES = new Set(['DELIVERED']);
 
 async function addAuditLog(actor: { _id: string; name: string }, action: string, entityRef: string, summary: string) {
     try {
@@ -55,9 +59,9 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Status DO tidak valid' }, { status: 400 });
         }
 
-        if (!DRIVER_ALLOWED_STATUS_UPDATES.has(status)) {
+        if (!DRIVER_ALLOWED_STATUS_UPDATES.has(status) && !DRIVER_APPROVAL_REQUEST_STATUSES.has(status)) {
             return NextResponse.json(
-                { error: 'Driver hanya boleh mengirim progres perjalanan. Status selesai atau batal harus ditetapkan admin.' },
+                { error: 'Driver hanya boleh mengirim progres perjalanan atau mengajukan status selesai ke admin.' },
                 { status: 403 }
             );
         }
@@ -69,6 +73,14 @@ export async function POST(request: Request) {
 
         if (extractRefId(deliveryOrder.driverRef) !== auth.driver._id) {
             return NextResponse.json({ error: 'Surat jalan ini bukan milik supir yang login' }, { status: 403 });
+        }
+
+        if (DRIVER_APPROVAL_REQUEST_STATUSES.has(status)) {
+            return handleDeliveryOrderDriverStatusRequest(
+                auth.session,
+                { id, status, note },
+                addAuditLog
+            );
         }
 
         return handleDeliveryOrderStatusUpdate(

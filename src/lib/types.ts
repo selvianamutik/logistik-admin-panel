@@ -339,6 +339,11 @@ export interface DeliveryOrder {
   trackingLastAccuracyM?: number;
   trackingLastSpeedKph?: number;
   trackingLastSource?: 'DRIVER_APP';
+  pendingDriverStatus?: DOStatus;
+  pendingDriverStatusRequestedAt?: string;
+  pendingDriverStatusRequestedBy?: string;
+  pendingDriverStatusRequestedByName?: string;
+  pendingDriverStatusNote?: string;
   cargoFinalizedAt?: string;
   cargoFinalizedBy?: string;
   cargoFinalizedByName?: string;

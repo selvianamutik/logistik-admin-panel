@@ -161,6 +161,8 @@ export const DO_STATUS_MAP: Record<string, { label: string; color: string }> = {
     ARRIVED: { label: 'Tiba di Tujuan', color: 'primary' },
     DELIVERED: { label: 'Terkirim', color: 'success' },
     CANCELLED: { label: 'Dibatalkan', color: 'danger' },
+    DRIVER_REQUESTED_DELIVERED: { label: 'Driver Ajukan Selesai', color: 'warning' },
+    DRIVER_REQUEST_REJECTED: { label: 'Permintaan Driver Ditolak', color: 'danger' },
 };
 
 export const DO_ACTUAL_DROP_TYPE_MAP: Record<string, { label: string; color: string }> = {

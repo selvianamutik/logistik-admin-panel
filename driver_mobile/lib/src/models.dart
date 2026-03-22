@@ -128,6 +128,10 @@ class DeliveryOrder {
     this.trackingLastLng,
     this.trackingLastAccuracyM,
     this.trackingLastSpeedKph,
+    this.pendingDriverStatus,
+    this.pendingDriverStatusRequestedAt,
+    this.pendingDriverStatusRequestedByName,
+    this.pendingDriverStatusNote,
   });
 
   final String id;
@@ -147,10 +151,16 @@ class DeliveryOrder {
   final double? trackingLastLng;
   final double? trackingLastAccuracyM;
   final double? trackingLastSpeedKph;
+  final DeliveryOrderStatus? pendingDriverStatus;
+  final String? pendingDriverStatusRequestedAt;
+  final String? pendingDriverStatusRequestedByName;
+  final String? pendingDriverStatusNote;
 
   bool get isClosed =>
       status == DeliveryOrderStatus.delivered ||
       status == DeliveryOrderStatus.cancelled;
+
+  bool get hasPendingDriverStatusRequest => pendingDriverStatus != null;
 
   factory DeliveryOrder.fromJson(Map<String, dynamic> json) {
     return DeliveryOrder(
@@ -171,6 +181,14 @@ class DeliveryOrder {
       trackingLastLng: _toDouble(json['trackingLastLng']),
       trackingLastAccuracyM: _toDouble(json['trackingLastAccuracyM']),
       trackingLastSpeedKph: _toDouble(json['trackingLastSpeedKph']),
+      pendingDriverStatus: _parseOptionalDoStatus(
+        json['pendingDriverStatus'] as String?,
+      ),
+      pendingDriverStatusRequestedAt:
+          json['pendingDriverStatusRequestedAt'] as String?,
+      pendingDriverStatusRequestedByName:
+          json['pendingDriverStatusRequestedByName'] as String?,
+      pendingDriverStatusNote: json['pendingDriverStatusNote'] as String?,
     );
   }
 
@@ -190,6 +208,13 @@ class DeliveryOrder {
       default:
         return DeliveryOrderStatus.created;
     }
+  }
+
+  static DeliveryOrderStatus? _parseOptionalDoStatus(String? raw) {
+    if (raw == null || raw.isEmpty) {
+      return null;
+    }
+    return _parseDoStatus(raw);
   }
 
   static TrackingState _parseTrackingState(String? raw) {

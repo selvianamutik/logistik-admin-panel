@@ -1263,6 +1263,10 @@ class _DriverHomePageState extends State<DriverHomePage>
                 children: <Widget>[
                   _buildSectionLabel('Tracking aktif'),
                   const SizedBox(height: 8),
+                  if (order.hasPendingDriverStatusRequest) ...<Widget>[
+                    _buildPendingApprovalNotice(order),
+                    const SizedBox(height: 10),
+                  ],
                   if (nextDriverProgress != null) ...<Widget>[
                     SizedBox(
                       width: double.infinity,
@@ -1289,7 +1293,9 @@ class _DriverHomePageState extends State<DriverHomePage>
                     const SizedBox(height: 10),
                   ],
                   _buildNotice(
-                    'Tracking harus tetap aktif sampai admin menyelesaikan DO ini. Driver tidak bisa menjeda atau menghentikannya sendiri.',
+                    order.hasPendingDriverStatusRequest
+                        ? 'Tracking tetap harus aktif sampai admin approve status selesai atau memberi arahan lanjutan.'
+                        : 'Tracking harus tetap aktif sampai admin menyelesaikan DO ini. Driver tidak bisa menjeda atau menghentikannya sendiri.',
                   ),
                 ],
               ),
@@ -1803,6 +1809,56 @@ class _DriverHomePageState extends State<DriverHomePage>
     );
   }
 
+  Widget _buildPendingApprovalNotice(DeliveryOrder order) {
+    final requestedStatus =
+        order.pendingDriverStatus == null
+            ? 'perubahan status'
+            : _formatDeliveryOrderStatus(order.pendingDriverStatus!);
+    final requestedBy = order.pendingDriverStatusRequestedByName ?? 'Driver';
+    final requestedAt = _formatDateTime(order.pendingDriverStatusRequestedAt);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            'Menunggu approval admin untuk $requestedStatus.',
+            style: const TextStyle(
+              color: Color(0xFF9A3412),
+              fontWeight: FontWeight.w800,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '$requestedBy • $requestedAt',
+            style: const TextStyle(
+              color: Color(0xFFC2410C),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          if ((order.pendingDriverStatusNote ?? '').trim().isNotEmpty) ...<Widget>[
+            const SizedBox(height: 8),
+            Text(
+              'Catatan: ${order.pendingDriverStatusNote!.trim()}',
+              style: const TextStyle(
+                color: Color(0xFF9A3412),
+                fontWeight: FontWeight.w600,
+                height: 1.4,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   String _formatDate(String? value) {
     if (value == null || value.isEmpty) {
       return '-';
@@ -1848,7 +1904,9 @@ class _DriverHomePageState extends State<DriverHomePage>
   }
 
   DeliveryOrderStatus? _nextDriverProgressStatus(DeliveryOrder order) {
-    if (order.trackingState != TrackingState.active || order.isClosed) {
+    if (order.trackingState != TrackingState.active ||
+        order.isClosed ||
+        order.hasPendingDriverStatusRequest) {
       return null;
     }
 
@@ -1857,8 +1915,9 @@ class _DriverHomePageState extends State<DriverHomePage>
         return DeliveryOrderStatus.onDelivery;
       case DeliveryOrderStatus.onDelivery:
         return DeliveryOrderStatus.arrived;
-      case DeliveryOrderStatus.created:
       case DeliveryOrderStatus.arrived:
+        return DeliveryOrderStatus.delivered;
+      case DeliveryOrderStatus.created:
       case DeliveryOrderStatus.delivered:
       case DeliveryOrderStatus.cancelled:
         return null;
@@ -1871,9 +1930,10 @@ class _DriverHomePageState extends State<DriverHomePage>
         return 'Tandai Dalam Pengiriman';
       case DeliveryOrderStatus.arrived:
         return 'Tandai Sudah Tiba';
+      case DeliveryOrderStatus.delivered:
+        return 'Ajukan Selesai ke Admin';
       case DeliveryOrderStatus.created:
       case DeliveryOrderStatus.headingToPickup:
-      case DeliveryOrderStatus.delivered:
       case DeliveryOrderStatus.cancelled:
         return 'Kirim Progres';
     }
@@ -1902,9 +1962,10 @@ class _DriverHomePageState extends State<DriverHomePage>
         return 'Status DO diperbarui menjadi dalam pengiriman.';
       case DeliveryOrderStatus.arrived:
         return 'Status DO diperbarui menjadi sudah tiba.';
+      case DeliveryOrderStatus.delivered:
+        return 'Permintaan selesai dikirim ke admin untuk approval.';
       case DeliveryOrderStatus.created:
       case DeliveryOrderStatus.headingToPickup:
-      case DeliveryOrderStatus.delivered:
       case DeliveryOrderStatus.cancelled:
         return 'Progres perjalanan berhasil diperbarui.';
     }

@@ -190,6 +190,19 @@ const DO_STATUS_TRANSITIONS: Record<string, string[]> = {
     CANCELLED: [],
 };
 
+const DRIVER_APPROVAL_REQUESTABLE_DO_STATUSES = new Set(['DELIVERED']);
+const DRIVER_STATUS_REQUEST_FIELDS = [
+    'pendingDriverStatus',
+    'pendingDriverStatusRequestedAt',
+    'pendingDriverStatusRequestedBy',
+    'pendingDriverStatusRequestedByName',
+    'pendingDriverStatusNote',
+];
+
+function buildDriverRequestedTrackingStatus(status: string) {
+    return `DRIVER_REQUESTED_${status}`;
+}
+
 async function releaseDriverTrackingLockIfOwned(driverRef: unknown, deliveryOrderRef: string, timestamp: string) {
     const driverId = extractRefId(driverRef);
     if (!driverId) {
@@ -1032,6 +1045,11 @@ export async function handleDeliveryOrderStatusUpdate(
         receiverName?: string;
         receiverCompany?: string;
         receiverAddress?: string;
+        pendingDriverStatus?: string;
+        pendingDriverStatusRequestedAt?: string;
+        pendingDriverStatusRequestedBy?: string;
+        pendingDriverStatusRequestedByName?: string;
+        pendingDriverStatusNote?: string;
     }>(id);
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
@@ -1129,6 +1147,7 @@ export async function handleDeliveryOrderStatusUpdate(
                     }
                     : {}),
             },
+            unset: DRIVER_STATUS_REQUEST_FIELDS,
         })
         .create({
             _id: crypto.randomUUID(),
@@ -1284,14 +1303,192 @@ export async function handleDeliveryOrderStatusUpdate(
                     podReceiverName,
                     podReceivedDate,
                     podNote,
+                    pendingDriverStatus: undefined,
+                    pendingDriverStatusRequestedAt: undefined,
+                    pendingDriverStatusRequestedBy: undefined,
+                    pendingDriverStatusRequestedByName: undefined,
+                    pendingDriverStatusNote: undefined,
                     cargoFinalizedAt: timestamp,
                     cargoFinalizedBy: session._id,
                     cargoFinalizedByName: session.name,
                     actualDropPoints,
                 }
                 : {}),
+            ...(status !== 'DELIVERED'
+                ? {
+                    pendingDriverStatus: undefined,
+                    pendingDriverStatusRequestedAt: undefined,
+                    pendingDriverStatusRequestedBy: undefined,
+                    pendingDriverStatusRequestedByName: undefined,
+                    pendingDriverStatusNote: undefined,
+                }
+                : {}),
             trackingState: shouldStopTracking ? 'STOPPED' : deliveryOrder.trackingState,
             trackingStoppedAt: shouldStopTracking ? timestamp : undefined,
+        },
+    });
+}
+
+export async function handleDeliveryOrderDriverStatusRequest(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const id = typeof data.id === 'string' ? data.id : '';
+    const status = typeof data.status === 'string' ? data.status : '';
+    const note = normalizeOptionalText(data.note);
+    if (!id || !status) {
+        return NextResponse.json({ error: 'Permintaan status driver tidak valid' }, { status: 400 });
+    }
+    if (!DRIVER_APPROVAL_REQUESTABLE_DO_STATUSES.has(status)) {
+        return NextResponse.json({ error: 'Status ini tidak memakai approval admin dari driver app' }, { status: 400 });
+    }
+
+    const deliveryOrder = await sanityGetById<{
+        _id: string;
+        doNumber?: string;
+        status?: string;
+        driverRef?: unknown;
+        pendingDriverStatus?: string;
+        pendingDriverStatusRequestedAt?: string;
+        pendingDriverStatusRequestedBy?: string;
+        pendingDriverStatusRequestedByName?: string;
+        pendingDriverStatusNote?: string;
+    }>(id);
+    if (!deliveryOrder) {
+        return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
+    }
+
+    const allowedStatuses = DO_STATUS_TRANSITIONS[deliveryOrder.status || ''] || [];
+    if (!allowedStatuses.includes(status)) {
+        return NextResponse.json({ error: 'Permintaan status driver tidak valid untuk kondisi DO saat ini' }, { status: 409 });
+    }
+
+    if (deliveryOrder.pendingDriverStatus) {
+        if (deliveryOrder.pendingDriverStatus === status) {
+            return NextResponse.json(
+                { error: `Permintaan ${status} untuk DO ${deliveryOrder.doNumber || id} sudah menunggu approval admin.` },
+                { status: 409 }
+            );
+        }
+        return NextResponse.json(
+            { error: `DO ${deliveryOrder.doNumber || id} masih punya permintaan status ${deliveryOrder.pendingDriverStatus} yang belum diputuskan admin.` },
+            { status: 409 }
+        );
+    }
+
+    const timestamp = new Date().toISOString();
+    const transaction = getSanityClient()
+        .transaction()
+        .patch(id, {
+            set: {
+                pendingDriverStatus: status,
+                pendingDriverStatusRequestedAt: timestamp,
+                pendingDriverStatusRequestedBy: session._id,
+                pendingDriverStatusRequestedByName: session.name,
+                pendingDriverStatusNote: note,
+            },
+        })
+        .create({
+            _id: crypto.randomUUID(),
+            _type: 'trackingLog',
+            refType: 'DO',
+            refRef: id,
+            status: buildDriverRequestedTrackingStatus(status),
+            note: note || undefined,
+            timestamp,
+            userRef: session._id,
+            userName: session.name,
+        });
+
+    await transaction.commit();
+
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'delivery-orders',
+        id,
+        `Driver mengajukan status ${status} untuk DO ${deliveryOrder.doNumber || id}${note ? `: ${note}` : ''}`
+    );
+
+    return NextResponse.json({
+        data: {
+            ...deliveryOrder,
+            pendingDriverStatus: status,
+            pendingDriverStatusRequestedAt: timestamp,
+            pendingDriverStatusRequestedBy: session._id,
+            pendingDriverStatusRequestedByName: session.name,
+            pendingDriverStatusNote: note,
+        },
+    });
+}
+
+export async function handleDeliveryOrderDriverStatusRequestReject(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const id = typeof data.id === 'string' ? data.id : '';
+    const note = normalizeOptionalText(data.note);
+    if (!id) {
+        return NextResponse.json({ error: 'Permintaan status driver tidak valid' }, { status: 400 });
+    }
+    if (!note) {
+        return NextResponse.json({ error: 'Alasan penolakan wajib diisi' }, { status: 400 });
+    }
+
+    const deliveryOrder = await sanityGetById<{
+        _id: string;
+        doNumber?: string;
+        pendingDriverStatus?: string;
+        pendingDriverStatusRequestedAt?: string;
+        pendingDriverStatusRequestedBy?: string;
+        pendingDriverStatusRequestedByName?: string;
+        pendingDriverStatusNote?: string;
+    }>(id);
+    if (!deliveryOrder) {
+        return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
+    }
+    if (!deliveryOrder.pendingDriverStatus) {
+        return NextResponse.json({ error: 'Tidak ada permintaan status driver yang menunggu approval' }, { status: 409 });
+    }
+
+    const timestamp = new Date().toISOString();
+    const transaction = getSanityClient()
+        .transaction()
+        .patch(id, {
+            unset: DRIVER_STATUS_REQUEST_FIELDS,
+        })
+        .create({
+            _id: crypto.randomUUID(),
+            _type: 'trackingLog',
+            refType: 'DO',
+            refRef: id,
+            status: 'DRIVER_REQUEST_REJECTED',
+            note: `${deliveryOrder.pendingDriverStatus}${note ? `: ${note}` : ''}`,
+            timestamp,
+            userRef: session._id,
+            userName: session.name,
+        });
+
+    await transaction.commit();
+
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'delivery-orders',
+        id,
+        `Permintaan driver ${deliveryOrder.pendingDriverStatus} untuk DO ${deliveryOrder.doNumber || id} ditolak: ${note}`
+    );
+
+    return NextResponse.json({
+        data: {
+            ...deliveryOrder,
+            pendingDriverStatus: undefined,
+            pendingDriverStatusRequestedAt: undefined,
+            pendingDriverStatusRequestedBy: undefined,
+            pendingDriverStatusRequestedByName: undefined,
+            pendingDriverStatusNote: undefined,
         },
     });
 }
