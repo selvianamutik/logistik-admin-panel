@@ -193,7 +193,6 @@ export function buildFreightNotaPrintDocument(opts: {
     const shipmentReferenceLabel = uniqueShipmentRefs.length > 0 ? uniqueShipmentRefs.join(', ') : '-';
     const shipmentNumberLabel = uniqueSjNumbers.length > 0 ? uniqueSjNumbers.join(', ') : '-';
     const shipmentAddressLabel = uniqueDestinations.length > 0 ? uniqueDestinations.join(' / ') : '-';
-    const shipmentOriginLabel = uniqueOrigins.length > 0 ? uniqueOrigins.join(' / ') : '-';
     const shipmentNoteLabel = [nota.notes, ...uniqueNotes].filter(Boolean).join(' / ') || '-';
     const customerAddressLabel = customer?.address?.trim() || '';
     const customerContactLabel = [customer?.contactPerson, customer?.phone].filter(Boolean).join(' | ');
@@ -215,12 +214,8 @@ export function buildFreightNotaPrintDocument(opts: {
     const itemRowsHtml = items.map((item, index) => {
         const qtyText = item.collie && item.collie > 0 ? `${fmtNumber(item.collie)} koli` : '-';
         const descriptionParts = [
-            item.barang || 'Jasa pengiriman',
-            item.noSJ ? `No. SJ ${item.noSJ}` : '',
-            item.doNumber ? `DO ${item.doNumber}` : '',
             item.dari && item.tujuan ? `${item.dari} -> ${item.tujuan}` : item.tujuan || item.dari || '',
-            item.beratKg ? `Berat ${fmtNumber(item.beratKg)} kg` : '',
-            item.vehiclePlate ? `Truck ${item.vehiclePlate}` : '',
+            item.beratKg ? `${fmtNumber(item.beratKg)} kg` : '',
         ].filter(Boolean);
 
         return `
@@ -261,7 +256,6 @@ export function buildFreightNotaPrintDocument(opts: {
                     ${logoHtml}
                     <div>
                         <div class="invoice-brand-title">Invoice</div>
-                        <div class="invoice-brand-subtitle">Nota Ongkos Angkut</div>
                     </div>
                 </div>
                 <div class="invoice-company-box">
@@ -286,10 +280,6 @@ export function buildFreightNotaPrintDocument(opts: {
                             <tr>
                                 <td>Nomor Invoice</td>
                                 <td>${escapePrintHtml(displayNumber)}</td>
-                            </tr>
-                            <tr>
-                                <td>Referensi Sistem</td>
-                                <td>${escapePrintHtml(nota.notaNumber)}</td>
                             </tr>
                             <tr>
                                 <td>Tanggal Invoice</td>
@@ -332,10 +322,6 @@ export function buildFreightNotaPrintDocument(opts: {
                     <table class="invoice-info-table">
                         <tbody>
                             <tr>
-                                <td>Asal Pengiriman</td>
-                                <td>${escapePrintHtml(shipmentOriginLabel)}</td>
-                            </tr>
-                            <tr>
                                 <td>Alamat Pengiriman</td>
                                 <td>${escapePrintHtml(shipmentAddressLabel)}</td>
                             </tr>
@@ -353,7 +339,7 @@ export function buildFreightNotaPrintDocument(opts: {
                 <thead>
                     <tr>
                         <th class="c invoice-col-no">No</th>
-                        <th>Uraian Pengiriman</th>
+                        <th>Uraian</th>
                         <th class="c invoice-col-qty">Qty</th>
                         <th class="r invoice-col-price">Harga Satuan</th>
                         <th class="r invoice-col-total">Jumlah</th>
@@ -369,7 +355,7 @@ export function buildFreightNotaPrintDocument(opts: {
                 <table class="invoice-total-table">
                     <tbody>
                         <tr>
-                            <td>Jumlah Total Tagihan</td>
+                            <td>Jumlah Total</td>
                             <td class="r">${escapePrintHtml(fmtCurrency(grossAmount))}</td>
                         </tr>
                         ${adjustmentAmount > 0 ? `
@@ -379,7 +365,7 @@ export function buildFreightNotaPrintDocument(opts: {
                             </tr>
                         ` : ''}
                         <tr class="invoice-grand-total-row">
-                            <td>Grand Total Tagihan</td>
+                            <td>Grand Total</td>
                             <td class="r">${escapePrintHtml(fmtCurrency(netAmount))}</td>
                         </tr>
                     </tbody>
@@ -400,7 +386,7 @@ export function buildFreightNotaPrintDocument(opts: {
             <div class="invoice-footer-grid">
                 <div class="invoice-panel">
                     <div class="invoice-section-title compact">Petunjuk Pembayaran</div>
-                    <div class="invoice-payment-line">Silakan melakukan pembayaran pada atau sebelum <strong>${escapePrintHtml(dueDateLabel)}</strong> dengan menyebutkan nomor invoice <strong>${escapePrintHtml(displayNumber)}</strong>.</div>
+                    <div class="invoice-payment-line">Mohon lakukan pembayaran sebelum <strong>${escapePrintHtml(dueDateLabel)}</strong> dengan menyebutkan nomor invoice <strong>${escapePrintHtml(displayNumber)}</strong>.</div>
                     ${bankInstructionLines.length > 0 ? `
                         <div class="invoice-payment-subtitle">Pembayaran ditujukan ke:</div>
                         <div class="invoice-payment-bank">${escapePrintHtml(bankInstructionLines.join(' | '))}</div>
@@ -423,12 +409,11 @@ export function buildFreightNotaPrintDocument(opts: {
     const extraStyles = `
         body { font-family: "Times New Roman", Arial, serif; padding: 0.45rem 0.6rem; color: #111827; max-width: 900px; }
         .invoice-sheet { font-size: 11px; line-height: 1.28; color: #111827; }
-        .invoice-brand-row { display: grid; grid-template-columns: 1.2fr 0.9fr; gap: 1rem; align-items: start; margin-bottom: 1rem; }
+        .invoice-brand-row { display: grid; grid-template-columns: 1.2fr 0.9fr; gap: 0.85rem; align-items: start; margin-bottom: 0.85rem; }
         .invoice-brand-left { display: flex; gap: 0.75rem; align-items: center; min-height: 68px; }
         .invoice-logo { width: 58px; height: 58px; object-fit: contain; filter: grayscale(1); }
         .invoice-logo-placeholder { display: flex; align-items: center; justify-content: center; border: 0.8px solid #4b5563; font-size: 1.45rem; font-weight: 700; width: 58px; height: 58px; }
         .invoice-brand-title { font-size: 1.5rem; font-weight: 700; letter-spacing: 0; }
-        .invoice-brand-subtitle { color: #111827; font-size: 0.95rem; margin-top: 0.05rem; font-weight: 600; }
         .invoice-company-box { padding: 0.1rem 0; font-size: 0.84rem; text-align: left; }
         .invoice-company-name { font-weight: 700; font-size: 1rem; margin-bottom: 0.2rem; text-transform: uppercase; }
         .invoice-top-grid, .invoice-shipment-grid { display: grid; grid-template-columns: 1.02fr 0.98fr; gap: 0.65rem; margin-bottom: 0.75rem; }
@@ -447,22 +432,22 @@ export function buildFreightNotaPrintDocument(opts: {
         .invoice-items-table th, .invoice-items-table td { border: 0.8px solid #4b5563; padding: 0.35rem 0.42rem; vertical-align: top; }
         .invoice-items-table th { background: #fff; font-weight: 700; }
         .invoice-col-no { width: 6%; }
-        .invoice-col-qty { width: 15%; }
+        .invoice-col-qty { width: 16%; }
         .invoice-col-price { width: 19%; }
         .invoice-col-total { width: 20%; }
-        .invoice-item-title { font-weight: 700; margin-bottom: 0.14rem; }
-        .invoice-item-meta { color: #374151; font-size: 0.76rem; }
-        .invoice-filler-row td { color: transparent; height: 38px; }
+        .invoice-item-title { font-weight: 400; margin-bottom: 0.08rem; }
+        .invoice-item-meta { color: #111827; font-size: 0.74rem; }
+        .invoice-filler-row td { color: transparent; height: 46px; }
         .invoice-total-box { display: flex; justify-content: flex-end; margin: 0; }
-        .invoice-total-table { width: 320px; }
+        .invoice-total-table { width: 290px; }
         .invoice-total-table td { border: 0.8px solid #4b5563; padding: 0.34rem 0.5rem; }
-        .invoice-total-table td:first-child { width: 68%; }
+        .invoice-total-table td:first-child { width: 62%; }
         .invoice-grand-total-row td { font-weight: 700; font-size: 1rem; }
         .invoice-bottom-label { font-weight: 700; margin-bottom: 0.25rem; }
         .invoice-bottom-value { font-size: 0.92rem; }
         .invoice-payment-line { margin-bottom: 0.45rem; }
         .invoice-payment-subtitle { font-weight: 700; margin-bottom: 0.2rem; }
-        .invoice-payment-bank { font-weight: 700; }
+        .invoice-payment-bank { font-weight: 400; }
         .invoice-payment-note { margin-top: 0.35rem; color: #111827; }
         .invoice-signature-box { border: 0.8px solid #4b5563; padding: 0.55rem 0.65rem; display: flex; flex-direction: column; justify-content: space-between; }
         .invoice-signature-title { margin-bottom: 0.15rem; }
