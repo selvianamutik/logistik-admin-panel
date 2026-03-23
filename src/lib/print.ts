@@ -4,6 +4,7 @@
 
 import DOMPurify from 'dompurify';
 import type { CompanyProfile, FreightNota, FreightNotaItem } from './types';
+import { getReceivableNetAmount, terbilang } from './utils';
 
 export async function fetchCompanyProfile(): Promise<CompanyProfile | null> {
     try {
@@ -171,205 +172,306 @@ export function buildFreightNotaPrintDocument(opts: {
 }) {
     const { nota, items, company } = opts;
     const displayNumber = formatFreightNotaDisplayNumber(nota, company);
-    const groupedRows = items.reduce<Array<{
-        no: number;
-        vehiclePlate: string;
-        date: string;
-        entries: Array<{
-            noSJ: string;
-            dari: string;
-            tujuan: string;
-            barang: string;
-            collie: string | number;
-            beratKg: string;
-            tarip: string;
-            uangRp: string;
-            ket: string;
-        }>;
-    }>>((groups, item) => {
-        const vehiclePlate = item.vehiclePlate || '';
-        const date = fmtPrintDate(item.date);
-        const key = `${vehiclePlate}__${date}`;
-        const current = groups.find(group => `${group.vehiclePlate}__${group.date}` === key);
-        const entry = {
-            noSJ: item.noSJ || item.doNumber || '',
-            dari: item.dari || '',
-            tujuan: item.tujuan || '',
-            barang: item.barang || '',
-            collie: item.collie || '',
-            beratKg: item.beratKg ? fmtNumber(item.beratKg) : '',
-            tarip: item.tarip ? fmtNumber(item.tarip) : '',
-            uangRp: item.uangRp ? fmtNumber(item.uangRp) : '',
-            ket: item.ket || '',
-        };
+    const grossAmount = nota.totalAmount || 0;
+    const adjustmentAmount = nota.totalAdjustmentAmount || 0;
+    const netAmount = getReceivableNetAmount(nota);
+    const printDate = fmtLongPrintDate(new Date().toISOString());
+    const dueDateLabel = nota.dueDate ? fmtLongPrintDate(nota.dueDate) : '-';
+    const uniqueShipmentDates = [...new Set(items.map(item => item.date).filter(Boolean))].sort();
+    const uniqueShipmentRefs = [...new Set(items.map(item => item.doNumber).filter(Boolean))];
+    const uniqueSjNumbers = [...new Set(items.map(item => item.noSJ || item.doNumber).filter(Boolean))];
+    const uniqueOrigins = [...new Set(items.map(item => item.dari).filter(Boolean))];
+    const uniqueDestinations = [...new Set(items.map(item => item.tujuan).filter(Boolean))];
+    const uniqueNotes = [...new Set(items.map(item => item.ket).filter(Boolean))];
+    const shipmentDateLabel =
+        uniqueShipmentDates.length === 0
+            ? fmtLongPrintDate(nota.issueDate)
+            : uniqueShipmentDates.length === 1
+                ? fmtLongPrintDate(uniqueShipmentDates[0])
+                : `${fmtPrintDate(uniqueShipmentDates[0])} s/d ${fmtPrintDate(uniqueShipmentDates[uniqueShipmentDates.length - 1])}`;
+    const shipmentReferenceLabel = uniqueShipmentRefs.length > 0 ? uniqueShipmentRefs.join(', ') : '-';
+    const shipmentNumberLabel = uniqueSjNumbers.length > 0 ? uniqueSjNumbers.join(', ') : '-';
+    const shipmentAddressLabel = uniqueDestinations.length > 0 ? uniqueDestinations.join(' / ') : '-';
+    const shipmentOriginLabel = uniqueOrigins.length > 0 ? uniqueOrigins.join(' / ') : '-';
+    const shipmentNoteLabel = [nota.notes, ...uniqueNotes].filter(Boolean).join(' / ') || '-';
+    const bankInstructionLines = [
+        company?.bankName ? `${company.bankName}` : '',
+        company?.bankAccount ? `A/C No. ${company.bankAccount}` : '',
+        company?.bankHolder ? `A/N ${company.bankHolder}` : '',
+    ].filter(Boolean);
+    const footerNote = company?.invoiceSettings?.footerNote?.trim() || '';
+    const amountInWords = terbilang(Math.max(Math.round(netAmount), 0))
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/^./, character => character.toUpperCase());
+    const signatureName =
+        company?.bankHolder && company.bankHolder.trim().toLowerCase() !== (company?.name || '').trim().toLowerCase()
+            ? company.bankHolder.trim()
+            : 'Bagian Administrasi';
 
-        if (current) {
-            current.entries.push(entry);
-            return groups;
-        }
+    const itemRowsHtml = items.map((item, index) => {
+        const qtyText = item.collie && item.collie > 0 ? `${fmtNumber(item.collie)} koli` : '-';
+        const descriptionParts = [
+            item.barang || 'Jasa pengiriman',
+            item.noSJ ? `No. SJ ${item.noSJ}` : '',
+            item.doNumber ? `DO ${item.doNumber}` : '',
+            item.dari && item.tujuan ? `${item.dari} -> ${item.tujuan}` : item.tujuan || item.dari || '',
+            item.beratKg ? `Berat ${fmtNumber(item.beratKg)} kg` : '',
+            item.vehiclePlate ? `Truck ${item.vehiclePlate}` : '',
+        ].filter(Boolean);
 
-        groups.push({
-            no: groups.length + 1,
-            vehiclePlate,
-            date,
-            entries: [entry],
-        });
-        return groups;
-    }, []);
-    const minPrintableRows = Math.max(items.length, 13);
-    const fillerCount = Math.max(minPrintableRows - items.length, 0);
-    const groupedRowsHtml = groupedRows.map(group => {
-        const span = Math.max(group.entries.length, 1);
-        return group.entries.map((entry, entryIndex) => `
+        return `
             <tr>
-                ${entryIndex === 0 ? `
-                    <td class="c group-cell" rowspan="${span}">${group.no}</td>
-                    <td class="group-cell" rowspan="${span}">${escapePrintHtml(group.vehiclePlate)}</td>
-                    <td class="c group-cell" rowspan="${span}">${escapePrintHtml(group.date)}</td>
-                ` : ''}
-                <td>${escapePrintHtml(entry.noSJ)}</td>
-                <td>${escapePrintHtml(entry.dari)}</td>
-                <td>${escapePrintHtml(entry.tujuan)}</td>
-                <td>${escapePrintHtml(entry.barang)}</td>
-                <td class="r">${escapePrintHtml(entry.collie)}</td>
-                <td class="r">${escapePrintHtml(entry.beratKg)}</td>
-                <td class="r">${escapePrintHtml(entry.tarip)}</td>
-                <td class="r">${escapePrintHtml(entry.uangRp)}</td>
-                <td>${escapePrintHtml(entry.ket)}</td>
+                <td class="c">${index + 1}</td>
+                <td>
+                    <div class="invoice-item-title">${escapePrintHtml(item.barang || 'Jasa pengiriman')}</div>
+                    <div class="invoice-item-meta">${escapePrintHtml(descriptionParts.slice(1).join(' | '))}</div>
+                </td>
+                <td class="c">${escapePrintHtml(qtyText)}</td>
+                <td class="r">${escapePrintHtml(fmtCurrency(item.tarip || 0))}</td>
+                <td class="r">${escapePrintHtml(fmtCurrency(item.uangRp || 0))}</td>
             </tr>
-        `).join('');
+        `;
     }).join('');
-    const fillerRowsHtml = Array.from({ length: fillerCount }, () => `
-        <tr class="nota-filler-row">
-            <td class="c">&nbsp;</td>
-            <td>&nbsp;</td>
-            <td class="c">&nbsp;</td>
+
+    const fillerRowsHtml = Array.from({ length: Math.max(6 - items.length, 0) }, () => `
+        <tr class="invoice-filler-row">
             <td>&nbsp;</td>
             <td>&nbsp;</td>
             <td>&nbsp;</td>
             <td>&nbsp;</td>
-            <td class="r">&nbsp;</td>
-            <td class="r">&nbsp;</td>
-            <td class="r">&nbsp;</td>
-            <td class="r">&nbsp;</td>
             <td>&nbsp;</td>
         </tr>
     `).join('');
 
-    const bankTransferLine = company?.bankName && company?.bankAccount
-        ? `${company.bankName} A/C ${company.bankAccount}${company.bankHolder ? ` A/N ${company.bankHolder}` : ''}`
+    const logoHtml = company?.logoUrl
+        ? `<img src="${escapePrintAttribute(company.logoUrl)}" alt="${escapePrintAttribute(company?.name || 'Logo perusahaan')}" class="invoice-logo" />`
+        : `<div class="invoice-logo invoice-logo-placeholder">${escapePrintHtml(company?.name?.slice(0, 1) || 'L')}</div>`;
+    const signatureStampHtml = company?.signatureStampUrl
+        ? `<img src="${escapePrintAttribute(company.signatureStampUrl)}" alt="Tanda tangan" class="invoice-signature-image" />`
         : '';
-    const extraNote = [company?.invoiceSettings?.footerNote, nota.notes].filter(Boolean).join(' ');
-    const companyLines = [
-        company?.name,
-        company?.address,
-        [company?.phone ? `TELP. ${company.phone}` : '', company?.email ? `EMAIL : ${company.email}` : '']
-            .filter(Boolean)
-            .join('  '),
-    ].filter(Boolean);
 
     const bodyHtml = `
-        <div class="nota-sheet">
-            <div class="nota-header">
-                <div class="nota-company">
-                    ${companyLines.map((line, index) => `<div class="${index === 0 ? 'nota-company-name' : 'nota-company-line'}">${escapePrintHtml(line)}</div>`).join('')}
-                </div>
-                <div class="nota-heading">
-                    <div class="nota-heading-top">
-                        <div class="nota-title">PERINCIAN ONGKOS ANGKUT NO.${escapePrintHtml(displayNumber)}</div>
-                        <div class="nota-issued"><span class="b">TGL. :</span> ${escapePrintHtml(fmtLongPrintDate(nota.issueDate))}</div>
+        <div class="invoice-sheet">
+            <div class="invoice-brand-row">
+                <div class="invoice-brand-left">
+                    ${logoHtml}
+                    <div>
+                        <div class="invoice-brand-title">Invoice / Nota Ongkos Angkut</div>
+                        <div class="invoice-brand-subtitle">Dokumen penagihan pengiriman yang disesuaikan dengan data operasional</div>
                     </div>
-                    <div class="nota-recipient-label">KEPADA YANG TERHORMAT :</div>
-                    <div class="nota-recipient-value">${escapePrintHtml(nota.customerName)}</div>
+                </div>
+                <div class="invoice-company-box">
+                    <div class="invoice-company-name">${escapePrintHtml(company?.name || 'Gading Mas Surya')}</div>
+                    ${company?.address ? `<div>${escapePrintHtml(company.address)}</div>` : ''}
+                    ${company?.phone ? `<div>Tel. ${escapePrintHtml(company.phone)}</div>` : ''}
+                    ${company?.email ? `<div>${escapePrintHtml(company.email)}</div>` : ''}
+                    ${company?.npwp ? `<div>NPWP: ${escapePrintHtml(company.npwp)}</div>` : ''}
                 </div>
             </div>
 
-            <table class="nota-table">
-                <colgroup>
-                    <col style="width: 4.5%" />
-                    <col style="width: 11%" />
-                    <col style="width: 11%" />
-                    <col style="width: 16%" />
-                    <col style="width: 12%" />
-                    <col style="width: 12%" />
-                    <col style="width: 11%" />
-                    <col style="width: 5.5%" />
-                    <col style="width: 7.5%" />
-                    <col style="width: 6.5%" />
-                    <col style="width: 12%" />
-                    <col style="width: 8%" />
-                </colgroup>
+            <div class="invoice-top-grid">
+                <div class="invoice-panel">
+                    <div class="invoice-panel-title">Kepada Yth.</div>
+                    <div class="invoice-recipient-name">${escapePrintHtml(nota.customerName)}</div>
+                </div>
+                <div class="invoice-panel">
+                    <table class="invoice-info-table">
+                        <tbody>
+                            <tr>
+                                <td>Nomor Invoice</td>
+                                <td>${escapePrintHtml(displayNumber)}</td>
+                            </tr>
+                            <tr>
+                                <td>Nomor Sistem</td>
+                                <td>${escapePrintHtml(nota.notaNumber)}</td>
+                            </tr>
+                            <tr>
+                                <td>Tanggal Invoice</td>
+                                <td>${escapePrintHtml(fmtLongPrintDate(nota.issueDate))}</td>
+                            </tr>
+                            <tr>
+                                <td>Tanggal Cetak</td>
+                                <td>${escapePrintHtml(printDate)}</td>
+                            </tr>
+                            <tr>
+                                <td>Jatuh Tempo</td>
+                                <td>${escapePrintHtml(dueDateLabel)}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="invoice-section-title">Perincian Pengiriman</div>
+            <div class="invoice-shipment-grid">
+                <div class="invoice-panel">
+                    <table class="invoice-info-table">
+                        <tbody>
+                            <tr>
+                                <td>Nomor Referensi</td>
+                                <td>${escapePrintHtml(shipmentReferenceLabel)}</td>
+                            </tr>
+                            <tr>
+                                <td>Tanggal Pengiriman</td>
+                                <td>${escapePrintHtml(shipmentDateLabel)}</td>
+                            </tr>
+                            <tr>
+                                <td>Nomor Pengiriman</td>
+                                <td>${escapePrintHtml(shipmentNumberLabel)}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="invoice-panel">
+                    <table class="invoice-info-table">
+                        <tbody>
+                            <tr>
+                                <td>Asal Pengiriman</td>
+                                <td>${escapePrintHtml(shipmentOriginLabel)}</td>
+                            </tr>
+                            <tr>
+                                <td>Alamat Pengiriman</td>
+                                <td>${escapePrintHtml(shipmentAddressLabel)}</td>
+                            </tr>
+                            <tr>
+                                <td>Catatan Pengiriman</td>
+                                <td>${escapePrintHtml(shipmentNoteLabel)}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="invoice-section-title">Perincian Jasa dan Harga</div>
+            <table class="invoice-items-table">
                 <thead>
                     <tr>
-                        <th class="c">NO</th>
-                        <th>NO.TRUCK</th>
-                        <th>TANGGAL</th>
-                        <th>NO. SJ</th>
-                        <th>DARI</th>
-                        <th>TUJUAN</th>
-                        <th>BARANG</th>
-                        <th class="r">COLLIE</th>
-                        <th class="r">BERAT KG</th>
-                        <th class="r">TARIP</th>
-                        <th class="r">UANG RP.</th>
-                        <th>KET</th>
+                        <th class="c invoice-col-no">No</th>
+                        <th>Uraian Pengiriman</th>
+                        <th class="c invoice-col-qty">Qty</th>
+                        <th class="r invoice-col-price">Harga Satuan</th>
+                        <th class="r invoice-col-total">Jumlah</th>
                     </tr>
                 </thead>
                 <tbody>
-                    ${groupedRowsHtml}
+                    ${itemRowsHtml}
                     ${fillerRowsHtml}
-                    <tr class="nota-total-row">
-                        <td colspan="7" class="r b">Jumlah</td>
-                        <td class="r b">${escapePrintHtml(nota.totalCollie || 0)}</td>
-                        <td class="r b">${escapePrintHtml(fmtNumber(nota.totalWeightKg || 0))}</td>
-                        <td></td>
-                        <td class="r b">${escapePrintHtml(fmtNumber(nota.totalAmount || 0))}</td>
-                        <td></td>
-                    </tr>
                 </tbody>
             </table>
 
-            <div class="nota-note-row">
-                <div class="nota-note">
-                    <div><span class="b">NOTE :</span> ONGKOS ANGKUTAN HARAP DITRANSFER KE :</div>
-                    ${bankTransferLine ? `<div class="nota-bank-line">${escapePrintHtml(bankTransferLine)}</div>` : ''}
-                    ${extraNote ? `<div class="nota-extra-note">${escapePrintHtml(extraNote)}</div>` : ''}
+            <div class="invoice-total-box">
+                <table class="invoice-total-table">
+                    <tbody>
+                        <tr>
+                            <td>Jumlah Total Tagihan</td>
+                            <td class="r">${escapePrintHtml(fmtCurrency(grossAmount))}</td>
+                        </tr>
+                        ${adjustmentAmount > 0 ? `
+                            <tr>
+                                <td>Potongan / Klaim</td>
+                                <td class="r">(${escapePrintHtml(fmtCurrency(adjustmentAmount))})</td>
+                            </tr>
+                        ` : ''}
+                        <tr class="invoice-grand-total-row">
+                            <td>Grand Total Tagihan</td>
+                            <td class="r">${escapePrintHtml(fmtCurrency(netAmount))}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="invoice-bottom-grid">
+                <div class="invoice-panel">
+                    <div class="invoice-bottom-label">Terbilang</div>
+                    <div class="invoice-bottom-value"># ${escapePrintHtml(amountInWords)} Rupiah #</div>
+                </div>
+                <div class="invoice-panel">
+                    <div class="invoice-bottom-label">Jatuh Tempo</div>
+                    <div class="invoice-bottom-value">${escapePrintHtml(dueDateLabel)}</div>
+                </div>
+            </div>
+
+            <div class="invoice-footer-grid">
+                <div class="invoice-panel">
+                    <div class="invoice-section-title compact">Petunjuk Pembayaran</div>
+                    <div class="invoice-payment-line">Silakan melakukan pembayaran pada atau sebelum <strong>${escapePrintHtml(dueDateLabel)}</strong> dengan menyebutkan nomor invoice <strong>${escapePrintHtml(displayNumber)}</strong>.</div>
+                    ${bankInstructionLines.length > 0 ? `
+                        <div class="invoice-payment-subtitle">Pembayaran ditujukan ke:</div>
+                        <div class="invoice-payment-bank">${escapePrintHtml(bankInstructionLines.join(' | '))}</div>
+                    ` : ''}
+                    ${footerNote ? `<div class="invoice-payment-note">${escapePrintHtml(footerNote)}</div>` : ''}
+                </div>
+                <div class="invoice-signature-box">
+                    <div class="invoice-signature-title">Hormat Kami,</div>
+                    <div class="invoice-signature-company">${escapePrintHtml(company?.name || 'Gading Mas Surya')}</div>
+                    <div class="invoice-signature-area">
+                        ${signatureStampHtml}
+                    </div>
+                    <div class="invoice-signature-name">${escapePrintHtml(signatureName)}</div>
+                    <div class="invoice-signature-role">Operasional / Finance</div>
                 </div>
             </div>
         </div>
     `;
 
     const extraStyles = `
-        body { font-family: Arial, Helvetica, sans-serif; padding: 0.6rem 0.8rem; color: #111827; max-width: 1120px; }
-        .nota-sheet { font-size: 9px; line-height: 1.15; }
-        .nota-header { display: grid; grid-template-columns: 36% 64%; gap: 0.6rem; align-items: start; }
-        .nota-company-name { font-weight: 700; font-size: 11px; text-transform: uppercase; margin-bottom: 0.1rem; }
-        .nota-company-line { font-size: 9px; text-transform: uppercase; margin-bottom: 0.08rem; }
-        .nota-heading-top { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
-        .nota-title { font-weight: 700; font-size: 11px; text-transform: uppercase; }
-        .nota-issued { white-space: nowrap; font-size: 9px; }
-        .nota-recipient-label { font-weight: 700; margin-top: 0.25rem; margin-bottom: 0.08rem; }
-        .nota-recipient-value { font-weight: 700; text-transform: uppercase; margin-bottom: 0.4rem; }
-        .nota-table { margin-top: 0.25rem; table-layout: fixed; }
-        .nota-table th, .nota-table td { padding: 0.12rem 0.18rem; border: 1px solid #1f2937; font-size: 8.8px; vertical-align: top; min-height: 18px; }
-        .nota-table td { height: 18px; }
-        .nota-table th { background: #fff; color: #111827; text-align: center; font-weight: 700; }
-        .group-cell { vertical-align: top; font-weight: 700; }
-        .nota-filler-row td { color: transparent; }
-        .nota-note-row { margin-top: 0.35rem; }
-        .nota-note { font-size: 9px; }
-        .nota-bank-line { margin-top: 0.12rem; padding-left: 1.6rem; font-weight: 700; }
-        .nota-extra-note { margin-top: 0.12rem; }
-        .nota-total-row td { font-weight: 700; }
+        body { font-family: Arial, Helvetica, sans-serif; padding: 0.5rem 0.75rem; color: #111827; max-width: 900px; }
+        .invoice-sheet { font-size: 11px; line-height: 1.35; color: #111827; }
+        .invoice-brand-row { display: grid; grid-template-columns: 1.15fr 1fr; gap: 1rem; align-items: start; margin-bottom: 0.9rem; }
+        .invoice-brand-left { display: flex; gap: 0.85rem; align-items: center; }
+        .invoice-logo { width: 64px; height: 64px; object-fit: contain; }
+        .invoice-logo-placeholder { display: flex; align-items: center; justify-content: center; border: 1px solid #9ca3af; border-radius: 12px; font-size: 1.8rem; font-weight: 700; }
+        .invoice-brand-title { font-size: 1.35rem; font-weight: 700; letter-spacing: 0.01em; }
+        .invoice-brand-subtitle { color: #6b7280; font-size: 0.82rem; margin-top: 0.15rem; }
+        .invoice-company-box { border: 1px solid #374151; padding: 0.75rem 0.85rem; font-size: 0.84rem; }
+        .invoice-company-name { font-weight: 700; font-size: 0.98rem; margin-bottom: 0.25rem; text-transform: uppercase; }
+        .invoice-top-grid, .invoice-shipment-grid, .invoice-bottom-grid, .invoice-footer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.85rem; margin-bottom: 0.85rem; }
+        .invoice-panel { border: 1px solid #374151; padding: 0.75rem 0.85rem; min-height: 100%; }
+        .invoice-panel-title, .invoice-section-title { font-weight: 700; font-style: italic; margin-bottom: 0.45rem; }
+        .invoice-section-title { margin: 0.9rem 0 0.45rem; }
+        .invoice-section-title.compact { margin-top: 0; font-style: normal; }
+        .invoice-recipient-name { font-weight: 700; font-size: 1rem; margin-bottom: 0.35rem; }
+        .invoice-panel-note { color: #6b7280; font-size: 0.78rem; }
+        .invoice-info-table, .invoice-items-table, .invoice-total-table { width: 100%; border-collapse: collapse; }
+        .invoice-info-table td { border: 1px solid #374151; padding: 0.38rem 0.45rem; vertical-align: top; }
+        .invoice-info-table td:first-child { width: 42%; font-weight: 600; background: #f9fafb; }
+        .invoice-items-table { table-layout: fixed; }
+        .invoice-items-table th, .invoice-items-table td { border: 1px solid #374151; padding: 0.42rem 0.45rem; vertical-align: top; }
+        .invoice-items-table th { background: #f3f4f6; font-weight: 700; }
+        .invoice-col-no { width: 6%; }
+        .invoice-col-qty { width: 15%; }
+        .invoice-col-price { width: 19%; }
+        .invoice-col-total { width: 20%; }
+        .invoice-item-title { font-weight: 700; margin-bottom: 0.18rem; }
+        .invoice-item-meta { color: #6b7280; font-size: 0.78rem; }
+        .invoice-filler-row td { color: transparent; height: 28px; }
+        .invoice-total-box { display: flex; justify-content: flex-end; margin: 0.7rem 0 0.85rem; }
+        .invoice-total-table { width: 310px; }
+        .invoice-total-table td { border: 1px solid #374151; padding: 0.42rem 0.55rem; }
+        .invoice-total-table td:first-child { width: 68%; }
+        .invoice-grand-total-row td { font-weight: 700; font-size: 1rem; }
+        .invoice-bottom-label { font-weight: 700; margin-bottom: 0.25rem; }
+        .invoice-bottom-value { font-size: 0.94rem; }
+        .invoice-payment-line { margin-bottom: 0.45rem; }
+        .invoice-payment-subtitle { font-weight: 700; margin-bottom: 0.2rem; }
+        .invoice-payment-bank { font-weight: 700; }
+        .invoice-payment-note { margin-top: 0.35rem; color: #374151; }
+        .invoice-signature-box { border: 1px solid #374151; padding: 0.75rem 0.85rem; display: flex; flex-direction: column; justify-content: space-between; }
+        .invoice-signature-title { margin-bottom: 0.2rem; }
+        .invoice-signature-company { font-weight: 700; text-transform: uppercase; margin-bottom: 0.45rem; }
+        .invoice-signature-area { min-height: 105px; display: flex; align-items: center; justify-content: center; }
+        .invoice-signature-image { max-width: 160px; max-height: 100px; object-fit: contain; }
+        .invoice-signature-name { font-weight: 700; text-transform: uppercase; margin-top: 0.35rem; }
+        .invoice-signature-role { color: #4b5563; font-size: 0.82rem; text-transform: uppercase; }
         .c { text-align: center; }
         .r { text-align: right; }
-        .b { font-weight: 700; }
         @page { size: A4 portrait; margin: 8mm; }
         @media print { body { padding: 0; } }
     `;
 
     return {
-        title: 'Perincian Ongkos Angkut',
+        title: 'Invoice / Nota Ongkos Angkut',
         subtitle: displayNumber,
         bodyHtml,
         extraStyles,
