@@ -146,7 +146,7 @@ export const ORDER_STATUS_MAP: Record<string, { label: string; color: string }> 
 
 export const ITEM_STATUS_MAP: Record<string, { label: string; color: string }> = {
     PENDING: { label: 'Pending', color: 'gray' },
-    ASSIGNED: { label: 'Siap Dikirim', color: 'primary' },
+    ASSIGNED: { label: 'Dalam DO Aktif', color: 'primary' },
     ON_DELIVERY: { label: 'Dalam Pengiriman', color: 'info' },
     PARTIAL: { label: 'Sebagian Terkirim', color: 'warning' },
     DELIVERED: { label: 'Terkirim', color: 'success' },

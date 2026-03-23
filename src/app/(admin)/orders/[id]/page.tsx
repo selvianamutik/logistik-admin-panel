@@ -8,13 +8,28 @@ import { Truck, FileText, Edit, Eye } from 'lucide-react';
 import CurrencyInput from '@/components/CurrencyInput';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { formatDate, formatCurrency, formatNumber, getReceivableNetAmount, ORDER_STATUS_MAP, ITEM_STATUS_MAP, DO_STATUS_MAP, INVOICE_STATUS_MAP, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
-import { formatCargoSummary, formatVolumeDisplay } from '@/lib/measurement';
+import {
+    convertKgToWeightInputValue,
+    convertM3ToVolumeInputValue,
+    convertVolumeToM3,
+    convertWeightToKg,
+    formatCargoSummary,
+    formatVolumeDisplay,
+    VOLUME_INPUT_UNIT_OPTIONS,
+    WEIGHT_INPUT_UNIT_OPTIONS,
+    type VolumeInputUnit,
+    type WeightInputUnit,
+} from '@/lib/measurement';
 import { calculateWeightPortion, getOrderItemProgress, roundQuantity } from '@/lib/order-item-progress';
 import type { Order, OrderItem, DeliveryOrder, DeliveryOrderItem, Driver, FreightNota, FreightNotaItem, Vehicle } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
 
 type SelectedShipmentMap = Record<string, {
     qtyKoli: string;
+    weightInputValue: string;
+    weightInputUnit: WeightInputUnit;
+    volumeInputValue: string;
+    volumeInputUnit: VolumeInputUnit;
     holdRemaining: boolean;
     holdReason: string;
     holdLocation: string;
@@ -60,6 +75,24 @@ function getActualDoItemCargo(doItem: DeliveryOrderItem): CargoAggregate {
 
 function hasCargoAggregate(cargo: CargoAggregate) {
     return cargo.qtyKoli > 0 || cargo.weightKg > 0 || cargo.volumeM3 > 0;
+}
+
+function buildSelectedNonKoliCargo(selection?: SelectedShipmentMap[string]): CargoAggregate {
+    if (!selection) {
+        return createCargoAggregate();
+    }
+
+    return {
+        qtyKoli: 0,
+        weightKg:
+            selection.weightInputValue.trim() && selection.weightInputUnit
+                ? roundQuantity(convertWeightToKg(Number(selection.weightInputValue), selection.weightInputUnit))
+                : 0,
+        volumeM3:
+            selection.volumeInputValue.trim() && selection.volumeInputUnit
+                ? roundQuantity(convertVolumeToM3(Number(selection.volumeInputValue), selection.volumeInputUnit), 3)
+                : 0,
+    };
 }
 
 function getCargoBasisValue(cargo: CargoAggregate) {
@@ -109,6 +142,10 @@ export default function OrderDetailPage() {
     const [showHoldModal, setShowHoldModal] = useState(false);
     const [holdingItem, setHoldingItem] = useState<OrderItem | null>(null);
     const [holdQtyKoli, setHoldQtyKoli] = useState('');
+    const [holdWeightInputValue, setHoldWeightInputValue] = useState('');
+    const [holdWeightInputUnit, setHoldWeightInputUnit] = useState<WeightInputUnit>('KG');
+    const [holdVolumeInputValue, setHoldVolumeInputValue] = useState('');
+    const [holdVolumeInputUnit, setHoldVolumeInputUnit] = useState<VolumeInputUnit>('M3');
     const [holdReason, setHoldReason] = useState('');
     const [holdLocation, setHoldLocation] = useState('');
     const [savingHold, setSavingHold] = useState(false);
@@ -286,24 +323,37 @@ export default function OrderDetailPage() {
                 const progress = itemProgressById[item._id];
                 const selection = selectedShipments[item._id];
                 const qtyKoli = Number(selection.qtyKoli || 0);
+                const selectedNonKoliCargo = buildSelectedNonKoliCargo(selection);
                 return {
                     orderItemRef: item._id,
                     qtyKoli,
+                    weightInputValue: selection.weightInputValue.trim() ? Number(selection.weightInputValue) : 0,
+                    weightInputUnit: selection.weightInputUnit,
+                    volumeInputValue: selection.volumeInputValue.trim() ? Number(selection.volumeInputValue) : 0,
+                    volumeInputUnit: selection.volumeInputUnit,
                     usesQtyBasis: progress.totalQtyKoli > 0,
                     pendingWeight: progress.pendingWeight,
                     pendingVolume: progress.pendingVolume,
-                    holdRemaining: selection.holdRemaining && qtyKoli < progress.pendingQtyKoli,
+                    holdRemaining: selection.holdRemaining && (
+                        progress.totalQtyKoli > 0
+                            ? qtyKoli < progress.pendingQtyKoli
+                            : selectedNonKoliCargo.weightKg < progress.pendingWeight || selectedNonKoliCargo.volumeM3 < progress.pendingVolume
+                    ),
                     holdReason: selection.holdReason.trim(),
                     holdLocation: selection.holdLocation.trim(),
                 };
             })
             .filter(item => item.usesQtyBasis
                 ? Number.isFinite(item.qtyKoli) && item.qtyKoli > 0
-                : item.pendingWeight > 0 || item.pendingVolume > 0
+                : item.weightInputValue > 0 || item.volumeInputValue > 0
             )
             .map(item => ({
                 orderItemRef: item.orderItemRef,
                 qtyKoli: item.qtyKoli,
+                weightInputValue: item.weightInputValue,
+                weightInputUnit: item.weightInputUnit,
+                volumeInputValue: item.volumeInputValue,
+                volumeInputUnit: item.volumeInputUnit,
                 holdRemaining: item.holdRemaining,
                 holdReason: item.holdReason,
                 holdLocation: item.holdLocation,
@@ -370,8 +420,22 @@ export default function OrderDetailPage() {
 
     const openHoldModal = (item: OrderItem) => {
         const progress = itemProgressById[item._id];
+        const defaultWeightUnit = item.weightInputUnit || 'KG';
+        const defaultVolumeUnit = item.volumeInputUnit || 'M3';
         setHoldingItem(item);
         setHoldQtyKoli(String(progress.pendingQtyKoli || ''));
+        setHoldWeightInputValue(
+            progress.pendingWeight > 0
+                ? String(convertKgToWeightInputValue(progress.pendingWeight, defaultWeightUnit))
+                : ''
+        );
+        setHoldWeightInputUnit(defaultWeightUnit);
+        setHoldVolumeInputValue(
+            progress.pendingVolume > 0
+                ? String(convertM3ToVolumeInputValue(progress.pendingVolume, defaultVolumeUnit))
+                : ''
+        );
+        setHoldVolumeInputUnit(defaultVolumeUnit);
         setHoldReason('');
         setHoldLocation('');
         setShowHoldModal(true);
@@ -392,6 +456,10 @@ export default function OrderDetailPage() {
                     data: {
                         id: holdingItem._id,
                         holdQtyKoli: Number(holdQtyKoli),
+                        holdWeightInputValue: holdWeightInputValue.trim() ? Number(holdWeightInputValue) : 0,
+                        holdWeightInputUnit,
+                        holdVolumeInputValue: holdVolumeInputValue.trim() ? Number(holdVolumeInputValue) : 0,
+                        holdVolumeInputUnit,
                         holdReason,
                         holdLocation,
                     },
@@ -402,10 +470,14 @@ export default function OrderDetailPage() {
                 addToast('error', result.error || 'Gagal menyimpan hold qty');
                 return;
             }
-            addToast('success', 'Sisa qty item berhasil di-hold');
+            addToast('success', 'Sisa item berhasil di-hold');
             setShowHoldModal(false);
             setHoldingItem(null);
             setHoldQtyKoli('');
+            setHoldWeightInputValue('');
+            setHoldWeightInputUnit('KG');
+            setHoldVolumeInputValue('');
+            setHoldVolumeInputUnit('M3');
             setHoldReason('');
             setHoldLocation('');
             await loadOrderDetail();
@@ -716,12 +788,12 @@ export default function OrderDetailPage() {
                                     </td>
                                     <td>
                                         <div className="table-actions">
-                                            {usesQtyBasis && progressInfo.pendingQtyKoli > 0 && (
+                                            {((usesQtyBasis && progressInfo.pendingQtyKoli > 0) || (!usesQtyBasis && (progressInfo.pendingWeight > 0 || progressInfo.pendingVolume > 0))) && (
                                                 <button className="table-action-btn" onClick={() => openHoldModal(item)}>
                                                     {activeAssignment ? 'Tahan Sisa' : 'Set Hold'}
                                                 </button>
                                             )}
-                                            {usesQtyBasis && progressInfo.heldQtyKoli > 0 && (
+                                            {((usesQtyBasis && progressInfo.heldQtyKoli > 0) || (!usesQtyBasis && (progressInfo.heldWeight > 0 || progressInfo.heldVolume > 0))) && (
                                                 <button className="table-action-btn" onClick={() => void releaseHoldQuantity(item)}>Lepas Hold</button>
                                             )}
                                             {activeAssignment && (
@@ -901,7 +973,7 @@ export default function OrderDetailPage() {
                             ) : (
                                 <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
                                     <table>
-                                        <thead><tr><th style={{ width: 40 }}></th><th>Item</th><th>Progress</th><th>Kirim Koli</th><th>Tahan Sisa (Opsional)</th></tr></thead>
+                                        <thead><tr><th style={{ width: 40 }}></th><th>Item</th><th>Progress</th><th>Rencana Kirim</th><th>Tahan Sisa (Opsional)</th></tr></thead>
                                         <tbody>
                                             {availableItems.map(item => {
                                                 const selection = selectedShipments[item._id];
@@ -911,12 +983,21 @@ export default function OrderDetailPage() {
                                                 const shippedWeightPreview = selectedQty > 0
                                                     ? calculateWeightPortion(progressInfo.totalWeight, progressInfo.totalQtyKoli, selectedQty)
                                                     : 0;
-                                                const plannedNonKoliCargo = {
-                                                    qtyKoli: 0,
-                                                    weightKg: progressInfo.pendingWeight,
-                                                    volumeM3: progressInfo.pendingVolume,
-                                                };
+                                                const selectedNonKoliCargo = buildSelectedNonKoliCargo(selection);
+                                                const plannedNonKoliCargo = selection
+                                                    ? selectedNonKoliCargo
+                                                    : {
+                                                        qtyKoli: 0,
+                                                        weightKg: progressInfo.pendingWeight,
+                                                        volumeM3: progressInfo.pendingVolume,
+                                                    };
                                                 const remainingAfterShipment = roundQuantity(Math.max(progressInfo.pendingQtyKoli - selectedQty, 0));
+                                                const remainingNonKoliCargo = {
+                                                    qtyKoli: 0,
+                                                    weightKg: roundQuantity(Math.max(progressInfo.pendingWeight - selectedNonKoliCargo.weightKg, 0)),
+                                                    volumeM3: roundQuantity(Math.max(progressInfo.pendingVolume - selectedNonKoliCargo.volumeM3, 0), 3),
+                                                };
+                                                const hasNonKoliRemaining = hasCargoAggregate(remainingNonKoliCargo);
                                                 return (
                                                     <tr key={item._id}>
                                                         <td>
@@ -930,6 +1011,14 @@ export default function OrderDetailPage() {
                                                                             ...prev,
                                                                             [item._id]: {
                                                                                 qtyKoli: usesQtyBasis ? String(progressInfo.pendingQtyKoli) : '0',
+                                                                                weightInputValue: !usesQtyBasis && progressInfo.pendingWeight > 0
+                                                                                    ? String(convertKgToWeightInputValue(progressInfo.pendingWeight, item.weightInputUnit || 'KG'))
+                                                                                    : '',
+                                                                                weightInputUnit: item.weightInputUnit || 'KG',
+                                                                                volumeInputValue: !usesQtyBasis && progressInfo.pendingVolume > 0
+                                                                                    ? String(convertM3ToVolumeInputValue(progressInfo.pendingVolume, item.volumeInputUnit || 'M3'))
+                                                                                    : '',
+                                                                                volumeInputUnit: item.volumeInputUnit || 'M3',
                                                                                 holdRemaining: false,
                                                                                 holdReason: '',
                                                                                 holdLocation: '',
@@ -1005,6 +1094,11 @@ export default function OrderDetailPage() {
                                                                                 ...prev,
                                                                                 [item._id]: {
                                                                                     ...(prev[item._id] || {
+                                                                                        qtyKoli: '0',
+                                                                                        weightInputValue: '',
+                                                                                        weightInputUnit: item.weightInputUnit || 'KG',
+                                                                                        volumeInputValue: '',
+                                                                                        volumeInputUnit: item.volumeInputUnit || 'M3',
                                                                                         holdRemaining: false,
                                                                                         holdReason: '',
                                                                                         holdLocation: '',
@@ -1030,14 +1124,96 @@ export default function OrderDetailPage() {
                                                                 </>
                                                             ) : (
                                                                 <div style={{ display: 'grid', gap: '0.35rem' }}>
-                                                                    <div className="detail-value" style={{ color: selection ? 'var(--color-primary)' : 'var(--text-color)' }}>
-                                                                        {selection
-                                                                            ? `Seluruh sisa akan ikut trip ini: ${formatCargoSummary(plannedNonKoliCargo)}`
-                                                                            : 'Centang item untuk mengirim seluruh sisa berat/volume'}
-                                                                    </div>
-                                                                    <div className="text-muted text-sm">
-                                                                        Item ini tidak memakai basis koli, jadi sistem mengirim penuh sisa berat/volume yang masih pending.
-                                                                    </div>
+                                                                    {selection ? (
+                                                                        <>
+                                                                            {progressInfo.pendingWeight > 0 && (
+                                                                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                                                                    <label className="form-label">Berat Kirim</label>
+                                                                                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 92px', gap: '0.5rem' }}>
+                                                                                        <FormattedNumberInput
+                                                                                            min={0}
+                                                                                            maxFractionDigits={(selection.weightInputUnit || 'KG') === 'TON' ? 3 : 2}
+                                                                                            value={Number(selection.weightInputValue || 0)}
+                                                                                            disabled={!selection || creatingDO}
+                                                                                            onValueChange={value => {
+                                                                                                setSelectedShipments(prev => ({
+                                                                                                    ...prev,
+                                                                                                    [item._id]: {
+                                                                                                        ...prev[item._id],
+                                                                                                        weightInputValue: String(value),
+                                                                                                    },
+                                                                                                }));
+                                                                                            }}
+                                                                                        />
+                                                                                        <select
+                                                                                            className="form-select"
+                                                                                            value={selection.weightInputUnit || 'KG'}
+                                                                                            disabled={creatingDO}
+                                                                                            onChange={e => {
+                                                                                                setSelectedShipments(prev => ({
+                                                                                                    ...prev,
+                                                                                                    [item._id]: {
+                                                                                                        ...prev[item._id],
+                                                                                                        weightInputUnit: e.target.value as WeightInputUnit,
+                                                                                                    },
+                                                                                                }));
+                                                                                            }}
+                                                                                        >
+                                                                                            {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                                                                        </select>
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+                                                                            {progressInfo.pendingVolume > 0 && (
+                                                                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                                                                    <label className="form-label">Volume Kirim</label>
+                                                                                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 92px', gap: '0.5rem' }}>
+                                                                                        <FormattedNumberInput
+                                                                                            min={0}
+                                                                                            maxFractionDigits={(selection.volumeInputUnit || 'M3') === 'LITER' ? 0 : 3}
+                                                                                            value={Number(selection.volumeInputValue || 0)}
+                                                                                            disabled={!selection || creatingDO}
+                                                                                            onValueChange={value => {
+                                                                                                setSelectedShipments(prev => ({
+                                                                                                    ...prev,
+                                                                                                    [item._id]: {
+                                                                                                        ...prev[item._id],
+                                                                                                        volumeInputValue: String(value),
+                                                                                                    },
+                                                                                                }));
+                                                                                            }}
+                                                                                        />
+                                                                                        <select
+                                                                                            className="form-select"
+                                                                                            value={selection.volumeInputUnit || 'M3'}
+                                                                                            disabled={creatingDO}
+                                                                                            onChange={e => {
+                                                                                                setSelectedShipments(prev => ({
+                                                                                                    ...prev,
+                                                                                                    [item._id]: {
+                                                                                                        ...prev[item._id],
+                                                                                                        volumeInputUnit: e.target.value as VolumeInputUnit,
+                                                                                                    },
+                                                                                                }));
+                                                                                            }}
+                                                                                        >
+                                                                                            {VOLUME_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                                                                        </select>
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+                                                                            <div className="detail-value" style={{ color: 'var(--color-primary)' }}>
+                                                                                Yang ikut trip ini: {formatCargoSummary(plannedNonKoliCargo)}
+                                                                            </div>
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            <div className="detail-value">Centang item untuk isi berat/volume yang ikut trip ini</div>
+                                                                            <div className="text-muted text-sm">
+                                                                                Item ini tidak memakai basis koli, jadi parsialnya dihitung dari berat dan/atau volume.
+                                                                            </div>
+                                                                        </>
+                                                                    )}
                                                                 </div>
                                                             )}
                                                         </td>
@@ -1104,7 +1280,66 @@ export default function OrderDetailPage() {
                                                                             )}
                                                                         </>
                                                                     ) : (
-                                                                        <span className="text-muted text-sm">Hold sisa item non-koli belum didukung di flow ini.</span>
+                                                                        <>
+                                                                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.82rem' }}>
+                                                                                <input
+                                                                                    type="checkbox"
+                                                                                    checked={selection.holdRemaining}
+                                                                                    disabled={creatingDO || !hasNonKoliRemaining}
+                                                                                    onChange={e => {
+                                                                                        setSelectedShipments(prev => ({
+                                                                                            ...prev,
+                                                                                            [item._id]: {
+                                                                                                ...prev[item._id],
+                                                                                                holdRemaining: e.target.checked,
+                                                                                            },
+                                                                                        }));
+                                                                                    }}
+                                                                                />
+                                                                                {hasNonKoliRemaining
+                                                                                    ? `Tahan sisa ${formatCargoSummary(remainingNonKoliCargo)}`
+                                                                                    : 'Semua sisa ikut trip ini'}
+                                                                            </label>
+                                                                            {selection.holdRemaining && hasNonKoliRemaining && (
+                                                                                <>
+                                                                                    <input
+                                                                                        className="form-input"
+                                                                                        placeholder="Alasan hold, mis. gudang tujuan penuh"
+                                                                                        value={selection.holdReason}
+                                                                                        disabled={creatingDO}
+                                                                                        onChange={e => {
+                                                                                            const value = e.target.value;
+                                                                                            setSelectedShipments(prev => ({
+                                                                                                ...prev,
+                                                                                                [item._id]: {
+                                                                                                    ...prev[item._id],
+                                                                                                    holdReason: value,
+                                                                                                },
+                                                                                            }));
+                                                                                        }}
+                                                                                    />
+                                                                                    <input
+                                                                                        className="form-input"
+                                                                                        placeholder="Lokasi hold, mis. gudang transit"
+                                                                                        value={selection.holdLocation}
+                                                                                        disabled={creatingDO}
+                                                                                        onChange={e => {
+                                                                                            const value = e.target.value;
+                                                                                            setSelectedShipments(prev => ({
+                                                                                                ...prev,
+                                                                                                [item._id]: {
+                                                                                                    ...prev[item._id],
+                                                                                                    holdLocation: value,
+                                                                                                },
+                                                                                            }));
+                                                                                        }}
+                                                                                    />
+                                                                                </>
+                                                                            )}
+                                                                            {!selection.holdRemaining && hasNonKoliRemaining && (
+                                                                                <span className="text-muted text-sm">Biarkan kosong kalau sisa berat/volume lanjut di trip berikutnya tanpa hold.</span>
+                                                                            )}
+                                                                        </>
                                                                     )}
                                                                 </div>
                                                             ) : (
@@ -1133,24 +1368,68 @@ export default function OrderDetailPage() {
                 <div className="modal-overlay" onClick={() => { if (!savingHold) { setShowHoldModal(false); setHoldingItem(null); } }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
-                            <h3 className="modal-title">Tahan Qty Item</h3>
+                            <h3 className="modal-title">Tahan Sisa Item</h3>
                             <button className="modal-close" onClick={() => { setShowHoldModal(false); setHoldingItem(null); }} disabled={savingHold}>&times;</button>
                         </div>
                         <div className="modal-body">
+                            {(() => {
+                                const progress = itemProgressById[holdingItem._id];
+                                const usesQtyBasis = progress.totalQtyKoli > 0;
+                                return (
+                                    <>
                             <div className="form-group">
                                 <label className="form-label">Item</label>
                                 <div className="detail-value">{holdingItem.description}</div>
                             </div>
-                            <div className="form-group">
-                                <label className="form-label">Qty hold (koli)</label>
-                                <FormattedNumberInput
-                                    min={0}
-                                    maxFractionDigits={2}
-                                    value={Number(holdQtyKoli || 0)}
-                                    onValueChange={value => setHoldQtyKoli(String(value))}
-                                    disabled={savingHold}
-                                />
-                            </div>
+                            {usesQtyBasis ? (
+                                <div className="form-group">
+                                    <label className="form-label">Qty hold (koli)</label>
+                                    <FormattedNumberInput
+                                        min={0}
+                                        maxFractionDigits={2}
+                                        value={Number(holdQtyKoli || 0)}
+                                        onValueChange={value => setHoldQtyKoli(String(value))}
+                                        disabled={savingHold}
+                                    />
+                                </div>
+                            ) : (
+                                <>
+                                    {progress.pendingWeight > 0 && (
+                                        <div className="form-group">
+                                            <label className="form-label">Berat Hold</label>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 92px', gap: '0.5rem' }}>
+                                                <FormattedNumberInput
+                                                    min={0}
+                                                    maxFractionDigits={holdWeightInputUnit === 'TON' ? 3 : 2}
+                                                    value={Number(holdWeightInputValue || 0)}
+                                                    onValueChange={value => setHoldWeightInputValue(String(value))}
+                                                    disabled={savingHold}
+                                                />
+                                                <select className="form-select" value={holdWeightInputUnit} onChange={e => setHoldWeightInputUnit(e.target.value as WeightInputUnit)} disabled={savingHold}>
+                                                    {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                                </select>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {progress.pendingVolume > 0 && (
+                                        <div className="form-group">
+                                            <label className="form-label">Volume Hold</label>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 92px', gap: '0.5rem' }}>
+                                                <FormattedNumberInput
+                                                    min={0}
+                                                    maxFractionDigits={holdVolumeInputUnit === 'LITER' ? 0 : 3}
+                                                    value={Number(holdVolumeInputValue || 0)}
+                                                    onValueChange={value => setHoldVolumeInputValue(String(value))}
+                                                    disabled={savingHold}
+                                                />
+                                                <select className="form-select" value={holdVolumeInputUnit} onChange={e => setHoldVolumeInputUnit(e.target.value as VolumeInputUnit)} disabled={savingHold}>
+                                                    {VOLUME_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                                </select>
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
+                            )}
                             <div className="form-group">
                                 <label className="form-label">Alasan hold</label>
                                 <input className="form-input" value={holdReason} onChange={e => setHoldReason(e.target.value)} disabled={savingHold} placeholder="Mis. gudang tujuan penuh" />
@@ -1159,6 +1438,9 @@ export default function OrderDetailPage() {
                                 <label className="form-label">Lokasi hold</label>
                                 <input className="form-input" value={holdLocation} onChange={e => setHoldLocation(e.target.value)} disabled={savingHold} placeholder="Mis. gudang transit Surabaya" />
                             </div>
+                                    </>
+                                );
+                            })()}
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => { setShowHoldModal(false); setHoldingItem(null); }} disabled={savingHold}>Batal</button>

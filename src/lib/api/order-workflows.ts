@@ -91,6 +91,10 @@ type ResolvedOrderPartyData = {
 type DeliveryOrderItemSelection = {
     orderItemRef: string;
     qtyKoli: number;
+    weightInputValue?: number;
+    weightInputUnit?: WeightInputUnit;
+    volumeInputValue?: number;
+    volumeInputUnit?: VolumeInputUnit;
     holdRemaining: boolean;
     holdReason?: string;
     holdLocation?: string;
@@ -255,13 +259,28 @@ function normalizeDeliveryOrderSelections(data: Record<string, unknown>, orderIt
     if (rawSelections.length > 0) {
         const selections = rawSelections
             .filter(isPlainObject)
-            .map<DeliveryOrderItemSelection>(item => ({
-                orderItemRef: normalizeText(item.orderItemRef),
-                qtyKoli: normalizeNumber(item.qtyKoli),
-                holdRemaining: Boolean(item.holdRemaining),
-                holdReason: normalizeOptionalText(item.holdReason),
-                holdLocation: normalizeOptionalText(item.holdLocation),
-            }));
+            .map<DeliveryOrderItemSelection>(item => {
+                const weightInputUnit: WeightInputUnit = item.weightInputUnit === 'TON' ? 'TON' : 'KG';
+                const volumeInputUnit: VolumeInputUnit =
+                    item.volumeInputUnit === 'LITER'
+                        ? 'LITER'
+                        : item.volumeInputUnit === 'KL'
+                            ? 'KL'
+                            : 'M3';
+                const weightInputValue = roundQuantity(normalizeNumber(item.weightInputValue), weightInputUnit === 'TON' ? 3 : 2);
+                const volumeInputValue = roundQuantity(normalizeNumber(item.volumeInputValue), volumeInputUnit === 'LITER' ? 0 : 3);
+                return {
+                    orderItemRef: normalizeText(item.orderItemRef),
+                    qtyKoli: normalizeNumber(item.qtyKoli),
+                    weightInputValue: weightInputValue > 0 ? weightInputValue : undefined,
+                    weightInputUnit: weightInputValue > 0 ? weightInputUnit : undefined,
+                    volumeInputValue: volumeInputValue > 0 ? volumeInputValue : undefined,
+                    volumeInputUnit: volumeInputValue > 0 ? volumeInputUnit : undefined,
+                    holdRemaining: Boolean(item.holdRemaining),
+                    holdReason: normalizeOptionalText(item.holdReason),
+                    holdLocation: normalizeOptionalText(item.holdLocation),
+                };
+            });
         return selections.filter(item => item.orderItemRef);
     }
 
@@ -272,6 +291,40 @@ function normalizeDeliveryOrderSelections(data: Record<string, unknown>, orderIt
         .map<DeliveryOrderItemSelection>(item => ({
             orderItemRef: item._id,
             qtyKoli: normalizeNumber(item.qtyKoli),
+            weightInputValue:
+                normalizeNumber(item.weightInputValue) > 0
+                    ? roundQuantity(normalizeNumber(item.weightInputValue), item.weightInputUnit === 'TON' ? 3 : 2)
+                    : normalizeNumber(item.weight) > 0
+                        ? roundQuantity(convertKgToWeightInputValue(normalizeNumber(item.weight), item.weightInputUnit === 'TON' ? 'TON' : 'KG'), item.weightInputUnit === 'TON' ? 3 : 2)
+                        : undefined,
+            weightInputUnit:
+                normalizeNumber(item.weightInputValue) > 0 || normalizeNumber(item.weight) > 0
+                    ? item.weightInputUnit === 'TON' ? 'TON' : 'KG'
+                    : undefined,
+            volumeInputValue:
+                normalizeNumber(item.volumeInputValue) > 0
+                    ? roundQuantity(normalizeNumber(item.volumeInputValue), item.volumeInputUnit === 'LITER' ? 0 : 3)
+                    : normalizeNumber(item.volume) > 0
+                        ? roundQuantity(
+                            convertM3ToVolumeInputValue(
+                                normalizeNumber(item.volume),
+                                item.volumeInputUnit === 'LITER'
+                                    ? 'LITER'
+                                    : item.volumeInputUnit === 'KL'
+                                        ? 'KL'
+                                        : 'M3'
+                            ),
+                            item.volumeInputUnit === 'LITER' ? 0 : 3
+                        )
+                        : undefined,
+            volumeInputUnit:
+                normalizeNumber(item.volumeInputValue) > 0 || normalizeNumber(item.volume) > 0
+                    ? item.volumeInputUnit === 'LITER'
+                        ? 'LITER'
+                        : item.volumeInputUnit === 'KL'
+                            ? 'KL'
+                            : 'M3'
+                    : undefined,
             holdRemaining: false,
         }));
 }
@@ -496,6 +549,22 @@ function normalizeDeliveryActualDropPoints(
 }
 
 function summarizeSelection(selection: DeliveryOrderItemSelection, description?: string) {
+    if (selection.qtyKoli <= 0) {
+        const segments: string[] = [];
+        if ((selection.weightInputValue || 0) > 0) {
+            segments.push(`${roundQuantity(normalizeNumber(selection.weightInputValue), selection.weightInputUnit === 'TON' ? 3 : 2)} ${selection.weightInputUnit === 'TON' ? 'ton' : 'kg'}`);
+        }
+        if ((selection.volumeInputValue || 0) > 0) {
+            const volumeUnitLabel =
+                selection.volumeInputUnit === 'LITER'
+                    ? 'liter'
+                    : selection.volumeInputUnit === 'KL'
+                        ? 'KL'
+                        : 'm3';
+            segments.push(`${roundQuantity(normalizeNumber(selection.volumeInputValue), selection.volumeInputUnit === 'LITER' ? 0 : 3)} ${volumeUnitLabel}`);
+        }
+        return `${description || selection.orderItemRef}: ${segments.join(' / ') || 'muatan parsial'}${selection.holdRemaining ? ' + sisa hold' : ''}`;
+    }
     return `${description || selection.orderItemRef}: ${roundQuantity(selection.qtyKoli)} koli${selection.holdRemaining ? ' + sisa hold' : ''}`;
 }
 
@@ -728,11 +797,20 @@ export async function handleOrderItemHoldSet(
 ) {
     const id = typeof data.id === 'string' ? data.id : '';
     const holdQtyKoli = normalizeNumber(data.holdQtyKoli);
+    const holdWeightInputUnit: WeightInputUnit = data.holdWeightInputUnit === 'TON' ? 'TON' : 'KG';
+    const holdWeightInputValue = roundQuantity(normalizeNumber(data.holdWeightInputValue), holdWeightInputUnit === 'TON' ? 3 : 2);
+    const holdVolumeInputUnit: VolumeInputUnit =
+        data.holdVolumeInputUnit === 'LITER'
+            ? 'LITER'
+            : data.holdVolumeInputUnit === 'KL'
+                ? 'KL'
+                : 'M3';
+    const holdVolumeInputValue = roundQuantity(normalizeNumber(data.holdVolumeInputValue), holdVolumeInputUnit === 'LITER' ? 0 : 3);
     const holdReason = normalizeOptionalText(data.holdReason);
     const holdLocation = normalizeOptionalText(data.holdLocation);
 
-    if (!id || !Number.isFinite(holdQtyKoli) || holdQtyKoli <= 0) {
-        return NextResponse.json({ error: 'Jumlah koli hold tidak valid' }, { status: 400 });
+    if (!id) {
+        return NextResponse.json({ error: 'Item order tidak valid' }, { status: 400 });
     }
     if (!holdReason) {
         return NextResponse.json({ error: 'Alasan hold wajib diisi' }, { status: 400 });
@@ -745,10 +823,58 @@ export async function handleOrderItemHoldSet(
 
     const progress = getOrderItemProgress(orderItem);
     if (progress.totalQtyKoli <= 0) {
-        return NextResponse.json(
-            { error: 'Hold sisa untuk item non-koli belum didukung. Kirim penuh berdasarkan berat/volume atau revisi order dulu.' },
-            { status: 409 }
+        const holdWeight = holdWeightInputValue > 0 ? roundQuantity(convertWeightToKg(holdWeightInputValue, holdWeightInputUnit)) : 0;
+        const holdVolume = holdVolumeInputValue > 0 ? roundQuantity(convertVolumeToM3(holdVolumeInputValue, holdVolumeInputUnit), 3) : 0;
+        if (progress.pendingWeight > 0 && holdWeight <= 0) {
+            return NextResponse.json({ error: 'Berat hold wajib diisi untuk item non-koli' }, { status: 400 });
+        }
+        if (progress.pendingVolume > 0 && holdVolume <= 0) {
+            return NextResponse.json({ error: 'Volume hold wajib diisi untuk item non-koli' }, { status: 400 });
+        }
+        if (holdWeight <= 0 && holdVolume <= 0) {
+            return NextResponse.json({ error: 'Muatan hold tidak valid' }, { status: 400 });
+        }
+        if (holdWeight - progress.pendingWeight > 0.00001) {
+            return NextResponse.json({ error: 'Berat hold melebihi sisa berat yang siap dikirim' }, { status: 409 });
+        }
+        if (holdVolume - progress.pendingVolume > 0.00001) {
+            return NextResponse.json({ error: 'Volume hold melebihi sisa volume yang siap dikirim' }, { status: 409 });
+        }
+
+        const updates = {
+            heldWeight: roundQuantity(progress.heldWeight + holdWeight),
+            heldVolume: roundQuantity(progress.heldVolume + holdVolume, 3),
+            holdReason,
+            holdLocation: holdLocation || undefined,
+            status: deriveOrderItemStatusFromProgress({
+                ...progress,
+                heldWeight: roundQuantity(progress.heldWeight + holdWeight),
+                heldVolume: roundQuantity(progress.heldVolume + holdVolume, 3),
+                pendingWeight: roundQuantity(Math.max(progress.pendingWeight - holdWeight, 0)),
+                pendingVolume: roundQuantity(Math.max(progress.pendingVolume - holdVolume, 0), 3),
+            }),
+        };
+
+        const updated = await sanityUpdate(id, updates);
+        const orderRef = extractRefId(orderItem.orderRef);
+        if (orderRef) {
+            await syncOrderStatusFromItems(orderRef, session, addAuditLog);
+        }
+        await addAuditLog(
+            session,
+            'UPDATE',
+            'order-items',
+            id,
+            `Item order hold ${[
+                holdWeight > 0 ? `${roundQuantity(holdWeight)} kg` : null,
+                holdVolume > 0 ? `${roundQuantity(holdVolume, 3)} m3` : null,
+            ].filter(Boolean).join(' / ')}${holdLocation ? ` di ${holdLocation}` : ''}: ${holdReason}`
         );
+
+        return NextResponse.json({ data: updated });
+    }
+    if (!Number.isFinite(holdQtyKoli) || holdQtyKoli <= 0) {
+        return NextResponse.json({ error: 'Jumlah koli hold tidak valid' }, { status: 400 });
     }
     if (progress.pendingQtyKoli <= 0) {
         return NextResponse.json({ error: 'Tidak ada sisa qty yang bisa ditahan' }, { status: 409 });
@@ -805,10 +931,37 @@ export async function handleOrderItemHoldRelease(
 
     const progress = getOrderItemProgress(orderItem);
     if (progress.totalQtyKoli <= 0) {
-        return NextResponse.json(
-            { error: 'Item non-koli tidak punya hold qty yang bisa dilepas dari workflow ini' },
-            { status: 409 }
+        if (progress.heldWeight <= 0 && progress.heldVolume <= 0) {
+            return NextResponse.json({ error: 'Item ini tidak punya hold aktif' }, { status: 409 });
+        }
+        const updates = {
+            heldWeight: 0,
+            heldVolume: 0,
+            holdReason: undefined,
+            holdLocation: undefined,
+            status: deriveOrderItemStatusFromProgress({
+                ...progress,
+                heldWeight: 0,
+                heldVolume: 0,
+                pendingWeight: roundQuantity(progress.pendingWeight + progress.heldWeight),
+                pendingVolume: roundQuantity(progress.pendingVolume + progress.heldVolume, 3),
+            }),
+        };
+        const updated = await sanityUpdate(id, updates);
+
+        const orderRef = extractRefId(orderItem.orderRef);
+        if (orderRef) {
+            await syncOrderStatusFromItems(orderRef, session, addAuditLog);
+        }
+        await addAuditLog(
+            session,
+            'UPDATE',
+            'order-items',
+            id,
+            `Hold item order dilepas${orderItem.holdLocation ? ` dari ${orderItem.holdLocation}` : ''}`
         );
+
+        return NextResponse.json({ data: updated });
     }
     if (progress.heldQtyKoli <= 0) {
         return NextResponse.json({ error: 'Item ini tidak punya qty hold aktif' }, { status: 409 });
@@ -2031,12 +2184,6 @@ export async function handleDeliveryOrderCreate(
             continue;
         }
 
-        if (selection.holdRemaining) {
-            return NextResponse.json(
-                { error: `Item ${item.description || 'order'} tidak memakai basis koli. Hold sisa untuk item non-koli belum didukung di flow ini.` },
-                { status: 409 }
-            );
-        }
         if (progress.pendingWeight <= 0 && progress.pendingVolume <= 0) {
             return NextResponse.json({ error: `Tidak ada sisa berat/volume ${item.description || 'item order'} yang siap dikirim` }, { status: 409 });
         }
@@ -2046,15 +2193,41 @@ export async function handleDeliveryOrderCreate(
                 { status: 400 }
             );
         }
+        const selectedWeightInputValue = normalizeNumber(selection.weightInputValue ?? 0);
+        const selectedVolumeInputValue = normalizeNumber(selection.volumeInputValue ?? 0);
+        const selectedWeightKg = selectedWeightInputValue > 0 && selection.weightInputUnit
+            ? roundQuantity(convertWeightToKg(selectedWeightInputValue, selection.weightInputUnit))
+            : 0;
+        const selectedVolumeM3 = selectedVolumeInputValue > 0 && selection.volumeInputUnit
+            ? roundQuantity(convertVolumeToM3(selectedVolumeInputValue, selection.volumeInputUnit), 3)
+            : 0;
+        if (progress.pendingWeight > 0 && selectedWeightKg <= 0) {
+            return NextResponse.json({ error: `Berat kirim untuk ${item.description || 'item order'} wajib diisi` }, { status: 400 });
+        }
+        if (progress.pendingVolume > 0 && selectedVolumeM3 <= 0) {
+            return NextResponse.json({ error: `Volume kirim untuk ${item.description || 'item order'} wajib diisi` }, { status: 400 });
+        }
+        if (selectedWeightKg <= 0 && selectedVolumeM3 <= 0) {
+            return NextResponse.json({ error: `Muatan kirim untuk ${item.description || 'item order'} tidak valid` }, { status: 400 });
+        }
+        if (selectedWeightKg - progress.pendingWeight > 0.00001) {
+            return NextResponse.json({ error: `Berat kirim untuk ${item.description || 'item order'} melebihi sisa berat yang siap dikirim` }, { status: 409 });
+        }
+        if (selectedVolumeM3 - progress.pendingVolume > 0.00001) {
+            return NextResponse.json({ error: `Volume kirim untuk ${item.description || 'item order'} melebihi sisa volume yang siap dikirim` }, { status: 409 });
+        }
+        const remainingWeightAfterShipment = roundQuantity(Math.max(progress.pendingWeight - selectedWeightKg, 0));
+        const remainingVolumeAfterShipment = roundQuantity(Math.max(progress.pendingVolume - selectedVolumeM3, 0), 3);
+        if (selection.holdRemaining) {
+            if (remainingWeightAfterShipment <= 0 && remainingVolumeAfterShipment <= 0) {
+                return NextResponse.json({ error: `Tidak ada sisa muatan ${item.description || 'item order'} yang bisa ditahan` }, { status: 409 });
+            }
+            if (!selection.holdReason) {
+                return NextResponse.json({ error: `Alasan hold wajib diisi untuk sisa muatan ${item.description || 'item order'}` }, { status: 400 });
+            }
+        }
 
-        selectionSummaries.push(
-            `${item.description || selection.orderItemRef}: kirim penuh sisa ${[
-                progress.pendingWeight > 0 ? `${roundQuantity(progress.pendingWeight)} kg` : null,
-                progress.pendingVolume > 0 ? `${roundQuantity(progress.pendingVolume, 3)} m3` : null,
-            ]
-                .filter(Boolean)
-                .join(' / ')}`
-        );
+        selectionSummaries.push(summarizeSelection(selection, item.description));
     }
 
     const doId = crypto.randomUUID();
@@ -2110,26 +2283,44 @@ export async function handleDeliveryOrderCreate(
         const progress = getOrderItemProgress(item);
         const usesQtyBasis = progress.totalQtyKoli > 0;
         const shippedQtyKoli = usesQtyBasis ? roundQuantity(selection.qtyKoli) : 0;
+        const selectedWeightInputValue = normalizeNumber(selection.weightInputValue ?? 0);
+        const selectedVolumeInputValue = normalizeNumber(selection.volumeInputValue ?? 0);
         const shippedWeight = usesQtyBasis
             ? calculateWeightPortion(progress.totalWeight, progress.totalQtyKoli, shippedQtyKoli)
-            : roundQuantity(progress.pendingWeight);
+            : (selectedWeightInputValue > 0 && selection.weightInputUnit
+                ? roundQuantity(convertWeightToKg(selectedWeightInputValue, selection.weightInputUnit))
+                : 0);
         const shippedVolumeM3 = usesQtyBasis
             ? calculateVolumePortion(normalizeNumber(item.volume ?? 0), progress.totalQtyKoli, shippedQtyKoli)
-            : roundQuantity(progress.pendingVolume, 3);
+            : (selectedVolumeInputValue > 0 && selection.volumeInputUnit
+                ? roundQuantity(convertVolumeToM3(selectedVolumeInputValue, selection.volumeInputUnit), 3)
+                : 0);
         const shippedWeightInputValue =
-            item.weightInputValue && item.weightInputUnit
+            usesQtyBasis && item.weightInputValue && item.weightInputUnit
                 ? roundQuantity(convertKgToWeightInputValue(shippedWeight, item.weightInputUnit), item.weightInputUnit === 'TON' ? 3 : 2)
+                : !usesQtyBasis && selection.weightInputValue && selection.weightInputUnit
+                    ? roundQuantity(selection.weightInputValue, selection.weightInputUnit === 'TON' ? 3 : 2)
+                : undefined;
+        const shippedWeightInputUnit =
+            shippedWeightInputValue !== undefined
+                ? (usesQtyBasis ? item.weightInputUnit : selection.weightInputUnit)
                 : undefined;
         const shippedVolumeInputValue =
-            item.volumeInputValue && item.volumeInputUnit
+            usesQtyBasis && item.volumeInputValue && item.volumeInputUnit
                 ? roundQuantity(convertM3ToVolumeInputValue(shippedVolumeM3, item.volumeInputUnit), item.volumeInputUnit === 'LITER' ? 0 : 3)
+                : !usesQtyBasis && selection.volumeInputValue && selection.volumeInputUnit
+                    ? roundQuantity(selection.volumeInputValue, selection.volumeInputUnit === 'LITER' ? 0 : 3)
+                : undefined;
+        const shippedVolumeInputUnit =
+            shippedVolumeInputValue !== undefined
+                ? (usesQtyBasis ? item.volumeInputUnit : selection.volumeInputUnit)
                 : undefined;
         const remainingQtyAfterShipment = roundQuantity(Math.max(progress.pendingQtyKoli - shippedQtyKoli, 0));
         const remainingWeightAfterShipment = roundQuantity(Math.max(progress.pendingWeight - shippedWeight, 0));
         const remainingVolumeAfterShipment = roundQuantity(Math.max(progress.pendingVolume - shippedVolumeM3, 0), 3);
-        const holdQtyToApply = usesQtyBasis && selection.holdRemaining ? remainingQtyAfterShipment : 0;
-        const holdWeightToApply = usesQtyBasis && selection.holdRemaining ? remainingWeightAfterShipment : 0;
-        const holdVolumeToApply = usesQtyBasis && selection.holdRemaining ? remainingVolumeAfterShipment : 0;
+        const holdQtyToApply = selection.holdRemaining ? (usesQtyBasis ? remainingQtyAfterShipment : 0) : 0;
+        const holdWeightToApply = selection.holdRemaining ? remainingWeightAfterShipment : 0;
+        const holdVolumeToApply = selection.holdRemaining ? remainingVolumeAfterShipment : 0;
         const nextProgress = {
             ...progress,
             assignedQtyKoli: roundQuantity(progress.assignedQtyKoli + shippedQtyKoli),
@@ -2153,9 +2344,9 @@ export async function handleDeliveryOrderCreate(
             orderItemWeight: shippedWeight,
             orderItemVolumeM3: shippedVolumeM3 > 0 ? shippedVolumeM3 : undefined,
             orderItemWeightInputValue: shippedWeightInputValue,
-            orderItemWeightInputUnit: item.weightInputUnit,
+            orderItemWeightInputUnit: shippedWeightInputUnit,
             orderItemVolumeInputValue: shippedVolumeInputValue,
-            orderItemVolumeInputUnit: item.volumeInputUnit,
+            orderItemVolumeInputUnit: shippedVolumeInputUnit,
             shippedQtyKoli: usesQtyBasis ? shippedQtyKoli : undefined,
             shippedWeight,
         });
