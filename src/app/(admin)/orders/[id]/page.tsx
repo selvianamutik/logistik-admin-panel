@@ -138,6 +138,8 @@ export default function OrderDetailPage() {
     const [doNotes, setDoNotes] = useState('');
     const [selectedShipments, setSelectedShipments] = useState<SelectedShipmentMap>({});
     const [vehicles, setVehicles] = useState<Array<Pick<Vehicle, '_id' | 'unitCode' | 'plateNumber' | 'serviceRef' | 'serviceName'>>>([]);
+    const [busyVehicleIds, setBusyVehicleIds] = useState<string[]>([]);
+    const [busyDriverIds, setBusyDriverIds] = useState<string[]>([]);
     const [drivers, setDrivers] = useState<Driver[]>([]);
     const [showHoldModal, setShowHoldModal] = useState(false);
     const [holdingItem, setHoldingItem] = useState<OrderItem | null>(null);
@@ -162,12 +164,13 @@ export default function OrderDetailPage() {
 
         setLoading(true);
         try {
-            const [orderData, itemData, deliveryOrders, vehicleData, driverData] = await Promise.all([
+            const [orderData, itemData, deliveryOrders, vehicleData, driverData, activeDeliveryOrders] = await Promise.all([
                 fetchEntity<Order | null>(`/api/data?entity=orders&id=${orderId}`),
                 fetchEntity<OrderItem[]>(`/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`),
                 fetchEntity<DeliveryOrder[]>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`),
                 fetchEntity<Array<Pick<Vehicle, '_id' | 'unitCode' | 'plateNumber' | 'serviceRef' | 'serviceName'>>>(`/api/data?entity=vehicles&filter=${encodeURIComponent(JSON.stringify({ status: ['ACTIVE', 'IN_SERVICE'] }))}`),
                 fetchEntity<Driver[]>('/api/data?entity=drivers'),
+                fetchEntity<Array<Pick<DeliveryOrder, '_id' | 'vehicleRef' | 'driverRef' | 'status'>>>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ status: ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'] }))}`),
             ]);
             const deliveryOrderIds = (deliveryOrders || []).map(item => item._id);
             const [deliveryOrderItems, notaItems] = await Promise.all([
@@ -189,6 +192,24 @@ export default function OrderDetailPage() {
             setDoItems(deliveryOrderItems);
             setNotas(orderNotas || []);
             setVehicles(vehicleData || []);
+            setBusyVehicleIds(
+                Array.from(
+                    new Set(
+                        (activeDeliveryOrders || [])
+                            .map(item => item.vehicleRef)
+                            .filter((value): value is string => Boolean(value))
+                    )
+                )
+            );
+            setBusyDriverIds(
+                Array.from(
+                    new Set(
+                        (activeDeliveryOrders || [])
+                            .map(item => item.driverRef)
+                            .filter((value): value is string => Boolean(value))
+                    )
+                )
+            );
             setDrivers((driverData || []).filter(driver => driver.active !== false));
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail order');
@@ -213,6 +234,9 @@ export default function OrderDetailPage() {
             const rightLabel = `${right.unitCode || ''} ${right.plateNumber || ''}`.trim();
             return leftLabel.localeCompare(rightLabel, 'id');
         });
+    const busyVehicleIdSet = new Set(busyVehicleIds);
+    const availableVehicles = sortedVehicles.filter(vehicle => !busyVehicleIdSet.has(vehicle._id));
+    const availableDrivers = drivers.filter(driver => !busyDriverIds.includes(driver._id));
     const selectedVehicleData = vehicles.find(vehicle => vehicle._id === doVehicle);
     const vehicleCategoryMismatch = Boolean(
         order?.serviceRef &&
@@ -231,6 +255,19 @@ export default function OrderDetailPage() {
             setDoVehicleOverrideReason('');
         }
     }, [requiresVehicleOverrideReason, doVehicleOverrideReason]);
+
+    useEffect(() => {
+        if (doVehicle && busyVehicleIds.includes(doVehicle)) {
+            setDoVehicle('');
+            setDoVehicleOverrideReason('');
+        }
+    }, [busyVehicleIds, doVehicle]);
+
+    useEffect(() => {
+        if (doDriver && busyDriverIds.includes(doDriver)) {
+            setDoDriver('');
+        }
+    }, [busyDriverIds, doDriver]);
 
     const activeAssignmentByItemId = doItems.reduce<Record<string, DeliveryOrder | undefined>>((acc, doi) => {
         const activeDeliveryOrder = dos.find(d => d._id === doi.deliveryOrderRef && ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(d.status));
@@ -966,12 +1003,14 @@ export default function OrderDetailPage() {
                                     <label className="form-label">Kendaraan</label>
                                     <select className="form-select" value={doVehicle} onChange={e => setDoVehicle(e.target.value)} disabled={creatingDO}>
                                         <option value="">Pilih kendaraan</option>
-                                        {sortedVehicles.map(v => <option key={v._id} value={v._id}>{v.unitCode ? `${v.unitCode} - ` : ''}{v.plateNumber}{v.serviceName ? ` (${v.serviceName})` : ' (Kategori belum diisi)'}</option>)}
+                                        {availableVehicles.map(v => <option key={v._id} value={v._id}>{v.unitCode ? `${v.unitCode} - ` : ''}{v.plateNumber}{v.serviceName ? ` (${v.serviceName})` : ' (Kategori belum diisi)'}</option>)}
                                     </select>
                                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                        {order.serviceRef
-                                            ? `Kendaraan yang cocok dengan kategori ${order.serviceName || '-'} ditampilkan lebih dulu. Trip parsial tetap boleh memakai armada lain jika memang diperlukan, tapi alasannya wajib dicatat.`
-                                            : 'Order ini belum punya kategori armada, jadi semua kendaraan operasional tetap tersedia.'}
+                                        {availableVehicles.length === 0
+                                            ? 'Tidak ada kendaraan kosong. Semua kendaraan operasional sedang dipakai DO aktif atau belum selesai.'
+                                            : order.serviceRef
+                                                ? `Kendaraan kosong yang cocok dengan kategori ${order.serviceName || '-'} ditampilkan lebih dulu. Trip parsial tetap boleh memakai armada lain jika memang diperlukan, tapi alasannya wajib dicatat.`
+                                                : 'Hanya kendaraan yang sedang kosong yang ditampilkan. Order ini belum punya kategori armada, jadi semua kendaraan operasional yang tidak sedang dipakai tetap tersedia.'}
                                     </div>
                                 </div>
                             </div>
@@ -1009,8 +1048,13 @@ export default function OrderDetailPage() {
                                 <label className="form-label">Supir</label>
                                 <select className="form-select" value={doDriver} onChange={e => setDoDriver(e.target.value)} disabled={creatingDO}>
                                     <option value="">-- Opsional, pilih supir --</option>
-                                    {drivers.map(driver => <option key={driver._id} value={driver._id}>{driver.name}{driver.phone ? ` - ${driver.phone}` : ''}</option>)}
+                                    {availableDrivers.map(driver => <option key={driver._id} value={driver._id}>{driver.name}{driver.phone ? ` - ${driver.phone}` : ''}</option>)}
                                 </select>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                    {availableDrivers.length === 0
+                                        ? 'Tidak ada supir kosong. Semua supir aktif sedang dipakai DO yang belum selesai.'
+                                        : 'Hanya supir yang sedang kosong yang ditampilkan. Supir yang masih terikat ke DO aktif tidak bisa dipakai untuk trip baru.'}
+                                </div>
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Upah Trip</label>

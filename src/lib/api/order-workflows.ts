@@ -2029,6 +2029,37 @@ export async function handleDeliveryOrderCreate(
         if (vehicle.status === 'OUT_OF_SERVICE') {
             return NextResponse.json({ error: 'Kendaraan yang sedang out of service tidak bisa dipakai untuk surat jalan baru' }, { status: 409 });
         }
+        const conflictingDeliveryOrder = await getSanityClient().fetch<{
+            _id: string;
+            doNumber?: string;
+            customerDoNumber?: string;
+        } | null>(
+            `*[
+                _type == "deliveryOrder" &&
+                status in ["CREATED", "HEADING_TO_PICKUP", "ON_DELIVERY", "ARRIVED"] &&
+                ((vehicleRef == $ref || vehicleRef._ref == $ref) || lower(coalesce(vehiclePlate, "")) == $plate)
+            ][0]{
+                _id,
+                doNumber,
+                customerDoNumber
+            }`,
+            {
+                ref: vehicleRef,
+                plate: (vehicle.plateNumber || vehiclePlate || '').toLowerCase(),
+            }
+        );
+        if (conflictingDeliveryOrder) {
+            const conflictingNumber =
+                conflictingDeliveryOrder.customerDoNumber ||
+                conflictingDeliveryOrder.doNumber ||
+                conflictingDeliveryOrder._id;
+            return NextResponse.json(
+                {
+                    error: `Kendaraan ${vehicle.plateNumber || vehicleRef} masih dipakai di surat jalan aktif ${conflictingNumber}. Selesaikan atau batalkan dulu DO tersebut.`,
+                },
+                { status: 409 }
+            );
+        }
         const orderServiceRef = extractRefId(order.serviceRef);
         vehicleServiceRef = extractRefId(vehicle.serviceRef) || undefined;
         vehicleServiceName = vehicle.serviceName || undefined;
@@ -2060,6 +2091,37 @@ export async function handleDeliveryOrderCreate(
         }
         if (driver.active === false) {
             return NextResponse.json({ error: 'Supir DO tidak aktif' }, { status: 409 });
+        }
+        const conflictingDeliveryOrder = await getSanityClient().fetch<{
+            _id: string;
+            doNumber?: string;
+            customerDoNumber?: string;
+        } | null>(
+            `*[
+                _type == "deliveryOrder" &&
+                status in ["CREATED", "HEADING_TO_PICKUP", "ON_DELIVERY", "ARRIVED"] &&
+                ((driverRef == $ref || driverRef._ref == $ref) || lower(coalesce(driverName, "")) == $driverName)
+            ][0]{
+                _id,
+                doNumber,
+                customerDoNumber
+            }`,
+            {
+                ref: driverRef,
+                driverName: (driver.name || driverName || '').toLowerCase(),
+            }
+        );
+        if (conflictingDeliveryOrder) {
+            const conflictingNumber =
+                conflictingDeliveryOrder.customerDoNumber ||
+                conflictingDeliveryOrder.doNumber ||
+                conflictingDeliveryOrder._id;
+            return NextResponse.json(
+                {
+                    error: `Supir ${driver.name || driverRef} masih terikat di surat jalan aktif ${conflictingNumber}. Selesaikan atau batalkan dulu DO tersebut.`,
+                },
+                { status: 409 }
+            );
         }
         driverName = driver.name || driverName;
     }
