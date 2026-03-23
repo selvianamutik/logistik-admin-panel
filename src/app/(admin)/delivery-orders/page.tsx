@@ -19,6 +19,30 @@ const DO_ACTION_PRIORITY: Record<string, number> = {
     CANCELLED: 5,
 };
 
+const getNextDeliveryOrderAction = (deliveryOrder: DeliveryOrder) => {
+    if (deliveryOrder.pendingDriverStatus) {
+        return 'Approve / tolak update driver';
+    }
+    switch (deliveryOrder.status) {
+        case 'ARRIVED':
+            return 'Selesaikan trip';
+        case 'ON_DELIVERY':
+            return deliveryOrder.trackingState === 'ACTIVE' || deliveryOrder.trackingState === 'PAUSED'
+                ? 'Pantau perjalanan'
+                : 'Aktifkan tracking / pantau';
+        case 'HEADING_TO_PICKUP':
+            return 'Pantau menuju pickup';
+        case 'CREATED':
+            return 'Pastikan trip siap berangkat';
+        case 'DELIVERED':
+            return 'Cek POD / arsip';
+        case 'CANCELLED':
+            return 'Tidak ada tindak lanjut';
+        default:
+            return 'Buka detail trip';
+    }
+};
+
 export default function DeliveryOrdersPage() {
     const router = useRouter();
     const { addToast } = useToast();
@@ -153,6 +177,12 @@ export default function DeliveryOrdersPage() {
                     }}><Printer size={15} /> Print</button>
                 </div>
             </div>
+            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)' }}>
+                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Cara baca halaman ini</div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                    Fokuskan dulu ke trip yang menunggu approval driver, sudah sampai tujuan, atau masih aktif di jalan. Kolom tindak lanjut membantu staff tahu langkah berikutnya tanpa membuka semua detail trip.
+                </div>
+            </div>
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card">
                     <div className="kpi-icon warning"><Truck size={20} /></div>
@@ -202,11 +232,11 @@ export default function DeliveryOrdersPage() {
                 </div>
                 <div className="table-wrapper table-desktop-only">
                     <table>
-                        <thead><tr><th>No. SJ Customer</th><th>No. Internal</th><th>Resi</th><th>Customer</th><th>Kategori</th><th>Kendaraan</th><th>Tanggal</th><th>Status</th><th>Approval Driver</th><th>Drop Aktual</th><th>Tracking</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>No. SJ Customer</th><th>No. Internal</th><th>Resi</th><th>Customer</th><th>Kategori</th><th>Kendaraan</th><th>Tanggal</th><th>Status</th><th>Tindak Lanjut</th><th>Approval Driver</th><th>Drop Aktual</th><th>Tracking</th><th>Aksi</th></tr></thead>
                         <tbody>
-                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
+                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 prioritizedDeliveryOrders.length === 0 ? (
-                                    <tr><td colSpan={12}><div className="empty-state"><Truck size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada surat jalan</div><div className="empty-state-text">Buat surat jalan dari halaman detail order</div></div></td></tr>
+                                    <tr><td colSpan={13}><div className="empty-state"><Truck size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada surat jalan</div><div className="empty-state-text">Buat surat jalan dari halaman detail order</div></div></td></tr>
                                 ) : prioritizedDeliveryOrders.map(d => (
                                     <tr key={d._id}>
                                         <td><Link href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{formatDeliveryOrderDisplayNumber(d)}</Link></td>
@@ -222,6 +252,7 @@ export default function DeliveryOrdersPage() {
                                         <td>{d.vehiclePlate || '-'}</td>
                                         <td className="text-muted">{formatDate(d.date)}</td>
                                         <td><span className={`badge badge-${DO_STATUS_MAP[d.status]?.color}`}><span className="badge-dot" /> {DO_STATUS_MAP[d.status]?.label}</span></td>
+                                        <td><span style={{ fontWeight: 500 }}>{getNextDeliveryOrderAction(d)}</span></td>
                                         <td>
                                             {d.pendingDriverStatus ? (
                                                 <div>
@@ -297,6 +328,10 @@ export default function DeliveryOrdersPage() {
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Kendaraan</span>
                                         <span className="mobile-record-value">{d.vehiclePlate || '-'}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Tindak Lanjut</span>
+                                        <span className="mobile-record-value">{getNextDeliveryOrderAction(d)}</span>
                                     </div>
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Tracking</span>

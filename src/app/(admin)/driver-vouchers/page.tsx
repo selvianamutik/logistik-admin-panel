@@ -21,6 +21,22 @@ const VOUCHER_ACTION_PRIORITY: Record<string, number> = {
     SETTLED: 2,
 };
 
+const getNextVoucherAction = (voucher: DriverVoucher) => {
+    if (voucher.status === 'DRAFT') {
+        return 'Lengkapi lalu terbitkan';
+    }
+    if (voucher.status === 'ISSUED') {
+        if (!voucher.issueBankRef) {
+            return 'Rekonsiliasi sumber dana';
+        }
+        if ((voucher.balance || 0) !== 0) {
+            return 'Top up atau selesaikan trip';
+        }
+        return 'Selesaikan trip';
+    }
+    return 'Arsip / cek histori';
+};
+
 export default function DriverVouchersPage() {
     const router = useRouter();
     const { addToast } = useToast();
@@ -136,6 +152,13 @@ export default function DriverVouchersPage() {
                 </div>
             </div>
 
+            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)' }}>
+                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Cara baca halaman ini</div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                    Halaman ini dipakai setelah trip dibuat. Fokuskan dulu ke uang jalan yang belum settle, lalu cek apakah trip perlu top up, perlu rekonsiliasi sumber dana, atau sudah siap diselesaikan.
+                </div>
+            </div>
+
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card">
                     <div className="kpi-icon warning"><Receipt size={20} /></div>
@@ -195,6 +218,7 @@ export default function DriverVouchersPage() {
                                 <th>Total Hak Trip</th>
                                 <th>Selisih</th>
                                 <th>Status</th>
+                                <th>Tindak Lanjut</th>
                                 <th>Aksi</th>
                             </tr>
                         </thead>
@@ -202,14 +226,14 @@ export default function DriverVouchersPage() {
                             {loading ? (
                                 [1, 2, 3].map(i => (
                                     <tr key={i}>
-                                        {Array.from({ length: 14 }).map((_, j) => (
+                                        {Array.from({ length: 15 }).map((_, j) => (
                                             <td key={j}><div className="skeleton skeleton-text" /></td>
                                         ))}
                                     </tr>
                                 ))
                             ) : filtered.length === 0 ? (
                                 <tr>
-                                    <td colSpan={14}>
+                                    <td colSpan={15}>
                                         <div className="empty-state">
                                             <Receipt size={48} className="empty-state-icon" />
                                             <div className="empty-state-title">Belum ada uang jalan trip</div>
@@ -262,6 +286,7 @@ export default function DriverVouchersPage() {
                                                     {!v.issueBankRef && <span className="badge badge-warning">Perlu Rekonsiliasi</span>}
                                                 </div>
                                             </td>
+                                            <td><span style={{ fontWeight: 500 }}>{getNextVoucherAction(v)}</span></td>
                                             <td>
                                                 <button
                                                     type="button"
@@ -346,6 +371,10 @@ export default function DriverVouchersPage() {
                                             <span className="mobile-record-value" style={{ fontWeight: 700, color: v.balance < 0 ? '#ef4444' : v.balance > 0 ? '#16a34a' : undefined }}>
                                                 {formatCurrency(v.balance)}
                                             </span>
+                                        </div>
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Tindak Lanjut</span>
+                                            <span className="mobile-record-value">{getNextVoucherAction(v)}</span>
                                         </div>
                                     </div>
                                     <div className="mobile-record-actions">
