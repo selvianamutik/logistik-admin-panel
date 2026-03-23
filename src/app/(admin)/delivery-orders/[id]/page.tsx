@@ -728,6 +728,7 @@ export default function DODetailPage() {
             ((Number.isFinite(qty) && qty > 0) || (Number.isFinite(weight) && weight > 0) || (Number.isFinite(volume) && volume > 0))
         );
     });
+    const actualDropPointCount = effectiveActualDropPoints.length;
     const actualDropSummary = doData.actualDropPoints || [];
     const hasLiveCoordinates = typeof doData.trackingLastLat === 'number' && typeof doData.trackingLastLng === 'number';
     const trackingMapUrl = hasLiveCoordinates ? `https://www.google.com/maps?q=${doData.trackingLastLat},${doData.trackingLastLng}` : null;
@@ -1158,6 +1159,24 @@ export default function DODetailPage() {
                                 <>
                                     <div style={{ background: 'var(--color-success-light)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: '0.8rem', color: 'var(--color-success)' }}>
                                         Status selesai ditetapkan oleh admin. Isi POD dan muatan aktual di bawah ini. Muatan <strong>Rencana Trip</strong> pada DO ini hanya estimasi. Sistem akan memakai <strong>Muatan Aktual</strong> sebagai realisasi akhir DO, mengembalikan selisih rencana ke pending bila perlu, lalu menandai DO sebagai <strong>Delivered</strong>.
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
+                                        <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
+                                            <div className="text-muted text-sm">Item dalam trip</div>
+                                            <div className="font-semibold" style={{ fontSize: '1.1rem', marginTop: '0.2rem' }}>{actualCargoItems.length} item</div>
+                                        </div>
+                                        <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
+                                            <div className="text-muted text-sm">Muatan aktual sementara</div>
+                                            <div className="font-semibold" style={{ fontSize: '0.95rem', marginTop: '0.2rem' }}>
+                                                {actualCargoItems.length > 0 ? formatCargoSummary(actualCargoTotals) : 'Belum diisi'}
+                                            </div>
+                                        </div>
+                                        <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
+                                            <div className="text-muted text-sm">Mode drop</div>
+                                            <div className="font-semibold" style={{ fontSize: '0.95rem', marginTop: '0.2rem' }}>
+                                                {showAdvancedDropEditor ? `${actualDropPointCount} titik aktual` : 'Trip normal / 1 tujuan'}
+                                            </div>
+                                        </div>
                                     </div>
                                     <div className="form-group">
                                         <label className="form-label">Nama Penerima POD <span className="required">*</span></label>

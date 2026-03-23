@@ -316,6 +316,70 @@ export default function OrderDetailPage() {
     const deliveredProgressBasis = getCargoBasisValue(totalDeliveredActualCargo);
     const progress = totalProgressBasis > 0 ? Math.min(100, Math.round((deliveredProgressBasis / totalProgressBasis) * 100)) : 0;
 
+    const buildDefaultShipmentSelection = useCallback((item: OrderItem): SelectedShipmentMap[string] => {
+        const progressInfo = itemProgressById[item._id];
+        return {
+            qtyKoli: progressInfo.totalQtyKoli > 0 ? String(progressInfo.pendingQtyKoli) : '0',
+            weightInputValue: progressInfo.totalQtyKoli === 0 && progressInfo.pendingWeight > 0
+                ? String(convertKgToWeightInputValue(progressInfo.pendingWeight, item.weightInputUnit || 'KG'))
+                : '',
+            weightInputUnit: item.weightInputUnit || 'KG',
+            volumeInputValue: progressInfo.totalQtyKoli === 0 && progressInfo.pendingVolume > 0
+                ? String(convertM3ToVolumeInputValue(progressInfo.pendingVolume, item.volumeInputUnit || 'M3'))
+                : '',
+            volumeInputUnit: item.volumeInputUnit || 'M3',
+            holdRemaining: false,
+            holdReason: '',
+            holdLocation: '',
+        };
+    }, [itemProgressById]);
+
+    const selectAllAvailableItems = () => {
+        const nextSelections: SelectedShipmentMap = {};
+        for (const item of availableItems) {
+            nextSelections[item._id] = buildDefaultShipmentSelection(item);
+        }
+        setSelectedShipments(nextSelections);
+    };
+
+    const clearSelectedShipments = () => {
+        setSelectedShipments({});
+    };
+
+    const selectedShipmentRows = availableItems.flatMap(item => {
+        const selection = selectedShipments[item._id];
+        if (!selection) {
+            return [];
+        }
+        const progressInfo = itemProgressById[item._id];
+        if (progressInfo.totalQtyKoli > 0) {
+            const qtyKoli = Number(selection.qtyKoli || 0);
+            const ratio = progressInfo.totalQtyKoli > 0 ? qtyKoli / progressInfo.totalQtyKoli : 0;
+            return [{
+                itemId: item._id,
+                description: item.description,
+                holdRemaining: selection.holdRemaining,
+                cargo: {
+                    qtyKoli,
+                    weightKg: qtyKoli > 0 ? calculateWeightPortion(progressInfo.totalWeight, progressInfo.totalQtyKoli, qtyKoli) : 0,
+                    volumeM3: qtyKoli > 0 && ratio > 0 ? roundQuantity(progressInfo.totalVolume * ratio, 3) : 0,
+                },
+            }];
+        }
+        return [{
+            itemId: item._id,
+            description: item.description,
+            holdRemaining: selection.holdRemaining,
+            cargo: buildSelectedNonKoliCargo(selection),
+        }];
+    });
+    const selectedShipmentTotals = selectedShipmentRows.reduce(
+        (sum, row) => addCargoAggregate(sum, row.cargo),
+        createCargoAggregate()
+    );
+    const selectedShipmentItemCount = selectedShipmentRows.length;
+    const selectedHoldCount = selectedShipmentRows.filter(row => row.holdRemaining).length;
+
     const handleCreateDO = async () => {
         const selectedItems = availableItems
             .filter(item => selectedShipments[item._id])
@@ -968,6 +1032,37 @@ export default function OrderDetailPage() {
                             <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: '0.8rem', color: 'var(--color-gray-600)' }}>
                                 Untuk pengiriman normal, cukup pilih kendaraan, supir, centang item yang jalan, lalu cek koli kirim. Opsi tahan sisa hanya dipakai kalau ada barang yang belum bisa lanjut.
                             </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
+                                <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
+                                    <div className="text-muted text-sm">Item dipilih</div>
+                                    <div className="font-semibold" style={{ fontSize: '1.1rem', marginTop: '0.2rem' }}>{selectedShipmentItemCount} item</div>
+                                </div>
+                                <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
+                                    <div className="text-muted text-sm">Muatan trip ini</div>
+                                    <div className="font-semibold" style={{ fontSize: '0.95rem', marginTop: '0.2rem' }}>
+                                        {selectedShipmentItemCount > 0 ? formatCargoSummary(selectedShipmentTotals) : 'Belum ada item dipilih'}
+                                    </div>
+                                </div>
+                                <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
+                                    <div className="text-muted text-sm">Item ditahan</div>
+                                    <div className="font-semibold" style={{ fontSize: '1.1rem', marginTop: '0.2rem' }}>{selectedHoldCount} item</div>
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.9rem' }}>
+                                <div className="text-muted text-sm">
+                                    {selectedShipmentItemCount > 0
+                                        ? 'Trip ini sudah siap dibuat. Koreksi hanya item yang memang perlu parsial atau hold.'
+                                        : 'Belum ada item dipilih. Untuk trip normal, gunakan pilih semua yang siap jalan.'}
+                                </div>
+                                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                    <button type="button" className="btn btn-secondary btn-sm" onClick={selectAllAvailableItems} disabled={creatingDO || availableItems.length === 0}>
+                                        Pilih Semua Siap Jalan
+                                    </button>
+                                    <button type="button" className="btn btn-secondary btn-sm" onClick={clearSelectedShipments} disabled={creatingDO || selectedShipmentItemCount === 0}>
+                                        Kosongkan Pilihan
+                                    </button>
+                                </div>
+                            </div>
                             {availableItems.length === 0 ? (
                                 <p className="text-muted text-sm">Semua item sudah masuk surat jalan</p>
                             ) : (
@@ -1009,20 +1104,7 @@ export default function OrderDetailPage() {
                                                                     if (e.target.checked) {
                                                                         setSelectedShipments(prev => ({
                                                                             ...prev,
-                                                                            [item._id]: {
-                                                                                qtyKoli: usesQtyBasis ? String(progressInfo.pendingQtyKoli) : '0',
-                                                                                weightInputValue: !usesQtyBasis && progressInfo.pendingWeight > 0
-                                                                                    ? String(convertKgToWeightInputValue(progressInfo.pendingWeight, item.weightInputUnit || 'KG'))
-                                                                                    : '',
-                                                                                weightInputUnit: item.weightInputUnit || 'KG',
-                                                                                volumeInputValue: !usesQtyBasis && progressInfo.pendingVolume > 0
-                                                                                    ? String(convertM3ToVolumeInputValue(progressInfo.pendingVolume, item.volumeInputUnit || 'M3'))
-                                                                                    : '',
-                                                                                volumeInputUnit: item.volumeInputUnit || 'M3',
-                                                                                holdRemaining: false,
-                                                                                holdReason: '',
-                                                                                holdLocation: '',
-                                                                            },
+                                                                            [item._id]: buildDefaultShipmentSelection(item),
                                                                         }));
                                                                     } else {
                                                                         setSelectedShipments(prev => {
@@ -1089,20 +1171,11 @@ export default function OrderDetailPage() {
                                                                         maxFractionDigits={2}
                                                                         value={Number(selection?.qtyKoli || 0)}
                                                                         disabled={!selection || creatingDO}
-                                                                        onValueChange={value => {
+                                                                onValueChange={value => {
                                                                             setSelectedShipments(prev => ({
                                                                                 ...prev,
                                                                                 [item._id]: {
-                                                                                    ...(prev[item._id] || {
-                                                                                        qtyKoli: '0',
-                                                                                        weightInputValue: '',
-                                                                                        weightInputUnit: item.weightInputUnit || 'KG',
-                                                                                        volumeInputValue: '',
-                                                                                        volumeInputUnit: item.volumeInputUnit || 'M3',
-                                                                                        holdRemaining: false,
-                                                                                        holdReason: '',
-                                                                                        holdLocation: '',
-                                                                                    }),
+                                                                                    ...(prev[item._id] || buildDefaultShipmentSelection(item)),
                                                                                     qtyKoli: String(value),
                                                                                 },
                                                                             }));
