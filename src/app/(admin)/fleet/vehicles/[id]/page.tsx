@@ -112,6 +112,7 @@ export default function VehicleDetailPage() {
     if (!vehicle) return <div className="empty-state"><div className="empty-state-title">Kendaraan tidak ditemukan</div></div>;
 
     const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
+    const activeDeliveryOrder = dos.find(deliveryOrder => ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status));
     const normalizedTireRows = tireEvents
         .map(event => {
             const status = resolveTireAssetStatus(event);
@@ -158,6 +159,18 @@ export default function VehicleDetailPage() {
         setEditingTire(null);
         setTireForm(createDefaultTireForm(slotCode));
         setShowTireModal(true);
+    };
+
+    const openVehicleMaintenance = () => {
+        router.push(`/fleet/maintenance?vehicleRef=${vehicle._id}&open=1`);
+    };
+
+    const openVehicleIncident = () => {
+        const params = new URLSearchParams({ vehicleRef: vehicle._id, open: '1' });
+        if (activeDeliveryOrder?._id) {
+            params.set('deliveryOrderRef', activeDeliveryOrder._id);
+        }
+        router.push(`/fleet/incidents?${params.toString()}`);
     };
 
     const openEditTire = (event: TireEvent) => {
@@ -284,6 +297,12 @@ export default function VehicleDetailPage() {
                     <p className="page-subtitle">{vehicle.brandModel} - {vehicle.unitCode}</p>
                 </div>
                 <div className="page-actions">
+                    <button className="btn btn-secondary" onClick={openVehicleMaintenance}>
+                        <Wrench size={16} /> Jadwalkan Servis
+                    </button>
+                    <button className="btn btn-secondary" onClick={openVehicleIncident}>
+                        <AlertTriangle size={16} /> Laporkan Insiden
+                    </button>
                     <button className="btn btn-secondary" onClick={() => router.push(`/fleet/vehicles/${vehicle._id}/edit`)}>
                         <Edit size={16} /> Edit Kendaraan
                     </button>
@@ -312,6 +331,17 @@ export default function VehicleDetailPage() {
                                 <div className="detail-row"><div className="detail-item"><div className="detail-label">Odometer Terakhir</div><div className="detail-value">{vehicle.lastOdometer ? `${vehicle.lastOdometer.toLocaleString()} km` : '-'}</div></div><div className="detail-item"><div className="detail-label">Catatan</div><div className="detail-value">{vehicle.notes || '-'}</div></div></div>
                             </div>
                             <div>
+                                {activeDeliveryOrder && (
+                                    <div style={{ marginBottom: '1rem', padding: '0.9rem 1rem', borderRadius: '0.8rem', border: '1px solid var(--color-primary-soft)', background: 'var(--color-primary-surface)' }}>
+                                        <div className="text-muted text-sm">Trip Aktif Kendaraan</div>
+                                        <div className="font-medium" style={{ marginTop: '0.2rem' }}>
+                                            {activeDeliveryOrder.customerDoNumber || activeDeliveryOrder.doNumber} - {activeDeliveryOrder.customerName}
+                                        </div>
+                                        <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
+                                            Status {DO_STATUS_MAP[activeDeliveryOrder.status]?.label || activeDeliveryOrder.status}. Gunakan tombol servis atau insiden di atas jika ada kejadian pada trip ini.
+                                        </div>
+                                    </div>
+                                )}
                                 <div className="kpi-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
                                     <div className="kpi-card"><div className="kpi-icon info"><Truck size={20} /></div><div className="kpi-content"><div className="kpi-label">Total DO</div><div className="kpi-value">{dos.length}</div></div></div>
                                     <div className="kpi-card"><div className="kpi-icon warning"><Wrench size={20} /></div><div className="kpi-content"><div className="kpi-label">Maintenance</div><div className="kpi-value">{maints.length}</div></div></div>
@@ -326,21 +356,103 @@ export default function VehicleDetailPage() {
             )}
 
             {tab === 'do' && (
-                <div className="card"><div className="table-wrapper"><table>
-                    <thead><tr><th>No. DO</th><th>Tanggal</th><th>Customer</th><th>Status</th></tr></thead>
-                    <tbody>{dos.length === 0 ? <tr><td colSpan={4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada riwayat DO</td></tr> : dos.map(d => (
-                        <tr key={d._id}><td><a href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{d.doNumber}</a></td><td>{formatDate(d.date)}</td><td>{d.customerName}</td><td><span className={`badge badge-${DO_STATUS_MAP[d.status]?.color}`}>{DO_STATUS_MAP[d.status]?.label}</span></td></tr>
-                    ))}</tbody>
-                </table></div></div>
+                <div className="card">
+                    <div className="card-header">
+                        <div>
+                            <span className="card-header-title">Riwayat Trip Unit</span>
+                            <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>Pantau trip yang pernah memakai kendaraan ini, termasuk trip aktif yang sedang berjalan.</div>
+                        </div>
+                    </div>
+                    <div className="card-body">
+                        <div className="table-wrapper table-desktop-only"><table>
+                            <thead><tr><th>No. DO</th><th>Tanggal</th><th>Customer</th><th>Status</th></tr></thead>
+                            <tbody>{dos.length === 0 ? <tr><td colSpan={4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada riwayat DO</td></tr> : dos.map(d => (
+                                <tr key={d._id}><td><a href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{d.customerDoNumber || d.doNumber}</a></td><td>{formatDate(d.date)}</td><td>{d.customerName}</td><td><span className={`badge badge-${DO_STATUS_MAP[d.status]?.color}`}>{DO_STATUS_MAP[d.status]?.label}</span></td></tr>
+                            ))}</tbody>
+                        </table></div>
+                        <div className="mobile-record-list">
+                            {dos.length === 0 ? (
+                                <div className="mobile-record-card">
+                                    <div className="mobile-record-title">Belum ada riwayat trip</div>
+                                    <div className="mobile-record-subtitle">Trip yang memakai kendaraan ini akan muncul di sini.</div>
+                                </div>
+                            ) : dos.map(d => (
+                                <div key={d._id} className="mobile-record-card">
+                                    <div className="mobile-record-header">
+                                        <div>
+                                            <div className="mobile-record-title">{d.customerDoNumber || d.doNumber}</div>
+                                            <div className="mobile-record-subtitle">{d.customerName}</div>
+                                        </div>
+                                        <span className={`badge badge-${DO_STATUS_MAP[d.status]?.color}`}>{DO_STATUS_MAP[d.status]?.label}</span>
+                                    </div>
+                                    <div className="mobile-record-meta">
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Tanggal</span>
+                                            <span className="mobile-record-value">{formatDate(d.date)}</span>
+                                        </div>
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Driver</span>
+                                            <span className="mobile-record-value">{d.driverName || '-'}</span>
+                                        </div>
+                                    </div>
+                                    <div className="mobile-record-actions">
+                                        <button className="btn btn-secondary" onClick={() => router.push(`/delivery-orders/${d._id}`)}>Lihat Trip</button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
             )}
 
             {tab === 'maintenance' && (
-                <div className="card"><div className="table-wrapper"><table>
-                    <thead><tr><th>Tipe</th><th>Jadwal</th><th>Status</th><th>Odometer</th><th>Vendor</th></tr></thead>
-                    <tbody>{maints.length === 0 ? <tr><td colSpan={5} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada maintenance</td></tr> : maints.map(m => (
-                        <tr key={m._id}><td>{m.type}</td><td>{m.scheduleType === 'DATE' ? formatDate(m.plannedDate) : `${(m.plannedOdometer || 0).toLocaleString()} km`}</td><td><span className={`badge badge-${MAINTENANCE_STATUS_MAP[m.status]?.color}`}>{MAINTENANCE_STATUS_MAP[m.status]?.label}</span></td><td>{m.odometerAtService ? `${m.odometerAtService.toLocaleString()} km` : '-'}</td><td>{m.vendor || '-'}</td></tr>
-                    ))}</tbody>
-                </table></div></div>
+                <div className="card">
+                    <div className="card-header" style={{ justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+                        <div>
+                            <span className="card-header-title">Servis & Maintenance</span>
+                            <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>Jadwalkan servis langsung dari kendaraan ini supaya staff tidak perlu pindah halaman dulu.</div>
+                        </div>
+                        <button className="btn btn-primary" onClick={openVehicleMaintenance}>
+                            <Plus size={16} /> Jadwalkan Servis
+                        </button>
+                    </div>
+                    <div className="card-body">
+                        <div className="table-wrapper table-desktop-only"><table>
+                            <thead><tr><th>Tipe</th><th>Jadwal</th><th>Status</th><th>Odometer</th><th>Vendor</th></tr></thead>
+                            <tbody>{maints.length === 0 ? <tr><td colSpan={5} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada maintenance</td></tr> : maints.map(m => (
+                                <tr key={m._id}><td>{m.type}</td><td>{m.scheduleType === 'DATE' ? formatDate(m.plannedDate) : `${(m.plannedOdometer || 0).toLocaleString()} km`}</td><td><span className={`badge badge-${MAINTENANCE_STATUS_MAP[m.status]?.color}`}>{MAINTENANCE_STATUS_MAP[m.status]?.label}</span></td><td>{m.odometerAtService ? `${m.odometerAtService.toLocaleString()} km` : '-'}</td><td>{m.vendor || '-'}</td></tr>
+                            ))}</tbody>
+                        </table></div>
+                        <div className="mobile-record-list">
+                            {maints.length === 0 ? (
+                                <div className="mobile-record-card">
+                                    <div className="mobile-record-title">Belum ada jadwal maintenance</div>
+                                    <div className="mobile-record-subtitle">Buat jadwal servis pertama dari tombol di atas.</div>
+                                </div>
+                            ) : maints.map(m => (
+                                <div key={m._id} className="mobile-record-card">
+                                    <div className="mobile-record-header">
+                                        <div>
+                                            <div className="mobile-record-title">{m.type}</div>
+                                            <div className="mobile-record-subtitle">{m.scheduleType === 'DATE' ? formatDate(m.plannedDate) : `${(m.plannedOdometer || 0).toLocaleString()} km`}</div>
+                                        </div>
+                                        <span className={`badge badge-${MAINTENANCE_STATUS_MAP[m.status]?.color}`}>{MAINTENANCE_STATUS_MAP[m.status]?.label}</span>
+                                    </div>
+                                    <div className="mobile-record-meta">
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Vendor</span>
+                                            <span className="mobile-record-value">{m.vendor || '-'}</span>
+                                        </div>
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Odometer</span>
+                                            <span className="mobile-record-value">{m.odometerAtService ? `${m.odometerAtService.toLocaleString()} km` : '-'}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
             )}
 
             {tab === 'ban' && (
@@ -417,12 +529,56 @@ export default function VehicleDetailPage() {
             )}
 
             {tab === 'insiden' && (
-                <div className="card"><div className="table-wrapper"><table>
-                    <thead><tr><th>No.</th><th>Tanggal</th><th>Tipe</th><th>Lokasi</th><th>Status</th></tr></thead>
-                    <tbody>{incidents.length === 0 ? <tr><td colSpan={5} className="text-center text-muted" style={{ padding: '2rem' }}>Tidak ada insiden</td></tr> : incidents.map(i => (
-                        <tr key={i._id}><td><a href={`/fleet/incidents/${i._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{i.incidentNumber}</a></td><td>{formatDate(i.dateTime)}</td><td>{i.incidentType}</td><td>{i.locationText}</td><td><span className={`badge badge-${INCIDENT_STATUS_MAP[i.status]?.color}`}>{INCIDENT_STATUS_MAP[i.status]?.label}</span></td></tr>
-                    ))}</tbody>
-                </table></div></div>
+                <div className="card">
+                    <div className="card-header" style={{ justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+                        <div>
+                            <span className="card-header-title">Insiden Kendaraan</span>
+                            <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>Kalau ada kendala di perjalanan atau di pool, laporkan langsung dari halaman unit ini.</div>
+                        </div>
+                        <button className="btn btn-danger" onClick={openVehicleIncident}>
+                            <AlertTriangle size={16} /> Laporkan Insiden
+                        </button>
+                    </div>
+                    <div className="card-body">
+                        <div className="table-wrapper table-desktop-only"><table>
+                            <thead><tr><th>No.</th><th>Tanggal</th><th>Tipe</th><th>Lokasi</th><th>Status</th></tr></thead>
+                            <tbody>{incidents.length === 0 ? <tr><td colSpan={5} className="text-center text-muted" style={{ padding: '2rem' }}>Tidak ada insiden</td></tr> : incidents.map(i => (
+                                <tr key={i._id}><td><a href={`/fleet/incidents/${i._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{i.incidentNumber}</a></td><td>{formatDate(i.dateTime)}</td><td>{i.incidentType}</td><td>{i.locationText}</td><td><span className={`badge badge-${INCIDENT_STATUS_MAP[i.status]?.color}`}>{INCIDENT_STATUS_MAP[i.status]?.label}</span></td></tr>
+                            ))}</tbody>
+                        </table></div>
+                        <div className="mobile-record-list">
+                            {incidents.length === 0 ? (
+                                <div className="mobile-record-card">
+                                    <div className="mobile-record-title">Tidak ada insiden</div>
+                                    <div className="mobile-record-subtitle">Laporan insiden kendaraan akan muncul di sini.</div>
+                                </div>
+                            ) : incidents.map(i => (
+                                <div key={i._id} className="mobile-record-card">
+                                    <div className="mobile-record-header">
+                                        <div>
+                                            <div className="mobile-record-title">{i.incidentNumber}</div>
+                                            <div className="mobile-record-subtitle">{formatDate(i.dateTime)} - {i.locationText || '-'}</div>
+                                        </div>
+                                        <span className={`badge badge-${INCIDENT_STATUS_MAP[i.status]?.color}`}>{INCIDENT_STATUS_MAP[i.status]?.label}</span>
+                                    </div>
+                                    <div className="mobile-record-meta">
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Tipe</span>
+                                            <span className="mobile-record-value">{i.incidentType}</span>
+                                        </div>
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">DO Terkait</span>
+                                            <span className="mobile-record-value">{i.relatedDONumber || '-'}</span>
+                                        </div>
+                                    </div>
+                                    <div className="mobile-record-actions">
+                                        <button className="btn btn-secondary" onClick={() => router.push(`/fleet/incidents/${i._id}`)}>Lihat Insiden</button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
             )}
 
             {tab === 'biaya' && isOwner && (
@@ -445,7 +601,7 @@ export default function VehicleDetailPage() {
                             <div style={{ display: 'grid', gap: '1rem' }}>
                                 <div style={{ padding: '0.85rem 1rem', borderRadius: '0.75rem', background: 'var(--color-gray-50)', border: '1px solid var(--color-gray-200)' }}>
                                     <div className="text-muted text-sm">Unit</div>
-                                    <div className="font-medium">{vehicle.plateNumber} • {vehicle.unitCode}</div>
+                                    <div className="font-medium">{vehicle.plateNumber} - {vehicle.unitCode}</div>
                                     <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
                                         Slot SP* otomatis dianggap serep unit. Slot lainnya dianggap ban terpasang. Untuk melepas ban dari unit ini, ubah slot atau statusnya lewat form edit.
                                     </div>
