@@ -192,7 +192,7 @@ export function buildFreightNotaPrintDocument(opts: {
     const shipmentReferenceLabel = uniqueShipmentRefs.length > 0 ? uniqueShipmentRefs.join(', ') : '-';
     const shipmentNumberLabel = uniqueSjNumbers.length > 0 ? uniqueSjNumbers.join(', ') : '-';
     const shipmentAddressLabel = uniqueDestinations.length > 0 ? uniqueDestinations.join(' / ') : '-';
-    const shipmentNoteLabel = [nota.notes, ...uniqueNotes].filter(Boolean).join(' / ') || '-';
+    const shipmentNoteLabel = [nota.notes, ...uniqueNotes].filter(Boolean).join(' / ');
     const customerAddressLabel = customer?.address?.trim() || '';
     const customerContactLabel = [customer?.contactPerson, customer?.phone].filter(Boolean).join(' | ');
     const bankInstructionLines = [
@@ -212,10 +212,7 @@ export function buildFreightNotaPrintDocument(opts: {
 
     const itemRowsHtml = items.map((item, index) => {
         const qtyText = item.collie && item.collie > 0 ? `${fmtNumber(item.collie)} koli` : '-';
-        const descriptionParts = [
-            item.dari && item.tujuan ? `${item.dari} -> ${item.tujuan}` : item.tujuan || item.dari || '',
-            item.beratKg ? `${fmtNumber(item.beratKg)} kg` : '',
-        ].filter(Boolean);
+        const descriptionParts = [item.dari && item.tujuan ? `${item.dari} -> ${item.tujuan}` : item.tujuan || item.dari || ''].filter(Boolean);
 
         return `
             <tr>
@@ -289,8 +286,8 @@ export function buildFreightNotaPrintDocument(opts: {
                                 <td>${escapePrintHtml(printDate)}</td>
                             </tr>
                             <tr>
-                                <td>Halaman</td>
-                                <td>1 / 1</td>
+                                <td>Jatuh Tempo</td>
+                                <td>${escapePrintHtml(dueDateLabel)}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -298,40 +295,28 @@ export function buildFreightNotaPrintDocument(opts: {
             </div>
 
             <div class="invoice-section-title">Perincian Pengiriman</div>
-            <div class="invoice-shipment-grid">
-                <div class="invoice-panel">
-                    <table class="invoice-info-table">
-                        <tbody>
-                            <tr>
-                                <td>Nomor Referensi</td>
-                                <td>${escapePrintHtml(shipmentReferenceLabel)}</td>
-                            </tr>
-                            <tr>
-                                <td>Tanggal Pengiriman</td>
-                                <td>${escapePrintHtml(shipmentDateLabel)}</td>
-                            </tr>
-                            <tr>
-                                <td>Nomor Pengiriman</td>
-                                <td>${escapePrintHtml(shipmentNumberLabel)}</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-                <div class="invoice-panel">
-                    <table class="invoice-info-table">
-                        <tbody>
-                            <tr>
-                                <td>Alamat Pengiriman</td>
-                                <td>${escapePrintHtml(shipmentAddressLabel)}</td>
-                            </tr>
-                            <tr>
-                                <td>Catatan Pengiriman</td>
-                                <td>${escapePrintHtml(shipmentNoteLabel)}</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+            <table class="invoice-info-table invoice-shipment-table">
+                <tbody>
+                    <tr>
+                        <td>Nomor Referensi</td>
+                        <td>${escapePrintHtml(shipmentReferenceLabel)}</td>
+                        <td>Tanggal Pengiriman</td>
+                        <td>${escapePrintHtml(shipmentDateLabel)}</td>
+                    </tr>
+                    <tr>
+                        <td>Nomor Pengiriman</td>
+                        <td>${escapePrintHtml(shipmentNumberLabel)}</td>
+                        <td>Alamat Pengiriman</td>
+                        <td>${escapePrintHtml(shipmentAddressLabel)}</td>
+                    </tr>
+                    ${shipmentNoteLabel ? `
+                        <tr>
+                            <td>Catatan</td>
+                            <td colspan="3">${escapePrintHtml(shipmentNoteLabel)}</td>
+                        </tr>
+                    ` : ''}
+                </tbody>
+            </table>
 
             <div class="invoice-section-title">Perincian Jasa dan Harga</div>
             <table class="invoice-items-table">
@@ -376,10 +361,6 @@ export function buildFreightNotaPrintDocument(opts: {
                     <div class="invoice-bottom-label">Terbilang</div>
                     <div class="invoice-bottom-value"># ${escapePrintHtml(amountInWords)} Rupiah #</div>
                 </div>
-                <div class="invoice-panel">
-                    <div class="invoice-bottom-label">Jatuh Tempo</div>
-                    <div class="invoice-bottom-value">${escapePrintHtml(dueDateLabel)}</div>
-                </div>
             </div>
 
             <div class="invoice-footer-grid">
@@ -415,7 +396,7 @@ export function buildFreightNotaPrintDocument(opts: {
         .invoice-brand-title { font-size: 1.5rem; font-weight: 700; letter-spacing: 0; }
         .invoice-company-box { padding: 0.1rem 0; font-size: 0.84rem; text-align: left; }
         .invoice-company-name { font-weight: 700; font-size: 1rem; margin-bottom: 0.2rem; text-transform: uppercase; }
-        .invoice-top-grid, .invoice-shipment-grid { display: grid; grid-template-columns: 1.02fr 0.98fr; gap: 0.65rem; margin-bottom: 0.75rem; }
+        .invoice-top-grid { display: grid; grid-template-columns: 1.02fr 0.98fr; gap: 0.65rem; margin-bottom: 0.75rem; }
         .invoice-bottom-grid, .invoice-footer-grid { display: grid; grid-template-columns: 1fr 0.62fr; gap: 0.65rem; margin-bottom: 0.75rem; }
         .invoice-panel { border: 0.8px solid #4b5563; padding: 0.55rem 0.65rem; min-height: 100%; }
         .invoice-panel-title, .invoice-section-title { font-weight: 700; font-style: italic; margin-bottom: 0.35rem; }
@@ -427,6 +408,8 @@ export function buildFreightNotaPrintDocument(opts: {
         .invoice-info-table, .invoice-items-table, .invoice-total-table { width: 100%; border-collapse: collapse; }
         .invoice-info-table td { border: 0.8px solid #4b5563; padding: 0.3rem 0.4rem; vertical-align: top; }
         .invoice-info-table td:first-child { width: 42%; font-weight: 600; background: #fff; }
+        .invoice-shipment-table td:nth-child(1),
+        .invoice-shipment-table td:nth-child(3) { width: 18%; font-weight: 600; }
         .invoice-items-table { table-layout: fixed; }
         .invoice-items-table th, .invoice-items-table td { border: 0.8px solid #4b5563; padding: 0.35rem 0.42rem; vertical-align: top; }
         .invoice-items-table th { background: #fff; font-weight: 700; }
@@ -434,8 +417,8 @@ export function buildFreightNotaPrintDocument(opts: {
         .invoice-col-qty { width: 16%; }
         .invoice-col-price { width: 19%; }
         .invoice-col-total { width: 20%; }
-        .invoice-item-title { font-weight: 400; margin-bottom: 0.08rem; }
-        .invoice-item-meta { color: #111827; font-size: 0.74rem; }
+        .invoice-item-title { font-weight: 400; margin-bottom: 0.06rem; }
+        .invoice-item-meta { color: #111827; font-size: 0.72rem; }
         .invoice-filler-row td { color: transparent; height: 46px; }
         .invoice-total-box { display: flex; justify-content: flex-end; margin: 0; }
         .invoice-total-table { width: 290px; }
