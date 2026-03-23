@@ -166,6 +166,12 @@ export default function NotaListPage() {
     }, {});
     const selectedCustomerStoredCredit = customerCreditByRef[receiptCustomerRef] || 0;
     const selectedCustomerOpenTotal = receiptOpenNotas.reduce((sum, item) => sum + item.remainingAmount, 0);
+    const receiptOpenCount = receiptOpenNotas.length;
+    const receiptPrimaryLabel = receiptOpenCount === 0
+        ? 'Simpan Kredit Customer'
+        : unappliedReceiptAmount > 0
+            ? 'Simpan Receipt & Kredit'
+            : 'Simpan Receipt';
 
     useEffect(() => {
         if (!singleOpenNota) {
@@ -575,6 +581,10 @@ export default function NotaListPage() {
                                 <div style={{ background: 'var(--color-primary-50)', border: '1px solid var(--color-primary-100)', borderRadius: '0.75rem', padding: '0.9rem 1rem', marginBottom: '1rem' }}>
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', fontSize: '0.82rem' }}>
                                         <div>
+                                            <div style={{ color: 'var(--text-muted)' }}>Jumlah Nota Terbuka</div>
+                                            <div style={{ fontWeight: 700 }}>{receiptOpenCount} nota</div>
+                                        </div>
+                                        <div>
                                             <div style={{ color: 'var(--text-muted)' }}>Nota Terbuka Saat Ini</div>
                                             <div style={{ fontWeight: 700 }}>{formatCurrency(selectedCustomerOpenTotal)}</div>
                                         </div>
@@ -585,6 +595,16 @@ export default function NotaListPage() {
                                         <div>
                                             <div style={{ color: 'var(--text-muted)' }}>Belum Dialokasikan dari Receipt Ini</div>
                                             <div style={{ fontWeight: 700, color: unappliedReceiptAmount > 0 ? 'var(--color-warning)' : 'inherit' }}>{formatCurrency(unappliedReceiptAmount)}</div>
+                                        </div>
+                                        <div>
+                                            <div style={{ color: 'var(--text-muted)' }}>Mode Receipt</div>
+                                            <div style={{ fontWeight: 700 }}>
+                                                {receiptOpenCount === 0
+                                                    ? 'Semua jadi kredit'
+                                                    : hasSingleOpenNota
+                                                        ? 'Alokasi otomatis'
+                                                        : 'Alokasi manual'}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -647,7 +667,7 @@ export default function NotaListPage() {
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setShowReceiptModal(false)} disabled={receiving}>Batal</button>
-                            <button className="btn btn-success" onClick={() => void handleCreateCustomerReceipt()} disabled={receiving}>{receiving ? 'Memproses...' : 'Simpan Receipt'}</button>
+                            <button className="btn btn-success" onClick={() => void handleCreateCustomerReceipt()} disabled={receiving}>{receiving ? 'Memproses...' : receiptPrimaryLabel}</button>
                         </div>
                     </div>
                 </div>

@@ -396,6 +396,7 @@ export default function DriverVoucherDetailPage() {
 
     const statusConfig = STATUS_MAP[voucher.status] || { label: voucher.status, cls: 'badge-gray' };
     const settlementLabel = balance > 0 ? 'Sisa akan kembali ke rekening atau kas perusahaan' : balance < 0 ? 'Perusahaan masih perlu menambah pembayaran ke supir' : 'Tidak ada selisih';
+    const settlementPrimaryLabel = balance > 0 ? 'Selesaikan & Catat Pengembalian' : balance < 0 ? 'Selesaikan & Tambah Bayar Supir' : 'Selesaikan Trip';
 
     return (
         <div>
@@ -407,13 +408,13 @@ export default function DriverVoucherDetailPage() {
                             <h1 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>{voucher.bonNumber}</h1>
                             <span className={`badge ${statusConfig.cls}`}>{statusConfig.label}</span>
                         </div>
-                        <p className="page-subtitle" style={{ margin: 0 }}>{voucher.driverName} | {formatDate(voucher.issuedDate)} | Trip {voucher.doNumber || '-'} | Uang jalan & settlement</p>
+                        <p className="page-subtitle" style={{ margin: 0 }}>{voucher.driverName} | {formatDate(voucher.issuedDate)} | Trip {voucher.doNumber || '-'} | Uang jalan trip</p>
                     </div>
                 </div>
                 <div className="page-actions">
-                    {!isSettled && <button className="btn btn-secondary btn-sm" onClick={openTopUpModal}><Plus size={15} /> Tambah Bon</button>}
-                    {!isSettled && (items.length > 0 || driverFeeAmount > 0) && <button className="btn btn-primary" onClick={openSettleModal}><CheckCircle size={16} /> Selesaikan Bon</button>}
-                    <button className="btn btn-secondary btn-sm" onClick={handlePrint}><Printer size={15} /> Print Bon</button>
+                    {!isSettled && <button className="btn btn-secondary btn-sm" onClick={openTopUpModal}><Plus size={15} /> Tambah Uang Jalan</button>}
+                    {!isSettled && (items.length > 0 || driverFeeAmount > 0) && <button className="btn btn-primary" onClick={openSettleModal}><CheckCircle size={16} /> Selesaikan Trip</button>}
+                    <button className="btn btn-secondary btn-sm" onClick={handlePrint}><Printer size={15} /> Print</button>
                 </div>
             </div>
 
@@ -630,8 +631,24 @@ export default function DriverVoucherDetailPage() {
             {showTopUpModal && (
                 <div className="modal-overlay" onClick={() => { if (!toppingUp) setShowTopUpModal(false); }}>
                     <div className="modal" onClick={event => event.stopPropagation()}>
-                        <div className="modal-header"><h3 className="modal-title">Top Up Uang Jalan</h3><button className="modal-close" onClick={() => setShowTopUpModal(false)} disabled={toppingUp}><X size={20} /></button></div>
+                        <div className="modal-header"><h3 className="modal-title">Tambah Uang Jalan</h3><button className="modal-close" onClick={() => setShowTopUpModal(false)} disabled={toppingUp}><X size={20} /></button></div>
                         <div className="modal-body">
+                            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '0.85rem 1rem', marginBottom: '1rem', border: '1px solid var(--color-gray-200)' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem' }}>
+                                    <div>
+                                        <div className="text-muted text-sm">Sudah Diberikan</div>
+                                        <div className="font-semibold">{formatCurrency(totalIssuedAmount)}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-muted text-sm">Total Hak Trip</div>
+                                        <div className="font-semibold">{formatCurrency(totalClaimAmount)}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-muted text-sm">Selisih Saat Ini</div>
+                                        <div className="font-semibold" style={{ color: balance < 0 ? 'var(--color-danger)' : 'inherit' }}>{formatCurrency(Math.abs(balance))}</div>
+                                    </div>
+                                </div>
+                            </div>
                             <div className="form-group">
                                 <label className="form-label">Tanggal Tambahan</label>
                                 <input type="date" className="form-input" value={topUpForm.date} onChange={event => setTopUpForm({ ...topUpForm, date: event.target.value })} />
@@ -652,7 +669,7 @@ export default function DriverVoucherDetailPage() {
                                 <textarea className="form-textarea" rows={2} value={topUpForm.note} onChange={event => setTopUpForm({ ...topUpForm, note: event.target.value })} placeholder="Alasan tambahan bon, misalnya kurang solar, inap, atau kebutuhan lain..." />
                             </div>
                         </div>
-                        <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowTopUpModal(false)} disabled={toppingUp}>Batal</button><button className="btn btn-primary" onClick={handleTopUp} disabled={toppingUp}><Plus size={16} /> {toppingUp ? 'Memproses...' : 'Tambah Bon'}</button></div>
+                        <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowTopUpModal(false)} disabled={toppingUp}>Batal</button><button className="btn btn-primary" onClick={handleTopUp} disabled={toppingUp}><Plus size={16} /> {toppingUp ? 'Memproses...' : 'Tambah Uang Jalan'}</button></div>
                     </div>
                 </div>
             )}
@@ -660,8 +677,24 @@ export default function DriverVoucherDetailPage() {
             {showSettleModal && (
                 <div className="modal-overlay" onClick={() => { if (!settling) setShowSettleModal(false); }}>
                     <div className="modal" onClick={event => event.stopPropagation()}>
-                        <div className="modal-header"><h3 className="modal-title">Settlement Uang Jalan Trip</h3><button className="modal-close" onClick={() => setShowSettleModal(false)} disabled={settling}><X size={20} /></button></div>
+                        <div className="modal-header"><h3 className="modal-title">Selesaikan Trip</h3><button className="modal-close" onClick={() => setShowSettleModal(false)} disabled={settling}><X size={20} /></button></div>
                         <div className="modal-body">
+                            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '0.85rem 1rem', marginBottom: '1rem', border: '1px solid var(--color-gray-200)' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem' }}>
+                                    <div>
+                                        <div className="text-muted text-sm">Total Uang Diberikan</div>
+                                        <div className="font-semibold">{formatCurrency(totalIssuedAmount)}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-muted text-sm">Total Hak Trip</div>
+                                        <div className="font-semibold">{formatCurrency(totalClaimAmount)}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-muted text-sm">{balance >= 0 ? 'Sisa Kembali' : 'Tambahan Bayar'}</div>
+                                        <div className="font-semibold" style={{ color: balance >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>{formatCurrency(Math.abs(balance))}</div>
+                                    </div>
+                                </div>
+                            </div>
                             <div className="form-group">
                                 <label className="form-label">Tanggal Selesaikan Trip</label>
                                 <input type="date" className="form-input" value={settlementDate} onChange={event => setSettlementDate(event.target.value)} disabled={settling} />
@@ -686,7 +719,7 @@ export default function DriverVoucherDetailPage() {
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setShowSettleModal(false)} disabled={settling}>Batal</button>
-                            <button className="btn btn-primary" onClick={handleSettle} disabled={settling}><CheckCircle size={16} /> {settling ? 'Memproses...' : 'Selesaikan Settlement'}</button>
+                            <button className="btn btn-primary" onClick={handleSettle} disabled={settling}><CheckCircle size={16} /> {settling ? 'Memproses...' : settlementPrimaryLabel}</button>
                         </div>
                     </div>
                 </div>
