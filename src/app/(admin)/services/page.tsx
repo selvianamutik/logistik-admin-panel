@@ -84,7 +84,7 @@ export default function ServicesPage() {
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Kategori Aktif</div><div className="kpi-value">{activeCount}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Kategori Nonaktif</div><div className="kpi-value">{inactiveCount}</div></div></div>
-                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Hak Ubah</div><div className="kpi-value">{isOwner ? 'OWNER' : 'Read only'}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Hak Ubah</div><div className="kpi-value">{isOwner ? 'OWNER' : 'Lihat saja'}</div></div></div>
             </div>
             <div className="table-container"><div className="table-wrapper"><table>
                 <thead><tr><th>Kode</th><th>Nama</th><th>Deskripsi</th><th>Status</th><th>Aksi</th></tr></thead>
@@ -94,7 +94,7 @@ export default function ServicesPage() {
                             items.map(s => (
                                 <tr key={s._id}><td className="font-mono">{s.code}</td><td className="font-semibold">{s.name}</td><td className="text-muted">{s.description}</td>
                                     <td><span className={`badge ${s.active !== false ? 'badge-success' : 'badge-gray'}`}>{s.active !== false ? 'Aktif' : 'Non-Aktif'}</span></td>
-                                    <td>{isOwner ? <button className="table-action-btn" onClick={() => openEdit(s)}><Edit size={14} /> Edit</button> : <span className="text-muted">Read only</span>}</td></tr>
+                                    <td>{isOwner ? <button className="table-action-btn" onClick={() => openEdit(s)}><Edit size={14} /> Edit</button> : <span className="text-muted">Lihat saja</span>}</td></tr>
                             ))}
                 </tbody>
             </table></div></div>

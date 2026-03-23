@@ -84,7 +84,7 @@ export default function ExpenseCategoriesPage() {
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Kategori Aktif</div><div className="kpi-value">{activeCount}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Kategori Nonaktif</div><div className="kpi-value">{inactiveCount}</div></div></div>
-                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Hak Ubah</div><div className="kpi-value">{isOwner ? 'OWNER' : 'Read only'}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Hak Ubah</div><div className="kpi-value">{isOwner ? 'OWNER' : 'Lihat saja'}</div></div></div>
             </div>
             <div className="table-container"><div className="table-wrapper"><table>
                 <thead><tr><th>Nama Kategori</th><th>Status</th><th>Aksi</th></tr></thead>
@@ -94,7 +94,7 @@ export default function ExpenseCategoriesPage() {
                             items.map(c => (
                                 <tr key={c._id}><td className="font-semibold">{c.name}</td>
                                     <td><span className={`badge ${c.active !== false ? 'badge-success' : 'badge-gray'}`}>{c.active !== false ? 'Aktif' : 'Non-Aktif'}</span></td>
-                                    <td>{isOwner ? <button className="table-action-btn" onClick={() => openEdit(c)}><Edit size={14} /> Edit</button> : <span className="text-muted">Read only</span>}</td></tr>
+                                    <td>{isOwner ? <button className="table-action-btn" onClick={() => openEdit(c)}><Edit size={14} /> Edit</button> : <span className="text-muted">Lihat saja</span>}</td></tr>
                             ))}
                 </tbody>
             </table></div></div>
