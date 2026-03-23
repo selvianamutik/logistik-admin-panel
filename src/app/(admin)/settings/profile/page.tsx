@@ -36,11 +36,17 @@ export default function ProfilePage() {
     return (
         <div>
             <div className="page-header"><div className="page-header-left"><h1 className="page-title">Profil Saya</h1><p className="page-subtitle">Kelola informasi akun Anda</p></div></div>
+            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)', maxWidth: 520 }}>
+                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Yang bisa diubah di halaman ini</div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                    Halaman ini hanya untuk memperbarui nama profil sendiri. Email dan role tetap dikelola dari pengaturan user oleh admin/owner.
+                </div>
+            </div>
             <div className="card" style={{ maxWidth: 520 }}>
                 <div className="card-body">
                     <form onSubmit={handleSubmit}>
                         <div className="form-group"><label className="form-label">Nama</label><input className="form-input" value={name} onChange={e => setName(e.target.value)} required /></div>
-                        <div className="form-group"><label className="form-label">Email</label><input className="form-input" value={user?.email || ''} disabled /><div className="form-hint">Email tidak dapat diubah</div></div>
+                        <div className="form-group"><label className="form-label">Email</label><input className="form-input" value={user?.email || ''} disabled /><div className="form-hint">Dikelola dari User Management</div></div>
                         <div className="form-group"><label className="form-label">Role</label><input className="form-input" value={user?.role || ''} disabled /></div>
                         <button type="submit" className="btn btn-primary" disabled={loading}><Save size={16} /> {loading ? 'Menyimpan...' : 'Simpan'}</button>
                     </form>

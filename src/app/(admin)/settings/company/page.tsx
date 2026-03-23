@@ -100,6 +100,13 @@ export default function CompanyPage() {
             <div className="page-header"><div className="page-header-left"><h1 className="page-title">Perusahaan &amp; Dokumen</h1><p className="page-subtitle">Kelola identitas perusahaan, branding aplikasi, dan nomor dokumen harian.</p></div>
                 <div className="page-actions"><button className="btn btn-primary" onClick={handleSave} disabled={saving}><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}</button></div></div>
 
+            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)' }}>
+                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Cara pakai halaman ini</div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                    Halaman ini dipakai saat identitas perusahaan, tema aplikasi, atau format nomor dokumen memang berubah. Untuk operasional harian, cukup isi seperlunya lalu simpan. Perubahan nomor hanya berlaku ke dokumen baru.
+                </div>
+            </div>
+
             <div className="detail-grid">
                 <div className="card">
                     <div className="card-header"><span className="card-header-title">Profil Perusahaan</span></div>

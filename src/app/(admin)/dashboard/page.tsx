@@ -20,6 +20,27 @@ interface DashboardData {
     recentNotas: Array<{ _id: string; notaNumber: string; customerName: string; status: string; totalAmount: number; totalAdjustmentAmount?: number; netAmount?: number }>;
 }
 
+const getRecentOrderAction = (status: string) => {
+    switch (status) {
+        case 'OPEN':
+            return 'Buat trip pertama';
+        case 'PARTIAL':
+            return 'Lanjutkan sisa pengiriman';
+        case 'ON_HOLD':
+            return 'Cek alasan hold';
+        case 'COMPLETE':
+            return 'Siap ditagih / arsip';
+        default:
+            return 'Buka detail order';
+    }
+};
+
+const getRecentNotaAction = (nota: DashboardData['recentNotas'][number]) => {
+    if (nota.status === 'UNPAID') return 'Tagih atau catat receipt';
+    if (nota.status === 'PARTIAL') return 'Follow up sisa pembayaran';
+    return (nota.totalAdjustmentAmount || 0) > 0 ? 'Arsip + cek potongan' : 'Arsip / cetak';
+};
+
 export default function DashboardPage() {
     const { user } = useApp();
     const { addToast } = useToast();
@@ -71,6 +92,13 @@ export default function DashboardPage() {
                 <div className="page-header-left">
                     <h1 className="page-title">Dashboard</h1>
                     <p className="page-subtitle">Pantau order, pengiriman, piutang, armada, dan kas yang perlu ditindaklanjuti hari ini.</p>
+                </div>
+            </div>
+
+            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)' }}>
+                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Cara baca dashboard ini</div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                    Halaman ini bukan laporan lengkap. Fokuskan dulu ke kartu yang angkanya masih tinggi, lalu buka daftar terkait untuk menindaklanjuti order, trip, tagihan, atau armada yang perlu perhatian hari ini.
                 </div>
             </div>
 
@@ -160,11 +188,12 @@ export default function DashboardPage() {
                                     <th>Resi</th>
                                     <th>Customer</th>
                                     <th>Status</th>
+                                    <th>Tindak Lanjut</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {data.recentOrders.length === 0 ? (
-                                    <tr><td colSpan={3} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada order</td></tr>
+                                    <tr><td colSpan={4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada order</td></tr>
                                 ) : (
                                     data.recentOrders.map(order => (
                                         <tr key={order._id}>
@@ -177,6 +206,7 @@ export default function DashboardPage() {
                                                     {ORDER_STATUS_MAP[order.status]?.label || order.status}
                                                 </span>
                                             </td>
+                                            <td>{getRecentOrderAction(order.status)}</td>
                                         </tr>
                                     ))
                                 )}
@@ -202,6 +232,10 @@ export default function DashboardPage() {
                                         </span>
                                     </div>
                                     <div className="mobile-record-actions">
+                                        <div className="mobile-record-kv" style={{ width: '100%' }}>
+                                            <span className="mobile-record-label">Tindak Lanjut</span>
+                                            <span className="mobile-record-value">{getRecentOrderAction(order.status)}</span>
+                                        </div>
                                         <Link href={`/orders/${order._id}`} className="btn btn-sm btn-secondary">
                                             Lihat Detail
                                         </Link>
@@ -227,12 +261,13 @@ export default function DashboardPage() {
                                     <th>No. Nota</th>
                                     <th>Customer</th>
                                     <th>Status</th>
+                                    <th>Tindak Lanjut</th>
                                     {isOwner && <th>Jumlah</th>}
                                 </tr>
                             </thead>
                             <tbody>
                                 {data.recentNotas.length === 0 ? (
-                                    <tr><td colSpan={isOwner ? 4 : 3} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada nota</td></tr>
+                                    <tr><td colSpan={isOwner ? 5 : 4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada nota</td></tr>
                                 ) : (
                                     data.recentNotas.map(nota => (
                                         <tr key={nota._id}>
@@ -245,6 +280,7 @@ export default function DashboardPage() {
                                                     {INVOICE_STATUS_MAP[nota.status]?.label || nota.status}
                                                 </span>
                                             </td>
+                                            <td>{getRecentNotaAction(nota)}</td>
                                             {isOwner && <td className="font-medium">{formatCurrency(getReceivableNetAmount(nota))}</td>}
                                         </tr>
                                     ))
@@ -278,6 +314,12 @@ export default function DashboardPage() {
                                             </div>
                                         </div>
                                     )}
+                                    <div className="mobile-record-meta">
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Tindak Lanjut</span>
+                                            <span className="mobile-record-value">{getRecentNotaAction(nota)}</span>
+                                        </div>
+                                    </div>
                                     <div className="mobile-record-actions">
                                         <Link href={`/invoices/${nota._id}`} className="btn btn-sm btn-secondary">
                                             Lihat Detail

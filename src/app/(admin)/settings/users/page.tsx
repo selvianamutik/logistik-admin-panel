@@ -8,6 +8,12 @@ import type { User } from '@/lib/types';
 type InternalUserRole = Exclude<User['role'], 'DRIVER'>;
 type InternalUser = User & { role: InternalUserRole };
 
+const getUserNextAction = (user: InternalUser) => {
+    if (user.active === false) return 'Aktifkan bila user dipakai lagi';
+    if (user.role === 'OWNER') return 'Pastikan akun owner tetap aman';
+    return 'Siap dipakai operasional internal';
+};
+
 export default function UsersPage() {
     const { addToast } = useToast();
     const [users, setUsers] = useState<InternalUser[]>([]);
@@ -17,6 +23,9 @@ export default function UsersPage() {
     const [saving, setSaving] = useState(false);
     const [togglingUserId, setTogglingUserId] = useState<string | null>(null);
     const [form, setForm] = useState({ name: '', email: '', role: 'ADMIN' as InternalUserRole, password: '' });
+    const activeUsers = users.filter(user => user.active !== false).length;
+    const inactiveUsers = users.filter(user => user.active === false).length;
+    const ownerUsers = users.filter(user => user.role === 'OWNER').length;
 
     useEffect(() => {
         const loadUsers = async () => {
@@ -110,17 +119,33 @@ export default function UsersPage() {
         <div>
             <div className="page-header"><div className="page-header-left"><h1 className="page-title">User Management</h1><p className="page-subtitle">Kelola user internal sistem</p></div>
                 <div className="page-actions"><button className="btn btn-primary" onClick={openNew}><Plus size={18} /> Tambah User</button></div></div>
+
+            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)' }}>
+                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Cara baca halaman ini</div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                    Halaman ini dipakai untuk mengelola akun internal admin dan owner. Fokuskan dulu ke user yang masih aktif, lalu nonaktifkan akun yang sudah tidak dipakai agar akses sistem tetap rapi.
+                </div>
+            </div>
+
+            <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">User Aktif</div><div className="kpi-value">{activeUsers}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">User Nonaktif</div><div className="kpi-value">{inactiveUsers}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Owner</div><div className="kpi-value">{ownerUsers}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Admin</div><div className="kpi-value">{users.length - ownerUsers}</div></div></div>
+            </div>
+
             <div className="table-container">
                 <div className="table-wrapper table-desktop-only">
                     <table>
-                        <thead><tr><th>Nama</th><th>Email</th><th>Role</th><th>Status</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>Nama</th><th>Email</th><th>Role</th><th>Status</th><th>Tindak Lanjut</th><th>Aksi</th></tr></thead>
                         <tbody suppressHydrationWarning>
-                            {loading ? [1, 2].map(i => <tr key={i}>{[1, 2, 3, 4, 5].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
+                            {loading ? [1, 2].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 users.map(u => (
                                     <tr key={u._id}>
                                         <td className="font-semibold">{u.name}</td><td>{u.email}</td>
                                         <td><span className={`badge ${u.role === 'OWNER' ? 'badge-purple' : 'badge-info'}`}>{u.role}</span></td>
                                         <td><span className={`badge ${u.active !== false ? 'badge-success' : 'badge-gray'}`}>{u.active !== false ? 'Aktif' : 'Non-Aktif'}</span></td>
+                                        <td>{getUserNextAction(u)}</td>
                                         <td><div className="table-actions">
                                             <button className="table-action-btn" onClick={() => openEdit(u)} disabled={togglingUserId === u._id}><Edit size={14} /> Edit</button>
                                             <button className="table-action-btn" onClick={() => toggleActive(u)} disabled={togglingUserId === u._id}><RefreshCw size={14} /> {togglingUserId === u._id ? 'Menyimpan...' : (u.active !== false ? 'Nonaktifkan' : 'Aktifkan')}</button>
@@ -150,6 +175,10 @@ export default function UsersPage() {
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Role</span>
                                         <span className="mobile-record-value">{u.role}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Tindak Lanjut</span>
+                                        <span className="mobile-record-value">{getUserNextAction(u)}</span>
                                     </div>
                                 </div>
                                 <div className="mobile-record-actions">
