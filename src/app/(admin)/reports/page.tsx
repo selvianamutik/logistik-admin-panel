@@ -355,6 +355,19 @@ export default function ReportsPage() {
           </button>
         </div>
       </div>
+      <div
+        className="card"
+        style={{ marginBottom: "1rem", background: "var(--color-gray-25)" }}
+      >
+        <div className="card-body" style={{ padding: "0.9rem 1rem" }}>
+          <div style={{ fontWeight: 700, marginBottom: "0.25rem" }}>
+            Cara baca halaman ini
+          </div>
+          <div style={{ fontSize: "0.82rem", color: "var(--color-gray-600)" }}>
+            Gunakan <strong>Laba Rugi</strong> untuk melihat hasil usaha pada periode tertentu, dan gunakan <strong>Arus Kas</strong> untuk melihat uang nyata yang masuk dan keluar dari bank atau kas. Halaman ini untuk kontrol owner/admin, bukan untuk input transaksi harian.
+          </div>
+        </div>
+      </div>
       <div className="page-toolbar">
         <div className="page-toolbar-main">
           <div className="segmented-tabs" aria-label="Jenis laporan">
@@ -449,6 +462,19 @@ export default function ReportsPage() {
 
       {tab === "pnl" ? (
         <div>
+          <div
+            className="card"
+            style={{ marginBottom: "1rem", background: "var(--color-gray-25)" }}
+          >
+            <div className="card-body" style={{ padding: "0.9rem 1rem" }}>
+              <div style={{ fontWeight: 700, marginBottom: "0.25rem" }}>
+                Catatan Laba Rugi
+              </div>
+              <div style={{ fontSize: "0.82rem", color: "var(--color-gray-600)" }}>
+                Pendapatan di halaman ini membaca pembayaran customer yang sudah masuk. Pengeluaran membaca transaksi biaya yang sudah dicatat. Jadi laba rugi di sini adalah ringkasan operasional, bukan pengganti detail nota, expense, atau rekening per transaksi.
+              </div>
+            </div>
+          </div>
           {invoices.length > 0 && (
             <div
               className="card"

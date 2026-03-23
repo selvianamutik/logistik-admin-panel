@@ -60,15 +60,32 @@ export default function AuditLogsPage() {
             log.action,
         ].some(value => value?.toLowerCase().includes(normalizedSearch));
     });
+    const today = new Date().toISOString().slice(0, 10);
+    const totalLogs = logs.length;
+    const todayLogs = logs.filter(log => (log.timestamp || log._createdAt || '').slice(0, 10) === today).length;
+    const loginLogs = logs.filter(log => log.action === 'LOGIN' || log.action === 'LOGOUT').length;
+    const mutationLogs = logs.filter(log => ['CREATE', 'UPDATE', 'DELETE'].includes(log.action)).length;
 
     const actionColors: Record<string, string> = { CREATE: 'success', UPDATE: 'warning', DELETE: 'danger', LOGIN: 'info', LOGOUT: 'gray' };
 
     return (
         <div>
             <div className="page-header"><div className="page-header-left"><h1 className="page-title">Audit Log</h1><p className="page-subtitle">Riwayat aktivitas penting sistem</p></div></div>
+            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)' }}>
+                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Cara baca halaman ini</div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                    Halaman ini untuk audit dan penelusuran masalah, bukan untuk kerja harian biasa. Cari berdasarkan user, aksi, atau target dokumen jika kamu perlu tahu siapa yang membuat, mengubah, atau menghapus data tertentu.
+                </div>
+            </div>
+            <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Total Log</div><div className="kpi-value">{totalLogs}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Hari Ini</div><div className="kpi-value">{todayLogs}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Login / Logout</div><div className="kpi-value">{loginLogs}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Perubahan Data</div><div className="kpi-value">{mutationLogs}</div></div></div>
+            </div>
             <div className="table-container">
                 <div className="table-toolbar"><div className="table-toolbar-left"><div className="table-search"><Search size={16} className="table-search-icon" /><input placeholder="Cari log..." value={search} onChange={e => setSearch(e.target.value)} /></div></div></div>
-                <div className="table-wrapper">
+                <div className="table-wrapper table-desktop-only">
                     <table>
                         <thead><tr><th>Waktu</th><th>User</th><th>Aksi</th><th>Entitas</th><th>Target</th><th>Ringkasan</th></tr></thead>
                         <tbody>
@@ -90,6 +107,40 @@ export default function AuditLogsPage() {
                         </tbody>
                     </table>
                 </div>
+                {!loading && (
+                    <div className="mobile-record-list">
+                        {filtered.length === 0 ? (
+                            <div className="mobile-record-card">
+                                <div className="mobile-record-title">Belum ada log</div>
+                                <div className="mobile-record-subtitle">Aktivitas penting sistem akan muncul di sini untuk kebutuhan audit.</div>
+                            </div>
+                        ) : filtered.map(l => (
+                            <div key={l._id} className="mobile-record-card">
+                                <div className="mobile-record-header">
+                                    <div>
+                                        <div className="mobile-record-title">{l.actorUserName || 'User tidak diketahui'}</div>
+                                        <div className="mobile-record-subtitle">{formatAuditDateTime(l.timestamp || l._createdAt)}</div>
+                                    </div>
+                                    <span className={`badge badge-${actionColors[l.action] || 'gray'}`}>{l.action}</span>
+                                </div>
+                                <div className="mobile-record-meta">
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Entitas</span>
+                                        <span className="mobile-record-value">{l.entityType || '-'}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Target</span>
+                                        <span className="mobile-record-value">{l.entityRef || '-'}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Ringkasan</span>
+                                        <span className="mobile-record-value">{l.changesSummary || '-'}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
                 {filtered.length > 0 && <div className="pagination"><div className="pagination-info">{filtered.length} log tercatat</div></div>}
             </div>
         </div>

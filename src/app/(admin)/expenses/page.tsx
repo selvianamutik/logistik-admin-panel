@@ -154,6 +154,13 @@ export default function ExpensesPage() {
                     <button className="btn btn-primary" onClick={() => setShowModal(true)}><Plus size={18} /> Tambah Pengeluaran</button>
                 </div></div>
 
+            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)' }}>
+                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Cara baca halaman ini</div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                    Halaman ini dipakai untuk mencatat biaya yang sudah benar-benar terjadi. Kalau pengeluaran dibayar dari kas atau rekening tertentu, pilih sumber dananya supaya arus kas ikut tercatat dengan benar.
+                </div>
+            </div>
+
             {/* KPI Summary */}
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card">
@@ -313,6 +320,9 @@ export default function ExpensesPage() {
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header"><h3 className="modal-title">Tambah Pengeluaran</h3><button className="modal-close" onClick={() => setShowModal(false)} disabled={saving}><X size={20} /></button></div>
                         <div className="modal-body">
+                            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: '0.8rem', color: 'var(--color-gray-600)' }}>
+                                Catat hanya pengeluaran yang sudah pasti keluar. Jika dibayar dari rekening atau kas tertentu, pilih sumber dana agar posisi arus kas ikut sinkron.
+                            </div>
                             <div className="form-group"><label className="form-label">Kategori <span className="required">*</span></label>
                                 <select className="form-select" value={form.categoryRef} onChange={e => setForm({ ...form, categoryRef: e.target.value })} disabled={saving}>
                                     <option value="">Pilih kategori</option>{categories.filter(c => c.active !== false).map(c => <option key={c._id} value={c._id}>{c.name}</option>)}

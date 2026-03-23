@@ -15,6 +15,8 @@ export default function ServicesPage() {
     const [saving, setSaving] = useState(false);
     const [form, setForm] = useState({ code: '', name: '', description: '', active: true });
     const isOwner = user?.role === 'OWNER';
+    const activeCount = items.filter(item => item.active !== false).length;
+    const inactiveCount = items.filter(item => item.active === false).length;
 
     useEffect(() => {
         const loadServices = async () => {
@@ -73,6 +75,17 @@ export default function ServicesPage() {
         <div>
             <div className="page-header"><div className="page-header-left"><h1 className="page-title">Kategori Truk / Armada</h1><p className="page-subtitle">Master kategori armada yang diminta customer pada order</p></div>
                 <div className="page-actions">{isOwner && <button className="btn btn-primary" onClick={openNew}><Plus size={18} /> Tambah Kategori</button>}</div></div>
+            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)' }}>
+                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Cara baca halaman ini</div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                    Halaman ini adalah master kategori armada yang diminta customer saat membuat order. Data di sini jarang berubah. Setelah kategori dibuat, kendaraan dan order akan mengikuti kategori tersebut.
+                </div>
+            </div>
+            <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Kategori Aktif</div><div className="kpi-value">{activeCount}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Kategori Nonaktif</div><div className="kpi-value">{inactiveCount}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Hak Ubah</div><div className="kpi-value">{isOwner ? 'OWNER' : 'Read only'}</div></div></div>
+            </div>
             <div className="table-container"><div className="table-wrapper"><table>
                 <thead><tr><th>Kode</th><th>Nama</th><th>Deskripsi</th><th>Status</th><th>Aksi</th></tr></thead>
                 <tbody>
@@ -89,6 +102,9 @@ export default function ServicesPage() {
                 <div className="modal-overlay" onClick={() => { if (!saving) setShowModal(false); }}><div className="modal" onClick={e => e.stopPropagation()}>
                     <div className="modal-header"><h3 className="modal-title">{editItem ? 'Edit' : 'Tambah'} Kategori Armada</h3><button className="modal-close" onClick={() => setShowModal(false)} disabled={saving}><X size={20} /></button></div>
                     <div className="modal-body">
+                        <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: '0.8rem', color: 'var(--color-gray-600)' }}>
+                            Pakai kode yang stabil karena prefix ini ikut dipakai untuk kode unit kendaraan, misalnya <strong>CDD-001</strong> atau <strong>FUS-001</strong>.
+                        </div>
                         <div className="form-group">
                             <label className="form-label">Kode Kategori</label>
                             <input className="form-input" value={form.code} onChange={e => setForm({ ...form, code: e.target.value.toUpperCase() })} placeholder="Contoh: CDD / FUS / CDB" />
