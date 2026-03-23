@@ -37,6 +37,19 @@ function createDefaultIncidentForm(vehicle?: Vehicle | null, deliveryOrder?: Del
     };
 }
 
+function getIncidentNextAction(item: Incident) {
+    if (item.status === 'OPEN') {
+        return 'Tangani segera dan cek kondisi unit, driver, serta trip terkait';
+    }
+    if (item.status === 'IN_PROGRESS') {
+        return 'Lanjutkan penanganan lalu perbarui status sampai selesai';
+    }
+    if (item.status === 'RESOLVED') {
+        return 'Verifikasi hasil penanganan lalu tutup insiden bila sudah aman';
+    }
+    return 'Arsip; buka lagi hanya jika ada tindak lanjut tambahan';
+}
+
 export default function IncidentsPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -222,7 +235,7 @@ export default function IncidentsPage() {
             <div className="page-header">
                 <div className="page-header-left">
                     <h1 className="page-title">Insiden Kendaraan</h1>
-                    <p className="page-subtitle">Laporan dan penanganan insiden armada</p>
+                    <p className="page-subtitle">Antrian insiden armada yang perlu ditangani, diverifikasi, atau diarsipkan.</p>
                 </div>
                 <div className="page-actions">
                     <button className="btn btn-primary" onClick={() => openIncidentModal(vehicleFilter ? vehicles.find(vehicle => vehicle._id === vehicleFilter) || null : null)}>
@@ -230,11 +243,17 @@ export default function IncidentsPage() {
                     </button>
                 </div>
             </div>
+            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: '1.5rem' }}>
+                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Cara baca halaman ini</div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                    Halaman ini dipakai untuk mencatat kejadian di lapangan, memantau mana yang masih terbuka, lalu memastikan kasus benar-benar selesai sebelum diarsipkan.
+                </div>
+            </div>
 
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
-                <div className="kpi-card"><div className="kpi-icon danger"><AlertTriangle size={20} /></div><div className="kpi-content"><div className="kpi-label">Open</div><div className="kpi-value">{openIncidentCount}</div></div></div>
+                <div className="kpi-card"><div className="kpi-icon danger"><AlertTriangle size={20} /></div><div className="kpi-content"><div className="kpi-label">Terbuka</div><div className="kpi-value">{openIncidentCount}</div></div></div>
                 <div className="kpi-card"><div className="kpi-icon warning"><AlertTriangle size={20} /></div><div className="kpi-content"><div className="kpi-label">Ditangani</div><div className="kpi-value">{progressIncidentCount}</div></div></div>
-                <div className="kpi-card"><div className="kpi-icon success"><AlertTriangle size={20} /></div><div className="kpi-content"><div className="kpi-label">Resolved</div><div className="kpi-value">{resolvedIncidentCount}</div></div></div>
+                <div className="kpi-card"><div className="kpi-icon success"><AlertTriangle size={20} /></div><div className="kpi-content"><div className="kpi-label">Selesai</div><div className="kpi-value">{resolvedIncidentCount}</div></div></div>
             </div>
 
             <div className="table-container">
@@ -256,10 +275,10 @@ export default function IncidentsPage() {
                 </div>
                 <div className="table-wrapper table-desktop-only">
                     <table>
-                        <thead><tr><th>No.</th><th>Waktu</th><th>Kendaraan</th><th>Supir</th><th>DO</th><th>Tipe</th><th>Lokasi</th><th>Urgency</th><th>Status</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>No.</th><th>Waktu</th><th>Kendaraan</th><th>Supir</th><th>DO</th><th>Tipe</th><th>Lokasi</th><th>Urgency</th><th>Status</th><th>Tindak Lanjut</th><th>Aksi</th></tr></thead>
                         <tbody>
-                            {loading ? [1, 2].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                filtered.length === 0 ? <tr><td colSpan={10}><div className="empty-state"><AlertTriangle size={48} className="empty-state-icon" /><div className="empty-state-title">Tidak ada insiden</div></div></td></tr> :
+                            {loading ? [1, 2].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
+                                filtered.length === 0 ? <tr><td colSpan={11}><div className="empty-state"><AlertTriangle size={48} className="empty-state-icon" /><div className="empty-state-title">Tidak ada insiden</div></div></td></tr> :
                                     filtered.map(item => (
                                         <tr key={item._id}>
                                             <td><Link href={`/fleet/incidents/${item._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{item.incidentNumber}</Link></td>
@@ -271,6 +290,7 @@ export default function IncidentsPage() {
                                             <td>{item.locationText}</td>
                                             <td><span className={`badge badge-${URGENCY_MAP[item.urgency]?.color}`}>{URGENCY_MAP[item.urgency]?.label}</span></td>
                                             <td><span className={`badge badge-${INCIDENT_STATUS_MAP[item.status]?.color}`}><span className="badge-dot" /> {INCIDENT_STATUS_MAP[item.status]?.label}</span></td>
+                                            <td>{getIncidentNextAction(item)}</td>
                                             <td><button className="table-action-btn" onClick={() => router.push(`/fleet/incidents/${item._id}`)}><Eye size={14} /> Lihat</button></td>
                                         </tr>
                                     ))}
@@ -315,6 +335,10 @@ export default function IncidentsPage() {
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Urgency</span>
                                         <span className="mobile-record-value">{URGENCY_MAP[item.urgency]?.label || item.urgency}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Tindak Lanjut</span>
+                                        <span className="mobile-record-value">{getIncidentNextAction(item)}</span>
                                     </div>
                                 </div>
                                 <div className="mobile-record-actions">

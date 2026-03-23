@@ -33,6 +33,16 @@ function createDefaultMaintenanceForm(vehicle?: Vehicle | null): MaintenanceForm
     };
 }
 
+function getMaintenanceNextAction(item: Maintenance) {
+    if (item.status === 'SCHEDULED') {
+        return 'Kerjakan servis sesuai jadwal atau odometer yang ditetapkan';
+    }
+    if (item.status === 'SKIPPED') {
+        return 'Jadwalkan ulang bila servis ini masih dibutuhkan';
+    }
+    return 'Arsip; buat jadwal berikutnya bila sudah waktunya servis lagi';
+}
+
 export default function MaintenancePage() {
     const searchParams = useSearchParams();
     const { addToast } = useToast();
@@ -181,8 +191,14 @@ export default function MaintenancePage() {
 
     return (
         <div>
-            <div className="page-header"><div className="page-header-left"><h1 className="page-title">Maintenance</h1><p className="page-subtitle">Jadwal dan riwayat servis kendaraan</p></div>
+            <div className="page-header"><div className="page-header-left"><h1 className="page-title">Maintenance</h1><p className="page-subtitle">Antrian servis kendaraan yang perlu dikerjakan, dilewati, atau diarsipkan.</p></div>
                 <div className="page-actions"><button className="btn btn-primary" onClick={() => openScheduleModal(vehicleFilter ? vehicles.find(vehicle => vehicle._id === vehicleFilter) || null : null)}><Plus size={18} /> Jadwalkan Servis</button></div></div>
+            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: '1.5rem' }}>
+                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Cara baca halaman ini</div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                    Halaman ini dipakai untuk menjadwalkan servis, menandai servis selesai, atau mencatat jadwal yang dilewati. Jika butuh konteks unit, buka dulu profil kendaraan dari baris yang bersangkutan.
+                </div>
+            </div>
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card"><div className="kpi-icon warning"><Wrench size={20} /></div><div className="kpi-content"><div className="kpi-label">Terjadwal</div><div className="kpi-value">{scheduledCount}</div></div></div>
                 <div className="kpi-card"><div className="kpi-icon success"><Wrench size={20} /></div><div className="kpi-content"><div className="kpi-label">Selesai</div><div className="kpi-value">{completedCount}</div></div></div>
@@ -192,16 +208,17 @@ export default function MaintenancePage() {
                 <div className="table-toolbar"><div className="table-toolbar-left"><div className="table-search"><Search size={16} className="table-search-icon" /><input placeholder="Cari kendaraan atau tipe servis..." value={search} onChange={e => setSearch(e.target.value)} /></div><select className="form-select" style={{ width: 'auto', minWidth: 180 }} value={vehicleFilter} onChange={e => setVehicleFilter(e.target.value)}><option value="">Semua Kendaraan</option>{vehicles.map(vehicle => <option key={vehicle._id} value={vehicle._id}>{vehicle.plateNumber} - {vehicle.brandModel}</option>)}</select><select className="form-select" style={{ width: 'auto', minWidth: 150 }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option value="">Semua Status</option>{Object.entries(MAINTENANCE_STATUS_MAP).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}</select></div></div>
                 <div className="table-wrapper table-desktop-only">
                     <table>
-                        <thead><tr><th>Kendaraan</th><th>Tipe Servis</th><th>Jadwal</th><th>Status</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>Kendaraan</th><th>Tipe Servis</th><th>Jadwal</th><th>Status</th><th>Tindak Lanjut</th><th>Aksi</th></tr></thead>
                         <tbody>
-                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                filtered.length === 0 ? <tr><td colSpan={5}><div className="empty-state"><Wrench size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada jadwal maintenance</div></div></td></tr> :
+                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
+                                filtered.length === 0 ? <tr><td colSpan={6}><div className="empty-state"><Wrench size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada jadwal maintenance</div></div></td></tr> :
                                     filtered.map(m => (
                                         <tr key={m._id}>
                                             <td><Link href={`/fleet/vehicles/${m.vehicleRef}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{m.vehiclePlate}</Link></td>
                                             <td>{m.type}</td>
                                             <td>{m.scheduleType === 'DATE' ? formatDate(m.plannedDate) : `${(m.plannedOdometer || 0).toLocaleString()} km`}</td>
                                             <td><span className={`badge badge-${MAINTENANCE_STATUS_MAP[m.status]?.color}`}><span className="badge-dot" /> {MAINTENANCE_STATUS_MAP[m.status]?.label}</span></td>
+                                            <td>{getMaintenanceNextAction(m)}</td>
                                             <td><div className="table-actions">
                                                 {m.status === 'SCHEDULED' && <><button className="table-action-btn" onClick={() => updateStatus(m._id, 'DONE')} disabled={updatingId === m._id}>{updatingId === m._id ? 'Menyimpan...' : 'Selesai'}</button><button className="table-action-btn" onClick={() => updateStatus(m._id, 'SKIPPED')} disabled={updatingId === m._id}>{updatingId === m._id ? 'Menyimpan...' : 'Lewati'}</button></>}
                                             </div></td>
@@ -232,6 +249,10 @@ export default function MaintenancePage() {
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Jadwal</span>
                                         <span className="mobile-record-value">{m.scheduleType === 'DATE' ? formatDate(m.plannedDate) : `${(m.plannedOdometer || 0).toLocaleString()} km`}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Tindak Lanjut</span>
+                                        <span className="mobile-record-value">{getMaintenanceNextAction(m)}</span>
                                     </div>
                                     {m.notes && (
                                         <div className="mobile-record-kv">

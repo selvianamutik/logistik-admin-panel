@@ -428,9 +428,9 @@ export default function DriverVoucherDetailPage() {
             {!voucher.issueBankRef && (
                 <div className="card" style={{ marginBottom: '1rem', border: '1px solid #f59e0b', background: 'rgba(245,158,11,0.08)' }}>
                     <div className="card-body" style={{ padding: '1rem' }}>
-                        <div style={{ fontWeight: 700, marginBottom: '0.35rem', color: '#92400e' }}>Bon legacy belum direkonsiliasi</div>
+                        <div style={{ fontWeight: 700, marginBottom: '0.35rem', color: '#92400e' }}>Pencairan lama belum tercatat ke rekening / kas</div>
                         <div style={{ fontSize: '0.82rem', color: '#92400e', marginBottom: '0.85rem' }}>
-                            Bon ini belum punya rekening sumber dan belum membentuk mutasi pencairan. Pilih rekening yang benar lalu posting pencairan agar laporan kas konsisten.
+                            Uang jalan lama ini belum punya sumber dana yang tercatat, jadi mutasi kas atau rekeningnya belum terbentuk. Pilih sumber dana yang benar lalu catat pencairannya agar laporan tetap konsisten.
                         </div>
                         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
                             <div className="form-group" style={{ minWidth: 260, marginBottom: 0 }}>
@@ -441,7 +441,7 @@ export default function DriverVoucherDetailPage() {
                                 </select>
                             </div>
                             <button className="btn btn-primary" onClick={handleRepairIssueLedger} disabled={repairingIssueLedger}>
-                                <CheckCircle size={16} /> {repairingIssueLedger ? 'Memproses...' : 'Posting Pencairan Legacy'}
+                                <CheckCircle size={16} /> {repairingIssueLedger ? 'Memproses...' : 'Catat Pencairan Lama'}
                             </button>
                         </div>
                     </div>
