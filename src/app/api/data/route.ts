@@ -44,15 +44,21 @@ import {
 import {
     handleDeliveryOrderCreate,
     handleDeliveryOrderDriverStatusRequestReject,
+    handleDeliveryOrderStatusUpdate,
     handleOrderItemHoldRelease,
     handleOrderItemHoldSet,
-    handleDeliveryOrderStatusUpdate,
     handleOrderCreate,
     handleOrderTargetRevision,
     handleOrderUpdateWithItems,
 } from '@/lib/api/order-workflows';
 import { handleInvoiceCreate } from '@/lib/api/support-workflows';
-import { filterExpensesByRole, sanitizeVehicleForRole } from '@/lib/rbac';
+import {
+    filterExpensesByRole,
+    hasPermission,
+    sanitizeVehicleForRole,
+    type AppModule,
+    type ModulePermissions,
+} from '@/lib/rbac';
 import {
     getSanityClient,
     SANITY_TYPE_MAP,
@@ -84,8 +90,43 @@ type DashboardSummary = {
 };
 
 const OWNER_ONLY_READ_ENTITIES = new Set(['audit-logs']);
-const OWNER_ONLY_MUTATION_ENTITIES = new Set(['company', 'audit-logs', 'bank-accounts', 'bank-transactions', 'services', 'expense-categories']);
+const OWNER_ONLY_MUTATION_ENTITIES = new Set(['company', 'audit-logs', 'services', 'expense-categories']);
 const LEGACY_READ_ONLY_ENTITIES = new Set(['invoices', 'invoice-items']);
+const ENTITY_MODULE_MAP: Partial<Record<keyof typeof SANITY_TYPE_MAP, AppModule>> = {
+    customers: 'customers',
+    'customer-products': 'customers',
+    services: 'services',
+    'expense-categories': 'expenseCategories',
+    drivers: 'drivers',
+    orders: 'orders',
+    'order-items': 'orders',
+    'delivery-orders': 'deliveryOrders',
+    'delivery-order-items': 'deliveryOrders',
+    'tracking-logs': 'deliveryOrders',
+    payments: 'freightNotas',
+    'customer-receipts': 'freightNotas',
+    'invoice-adjustments': 'freightNotas',
+    expenses: 'expenses',
+    vehicles: 'vehicles',
+    maintenances: 'maintenance',
+    'tire-events': 'tires',
+    incidents: 'incidents',
+    'incident-action-logs': 'incidents',
+    'bank-accounts': 'bankAccounts',
+    'bank-transactions': 'bankAccounts',
+    'driver-vouchers': 'driverVouchers',
+    'driver-voucher-disbursements': 'driverVouchers',
+    'driver-voucher-items': 'driverVouchers',
+    'freight-notas': 'freightNotas',
+    'freight-nota-items': 'freightNotas',
+    invoices: 'freightNotas',
+    'invoice-items': 'freightNotas',
+    'driver-borongans': 'driverBorongans',
+    'driver-borogan-items': 'driverBorongans',
+    'driver-borongan-items': 'driverBorongans',
+    users: 'userManagement',
+    'audit-logs': 'auditLogs',
+};
 
 function validateEntity(entity: string | null): entity is keyof typeof SANITY_TYPE_MAP {
     return Boolean(entity && SANITY_TYPE_MAP[entity]);
@@ -93,6 +134,41 @@ function validateEntity(entity: string | null): entity is keyof typeof SANITY_TY
 
 function forbidOwnerOnlyEntity(session: Session, entity: string) {
     if (OWNER_ONLY_MUTATION_ENTITIES.has(entity) && session.role !== 'OWNER') {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+    return null;
+}
+
+function getEntityModule(entity: string | null): AppModule | null {
+    if (!entity) return null;
+    return ENTITY_MODULE_MAP[entity as keyof typeof SANITY_TYPE_MAP] || null;
+}
+
+function getMutationPermissionAction(action?: string): keyof ModulePermissions {
+    if (action === 'delete') return 'delete';
+    if (
+        action === 'update' ||
+        action === 'update-with-items' ||
+        action === 'revise-targets' ||
+        action === 'set-status' ||
+        action === 'reject-driver-status-request' ||
+        action === 'set-hold-quantity' ||
+        action === 'release-hold' ||
+        action === 'settle' ||
+        action === 'top-up' ||
+        action === 'repair-issue-ledger' ||
+        action === 'mark-paid' ||
+        action === 'void'
+    ) {
+        return 'update';
+    }
+    return 'create';
+}
+
+function forbidModuleAccess(session: Session, entity: string, action: keyof ModulePermissions) {
+    const targetModule = getEntityModule(entity);
+    if (!targetModule) return null;
+    if (!hasPermission(session.role, targetModule, action)) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
     return null;
@@ -198,21 +274,22 @@ async function getDashboardSummary(session: Session): Promise<DashboardSummary> 
         (sum, voucher) => sum + getDriverVoucherIssuedAmount(voucher),
         0
     );
+    const canSeeFinancialTotals = session.role === 'OWNER' || session.role === 'FINANCE';
 
     return {
         orderStats,
         doStats,
         notaStats: {
             unpaid: unpaidNotas.length,
-            totalOutstanding: session.role === 'OWNER' ? notaOutstanding : 0,
+            totalOutstanding: canSeeFinancialTotals ? notaOutstanding : 0,
         },
         boronganStats: {
             unpaid: unpaidBorongans.length,
-            totalOutstanding: session.role === 'OWNER' ? boronganOutstanding : 0,
+            totalOutstanding: canSeeFinancialTotals ? boronganOutstanding : 0,
         },
         voucherStats: {
             unsettled: openVouchers.length,
-            totalIssued: session.role === 'OWNER' ? voucherIssued : 0,
+            totalIssued: canSeeFinancialTotals ? voucherIssued : 0,
         },
         fleetStats,
         recentOrders,
@@ -234,6 +311,9 @@ export async function GET(request: Request) {
     const filter = searchParams.get('filter');
 
     if (entity === 'dashboard-summary') {
+        if (!hasPermission(session.role, 'dashboard', 'view')) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
         try {
             const summary = await getDashboardSummary(session);
             return NextResponse.json({ data: summary });
@@ -245,6 +325,13 @@ export async function GET(request: Request) {
 
     if (!validateEntity(entity)) {
         return NextResponse.json({ error: 'Invalid entity type' }, { status: 400 });
+    }
+
+    if (entity !== 'users' && entity !== 'company') {
+        const forbiddenModuleRead = forbidModuleAccess(session, entity, 'view');
+        if (forbiddenModuleRead) {
+            return forbiddenModuleRead;
+        }
     }
 
     if (entity === 'users' && session.role !== 'OWNER' && id !== session._id) {
@@ -364,13 +451,6 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Invalid entity type' }, { status: 400 });
         }
 
-        if (LEGACY_READ_ONLY_ENTITIES.has(entity)) {
-            return NextResponse.json(
-                { error: 'Invoice legacy sudah dibekukan. Gunakan Nota Ongkos untuk workflow tagihan aktif.' },
-                { status: 409 }
-            );
-        }
-
         if (entity === 'users') {
             if (action === 'delete') {
                 return NextResponse.json({ error: 'User tidak boleh dihapus permanen' }, { status: 409 });
@@ -379,10 +459,22 @@ export async function POST(request: Request) {
             if (session.role !== 'OWNER' && action !== 'update') {
                 return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
             }
+        } else {
+            const forbiddenModuleMutation = forbidModuleAccess(session, entity, getMutationPermissionAction(action));
+            if (forbiddenModuleMutation) {
+                return forbiddenModuleMutation;
+            }
         }
 
         const forbidden = forbidOwnerOnlyEntity(session, entity);
         if (forbidden) return forbidden;
+
+        if (LEGACY_READ_ONLY_ENTITIES.has(entity)) {
+            return NextResponse.json(
+                { error: 'Invoice legacy sudah dibekukan. Gunakan Nota Ongkos untuk workflow tagihan aktif.' },
+                { status: 409 }
+            );
+        }
 
         const docType = SANITY_TYPE_MAP[entity];
 

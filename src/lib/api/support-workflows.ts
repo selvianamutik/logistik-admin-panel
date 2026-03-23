@@ -13,6 +13,8 @@ type AuditLogFn = (
     summary: string
 ) => void | Promise<void>;
 
+const MANAGEABLE_USER_ROLES = ['OWNER', 'OPERASIONAL', 'FINANCE', 'ARMADA', 'DRIVER'] as const;
+
 async function validateDriverAccountLink(driverRef: unknown, excludeUserId?: string) {
     const normalizedDriverRef = normalizeText(driverRef);
     if (!normalizedDriverRef) {
@@ -46,7 +48,7 @@ export async function normalizeUserCreatePayload(data: Record<string, unknown>) 
     const email = normalizeText(data.email).toLowerCase();
     const password = typeof data.password === 'string' ? data.password.trim() : '';
     const role =
-        data.role === 'OWNER' || data.role === 'ADMIN' || data.role === 'DRIVER'
+        typeof data.role === 'string' && MANAGEABLE_USER_ROLES.includes(data.role as typeof MANAGEABLE_USER_ROLES[number])
             ? data.role
             : null;
     if (!name || !email) {
@@ -131,7 +133,10 @@ export async function normalizeUserUpdates(
         nextUpdates.email = normalizedEmail;
     }
 
-    if (typeof nextUpdates.role === 'string' && !['OWNER', 'ADMIN', 'DRIVER'].includes(nextUpdates.role)) {
+    if (
+        typeof nextUpdates.role === 'string' &&
+        !MANAGEABLE_USER_ROLES.includes(nextUpdates.role as typeof MANAGEABLE_USER_ROLES[number])
+    ) {
         throw new Error('Role user tidak valid');
     }
 

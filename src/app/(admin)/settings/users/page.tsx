@@ -4,14 +4,23 @@ import { useState, useEffect } from 'react';
 import { useToast } from '../../layout';
 import { Plus, Edit, Save, X, RefreshCw } from 'lucide-react';
 import type { User } from '@/lib/types';
+import { INTERNAL_USER_ROLE_OPTIONS, type InternalUserRole } from '@/lib/rbac';
 
-type InternalUserRole = Exclude<User['role'], 'DRIVER'>;
 type InternalUser = User & { role: InternalUserRole };
 
 const getUserNextAction = (user: InternalUser) => {
     if (user.active === false) return 'Aktifkan bila user dipakai lagi';
     if (user.role === 'OWNER') return 'Pastikan akun owner tetap aman';
-    return 'Siap dipakai operasional internal';
+    if (user.role === 'FINANCE') return 'Siap dipakai tim finance';
+    if (user.role === 'ARMADA') return 'Siap dipakai tim armada';
+    return 'Siap dipakai tim operasional';
+};
+
+const ROLE_LABELS: Record<InternalUserRole, string> = {
+    OWNER: 'OWNER',
+    OPERASIONAL: 'OPERASIONAL',
+    FINANCE: 'FINANCE',
+    ARMADA: 'ARMADA',
 };
 
 export default function UsersPage() {
@@ -22,10 +31,13 @@ export default function UsersPage() {
     const [editUser, setEditUser] = useState<InternalUser | null>(null);
     const [saving, setSaving] = useState(false);
     const [togglingUserId, setTogglingUserId] = useState<string | null>(null);
-    const [form, setForm] = useState({ name: '', email: '', role: 'ADMIN' as InternalUserRole, password: '' });
+    const [form, setForm] = useState({ name: '', email: '', role: 'OPERASIONAL' as InternalUserRole, password: '' });
     const activeUsers = users.filter(user => user.active !== false).length;
     const inactiveUsers = users.filter(user => user.active === false).length;
     const ownerUsers = users.filter(user => user.role === 'OWNER').length;
+    const operationalUsers = users.filter(user => user.role === 'OPERASIONAL').length;
+    const financeUsers = users.filter(user => user.role === 'FINANCE').length;
+    const armadaUsers = users.filter(user => user.role === 'ARMADA').length;
 
     useEffect(() => {
         const loadUsers = async () => {
@@ -46,7 +58,7 @@ export default function UsersPage() {
         void loadUsers();
     }, [addToast]);
 
-    const openNew = () => { setEditUser(null); setForm({ name: '', email: '', role: 'ADMIN', password: '' }); setShowModal(true); };
+    const openNew = () => { setEditUser(null); setForm({ name: '', email: '', role: 'OPERASIONAL', password: '' }); setShowModal(true); };
     const openEdit = (u: InternalUser) => { setEditUser(u); setForm({ name: u.name, email: u.email, role: u.role, password: '' }); setShowModal(true); };
 
     const handleSave = async () => {
@@ -123,7 +135,7 @@ export default function UsersPage() {
             <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)' }}>
                 <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Cara baca halaman ini</div>
                 <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                    Halaman ini dipakai untuk mengelola akun internal admin dan owner. Fokuskan dulu ke user yang masih aktif, lalu nonaktifkan akun yang sudah tidak dipakai agar akses sistem tetap rapi.
+                    Halaman ini dipakai untuk mengelola akun internal owner, operasional, finance, dan armada. Fokuskan dulu ke user yang masih aktif, lalu nonaktifkan akun yang sudah tidak dipakai agar akses sistem tetap rapi.
                 </div>
             </div>
 
@@ -131,7 +143,9 @@ export default function UsersPage() {
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">User Aktif</div><div className="kpi-value">{activeUsers}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">User Nonaktif</div><div className="kpi-value">{inactiveUsers}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Owner</div><div className="kpi-value">{ownerUsers}</div></div></div>
-                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Admin</div><div className="kpi-value">{users.length - ownerUsers}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Operasional</div><div className="kpi-value">{operationalUsers}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Finance</div><div className="kpi-value">{financeUsers}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Armada</div><div className="kpi-value">{armadaUsers}</div></div></div>
             </div>
 
             <div className="table-container">
@@ -143,7 +157,7 @@ export default function UsersPage() {
                                 users.map(u => (
                                     <tr key={u._id}>
                                         <td className="font-semibold">{u.name}</td><td>{u.email}</td>
-                                        <td><span className={`badge ${u.role === 'OWNER' ? 'badge-purple' : 'badge-info'}`}>{u.role}</span></td>
+                                        <td><span className={`badge ${u.role === 'OWNER' ? 'badge-purple' : 'badge-info'}`}>{ROLE_LABELS[u.role]}</span></td>
                                         <td><span className={`badge ${u.active !== false ? 'badge-success' : 'badge-gray'}`}>{u.active !== false ? 'Aktif' : 'Non-Aktif'}</span></td>
                                         <td>{getUserNextAction(u)}</td>
                                         <td><div className="table-actions">
@@ -174,7 +188,7 @@ export default function UsersPage() {
                                 <div className="mobile-record-meta">
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Role</span>
-                                        <span className="mobile-record-value">{u.role}</span>
+                                        <span className="mobile-record-value">{ROLE_LABELS[u.role]}</span>
                                     </div>
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Tindak Lanjut</span>
@@ -204,7 +218,9 @@ export default function UsersPage() {
                             <div className="form-group"><label className="form-label">Email <span className="required">*</span></label><input className="form-input" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
                             <div className="form-group"><label className="form-label">Role</label>
                                 <select className="form-select" value={form.role} onChange={e => setForm({ ...form, role: e.target.value as InternalUserRole })}>
-                                    <option value="ADMIN">ADMIN</option><option value="OWNER">OWNER</option>
+                                    {INTERNAL_USER_ROLE_OPTIONS.map(role => (
+                                        <option key={role} value={role}>{ROLE_LABELS[role]}</option>
+                                    ))}
                                 </select>
                             </div>
                             <div className="form-group"><label className="form-label">{editUser ? 'Reset Password (kosongkan jika tidak diubah)' : 'Password *'}</label><input className="form-input" type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} /><div className="form-hint">Minimal 8 karakter</div></div>

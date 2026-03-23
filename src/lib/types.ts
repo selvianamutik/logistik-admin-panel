@@ -5,7 +5,7 @@
 // ── Roles & Auth ──
 import type { VolumeInputUnit, WeightInputUnit } from './measurement';
 
-export type UserRole = 'OWNER' | 'ADMIN' | 'DRIVER';
+export type UserRole = 'OWNER' | 'OPERASIONAL' | 'FINANCE' | 'ARMADA' | 'DRIVER' | 'ADMIN';
 
 export interface User {
   _id: string;

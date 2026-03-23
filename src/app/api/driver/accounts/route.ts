@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { hashPassword } from '@/lib/auth';
 import { sanitizeUserForClient } from '@/lib/api/data-helpers';
-import { requireAdminOrOwnerSession } from '@/lib/api/driver-portal';
+import { requireInternalSession } from '@/lib/api/driver-portal';
 import { ensureSameOriginRequest } from '@/lib/api/request-security';
 import { getSanityClient, sanityCreate, sanityGetById, sanityUpdate } from '@/lib/sanity';
 import type { Driver, User } from '@/lib/types';
@@ -125,7 +125,7 @@ async function deactivateDriverAccountAtomically(input: {
 }
 
 export async function GET() {
-    const auth = await requireAdminOrOwnerSession();
+    const auth = await requireInternalSession(['OWNER', 'ARMADA']);
     if ('error' in auth) {
         return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
@@ -151,7 +151,7 @@ export async function POST(request: Request) {
         return originError;
     }
 
-    const auth = await requireAdminOrOwnerSession();
+    const auth = await requireInternalSession(['OWNER', 'ARMADA']);
     if ('error' in auth) {
         return NextResponse.json({ error: auth.error }, { status: auth.status });
     }

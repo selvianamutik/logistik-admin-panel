@@ -6,10 +6,34 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 import { matchesPathSegment } from '@/lib/pathname';
+import { hasPermission, type AppModule } from '@/lib/rbac';
 import { DRIVER_SESSION_COOKIE, SESSION_COOKIE, verifySessionToken } from '@/lib/session';
 import type { SessionUser } from '@/lib/types';
 
-const OWNER_ONLY_PATHS = ['/settings/company', '/settings/users', '/settings/audit-logs', '/reports'];
+const INTERNAL_PATH_MODULES: Array<{ path: string; module: AppModule }> = [
+    { path: '/dashboard', module: 'dashboard' },
+    { path: '/orders', module: 'orders' },
+    { path: '/delivery-orders', module: 'deliveryOrders' },
+    { path: '/invoices', module: 'freightNotas' },
+    { path: '/customers', module: 'customers' },
+    { path: '/services', module: 'services' },
+    { path: '/expense-categories', module: 'expenseCategories' },
+    { path: '/expenses', module: 'expenses' },
+    { path: '/reports', module: 'reports' },
+    { path: '/fleet/vehicles', module: 'vehicles' },
+    { path: '/fleet/drivers', module: 'drivers' },
+    { path: '/fleet/maintenance', module: 'maintenance' },
+    { path: '/fleet/tires', module: 'tires' },
+    { path: '/fleet/incidents', module: 'incidents' },
+    { path: '/bank-accounts', module: 'bankAccounts' },
+    { path: '/driver-vouchers', module: 'driverVouchers' },
+    { path: '/borongan', module: 'driverBorongans' },
+    { path: '/settings/profile', module: 'profile' },
+    { path: '/settings/password', module: 'profile' },
+    { path: '/settings/company', module: 'companySettings' },
+    { path: '/settings/users', module: 'userManagement' },
+    { path: '/settings/audit-logs', module: 'auditLogs' },
+];
 
 function isDriverPortalPath(pathname: string) {
     return matchesPathSegment(pathname, '/driver');
@@ -21,6 +45,11 @@ function isDriverLoginPath(pathname: string) {
 
 function isAdminLoginPath(pathname: string) {
     return matchesPathSegment(pathname, '/login');
+}
+
+function getModuleForPath(pathname: string) {
+    const matched = INTERNAL_PATH_MODULES.find(item => matchesPathSegment(pathname, item.path));
+    return matched?.module || null;
 }
 
 async function getLiveSessionUser(
@@ -205,7 +234,8 @@ export async function proxy(request: NextRequest) {
             return NextResponse.redirect(new URL('/driver', request.url));
         }
 
-        if (user.role !== 'OWNER' && OWNER_ONLY_PATHS.some(path => matchesPathSegment(pathname, path))) {
+        const targetModule = getModuleForPath(pathname);
+        if (targetModule && !hasPermission(user.role, targetModule, 'view')) {
             return NextResponse.redirect(new URL('/dashboard', request.url));
         }
 

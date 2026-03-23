@@ -1,6 +1,7 @@
 import { getDriverSession, getSession, getSessionFromToken } from '@/lib/auth';
 import { getSanityClient, sanityGetById, sanityGetCompanyProfile } from '@/lib/sanity';
 import type { CompanyProfile, DeliveryOrder, Driver, SessionUser, User } from '@/lib/types';
+import { normalizeUserRole, type InternalUserRole } from '@/lib/rbac';
 
 export type DriverSessionContext = {
     session: SessionUser;
@@ -8,12 +9,16 @@ export type DriverSessionContext = {
     driver: Driver;
 };
 
-export async function requireAdminOrOwnerSession() {
+export async function requireInternalSession(allowedRoles?: InternalUserRole[]) {
     const session = await getSession();
     if (!session) {
         return { error: 'Unauthorized', status: 401 } as const;
     }
-    if (session.role !== 'OWNER' && session.role !== 'ADMIN') {
+    const normalizedRole = normalizeUserRole(session.role);
+    if (normalizedRole === 'DRIVER') {
+        return { error: 'Forbidden', status: 403 } as const;
+    }
+    if (allowedRoles && !allowedRoles.includes(normalizedRole)) {
         return { error: 'Forbidden', status: 403 } as const;
     }
     return { session } as const;

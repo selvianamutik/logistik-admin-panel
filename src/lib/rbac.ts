@@ -1,11 +1,10 @@
 /* ============================================================
-   LOGISTIK — RBAC + RLC Privacy System
+   LOGISTIK - RBAC + RLC Privacy System
    Role-based access control with record/field-level privacy
    ============================================================ */
 
-import { UserRole, Expense, Vehicle } from './types';
+import type { Expense, UserRole, Vehicle } from './types';
 
-// ── Permission Matrix ──
 export interface ModulePermissions {
     view: boolean;
     create: boolean;
@@ -15,133 +14,204 @@ export interface ModulePermissions {
     print: boolean;
 }
 
-const permissionMatrix: Record<string, Partial<Record<UserRole, ModulePermissions>>> = {
+export type EffectiveUserRole = Exclude<UserRole, 'ADMIN'>;
+export type InternalUserRole = Exclude<EffectiveUserRole, 'DRIVER'>;
+export type AppModule =
+    | 'dashboard'
+    | 'orders'
+    | 'deliveryOrders'
+    | 'invoices'
+    | 'customers'
+    | 'services'
+    | 'expenseCategories'
+    | 'expenses'
+    | 'reports'
+    | 'vehicles'
+    | 'maintenance'
+    | 'incidents'
+    | 'companySettings'
+    | 'userManagement'
+    | 'auditLogs'
+    | 'profile'
+    | 'tires'
+    | 'drivers'
+    | 'bankAccounts'
+    | 'driverVouchers'
+    | 'freightNotas'
+    | 'driverBorongans';
+
+const DENY_ALL: ModulePermissions = {
+    view: false,
+    create: false,
+    update: false,
+    delete: false,
+    export: false,
+    print: false,
+};
+
+const OWNER_FULL: ModulePermissions = {
+    view: true,
+    create: true,
+    update: true,
+    delete: true,
+    export: true,
+    print: true,
+};
+
+export const INTERNAL_USER_ROLE_OPTIONS: InternalUserRole[] = [
+    'OWNER',
+    'OPERASIONAL',
+    'FINANCE',
+    'ARMADA',
+];
+
+export function normalizeUserRole(role: UserRole): EffectiveUserRole {
+    return role === 'ADMIN' ? 'OPERASIONAL' : role;
+}
+
+const permissionMatrix: Record<AppModule, Partial<Record<EffectiveUserRole, ModulePermissions>>> = {
     dashboard: {
-        OWNER: { view: true, create: false, update: false, delete: false, export: false, print: false },
-        ADMIN: { view: true, create: false, update: false, delete: false, export: false, print: false },
+        OWNER: { ...DENY_ALL, view: true },
+        OPERASIONAL: { ...DENY_ALL, view: true },
+        FINANCE: { ...DENY_ALL, view: true },
+        ARMADA: { ...DENY_ALL, view: true },
     },
     orders: {
-        OWNER: { view: true, create: true, update: true, delete: true, export: true, print: true },
-        ADMIN: { view: true, create: true, update: true, delete: true, export: true, print: true },
+        OWNER: OWNER_FULL,
+        OPERASIONAL: OWNER_FULL,
+        FINANCE: { ...DENY_ALL, view: true },
+        ARMADA: { ...DENY_ALL, view: true },
     },
     deliveryOrders: {
-        OWNER: { view: true, create: true, update: true, delete: true, export: true, print: true },
-        ADMIN: { view: true, create: true, update: true, delete: true, export: true, print: true },
+        OWNER: OWNER_FULL,
+        OPERASIONAL: OWNER_FULL,
+        FINANCE: { ...DENY_ALL, view: true, print: true },
+        ARMADA: { ...DENY_ALL, view: true, print: true },
     },
     invoices: {
-        OWNER: { view: true, create: true, update: true, delete: true, export: true, print: true },
-        ADMIN: { view: true, create: true, update: false, delete: false, export: true, print: true },
+        OWNER: OWNER_FULL,
+        FINANCE: OWNER_FULL,
+        OPERASIONAL: { ...DENY_ALL, view: true, print: true },
     },
     customers: {
-        OWNER: { view: true, create: true, update: true, delete: true, export: true, print: false },
-        ADMIN: { view: true, create: true, update: true, delete: true, export: true, print: false },
+        OWNER: OWNER_FULL,
+        OPERASIONAL: OWNER_FULL,
+        FINANCE: { ...DENY_ALL, view: true },
     },
     services: {
-        OWNER: { view: true, create: true, update: true, delete: true, export: false, print: false },
-        ADMIN: { view: true, create: false, update: false, delete: false, export: false, print: false },
+        OWNER: OWNER_FULL,
+        OPERASIONAL: { ...DENY_ALL, view: true },
+        ARMADA: { ...DENY_ALL, view: true },
     },
     expenseCategories: {
-        OWNER: { view: true, create: true, update: true, delete: true, export: false, print: false },
-        ADMIN: { view: true, create: false, update: false, delete: false, export: false, print: false },
+        OWNER: OWNER_FULL,
+        OPERASIONAL: { ...DENY_ALL, view: true },
+        FINANCE: { ...DENY_ALL, view: true },
     },
     expenses: {
-        OWNER: { view: true, create: true, update: true, delete: true, export: true, print: false },
-        ADMIN: { view: true, create: true, update: false, delete: false, export: false, print: false },
+        OWNER: OWNER_FULL,
+        OPERASIONAL: { ...DENY_ALL, view: true, create: true },
+        FINANCE: OWNER_FULL,
     },
     reports: {
-        OWNER: { view: true, create: false, update: false, delete: false, export: true, print: true },
-        ADMIN: { view: false, create: false, update: false, delete: false, export: false, print: false },
+        OWNER: { ...DENY_ALL, view: true, export: true, print: true },
+        FINANCE: { ...DENY_ALL, view: true, export: true, print: true },
     },
     vehicles: {
-        OWNER: { view: true, create: true, update: true, delete: true, export: true, print: true },
-        ADMIN: { view: true, create: true, update: true, delete: true, export: true, print: true },
+        OWNER: OWNER_FULL,
+        OPERASIONAL: { ...DENY_ALL, view: true, print: true },
+        ARMADA: OWNER_FULL,
     },
     maintenance: {
-        OWNER: { view: true, create: true, update: true, delete: true, export: false, print: false },
-        ADMIN: { view: true, create: true, update: true, delete: false, export: false, print: false },
+        OWNER: OWNER_FULL,
+        OPERASIONAL: { ...DENY_ALL, view: true },
+        ARMADA: OWNER_FULL,
     },
     incidents: {
-        OWNER: { view: true, create: true, update: true, delete: true, export: true, print: true },
-        ADMIN: { view: true, create: true, update: true, delete: false, export: true, print: true },
+        OWNER: OWNER_FULL,
+        OPERASIONAL: { ...DENY_ALL, view: true, create: true, update: true, export: true, print: true },
+        ARMADA: OWNER_FULL,
     },
     companySettings: {
-        OWNER: { view: true, create: false, update: true, delete: false, export: false, print: false },
-        ADMIN: { view: false, create: false, update: false, delete: false, export: false, print: false },
+        OWNER: { ...DENY_ALL, view: true, update: true },
     },
     userManagement: {
-        OWNER: { view: true, create: true, update: true, delete: true, export: false, print: false },
-        ADMIN: { view: false, create: false, update: false, delete: false, export: false, print: false },
+        OWNER: OWNER_FULL,
     },
     auditLogs: {
-        OWNER: { view: true, create: false, update: false, delete: false, export: true, print: false },
-        ADMIN: { view: false, create: false, update: false, delete: false, export: false, print: false },
+        OWNER: { ...DENY_ALL, view: true, export: true },
     },
     profile: {
-        OWNER: { view: true, create: false, update: true, delete: false, export: false, print: false },
-        ADMIN: { view: true, create: false, update: true, delete: false, export: false, print: false },
+        OWNER: { ...DENY_ALL, view: true, update: true },
+        OPERASIONAL: { ...DENY_ALL, view: true, update: true },
+        FINANCE: { ...DENY_ALL, view: true, update: true },
+        ARMADA: { ...DENY_ALL, view: true, update: true },
     },
     tires: {
-        OWNER: { view: true, create: true, update: true, delete: true, export: false, print: false },
-        ADMIN: { view: true, create: true, update: true, delete: false, export: false, print: false },
+        OWNER: OWNER_FULL,
+        OPERASIONAL: { ...DENY_ALL, view: true },
+        ARMADA: OWNER_FULL,
     },
     drivers: {
-        OWNER: { view: true, create: true, update: true, delete: true, export: false, print: false },
-        ADMIN: { view: true, create: true, update: true, delete: false, export: false, print: false },
+        OWNER: OWNER_FULL,
+        OPERASIONAL: { ...DENY_ALL, view: true },
+        ARMADA: OWNER_FULL,
     },
     bankAccounts: {
-        OWNER: { view: true, create: true, update: true, delete: true, export: true, print: false },
-        ADMIN: { view: true, create: false, update: false, delete: false, export: false, print: false },
+        OWNER: OWNER_FULL,
+        OPERASIONAL: { ...DENY_ALL, view: true },
+        FINANCE: { ...DENY_ALL, view: true, create: true, update: true, export: true },
     },
     driverVouchers: {
-        OWNER: { view: true, create: true, update: true, delete: true, export: true, print: true },
-        ADMIN: { view: true, create: true, update: true, delete: false, export: true, print: true },
+        OWNER: OWNER_FULL,
+        OPERASIONAL: OWNER_FULL,
+        FINANCE: { ...DENY_ALL, view: true, export: true, print: true },
     },
     freightNotas: {
-        OWNER: { view: true, create: true, update: true, delete: true, export: true, print: true },
-        ADMIN: { view: true, create: true, update: true, delete: false, export: true, print: true },
+        OWNER: OWNER_FULL,
+        OPERASIONAL: { ...DENY_ALL, view: true, print: true },
+        FINANCE: OWNER_FULL,
     },
     driverBorongans: {
-        OWNER: { view: true, create: true, update: true, delete: true, export: true, print: true },
-        ADMIN: { view: true, create: true, update: true, delete: false, export: true, print: true },
+        OWNER: OWNER_FULL,
+        OPERASIONAL: { ...DENY_ALL, view: true },
+        FINANCE: { ...DENY_ALL, view: true, export: true, print: true },
     },
 };
 
-// ── Check Permission ──
-export function hasPermission(role: UserRole, module: string, action: keyof ModulePermissions): boolean {
+export function hasPermission(role: UserRole, module: AppModule, action: keyof ModulePermissions): boolean {
+    const normalizedRole = normalizeUserRole(role);
     const modulePerms = permissionMatrix[module];
     if (!modulePerms) return false;
-    const rolePerms = modulePerms[role];
+    const rolePerms = modulePerms[normalizedRole];
     if (!rolePerms) return false;
     return rolePerms[action];
 }
 
-export function getModulePermissions(role: UserRole, module: string): ModulePermissions {
-    return permissionMatrix[module]?.[role] || {
-        view: false, create: false, update: false, delete: false, export: false, print: false,
+export function getModulePermissions(role: UserRole, module: AppModule): ModulePermissions {
+    const normalizedRole = normalizeUserRole(role);
+    return permissionMatrix[module]?.[normalizedRole] || DENY_ALL;
+}
+
+export function filterExpensesByRole(expenses: Expense[], role: UserRole): Expense[] {
+    if (normalizeUserRole(role) === 'OWNER') return expenses;
+    return expenses.filter(expense => expense.privacyLevel !== 'ownerOnly');
+}
+
+export function sanitizeVehicleForRole(vehicle: Vehicle, role: UserRole): Vehicle {
+    if (normalizeUserRole(role) === 'OWNER') return vehicle;
+    return {
+        ...vehicle,
+        chassisNumber: undefined,
+        engineNumber: undefined,
     };
 }
 
-// ── RLC: Filter expenses by privacy ──
-export function filterExpensesByRole(expenses: Expense[], role: UserRole): Expense[] {
-    if (role === 'OWNER') return expenses;
-    return expenses.filter(e => e.privacyLevel !== 'ownerOnly');
-}
-
-// ── RLC: Sanitize vehicle data for ADMIN ──
-export function sanitizeVehicleForRole(vehicle: Vehicle, role: UserRole): Vehicle {
-    if (role === 'OWNER') return vehicle;
-    // Remove sensitive fields for ADMIN
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { chassisNumber: _c, engineNumber: _e, ...safe } = vehicle;
-    return { ...safe, chassisNumber: undefined, engineNumber: undefined };
-}
-
-// ── Sidebar Menu Items ──
 export interface SidebarMenuItem {
     label: string;
     href: string;
     icon: string;
-    module: string;
+    module: AppModule;
     badge?: number;
 }
 
@@ -151,16 +221,15 @@ export interface SidebarMenuGroup {
 }
 
 export function getSidebarMenu(role: UserRole): SidebarMenuGroup[] {
-    if (role === 'DRIVER') {
+    const normalizedRole = normalizeUserRole(role);
+    if (normalizedRole === 'DRIVER') {
         return [];
     }
 
     const groups: SidebarMenuGroup[] = [
         {
             label: 'Utama',
-            items: [
-                { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', module: 'dashboard' },
-            ],
+            items: [{ label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', module: 'dashboard' }],
         },
         {
             label: 'Kerja Harian',
@@ -176,7 +245,7 @@ export function getSidebarMenu(role: UserRole): SidebarMenuGroup[] {
             items: [
                 { label: 'Tagihan / Nota', href: '/invoices', icon: 'FileText', module: 'freightNotas' },
                 { label: 'Rekening & Kas', href: '/bank-accounts', icon: 'Landmark', module: 'bankAccounts' },
-                ...(role === 'OWNER' ? [{ label: 'Laporan', href: '/reports', icon: 'BarChart3', module: 'reports' }] : []),
+                { label: 'Laporan', href: '/reports', icon: 'BarChart3', module: 'reports' },
             ],
         },
         {
@@ -202,18 +271,17 @@ export function getSidebarMenu(role: UserRole): SidebarMenuGroup[] {
             items: [
                 { label: 'Profil Saya', href: '/settings/profile', icon: 'User', module: 'profile' },
                 { label: 'Ubah Password', href: '/settings/password', icon: 'Lock', module: 'profile' },
-                ...(role === 'OWNER' ? [
-                    { label: 'Perusahaan', href: '/settings/company', icon: 'Building2', module: 'companySettings' },
-                    { label: 'Pengguna', href: '/settings/users', icon: 'UserCog', module: 'userManagement' },
-                    { label: 'Audit Aktivitas', href: '/settings/audit-logs', icon: 'ScrollText', module: 'auditLogs' },
-                ] : []),
+                { label: 'Perusahaan', href: '/settings/company', icon: 'Building2', module: 'companySettings' },
+                { label: 'Pengguna', href: '/settings/users', icon: 'UserCog', module: 'userManagement' },
+                { label: 'Audit Aktivitas', href: '/settings/audit-logs', icon: 'ScrollText', module: 'auditLogs' },
             ],
         },
     ];
 
-    // Filter groups based on role permissions
-    return groups.map(group => ({
-        ...group,
-        items: group.items.filter(item => hasPermission(role, item.module, 'view')),
-    })).filter(group => group.items.length > 0);
+    return groups
+        .map(group => ({
+            ...group,
+            items: group.items.filter(item => hasPermission(normalizedRole, item.module, 'view')),
+        }))
+        .filter(group => group.items.length > 0);
 }

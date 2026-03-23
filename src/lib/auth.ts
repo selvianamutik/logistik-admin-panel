@@ -7,6 +7,7 @@ import { compare, hash } from 'bcryptjs';
 import { cookies, headers } from 'next/headers';
 
 import type { SessionUser, User } from './types';
+import { normalizeUserRole } from './rbac';
 import { sanityGetById } from './sanity';
 import {
     createSessionToken,
@@ -40,7 +41,7 @@ export async function createSession(user: User): Promise<string> {
         _id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role,
+        role: normalizeUserRole(user.role),
         driverRef: user.driverRef,
     };
 
@@ -52,7 +53,7 @@ function buildSessionUser(user: User): SessionUser {
         _id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role,
+        role: normalizeUserRole(user.role),
         driverRef: user.driverRef,
         driverName: user.driverName,
     };

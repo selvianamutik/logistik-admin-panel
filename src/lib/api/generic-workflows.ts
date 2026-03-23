@@ -159,6 +159,55 @@ function normalizeCustomerPayload(data: Record<string, unknown>, existing?: Reco
     return next;
 }
 
+function normalizeBankAccountPayload(data: Record<string, unknown>, existing?: Record<string, unknown>) {
+    const next: Record<string, unknown> = {};
+
+    if (Object.prototype.hasOwnProperty.call(data, 'bankName') || !existing) {
+        const bankName = normalizeText(data.bankName);
+        if (!bankName) {
+            throw new Error('Nama rekening / kas wajib diisi');
+        }
+        next.bankName = bankName;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'accountNumber') || !existing) {
+        const accountNumber = normalizeText(data.accountNumber);
+        if (!accountNumber) {
+            throw new Error('Nomor rekening / kode kas wajib diisi');
+        }
+        next.accountNumber = accountNumber;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'accountHolder') || !existing) {
+        const accountHolder = normalizeText(data.accountHolder);
+        if (!accountHolder) {
+            throw new Error('Atas nama rekening / kas wajib diisi');
+        }
+        next.accountHolder = accountHolder;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'initialBalance') || !existing) {
+        const initialBalance = normalizeNumber(data.initialBalance);
+        if (!Number.isFinite(initialBalance) || initialBalance < 0) {
+            throw new Error('Saldo awal rekening / kas tidak valid');
+        }
+        next.initialBalance = initialBalance;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'notes') || !existing) {
+        next.notes = normalizeOptionalText(data.notes);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'active') || !existing) {
+        if (data.active !== undefined && typeof data.active !== 'boolean') {
+            throw new Error('Status rekening / kas tidak valid');
+        }
+        next.active = typeof data.active === 'boolean' ? data.active : true;
+    }
+
+    return next;
+}
+
 async function normalizeCustomerProductPayload(data: Record<string, unknown>, existing?: Record<string, unknown>) {
     const next: Record<string, unknown> = {};
     const existingId = typeof existing?._id === 'string' ? existing._id : undefined;
@@ -621,6 +670,15 @@ export async function handleGenericUpdate(
                 return NextResponse.json({ error: 'Identitas akun Kas Tunai sistem tidak boleh diubah manual' }, { status: 409 });
             }
         }
+
+        try {
+            Object.assign(updates, normalizeBankAccountPayload(updates, existingAccount as unknown as Record<string, unknown>));
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Data rekening / kas tidak valid' },
+                { status: 400 }
+            );
+        }
     }
 
     const normalizedUpdates =
@@ -904,6 +962,14 @@ export async function handleGenericCreate(
     if (entity === 'bank-accounts') {
         if (data.accountType === 'CASH' || typeof data.systemKey === 'string') {
             return NextResponse.json({ error: 'Akun sistem tidak boleh dibuat manual' }, { status: 409 });
+        }
+        try {
+            Object.assign(newDoc, normalizeBankAccountPayload(data));
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Data rekening / kas tidak valid' },
+                { status: 400 }
+            );
         }
         newDoc.accountType = 'BANK';
     }

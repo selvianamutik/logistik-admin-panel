@@ -5,6 +5,7 @@ import {
     sanityGetCompanyProfile,
     sanityUpdate,
 } from '@/lib/sanity';
+import { normalizeUserRole } from '@/lib/rbac';
 import type { CompanyProfile, User } from '@/lib/types';
 
 export type ApiSession = { _id: string; name: string; role: User['role'] };
@@ -64,7 +65,10 @@ export function extractRefId(value: unknown) {
 export function sanitizeUserForClient(user: User): PublicUser {
     const { passwordHash, ...safeUser } = user;
     void passwordHash;
-    return safeUser;
+    return {
+        ...safeUser,
+        role: normalizeUserRole(user.role),
+    };
 }
 
 export function sanitizeCompanyProfileForRole(

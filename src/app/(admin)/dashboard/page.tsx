@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { formatCurrency, formatDate, getReceivableNetAmount, ORDER_STATUS_MAP, INVOICE_STATUS_MAP } from '@/lib/utils';
 import Link from 'next/link';
+import { hasPermission } from '@/lib/rbac';
 
 interface DashboardData {
     orderStats: { total: number; open: number; partial: number; complete: number; onHold: number };
@@ -115,7 +116,13 @@ export default function DashboardPage() {
             </div>
         );
     }
-    const isOwner = user?.role === 'OWNER';
+    const canSeeFinancialTotals = user ? (user.role === 'OWNER' || user.role === 'FINANCE') : false;
+    const canViewOrders = user ? hasPermission(user.role, 'orders', 'view') : false;
+    const canViewDeliveryOrders = user ? hasPermission(user.role, 'deliveryOrders', 'view') : false;
+    const canViewInvoices = user ? hasPermission(user.role, 'freightNotas', 'view') : false;
+    const canViewIncidents = user ? hasPermission(user.role, 'incidents', 'view') : false;
+    const canViewMaintenance = user ? hasPermission(user.role, 'maintenance', 'view') : false;
+    const canViewTripCash = user ? hasPermission(user.role, 'driverVouchers', 'view') : false;
 
     return (
         <div>
@@ -135,7 +142,7 @@ export default function DashboardPage() {
 
             {/* KPI Cards */}
             <div className="kpi-grid">
-                <Link href="/orders" style={{ textDecoration: 'none' }}>
+                {canViewOrders && <Link href="/orders" style={{ textDecoration: 'none' }}>
                     <div className="kpi-card">
                         <div className="kpi-icon primary"><Package size={24} /></div>
                         <div className="kpi-content">
@@ -144,9 +151,9 @@ export default function DashboardPage() {
                             <div className="kpi-sub">{data.orderStats.open} belum terkirim, {data.orderStats.partial} sebagian terkirim</div>
                         </div>
                     </div>
-                </Link>
+                </Link>}
 
-                <Link href="/delivery-orders" style={{ textDecoration: 'none' }}>
+                {canViewDeliveryOrders && <Link href="/delivery-orders" style={{ textDecoration: 'none' }}>
                     <div className="kpi-card">
                         <div className="kpi-icon info"><Truck size={24} /></div>
                         <div className="kpi-content">
@@ -155,20 +162,20 @@ export default function DashboardPage() {
                             <div className="kpi-sub">{data.doStats.total} total surat jalan</div>
                         </div>
                     </div>
-                </Link>
+                </Link>}
 
-                <Link href="/invoices" style={{ textDecoration: 'none' }}>
+                {canViewInvoices && <Link href="/invoices" style={{ textDecoration: 'none' }}>
                     <div className="kpi-card">
                         <div className="kpi-icon warning"><FileText size={24} /></div>
                         <div className="kpi-content">
                             <div className="kpi-label">Nota Belum Lunas</div>
                             <div className="kpi-value">{data.notaStats.unpaid}</div>
-                            {isOwner && <div className="kpi-sub">{formatCurrency(data.notaStats.totalOutstanding)} piutang aktif</div>}
+                            {canSeeFinancialTotals && <div className="kpi-sub">{formatCurrency(data.notaStats.totalOutstanding)} piutang aktif</div>}
                         </div>
                     </div>
-                </Link>
+                </Link>}
 
-                <Link href="/fleet/incidents" style={{ textDecoration: 'none' }}>
+                {canViewIncidents && <Link href="/fleet/incidents" style={{ textDecoration: 'none' }}>
                     <div className="kpi-card">
                         <div className="kpi-icon danger"><AlertTriangle size={24} /></div>
                         <div className="kpi-content">
@@ -177,9 +184,9 @@ export default function DashboardPage() {
                             <div className="kpi-sub">Perlu penanganan</div>
                         </div>
                     </div>
-                </Link>
+                </Link>}
 
-                <Link href="/fleet/maintenance" style={{ textDecoration: 'none' }}>
+                {canViewMaintenance && <Link href="/fleet/maintenance" style={{ textDecoration: 'none' }}>
                     <div className="kpi-card">
                         <div className="kpi-icon info"><Wrench size={24} /></div>
                         <div className="kpi-content">
@@ -188,24 +195,24 @@ export default function DashboardPage() {
                             <div className="kpi-sub">Maintenance terjadwal</div>
                         </div>
                     </div>
-                </Link>
+                </Link>}
 
-                <Link href="/driver-vouchers" style={{ textDecoration: 'none' }}>
+                {canViewTripCash && <Link href="/driver-vouchers" style={{ textDecoration: 'none' }}>
                     <div className="kpi-card">
                         <div className="kpi-icon success"><DollarSign size={24} /></div>
                         <div className="kpi-content">
                             <div className="kpi-label">Uang Jalan Trip Belum Settle</div>
                             <div className="kpi-value">{data.voucherStats.unsettled}</div>
-                            {isOwner && <div className="kpi-sub">{formatCurrency(data.voucherStats.totalIssued)} uang jalan dicairkan</div>}
+                            {canSeeFinancialTotals && <div className="kpi-sub">{formatCurrency(data.voucherStats.totalIssued)} uang jalan dicairkan</div>}
                         </div>
                     </div>
-                </Link>
+                </Link>}
             </div>
 
             {/* Tables */}
             <div className="chart-grid">
                 {/* Recent Orders */}
-                <div className="card">
+                {canViewOrders && <div className="card">
                     <div className="card-header">
                         <span className="card-header-title">Order Terbaru</span>
                         <Link href="/orders" className="btn btn-ghost btn-sm">
@@ -275,10 +282,10 @@ export default function DashboardPage() {
                             ))
                         )}
                     </div>
-                </div>
+                </div>}
 
                 {/* Recent Notas */}
-                <div className="card">
+                {canViewInvoices && <div className="card">
                     <div className="card-header">
                         <span className="card-header-title">Nota Terbaru</span>
                         <Link href="/invoices" className="btn btn-ghost btn-sm">
@@ -293,12 +300,12 @@ export default function DashboardPage() {
                                     <th>Customer</th>
                                     <th>Status</th>
                                     <th>Tindak Lanjut</th>
-                                    {isOwner && <th>Jumlah</th>}
+                                    {canSeeFinancialTotals && <th>Jumlah</th>}
                                 </tr>
                             </thead>
                             <tbody>
                                 {data.recentNotas.length === 0 ? (
-                                    <tr><td colSpan={isOwner ? 5 : 4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada nota</td></tr>
+                                    <tr><td colSpan={canSeeFinancialTotals ? 5 : 4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada nota</td></tr>
                                 ) : (
                                     data.recentNotas.map(nota => (
                                         <tr key={nota._id}>
@@ -312,7 +319,7 @@ export default function DashboardPage() {
                                                 </span>
                                             </td>
                                             <td>{getRecentNotaAction(nota)}</td>
-                                            {isOwner && <td className="font-medium">{formatCurrency(getReceivableNetAmount(nota))}</td>}
+                                            {canSeeFinancialTotals && <td className="font-medium">{formatCurrency(getReceivableNetAmount(nota))}</td>}
                                         </tr>
                                     ))
                                 )}
@@ -337,7 +344,7 @@ export default function DashboardPage() {
                                             {INVOICE_STATUS_MAP[nota.status]?.label || nota.status}
                                         </span>
                                     </div>
-                                    {isOwner && (
+                                    {canSeeFinancialTotals && (
                                         <div className="mobile-record-meta">
                                             <div className="mobile-record-kv">
                                                 <span className="mobile-record-label">Tagihan Netto</span>
@@ -360,73 +367,71 @@ export default function DashboardPage() {
                             ))
                         )}
                     </div>
-                </div>
+                </div>}
             </div>
 
             {/* Reminders */}
-            {isOwner && (
-                <div className="card mt-6">
-                    <div className="card-header">
-                        <span className="card-header-title">Tindak Lanjut Hari Ini</span>
-                    </div>
-                    <div className="card-body">
-                        <ul className="reminder-list">
-                            {data.orderStats.onHold > 0 && (
-                                <li className="reminder-item">
-                                    <div className="reminder-icon warning"><Clock size={16} /></div>
-                                    <div>
-                                        <strong>{data.orderStats.onHold} order</strong> masih tertahan dan perlu keputusan lanjut
-                                    </div>
-                                </li>
-                            )}
-                            {data.notaStats.unpaid > 0 && (
-                                <li className="reminder-item">
-                                    <div className="reminder-icon danger"><FileText size={16} /></div>
-                                    <div>
-                                        <strong>{data.notaStats.unpaid} nota</strong> masih menunggu pelunasan ({formatCurrency(data.notaStats.totalOutstanding)})
-                                    </div>
-                                </li>
-                            )}
-                            {data.voucherStats.unsettled > 0 && (
-                                <li className="reminder-item">
-                                    <div className="reminder-icon info"><DollarSign size={16} /></div>
-                                    <div>
-                                        <strong>{data.voucherStats.unsettled} trip</strong> masih menunggu settlement uang jalan{isOwner ? ` (${formatCurrency(data.voucherStats.totalIssued)} sudah dicairkan)` : ''}
-                                    </div>
-                                </li>
-                            )}
-                            {data.fleetStats.maintenanceDue > 0 && (
-                                <li className="reminder-item">
-                                    <div className="reminder-icon info"><Wrench size={16} /></div>
-                                    <div>
-                                        <strong>{data.fleetStats.maintenanceDue} kendaraan</strong> perlu servis
-                                    </div>
-                                </li>
-                            )}
-                            {data.fleetStats.openIncidents > 0 && (
-                                <li className="reminder-item">
-                                    <div className="reminder-icon danger"><AlertTriangle size={16} /></div>
-                                    <div>
-                                        <strong>{data.fleetStats.openIncidents} insiden</strong> masih terbuka
-                                    </div>
-                                </li>
-                            )}
-                            {data.orderStats.onHold === 0 &&
-                                data.notaStats.unpaid === 0 &&
-                                data.voucherStats.unsettled === 0 &&
-                                data.fleetStats.maintenanceDue === 0 &&
-                                data.fleetStats.openIncidents === 0 && (
-                                <li className="reminder-item">
-                                    <div className="reminder-icon" style={{ background: 'var(--color-success-light)', color: 'var(--color-success)' }}>
-                                        <TrendingUp size={16} />
-                                    </div>
-                                    <div>Operasional cukup aman. Tidak ada tindak lanjut mendesak saat ini.</div>
-                                </li>
-                            )}
-                        </ul>
-                    </div>
+            <div className="card mt-6">
+                <div className="card-header">
+                    <span className="card-header-title">Tindak Lanjut Hari Ini</span>
                 </div>
-            )}
+                <div className="card-body">
+                    <ul className="reminder-list">
+                        {canViewOrders && data.orderStats.onHold > 0 && (
+                            <li className="reminder-item">
+                                <div className="reminder-icon warning"><Clock size={16} /></div>
+                                <div>
+                                    <strong>{data.orderStats.onHold} order</strong> masih tertahan dan perlu keputusan lanjut
+                                </div>
+                            </li>
+                        )}
+                        {canViewInvoices && data.notaStats.unpaid > 0 && (
+                            <li className="reminder-item">
+                                <div className="reminder-icon danger"><FileText size={16} /></div>
+                                <div>
+                                    <strong>{data.notaStats.unpaid} nota</strong> masih menunggu pelunasan{canSeeFinancialTotals ? ` (${formatCurrency(data.notaStats.totalOutstanding)})` : ''}
+                                </div>
+                            </li>
+                        )}
+                        {canViewTripCash && data.voucherStats.unsettled > 0 && (
+                            <li className="reminder-item">
+                                <div className="reminder-icon info"><DollarSign size={16} /></div>
+                                <div>
+                                    <strong>{data.voucherStats.unsettled} trip</strong> masih menunggu settlement uang jalan{canSeeFinancialTotals ? ` (${formatCurrency(data.voucherStats.totalIssued)} sudah dicairkan)` : ''}
+                                </div>
+                            </li>
+                        )}
+                        {canViewMaintenance && data.fleetStats.maintenanceDue > 0 && (
+                            <li className="reminder-item">
+                                <div className="reminder-icon info"><Wrench size={16} /></div>
+                                <div>
+                                    <strong>{data.fleetStats.maintenanceDue} kendaraan</strong> perlu servis
+                                </div>
+                            </li>
+                        )}
+                        {canViewIncidents && data.fleetStats.openIncidents > 0 && (
+                            <li className="reminder-item">
+                                <div className="reminder-icon danger"><AlertTriangle size={16} /></div>
+                                <div>
+                                    <strong>{data.fleetStats.openIncidents} insiden</strong> masih terbuka
+                                </div>
+                            </li>
+                        )}
+                        {(!canViewOrders || data.orderStats.onHold === 0) &&
+                            (!canViewInvoices || data.notaStats.unpaid === 0) &&
+                            (!canViewTripCash || data.voucherStats.unsettled === 0) &&
+                            (!canViewMaintenance || data.fleetStats.maintenanceDue === 0) &&
+                            (!canViewIncidents || data.fleetStats.openIncidents === 0) && (
+                            <li className="reminder-item">
+                                <div className="reminder-icon" style={{ background: 'var(--color-success-light)', color: 'var(--color-success)' }}>
+                                    <TrendingUp size={16} />
+                                </div>
+                                <div>Operasional cukup aman. Tidak ada tindak lanjut mendesak saat ini.</div>
+                            </li>
+                        )}
+                    </ul>
+                </div>
+            </div>
         </div>
     );
 }

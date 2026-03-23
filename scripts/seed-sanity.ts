@@ -24,7 +24,7 @@ const client = createClient({
 });
 
 const OWNER_PASSWORD_HASH = '$2b$10$gmQQXBYsr6av5en3FKDsRuW/ZiOXB6hOqzD2EXmGWICdq2EADL2YW';
-const ADMIN_PASSWORD_HASH = '$2b$10$RTJAvsAXXjPgBPdE/rXYqeQM6mn7lJG7qK8u/wML.qZZ2Bg7SB4Be';
+const INTERNAL_PASSWORD_HASH = '$2b$10$RTJAvsAXXjPgBPdE/rXYqeQM6mn7lJG7qK8u/wML.qZZ2Bg7SB4Be';
 const DRIVER_PASSWORD_HASH = '$2b$10$O9./WCIZQXNxhcLle.E9n.eJh35t9ej64F8sx9b2wKkCn93sTLmh.';
 
 const documents: SeedDoc[] = [];
@@ -133,11 +133,33 @@ function buildSeedDocuments() {
             _type: 'user',
             name: 'Admin Operasional',
             email: 'admin@company.local',
-            role: 'ADMIN',
-            passwordHash: ADMIN_PASSWORD_HASH,
+            role: 'OPERASIONAL',
+            passwordHash: INTERNAL_PASSWORD_HASH,
             active: true,
             createdAt: '2026-03-01T08:15:00Z',
             lastLoginAt: '2026-03-16T11:05:00Z',
+        },
+        {
+            _id: 'user-finance-001',
+            _type: 'user',
+            name: 'Finance Utama',
+            email: 'finance@company.local',
+            role: 'FINANCE',
+            passwordHash: INTERNAL_PASSWORD_HASH,
+            active: true,
+            createdAt: '2026-03-01T08:20:00Z',
+            lastLoginAt: '2026-03-16T10:15:00Z',
+        },
+        {
+            _id: 'user-armada-001',
+            _type: 'user',
+            name: 'PIC Armada',
+            email: 'armada@company.local',
+            role: 'ARMADA',
+            passwordHash: INTERNAL_PASSWORD_HASH,
+            active: true,
+            createdAt: '2026-03-01T08:25:00Z',
+            lastLoginAt: '2026-03-16T09:55:00Z',
         },
         {
             _id: 'user-driver-001',
