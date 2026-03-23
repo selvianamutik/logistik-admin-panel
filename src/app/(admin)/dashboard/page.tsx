@@ -46,9 +46,12 @@ export default function DashboardPage() {
     const { addToast } = useToast();
     const [data, setData] = useState<DashboardData | null>(null);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
 
     useEffect(() => {
         async function load() {
+            setLoading(true);
+            setLoadError(null);
             try {
                 const res = await fetch('/api/data?entity=dashboard-summary');
                 const payload = await res.json();
@@ -59,7 +62,9 @@ export default function DashboardPage() {
                 setData(payload.data);
             } catch (err) {
                 console.error('Dashboard load error:', err);
-                addToast('error', err instanceof Error ? err.message : 'Gagal memuat dashboard');
+                const message = err instanceof Error ? err.message : 'Gagal memuat dashboard';
+                setLoadError(message);
+                addToast('error', message);
             } finally {
                 setLoading(false);
             }
@@ -83,7 +88,33 @@ export default function DashboardPage() {
         );
     }
 
-    if (!data) return null;
+    if (!data) {
+        return (
+            <div>
+                <div className="page-header">
+                    <div className="page-header-left">
+                        <h1 className="page-title">Dashboard</h1>
+                        <p className="page-subtitle">Ringkasan operasional harian dan tindak lanjut utama.</p>
+                    </div>
+                </div>
+                <div className="card">
+                    <div className="card-body" style={{ display: 'grid', gap: '0.9rem' }}>
+                        <div style={{ fontWeight: 600 }}>Dashboard belum bisa dimuat</div>
+                        <div className="text-muted">{loadError || 'Terjadi gangguan saat memuat ringkasan dashboard.'}</div>
+                        <div>
+                            <button
+                                type="button"
+                                className="btn btn-primary"
+                                onClick={() => window.location.reload()}
+                            >
+                                Coba Muat Ulang
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
     const isOwner = user?.role === 'OWNER';
 
     return (

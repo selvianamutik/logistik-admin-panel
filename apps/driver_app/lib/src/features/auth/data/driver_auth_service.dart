@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../../../app.dart';
@@ -11,27 +10,20 @@ class DriverAuthService {
     required String email,
     required String password,
   }) async {
-    final uri = Uri.parse('${AppConfig.apiBaseUrl}/api/auth/login');
+    final uri = Uri.parse('${AppConfig.apiBaseUrl}/api/driver/mobile/login');
     final headers = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
       'x-client-type': 'driver-app',
     };
-debugPrint('=== LOGIN HEADERS ===');
-headers.forEach((key, value) => debugPrint('  $key: $value'));
     final response = await http.post(
       uri,
       headers: headers,
       body: jsonEncode({
         'email': email.trim().toLowerCase(),
         'password': password,
-        'scope': 'DRIVER',
       }),
     );
-debugPrint('=== LOGIN ===');
-debugPrint('URL: $uri');
-debugPrint('STATUS: ${response.statusCode}');
-debugPrint('BODY: ${response.body}');
     final decoded = _decodeJson(response.body);
 
     if (response.statusCode >= 400) {
@@ -57,7 +49,8 @@ debugPrint('BODY: ${response.body}');
 
     return DriverAppSession(
       driverId: user['_id'] as String? ?? '',
-      driverName: user['name'] as String? ?? '',
+      driverName:
+          user['driverName'] as String? ?? user['name'] as String? ?? '',
       email: user['email'] as String? ?? email,
       role: user['role'] as String? ?? 'DRIVER',
       driverRef: driverRef,

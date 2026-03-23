@@ -6,16 +6,23 @@
 // tree, read text, and verify that the values of widget properties are correct.
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
 
-import 'package:driver_app/src/app.dart';
+import 'package:driver_app/src/features/auth/presentation/login_page.dart';
+import 'package:driver_app/src/shared/theme.dart';
 
 void main() {
   testWidgets('login page is shown before session exists', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const DriverTrackingApp());
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildAppTheme(),
+        home: LoginPage(onLogin: (_) {}),
+      ),
+    );
 
-    expect(find.text('Driver Tracking'), findsOneWidget);
+    expect(find.text('Selamat datang'), findsOneWidget);
     expect(find.text('Masuk'), findsOneWidget);
   });
 }

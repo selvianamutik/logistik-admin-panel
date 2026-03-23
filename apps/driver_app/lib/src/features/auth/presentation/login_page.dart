@@ -97,7 +97,7 @@ class _LoginPageState extends State<LoginPage> {
                   Text(
                     'Masuk untuk melihat perjalanan aktif\ndan mengirim lokasi berkala.',
                     style: TextStyle(
-                      color: scheme.onSurface.withOpacity(0.5),
+                      color: scheme.onSurface.withValues(alpha: 0.5),
                       fontSize: 14,
                       height: 1.6,
                     ),
@@ -121,7 +121,7 @@ class _LoginPageState extends State<LoginPage> {
                             prefixIcon: Icon(
                               Icons.alternate_email_rounded,
                               size: 18,
-                              color: scheme.onSurface.withOpacity(0.35),
+                              color: scheme.onSurface.withValues(alpha: 0.35),
                             ),
                           ),
                           validator: (value) {
@@ -145,7 +145,7 @@ class _LoginPageState extends State<LoginPage> {
                             prefixIcon: Icon(
                               Icons.lock_outline_rounded,
                               size: 18,
-                              color: scheme.onSurface.withOpacity(0.35),
+                              color: scheme.onSurface.withValues(alpha: 0.35),
                             ),
                             suffixIcon: GestureDetector(
                               onTap: () => setState(
@@ -156,7 +156,7 @@ class _LoginPageState extends State<LoginPage> {
                                     ? Icons.visibility_off_outlined
                                     : Icons.visibility_outlined,
                                 size: 18,
-                                color: scheme.onSurface.withOpacity(0.35),
+                                color: scheme.onSurface.withValues(alpha: 0.35),
                               ),
                             ),
                           ),
@@ -257,9 +257,9 @@ class _LoginPageState extends State<LoginPage> {
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            'Login memanggil /api/auth/login dengan scope DRIVER. Pastikan API_BASE_URL mengarah ke host Next.js untuk device fisik.',
+                            'Login mobile memakai endpoint khusus aplikasi driver. Pastikan API_BASE_URL mengarah ke server aplikasi yang benar.',
                             style: TextStyle(
-                              color: scheme.primary.withOpacity(0.8),
+                              color: scheme.primary.withValues(alpha: 0.8),
                               fontSize: 12,
                               height: 1.5,
                             ),
@@ -287,7 +287,7 @@ class _FieldLabel extends StatelessWidget {
     return Text(
       label,
       style: TextStyle(
-        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
         fontSize: 13,
         fontWeight: FontWeight.w600,
       ),

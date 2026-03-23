@@ -12,6 +12,7 @@ class DeliveryTrip {
     required this.etdLabel,
     required this.statusNote,
     this.trackingState,
+    this.pendingDriverStatus,
     this.receiverName,
     this.itemSummary,
   });
@@ -26,10 +27,17 @@ class DeliveryTrip {
   final String etdLabel;
   final String statusNote;
   final String? trackingState;
+  final String? pendingDriverStatus;
   final String? receiverName;
   final String? itemSummary;
 
-  DeliveryTrip copyWith({TripStatus? status, String? trackingState}) {
+  bool get isAwaitingAdminApproval => pendingDriverStatus == 'DELIVERED';
+
+  DeliveryTrip copyWith({
+    TripStatus? status,
+    String? trackingState,
+    String? pendingDriverStatus,
+  }) {
     return DeliveryTrip(
       deliveryOrderId: deliveryOrderId,
       doNumber: doNumber,
@@ -41,6 +49,7 @@ class DeliveryTrip {
       etdLabel: etdLabel,
       statusNote: statusNote,
       trackingState: trackingState ?? this.trackingState,
+      pendingDriverStatus: pendingDriverStatus ?? this.pendingDriverStatus,
       receiverName: receiverName,
       itemSummary: itemSummary,
     );
