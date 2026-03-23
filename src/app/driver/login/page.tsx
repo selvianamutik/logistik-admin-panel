@@ -16,12 +16,25 @@ export default function DriverLoginPage() {
 
         const checkExistingSession = async () => {
             try {
-                const res = await fetch('/api/driver/session');
-                if (!alive || !res.ok) return;
+                const [driverRes, adminRes] = await Promise.all([
+                    fetch('/api/driver/session'),
+                    fetch('/api/auth/session'),
+                ]);
+                if (!alive) return;
 
-                const payload = await res.json() as { user?: { role?: string } | null };
-                if (payload.user?.role === 'DRIVER') {
+                const driverPayload = driverRes.ok
+                    ? await driverRes.json() as { user?: { role?: string } | null }
+                    : { user: null };
+                if (driverPayload.user?.role === 'DRIVER') {
                     window.location.replace('/driver');
+                    return;
+                }
+
+                const adminPayload = adminRes.ok
+                    ? await adminRes.json() as { user?: { role?: string } | null }
+                    : { user: null };
+                if (adminPayload.user) {
+                    window.location.replace('/dashboard');
                     return;
                 }
             } catch {

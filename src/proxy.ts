@@ -69,37 +69,75 @@ export async function proxy(request: NextRequest) {
     const driverToken = request.cookies.get(DRIVER_SESSION_COOKIE)?.value;
 
     if (driverLoginPath) {
-        if (!driverToken) {
-            return NextResponse.next();
+        if (driverToken) {
+            const live = await getLiveSessionUser(request, driverToken, 'DRIVER');
+            let user = live.user;
+            if (!user && !live.checkedLive) {
+                user = await verifySessionToken(driverToken);
+            }
+            if (user?.role === 'DRIVER') {
+                return NextResponse.redirect(new URL('/driver', request.url));
+            }
+            if (!user) {
+                const response = NextResponse.next();
+                response.cookies.delete(DRIVER_SESSION_COOKIE);
+                return response;
+            }
         }
-        const live = await getLiveSessionUser(request, driverToken, 'DRIVER');
-        let user = live.user;
-        if (!user && !live.checkedLive) {
-            user = await verifySessionToken(driverToken);
+
+        if (adminToken) {
+            const live = await getLiveSessionUser(request, adminToken, 'ADMIN');
+            let user = live.user;
+            if (!user && !live.checkedLive) {
+                user = await verifySessionToken(adminToken);
+            }
+            if (user && user.role !== 'DRIVER') {
+                return NextResponse.redirect(new URL('/dashboard', request.url));
+            }
+            if (!user) {
+                const response = NextResponse.next();
+                response.cookies.delete(SESSION_COOKIE);
+                return response;
+            }
         }
-        if (!user) {
-            const response = NextResponse.next();
-            response.cookies.delete(DRIVER_SESSION_COOKIE);
-            return response;
-        }
-        return NextResponse.redirect(new URL('/driver', request.url));
+
+        return NextResponse.next();
     }
 
     if (adminLoginPath) {
-        if (!adminToken) {
-            return NextResponse.next();
+        if (adminToken) {
+            const live = await getLiveSessionUser(request, adminToken, 'ADMIN');
+            let user = live.user;
+            if (!user && !live.checkedLive) {
+                user = await verifySessionToken(adminToken);
+            }
+            if (user) {
+                return NextResponse.redirect(new URL(user.role === 'DRIVER' ? '/driver' : '/dashboard', request.url));
+            }
+            if (!user) {
+                const response = NextResponse.next();
+                response.cookies.delete(SESSION_COOKIE);
+                return response;
+            }
         }
-        const live = await getLiveSessionUser(request, adminToken, 'ADMIN');
-        let user = live.user;
-        if (!user && !live.checkedLive) {
-            user = await verifySessionToken(adminToken);
+
+        if (driverToken) {
+            const live = await getLiveSessionUser(request, driverToken, 'DRIVER');
+            let user = live.user;
+            if (!user && !live.checkedLive) {
+                user = await verifySessionToken(driverToken);
+            }
+            if (user?.role === 'DRIVER') {
+                return NextResponse.redirect(new URL('/driver', request.url));
+            }
+            if (!user) {
+                const response = NextResponse.next();
+                response.cookies.delete(DRIVER_SESSION_COOKIE);
+                return response;
+            }
         }
-        if (!user) {
-            const response = NextResponse.next();
-            response.cookies.delete(SESSION_COOKIE);
-            return response;
-        }
-        return NextResponse.redirect(new URL(user.role === 'DRIVER' ? '/driver' : '/dashboard', request.url));
+
+        return NextResponse.next();
     }
 
     if (pathname === '/') {
