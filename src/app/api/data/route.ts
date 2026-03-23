@@ -387,59 +387,59 @@ export async function POST(request: Request) {
         const docType = SANITY_TYPE_MAP[entity];
 
         if (action === 'update') {
-            return handleGenericUpdate(session, entity, data, addAuditLog);
+            return await handleGenericUpdate(session, entity, data, addAuditLog);
         }
 
         if (action === 'delete') {
-            return handleGenericDelete(session, entity, data, addAuditLog);
+            return await handleGenericDelete(session, entity, data, addAuditLog);
         }
 
         if (entity === 'driver-borongans' && action === 'mark-paid') {
-            return handleBoronganPayment(session, data, addAuditLog);
+            return await handleBoronganPayment(session, data, addAuditLog);
         }
 
         if (entity === 'incidents' && action === 'set-status') {
-            return handleIncidentStatusUpdate(session, data, addAuditLog);
+            return await handleIncidentStatusUpdate(session, data, addAuditLog);
         }
 
         if (entity === 'orders' && action === 'create-with-items') {
-            return handleOrderCreate(session, data, addAuditLog);
+            return await handleOrderCreate(session, data, addAuditLog);
         }
 
         if (entity === 'orders' && action === 'update-with-items') {
-            return handleOrderUpdateWithItems(session, data, addAuditLog);
+            return await handleOrderUpdateWithItems(session, data, addAuditLog);
         }
 
         if (entity === 'orders' && action === 'revise-targets') {
-            return handleOrderTargetRevision(session, data, addAuditLog);
+            return await handleOrderTargetRevision(session, data, addAuditLog);
         }
 
         if (entity === 'delivery-orders' && action === 'create-with-items') {
-            return handleDeliveryOrderCreate(session, data, addAuditLog);
+            return await handleDeliveryOrderCreate(session, data, addAuditLog);
         }
 
         if (entity === 'order-items' && action === 'set-hold-quantity') {
-            return handleOrderItemHoldSet(session, data, addAuditLog);
+            return await handleOrderItemHoldSet(session, data, addAuditLog);
         }
 
         if (entity === 'order-items' && action === 'release-hold') {
-            return handleOrderItemHoldRelease(session, data, addAuditLog);
+            return await handleOrderItemHoldRelease(session, data, addAuditLog);
         }
 
         if (entity === 'freight-notas' && action === 'create-with-items') {
-            return handleFreightNotaCreate(session, data, addAuditLog);
+            return await handleFreightNotaCreate(session, data, addAuditLog);
         }
 
         if (entity === 'invoices' && action === 'create-with-items') {
-            return handleInvoiceCreate(session, data, addAuditLog);
+            return await handleInvoiceCreate(session, data, addAuditLog);
         }
 
         if (entity === 'delivery-orders' && action === 'set-status') {
-            return handleDeliveryOrderStatusUpdate(session, data, addAuditLog);
+            return await handleDeliveryOrderStatusUpdate(session, data, addAuditLog);
         }
 
         if (entity === 'delivery-orders' && action === 'reject-driver-status-request') {
-            return handleDeliveryOrderDriverStatusRequestReject(session, data, addAuditLog);
+            return await handleDeliveryOrderDriverStatusRequestReject(session, data, addAuditLog);
         }
 
         if (entity === 'driver-borongans' && action === 'create-with-items') {
@@ -450,58 +450,58 @@ export async function POST(request: Request) {
         }
 
         if (entity === 'driver-vouchers' && action === 'settle') {
-            return handleDriverVoucherSettlement(session, data, addAuditLog);
+            return await handleDriverVoucherSettlement(session, data, addAuditLog);
         }
 
         if (entity === 'driver-vouchers' && action === 'top-up') {
-            return handleDriverVoucherTopUp(session, data, addAuditLog);
+            return await handleDriverVoucherTopUp(session, data, addAuditLog);
         }
 
         if (entity === 'driver-vouchers' && action === 'repair-issue-ledger') {
-            return handleDriverVoucherIssueRepair(session, data, addAuditLog);
+            return await handleDriverVoucherIssueRepair(session, data, addAuditLog);
         }
 
         if (entity === 'driver-voucher-disbursements' && action === 'delete') {
-            return handleDriverVoucherDisbursementDelete(session, data, addAuditLog);
+            return await handleDriverVoucherDisbursementDelete(session, data, addAuditLog);
         }
 
         if (entity === 'bank-transactions' && action === 'transfer') {
-            return handleBankTransfer(session, data, addAuditLog);
+            return await handleBankTransfer(session, data, addAuditLog);
         }
 
         if (entity === 'payments') {
-            return handlePaymentCreate(session, data, addAuditLog);
+            return await handlePaymentCreate(session, data, addAuditLog);
         }
 
         if (entity === 'customer-receipts') {
-            return handleCustomerReceiptCreate(session, data, addAuditLog);
+            return await handleCustomerReceiptCreate(session, data, addAuditLog);
         }
 
         if (entity === 'invoice-adjustments' && action === 'void') {
-            return handleInvoiceAdjustmentVoid(session, data, addAuditLog);
+            return await handleInvoiceAdjustmentVoid(session, data, addAuditLog);
         }
 
         if (entity === 'invoice-adjustments') {
-            return handleInvoiceAdjustmentCreate(session, data, addAuditLog);
+            return await handleInvoiceAdjustmentCreate(session, data, addAuditLog);
         }
 
         if (entity === 'expenses') {
-            return handleExpenseCreate(session, data, addAuditLog);
+            return await handleExpenseCreate(session, data, addAuditLog);
         }
 
         if (entity === 'driver-vouchers') {
-            return handleDriverVoucherCreate(session, data, addAuditLog);
+            return await handleDriverVoucherCreate(session, data, addAuditLog);
         }
 
         if (entity === 'driver-voucher-items') {
-            return handleDriverVoucherItemCreate(session, data, addAuditLog);
+            return await handleDriverVoucherItemCreate(session, data, addAuditLog);
         }
 
         if (entity === 'incidents') {
-            return handleIncidentCreate(session, data, addAuditLog);
+            return await handleIncidentCreate(session, data, addAuditLog);
         }
 
-        return handleGenericCreate(session, entity, docType, data, addAuditLog);
+        return await handleGenericCreate(session, entity, docType, data, addAuditLog);
     } catch (err) {
         const message = err instanceof Error ? err.message : 'Server error';
         const status = message === 'Forbidden' ? 403 : 400;
