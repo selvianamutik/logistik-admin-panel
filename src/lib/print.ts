@@ -257,8 +257,8 @@ export function buildFreightNotaPrintDocument(opts: {
                 <div class="invoice-brand-left">
                     ${logoHtml}
                     <div>
-                        <div class="invoice-brand-title">Invoice / Nota Ongkos Angkut</div>
-                        <div class="invoice-brand-subtitle">Dokumen penagihan pengiriman yang disesuaikan dengan data operasional</div>
+                        <div class="invoice-brand-title">Invoice</div>
+                        <div class="invoice-brand-subtitle">Nota Ongkos Angkut</div>
                     </div>
                 </div>
                 <div class="invoice-company-box">
@@ -274,6 +274,7 @@ export function buildFreightNotaPrintDocument(opts: {
                 <div class="invoice-panel">
                     <div class="invoice-panel-title">Kepada Yth.</div>
                     <div class="invoice-recipient-name">${escapePrintHtml(nota.customerName)}</div>
+                    ${company?.address ? `<div class="invoice-recipient-address">${escapePrintHtml(company.address)}</div>` : ''}
                 </div>
                 <div class="invoice-panel">
                     <table class="invoice-info-table">
@@ -416,54 +417,55 @@ export function buildFreightNotaPrintDocument(opts: {
     `;
 
     const extraStyles = `
-        body { font-family: Arial, Helvetica, sans-serif; padding: 0.5rem 0.75rem; color: #111827; max-width: 900px; }
-        .invoice-sheet { font-size: 11px; line-height: 1.35; color: #111827; }
-        .invoice-brand-row { display: grid; grid-template-columns: 1.15fr 1fr; gap: 1rem; align-items: start; margin-bottom: 0.9rem; }
-        .invoice-brand-left { display: flex; gap: 0.85rem; align-items: center; }
-        .invoice-logo { width: 64px; height: 64px; object-fit: contain; }
-        .invoice-logo-placeholder { display: flex; align-items: center; justify-content: center; border: 1px solid #9ca3af; border-radius: 12px; font-size: 1.8rem; font-weight: 700; }
-        .invoice-brand-title { font-size: 1.35rem; font-weight: 700; letter-spacing: 0.01em; }
-        .invoice-brand-subtitle { color: #6b7280; font-size: 0.82rem; margin-top: 0.15rem; }
-        .invoice-company-box { border: 1px solid #374151; padding: 0.75rem 0.85rem; font-size: 0.84rem; }
-        .invoice-company-name { font-weight: 700; font-size: 0.98rem; margin-bottom: 0.25rem; text-transform: uppercase; }
-        .invoice-top-grid, .invoice-shipment-grid, .invoice-bottom-grid, .invoice-footer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.85rem; margin-bottom: 0.85rem; }
-        .invoice-panel { border: 1px solid #374151; padding: 0.75rem 0.85rem; min-height: 100%; }
-        .invoice-panel-title, .invoice-section-title { font-weight: 700; font-style: italic; margin-bottom: 0.45rem; }
-        .invoice-section-title { margin: 0.9rem 0 0.45rem; }
-        .invoice-section-title.compact { margin-top: 0; font-style: normal; }
-        .invoice-recipient-name { font-weight: 700; font-size: 1rem; margin-bottom: 0.35rem; }
-        .invoice-panel-note { color: #6b7280; font-size: 0.78rem; }
+        body { font-family: "Times New Roman", Arial, serif; padding: 0.45rem 0.6rem; color: #111827; max-width: 900px; }
+        .invoice-sheet { font-size: 11px; line-height: 1.28; color: #111827; }
+        .invoice-brand-row { display: grid; grid-template-columns: 1.2fr 0.9fr; gap: 1rem; align-items: start; margin-bottom: 1rem; }
+        .invoice-brand-left { display: flex; gap: 0.75rem; align-items: center; min-height: 68px; }
+        .invoice-logo { width: 58px; height: 58px; object-fit: contain; filter: grayscale(1); }
+        .invoice-logo-placeholder { display: flex; align-items: center; justify-content: center; border: 0.8px solid #4b5563; font-size: 1.45rem; font-weight: 700; width: 58px; height: 58px; }
+        .invoice-brand-title { font-size: 1.5rem; font-weight: 700; letter-spacing: 0; }
+        .invoice-brand-subtitle { color: #111827; font-size: 0.95rem; margin-top: 0.05rem; font-weight: 600; }
+        .invoice-company-box { padding: 0.1rem 0; font-size: 0.84rem; text-align: left; }
+        .invoice-company-name { font-weight: 700; font-size: 1rem; margin-bottom: 0.2rem; text-transform: uppercase; }
+        .invoice-top-grid, .invoice-shipment-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.65rem; margin-bottom: 0.75rem; }
+        .invoice-bottom-grid, .invoice-footer-grid { display: grid; grid-template-columns: 1fr 0.62fr; gap: 0.65rem; margin-bottom: 0.75rem; }
+        .invoice-panel { border: 0.8px solid #4b5563; padding: 0.55rem 0.65rem; min-height: 100%; }
+        .invoice-panel-title, .invoice-section-title { font-weight: 700; font-style: italic; margin-bottom: 0.35rem; }
+        .invoice-section-title { margin: 0.75rem 0 0.3rem; padding-left: 0.2rem; }
+        .invoice-section-title.compact { margin-top: 0; font-style: italic; }
+        .invoice-recipient-name { font-weight: 700; font-size: 1rem; margin-bottom: 0.28rem; }
+        .invoice-recipient-address { white-space: pre-line; }
         .invoice-info-table, .invoice-items-table, .invoice-total-table { width: 100%; border-collapse: collapse; }
-        .invoice-info-table td { border: 1px solid #374151; padding: 0.38rem 0.45rem; vertical-align: top; }
-        .invoice-info-table td:first-child { width: 42%; font-weight: 600; background: #f9fafb; }
+        .invoice-info-table td { border: 0.8px solid #4b5563; padding: 0.3rem 0.4rem; vertical-align: top; }
+        .invoice-info-table td:first-child { width: 42%; font-weight: 600; background: #fff; }
         .invoice-items-table { table-layout: fixed; }
-        .invoice-items-table th, .invoice-items-table td { border: 1px solid #374151; padding: 0.42rem 0.45rem; vertical-align: top; }
-        .invoice-items-table th { background: #f3f4f6; font-weight: 700; }
+        .invoice-items-table th, .invoice-items-table td { border: 0.8px solid #4b5563; padding: 0.35rem 0.42rem; vertical-align: top; }
+        .invoice-items-table th { background: #fff; font-weight: 700; }
         .invoice-col-no { width: 6%; }
         .invoice-col-qty { width: 15%; }
         .invoice-col-price { width: 19%; }
         .invoice-col-total { width: 20%; }
-        .invoice-item-title { font-weight: 700; margin-bottom: 0.18rem; }
-        .invoice-item-meta { color: #6b7280; font-size: 0.78rem; }
-        .invoice-filler-row td { color: transparent; height: 28px; }
-        .invoice-total-box { display: flex; justify-content: flex-end; margin: 0.7rem 0 0.85rem; }
-        .invoice-total-table { width: 310px; }
-        .invoice-total-table td { border: 1px solid #374151; padding: 0.42rem 0.55rem; }
+        .invoice-item-title { font-weight: 700; margin-bottom: 0.14rem; }
+        .invoice-item-meta { color: #374151; font-size: 0.76rem; }
+        .invoice-filler-row td { color: transparent; height: 38px; }
+        .invoice-total-box { display: flex; justify-content: flex-end; margin: 0; }
+        .invoice-total-table { width: 320px; }
+        .invoice-total-table td { border: 0.8px solid #4b5563; padding: 0.34rem 0.5rem; }
         .invoice-total-table td:first-child { width: 68%; }
         .invoice-grand-total-row td { font-weight: 700; font-size: 1rem; }
         .invoice-bottom-label { font-weight: 700; margin-bottom: 0.25rem; }
-        .invoice-bottom-value { font-size: 0.94rem; }
+        .invoice-bottom-value { font-size: 0.92rem; }
         .invoice-payment-line { margin-bottom: 0.45rem; }
         .invoice-payment-subtitle { font-weight: 700; margin-bottom: 0.2rem; }
         .invoice-payment-bank { font-weight: 700; }
-        .invoice-payment-note { margin-top: 0.35rem; color: #374151; }
-        .invoice-signature-box { border: 1px solid #374151; padding: 0.75rem 0.85rem; display: flex; flex-direction: column; justify-content: space-between; }
-        .invoice-signature-title { margin-bottom: 0.2rem; }
+        .invoice-payment-note { margin-top: 0.35rem; color: #111827; }
+        .invoice-signature-box { border: 0.8px solid #4b5563; padding: 0.55rem 0.65rem; display: flex; flex-direction: column; justify-content: space-between; }
+        .invoice-signature-title { margin-bottom: 0.15rem; }
         .invoice-signature-company { font-weight: 700; text-transform: uppercase; margin-bottom: 0.45rem; }
-        .invoice-signature-area { min-height: 105px; display: flex; align-items: center; justify-content: center; }
-        .invoice-signature-image { max-width: 160px; max-height: 100px; object-fit: contain; }
-        .invoice-signature-name { font-weight: 700; text-transform: uppercase; margin-top: 0.35rem; }
-        .invoice-signature-role { color: #4b5563; font-size: 0.82rem; text-transform: uppercase; }
+        .invoice-signature-area { min-height: 95px; display: flex; align-items: flex-end; justify-content: center; }
+        .invoice-signature-image { max-width: 150px; max-height: 92px; object-fit: contain; filter: grayscale(1); }
+        .invoice-signature-name { font-weight: 700; text-transform: uppercase; margin-top: 0.3rem; border-top: 0.8px solid #4b5563; padding-top: 0.25rem; }
+        .invoice-signature-role { color: #111827; font-size: 0.8rem; text-transform: uppercase; }
         .c { text-align: center; }
         .r { text-align: right; }
         @page { size: A4 portrait; margin: 8mm; }
