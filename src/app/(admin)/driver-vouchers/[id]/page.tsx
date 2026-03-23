@@ -418,13 +418,6 @@ export default function DriverVoucherDetailPage() {
                 </div>
             </div>
 
-            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)' }}>
-                <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Alur kerja halaman ini</div>
-                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                    Fokus harian di halaman ini hanya tiga langkah: cek uang yang sudah diberikan, catat biaya perjalanan aktual, lalu selesaikan bon saat trip sudah beres. Riwayat pencairan dan detail lain cukup dibuka jika memang perlu audit.
-                </div>
-            </div>
-
             {!voucher.issueBankRef && (
                 <div className="card" style={{ marginBottom: '1rem', border: '1px solid #f59e0b', background: 'rgba(245,158,11,0.08)' }}>
                     <div className="card-body" style={{ padding: '1rem' }}>
@@ -473,10 +466,7 @@ export default function DriverVoucherDetailPage() {
                 </div></div>
             </div>
 
-            <CollapsibleCard
-                title="Informasi Trip"
-                subtitle="Buka jika perlu cek detail supir, kendaraan, rute, dan rekening bon."
-            >
+            <CollapsibleCard title="Informasi Trip">
                 <div className="card-body">
                     <div className="detail-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-4)' }}>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>SUPIR</div><div className="font-medium">{voucher.driverName || '-'}</div></div>
@@ -494,10 +484,7 @@ export default function DriverVoucherDetailPage() {
                 </div>
             </CollapsibleCard>
 
-            <CollapsibleCard
-                title={`Riwayat Uang Jalan (${disbursements.length})`}
-                subtitle="Buka jika perlu cek uang jalan awal dan top up yang pernah dicairkan."
-            >
+            <CollapsibleCard title={`Riwayat Uang Jalan (${disbursements.length})`}>
                 {!isSettled && (
                     <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
                         <button className="btn btn-secondary btn-sm" onClick={openTopUpModal}><Plus size={14} /> Top Up Uang Jalan</button>

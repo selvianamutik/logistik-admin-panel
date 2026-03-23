@@ -92,7 +92,6 @@ export default function NewDriverVoucherPage() {
         selectedDo?.pickupAddress || selectedOrder?.pickupAddress,
         selectedDo?.receiverAddress || selectedOrder?.receiverAddress,
     ].filter(Boolean).join(' -> ') || '';
-    const selectedTripFee = Number(selectedDo?.taripBorongan || 0);
     const effectiveTripFee = Number(form.driverFeeAmount || 0);
 
     const handleSave = async () => {
@@ -250,11 +249,6 @@ export default function NewDriverVoucherPage() {
                             onValueChange={value => setForm({ ...form, driverFeeAmount: value })}
                             placeholder="Ketik upah trip"
                         />
-                        <div className="form-helper">
-                            {selectedTripFee > 0
-                                ? 'Nilai ini mengikuti upah trip pada DO. Jika perlu koreksi, ubah di sini saat bon diterbitkan.'
-                                : 'Trip ini belum punya upah. Isi di sini, lalu sistem akan menyimpannya ke DO saat bon diterbitkan.'}
-                        </div>
                     </div>
                     <div className="form-group">
                         <label className="form-label">Catatan</label>

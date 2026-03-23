@@ -152,13 +152,6 @@ export default function DriverVouchersPage() {
                 </div>
             </div>
 
-            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)' }}>
-                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Cara baca halaman ini</div>
-                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                    Halaman ini dipakai setelah trip dibuat. Fokuskan dulu ke uang jalan yang belum diselesaikan, lalu cek apakah trip perlu top up, perlu rekonsiliasi sumber dana, atau sudah siap ditutup.
-                </div>
-            </div>
-
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card">
                     <div className="kpi-icon warning"><Receipt size={20} /></div>

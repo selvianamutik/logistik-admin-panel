@@ -71,12 +71,6 @@ export default function AuditLogsPage() {
     return (
         <div>
             <div className="page-header"><div className="page-header-left"><h1 className="page-title">Audit Log</h1><p className="page-subtitle">Riwayat aktivitas penting sistem</p></div></div>
-            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)' }}>
-                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Cara baca halaman ini</div>
-                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                    Halaman ini untuk audit dan penelusuran masalah, bukan untuk kerja harian biasa. Cari berdasarkan user, aksi, atau target dokumen jika kamu perlu tahu siapa yang membuat, mengubah, atau menghapus data tertentu.
-                </div>
-            </div>
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Total Log</div><div className="kpi-value">{totalLogs}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Hari Ini</div><div className="kpi-value">{todayLogs}</div></div></div>

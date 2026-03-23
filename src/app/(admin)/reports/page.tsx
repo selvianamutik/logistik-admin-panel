@@ -25,7 +25,6 @@ import type {
   DriverVoucher,
   Expense,
   FreightNota,
-  Invoice,
   Payment,
 } from "@/lib/types";
 
@@ -36,7 +35,6 @@ export default function ReportsPage() {
   const [tab, setTab] = useState<Tab>("pnl");
   const [payments, setPayments] = useState<Payment[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [freightNotas, setFreightNotas] = useState<FreightNota[]>([]);
   const [driverVouchers, setDriverVouchers] = useState<DriverVoucher[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
@@ -78,11 +76,10 @@ export default function ReportsPage() {
 
     async function loadReportData() {
       try {
-        const [pay, exp, inv, nota, vouchers, banks, txs, companyProfile] =
+        const [pay, exp, nota, vouchers, banks, txs, companyProfile] =
           await Promise.all([
             fetchEntity<Payment[]>("payments"),
             fetchEntity<Expense[]>("expenses"),
-            fetchEntity<Invoice[]>("invoices"),
             fetchEntity<FreightNota[]>("freight-notas"),
             fetchEntity<DriverVoucher[]>("driver-vouchers"),
             fetchEntity<BankAccount[]>("bank-accounts"),
@@ -91,7 +88,6 @@ export default function ReportsPage() {
           ]);
         setPayments(pay || []);
         setExpenses(exp || []);
-        setInvoices(inv || []);
         setFreightNotas(nota || []);
         setDriverVouchers(vouchers || []);
         setAllBankAccounts(banks || []);
@@ -148,17 +144,6 @@ export default function ReportsPage() {
     },
     {},
   );
-  const legacyInvoicesInPeriod = invoices.filter((item) =>
-    inPeriod(item.issueDate),
-  );
-  const legacyInvoiceOutstanding = legacyInvoicesInPeriod
-    .filter((item) => item.status !== "PAID")
-    .reduce(
-      (sum, item) =>
-        sum +
-        getReceivableRemainingAmount(item, paymentTotalsByInvoice[item._id]),
-      0,
-    );
   const totalNotaIssued = freightNotas
     .filter((item) => inPeriod(item.issueDate))
     .reduce((sum, item) => sum + item.totalAmount, 0);
@@ -355,19 +340,6 @@ export default function ReportsPage() {
           </button>
         </div>
       </div>
-      <div
-        className="card"
-        style={{ marginBottom: "1rem", background: "var(--color-gray-25)" }}
-      >
-        <div className="card-body" style={{ padding: "0.9rem 1rem" }}>
-          <div style={{ fontWeight: 700, marginBottom: "0.25rem" }}>
-            Cara baca halaman ini
-          </div>
-          <div style={{ fontSize: "0.82rem", color: "var(--color-gray-600)" }}>
-            Gunakan <strong>Laba Rugi</strong> untuk melihat hasil usaha pada periode tertentu, dan gunakan <strong>Arus Kas</strong> untuk melihat uang nyata yang masuk dan keluar dari bank atau kas. Halaman ini untuk kontrol owner/admin, bukan untuk input transaksi harian.
-          </div>
-        </div>
-      </div>
       <div className="page-toolbar">
         <div className="page-toolbar-main">
           <div className="segmented-tabs" aria-label="Jenis laporan">
@@ -444,58 +416,8 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {tab === "cashflow" && (
-        <div
-          className="card"
-          style={{ marginBottom: "1rem", background: "var(--color-gray-25)" }}
-        >
-          <div className="card-body" style={{ padding: "0.9rem 1rem" }}>
-            <div style={{ fontWeight: 700, marginBottom: "0.25rem" }}>
-              Catatan Arus Kas
-            </div>
-            <div style={{ fontSize: "0.82rem", color: "var(--color-gray-600)" }}>
-              Tab ini menampilkan semua mutasi uang yang benar-benar tercatat di rekening bank dan akun <strong>Kas Tunai</strong>. Pengeluaran tunai baru terlihat di sini setelah diposting ke akun kas yang dipakai.
-            </div>
-          </div>
-        </div>
-      )}
-
       {tab === "pnl" ? (
         <div>
-          <div
-            className="card"
-            style={{ marginBottom: "1rem", background: "var(--color-gray-25)" }}
-          >
-            <div className="card-body" style={{ padding: "0.9rem 1rem" }}>
-              <div style={{ fontWeight: 700, marginBottom: "0.25rem" }}>
-                Catatan Laba Rugi
-              </div>
-              <div style={{ fontSize: "0.82rem", color: "var(--color-gray-600)" }}>
-                Pendapatan di halaman ini membaca pembayaran customer yang sudah masuk. Pengeluaran membaca transaksi biaya yang sudah dicatat. Jadi laba rugi di sini adalah ringkasan operasional, bukan pengganti detail nota, expense, atau rekening per transaksi.
-              </div>
-            </div>
-          </div>
-          {invoices.length > 0 && (
-            <div
-              className="card"
-              style={{
-                marginBottom: "1rem",
-                borderColor: "var(--color-warning)",
-                background: "var(--color-warning-soft, #fff7ed)",
-              }}
-            >
-              <div className="card-body" style={{ padding: "0.9rem 1rem" }}>
-                <div style={{ fontWeight: 700, marginBottom: "0.25rem" }}>
-                  Catatan Tagihan Lama
-                </div>
-                <div
-                  style={{ fontSize: "0.82rem", color: "var(--color-gray-700)" }}
-                >
-                  Masih ada {invoices.length} tagihan lama dari sistem sebelumnya. Ringkasan utama halaman ini tetap menghitung <strong>Nota Ongkos aktif</strong>. Pada periode ini, sisa tagihan lama yang masih terbaca adalah {formatCurrency(legacyInvoiceOutstanding)} dari {legacyInvoicesInPeriod.length} dokumen untuk referensi historis.
-                </div>
-              </div>
-            </div>
-          )}
           <div className="responsive-stat-grid" style={{ marginBottom: "1.5rem" }}>
             {[
               {

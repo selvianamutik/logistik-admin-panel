@@ -154,13 +154,6 @@ export default function ExpensesPage() {
                     <button className="btn btn-primary" onClick={() => setShowModal(true)}><Plus size={18} /> Tambah Pengeluaran</button>
                 </div></div>
 
-            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)' }}>
-                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Cara baca halaman ini</div>
-                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                    Halaman ini dipakai untuk mencatat biaya yang sudah benar-benar terjadi. Kalau pengeluaran dibayar dari kas atau rekening tertentu, pilih sumber dananya supaya arus kas ikut tercatat dengan benar.
-                </div>
-            </div>
-
             {/* KPI Summary */}
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card">

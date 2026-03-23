@@ -140,13 +140,6 @@ export default function VehiclesPage() {
                 </div>
             </div>
 
-            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: '1.5rem' }}>
-                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Cara baca halaman ini</div>
-                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                    Fokus harian di halaman ini hanya tiga hal: cek unit yang siap dipakai, lihat apakah slot ban sudah lengkap, lalu buka profil unit bila ada servis, insiden, atau penggantian ban.
-                </div>
-            </div>
-
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card"><div className="kpi-icon success"><Car size={20} /></div><div className="kpi-content"><div className="kpi-label">Siap Dipakai</div><div className="kpi-value">{activeVehicleCount}</div></div></div>
                 <div className="kpi-card"><div className="kpi-icon warning"><Car size={20} /></div><div className="kpi-content"><div className="kpi-label">Ban Belum Lengkap</div><div className="kpi-value">{incompleteTireCount}</div></div></div>

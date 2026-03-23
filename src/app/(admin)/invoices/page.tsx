@@ -414,13 +414,6 @@ export default function NotaListPage() {
                 </div>
             </div>
 
-            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)' }}>
-                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Cara baca halaman ini</div>
-                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                    Fokuskan dulu ke nota yang belum lunas atau baru dibayar sebagian. Kolom tindak lanjut di bawah membantu tim finance tahu apakah sebuah nota perlu ditagih, difollow up, atau sudah tinggal diarsipkan.
-                </div>
-            </div>
-
             {/* KPI */}
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card">

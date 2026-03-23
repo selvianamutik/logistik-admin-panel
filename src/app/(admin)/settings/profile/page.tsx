@@ -36,12 +36,6 @@ export default function ProfilePage() {
     return (
         <div>
             <div className="page-header"><div className="page-header-left"><h1 className="page-title">Profil Saya</h1><p className="page-subtitle">Kelola informasi akun Anda</p></div></div>
-            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)', maxWidth: 520 }}>
-                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Yang bisa diubah di halaman ini</div>
-                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                    Halaman ini hanya untuk memperbarui nama profil sendiri. Email dan role tetap dikelola dari pengaturan user oleh admin/owner.
-                </div>
-            </div>
             <div className="card" style={{ maxWidth: 520 }}>
                 <div className="card-body">
                     <form onSubmit={handleSubmit}>

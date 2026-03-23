@@ -300,10 +300,7 @@ export default function NotaDetailPage() {
                             </div>
                         </div>
 
-                        <CollapsibleCard
-                            title="Rincian Perjalanan"
-                            subtitle="Buka jika perlu cek detail baris perjalanan yang membentuk nota ini"
-                        >
+                        <CollapsibleCard title="Rincian Perjalanan">
                             <div className="table-wrapper" style={{ overflowX: 'auto' }}>
                                 <table style={{ minWidth: 800 }}>
                                     <thead><tr><th>NO.TRUCK</th><th>TGL</th><th>NO.SJ</th><th>DARI</th><th>TUJUAN</th><th>BARANG</th><th>COLLIE</th><th>BERAT KG</th><th>TARIP</th><th style={{ textAlign: 'right' }}>UANG RP</th><th>KET</th></tr></thead>
@@ -366,11 +363,7 @@ export default function NotaDetailPage() {
                             </div>
                         </div>
 
-                        <CollapsibleCard
-                            title="Riwayat Pembayaran"
-                            subtitle="Buka jika perlu audit pembayaran yang sudah masuk"
-                            defaultOpen={payments.length > 0}
-                        >
+                        <CollapsibleCard title="Riwayat Pembayaran" defaultOpen={payments.length > 0}>
                             <div style={{ padding: payments.length === 0 ? '2rem 1.5rem' : 0 }}>
                                 {payments.length === 0 ? (
                                     <div style={{ textAlign: 'center', color: 'var(--color-gray-400)' }}>
@@ -416,11 +409,7 @@ export default function NotaDetailPage() {
                             </div>
                         </CollapsibleCard>
 
-                        <CollapsibleCard
-                            title="Riwayat Klaim / Potongan"
-                            subtitle="Buka jika perlu cek potongan netto karena klaim atau penalti"
-                            defaultOpen={adjustments.length > 0}
-                        >
+                        <CollapsibleCard title="Riwayat Klaim / Potongan" defaultOpen={adjustments.length > 0}>
                             <div style={{ padding: adjustments.length === 0 ? '2rem 1.5rem' : 0 }}>
                                 {adjustments.length === 0 ? (
                                     <div style={{ textAlign: 'center', color: 'var(--color-gray-400)' }}>

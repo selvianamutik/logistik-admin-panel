@@ -231,12 +231,6 @@ export default function CustomerDetailPage() {
             </div>
 
             <div style={{ display: 'grid', gap: 'var(--space-6)' }}>
-            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)' }}>
-                <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Yang paling sering dipakai di halaman ini</div>
-                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                    Untuk kerja harian, bagian utama biasanya hanya <strong>Master Barang Customer</strong>. Histori order dan nota di bawah cukup dibuka saat perlu cek cepat.
-                </div>
-            </div>
             <div
                 className="detail-grid"
                 style={{
@@ -408,10 +402,7 @@ export default function CustomerDetailPage() {
                 </div>
             </CollapsibleCard>
 
-            <CollapsibleCard
-                title={`Order Terbaru (${orders.length})`}
-                subtitle="Buka jika perlu cek cepat order customer ini tanpa masuk ke menu order."
-            >
+            <CollapsibleCard title={`Order Terbaru (${orders.length})`}>
                 <div className="table-wrapper table-desktop-only">
                     <table>
                         <thead><tr><th>Resi</th><th>Penerima</th><th>Status</th><th>Tanggal</th></tr></thead>
@@ -457,10 +448,7 @@ export default function CustomerDetailPage() {
                 </div>
             </CollapsibleCard>
 
-            <CollapsibleCard
-                title={`Nota Ongkos (${notas.length})`}
-                subtitle="Buka jika perlu cek tagihan customer ini tanpa masuk ke menu tagihan."
-            >
+            <CollapsibleCard title={`Nota Ongkos (${notas.length})`}>
                 <div className="table-wrapper table-desktop-only">
                     <table>
                         <thead><tr><th>No. Nota</th><th>Total</th><th>Status</th><th>Jatuh Tempo</th></tr></thead>

@@ -246,12 +246,6 @@ export default function DriversPage() {
                 <div className="page-actions">
                     <button className="btn btn-primary" onClick={() => { setEditId(null); setShowModal(true); }}><Plus size={18} /> Tambah Supir</button>
                 </div></div>
-            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)' }}>
-                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Cara baca halaman ini</div>
-                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                    Halaman ini dipakai untuk memastikan data supir dan akses mobile siap sebelum dipakai di trip. Setelah supir dibuat, aktifkan akses mobile hanya untuk supir yang benar-benar memakai aplikasi driver.
-                </div>
-            </div>
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Supir Aktif</div><div className="kpi-value">{activeDrivers}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Siap App Driver</div><div className="kpi-value">{mobileReadyDrivers}</div></div></div>

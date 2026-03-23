@@ -243,13 +243,6 @@ export default function IncidentsPage() {
                     </button>
                 </div>
             </div>
-            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: '1.5rem' }}>
-                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Cara baca halaman ini</div>
-                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                    Halaman ini dipakai untuk mencatat kejadian di lapangan, memantau mana yang masih terbuka, lalu memastikan kasus benar-benar selesai sebelum diarsipkan.
-                </div>
-            </div>
-
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card"><div className="kpi-icon danger"><AlertTriangle size={20} /></div><div className="kpi-content"><div className="kpi-label">Terbuka</div><div className="kpi-value">{openIncidentCount}</div></div></div>
                 <div className="kpi-card"><div className="kpi-icon warning"><AlertTriangle size={20} /></div><div className="kpi-content"><div className="kpi-label">Ditangani</div><div className="kpi-value">{progressIncidentCount}</div></div></div>

@@ -226,13 +226,6 @@ export default function CustomersPage() {
                 </div>
             </div>
 
-            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)' }}>
-                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Alur cepat halaman ini</div>
-                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                    Untuk customer baru, cukup isi identitas dasar dan prefix surat jalan. Setelah itu lanjutkan ke detail customer untuk melengkapi master barang agar order berikutnya lebih cepat diinput.
-                </div>
-            </div>
-
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card">
                     <div className="kpi-icon info"><Users size={20} /></div>

@@ -885,13 +885,7 @@ export default function DODetailPage() {
             </div>
 
             <div style={{ display: 'grid', gap: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
-            <CollapsibleCard
-                title="Muatan & Realisasi Trip"
-                subtitle="Buka jika perlu cek rencana trip, realisasi aktual, dan titik drop lapangan"
-            >
-                    <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '0.85rem 1rem', color: 'var(--text-muted)', fontSize: '0.82rem', marginBottom: '1rem' }}>
-                        Muatan <strong>Rencana Trip</strong> di bawah ini masih estimasi proporsional dari target order/resi. Angka operasional yang dipakai sebagai sumber kebenaran akhir baru ditetapkan saat admin mengisi <strong>Muatan Aktual Final</strong> ketika DO diselesaikan.
-                    </div>
+            <CollapsibleCard title="Muatan & Realisasi Trip">
                     <div className="detail-row">
                         <div className="detail-item">
                             <div className="detail-label">Asal Tagihan</div>
@@ -955,11 +949,7 @@ export default function DODetailPage() {
                     </div>
             </CollapsibleCard>
 
-            <CollapsibleCard
-                title="Tracking Driver"
-                subtitle="Buka jika perlu cek posisi driver, peta, dan riwayat tracking"
-                defaultOpen={doData.trackingState === 'ACTIVE'}
-            >
+            <CollapsibleCard title="Tracking Driver" defaultOpen={doData.trackingState === 'ACTIVE'}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
                         <div className="detail-label" style={{ marginBottom: 0 }}>Status Tracking</div>
                         <span className={`badge ${doData.trackingState === 'ACTIVE' ? 'badge-info' : doData.trackingState === 'PAUSED' ? 'badge-warning' : 'badge-gray'}`}>
@@ -1005,11 +995,7 @@ export default function DODetailPage() {
                     )}
             </CollapsibleCard>
 
-            <CollapsibleCard
-                title="Upah Trip Driver"
-                subtitle={doData.taripBorongan ? 'Buka jika perlu cek atau ubah upah trip' : 'Upah trip belum diisi. Buka bagian ini untuk melengkapinya.'}
-                defaultOpen={!doData.taripBorongan}
-            >
+            <CollapsibleCard title="Upah Trip Driver" defaultOpen={!doData.taripBorongan}>
                     {!editingTarip ? (
                         <div className="detail-row">
                             <div className="detail-item">
@@ -1102,10 +1088,7 @@ export default function DODetailPage() {
                 </div>
             </div>
 
-            <CollapsibleCard
-                title="Riwayat Tracking"
-                subtitle="Buka jika perlu audit urutan status dan update perjalanan"
-            >
+            <CollapsibleCard title="Riwayat Tracking">
                     {trackingLogs.length === 0 ? (
                         <p className="text-muted text-sm text-center" style={{ padding: '1rem' }}>Belum ada tracking log</p>
                     ) : (

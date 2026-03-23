@@ -161,13 +161,6 @@ export default function OrdersPage() {
                 </div>
             </div>
 
-            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)' }}>
-                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Cara baca halaman ini</div>
-                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                    Fokuskan dulu ke order yang perlu dibuatkan trip atau dilanjutkan pengirimannya. Status dan kolom tindak lanjut di bawah dirapikan untuk membantu staff tahu langkah berikutnya tanpa membuka detail satu per satu.
-                </div>
-            </div>
-
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card">
                     <div className="kpi-icon info"><Package size={20} /></div>

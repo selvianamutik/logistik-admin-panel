@@ -494,20 +494,6 @@ export default function BankAccountsPage() {
         </div>
       </div>
 
-      <div
-        className="card"
-        style={{ marginBottom: "1.5rem", background: "var(--color-gray-25)" }}
-      >
-        <div className="card-body" style={{ padding: "0.9rem 1rem" }}>
-          <div style={{ fontWeight: 700, marginBottom: "0.25rem" }}>
-            Cara baca halaman ini
-          </div>
-          <div style={{ fontSize: "0.82rem", color: "var(--color-gray-600)" }}>
-            Halaman ini dipakai untuk melihat posisi uang nyata. Fokuskan dulu ke saldo total, lalu cek kartu rekening satu per satu untuk tahu rekening mana yang aktif dipakai, perlu transfer, atau perlu ditambah saldonya.
-          </div>
-        </div>
-      </div>
-
       <div className="responsive-stat-grid" style={{ marginBottom: "1rem" }}>
         <div className="card">
           <div className="card-body">

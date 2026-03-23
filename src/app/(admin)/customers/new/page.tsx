@@ -50,13 +50,6 @@ export default function CustomerNewPage() {
                 </div>
             </div>
             <form onSubmit={handleSave}>
-                <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)', maxWidth: 640 }}>
-                    <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Alur cepat halaman ini</div>
-                    <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                        Isi identitas customer dan prefix surat jalannya dulu. Setelah customer tersimpan, lanjutkan ke detail customer untuk menambahkan master barang jika customer ini punya daftar barang tetap.
-                    </div>
-                </div>
-
                 <div className="card" style={{ maxWidth: 640 }}>
                     <div className="card-header"><span className="card-header-title">Informasi Customer</span></div>
                     <div className="card-body">
