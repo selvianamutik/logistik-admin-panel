@@ -91,6 +91,22 @@ export function useApp() {
     return useContext(AppContext);
 }
 
+function getRoleWorkspaceLabel(role?: SessionUser['role']) {
+    switch (role) {
+        case 'OWNER':
+            return 'Owner';
+        case 'OPERASIONAL':
+        case 'ADMIN':
+            return 'Operasional';
+        case 'FINANCE':
+            return 'Finance';
+        case 'ARMADA':
+            return 'Armada';
+        default:
+            return 'Dashboard';
+    }
+}
+
 // ── Admin Layout ──
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
     const router = useRouter();
@@ -148,7 +164,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                     setCompany(co.data);
                     if (co.data.themeColor) applyTheme(co.data.themeColor);
                     if (co.data.name) {
-                        document.title = `Operasional - ${co.data.name}`;
+                        document.title = `${getRoleWorkspaceLabel(session.user?.role)} - ${co.data.name}`;
                     }
                 }
             } catch {
@@ -300,7 +316,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                             )}
                             <div className="sidebar-logo-text-wrap">
                                 <span className="sidebar-logo-text">{company?.name || 'Gading Mas Surya'}</span>
-                                <span className="sidebar-logo-subtitle">Operasional &amp; Keuangan</span>
+                                <span className="sidebar-logo-subtitle">Panel Internal</span>
                             </div>
                         </div>
 
