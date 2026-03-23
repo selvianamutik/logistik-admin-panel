@@ -18,6 +18,23 @@ const ORDER_ACTION_PRIORITY: Record<string, number> = {
     CANCELLED: 4,
 };
 
+const getNextActionLabel = (order: Order) => {
+    switch (order.status) {
+        case 'OPEN':
+            return 'Buat trip pertama';
+        case 'PARTIAL':
+            return 'Lanjutkan sisa pengiriman';
+        case 'ON_HOLD':
+            return 'Cek alasan hold';
+        case 'COMPLETE':
+            return 'Siap ditagih / arsip';
+        case 'CANCELLED':
+            return 'Tidak ada tindak lanjut';
+        default:
+            return 'Periksa detail order';
+    }
+};
+
 export default function OrdersPage() {
     const router = useRouter();
     const { addToast } = useToast();
@@ -144,6 +161,13 @@ export default function OrdersPage() {
                 </div>
             </div>
 
+            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)' }}>
+                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Cara baca halaman ini</div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                    Fokuskan dulu ke order yang perlu dibuatkan trip atau dilanjutkan pengirimannya. Status dan kolom tindak lanjut di bawah dirapikan untuk membantu staff tahu langkah berikutnya tanpa membuka detail satu per satu.
+                </div>
+            </div>
+
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card">
                     <div className="kpi-icon info"><Package size={20} /></div>
@@ -214,6 +238,7 @@ export default function OrdersPage() {
                                 <th>Penerima</th>
                                 <th>Kategori Armada</th>
                                 <th>Status</th>
+                                <th>Tindak Lanjut</th>
                                 <th>Tanggal</th>
                                 <th>Aksi</th>
                             </tr>
@@ -222,14 +247,14 @@ export default function OrdersPage() {
                             {loading ? (
                                 [1, 2, 3].map(i => (
                                     <tr key={i}>
-                                        {[1, 2, 3, 4, 5, 6, 7].map(j => (
+                                        {[1, 2, 3, 4, 5, 6, 7, 8].map(j => (
                                             <td key={j}><div className="skeleton skeleton-text" /></td>
                                         ))}
                                     </tr>
                                 ))
                             ) : prioritizedOrders.length === 0 ? (
                                 <tr>
-                                    <td colSpan={7}>
+                                    <td colSpan={8}>
                                         <div className="empty-state">
                                             <Package size={48} className="empty-state-icon" />
                                             <div className="empty-state-title">Belum ada order</div>
@@ -256,6 +281,9 @@ export default function OrdersPage() {
                                                 <span className="badge-dot" />
                                                 {ORDER_STATUS_MAP[order.status]?.label || order.status}
                                             </span>
+                                        </td>
+                                        <td>
+                                            <span style={{ fontWeight: 500 }}>{getNextActionLabel(order)}</span>
                                         </td>
                                         <td className="text-muted">{formatDate(order.createdAt)}</td>
                                         <td>
@@ -308,6 +336,10 @@ export default function OrdersPage() {
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Kategori Armada</span>
                                         <span className="mobile-record-value">{getServiceLabel(order)}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Tindak Lanjut</span>
+                                        <span className="mobile-record-value">{getNextActionLabel(order)}</span>
                                     </div>
                                 </div>
                                 <div className="mobile-record-actions">

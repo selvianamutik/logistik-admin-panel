@@ -63,6 +63,9 @@ export default function CustomersPage() {
         c.contactPerson?.toLowerCase().includes(search.toLowerCase()) ||
         c.deliveryOrderPrefix?.toLowerCase().includes(search.toLowerCase())
     );
+    const totalProducts = Object.values(customerProductCounts).reduce((sum, count) => sum + count, 0);
+    const customersNeedingCatalog = items.filter(customer => (customerProductCounts[customer._id] || 0) === 0).length;
+    const customersWithCustomPrefix = items.filter(customer => (customer.deliveryOrderPrefix || 'SJ') !== 'SJ').length;
 
     const openNew = () => {
         setEditItem(null);
@@ -223,6 +226,44 @@ export default function CustomersPage() {
                 </div>
             </div>
 
+            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)' }}>
+                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Alur cepat halaman ini</div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                    Untuk customer baru, cukup isi identitas dasar dan prefix surat jalan. Setelah itu lanjutkan ke detail customer untuk melengkapi master barang agar order berikutnya lebih cepat diinput.
+                </div>
+            </div>
+
+            <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
+                <div className="kpi-card">
+                    <div className="kpi-icon info"><Users size={20} /></div>
+                    <div className="kpi-content">
+                        <div className="kpi-label">Total Customer</div>
+                        <div className="kpi-value">{items.length}</div>
+                    </div>
+                </div>
+                <div className="kpi-card">
+                    <div className="kpi-icon success"><Users size={20} /></div>
+                    <div className="kpi-content">
+                        <div className="kpi-label">Master Barang</div>
+                        <div className="kpi-value">{totalProducts}</div>
+                    </div>
+                </div>
+                <div className="kpi-card">
+                    <div className="kpi-icon warning"><Users size={20} /></div>
+                    <div className="kpi-content">
+                        <div className="kpi-label">Butuh Setup Barang</div>
+                        <div className="kpi-value">{customersNeedingCatalog}</div>
+                    </div>
+                </div>
+                <div className="kpi-card">
+                    <div className="kpi-icon neutral"><Users size={20} /></div>
+                    <div className="kpi-content">
+                        <div className="kpi-label">Prefix Khusus</div>
+                        <div className="kpi-value">{customersWithCustomPrefix}</div>
+                    </div>
+                </div>
+            </div>
+
             <div className="table-container">
                 <div className="table-toolbar">
                     <div className="table-toolbar-left">
@@ -243,6 +284,7 @@ export default function CustomersPage() {
                                 <th>Email</th>
                                 <th>Prefix SJ</th>
                                 <th>Master Barang</th>
+                                <th>Status Setup</th>
                                 <th>Termin</th>
                                 <th>Aksi</th>
                             </tr>
@@ -251,14 +293,14 @@ export default function CustomersPage() {
                             {loading ? (
                                 [1, 2, 3].map(i => (
                                     <tr key={i}>
-                                        {[1, 2, 3, 4, 5, 6, 7, 8].map(j => (
+                                        {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(j => (
                                             <td key={j}><div className="skeleton skeleton-text" /></td>
                                         ))}
                                     </tr>
                                 ))
                             ) : filtered.length === 0 ? (
                                 <tr>
-                                    <td colSpan={8}>
+                                    <td colSpan={9}>
                                         <div className="empty-state">
                                             <Users size={48} className="empty-state-icon" />
                                             <div className="empty-state-title">Belum ada customer</div>
@@ -278,10 +320,17 @@ export default function CustomersPage() {
                                         <td className="text-muted">{customer.email}</td>
                                         <td className="font-mono">{customer.deliveryOrderPrefix || 'SJ'}</td>
                                         <td><span className="badge badge-info">{customerProductCounts[customer._id] || 0} barang</span></td>
+                                        <td>
+                                            {(customerProductCounts[customer._id] || 0) > 0 ? (
+                                                <span className="badge badge-success">Siap dipakai</span>
+                                            ) : (
+                                                <span className="badge badge-warning">Perlu setup barang</span>
+                                            )}
+                                        </td>
                                         <td>{customer.defaultPaymentTerm} hari</td>
                                         <td>
                                             <div className="table-actions">
-                                                <Link href={`/customers/${customer._id}`} className="table-action-btn">Detail</Link>
+                                                <Link href={`/customers/${customer._id}`} className="table-action-btn">Detail & Barang</Link>
                                                 <button className="table-action-btn" onClick={() => openEdit(customer)}><Edit size={14} /> Edit</button>
                                                 <button className="table-action-btn danger" onClick={() => setDeleteId(customer._id)}><Trash2 size={14} /> Hapus</button>
                                             </div>
@@ -324,6 +373,12 @@ export default function CustomersPage() {
                                         <span className="mobile-record-value">{customerProductCounts[customer._id] || 0} barang</span>
                                     </div>
                                     <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Status Setup</span>
+                                        <span className="mobile-record-value">
+                                            {(customerProductCounts[customer._id] || 0) > 0 ? 'Siap dipakai' : 'Perlu setup barang'}
+                                        </span>
+                                    </div>
+                                    <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Termin</span>
                                         <span className="mobile-record-value">{customer.defaultPaymentTerm} hari</span>
                                     </div>
@@ -351,6 +406,9 @@ export default function CustomersPage() {
                             <button className="modal-close" onClick={() => setShowModal(false)} disabled={saving}><X size={20} /></button>
                         </div>
                         <div className="modal-body">
+                            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: '0.8rem', color: 'var(--color-gray-600)' }}>
+                                Simpan customer dulu, lalu lanjutkan ke detail customer untuk menambahkan master barang jika customer ini sering kirim barang yang sama.
+                            </div>
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Nama <span className="required">*</span></label>
