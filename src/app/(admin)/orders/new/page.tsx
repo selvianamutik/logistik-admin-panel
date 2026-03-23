@@ -10,6 +10,9 @@ import type { Customer, CustomerProduct, Service } from '@/lib/types';
 import {
     convertKgToWeightInputValue,
     convertM3ToVolumeInputValue,
+    convertVolumeToM3,
+    convertWeightToKg,
+    formatCargoSummary,
     VOLUME_INPUT_UNIT_OPTIONS,
     WEIGHT_INPUT_UNIT_OPTIONS,
     type VolumeInputUnit,
@@ -56,6 +59,21 @@ export default function NewOrderPage() {
     const [pickupAddress, setPickupAddress] = useState('');
     const [notes, setNotes] = useState('');
     const [items, setItems] = useState<OrderItemForm[]>([{ ...DEFAULT_ITEM }]);
+
+    const draftItems = items.filter(item =>
+        item.description.trim() ||
+        item.customerProductRef ||
+        item.qtyKoli > 0 ||
+        item.weightInputValue > 0 ||
+        item.volumeInputValue > 0
+    );
+    const draftCargo = draftItems.reduce((sum, item) => ({
+        qtyKoli: sum.qtyKoli + Number(item.qtyKoli || 0),
+        weightKg: sum.weightKg + (item.weightInputValue > 0 ? convertWeightToKg(item.weightInputValue, item.weightInputUnit) : 0),
+        volumeM3: sum.volumeM3 + (item.volumeInputValue > 0 ? convertVolumeToM3(item.volumeInputValue, item.volumeInputUnit) : 0),
+    }), { qtyKoli: 0, weightKg: 0, volumeM3: 0 });
+    const selectedCustomer = customers.find(customer => customer._id === customerRef) || null;
+    const selectedService = services.find(service => service._id === serviceRef) || null;
 
     useEffect(() => {
         const fetchEntity = async <T,>(url: string) => {
@@ -230,6 +248,42 @@ export default function NewOrderPage() {
             </div>
 
             <form onSubmit={handleSubmit}>
+                <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)' }}>
+                    <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Alur cepat halaman ini</div>
+                    <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                        Untuk order normal, cukup pilih customer, isi tujuan, lalu tambahkan barang. Kategori armada, pickup, dan catatan hanya dipakai jika memang sudah diketahui sejak awal.
+                    </div>
+                </div>
+
+                <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
+                    <div className="kpi-card">
+                        <div className="kpi-content">
+                            <div className="kpi-label">Customer</div>
+                            <div className="kpi-value" style={{ fontSize: '1rem' }}>{selectedCustomer?.name || 'Belum dipilih'}</div>
+                        </div>
+                    </div>
+                    <div className="kpi-card">
+                        <div className="kpi-content">
+                            <div className="kpi-label">Kategori Armada</div>
+                            <div className="kpi-value" style={{ fontSize: '1rem' }}>{selectedService?.name || 'Opsional'}</div>
+                        </div>
+                    </div>
+                    <div className="kpi-card">
+                        <div className="kpi-content">
+                            <div className="kpi-label">Draft Barang</div>
+                            <div className="kpi-value">{draftItems.length} item</div>
+                        </div>
+                    </div>
+                    <div className="kpi-card">
+                        <div className="kpi-content">
+                            <div className="kpi-label">Muatan Draft</div>
+                            <div className="kpi-value" style={{ fontSize: '0.95rem' }}>
+                                {draftItems.length > 0 ? formatCargoSummary(draftCargo) : 'Belum diisi'}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div className="detail-grid">
                     {/* Pengirim */}
                     <div className="card">
@@ -289,6 +343,9 @@ export default function NewOrderPage() {
                         </button>
                     </div>
                     <div className="card-body">
+                        <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: '0.8rem', color: 'var(--color-gray-600)' }}>
+                            Isi item yang benar-benar dikirim pada resi ini. Kalau customer punya master barang, gunakan dropdown barang customer supaya deskripsi dan muatan default langsung terisi.
+                        </div>
                         {items.map((item, idx) => (
                             <div key={idx} style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 12, padding: 12, background: 'var(--color-gray-50)', borderRadius: 'var(--radius-md)' }}>
                                 {customerRef && customerProducts.length > 0 && (

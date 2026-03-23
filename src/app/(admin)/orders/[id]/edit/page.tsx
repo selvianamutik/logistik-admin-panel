@@ -10,6 +10,9 @@ import type { Order, Customer, CustomerProduct, Service, DeliveryOrder, OrderIte
 import {
     convertKgToWeightInputValue,
     convertM3ToVolumeInputValue,
+    convertVolumeToM3,
+    convertWeightToKg,
+    formatCargoSummary,
     VOLUME_INPUT_UNIT_OPTIONS,
     WEIGHT_INPUT_UNIT_OPTIONS,
     type VolumeInputUnit,
@@ -307,6 +310,13 @@ export default function OrderEditPage() {
     if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 300 }} /></div>;
 
     const isRevisionMode = hasDeliveryOrders || hasOperationalProgress;
+    const targetCargo = items.reduce((sum, item) => ({
+        qtyKoli: sum.qtyKoli + Number(item.qtyKoli || 0),
+        weightKg: sum.weightKg + (item.weightInputValue > 0 ? convertWeightToKg(item.weightInputValue, item.weightInputUnit) : 0),
+        volumeM3: sum.volumeM3 + (item.volumeInputValue > 0 ? convertVolumeToM3(item.volumeInputValue, item.volumeInputUnit) : 0),
+    }), { qtyKoli: 0, weightKg: 0, volumeM3: 0 });
+    const selectedCustomer = customers.find(customer => customer._id === form.customerRef) || null;
+    const selectedService = services.find(service => service._id === form.serviceRef) || null;
 
     return (
         <div>
@@ -317,16 +327,49 @@ export default function OrderEditPage() {
                 </div>
             </div>
 
+            <div style={{ background: isRevisionMode ? 'rgba(245, 158, 11, 0.08)' : 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: isRevisionMode ? '1px solid rgba(245, 158, 11, 0.35)' : '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)' }}>
+                <div style={{ fontWeight: 600, marginBottom: '0.35rem', color: isRevisionMode ? '#92400e' : 'inherit' }}>
+                    {isRevisionMode ? 'Mode revisi target order' : 'Mode edit order biasa'}
+                </div>
+                <div style={{ fontSize: '0.82rem', color: isRevisionMode ? '#92400e' : 'var(--text-muted)' }}>
+                    {isRevisionMode
+                        ? 'Order ini sudah punya progress. Identitas barang dan pihak terkait tetap dikunci agar histori trip tidak berubah diam-diam. Di layar ini kamu hanya merevisi target koli, berat, volume, dan catatan dengan alasan yang jelas.'
+                        : 'Order ini belum punya progress operasional. Data pengirim, penerima, armada, dan item masih bisa diperbarui seperti biasa.'}
+                </div>
+            </div>
+
+            <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
+                <div className="kpi-card">
+                    <div className="kpi-content">
+                        <div className="kpi-label">Customer</div>
+                        <div className="kpi-value" style={{ fontSize: '1rem' }}>{selectedCustomer?.name || 'Belum dipilih'}</div>
+                    </div>
+                </div>
+                <div className="kpi-card">
+                    <div className="kpi-content">
+                        <div className="kpi-label">Kategori Armada</div>
+                        <div className="kpi-value" style={{ fontSize: '1rem' }}>{selectedService?.name || 'Opsional'}</div>
+                    </div>
+                </div>
+                <div className="kpi-card">
+                    <div className="kpi-content">
+                        <div className="kpi-label">Item</div>
+                        <div className="kpi-value">{items.length} item</div>
+                    </div>
+                </div>
+                <div className="kpi-card">
+                    <div className="kpi-content">
+                        <div className="kpi-label">{isRevisionMode ? 'Target Revisi' : 'Muatan Target'}</div>
+                        <div className="kpi-value" style={{ fontSize: '0.95rem' }}>{formatCargoSummary(targetCargo)}</div>
+                    </div>
+                </div>
+            </div>
+
             <form onSubmit={handleSave}>
                 <div className="detail-grid">
                     <div className="card">
                         <div className="card-header"><span className="card-header-title">Informasi Order</span></div>
                         <div className="card-body">
-                            {isRevisionMode && (
-                                <div className="alert alert-warning" style={{ marginBottom: '1rem' }}>
-                                    Order ini sudah punya progress operasional. Data utama dan identitas item tetap dikunci. Yang bisa direvisi di sini hanya target koli, berat, volume, dan catatan order agar histori trip yang sudah terjadi tidak ikut berubah diam-diam.
-                                </div>
-                            )}
                             <div className="form-group">
                                 <label className="form-label">Customer / Pengirim / Penagih</label>
                                 <select className="form-select" value={form.customerRef} onChange={e => handleCustomerChange(e.target.value)} disabled={isRevisionMode}>
@@ -400,28 +443,49 @@ export default function OrderEditPage() {
                         </button>
                     </div>
                     <div className="card-body">
+                        <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: '0.8rem', color: 'var(--color-gray-600)' }}>
+                            {isRevisionMode
+                                ? 'Di mode revisi, nama barang dan master barang customer tetap mengikuti histori awal. Yang kamu koreksi di sini hanya target koli, berat, dan volume.'
+                                : 'Gunakan master barang customer kalau tersedia supaya deskripsi dan muatan default terisi otomatis.'}
+                        </div>
                         {items.map((item, idx) => (
                             <div key={item.id || idx} style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 12, padding: 12, background: 'var(--color-gray-50)', borderRadius: 'var(--radius-md)' }}>
-                                <div style={{ flex: '1 1 260px' }}>
-                                    <label className="form-label">Barang Customer</label>
-                                    <select
-                                        className="form-select"
-                                        value={item.customerProductRef}
-                                        onChange={e => applyCustomerProductSelection(idx, e.target.value)}
-                                        disabled={isRevisionMode || !form.customerRef}
-                                    >
-                                        <option value="">{form.customerRef ? 'Pilih dari master barang customer (opsional)' : 'Pilih customer dulu'}</option>
-                                        {customerProducts.map(product => (
-                                            <option key={product._id} value={product._id}>
-                                                {product.code ? `${product.code} - ` : ''}{product.name}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div style={{ flex: '2 1 280px' }}>
-                                    <label className="form-label">Deskripsi</label>
-                                    <input className="form-input" value={item.description} onChange={e => updateItem(idx, 'description', e.target.value)} placeholder="Nama/deskripsi barang" disabled={isRevisionMode} />
-                                </div>
+                                {isRevisionMode ? (
+                                    <div style={{ flex: '2 1 320px', display: 'grid', gap: '0.35rem' }}>
+                                        <label className="form-label">Item</label>
+                                        <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.65rem', padding: '0.8rem 0.9rem', background: 'var(--color-white)' }}>
+                                            <div className="font-medium">{item.description || '-'}</div>
+                                            <div className="text-muted text-sm">
+                                                {item.customerProductRef
+                                                    ? `Master barang customer terhubung dan identitas item dikunci saat revisi.`
+                                                    : 'Item ini tidak memakai master barang customer. Deskripsi tetap dikunci saat revisi.'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div style={{ flex: '1 1 260px' }}>
+                                            <label className="form-label">Barang Customer</label>
+                                            <select
+                                                className="form-select"
+                                                value={item.customerProductRef}
+                                                onChange={e => applyCustomerProductSelection(idx, e.target.value)}
+                                                disabled={!form.customerRef}
+                                            >
+                                                <option value="">{form.customerRef ? 'Pilih dari master barang customer (opsional)' : 'Pilih customer dulu'}</option>
+                                                {customerProducts.map(product => (
+                                                    <option key={product._id} value={product._id}>
+                                                        {product.code ? `${product.code} - ` : ''}{product.name}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div style={{ flex: '2 1 280px' }}>
+                                            <label className="form-label">Deskripsi</label>
+                                            <input className="form-input" value={item.description} onChange={e => updateItem(idx, 'description', e.target.value)} placeholder="Nama/deskripsi barang" />
+                                        </div>
+                                    </>
+                                )}
                                 <div style={{ flex: '0 1 110px' }}>
                                     <label className="form-label">{isRevisionMode ? 'Target Koli (Opsional)' : 'Koli (Opsional)'}</label>
                                     <FormattedNumberInput min={0} allowDecimal={false} value={item.qtyKoli} onValueChange={value => updateItem(idx, 'qtyKoli', value)} disabled={false} />
