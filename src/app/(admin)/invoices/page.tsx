@@ -23,6 +23,16 @@ const INVOICE_ACTION_PRIORITY: Record<string, number> = {
     PAID: 2,
 };
 
+const getNextInvoiceAction = (nota: FreightNota, remainingAmount: number) => {
+    if (nota.status === 'UNPAID') {
+        return 'Tagih atau catat receipt';
+    }
+    if (nota.status === 'PARTIAL') {
+        return remainingAmount > 0 ? 'Follow up sisa pembayaran' : 'Cek alokasi receipt';
+    }
+    return (nota.totalAdjustmentAmount || 0) > 0 ? 'Arsip + cek potongan' : 'Arsip / cetak';
+};
+
 export default function NotaListPage() {
     const router = useRouter();
     const { addToast } = useToast();
@@ -393,6 +403,13 @@ export default function NotaListPage() {
                 </div>
             </div>
 
+            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)' }}>
+                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Cara baca halaman ini</div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                    Fokuskan dulu ke nota yang belum lunas atau baru dibayar sebagian. Kolom tindak lanjut di bawah membantu tim finance tahu apakah sebuah nota perlu ditagih, difollow up, atau sudah tinggal diarsipkan.
+                </div>
+            </div>
+
             {/* KPI */}
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card">
@@ -437,11 +454,11 @@ export default function NotaListPage() {
                 </div>
                 <div className="table-wrapper table-desktop-only">
                     <table>
-                        <thead><tr><th>No. Nota</th><th>Customer</th><th>Tanggal</th><th>Total Collie</th><th>Total Berat</th><th>Tagihan Netto</th><th>Status</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>No. Nota</th><th>Customer</th><th>Tanggal</th><th>Total Collie</th><th>Total Berat</th><th>Tagihan Netto</th><th>Status</th><th>Tindak Lanjut</th><th>Aksi</th></tr></thead>
                         <tbody>
-                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
+                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 prioritizedNotas.length === 0 ? (
-                                    <tr><td colSpan={8}><div className="empty-state"><FileText size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada nota</div><div className="empty-state-text">Klik tombol &quot;Buat Nota&quot; untuk membuat nota baru</div></div></td></tr>
+                                    <tr><td colSpan={9}><div className="empty-state"><FileText size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada nota</div><div className="empty-state-text">Klik tombol &quot;Buat Nota&quot; untuk membuat nota baru</div></div></td></tr>
                                 ) : prioritizedNotas.map(n => (
                                     <tr key={n._id}>
                                         <td>
@@ -464,6 +481,7 @@ export default function NotaListPage() {
                                             {(n.totalAdjustmentAmount || 0) > 0 && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Bruto {formatCurrency(n.totalAmount)}</div>}
                                         </td>
                                         <td><span className={`badge badge-${STATUS_MAP[n.status]?.color}`}><span className="badge-dot" /> {STATUS_MAP[n.status]?.label}</span></td>
+                                        <td><span style={{ fontWeight: 500 }}>{getNextInvoiceAction(n, getNotaRemaining(n))}</span></td>
                                         <td>
                                             <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
                                                 <button className="table-action-btn" onClick={() => router.push(`/invoices/${n._id}`)}>Buka</button>
@@ -510,6 +528,10 @@ export default function NotaListPage() {
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Tagihan Netto</span>
                                         <span className="mobile-record-value" style={{ fontWeight: 700 }}>{formatCurrency(getReceivableNetAmount(n))}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Tindak Lanjut</span>
+                                        <span className="mobile-record-value">{getNextInvoiceAction(n, getNotaRemaining(n))}</span>
                                     </div>
                                 </div>
                                 <div className="mobile-record-actions">

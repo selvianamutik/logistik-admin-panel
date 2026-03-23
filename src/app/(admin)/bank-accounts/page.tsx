@@ -74,6 +74,20 @@ function getBankPreset(bankName: string) {
   return BANK_PRESETS[key || "OTHER"];
 }
 
+function getAccountNextAction(account: BankAccount) {
+  if (isCashAccount(account)) {
+    return account.currentBalance > 0
+      ? "Siap dipakai untuk operasional harian"
+      : "Cek perlu isi saldo kas";
+  }
+
+  if ((account.currentBalance || 0) <= 0) {
+    return "Cek saldo / mutasi rekening";
+  }
+
+  return "Pantau mutasi atau transfer";
+}
+
 function BankLogo({ name }: { name: string }) {
   const preset = getBankPreset(name);
   if (preset.logo) {
@@ -480,6 +494,20 @@ export default function BankAccountsPage() {
         </div>
       </div>
 
+      <div
+        className="card"
+        style={{ marginBottom: "1.5rem", background: "var(--color-gray-25)" }}
+      >
+        <div className="card-body" style={{ padding: "0.9rem 1rem" }}>
+          <div style={{ fontWeight: 700, marginBottom: "0.25rem" }}>
+            Cara baca halaman ini
+          </div>
+          <div style={{ fontSize: "0.82rem", color: "var(--color-gray-600)" }}>
+            Halaman ini dipakai untuk melihat posisi uang nyata. Fokuskan dulu ke saldo total, lalu cek kartu rekening satu per satu untuk tahu rekening mana yang aktif dipakai, perlu transfer, atau perlu ditambah saldonya.
+          </div>
+        </div>
+      </div>
+
       <div className="responsive-stat-grid" style={{ marginBottom: "1rem" }}>
         <div className="card">
           <div className="card-body">
@@ -636,6 +664,16 @@ export default function BankAccountsPage() {
                       }}
                     >
                       a.n. {account.accountHolder}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "0.78rem",
+                        fontWeight: 600,
+                        marginBottom: "0.75rem",
+                        color: "var(--color-primary)",
+                      }}
+                    >
+                      Tindak lanjut: {getAccountNextAction(account)}
                     </div>
                     <div
                       style={{
