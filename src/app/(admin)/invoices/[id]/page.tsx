@@ -10,7 +10,7 @@ import PageBackButton from '@/components/PageBackButton';
 import { buildFreightNotaPrintDocument, fetchCompanyProfile, formatFreightNotaDisplayNumber, openBrandedPrint } from '@/lib/print';
 import { exportFreightNotaDetail } from '@/lib/export';
 import { formatDate, formatCurrency, getReceivableNetAmount, INVOICE_ADJUSTMENT_KIND_MAP, PAYMENT_METHOD_MAP } from '@/lib/utils';
-import type { FreightNota, FreightNotaItem, Payment, BankAccount, CompanyProfile, InvoiceAdjustment } from '@/lib/types';
+import type { FreightNota, FreightNotaItem, Payment, BankAccount, CompanyProfile, InvoiceAdjustment, Customer } from '@/lib/types';
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
     UNPAID: { label: 'Belum Lunas', color: 'danger' },
@@ -28,6 +28,7 @@ export default function NotaDetailPage() {
     const [adjustments, setAdjustments] = useState<InvoiceAdjustment[]>([]);
     const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
     const [company, setCompany] = useState<CompanyProfile | null>(null);
+    const [customer, setCustomer] = useState<Pick<Customer, '_id' | 'name' | 'address' | 'contactPerson' | 'phone'> | null>(null);
     const [loading, setLoading] = useState(true);
     const [showPayModal, setShowPayModal] = useState(false);
     const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
@@ -63,6 +64,9 @@ export default function NotaDetailPage() {
                 fetchEntity<BankAccount[]>('/api/data?entity=bank-accounts'),
                 fetchCompanyProfile(),
             ]);
+            const customerData = notaData?.customerRef
+                ? await fetchEntity<Pick<Customer, '_id' | 'name' | 'address' | 'contactPerson' | 'phone'> | null>(`/api/data?entity=customers&id=${notaData.customerRef}`)
+                : null;
 
             setNota(notaData);
             setItems(notaItems || []);
@@ -70,6 +74,7 @@ export default function NotaDetailPage() {
             setAdjustments((adjustmentRows || []).sort((a, b) => b.date.localeCompare(a.date)));
             setBankAccounts((accounts || []).filter(account => account.active !== false));
             setCompany(companyData);
+            setCustomer(customerData);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail nota');
         } finally {
@@ -196,7 +201,7 @@ export default function NotaDetailPage() {
         try {
             const resolvedCompany = company ?? await fetchCompanyProfile();
             setCompany(resolvedCompany);
-            const doc = buildFreightNotaPrintDocument({ nota, items, company: resolvedCompany });
+            const doc = buildFreightNotaPrintDocument({ nota, items, company: resolvedCompany, customer });
             openBrandedPrint({
                 title: doc.title,
                 subtitle: doc.subtitle,

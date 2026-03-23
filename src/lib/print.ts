@@ -3,7 +3,7 @@
    ============================================================ */
 
 import DOMPurify from 'dompurify';
-import type { CompanyProfile, FreightNota, FreightNotaItem } from './types';
+import type { CompanyProfile, Customer, FreightNota, FreightNotaItem } from './types';
 import { getReceivableNetAmount, terbilang } from './utils';
 
 export async function fetchCompanyProfile(): Promise<CompanyProfile | null> {
@@ -169,8 +169,9 @@ export function buildFreightNotaPrintDocument(opts: {
     nota: FreightNota;
     items: FreightNotaItem[];
     company: CompanyProfile | null;
+    customer?: Pick<Customer, 'name' | 'address' | 'contactPerson' | 'phone'> | null;
 }) {
-    const { nota, items, company } = opts;
+    const { nota, items, company, customer } = opts;
     const displayNumber = formatFreightNotaDisplayNumber(nota, company);
     const grossAmount = nota.totalAmount || 0;
     const adjustmentAmount = nota.totalAdjustmentAmount || 0;
@@ -194,6 +195,8 @@ export function buildFreightNotaPrintDocument(opts: {
     const shipmentAddressLabel = uniqueDestinations.length > 0 ? uniqueDestinations.join(' / ') : '-';
     const shipmentOriginLabel = uniqueOrigins.length > 0 ? uniqueOrigins.join(' / ') : '-';
     const shipmentNoteLabel = [nota.notes, ...uniqueNotes].filter(Boolean).join(' / ') || '-';
+    const customerAddressLabel = customer?.address?.trim() || '';
+    const customerContactLabel = [customer?.contactPerson, customer?.phone].filter(Boolean).join(' | ');
     const bankInstructionLines = [
         company?.bankName ? `${company.bankName}` : '',
         company?.bankAccount ? `A/C No. ${company.bankAccount}` : '',
@@ -274,7 +277,8 @@ export function buildFreightNotaPrintDocument(opts: {
                 <div class="invoice-panel">
                     <div class="invoice-panel-title">Kepada Yth.</div>
                     <div class="invoice-recipient-name">${escapePrintHtml(nota.customerName)}</div>
-                    ${company?.address ? `<div class="invoice-recipient-address">${escapePrintHtml(company.address)}</div>` : ''}
+                    ${customerAddressLabel ? `<div class="invoice-recipient-address">${escapePrintHtml(customerAddressLabel)}</div>` : ''}
+                    ${customerContactLabel ? `<div class="invoice-recipient-contact">${escapePrintHtml(customerContactLabel)}</div>` : ''}
                 </div>
                 <div class="invoice-panel">
                     <table class="invoice-info-table">
@@ -284,7 +288,7 @@ export function buildFreightNotaPrintDocument(opts: {
                                 <td>${escapePrintHtml(displayNumber)}</td>
                             </tr>
                             <tr>
-                                <td>Nomor Sistem</td>
+                                <td>Referensi Sistem</td>
                                 <td>${escapePrintHtml(nota.notaNumber)}</td>
                             </tr>
                             <tr>
@@ -296,8 +300,8 @@ export function buildFreightNotaPrintDocument(opts: {
                                 <td>${escapePrintHtml(printDate)}</td>
                             </tr>
                             <tr>
-                                <td>Jatuh Tempo</td>
-                                <td>${escapePrintHtml(dueDateLabel)}</td>
+                                <td>Halaman</td>
+                                <td>1 / 1</td>
                             </tr>
                         </tbody>
                     </table>
@@ -427,7 +431,7 @@ export function buildFreightNotaPrintDocument(opts: {
         .invoice-brand-subtitle { color: #111827; font-size: 0.95rem; margin-top: 0.05rem; font-weight: 600; }
         .invoice-company-box { padding: 0.1rem 0; font-size: 0.84rem; text-align: left; }
         .invoice-company-name { font-weight: 700; font-size: 1rem; margin-bottom: 0.2rem; text-transform: uppercase; }
-        .invoice-top-grid, .invoice-shipment-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.65rem; margin-bottom: 0.75rem; }
+        .invoice-top-grid, .invoice-shipment-grid { display: grid; grid-template-columns: 1.02fr 0.98fr; gap: 0.65rem; margin-bottom: 0.75rem; }
         .invoice-bottom-grid, .invoice-footer-grid { display: grid; grid-template-columns: 1fr 0.62fr; gap: 0.65rem; margin-bottom: 0.75rem; }
         .invoice-panel { border: 0.8px solid #4b5563; padding: 0.55rem 0.65rem; min-height: 100%; }
         .invoice-panel-title, .invoice-section-title { font-weight: 700; font-style: italic; margin-bottom: 0.35rem; }
@@ -435,6 +439,7 @@ export function buildFreightNotaPrintDocument(opts: {
         .invoice-section-title.compact { margin-top: 0; font-style: italic; }
         .invoice-recipient-name { font-weight: 700; font-size: 1rem; margin-bottom: 0.28rem; }
         .invoice-recipient-address { white-space: pre-line; }
+        .invoice-recipient-contact { margin-top: 0.2rem; font-size: 0.82rem; }
         .invoice-info-table, .invoice-items-table, .invoice-total-table { width: 100%; border-collapse: collapse; }
         .invoice-info-table td { border: 0.8px solid #4b5563; padding: 0.3rem 0.4rem; vertical-align: top; }
         .invoice-info-table td:first-child { width: 42%; font-weight: 600; background: #fff; }

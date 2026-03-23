@@ -338,14 +338,25 @@ export default function NotaListPage() {
         return (payload.data || []) as FreightNotaItem[];
     };
 
+    const fetchCustomerSummary = async (customerRef?: string) => {
+        if (!customerRef) return null;
+        const response = await fetch(`/api/data?entity=customers&id=${customerRef}`);
+        const payload = await response.json();
+        if (!response.ok) {
+            throw new Error(payload.error || 'Gagal memuat customer');
+        }
+        return (payload.data || null) as Pick<Customer, '_id' | 'name' | 'address' | 'contactPerson' | 'phone'> | null;
+    };
+
     const handlePrintNota = async (nota: FreightNota) => {
         try {
-            const [resolvedCompany, notaItems] = await Promise.all([
+            const [resolvedCompany, notaItems, customer] = await Promise.all([
                 company ? Promise.resolve(company) : fetchCompanyProfile(),
                 fetchNotaItems(nota._id),
+                fetchCustomerSummary(nota.customerRef),
             ]);
             setCompany(resolvedCompany);
-            const doc = buildFreightNotaPrintDocument({ nota, items: notaItems, company: resolvedCompany });
+            const doc = buildFreightNotaPrintDocument({ nota, items: notaItems, company: resolvedCompany, customer });
             openBrandedPrint({
                 title: doc.title,
                 subtitle: doc.subtitle,
