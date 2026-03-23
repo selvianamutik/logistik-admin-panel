@@ -190,6 +190,15 @@ export default function BankAccountDetailPage() {
                 </div>
             </div>
 
+            <div className="card" style={{ marginBottom: '1.5rem', background: 'var(--color-gray-25)' }}>
+                <div className="card-body" style={{ padding: '0.9rem 1rem' }}>
+                    <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Cara baca halaman ini</div>
+                    <div style={{ fontSize: '0.82rem', color: 'var(--color-gray-600)' }}>
+                        Halaman ini dipakai untuk memeriksa mutasi satu rekening atau kas tertentu. Fokuskan dulu ke saldo saat ini, total masuk, total keluar, lalu lihat riwayat transaksinya jika ada selisih atau mutasi yang ingin ditelusuri.
+                    </div>
+                </div>
+            </div>
+
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
                 <div className="card" style={{ background: bankInfo.gradient, color: '#fff', overflow: 'hidden', position: 'relative' }}>
                     <div style={{ position: 'absolute', right: -15, top: -15, width: 80, height: 80, borderRadius: '50%', background: 'rgba(255,255,255,0.08)' }} />
@@ -227,7 +236,7 @@ export default function BankAccountDetailPage() {
                     <span className="card-header-title">Riwayat Transaksi</span>
                     <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{transactions.length} transaksi</span>
                 </div>
-                <div className="table-wrapper" style={{ overflowX: 'auto' }}>
+                <div className="table-wrapper table-desktop-only" style={{ overflowX: 'auto' }}>
                     <table style={{ minWidth: 600 }}>
                         <thead>
                             <tr><th>Tanggal</th><th>Tipe</th><th>Deskripsi</th><th style={{ textAlign: 'right' }}>Jumlah</th><th style={{ textAlign: 'right' }}>Saldo Setelah</th></tr>
@@ -262,6 +271,40 @@ export default function BankAccountDetailPage() {
                             })}
                         </tbody>
                     </table>
+                </div>
+                <div className="mobile-record-list">
+                    {transactions.length === 0 ? (
+                        <div className="mobile-record-card">
+                            <div className="mobile-record-title">Belum ada transaksi</div>
+                            <div className="mobile-record-subtitle">Mutasi rekening atau kas ini akan muncul di sini setelah ada pergerakan dana.</div>
+                        </div>
+                    ) : transactions.map(tx => {
+                        const cfg = typeConfig[tx.type] || typeConfig.CREDIT;
+                        const isPositive = tx.type === 'CREDIT' || tx.type === 'TRANSFER_IN';
+                        return (
+                            <div key={tx._id} className="mobile-record-card">
+                                <div className="mobile-record-header">
+                                    <div>
+                                        <div className="mobile-record-title">{cfg.label}</div>
+                                        <div className="mobile-record-subtitle">{fmtDate(tx.date)} • {tx.description}</div>
+                                    </div>
+                                    <span className={`badge ${cfg.badge}`}>{cfg.label}</span>
+                                </div>
+                                <div className="mobile-record-meta">
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Jumlah</span>
+                                        <span className="mobile-record-value" style={{ fontWeight: 700, color: isPositive ? 'var(--success)' : 'var(--danger)' }}>
+                                            {cfg.sign}{fmt(tx.amount)}
+                                        </span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Saldo Setelah</span>
+                                        <span className="mobile-record-value">{fmt(tx.balanceAfter)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
                 </div>
             </div>
         </div>

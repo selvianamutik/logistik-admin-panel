@@ -15,6 +15,8 @@ export default function ExpenseCategoriesPage() {
     const [saving, setSaving] = useState(false);
     const [name, setName] = useState('');
     const isOwner = user?.role === 'OWNER';
+    const activeCount = items.filter(item => item.active !== false).length;
+    const inactiveCount = items.filter(item => item.active === false).length;
 
     useEffect(() => {
         const loadCategories = async () => {
@@ -73,6 +75,17 @@ export default function ExpenseCategoriesPage() {
         <div>
             <div className="page-header"><div className="page-header-left"><h1 className="page-title">Kategori Biaya</h1><p className="page-subtitle">Kelola kategori pengeluaran</p></div>
                 <div className="page-actions">{isOwner && <button className="btn btn-primary" onClick={openNew}><Plus size={18} /> Tambah Kategori</button>}</div></div>
+            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)' }}>
+                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Cara baca halaman ini</div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                    Halaman ini adalah master kategori biaya untuk membantu pengeluaran dicatat dengan rapi. Tambahkan kategori baru hanya jika memang belum ada kategori yang cocok.
+                </div>
+            </div>
+            <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Kategori Aktif</div><div className="kpi-value">{activeCount}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Kategori Nonaktif</div><div className="kpi-value">{inactiveCount}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Hak Ubah</div><div className="kpi-value">{isOwner ? 'OWNER' : 'Read only'}</div></div></div>
+            </div>
             <div className="table-container"><div className="table-wrapper"><table>
                 <thead><tr><th>Nama Kategori</th><th>Status</th><th>Aksi</th></tr></thead>
                 <tbody>
@@ -88,7 +101,12 @@ export default function ExpenseCategoriesPage() {
             {showModal && (
                 <div className="modal-overlay" onClick={() => { if (!saving) setShowModal(false); }}><div className="modal" onClick={e => e.stopPropagation()}>
                     <div className="modal-header"><h3 className="modal-title">{editItem ? 'Edit' : 'Tambah'} Kategori</h3><button className="modal-close" onClick={() => setShowModal(false)} disabled={saving}><X size={20} /></button></div>
-                    <div className="modal-body"><div className="form-group"><label className="form-label">Nama Kategori</label><input className="form-input" value={name} onChange={e => setName(e.target.value)} autoFocus /></div></div>
+                    <div className="modal-body">
+                        <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: '0.8rem', color: 'var(--color-gray-600)' }}>
+                            Pilih nama kategori yang mudah dipahami operasional, misalnya <strong>Solar</strong>, <strong>Tol</strong>, <strong>Parkir</strong>, atau <strong>Servis Kendaraan</strong>.
+                        </div>
+                        <div className="form-group"><label className="form-label">Nama Kategori</label><input className="form-input" value={name} onChange={e => setName(e.target.value)} autoFocus /></div>
+                    </div>
                     <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowModal(false)} disabled={saving}>Batal</button><button className="btn btn-primary" onClick={handleSave} disabled={saving}><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}</button></div>
                 </div></div>
             )}

@@ -58,6 +58,12 @@ export default function DriversPage() {
     const accountByDriverRef = new Map(accounts.filter(account => account.driverRef).map(account => [account.driverRef as string, account]));
     const isDriverActive = (driver: Pick<Driver, 'active'>) => driver.active !== false;
     const isAccountActive = (account: Pick<DriverMobileAccount, 'active'>) => account.active !== false;
+    const activeDrivers = items.filter(driver => isDriverActive(driver)).length;
+    const mobileReadyDrivers = items.filter(driver => {
+        const account = accountByDriverRef.get(driver._id);
+        return isDriverActive(driver) && !!account && isAccountActive(account);
+    }).length;
+    const inactiveDrivers = items.filter(driver => !isDriverActive(driver)).length;
 
     const handleSave = async () => {
         if (!form.name || !form.phone) { addToast('error', 'Nama dan no. HP wajib diisi'); return; }
@@ -240,6 +246,17 @@ export default function DriversPage() {
                 <div className="page-actions">
                     <button className="btn btn-primary" onClick={() => { setEditId(null); setShowModal(true); }}><Plus size={18} /> Tambah Supir</button>
                 </div></div>
+            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)' }}>
+                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Cara baca halaman ini</div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                    Halaman ini dipakai untuk memastikan data supir dan akses mobile siap sebelum dipakai di trip. Setelah supir dibuat, aktifkan akses mobile hanya untuk supir yang benar-benar memakai aplikasi driver.
+                </div>
+            </div>
+            <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Supir Aktif</div><div className="kpi-value">{activeDrivers}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Siap App Driver</div><div className="kpi-value">{mobileReadyDrivers}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Supir Nonaktif</div><div className="kpi-value">{inactiveDrivers}</div></div></div>
+            </div>
             <div className="table-container">
                 <div className="table-toolbar"><div className="table-toolbar-left"><div className="table-search"><Search size={16} className="table-search-icon" /><input placeholder="Cari nama, HP, SIM..." value={search} onChange={e => setSearch(e.target.value)} /></div></div></div>
                 <div className="table-wrapper table-desktop-only">
@@ -357,6 +374,9 @@ export default function DriversPage() {
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header"><h3 className="modal-title">{editId ? 'Edit Supir' : 'Tambah Supir'}</h3><button className="modal-close" onClick={closeModal} disabled={savingDriver}><X size={20} /></button></div>
                         <div className="modal-body">
+                            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: '0.8rem', color: 'var(--color-gray-600)' }}>
+                                Isi data identitas supir dulu. Akses mobile bisa diatur setelah data supir tersimpan.
+                            </div>
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Nama <span className="required">*</span></label><input className="form-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
                                 <div className="form-group"><label className="form-label">No. HP <span className="required">*</span></label><input className="form-input" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></div>
@@ -383,6 +403,9 @@ export default function DriversPage() {
                             <button className="modal-close" onClick={closeAccessModal} disabled={savingAccess}><X size={20} /></button>
                         </div>
                         <div className="modal-body">
+                            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: '0.8rem', color: 'var(--color-gray-600)' }}>
+                                Gunakan bagian ini hanya jika supir memang perlu login ke aplikasi driver. Menonaktifkan akun mobile tidak menghapus data supir, hanya memutus akses login.
+                            </div>
                             <div className="form-group">
                                 <label className="form-label">Supir</label>
                                 <input className="form-input" value={accessDriver.name} disabled />

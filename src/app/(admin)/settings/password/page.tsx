@@ -43,6 +43,12 @@ export default function PasswordPage() {
     return (
         <div>
             <div className="page-header"><div className="page-header-left"><h1 className="page-title">Ubah Password</h1><p className="page-subtitle">Perbarui password akun Anda</p></div></div>
+            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)', maxWidth: 520 }}>
+                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Kapan halaman ini dipakai</div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                    Gunakan halaman ini jika kamu memang ingin mengganti password akunmu sendiri. Untuk reset akun user lain, gunakan <strong>User Management</strong>.
+                </div>
+            </div>
             <div className="card" style={{ maxWidth: 520 }}>
                 <div className="card-body">
                     <form onSubmit={handleSubmit}>
