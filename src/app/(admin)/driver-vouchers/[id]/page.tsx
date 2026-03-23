@@ -313,7 +313,7 @@ export default function DriverVoucherDetailPage() {
     const handleSettle = async () => {
         if (!voucher) return;
         if (items.length === 0 && driverFeeAmount <= 0) {
-            addToast('error', 'Isi biaya perjalanan atau upah supir sebelum settlement');
+            addToast('error', 'Isi biaya perjalanan atau upah supir sebelum penyelesaian trip');
             return;
         }
         if (balance !== 0 && !settlementBankRef) {

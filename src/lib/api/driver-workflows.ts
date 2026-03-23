@@ -1533,7 +1533,7 @@ export async function handleDriverVoucherSettlement(
         }
         const driverFeeAmount = normalizeNumber(state.voucher.driverFeeAmount || 0);
         if (state.items.length === 0 && driverFeeAmount <= 0) {
-            return NextResponse.json({ error: 'Isi biaya perjalanan atau upah supir sebelum settlement' }, { status: 400 });
+            return NextResponse.json({ error: 'Isi biaya perjalanan atau upah supir sebelum penyelesaian trip' }, { status: 400 });
         }
 
         const existingExpense = await getSanityClient().fetch<{ _id: string } | null>(

@@ -155,7 +155,7 @@ export default function DriverVouchersPage() {
             <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)' }}>
                 <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Cara baca halaman ini</div>
                 <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                    Halaman ini dipakai setelah trip dibuat. Fokuskan dulu ke uang jalan yang belum settle, lalu cek apakah trip perlu top up, perlu rekonsiliasi sumber dana, atau sudah siap diselesaikan.
+                    Halaman ini dipakai setelah trip dibuat. Fokuskan dulu ke uang jalan yang belum diselesaikan, lalu cek apakah trip perlu top up, perlu rekonsiliasi sumber dana, atau sudah siap ditutup.
                 </div>
             </div>
 
@@ -163,7 +163,7 @@ export default function DriverVouchersPage() {
                 <div className="kpi-card">
                     <div className="kpi-icon warning"><Receipt size={20} /></div>
                     <div className="kpi-content">
-                        <div className="kpi-label">Belum Settle</div>
+                        <div className="kpi-label">Belum Diselesaikan</div>
                         <div className="kpi-value">{queueCounts.issued}</div>
                     </div>
                 </div>

@@ -526,7 +526,7 @@ export default function ReportsPage() {
                 color: "var(--color-warning)",
               },
               {
-                label: "Uang Jalan Trip Belum Settle",
+                label: "Uang Jalan Trip Belum Diselesaikan",
                 value: formatCurrency(openVoucherClaims),
                 note: `${openDriverVouchers.length} trip aktif`,
                 color: "var(--color-primary)",
@@ -803,7 +803,7 @@ export default function ReportsPage() {
                               {item.driverName || "-"} | {formatDate(item.issuedDate)}
                             </div>
                           </div>
-                          <span className="badge badge-warning">Belum Settle</span>
+                          <span className="badge badge-warning">Belum Diselesaikan</span>
                         </div>
                         <div className="mobile-record-meta">
                           <div className="mobile-record-kv">
