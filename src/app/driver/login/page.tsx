@@ -1,16 +1,43 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import { AlertCircle, Eye, EyeOff, Loader2, Smartphone } from 'lucide-react';
 
 export default function DriverLoginPage() {
-    const router = useRouter();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    const [checkingSession, setCheckingSession] = useState(true);
+
+    useEffect(() => {
+        let alive = true;
+
+        const checkExistingSession = async () => {
+            try {
+                const res = await fetch('/api/driver/session');
+                if (!alive || !res.ok) return;
+
+                const payload = await res.json() as { user?: { role?: string } | null };
+                if (payload.user?.role === 'DRIVER') {
+                    window.location.replace('/driver');
+                    return;
+                }
+            } catch {
+                // Ignore background session check failures on the driver login page.
+            } finally {
+                if (alive) {
+                    setCheckingSession(false);
+                }
+            }
+        };
+
+        void checkExistingSession();
+        return () => {
+            alive = false;
+        };
+    }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -46,13 +73,31 @@ export default function DriverLoginPage() {
                 return;
             }
 
-            router.push('/driver');
-            router.refresh();
+            window.location.assign('/driver');
         } catch {
             setError('Tidak dapat terhubung ke server');
             setLoading(false);
         }
     };
+
+    if (checkingSession) {
+        return (
+            <main className="login-page driver-login-page">
+                <div className="login-card">
+                    <div className="login-header">
+                        <div className="login-logo" style={{ display: 'grid', placeItems: 'center' }}>
+                            <Smartphone size={22} />
+                        </div>
+                        <h1 className="login-title">Aplikasi Driver</h1>
+                        <p className="login-subtitle">Memeriksa sesi driver...</p>
+                    </div>
+                    <div className="login-body" style={{ display: 'flex', justifyContent: 'center' }}>
+                        <Loader2 size={20} className="spinner" />
+                    </div>
+                </div>
+            </main>
+        );
+    }
 
     return (
         <main className="login-page driver-login-page">

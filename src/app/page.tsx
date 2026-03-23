@@ -13,7 +13,7 @@ export default async function HomePage() {
     }
 
     if (driverSession) {
-        redirect('/login');
+        redirect('/driver');
     }
 
     redirect('/login');

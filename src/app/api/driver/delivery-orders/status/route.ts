@@ -76,14 +76,14 @@ export async function POST(request: Request) {
         }
 
         if (DRIVER_APPROVAL_REQUEST_STATUSES.has(status)) {
-            return handleDeliveryOrderDriverStatusRequest(
+            return await handleDeliveryOrderDriverStatusRequest(
                 auth.session,
                 { id, status, note },
                 addAuditLog
             );
         }
 
-        return handleDeliveryOrderStatusUpdate(
+        return await handleDeliveryOrderStatusUpdate(
             auth.session,
             { id, status, note },
             addAuditLog
