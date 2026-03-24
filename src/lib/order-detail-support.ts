@@ -8,7 +8,7 @@ import {
     type WeightInputUnit,
 } from '@/lib/measurement';
 import { calculateWeightPortion, getOrderItemProgress, roundQuantity } from '@/lib/order-item-progress';
-import type { DeliveryOrder, DeliveryOrderItem, OrderItem } from '@/lib/types';
+import type { DeliveryOrder, DeliveryOrderItem, Driver, Order, OrderItem, Vehicle } from '@/lib/types';
 
 export type SelectedShipmentMap = Record<string, {
     qtyKoli: string;
@@ -44,6 +44,18 @@ export type CreateDeliveryOrderItemInput = {
     volumeInputValue: number;
     volumeInputUnit: VolumeInputUnit;
     holdRemaining: boolean;
+    holdReason: string;
+    holdLocation: string;
+};
+
+export type VehicleSummary = Pick<Vehicle, '_id' | 'unitCode' | 'plateNumber' | 'serviceRef' | 'serviceName'>;
+
+export type HoldFormState = {
+    holdQtyKoli: string;
+    holdWeightInputValue: string;
+    holdWeightInputUnit: WeightInputUnit;
+    holdVolumeInputValue: string;
+    holdVolumeInputUnit: VolumeInputUnit;
     holdReason: string;
     holdLocation: string;
 };
@@ -360,4 +372,106 @@ export function buildCreateDeliveryOrderItems(
                 ? Number.isFinite(item.qtyKoli) && item.qtyKoli > 0
                 : item.weightInputValue > 0 || item.volumeInputValue > 0
         );
+}
+
+export function buildBusyAssignmentIds(activeDeliveryOrders: Array<Pick<DeliveryOrder, 'vehicleRef' | 'driverRef'>>) {
+    return {
+        busyVehicleIds: Array.from(
+            new Set(
+                activeDeliveryOrders
+                    .map(item => item.vehicleRef)
+                    .filter((value): value is string => Boolean(value))
+            )
+        ),
+        busyDriverIds: Array.from(
+            new Set(
+                activeDeliveryOrders
+                    .map(item => item.driverRef)
+                    .filter((value): value is string => Boolean(value))
+            )
+        ),
+    };
+}
+
+export function sortOrderDetailVehicles(vehicles: VehicleSummary[], order: Order | null) {
+    return vehicles
+        .slice()
+        .sort((left, right) => {
+            const leftMatches = order?.serviceRef && left.serviceRef === order.serviceRef ? 1 : 0;
+            const rightMatches = order?.serviceRef && right.serviceRef === order.serviceRef ? 1 : 0;
+            if (leftMatches !== rightMatches) {
+                return rightMatches - leftMatches;
+            }
+            const leftLabel = `${left.unitCode || ''} ${left.plateNumber || ''}`.trim();
+            const rightLabel = `${right.unitCode || ''} ${right.plateNumber || ''}`.trim();
+            return leftLabel.localeCompare(rightLabel, 'id');
+        });
+}
+
+export function getAvailableVehicles(vehicles: VehicleSummary[], busyVehicleIds: string[]) {
+    const busyVehicleIdSet = new Set(busyVehicleIds);
+    return vehicles.filter(vehicle => !busyVehicleIdSet.has(vehicle._id));
+}
+
+export function getAvailableDrivers(drivers: Driver[], busyDriverIds: string[]) {
+    return drivers.filter(driver => !busyDriverIds.includes(driver._id));
+}
+
+export function shouldRequireVehicleOverrideReason(order: Order | null, selectedVehicle?: VehicleSummary) {
+    if (!order?.serviceRef || !selectedVehicle) {
+        return false;
+    }
+    return selectedVehicle.serviceRef !== order.serviceRef || !selectedVehicle.serviceRef;
+}
+
+export function buildHoldFormState(item: OrderItem, progressInfo: OrderItemProgressInfo): HoldFormState {
+    const defaultWeightUnit = item.weightInputUnit || 'KG';
+    const defaultVolumeUnit = item.volumeInputUnit || 'M3';
+
+    return {
+        holdQtyKoli: String(progressInfo.pendingQtyKoli || ''),
+        holdWeightInputValue:
+            progressInfo.pendingWeight > 0
+                ? String(convertKgToWeightInputValue(progressInfo.pendingWeight, defaultWeightUnit))
+                : '',
+        holdWeightInputUnit: defaultWeightUnit,
+        holdVolumeInputValue:
+            progressInfo.pendingVolume > 0
+                ? String(convertM3ToVolumeInputValue(progressInfo.pendingVolume, defaultVolumeUnit))
+                : '',
+        holdVolumeInputUnit: defaultVolumeUnit,
+        holdReason: '',
+        holdLocation: '',
+    };
+}
+
+export function buildCreateDeliveryOrderRequestData(params: {
+    order: Order | null;
+    items: CreateDeliveryOrderItemInput[];
+    vehicleRef?: string;
+    selectedVehicle?: VehicleSummary;
+    driverRef?: string;
+    selectedDriver?: Driver;
+    date: string;
+    notes: string;
+    taripBorongan?: number;
+    requiresVehicleOverrideReason: boolean;
+    vehicleOverrideReason: string;
+}) {
+    return {
+        orderRef: params.order?._id,
+        items: params.items,
+        masterResi: params.order?.masterResi,
+        vehicleRef: params.vehicleRef || undefined,
+        vehiclePlate: params.selectedVehicle?.plateNumber || '',
+        vehicleCategoryOverrideReason: params.requiresVehicleOverrideReason ? params.vehicleOverrideReason.trim() : undefined,
+        driverRef: params.driverRef || undefined,
+        driverName: params.selectedDriver?.name || '',
+        taripBorongan: params.taripBorongan && params.taripBorongan > 0 ? params.taripBorongan : undefined,
+        date: params.date,
+        notes: params.notes,
+        customerName: params.order?.customerName,
+        receiverName: params.order?.receiverName,
+        receiverAddress: params.order?.receiverAddress,
+    };
 }

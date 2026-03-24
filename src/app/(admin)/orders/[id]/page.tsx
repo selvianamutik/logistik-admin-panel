@@ -10,8 +10,6 @@ import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { fetchAdminData } from '@/lib/api/admin-client';
 import { formatDate, formatCurrency, formatNumber, getReceivableNetAmount, ORDER_STATUS_MAP, ITEM_STATUS_MAP, DO_STATUS_MAP, INVOICE_STATUS_MAP, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
 import {
-    convertKgToWeightInputValue,
-    convertM3ToVolumeInputValue,
     formatCargoSummary,
     formatVolumeDisplay,
     VOLUME_INPUT_UNIT_OPTIONS,
@@ -21,13 +19,20 @@ import {
 } from '@/lib/measurement';
 import { calculateWeightPortion, roundQuantity } from '@/lib/order-item-progress';
 import {
+    buildBusyAssignmentIds,
     buildCreateDeliveryOrderItems,
+    buildCreateDeliveryOrderRequestData,
     buildDefaultShipmentSelection,
+    buildHoldFormState,
     buildOrderDetailMetrics,
     buildSelectedNonKoliCargo,
     createCargoAggregate,
     formatProgressLine,
+    getAvailableDrivers,
+    getAvailableVehicles,
     hasCargoAggregate,
+    shouldRequireVehicleOverrideReason,
+    sortOrderDetailVehicles,
     type SelectedShipmentMap,
     summarizeSelectedShipments,
 } from '@/lib/order-detail-support';
@@ -100,25 +105,10 @@ export default function OrderDetailPage() {
             setDos(deliveryOrders || []);
             setDoItems(deliveryOrderItems);
             setNotas(orderNotas || []);
+            const { busyVehicleIds: nextBusyVehicleIds, busyDriverIds: nextBusyDriverIds } = buildBusyAssignmentIds(activeDeliveryOrders || []);
             setVehicles(vehicleData || []);
-            setBusyVehicleIds(
-                Array.from(
-                    new Set(
-                        (activeDeliveryOrders || [])
-                            .map(item => item.vehicleRef)
-                            .filter((value): value is string => Boolean(value))
-                    )
-                )
-            );
-            setBusyDriverIds(
-                Array.from(
-                    new Set(
-                        (activeDeliveryOrders || [])
-                            .map(item => item.driverRef)
-                            .filter((value): value is string => Boolean(value))
-                    )
-                )
-            );
+            setBusyVehicleIds(nextBusyVehicleIds);
+            setBusyDriverIds(nextBusyDriverIds);
             setDrivers((driverData || []).filter(driver => driver.active !== false));
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail order');
@@ -131,33 +121,11 @@ export default function OrderDetailPage() {
         void loadOrderDetail();
     }, [loadOrderDetail]);
 
-    const sortedVehicles = vehicles
-        .slice()
-        .sort((left, right) => {
-            const leftMatches = order?.serviceRef && left.serviceRef === order.serviceRef ? 1 : 0;
-            const rightMatches = order?.serviceRef && right.serviceRef === order.serviceRef ? 1 : 0;
-            if (leftMatches !== rightMatches) {
-                return rightMatches - leftMatches;
-            }
-            const leftLabel = `${left.unitCode || ''} ${left.plateNumber || ''}`.trim();
-            const rightLabel = `${right.unitCode || ''} ${right.plateNumber || ''}`.trim();
-            return leftLabel.localeCompare(rightLabel, 'id');
-        });
-    const busyVehicleIdSet = new Set(busyVehicleIds);
-    const availableVehicles = sortedVehicles.filter(vehicle => !busyVehicleIdSet.has(vehicle._id));
-    const availableDrivers = drivers.filter(driver => !busyDriverIds.includes(driver._id));
+    const sortedVehicles = sortOrderDetailVehicles(vehicles, order);
+    const availableVehicles = getAvailableVehicles(sortedVehicles, busyVehicleIds);
+    const availableDrivers = getAvailableDrivers(drivers, busyDriverIds);
     const selectedVehicleData = vehicles.find(vehicle => vehicle._id === doVehicle);
-    const vehicleCategoryMismatch = Boolean(
-        order?.serviceRef &&
-        selectedVehicleData &&
-        selectedVehicleData.serviceRef !== order.serviceRef
-    );
-    const vehicleMissingCategory = Boolean(
-        order?.serviceRef &&
-        selectedVehicleData &&
-        !selectedVehicleData.serviceRef
-    );
-    const requiresVehicleOverrideReason = vehicleCategoryMismatch || vehicleMissingCategory;
+    const requiresVehicleOverrideReason = shouldRequireVehicleOverrideReason(order, selectedVehicleData);
 
     useEffect(() => {
         if (!requiresVehicleOverrideReason && doVehicleOverrideReason) {
@@ -244,22 +212,19 @@ export default function OrderDetailPage() {
                 body: JSON.stringify({
                     entity: 'delivery-orders',
                     action: 'create-with-items',
-                    data: {
-                        orderRef: order?._id,
+                    data: buildCreateDeliveryOrderRequestData({
+                        order,
                         items: selectedItems,
-                        masterResi: order?.masterResi,
-                        vehicleRef: doVehicle || undefined,
-                        vehiclePlate: selVeh?.plateNumber || '',
-                        vehicleCategoryOverrideReason: requiresVehicleOverrideReason ? doVehicleOverrideReason.trim() : undefined,
-                        driverRef: doDriver || undefined,
-                        driverName: selDriver?.name || '',
-                        taripBorongan: doTripFee > 0 ? doTripFee : undefined,
+                        vehicleRef: doVehicle,
+                        selectedVehicle: selVeh,
+                        driverRef: doDriver,
+                        selectedDriver: selDriver,
+                        taripBorongan: doTripFee,
                         date: doDate,
                         notes: doNotes,
-                        customerName: order?.customerName,
-                        receiverName: order?.receiverName,
-                        receiverAddress: order?.receiverAddress,
-                    }
+                        requiresVehicleOverrideReason,
+                        vehicleOverrideReason: doVehicleOverrideReason,
+                    }),
                 }),
             });
             const doData = await doRes.json();
@@ -287,24 +252,15 @@ export default function OrderDetailPage() {
 
     const openHoldModal = (item: OrderItem) => {
         const progress = itemProgressById[item._id];
-        const defaultWeightUnit = item.weightInputUnit || 'KG';
-        const defaultVolumeUnit = item.volumeInputUnit || 'M3';
+        const nextHoldState = buildHoldFormState(item, progress);
         setHoldingItem(item);
-        setHoldQtyKoli(String(progress.pendingQtyKoli || ''));
-        setHoldWeightInputValue(
-            progress.pendingWeight > 0
-                ? String(convertKgToWeightInputValue(progress.pendingWeight, defaultWeightUnit))
-                : ''
-        );
-        setHoldWeightInputUnit(defaultWeightUnit);
-        setHoldVolumeInputValue(
-            progress.pendingVolume > 0
-                ? String(convertM3ToVolumeInputValue(progress.pendingVolume, defaultVolumeUnit))
-                : ''
-        );
-        setHoldVolumeInputUnit(defaultVolumeUnit);
-        setHoldReason('');
-        setHoldLocation('');
+        setHoldQtyKoli(nextHoldState.holdQtyKoli);
+        setHoldWeightInputValue(nextHoldState.holdWeightInputValue);
+        setHoldWeightInputUnit(nextHoldState.holdWeightInputUnit);
+        setHoldVolumeInputValue(nextHoldState.holdVolumeInputValue);
+        setHoldVolumeInputUnit(nextHoldState.holdVolumeInputUnit);
+        setHoldReason(nextHoldState.holdReason);
+        setHoldLocation(nextHoldState.holdLocation);
         setShowHoldModal(true);
     };
 

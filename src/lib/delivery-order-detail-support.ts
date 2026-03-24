@@ -1,4 +1,4 @@
-import type { DeliveryOrder, DeliveryOrderItem, TrackingLog } from '@/lib/types';
+import type { DeliveryOrder, DeliveryOrderItem, Order, TrackingLog } from '@/lib/types';
 import type { VolumeInputUnit, WeightInputUnit } from '@/lib/measurement';
 import { formatCargoSummary } from '@/lib/measurement';
 import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatDate, formatDateTime } from '@/lib/utils';
@@ -404,4 +404,119 @@ export function buildDeliveryOrderPrintHtml(
             </tbody>
         </table>
     `;
+}
+
+export function buildResolvedDeliveryOrder(deliveryOrder: DeliveryOrder | null, sourceOrder: Order | null) {
+    if (!deliveryOrder) {
+        return null;
+    }
+
+    return {
+        ...deliveryOrder,
+        customerName: deliveryOrder.customerName || sourceOrder?.customerName,
+        receiverName: deliveryOrder.receiverName || sourceOrder?.receiverName,
+        receiverPhone: deliveryOrder.receiverPhone || sourceOrder?.receiverPhone,
+        receiverAddress: deliveryOrder.receiverAddress || sourceOrder?.receiverAddress,
+        receiverCompany: deliveryOrder.receiverCompany || sourceOrder?.receiverCompany,
+        pickupAddress: deliveryOrder.pickupAddress || sourceOrder?.pickupAddress,
+        serviceRef: deliveryOrder.serviceRef || sourceOrder?.serviceRef,
+        serviceName: deliveryOrder.serviceName || sourceOrder?.serviceName,
+    };
+}
+
+export function sortTrackingLogs(logs: TrackingLog[]) {
+    return [...logs].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+}
+
+export function createEmptyActualDropDraft(): ActualDropDraft {
+    return {
+        draftKey: crypto.randomUUID(),
+        stopType: 'DROP',
+        locationName: '',
+        locationAddress: '',
+        qtyKoli: '',
+        weightInputValue: '',
+        weightInputUnit: 'KG',
+        volumeInputValue: '',
+        volumeInputUnit: 'M3',
+        note: '',
+    };
+}
+
+export function buildDeliveryOrderStatusUpdateData(params: {
+    id?: string;
+    status: string;
+    note: string;
+    actualCargoItems: ActualCargoDraft[];
+    actualDropPoints: ActualDropDraft[];
+    effectiveActualDropPoints: ActualDropDraft[];
+    podName: string;
+    podDate: string;
+    podNote: string;
+}) {
+    const completingDelivery = params.status === 'DELIVERED';
+
+    return {
+        id: params.id,
+        status: params.status,
+        note: params.note,
+        ...(completingDelivery
+            ? {
+                podReceiverName: params.podName,
+                podReceivedDate: params.podDate,
+                podNote: params.podNote,
+                actualItems: params.actualCargoItems.map(item => ({
+                    deliveryOrderItemRef: item.deliveryOrderItemRef,
+                    actualQtyKoli: Number(item.actualQtyKoli),
+                    actualWeightInputValue: Number(item.actualWeightInputValue),
+                    actualWeightInputUnit: item.actualWeightInputUnit,
+                    actualVolumeInputValue: item.actualVolumeInputValue.trim()
+                        ? Number(item.actualVolumeInputValue)
+                        : 0,
+                    actualVolumeInputUnit: item.actualVolumeInputUnit,
+                })),
+                actualDropPoints: params.effectiveActualDropPoints.map(item => ({
+                    stopType: item.stopType,
+                    locationName: item.locationName,
+                    locationAddress: item.locationAddress,
+                    qtyKoli: item.qtyKoli.trim() ? Number(item.qtyKoli) : 0,
+                    weightInputValue: item.weightInputValue.trim() ? Number(item.weightInputValue) : 0,
+                    weightInputUnit: item.weightInputUnit,
+                    volumeInputValue: item.volumeInputValue.trim() ? Number(item.volumeInputValue) : 0,
+                    volumeInputUnit: item.volumeInputUnit,
+                    note: item.note,
+                })),
+            }
+            : {}),
+    };
+}
+
+export function buildDeliveryOrderPodUpdateData(params: {
+    id?: string;
+    podName: string;
+    podDate: string;
+    podNote: string;
+}) {
+    return {
+        id: params.id,
+        updates: {
+            podReceiverName: params.podName,
+            podReceivedDate: params.podDate,
+            podNote: params.podNote,
+        },
+    };
+}
+
+export function buildDeliveryOrderTripFeeUpdateData(params: {
+    id?: string;
+    taripBorongan: number;
+    keteranganBorongan: string;
+}) {
+    return {
+        id: params.id,
+        updates: {
+            taripBorongan: params.taripBorongan,
+            keteranganBorongan: params.keteranganBorongan,
+        },
+    };
 }

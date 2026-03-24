@@ -14,9 +14,15 @@ import {
     buildDeliveryOrderDetailState,
     buildDeliveryOrderPrintHtml,
     buildActualCargoDraft,
+    buildDeliveryOrderPodUpdateData,
+    buildDeliveryOrderStatusUpdateData,
+    buildDeliveryOrderTripFeeUpdateData,
+    buildResolvedDeliveryOrder,
     buildDefaultActualDropDrafts,
+    createEmptyActualDropDraft,
     getNextDeliveryOrderStatuses,
     shouldOpenAdvancedDropEditor,
+    sortTrackingLogs,
     type ActualCargoDraft,
     type ActualDropDraft,
 } from '@/lib/delivery-order-detail-support';
@@ -74,23 +80,13 @@ export default function DODetailPage() {
                     : Promise.resolve(null),
             ]);
 
-            const resolvedDeliveryOrder = deliveryOrder ? {
-                ...deliveryOrder,
-                customerName: deliveryOrder.customerName || sourceOrder?.customerName,
-                receiverName: deliveryOrder.receiverName || sourceOrder?.receiverName,
-                receiverPhone: deliveryOrder.receiverPhone || sourceOrder?.receiverPhone,
-                receiverAddress: deliveryOrder.receiverAddress || sourceOrder?.receiverAddress,
-                receiverCompany: deliveryOrder.receiverCompany || sourceOrder?.receiverCompany,
-                pickupAddress: deliveryOrder.pickupAddress || sourceOrder?.pickupAddress,
-                serviceRef: deliveryOrder.serviceRef || sourceOrder?.serviceRef,
-                serviceName: deliveryOrder.serviceName || sourceOrder?.serviceName,
-            } : null;
+            const resolvedDeliveryOrder = buildResolvedDeliveryOrder(deliveryOrder, sourceOrder);
 
             setDoData(resolvedDeliveryOrder);
             setTaripBorongan(resolvedDeliveryOrder?.taripBorongan || 0);
             setKeteranganBorongan(resolvedDeliveryOrder?.keteranganBorongan || '');
             setDoItems(itemRows || []);
-            setTrackingLogs((logRows || []).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()));
+            setTrackingLogs(sortTrackingLogs(logRows || []));
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail surat jalan');
         } finally {
@@ -173,18 +169,7 @@ export default function DODetailPage() {
     const addActualDropDraft = () => {
         setActualDropPoints(previous => [
             ...previous,
-            {
-                draftKey: crypto.randomUUID(),
-                stopType: 'DROP',
-                locationName: '',
-                locationAddress: '',
-                qtyKoli: '',
-                weightInputValue: '',
-                weightInputUnit: 'KG',
-                volumeInputValue: '',
-                volumeInputUnit: 'M3',
-                note: '',
-            },
+            createEmptyActualDropDraft(),
         ]);
     };
 
@@ -215,39 +200,17 @@ export default function DODetailPage() {
                 body: JSON.stringify({
                     entity: 'delivery-orders',
                     action: 'set-status',
-                    data: {
+                    data: buildDeliveryOrderStatusUpdateData({
                         id: doData?._id,
                         status: newStatus,
                         note: statusNote,
-                        ...(completingDelivery
-                            ? {
-                                podReceiverName: podName,
-                                podReceivedDate: podDate,
-                                podNote,
-                                actualItems: actualCargoItems.map(item => ({
-                                    deliveryOrderItemRef: item.deliveryOrderItemRef,
-                                    actualQtyKoli: Number(item.actualQtyKoli),
-                                    actualWeightInputValue: Number(item.actualWeightInputValue),
-                                    actualWeightInputUnit: item.actualWeightInputUnit,
-                                    actualVolumeInputValue: item.actualVolumeInputValue.trim()
-                                        ? Number(item.actualVolumeInputValue)
-                                        : 0,
-                                    actualVolumeInputUnit: item.actualVolumeInputUnit,
-                                })),
-                                actualDropPoints: effectiveActualDropPoints.map(item => ({
-                                    stopType: item.stopType,
-                                    locationName: item.locationName,
-                                    locationAddress: item.locationAddress,
-                                    qtyKoli: item.qtyKoli.trim() ? Number(item.qtyKoli) : 0,
-                                    weightInputValue: item.weightInputValue.trim() ? Number(item.weightInputValue) : 0,
-                                    weightInputUnit: item.weightInputUnit,
-                                    volumeInputValue: item.volumeInputValue.trim() ? Number(item.volumeInputValue) : 0,
-                                    volumeInputUnit: item.volumeInputUnit,
-                                    note: item.note,
-                                })),
-                            }
-                            : {}),
-                    },
+                        actualCargoItems,
+                        actualDropPoints,
+                        effectiveActualDropPoints,
+                        podName,
+                        podDate,
+                        podNote,
+                    }),
                 }),
             });
             const d = await res.json();
@@ -296,14 +259,12 @@ export default function DODetailPage() {
                 body: JSON.stringify({
                     entity: 'delivery-orders',
                     action: 'update',
-                    data: {
+                    data: buildDeliveryOrderPodUpdateData({
                         id: doData?._id,
-                        updates: {
-                            podReceiverName: podName,
-                            podReceivedDate: podDate,
-                            podNote,
-                        },
-                    },
+                        podName,
+                        podDate,
+                        podNote,
+                    }),
                 }),
             });
             const result = await res.json();
@@ -358,7 +319,15 @@ export default function DODetailPage() {
         try {
             const res = await fetch('/api/data', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ entity: 'delivery-orders', action: 'update', data: { id: doData?._id, updates: { taripBorongan, keteranganBorongan } } }),
+                body: JSON.stringify({
+                    entity: 'delivery-orders',
+                    action: 'update',
+                    data: buildDeliveryOrderTripFeeUpdateData({
+                        id: doData?._id,
+                        taripBorongan,
+                        keteranganBorongan,
+                    }),
+                }),
             });
             const result = await res.json();
             if (!res.ok) {
