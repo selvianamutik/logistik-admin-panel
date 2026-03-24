@@ -4,14 +4,19 @@ import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '../../layout';
 import { Plus, Search, Disc3, CheckCircle, Warehouse, ExternalLink } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
+import {
+    buildTiresQuery,
+    createDefaultTireForm,
+    getSelectableInternalTireSlots,
+    getSelectableTireVehicles,
+    resolveFleetTireEvents,
+    TIRE_TYPES,
+    type TireFormState,
+} from '@/lib/fleet-asset-page-support';
 import { formatDate, TIRE_ASSET_STATUS_MAP } from '@/lib/utils';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import {
     formatTireSlotLabel,
-    INTERNAL_TIRE_SLOT_CODES,
-    resolveTireAssetStatus,
-    resolveTireHolderType,
-    resolveTirePlacementLabel,
     resolveTireSlotCode,
     TIRE_HOLDER_TYPE_OPTIONS,
     TIRE_STATUS_OPTIONS,
@@ -19,38 +24,6 @@ import {
     type TireHolderType,
 } from '@/lib/tire-slots';
 import type { TireEvent, Vehicle } from '@/lib/types';
-
-const TIRE_TYPES = ['Tubeless', 'Tube Type', 'Solid'] as const;
-
-type TireFormState = {
-    tireCode: string;
-    holderType: TireHolderType;
-    status: TireAssetStatus;
-    vehicleRef: string;
-    slotCode: string;
-    tireType: 'Tubeless' | 'Tube Type' | 'Solid';
-    tireBrand: string;
-    tireSize: string;
-    installDate: string;
-    notes: string;
-    externalPartyName: string;
-    externalPlateNumber: string;
-};
-
-const DEFAULT_FORM: TireFormState = {
-    tireCode: '',
-    holderType: 'INTERNAL_VEHICLE',
-    status: 'IN_USE',
-    vehicleRef: '',
-    slotCode: '1L',
-    tireType: 'Tubeless',
-    tireBrand: '',
-    tireSize: '',
-    installDate: new Date().toISOString().split('T')[0],
-    notes: '',
-    externalPartyName: '',
-    externalPlateNumber: '',
-};
 
 export default function TiresPage() {
     const { addToast } = useToast();
@@ -69,37 +42,23 @@ export default function TiresPage() {
     const [showModal, setShowModal] = useState(false);
     const [editTarget, setEditTarget] = useState<TireEvent | null>(null);
     const [saving, setSaving] = useState(false);
-    const [form, setForm] = useState<TireFormState>(DEFAULT_FORM);
+    const [form, setForm] = useState<TireFormState>(createDefaultTireForm());
 
     useEffect(() => {
         setPage(1);
     }, [search, filterVehicle, filterStatus]);
 
-    const buildTiresQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
-        const params = new URLSearchParams({
-            entity: 'tire-events',
-            page: String(targetPage),
-            pageSize: String(targetPageSize),
-        });
-
-        if (search.trim()) {
-            params.set('q', search.trim());
-            params.set('searchFields', 'tireCode,tireBrand,tireSize,vehiclePlate,notes,externalPartyName,externalPlateNumber,slotCode,slotLabel,posisi');
-        }
-
-        const filterObj: Record<string, string> = {};
-        if (filterVehicle) {
-            filterObj.vehicleRef = filterVehicle;
-        }
-        if (filterStatus !== 'all') {
-            filterObj.status = filterStatus;
-        }
-        if (Object.keys(filterObj).length > 0) {
-            params.set('filter', JSON.stringify(filterObj));
-        }
-
-        return params.toString();
-    }, [filterStatus, filterVehicle, page, search]);
+    const buildCurrentTiresQuery = useCallback(
+        (targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) =>
+            buildTiresQuery({
+                page: targetPage,
+                pageSize: targetPageSize,
+                search,
+                filterVehicle,
+                filterStatus,
+            }),
+        [filterStatus, filterVehicle, page, search]
+    );
 
     const loadData = useCallback(async () => {
         setLoading(true);
@@ -114,7 +73,7 @@ export default function TiresPage() {
             };
 
             const [tirePayload, vehiclePayload, mountedPayload, sparePayload, warehousePayload, loanedPayload] = await Promise.all([
-                fetchEntity<TireEvent[]>(`/api/data?${buildTiresQuery()}`),
+                fetchEntity<TireEvent[]>(`/api/data?${buildCurrentTiresQuery()}`),
                 fetchEntity<Vehicle[]>('/api/data?entity=vehicles'),
                 fetchEntity<TireEvent[]>('/api/data?entity=tire-events&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'IN_USE' }))),
                 fetchEntity<TireEvent[]>('/api/data?entity=tire-events&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'SPARE' }))),
@@ -133,31 +92,17 @@ export default function TiresPage() {
         } finally {
             setLoading(false);
         }
-    }, [addToast, buildTiresQuery]);
+    }, [addToast, buildCurrentTiresQuery]);
 
     useEffect(() => {
         void loadData();
     }, [loadData]);
 
-    const selectableVehicles = vehicles.filter(vehicle => vehicle.status !== 'SOLD' || vehicle._id === editTarget?.vehicleRef);
-    const internalSlots = INTERNAL_TIRE_SLOT_CODES.filter(code => form.status === 'SPARE' ? code.startsWith('SP') : !code.startsWith('SP'));
-    const resolvedEvents = events.map(event => {
-        const holderType = resolveTireHolderType(event);
-        const status = resolveTireAssetStatus(event);
-        const slotCode = resolveTireSlotCode(event);
-        const slotLabel = slotCode ? formatTireSlotLabel(slotCode) : undefined;
-        return {
-            ...event,
-            holderType,
-            status,
-            tireCodeLabel: event.tireCode?.trim() || 'Belum dikodekan',
-            slotCode,
-            slotLabel,
-            placementLabel: resolveTirePlacementLabel({ ...event, holderType, status, slotCode }),
-        };
-    });
+    const selectableVehicles = getSelectableTireVehicles(vehicles, editTarget);
+    const internalSlots = getSelectableInternalTireSlots(form.status);
+    const resolvedEvents = resolveFleetTireEvents(events);
 
-    const resetForm = () => setForm({ ...DEFAULT_FORM, installDate: new Date().toISOString().split('T')[0] });
+    const resetForm = () => setForm(createDefaultTireForm());
 
     const openAdd = () => {
         setEditTarget(null);
@@ -166,9 +111,10 @@ export default function TiresPage() {
     };
 
     const openEdit = (event: TireEvent) => {
-        const holderType = resolveTireHolderType(event);
-        const status = resolveTireAssetStatus(event);
-        const slotCode = resolveTireSlotCode(event) || '';
+        const resolvedEvent = resolvedEvents.find(item => item._id === event._id);
+        const holderType = resolvedEvent?.holderType || 'INTERNAL_VEHICLE';
+        const status = resolvedEvent?.status || 'IN_USE';
+        const slotCode = resolvedEvent?.slotCode || resolveTireSlotCode(event) || '';
         setEditTarget(event);
         setForm({
             tireCode: event.tireCode || '',

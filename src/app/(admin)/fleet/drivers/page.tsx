@@ -4,11 +4,18 @@ import { useCallback, useEffect, useState } from 'react';
 import { useToast } from '../../layout';
 import { Plus, Search, UserCircle, Save, X, Edit2, ToggleLeft, ToggleRight, Smartphone } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
+import {
+    buildDriverAccountMap,
+    buildDriversQuery,
+    createDefaultDriverAccessForm,
+    createDefaultDriverForm,
+    isDriverAccountActive,
+    isDriverActive,
+    type DriverMobileAccount,
+} from '@/lib/fleet-asset-page-support';
 import { formatDateTime } from '@/lib/utils';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
-import type { Driver, User } from '@/lib/types';
-
-type DriverMobileAccount = Pick<User, '_id' | 'name' | 'email' | 'active' | 'driverRef' | 'driverName' | 'lastLoginAt'>;
+import type { Driver } from '@/lib/types';
 
 export default function DriversPage() {
     const { addToast } = useToast();
@@ -28,32 +35,23 @@ export default function DriversPage() {
     const [savingDriver, setSavingDriver] = useState(false);
     const [savingAccess, setSavingAccess] = useState(false);
     const [togglingDriverId, setTogglingDriverId] = useState<string | null>(null);
-    const [form, setForm] = useState({ name: '', phone: '', licenseNumber: '', ktpNumber: '', simExpiry: '', address: '', active: true });
-    const [accountForm, setAccountForm] = useState({ accountId: '', name: '', email: '', password: '', active: true });
+    const [form, setForm] = useState(createDefaultDriverForm());
+    const [accountForm, setAccountForm] = useState(createDefaultDriverAccessForm());
 
     useEffect(() => {
         setPage(1);
     }, [search]);
 
-    const buildDriversQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
-        const params = new URLSearchParams({
-            entity: 'drivers',
-            page: String(targetPage),
-            pageSize: String(targetPageSize),
-            sortField: 'name',
-            sortDir: 'asc',
-        });
-        if (search.trim()) {
-            params.set('q', search.trim());
-            params.set('searchFields', 'name,phone,licenseNumber');
-        }
-        return params.toString();
-    }, [page, search]);
+    const buildCurrentDriversQuery = useCallback(
+        (targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) =>
+            buildDriversQuery({ page: targetPage, pageSize: targetPageSize, search }),
+        [page, search]
+    );
 
     const loadDrivers = useCallback(async () => {
         setLoading(true);
         try {
-            const listRes = await fetch(`/api/data?${buildDriversQuery()}`);
+            const listRes = await fetch(`/api/data?${buildCurrentDriversQuery()}`);
             const listPayload = await listRes.json();
             if (!listRes.ok) {
                 throw new Error(listPayload.error || 'Gagal memuat data supir');
@@ -92,21 +90,19 @@ export default function DriversPage() {
         } finally {
             setLoading(false);
         }
-    }, [addToast, buildDriversQuery]);
+    }, [addToast, buildCurrentDriversQuery]);
 
     useEffect(() => {
         void loadDrivers();
     }, [loadDrivers]);
 
-    const accountByDriverRef = new Map(accounts.filter(account => account.driverRef).map(account => [account.driverRef as string, account]));
-    const isDriverActive = (driver: Pick<Driver, 'active'>) => driver.active !== false;
-    const isAccountActive = (account: Pick<DriverMobileAccount, 'active'>) => account.active !== false;
+    const accountByDriverRef = buildDriverAccountMap(accounts);
 
     const closeModal = () => {
         if (savingDriver) return;
         setShowModal(false);
         setEditId(null);
-        setForm({ name: '', phone: '', licenseNumber: '', ktpNumber: '', simExpiry: '', address: '', active: true });
+        setForm(createDefaultDriverForm());
     };
 
     const handleSave = async () => {
@@ -203,7 +199,7 @@ export default function DriversPage() {
         if (savingAccess) return;
         setShowAccessModal(false);
         setAccessDriver(null);
-        setAccountForm({ accountId: '', name: '', email: '', password: '', active: true });
+        setAccountForm(createDefaultDriverAccessForm());
     };
 
     const saveDriverAccess = async () => {
@@ -309,7 +305,7 @@ export default function DriversPage() {
                                                                 <Smartphone size={14} /> {account.email}
                                                             </div>
                                                             <div className="text-muted text-sm">
-                                                                {isAccountActive(account) ? 'Aktif' : 'Non-aktif'}
+                                                                {isDriverAccountActive(account) ? 'Aktif' : 'Non-aktif'}
                                                                 {account.lastLoginAt ? ` | Login terakhir ${formatDateTime(account.lastLoginAt)}` : ' | Belum pernah login'}
                                                             </div>
                                                         </div>
@@ -367,7 +363,7 @@ export default function DriversPage() {
                                             <span className="mobile-record-label">Akses Mobile</span>
                                             <span className="mobile-record-value">
                                                 {account
-                                                    ? `${account.email} | ${isAccountActive(account) ? 'Aktif' : 'Non-aktif'}${account.lastLoginAt ? ` | Login ${formatDateTime(account.lastLoginAt)}` : ''}`
+                                                    ? `${account.email} | ${isDriverAccountActive(account) ? 'Aktif' : 'Non-aktif'}${account.lastLoginAt ? ` | Login ${formatDateTime(account.lastLoginAt)}` : ''}`
                                                     : 'Belum ada akun mobile'}
                                             </span>
                                         </div>
