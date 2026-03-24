@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useApp, useToast } from '../../../layout';
 import { Car, Wrench, AlertTriangle, Truck, Edit, Plus, Disc3, Warehouse, ExternalLink, Save } from 'lucide-react';
@@ -14,41 +14,19 @@ import {
     formatCurrency,
 } from '@/lib/utils';
 import {
-    compareTireSlotCodes,
     formatTireSlotLabel,
-    getSuggestedVehicleTireLayout,
-    resolveTireAssetStatus,
-    resolveTirePlacementLabel,
     resolveTireSlotCode,
 } from '@/lib/tire-slots';
 import type { Vehicle, Maintenance, Incident, DeliveryOrder, TireEvent, Expense } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
-
-type VehicleTireFormState = {
-    registeredTireId: string;
-    tireCode: string;
-    slotCode: string;
-    tireType: 'Tubeless' | 'Tube Type' | 'Solid';
-    tireBrand: string;
-    tireSize: string;
-    installDate: string;
-    notes: string;
-};
-
-const TIRE_TYPE_OPTIONS: VehicleTireFormState['tireType'][] = ['Tubeless', 'Tube Type', 'Solid'];
-
-function createDefaultTireForm(slotCode = '1L'): VehicleTireFormState {
-    return {
-        registeredTireId: '',
-        tireCode: '',
-        slotCode,
-        tireType: 'Tubeless',
-        tireBrand: '',
-        tireSize: '',
-        installDate: new Date().toISOString().split('T')[0],
-        notes: '',
-    };
-}
+import {
+    buildVehicleTireDetailState,
+    createDefaultVehicleTireForm,
+    getVehicleTabs,
+    type NormalizedVehicleTireRow,
+    type VehicleTireFormState,
+    VEHICLE_TIRE_TYPE_OPTIONS,
+} from '@/lib/vehicle-detail-page-support';
 
 export default function VehicleDetailPage() {
     const params = useParams();
@@ -67,14 +45,11 @@ export default function VehicleDetailPage() {
     const [loading, setLoading] = useState(true);
     const [tab, setTab] = useState('profil');
     const [showTireModal, setShowTireModal] = useState(false);
-    const [tireForm, setTireForm] = useState<VehicleTireFormState>(createDefaultTireForm());
+    const [tireForm, setTireForm] = useState<VehicleTireFormState>(createDefaultVehicleTireForm());
     const [editingTire, setEditingTire] = useState<TireEvent | null>(null);
     const [savingTire, setSavingTire] = useState(false);
     const isOwner = user?.role === 'OWNER';
-    const vehicleTabs = useMemo(
-        () => ['profil', 'do', 'maintenance', 'ban', 'insiden', ...(isOwner ? ['biaya'] : [])],
-        [isOwner]
-    );
+    const vehicleTabs = getVehicleTabs(isOwner);
 
     const loadVehicleDetail = useCallback(async () => {
         const fetchEntity = async <T,>(url: string, fallbackMessage: string) => {
@@ -132,53 +107,23 @@ export default function VehicleDetailPage() {
 
     const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
     const activeDeliveryOrder = dos.find(deliveryOrder => ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status));
-    const normalizeTireRow = (event: TireEvent) => {
-        const status = resolveTireAssetStatus(event);
-        const slotCode = resolveTireSlotCode(event);
-        return {
-            ...event,
-            status,
-            tireCodeLabel: event.tireCode?.trim() || 'Belum dikodekan',
-            slotCode,
-            slotLabel: slotCode ? formatTireSlotLabel(slotCode) : undefined,
-            placementLabel: resolveTirePlacementLabel(event),
-        };
-    };
-    const normalizedTireRows = tireEvents
-        .map(normalizeTireRow)
-        .sort((left, right) => {
-            const leftSlot = left.slotCode || left.posisi || '';
-            const rightSlot = right.slotCode || right.posisi || '';
-            return compareTireSlotCodes(leftSlot, rightSlot);
-        });
-    const normalizedAllTireRows = allTireEvents
-        .map(normalizeTireRow)
-        .sort((left, right) => left.tireCodeLabel.localeCompare(right.tireCodeLabel, 'id-ID'));
-    const internalUnitTires = normalizedTireRows.filter(row => Boolean(row.slotCode) && ['IN_USE', 'SPARE'].includes(row.status));
-    const layout = getSuggestedVehicleTireLayout(
-        vehicle.vehicleType,
-        vehicle.serviceName,
-        internalUnitTires.map(row => row.slotCode || '').filter(Boolean)
-    );
-    const tireBySlot = new Map(internalUnitTires.map(row => [row.slotCode || '', row]));
-    const mountedSlots = layout.roadSlots.map(slotCode => ({ slotCode, event: tireBySlot.get(slotCode) }));
-    const spareSlots = layout.spareSlots.map(slotCode => ({ slotCode, event: tireBySlot.get(slotCode) }));
-    const filledSlotCount = [...mountedSlots, ...spareSlots].filter(slot => Boolean(slot.event)).length;
-    const emptySlotCount = layout.allSlots.length - filledSlotCount;
-    const externalAuditTires = normalizedTireRows.filter(row => !row.slotCode || !layout.allSlots.includes(row.slotCode as (typeof layout.allSlots)[number]));
-    const selectedRegisteredTire = normalizedAllTireRows.find(row => row._id === tireForm.registeredTireId);
-    const tireSelectionLocked = Boolean(editingTire || selectedRegisteredTire);
-    const availableRegisteredTires = normalizedAllTireRows.filter(row => {
-        if (editingTire) {
-            return row._id === editingTire._id;
-        }
-        if (row.status === 'SCRAPPED') {
-            return false;
-        }
-        if (row.holderType === 'INTERNAL_VEHICLE' && ['IN_USE', 'SPARE'].includes(row.status)) {
-            return false;
-        }
-        return true;
+    const {
+        normalizedAllTireRows,
+        layout,
+        mountedSlots,
+        spareSlots,
+        filledSlotCount,
+        emptySlotCount,
+        externalAuditTires,
+        selectedRegisteredTire,
+        tireSelectionLocked,
+        availableRegisteredTires,
+    } = buildVehicleTireDetailState({
+        vehicle,
+        tireEvents,
+        allTireEvents,
+        tireForm,
+        editingTire,
     });
 
     const updateTireForm = <K extends keyof VehicleTireFormState>(key: K, value: VehicleTireFormState[K]) => {
@@ -189,12 +134,12 @@ export default function VehicleDetailPage() {
         if (savingTire) return;
         setShowTireModal(false);
         setEditingTire(null);
-        setTireForm(createDefaultTireForm(layout.allSlots[0] || '1L'));
+        setTireForm(createDefaultVehicleTireForm(layout.allSlots[0] || '1L'));
     };
 
     const openNewTire = (slotCode: string) => {
         setEditingTire(null);
-        setTireForm(createDefaultTireForm(slotCode));
+        setTireForm(createDefaultVehicleTireForm(slotCode));
         setShowTireModal(true);
     };
 
@@ -229,7 +174,7 @@ export default function VehicleDetailPage() {
     const handleRegisteredTireChange = (registeredTireId: string) => {
         if (!registeredTireId) {
             setTireForm(prev => ({
-                ...createDefaultTireForm(prev.slotCode),
+                ...createDefaultVehicleTireForm(prev.slotCode),
                 slotCode: prev.slotCode,
                 installDate: prev.installDate,
             }));
@@ -310,7 +255,7 @@ export default function VehicleDetailPage() {
         }
     };
 
-    const renderSlotCard = (slotCode: string, event?: (typeof normalizedTireRows)[number]) => (
+    const renderSlotCard = (slotCode: string, event?: NormalizedVehicleTireRow) => (
         <div
             key={slotCode}
             style={{
@@ -728,7 +673,7 @@ export default function VehicleDetailPage() {
                                     <div className="form-group">
                                         <label className="form-label">Jenis Ban</label>
                                         <select className="form-select" value={tireForm.tireType} onChange={e => updateTireForm('tireType', e.target.value as VehicleTireFormState['tireType'])} disabled={savingTire || tireSelectionLocked}>
-                                            {TIRE_TYPE_OPTIONS.map(type => <option key={type} value={type}>{type}</option>)}
+                                            {VEHICLE_TIRE_TYPE_OPTIONS.map(type => <option key={type} value={type}>{type}</option>)}
                                         </select>
                                     </div>
                                     <div className="form-group">
