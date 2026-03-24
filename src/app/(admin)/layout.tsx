@@ -118,6 +118,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
     const [loading, setLoading] = useState(true);
     const [isMobile, setIsMobile] = useState(false);
+    const [isTablet, setIsTablet] = useState(false);
 
     // Generate theme palette from a single hex color
     const applyTheme = useCallback((hex: string) => {
@@ -175,12 +176,31 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         };
 
         void loadAppContext();
-        // Track mobile state using matchMedia (matches CSS @media breakpoint exactly)
+        // Keep navigation compact on tablet so forms and detail pages retain usable width.
         const mobileQuery = window.matchMedia('(max-width: 768px)');
-        const checkMobile = (e: MediaQueryList | MediaQueryListEvent) => setIsMobile(e.matches);
-        checkMobile(mobileQuery);
-        mobileQuery.addEventListener('change', checkMobile);
-        return () => mobileQuery.removeEventListener('change', checkMobile);
+        const tabletQuery = window.matchMedia('(min-width: 769px) and (max-width: 1100px)');
+        const syncViewport = () => {
+            const mobile = mobileQuery.matches;
+            const tablet = tabletQuery.matches;
+            setIsMobile(mobile);
+            setIsTablet(tablet);
+            if (mobile) {
+                setMobileOpen(false);
+                setSidebarCollapsed(false);
+                return;
+            }
+            if (tablet) {
+                setMobileOpen(false);
+                setSidebarCollapsed(true);
+            }
+        };
+        syncViewport();
+        mobileQuery.addEventListener('change', syncViewport);
+        tabletQuery.addEventListener('change', syncViewport);
+        return () => {
+            mobileQuery.removeEventListener('change', syncViewport);
+            tabletQuery.removeEventListener('change', syncViewport);
+        };
     }, [router, applyTheme]);
 
     useEffect(() => {
@@ -374,7 +394,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                                     title={sidebarToggleLabel}
                                 >
                                     {isMobile ? (mobileOpen ? <X size={20} /> : <Menu size={20} />) : (sidebarCollapsed ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />)}
-                                    {!isMobile && (
+                                    {!isMobile && !isTablet && (
                                         <span className="topbar-toggle-label">
                                             {sidebarCollapsed ? 'Buka Menu' : 'Ciutkan Menu'}
                                         </span>
