@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { AlertCircle, Eye, EyeOff, Loader2, Smartphone } from 'lucide-react';
 
 export default function DriverLoginPage() {
@@ -9,48 +9,6 @@ export default function DriverLoginPage() {
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
-    const [checkingSession, setCheckingSession] = useState(true);
-
-    useEffect(() => {
-        let alive = true;
-
-        const checkExistingSession = async () => {
-            try {
-                const [driverRes, adminRes] = await Promise.all([
-                    fetch('/api/driver/session'),
-                    fetch('/api/auth/session'),
-                ]);
-                if (!alive) return;
-
-                const driverPayload = driverRes.ok
-                    ? await driverRes.json() as { user?: { role?: string } | null }
-                    : { user: null };
-                if (driverPayload.user?.role === 'DRIVER') {
-                    window.location.replace('/driver');
-                    return;
-                }
-
-                const adminPayload = adminRes.ok
-                    ? await adminRes.json() as { user?: { role?: string } | null }
-                    : { user: null };
-                if (adminPayload.user) {
-                    window.location.replace('/dashboard');
-                    return;
-                }
-            } catch {
-                // Ignore background session check failures on the driver login page.
-            } finally {
-                if (alive) {
-                    setCheckingSession(false);
-                }
-            }
-        };
-
-        void checkExistingSession();
-        return () => {
-            alive = false;
-        };
-    }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -92,25 +50,6 @@ export default function DriverLoginPage() {
             setLoading(false);
         }
     };
-
-    if (checkingSession) {
-        return (
-            <main className="login-page driver-login-page">
-                <div className="login-card">
-                    <div className="login-header">
-                        <div className="login-logo" style={{ display: 'grid', placeItems: 'center' }}>
-                            <Smartphone size={22} />
-                        </div>
-                        <h1 className="login-title">Aplikasi Driver</h1>
-                        <p className="login-subtitle">Memeriksa sesi driver...</p>
-                    </div>
-                    <div className="login-body" style={{ display: 'flex', justifyContent: 'center' }}>
-                        <Loader2 size={20} className="spinner" />
-                    </div>
-                </div>
-            </main>
-        );
-    }
 
     return (
         <main className="login-page driver-login-page">

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Eye, EyeOff, AlertCircle, Loader2 } from 'lucide-react';
 
 export default function LoginPage() {
@@ -9,48 +9,6 @@ export default function LoginPage() {
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
-    const [checkingSession, setCheckingSession] = useState(true);
-
-    useEffect(() => {
-        let alive = true;
-
-        const checkExistingSession = async () => {
-            try {
-                const [adminRes, driverRes] = await Promise.all([
-                    fetch('/api/auth/session'),
-                    fetch('/api/driver/session'),
-                ]);
-                if (!alive) return;
-
-                const adminPayload = adminRes.ok
-                    ? await adminRes.json() as { user?: { role?: string } | null }
-                    : { user: null };
-                if (adminPayload.user) {
-                    window.location.replace('/dashboard');
-                    return;
-                }
-
-                const driverPayload = driverRes.ok
-                    ? await driverRes.json() as { user?: { role?: string } | null }
-                    : { user: null };
-                if (driverPayload.user?.role === 'DRIVER') {
-                    window.location.replace('/driver');
-                    return;
-                }
-            } catch {
-                // Ignore background session check failures on the login page.
-            } finally {
-                if (alive) {
-                    setCheckingSession(false);
-                }
-            }
-        };
-
-        void checkExistingSession();
-        return () => {
-            alive = false;
-        };
-    }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -88,23 +46,6 @@ export default function LoginPage() {
             setLoading(false);
         }
     };
-
-    if (checkingSession) {
-        return (
-            <main className="login-page">
-                <div className="login-card">
-                    <div className="login-header">
-                        <div className="login-logo">G</div>
-                        <h1 className="login-title">Gading Mas Surya</h1>
-                        <p className="login-subtitle">Memeriksa sesi login...</p>
-                    </div>
-                    <div className="login-body" style={{ display: 'flex', justifyContent: 'center' }}>
-                        <Loader2 size={20} className="spinner" />
-                    </div>
-                </div>
-            </main>
-        );
-    }
 
     return (
         <main className="login-page">
