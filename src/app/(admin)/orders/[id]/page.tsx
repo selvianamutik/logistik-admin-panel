@@ -19,18 +19,17 @@ import {
     type VolumeInputUnit,
     type WeightInputUnit,
 } from '@/lib/measurement';
-import { calculateWeightPortion, getOrderItemProgress, roundQuantity } from '@/lib/order-item-progress';
+import { calculateWeightPortion, roundQuantity } from '@/lib/order-item-progress';
 import {
-    addCargoAggregate,
+    buildCreateDeliveryOrderItems,
+    buildDefaultShipmentSelection,
+    buildOrderDetailMetrics,
     buildSelectedNonKoliCargo,
     createCargoAggregate,
     formatProgressLine,
-    getActualDoItemCargo,
-    getCargoBasisValue,
-    getPlannedDoItemCargo,
     hasCargoAggregate,
-    type CargoAggregate,
     type SelectedShipmentMap,
+    summarizeSelectedShipments,
 } from '@/lib/order-detail-support';
 import type { Order, OrderItem, DeliveryOrder, DeliveryOrderItem, Driver, FreightNota, FreightNotaItem, Vehicle } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
@@ -179,112 +178,33 @@ export default function OrderDetailPage() {
         }
     }, [busyDriverIds, doDriver]);
 
-    const activeAssignmentByItemId = doItems.reduce<Record<string, DeliveryOrder | undefined>>((acc, doi) => {
-        const activeDeliveryOrder = dos.find(d => d._id === doi.deliveryOrderRef && ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(d.status));
-        if (activeDeliveryOrder && doi.orderItemRef) {
-            acc[doi.orderItemRef] = activeDeliveryOrder;
-        }
-        return acc;
-    }, {});
-    const doItemByOrderItemId = doItems.reduce<Record<string, DeliveryOrderItem | undefined>>((acc, doi) => {
-        if (doi.orderItemRef && activeAssignmentByItemId[doi.orderItemRef]) {
-            acc[doi.orderItemRef] = doi;
-        }
-        return acc;
-    }, {});
-    const itemProgressById = items.reduce<Record<string, ReturnType<typeof getOrderItemProgress>>>((acc, item) => {
-        acc[item._id] = getOrderItemProgress(item);
-        return acc;
-    }, {});
-    const deliveredActualCargoByItemId = doItems.reduce<Record<string, CargoAggregate>>((acc, doItem) => {
-        const deliveryOrder = dos.find(item => item._id === doItem.deliveryOrderRef);
-        if (!deliveryOrder || deliveryOrder.status !== 'DELIVERED' || !doItem.orderItemRef) {
-            return acc;
-        }
-        const current = acc[doItem.orderItemRef] || createCargoAggregate();
-        acc[doItem.orderItemRef] = addCargoAggregate(current, getActualDoItemCargo(doItem));
-        return acc;
-    }, {});
-    const activePlannedCargoByItemId = doItems.reduce<Record<string, CargoAggregate>>((acc, doItem) => {
-        const deliveryOrder = dos.find(item => item._id === doItem.deliveryOrderRef);
-        if (!deliveryOrder || !['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status) || !doItem.orderItemRef) {
-            return acc;
-        }
-        const current = acc[doItem.orderItemRef] || createCargoAggregate();
-        acc[doItem.orderItemRef] = addCargoAggregate(current, getPlannedDoItemCargo(doItem));
-        return acc;
-    }, {});
+    const {
+        activeAssignmentByItemId,
+        doItemByOrderItemId,
+        itemProgressById,
+        deliveredActualCargoByItemId,
+        activePlannedCargoByItemId,
+        availableItems,
+        totalOrderCargo,
+        totalHeldCargo,
+        totalPendingCargo,
+        totalDeliveredActualCargo,
+        totalActivePlannedCargo,
+        doPlannedCargoById,
+        doActualCargoById,
+        progress,
+        deliveredDoCount,
+    } = buildOrderDetailMetrics(items, dos, doItems);
 
-    const availableItems = items.filter(item => {
-        const progress = itemProgressById[item._id];
-        return (progress.pendingQtyKoli > 0 || progress.pendingWeight > 0 || progress.pendingVolume > 0) && !activeAssignmentByItemId[item._id];
-    });
-    const totalOrderCargo = items.reduce((sum, item) => addCargoAggregate(sum, {
-        qtyKoli: item.qtyKoli,
-        weightKg: item.weight,
-        volumeM3: item.volume,
-    }), createCargoAggregate());
-    const totalHeldCargo = items.reduce((sum, item) => {
-        const progress = itemProgressById[item._id];
-        return addCargoAggregate(sum, {
-            qtyKoli: progress.heldQtyKoli,
-            weightKg: progress.heldWeight,
-            volumeM3: progress.heldVolume,
-        });
-    }, createCargoAggregate());
-    const totalPendingCargo = items.reduce((sum, item) => {
-        const progress = itemProgressById[item._id];
-        return addCargoAggregate(sum, {
-            qtyKoli: progress.pendingQtyKoli,
-            weightKg: progress.pendingWeight,
-            volumeM3: progress.pendingVolume,
-        });
-    }, createCargoAggregate());
-    const totalDeliveredActualCargo = Object.values(deliveredActualCargoByItemId).reduce(
-        (sum, cargo) => addCargoAggregate(sum, cargo),
-        createCargoAggregate()
+    const createDefaultShipmentSelection = useCallback(
+        (item: OrderItem): SelectedShipmentMap[string] => buildDefaultShipmentSelection(item, itemProgressById[item._id]),
+        [itemProgressById]
     );
-    const totalActivePlannedCargo = Object.values(activePlannedCargoByItemId).reduce(
-        (sum, cargo) => addCargoAggregate(sum, cargo),
-        createCargoAggregate()
-    );
-    const doPlannedCargoById = doItems.reduce<Record<string, CargoAggregate>>((acc, doItem) => {
-        const current = acc[doItem.deliveryOrderRef] || createCargoAggregate();
-        acc[doItem.deliveryOrderRef] = addCargoAggregate(current, getPlannedDoItemCargo(doItem));
-        return acc;
-    }, {});
-    const doActualCargoById = doItems.reduce<Record<string, CargoAggregate>>((acc, doItem) => {
-        const current = acc[doItem.deliveryOrderRef] || createCargoAggregate();
-        acc[doItem.deliveryOrderRef] = addCargoAggregate(current, getActualDoItemCargo(doItem));
-        return acc;
-    }, {});
-    const deliveredDoCount = dos.filter(d => d.status === 'DELIVERED').length;
-    const totalProgressBasis = getCargoBasisValue(totalOrderCargo);
-    const deliveredProgressBasis = getCargoBasisValue(totalDeliveredActualCargo);
-    const progress = totalProgressBasis > 0 ? Math.min(100, Math.round((deliveredProgressBasis / totalProgressBasis) * 100)) : 0;
-
-    const buildDefaultShipmentSelection = useCallback((item: OrderItem): SelectedShipmentMap[string] => {
-        const progressInfo = itemProgressById[item._id];
-        return {
-            qtyKoli: progressInfo.totalQtyKoli > 0 ? String(progressInfo.pendingQtyKoli) : '0',
-            weightInputValue: progressInfo.totalQtyKoli === 0 && progressInfo.pendingWeight > 0
-                ? String(convertKgToWeightInputValue(progressInfo.pendingWeight, item.weightInputUnit || 'KG'))
-                : '',
-            weightInputUnit: item.weightInputUnit || 'KG',
-            volumeInputValue: progressInfo.totalQtyKoli === 0 && progressInfo.pendingVolume > 0
-                ? String(convertM3ToVolumeInputValue(progressInfo.pendingVolume, item.volumeInputUnit || 'M3'))
-                : '',
-            volumeInputUnit: item.volumeInputUnit || 'M3',
-            holdRemaining: false,
-            holdReason: '',
-            holdLocation: '',
-        };
-    }, [itemProgressById]);
 
     const selectAllAvailableItems = () => {
         const nextSelections: SelectedShipmentMap = {};
         for (const item of availableItems) {
-            nextSelections[item._id] = buildDefaultShipmentSelection(item);
+            nextSelections[item._id] = createDefaultShipmentSelection(item);
         }
         setSelectedShipments(nextSelections);
     };
@@ -293,82 +213,18 @@ export default function OrderDetailPage() {
         setSelectedShipments({});
     };
 
-    const selectedShipmentRows = availableItems.flatMap(item => {
-        const selection = selectedShipments[item._id];
-        if (!selection) {
-            return [];
-        }
-        const progressInfo = itemProgressById[item._id];
-        if (progressInfo.totalQtyKoli > 0) {
-            const qtyKoli = Number(selection.qtyKoli || 0);
-            const ratio = progressInfo.totalQtyKoli > 0 ? qtyKoli / progressInfo.totalQtyKoli : 0;
-            return [{
-                itemId: item._id,
-                description: item.description,
-                holdRemaining: selection.holdRemaining,
-                cargo: {
-                    qtyKoli,
-                    weightKg: qtyKoli > 0 ? calculateWeightPortion(progressInfo.totalWeight, progressInfo.totalQtyKoli, qtyKoli) : 0,
-                    volumeM3: qtyKoli > 0 && ratio > 0 ? roundQuantity(progressInfo.totalVolume * ratio, 3) : 0,
-                },
-            }];
-        }
-        return [{
-            itemId: item._id,
-            description: item.description,
-            holdRemaining: selection.holdRemaining,
-            cargo: buildSelectedNonKoliCargo(selection),
-        }];
-    });
-    const selectedShipmentTotals = selectedShipmentRows.reduce(
-        (sum, row) => addCargoAggregate(sum, row.cargo),
-        createCargoAggregate()
-    );
-    const selectedShipmentItemCount = selectedShipmentRows.length;
-    const selectedHoldCount = selectedShipmentRows.filter(row => row.holdRemaining).length;
+    const {
+        totals: selectedShipmentTotals,
+        itemCount: selectedShipmentItemCount,
+        holdCount: selectedHoldCount,
+    } = summarizeSelectedShipments(availableItems, selectedShipments, itemProgressById);
 
     const handleCreateDO = async () => {
-        const selectedItems = availableItems
-            .filter(item => selectedShipments[item._id])
-            .map(item => {
-                const progress = itemProgressById[item._id];
-                const selection = selectedShipments[item._id];
-                const qtyKoli = Number(selection.qtyKoli || 0);
-                const selectedNonKoliCargo = buildSelectedNonKoliCargo(selection);
-                return {
-                    orderItemRef: item._id,
-                    qtyKoli,
-                    weightInputValue: selection.weightInputValue.trim() ? Number(selection.weightInputValue) : 0,
-                    weightInputUnit: selection.weightInputUnit,
-                    volumeInputValue: selection.volumeInputValue.trim() ? Number(selection.volumeInputValue) : 0,
-                    volumeInputUnit: selection.volumeInputUnit,
-                    usesQtyBasis: progress.totalQtyKoli > 0,
-                    pendingWeight: progress.pendingWeight,
-                    pendingVolume: progress.pendingVolume,
-                    holdRemaining: selection.holdRemaining && (
-                        progress.totalQtyKoli > 0
-                            ? qtyKoli < progress.pendingQtyKoli
-                            : selectedNonKoliCargo.weightKg < progress.pendingWeight || selectedNonKoliCargo.volumeM3 < progress.pendingVolume
-                    ),
-                    holdReason: selection.holdReason.trim(),
-                    holdLocation: selection.holdLocation.trim(),
-                };
-            })
-            .filter(item => item.usesQtyBasis
-                ? Number.isFinite(item.qtyKoli) && item.qtyKoli > 0
-                : item.weightInputValue > 0 || item.volumeInputValue > 0
-            )
-            .map(item => ({
-                orderItemRef: item.orderItemRef,
-                qtyKoli: item.qtyKoli,
-                weightInputValue: item.weightInputValue,
-                weightInputUnit: item.weightInputUnit,
-                volumeInputValue: item.volumeInputValue,
-                volumeInputUnit: item.volumeInputUnit,
-                holdRemaining: item.holdRemaining,
-                holdReason: item.holdReason,
-                holdLocation: item.holdLocation,
-            }));
+        const selectedItems = buildCreateDeliveryOrderItems(
+            availableItems,
+            selectedShipments,
+            itemProgressById
+        );
 
         if (selectedItems.length === 0) {
             addToast('error', 'Pilih minimal 1 item untuk surat jalan');
@@ -1058,7 +914,7 @@ export default function OrderDetailPage() {
                                                                     if (e.target.checked) {
                                                                         setSelectedShipments(prev => ({
                                                                             ...prev,
-                                                                            [item._id]: buildDefaultShipmentSelection(item),
+                                [item._id]: createDefaultShipmentSelection(item),
                                                                         }));
                                                                     } else {
                                                                         setSelectedShipments(prev => {
@@ -1129,7 +985,7 @@ export default function OrderDetailPage() {
                                                                             setSelectedShipments(prev => ({
                                                                                 ...prev,
                                                                                 [item._id]: {
-                                                                                    ...(prev[item._id] || buildDefaultShipmentSelection(item)),
+                                    ...(prev[item._id] || createDefaultShipmentSelection(item)),
                                                                                     qtyKoli: String(value),
                                                                                 },
                                                                             }));

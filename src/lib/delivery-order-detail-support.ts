@@ -1,5 +1,7 @@
-import type { DeliveryOrder, DeliveryOrderItem } from '@/lib/types';
+import type { DeliveryOrder, DeliveryOrderItem, TrackingLog } from '@/lib/types';
 import type { VolumeInputUnit, WeightInputUnit } from '@/lib/measurement';
+import { formatCargoSummary } from '@/lib/measurement';
+import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatDate, formatDateTime } from '@/lib/utils';
 
 export interface ActualCargoDraft {
     deliveryOrderItemRef: string;
@@ -33,6 +35,23 @@ export interface ActualDropDraft {
     volumeInputUnit: VolumeInputUnit;
     note: string;
 }
+
+export type DeliveryOrderDetailState = {
+    actualCargoTotals: {
+        qtyKoli: number;
+        weightKg: number;
+        volumeM3: number;
+    };
+    autoActualDropDraft: ActualDropDraft;
+    effectiveActualDropPoints: ActualDropDraft[];
+    actualCargoReady: boolean;
+    actualDropReady: boolean;
+    actualDropPointCount: number;
+    actualDropSummary: NonNullable<DeliveryOrder['actualDropPoints']>;
+    hasLiveCoordinates: boolean;
+    trackingMapUrl: string | null;
+    mapEmbedUrl: string | null;
+};
 
 export function buildActualCargoDraft(item: DeliveryOrderItem): ActualCargoDraft {
     const plannedQtyKoli = Number(item.orderItemQtyKoli || item.shippedQtyKoli || 0);
@@ -146,4 +165,243 @@ export function shouldOpenAdvancedDropEditor(doData: DeliveryOrder | null, dropD
         (point.locationAddress || '') !== defaultLocationAddress ||
         point.note.trim().length > 0
     );
+}
+
+export function getNextDeliveryOrderStatuses(current: string): string[] {
+    const transitions: Record<string, string[]> = {
+        CREATED: ['HEADING_TO_PICKUP', 'ON_DELIVERY', 'CANCELLED'],
+        HEADING_TO_PICKUP: ['ON_DELIVERY', 'CANCELLED'],
+        ON_DELIVERY: ['ARRIVED', 'DELIVERED', 'CANCELLED'],
+        ARRIVED: ['DELIVERED', 'CANCELLED'],
+    };
+    return transitions[current] || [];
+}
+
+export function buildDeliveryOrderDetailState(params: {
+    doData: DeliveryOrder | null;
+    actualCargoItems: ActualCargoDraft[];
+    actualDropPoints: ActualDropDraft[];
+    showAdvancedDropEditor: boolean;
+}): DeliveryOrderDetailState {
+    const { doData, actualCargoItems, actualDropPoints, showAdvancedDropEditor } = params;
+    const actualCargoTotals = summarizeActualCargoDrafts(actualCargoItems);
+    const autoActualDropDraft = buildAutoActualDropDraft(doData, actualCargoItems);
+    const effectiveActualDropPoints = showAdvancedDropEditor ? actualDropPoints : [autoActualDropDraft];
+    const actualCargoReady = actualCargoItems.every(item => {
+        const qty = Number(item.actualQtyKoli);
+        const weight = Number(item.actualWeightInputValue);
+        const volume = Number(item.actualVolumeInputValue);
+        return (
+            (!item.requireQty || (Number.isFinite(qty) && qty > 0)) &&
+            (!item.requireWeight || (Number.isFinite(weight) && weight > 0)) &&
+            (!item.requireVolume || (Number.isFinite(volume) && volume > 0)) &&
+            (
+                (item.requireQty && Number.isFinite(qty) && qty > 0) ||
+                (Number.isFinite(weight) && weight > 0) ||
+                (Number.isFinite(volume) && volume > 0)
+            )
+        );
+    });
+    const actualDropReady = effectiveActualDropPoints.length > 0 && effectiveActualDropPoints.every(item => {
+        const qty = Number(item.qtyKoli);
+        const weight = Number(item.weightInputValue);
+        const volume = Number(item.volumeInputValue);
+        return (
+            Boolean(item.locationName.trim() || item.locationAddress.trim()) &&
+            ((Number.isFinite(qty) && qty > 0) || (Number.isFinite(weight) && weight > 0) || (Number.isFinite(volume) && volume > 0))
+        );
+    });
+    const actualDropPointCount = effectiveActualDropPoints.length;
+    const actualDropSummary = doData?.actualDropPoints || [];
+    const hasLiveCoordinates = typeof doData?.trackingLastLat === 'number' && typeof doData?.trackingLastLng === 'number';
+    const trackingMapUrl = hasLiveCoordinates ? `https://www.google.com/maps?q=${doData?.trackingLastLat},${doData?.trackingLastLng}` : null;
+    const trackingLat = hasLiveCoordinates ? (doData?.trackingLastLat as number) : null;
+    const trackingLng = hasLiveCoordinates ? (doData?.trackingLastLng as number) : null;
+    const mapEmbedUrl = hasLiveCoordinates
+        ? `https://www.openstreetmap.org/export/embed.html?bbox=${trackingLng! - 0.01},${trackingLat! - 0.01},${trackingLng! + 0.01},${trackingLat! + 0.01}&layer=mapnik&marker=${trackingLat!},${trackingLng!}`
+        : null;
+
+    return {
+        actualCargoTotals,
+        autoActualDropDraft,
+        effectiveActualDropPoints,
+        actualCargoReady,
+        actualDropReady,
+        actualDropPointCount,
+        actualDropSummary,
+        hasLiveCoordinates,
+        trackingMapUrl,
+        mapEmbedUrl,
+    };
+}
+
+export function buildDeliveryOrderPrintHtml(
+    doData: DeliveryOrder,
+    doItems: DeliveryOrderItem[],
+    trackingLogs: TrackingLog[]
+) {
+    return `
+        <div style="margin-bottom:16px">
+            <table style="width:100%;border:none"><tbody>
+                <tr>
+                    <td style="border:none;padding:2px 8px;width:140px;font-weight:600">No. SJ Customer</td>
+                    <td style="border:none;padding:2px 8px">${doData.customerDoNumber || doData.doNumber || '-'}</td>
+                    <td style="border:none;padding:2px 8px;width:140px;font-weight:600">Tanggal</td>
+                    <td style="border:none;padding:2px 8px">${formatDate(doData.date || '')}</td>
+                </tr>
+                <tr>
+                    <td style="border:none;padding:2px 8px;font-weight:600">No. Internal</td>
+                    <td style="border:none;padding:2px 8px">${doData.doNumber || '-'}</td>
+                    <td style="border:none;padding:2px 8px;font-weight:600">Master Resi</td>
+                    <td style="border:none;padding:2px 8px">${doData.masterResi || '-'}</td>
+                </tr>
+                <tr>
+                    <td style="border:none;padding:2px 8px;font-weight:600"></td>
+                    <td style="border:none;padding:2px 8px"></td>
+                    <td style="border:none;padding:2px 8px;font-weight:600">Status</td>
+                    <td style="border:none;padding:2px 8px">${DO_STATUS_MAP[doData.status || '']?.label || doData.status || '-'}</td>
+                </tr>
+                <tr>
+                    <td style="border:none;padding:2px 8px;font-weight:600">Customer</td>
+                    <td style="border:none;padding:2px 8px">${doData.customerName || '-'}</td>
+                    <td style="border:none;padding:2px 8px;font-weight:600">Kendaraan</td>
+                    <td style="border:none;padding:2px 8px">${doData.vehiclePlate || '-'}</td>
+                </tr>
+                <tr>
+                    <td style="border:none;padding:2px 8px;font-weight:600">Driver</td>
+                    <td style="border:none;padding:2px 8px">${doData.driverName || '-'}</td>
+                    <td style="border:none;padding:2px 8px;font-weight:600">Penerima</td>
+                    <td style="border:none;padding:2px 8px">${doData.receiverName || '-'}</td>
+                </tr>
+                <tr>
+                    <td style="border:none;padding:2px 8px;font-weight:600">Telepon Penerima</td>
+                    <td style="border:none;padding:2px 8px">${doData.receiverPhone || '-'}</td>
+                    <td style="border:none;padding:2px 8px;font-weight:600">Armada Diminta</td>
+                    <td style="border:none;padding:2px 8px">${doData.serviceName || '-'}</td>
+                </tr>
+                <tr>
+                    <td style="border:none;padding:2px 8px;font-weight:600">Armada Aktual</td>
+                    <td style="border:none;padding:2px 8px">${doData.vehicleServiceName || doData.serviceName || '-'}</td>
+                    <td style="border:none;padding:2px 8px;font-weight:600">Kendaraan</td>
+                    <td style="border:none;padding:2px 8px">${doData.vehiclePlate || '-'}</td>
+                </tr>
+                ${doData.vehicleCategoryOverrideReason ? `<tr><td style="border:none;padding:2px 8px;font-weight:600">Alasan Override Armada</td><td colspan="3" style="border:none;padding:2px 8px">${doData.vehicleCategoryOverrideReason}</td></tr>` : ''}
+                ${doData.receiverCompany ? `<tr><td style="border:none;padding:2px 8px;font-weight:600">Perusahaan Penerima</td><td colspan="3" style="border:none;padding:2px 8px">${doData.receiverCompany}</td></tr>` : ''}
+                <tr>
+                    <td style="border:none;padding:2px 8px;font-weight:600">Alamat Pickup</td>
+                    <td colspan="3" style="border:none;padding:2px 8px">${doData.pickupAddress || '-'}</td>
+                </tr>
+                <tr>
+                    <td style="border:none;padding:2px 8px;font-weight:600">Alamat Penerima</td>
+                    <td colspan="3" style="border:none;padding:2px 8px">${doData.receiverAddress || '-'}</td>
+                </tr>
+                ${doData.notes ? `<tr><td style="border:none;padding:2px 8px;font-weight:600">Catatan</td><td colspan="3" style="border:none;padding:2px 8px">${doData.notes}</td></tr>` : ''}
+                ${doData.podReceiverName ? `<tr><td style="border:none;padding:2px 8px;font-weight:600">POD</td><td colspan="3" style="border:none;padding:2px 8px">Diterima oleh ${doData.podReceiverName} pada ${formatDate(doData.podReceivedDate || '')}${doData.podNote ? ` - ${doData.podNote}` : ''}</td></tr>` : ''}
+            </tbody></table>
+        </div>
+        <div class="section-title">Route Tagihan & Realisasi Drop</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Tipe</th>
+                    <th>Lokasi</th>
+                    <th>Alamat</th>
+                    <th>Muatan</th>
+                    <th>Catatan</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${(doData.actualDropPoints || []).length > 0
+                    ? (doData.actualDropPoints || [])
+                        .slice()
+                        .sort((a, b) => (a.sequence || 0) - (b.sequence || 0))
+                        .map(point => `
+                            <tr>
+                                <td>${DO_ACTUAL_DROP_TYPE_MAP[point.stopType]?.label || point.stopType}</td>
+                                <td>${point.sequence}. ${point.locationName || '-'}</td>
+                                <td>${point.locationAddress || '-'}</td>
+                                <td>${formatCargoSummary({
+                                    qtyKoli: point.qtyKoli,
+                                    weightKg: point.weightKg,
+                                    weightInputValue: point.weightInputValue,
+                                    weightInputUnit: point.weightInputUnit,
+                                    volumeM3: point.volumeM3,
+                                    volumeInputValue: point.volumeInputValue,
+                                    volumeInputUnit: point.volumeInputUnit,
+                                })}</td>
+                                <td>${point.note || '-'}</td>
+                            </tr>
+                        `).join('')
+                    : `
+                        <tr>
+                            <td>Drop</td>
+                            <td>1. ${doData.receiverCompany || doData.receiverName || 'Tujuan Tagihan'}</td>
+                            <td>${doData.receiverAddress || '-'}</td>
+                            <td>-</td>
+                            <td>Realisasi drop belum dicatat terpisah.</td>
+                        </tr>
+                    `}
+            </tbody>
+        </table>
+        <div class="section-title">Detail Barang</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>No</th>
+                    <th>Deskripsi</th>
+                    <th class="r">Koli</th>
+                    <th>Muatan</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${doItems.map((item, index) => `
+                    <tr>
+                        <td>${index + 1}</td>
+                        <td>${item.orderItemDescription || '-'}</td>
+                        <td class="r">${item.actualQtyKoli ?? item.orderItemQtyKoli ?? 0}</td>
+                        <td>${formatCargoSummary(
+                            item.actualQtyKoli !== undefined || item.actualWeightKg !== undefined || item.actualVolumeM3 !== undefined
+                                ? {
+                                    qtyKoli: item.actualQtyKoli,
+                                    weightKg: item.actualWeightKg,
+                                    weightInputValue: item.actualWeightInputValue,
+                                    weightInputUnit: item.actualWeightInputUnit,
+                                    volumeM3: item.actualVolumeM3,
+                                    volumeInputValue: item.actualVolumeInputValue,
+                                    volumeInputUnit: item.actualVolumeInputUnit,
+                                }
+                                : {
+                                    qtyKoli: item.orderItemQtyKoli,
+                                    weightKg: item.orderItemWeight,
+                                    weightInputValue: item.orderItemWeightInputValue,
+                                    weightInputUnit: item.orderItemWeightInputUnit,
+                                    volumeM3: item.orderItemVolumeM3,
+                                    volumeInputValue: item.orderItemVolumeInputValue,
+                                    volumeInputUnit: item.orderItemVolumeInputUnit,
+                                }
+                        )}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+        <div class="section-title">Timeline Pengiriman</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Waktu</th>
+                    <th>Status</th>
+                    <th>Catatan</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${trackingLogs.length > 0 ? trackingLogs.map((item) => `
+                    <tr>
+                        <td>${formatDateTime(item.timestamp)}</td>
+                        <td>${DO_STATUS_MAP[item.status]?.label || item.status || '-'}</td>
+                        <td>${item.note || '-'}</td>
+                    </tr>
+                `).join('') : '<tr><td colspan="3" class="c">Belum ada log tracking</td></tr>'}
+            </tbody>
+        </table>
+    `;
 }
