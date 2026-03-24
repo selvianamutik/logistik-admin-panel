@@ -27,9 +27,9 @@ export function getRecentOrderAction(status: string) {
 }
 
 export function getRecentNotaAction(nota: DashboardData['recentNotas'][number]) {
-    if (nota.status === 'UNPAID') return 'Tagih atau catat receipt';
-    if (nota.status === 'PARTIAL') return 'Follow up sisa pembayaran';
-    return (nota.totalAdjustmentAmount || 0) > 0 ? 'Arsip + cek potongan' : 'Arsip / cetak';
+    if (nota.status === 'UNPAID') return 'Tagih atau catat penerimaan';
+    if (nota.status === 'PARTIAL') return 'Follow up sisa pembayaran nota';
+    return (nota.totalAdjustmentAmount || 0) > 0 ? 'Arsip + cek potongan tagihan' : 'Arsip / cetak';
 }
 
 export function getDashboardNotaNetAmount(nota: DashboardData['recentNotas'][number]) {

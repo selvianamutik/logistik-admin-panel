@@ -219,7 +219,7 @@ export default function CompanyPage() {
                             </div>
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Prefix Nota</label><input className="form-input" value={data.numberingSettings.notaPrefix || 'NOTA-'} onChange={e => uNum('notaPrefix', e.target.value)} /></div>
-                                <div className="form-group"><label className="form-label">Prefix Receipt</label><input className="form-input" value={data.numberingSettings.receiptPrefix || 'RCV-'} onChange={e => uNum('receiptPrefix', e.target.value)} /></div>
+                                <div className="form-group"><label className="form-label">Prefix Penerimaan</label><input className="form-input" value={data.numberingSettings.receiptPrefix || 'RCV-'} onChange={e => uNum('receiptPrefix', e.target.value)} /></div>
                             </div>
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Kode Seri Cetak Nota</label><input className="form-input" value={data.numberingSettings.notaSeriesCode || '3'} onChange={e => uNum('notaSeriesCode', e.target.value)} /></div>

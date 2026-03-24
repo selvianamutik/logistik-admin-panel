@@ -21,12 +21,12 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
 
 const getNextInvoiceAction = (nota: FreightNota, remainingAmount: number) => {
     if (nota.status === 'UNPAID') {
-        return 'Tagih atau catat receipt';
+        return 'Tagih atau catat penerimaan';
     }
     if (nota.status === 'PARTIAL') {
-        return remainingAmount > 0 ? 'Follow up sisa pembayaran' : 'Cek alokasi receipt';
+        return remainingAmount > 0 ? 'Follow up sisa pembayaran nota' : 'Cek alokasi penerimaan';
     }
-    return (nota.totalAdjustmentAmount || 0) > 0 ? 'Arsip + cek potongan' : 'Arsip / cetak';
+    return (nota.totalAdjustmentAmount || 0) > 0 ? 'Arsip + cek potongan tagihan' : 'Arsip / cetak';
 };
 
 export default function NotaListPage() {
@@ -137,7 +137,7 @@ export default function NotaListPage() {
         if (!notaRes.ok) throw new Error(notaPayload.error || 'Gagal memuat nota ongkos');
         if (!summaryRes.ok) throw new Error(summaryPayload.error || 'Gagal memuat ringkasan nota');
         if (!customerRes.ok) throw new Error(customerPayload.error || 'Gagal memuat customer');
-        if (!receiptRes.ok) throw new Error(receiptPayload.error || 'Gagal memuat receipt customer');
+        if (!receiptRes.ok) throw new Error(receiptPayload.error || 'Gagal memuat penerimaan customer');
         if (!bankRes.ok) throw new Error(bankPayload.error || 'Gagal memuat rekening');
 
         const notaRows = (notaPayload.data || []) as FreightNota[];
@@ -235,8 +235,8 @@ export default function NotaListPage() {
     const receiptPrimaryLabel = receiptOpenCount === 0
         ? 'Simpan Kredit Customer'
         : unappliedReceiptAmount > 0
-            ? 'Simpan Receipt & Kredit'
-            : 'Simpan Receipt';
+            ? 'Simpan Penerimaan & Kredit'
+            : 'Simpan Penerimaan';
 
     useEffect(() => {
         if (!showReceiptModal || !receiptCustomerRef) {
@@ -288,7 +288,7 @@ export default function NotaListPage() {
                     );
                     const paymentsPayload = await paymentsRes.json();
                     if (!paymentsRes.ok) {
-                        throw new Error(paymentsPayload.error || 'Gagal memuat pembayaran receipt');
+                        throw new Error(paymentsPayload.error || 'Gagal memuat alokasi penerimaan');
                     }
                     paymentRows = (paymentsPayload.data || []) as Payment[];
                 }
@@ -499,7 +499,7 @@ export default function NotaListPage() {
                     <h1 className="page-title">Nota Ongkos Angkut</h1>
                 </div>
                 <div className="page-actions">
-                    <button className="btn btn-success" onClick={openReceiptModal}><Plus size={18} /> Terima Pembayaran</button>
+                    <button className="btn btn-success" onClick={openReceiptModal}><Plus size={18} /> Catat Penerimaan</button>
                     <button
                         className="btn btn-secondary btn-sm"
                         onClick={async () => {
@@ -680,7 +680,7 @@ export default function NotaListPage() {
                 <div className="modal-overlay" onClick={() => { if (!receiving) setShowReceiptModal(false); }}>
                     <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 980 }}>
                         <div className="modal-header">
-                            <h3 className="modal-title">Terima Pembayaran Customer</h3>
+                            <h3 className="modal-title">Catat Penerimaan Customer</h3>
                             <button className="modal-close" onClick={() => setShowReceiptModal(false)} disabled={receiving}>&times;</button>
                         </div>
                         <div className="modal-body">
@@ -693,7 +693,7 @@ export default function NotaListPage() {
                                     </select>
                                 </div>
                                 <div className="form-group">
-                                    <label className="form-label">Tanggal Receipt</label>
+                                    <label className="form-label">Tanggal Penerimaan</label>
                                     <input type="date" className="form-input" value={receiptDate} onChange={e => setReceiptDate(e.target.value)} disabled={receiving} />
                                 </div>
                             </div>
@@ -715,7 +715,7 @@ export default function NotaListPage() {
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Total Penerimaan (Rp)</label>
-                                    <CurrencyInput value={receiptAmount} onValueChange={value => setReceiptAmount(value)} disabled={receiving} placeholder="Ketik total receipt" />
+                                    <CurrencyInput value={receiptAmount} onValueChange={value => setReceiptAmount(value)} disabled={receiving} placeholder="Ketik total penerimaan" />
                                 </div>
                                 {!hasSingleOpenNota && (
                                     <div className="form-group" style={{ alignSelf: 'end' }}>
@@ -728,7 +728,7 @@ export default function NotaListPage() {
                                 <textarea className="form-textarea" rows={2} value={receiptNote} onChange={e => setReceiptNote(e.target.value)} disabled={receiving} placeholder="Contoh: Transfer gabungan invoice Arwana batch 1" />
                             </div>
                             <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--color-gray-600)', marginBottom: '1rem' }}>
-                                Satu receipt mewakili satu uang masuk nyata di bank/kas. Receipt bisa dialokasikan ke beberapa nota customer yang sama. Jika ada sisa yang belum dialokasikan, sistem menyimpannya sebagai kredit customer.
+                                Satu penerimaan customer mewakili satu uang masuk nyata di bank/kas. Penerimaan ini bisa dialokasikan ke beberapa nota customer yang sama. Jika ada sisa yang belum dialokasikan, sistem menyimpannya sebagai kredit customer.
                             </div>
                             {receiptCustomerRef && (
                                 <div style={{ background: 'var(--color-primary-50)', border: '1px solid var(--color-primary-100)', borderRadius: '0.75rem', padding: '0.9rem 1rem', marginBottom: '1rem' }}>
@@ -746,11 +746,11 @@ export default function NotaListPage() {
                                             <div style={{ fontWeight: 700 }}>{formatCurrency(selectedCustomerStoredCredit)}</div>
                                         </div>
                                         <div>
-                                            <div style={{ color: 'var(--text-muted)' }}>Belum Dialokasikan dari Receipt Ini</div>
+                                            <div style={{ color: 'var(--text-muted)' }}>Belum Dialokasikan dari Penerimaan Ini</div>
                                             <div style={{ fontWeight: 700, color: unappliedReceiptAmount > 0 ? 'var(--color-warning)' : 'inherit' }}>{formatCurrency(unappliedReceiptAmount)}</div>
                                         </div>
                                         <div>
-                                            <div style={{ color: 'var(--text-muted)' }}>Mode Receipt</div>
+                                            <div style={{ color: 'var(--text-muted)' }}>Mode Penerimaan</div>
                                             <div style={{ fontWeight: 700 }}>
                                                 {receiptOpenCount === 0
                                                     ? 'Semua jadi kredit'
@@ -775,7 +775,7 @@ export default function NotaListPage() {
                             ) : receiptOpenNotaItems.length === 0 ? (
                                 <div className="empty-state">
                                     <div className="empty-state-title">Tidak ada nota terbuka</div>
-                                    <div className="empty-state-text">Customer ini tidak punya sisa tagihan netto. Kamu tetap bisa menyimpan receipt ini sebagai kredit customer.</div>
+                                    <div className="empty-state-text">Customer ini tidak punya sisa tagihan netto. Kamu tetap bisa menyimpan penerimaan ini sebagai kredit customer.</div>
                                 </div>
                             ) : hasSingleOpenNota && singleOpenNota ? (
                                 <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)' }}>
@@ -784,13 +784,13 @@ export default function NotaListPage() {
                                         <div>Nota: <strong>{formatFreightNotaDisplayNumber(singleOpenNota.nota, company)}</strong></div>
                                         <div>No. Internal: {singleOpenNota.nota.notaNumber}</div>
                                         <div>Sisa tagihan: <strong>{formatCurrency(singleOpenNota.remainingAmount)}</strong></div>
-                                        <div>Pembayaran yang kamu isi di atas akan langsung dialokasikan ke nota ini sampai penuh. Jika nominal receipt lebih besar, sisanya otomatis menjadi kredit customer.</div>
+                                        <div>Penerimaan yang kamu isi di atas akan langsung dialokasikan ke nota ini sampai penuh. Jika nominalnya lebih besar, sisanya otomatis menjadi kredit customer.</div>
                                     </div>
                                 </div>
                             ) : (
                                 <div className="table-wrapper" style={{ overflowX: 'auto' }}>
                                     <table style={{ minWidth: 720 }}>
-                                        <thead><tr><th>No. Nota</th><th>Tgl</th><th>Netto</th><th>Sudah Dibayar</th><th>Sisa</th><th>Alokasi Receipt</th></tr></thead>
+                                        <thead><tr><th>No. Nota</th><th>Tgl</th><th>Netto</th><th>Sudah Dibayar</th><th>Sisa</th><th>Alokasi Penerimaan</th></tr></thead>
                                         <tbody>
                                             {receiptOpenNotaItems.map(item => (
                                                 <tr key={item.nota._id}>
@@ -816,10 +816,10 @@ export default function NotaListPage() {
                                 <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Total alokasi: <strong>{formatCurrency(totalAllocated)}</strong></div>
                                 <div style={{ fontSize: '0.85rem', color: totalAllocated - receiptAmount > 0.00001 ? 'var(--color-danger)' : unappliedReceiptAmount > 0 ? 'var(--color-warning)' : 'var(--color-success)' }}>
                                     {totalAllocated - receiptAmount > 0.00001
-                                        ? 'Total alokasi melebihi total receipt'
+                                        ? 'Total alokasi melebihi total penerimaan'
                                         : unappliedReceiptAmount > 0
                                             ? `Belum dialokasikan / kredit customer: ${formatCurrency(unappliedReceiptAmount)}`
-                                            : 'Total alokasi sudah cocok dengan receipt'}
+                                            : 'Total alokasi sudah cocok dengan penerimaan'}
                                 </div>
                             </div>
                         </div>

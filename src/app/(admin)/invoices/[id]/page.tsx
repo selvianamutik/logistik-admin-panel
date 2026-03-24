@@ -108,7 +108,7 @@ export default function NotaDetailPage() {
                 addToast('error', result.error || 'Gagal');
                 return;
             }
-            addToast('success', 'Pembayaran dicatat');
+            addToast('success', 'Pembayaran nota dicatat');
             setShowPayModal(false);
             setPayAmount(0);
             setPayNote('');
@@ -123,7 +123,7 @@ export default function NotaDetailPage() {
 
     const handleAddAdjustment = async () => {
         if (adjustAmount <= 0) {
-            addToast('error', 'Nominal potongan/klaim harus lebih dari 0');
+            addToast('error', 'Nominal potongan tagihan harus lebih dari 0');
             return;
         }
         if (adjustAmount > Math.max(grossAmount - totalAdjustmentAmount, 0)) {
@@ -149,24 +149,24 @@ export default function NotaDetailPage() {
             });
             const result = await res.json();
             if (!res.ok) {
-                addToast('error', result.error || 'Gagal mencatat klaim/potongan');
+                addToast('error', result.error || 'Gagal mencatat potongan tagihan');
                 return;
             }
-            addToast('success', 'Klaim/potongan berhasil dicatat');
+            addToast('success', 'Potongan tagihan berhasil dicatat');
             setShowAdjustmentModal(false);
             setAdjustAmount(0);
             setAdjustKind('DAMAGE_CLAIM');
             setAdjustNote('');
             await loadNotaDetail();
         } catch {
-            addToast('error', 'Gagal mencatat klaim/potongan');
+            addToast('error', 'Gagal mencatat potongan tagihan');
         } finally {
             setAdjusting(false);
         }
     };
 
     const handleVoidAdjustment = async (adjustmentId: string) => {
-        if (!confirm('Void klaim/potongan ini?')) return;
+        if (!confirm('Void potongan tagihan ini?')) return;
         try {
             const res = await fetch('/api/data', {
                 method: 'POST',
@@ -179,13 +179,13 @@ export default function NotaDetailPage() {
             });
             const result = await res.json();
             if (!res.ok) {
-                addToast('error', result.error || 'Gagal void klaim/potongan');
+                addToast('error', result.error || 'Gagal void potongan tagihan');
                 return;
             }
-            addToast('success', 'Klaim/potongan di-void');
+            addToast('success', 'Potongan tagihan di-void');
             await loadNotaDetail();
         } catch {
-            addToast('error', 'Gagal void klaim/potongan');
+            addToast('error', 'Gagal void potongan tagihan');
         }
     };
 
@@ -258,8 +258,8 @@ export default function NotaDetailPage() {
                 </div>
                 </div>
                 <div className="page-actions" style={{ gap: '0.4rem' }}>
-                    {nota.status !== 'PAID' && <button className="btn btn-success btn-sm" onClick={() => setShowPayModal(true)}><DollarSign size={14} /> Tambah Pembayaran</button>}
-                    {grossAmount > totalAdjustmentAmount && <button className="btn btn-secondary btn-sm" onClick={() => setShowAdjustmentModal(true)}>Tambah Potongan</button>}
+                    {nota.status !== 'PAID' && <button className="btn btn-success btn-sm" onClick={() => setShowPayModal(true)}><DollarSign size={14} /> Catat Pembayaran</button>}
+                    {grossAmount > totalAdjustmentAmount && <button className="btn btn-secondary btn-sm" onClick={() => setShowAdjustmentModal(true)}>Catat Potongan</button>}
                     <button className="btn btn-secondary btn-sm" onClick={handleExportExcel}><FileDown size={14} /> Excel</button>
                     <button className="btn btn-secondary btn-sm" onClick={handlePrint}><Printer size={14} /> Cetak Nota</button>
                     <button className="btn btn-secondary btn-sm" onClick={handleDelete}><Trash2 size={14} /></button>
@@ -351,11 +351,11 @@ export default function NotaDetailPage() {
                                     <div className={`progress-bar-fill ${paidPercent >= 100 ? 'success' : ''}`} style={{ width: `${paidPercent}%` }} />
                                 </div>
                                 <div style={{ fontSize: '0.72rem', color: 'var(--color-gray-400)', marginBottom: '1rem' }}>{paidPercent.toFixed(0)}% terbayar</div>
-                                {nota.status !== 'PAID' && <button className="btn btn-success" style={{ width: '100%' }} onClick={() => setShowPayModal(true)}><DollarSign size={16} /> Tambah Pembayaran</button>}
+                                {nota.status !== 'PAID' && <button className="btn btn-success" style={{ width: '100%' }} onClick={() => setShowPayModal(true)}><DollarSign size={16} /> Catat Pembayaran</button>}
                             </div>
                         </div>
 
-                        <CollapsibleCard title="Riwayat Pembayaran" defaultOpen={payments.length > 0}>
+                        <CollapsibleCard title="Riwayat Pembayaran Nota" defaultOpen={payments.length > 0}>
                             <div style={{ padding: payments.length === 0 ? '2rem 1.5rem' : 0 }}>
                                 {payments.length === 0 ? (
                                     <div style={{ textAlign: 'center', color: 'var(--color-gray-400)' }}>
@@ -383,7 +383,7 @@ export default function NotaDetailPage() {
                                         </div>
                                         <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.72rem', color: 'var(--color-gray-400)' }}>
                                             <span className={`badge badge-${p.method === 'CASH' ? 'warning' : 'info'}`} style={{ fontSize: '0.62rem' }}>{PAYMENT_METHOD_MAP[p.method] || p.method}</span>
-                                            {p.receiptNumber && <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>Receipt {p.receiptNumber}</span>}
+                                            {p.receiptNumber && <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>Penerimaan {p.receiptNumber}</span>}
                                             {accountLabel && <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Landmark size={10} /> {accountLabel}</span>}
                                             {p.note && <span>| {p.note}</span>}
                                         </div>
@@ -394,11 +394,11 @@ export default function NotaDetailPage() {
                             </div>
                         </CollapsibleCard>
 
-                        <CollapsibleCard title="Riwayat Klaim / Potongan" defaultOpen={adjustments.length > 0}>
+                        <CollapsibleCard title="Riwayat Potongan Tagihan" defaultOpen={adjustments.length > 0}>
                             <div style={{ padding: adjustments.length === 0 ? '2rem 1.5rem' : 0 }}>
                                 {adjustments.length === 0 ? (
                                     <div style={{ textAlign: 'center', color: 'var(--color-gray-400)' }}>
-                                        <div style={{ fontSize: '0.82rem' }}>Belum ada klaim atau potongan</div>
+                                        <div style={{ fontSize: '0.82rem' }}>Belum ada potongan tagihan</div>
                                     </div>
                                 ) : adjustments.map((adjustment, index) => (
                                     <div key={adjustment._id} style={{ padding: '0.85rem 1rem', borderBottom: index < adjustments.length - 1 ? '1px solid var(--color-gray-100)' : 'none' }}>
@@ -429,14 +429,14 @@ export default function NotaDetailPage() {
             {showPayModal && (
                 <div className="modal-overlay" onClick={() => { if (!paying) setShowPayModal(false); }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header"><h3 className="modal-title">Tambah Pembayaran</h3><button className="modal-close" onClick={() => setShowPayModal(false)} disabled={paying}>&times;</button></div>
+                        <div className="modal-header"><h3 className="modal-title">Catat Pembayaran Nota</h3><button className="modal-close" onClick={() => setShowPayModal(false)} disabled={paying}>&times;</button></div>
                         <div className="modal-body">
                             <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <div><div style={{ fontSize: '0.68rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Sisa Tagihan</div><div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-danger)' }}>{formatCurrency(remaining)}</div></div>
                                 <button className="btn btn-sm btn-ghost" onClick={() => setPayAmount(remaining)} style={{ fontSize: '0.72rem' }} disabled={paying}>Bayar penuh</button>
                             </div>
                             <div className="form-group"><label className="form-label">Tanggal</label><input type="date" className="form-input" value={payDate} onChange={e => setPayDate(e.target.value)} disabled={paying} /></div>
-                            <div className="form-group"><label className="form-label">Nominal (Rp)</label><CurrencyInput value={payAmount} onValueChange={value => setPayAmount(value)} disabled={paying} placeholder="Ketik nominal pembayaran" /></div>
+                            <div className="form-group"><label className="form-label">Nominal (Rp)</label><CurrencyInput value={payAmount} onValueChange={value => setPayAmount(value)} disabled={paying} placeholder="Ketik nominal pembayaran nota" /></div>
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Metode</label>
                                     <select className="form-select" value={payMethod} onChange={e => setPayMethod(e.target.value)} disabled={paying}>
@@ -461,7 +461,7 @@ export default function NotaDetailPage() {
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setShowPayModal(false)} disabled={paying}>Batal</button>
-                            <button className="btn btn-success" onClick={handleAddPayment} disabled={paying}><DollarSign size={16} /> {paying ? 'Memproses...' : 'Simpan Pembayaran'}</button>
+                            <button className="btn btn-success" onClick={handleAddPayment} disabled={paying}><DollarSign size={16} /> {paying ? 'Memproses...' : 'Simpan Pembayaran Nota'}</button>
                         </div>
                     </div>
                 </div>
@@ -469,7 +469,7 @@ export default function NotaDetailPage() {
             {showAdjustmentModal && (
                 <div className="modal-overlay" onClick={() => { if (!adjusting) setShowAdjustmentModal(false); }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header"><h3 className="modal-title">Catat Klaim / Potongan</h3><button className="modal-close" onClick={() => setShowAdjustmentModal(false)} disabled={adjusting}>&times;</button></div>
+                        <div className="modal-header"><h3 className="modal-title">Catat Potongan Tagihan</h3><button className="modal-close" onClick={() => setShowAdjustmentModal(false)} disabled={adjusting}>&times;</button></div>
                         <div className="modal-body">
                             <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.75rem' }}>
                                 <div><div style={{ fontSize: '0.68rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Bruto</div><div style={{ fontSize: '1rem', fontWeight: 700 }}>{formatCurrency(grossAmount)}</div></div>
@@ -485,13 +485,13 @@ export default function NotaDetailPage() {
                                 <div className="form-group"><label className="form-label">Nominal (Rp)</label><CurrencyInput value={adjustAmount} onValueChange={value => setAdjustAmount(value)} disabled={adjusting} placeholder="Ketik nominal potongan" /></div>
                             </div>
                             <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--color-gray-600)', marginBottom: '1rem' }}>
-                                Klaim/potongan akan mengurangi nilai netto tagihan. Ini bukan pembayaran masuk dan tidak membuat mutasi kas/bank.
+                                Potongan tagihan akan mengurangi nilai netto nota. Ini bukan pembayaran masuk dan tidak membuat mutasi kas/bank.
                             </div>
                             <div className="form-group"><label className="form-label">Catatan</label><textarea className="form-textarea" rows={2} value={adjustNote} onChange={e => setAdjustNote(e.target.value)} disabled={adjusting} placeholder="Contoh: Klaim 2 dus pecah saat bongkar" /></div>
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setShowAdjustmentModal(false)} disabled={adjusting}>Batal</button>
-                            <button className="btn btn-warning" onClick={handleAddAdjustment} disabled={adjusting}>{adjusting ? 'Menyimpan...' : 'Simpan Potongan'}</button>
+                            <button className="btn btn-warning" onClick={handleAddAdjustment} disabled={adjusting}>{adjusting ? 'Menyimpan...' : 'Simpan Potongan Tagihan'}</button>
                         </div>
                     </div>
                 </div>
