@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useToast } from '../../layout';
@@ -8,7 +8,7 @@ import { Plus, Search, Wrench, Save, X } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { formatDate, MAINTENANCE_STATUS_MAP } from '@/lib/utils';
-import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
+import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { Maintenance, Vehicle } from '@/lib/types';
 
 type MaintenanceFormState = {
@@ -55,6 +55,10 @@ export default function MaintenancePage() {
     const [vehicleFilter, setVehicleFilter] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [page, setPage] = useState(1);
+    const [filteredTotalMaintenance, setFilteredTotalMaintenance] = useState(0);
+    const [scheduledCount, setScheduledCount] = useState(0);
+    const [completedCount, setCompletedCount] = useState(0);
+    const [skippedCount, setSkippedCount] = useState(0);
     const [showModal, setShowModal] = useState(false);
     const [saving, setSaving] = useState(false);
     const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -62,27 +66,72 @@ export default function MaintenancePage() {
     const [form, setForm] = useState<MaintenanceFormState>(createDefaultMaintenanceForm());
 
     useEffect(() => {
-        const fetchEntity = async <T,>(url: string) => {
-            const res = await fetch(url);
-            const payload = await res.json();
-            if (!res.ok) {
-                throw new Error(payload.error || 'Gagal memuat maintenance');
-            }
-            return payload.data as T;
-        };
+        setPage(1);
+    }, [search, vehicleFilter, statusFilter]);
 
-        Promise.all([
-            fetchEntity<Maintenance[]>('/api/data?entity=maintenances'),
-            fetchEntity<Vehicle[]>('/api/data?entity=vehicles'),
-        ]).then(([maintenanceRows, vehicleRows]) => {
-            setItems(maintenanceRows || []);
-            setVehicles((vehicleRows || []).filter(vehicle => vehicle.status !== 'SOLD'));
-        }).catch(error => {
-            addToast('error', error instanceof Error ? error.message : 'Gagal memuat maintenance');
-        }).finally(() => {
-            setLoading(false);
+    const buildMaintenanceQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
+        const params = new URLSearchParams({
+            entity: 'maintenances',
+            page: String(targetPage),
+            pageSize: String(targetPageSize),
+            sortPreset: 'work-queue',
         });
-    }, [addToast]);
+
+        if (search.trim()) {
+            params.set('q', search.trim());
+            params.set('searchFields', 'type,vehiclePlate,notes');
+        }
+
+        const filterObj: Record<string, string> = {};
+        if (vehicleFilter) {
+            filterObj.vehicleRef = vehicleFilter;
+        }
+        if (statusFilter) {
+            filterObj.status = statusFilter;
+        }
+        if (Object.keys(filterObj).length > 0) {
+            params.set('filter', JSON.stringify(filterObj));
+        }
+
+        return params.toString();
+    }, [page, search, vehicleFilter, statusFilter]);
+
+    const loadMaintenance = useCallback(async () => {
+        setLoading(true);
+        try {
+            const fetchEntity = async <T,>(url: string) => {
+                const res = await fetch(url);
+                const payload = await res.json();
+                if (!res.ok) {
+                    throw new Error(payload.error || 'Gagal memuat maintenance');
+                }
+                return payload as { data: T; meta?: { total?: number } };
+            };
+
+            const [listPayload, vehiclePayload, scheduledPayload, completedPayload, skippedPayload] = await Promise.all([
+                fetchEntity<Maintenance[]>(`/api/data?${buildMaintenanceQuery()}`),
+                fetchEntity<Vehicle[]>('/api/data?entity=vehicles'),
+                fetchEntity<Maintenance[]>('/api/data?entity=maintenances&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'SCHEDULED' }))),
+                fetchEntity<Maintenance[]>('/api/data?entity=maintenances&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'DONE' }))),
+                fetchEntity<Maintenance[]>('/api/data?entity=maintenances&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'SKIPPED' }))),
+            ]);
+
+            setItems(listPayload.data || []);
+            setFilteredTotalMaintenance(listPayload.meta?.total || 0);
+            setVehicles(((vehiclePayload.data || []) as Vehicle[]).filter(vehicle => vehicle.status !== 'SOLD'));
+            setScheduledCount(scheduledPayload.meta?.total || 0);
+            setCompletedCount(completedPayload.meta?.total || 0);
+            setSkippedCount(skippedPayload.meta?.total || 0);
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat maintenance');
+        } finally {
+            setLoading(false);
+        }
+    }, [addToast, buildMaintenanceQuery]);
+
+    useEffect(() => {
+        void loadMaintenance();
+    }, [loadMaintenance]);
 
     useEffect(() => {
         if (loading || prefillApplied) {
@@ -110,10 +159,6 @@ export default function MaintenancePage() {
         setPrefillApplied(true);
     }, [loading, prefillApplied, searchParams, vehicles]);
 
-    useEffect(() => {
-        setPage(1);
-    }, [search, vehicleFilter, statusFilter]);
-
     const openScheduleModal = (vehicle?: Vehicle | null) => {
         setForm(createDefaultMaintenanceForm(vehicle));
         setShowModal(true);
@@ -126,48 +171,34 @@ export default function MaintenancePage() {
         setForm(createDefaultMaintenanceForm(filteredVehicle || null));
     };
 
-    const filtered = items
-        .filter(m => {
-            const matchesSearch =
-                !search
-                || m.type?.toLowerCase().includes(search.toLowerCase())
-                || m.vehiclePlate?.toLowerCase().includes(search.toLowerCase())
-                || m.notes?.toLowerCase().includes(search.toLowerCase());
-            const matchesVehicle = !vehicleFilter || m.vehicleRef === vehicleFilter;
-            const matchesStatus = !statusFilter || m.status === statusFilter;
-            return matchesSearch && matchesVehicle && matchesStatus;
-        })
-        .sort((left, right) => {
-            const statusRank = (status: Maintenance['status']) => {
-                if (status === 'SCHEDULED') return 0;
-                if (status === 'DONE') return 1;
-                return 2;
-            };
-            const byStatus = statusRank(left.status) - statusRank(right.status);
-            if (byStatus !== 0) return byStatus;
-            const leftSchedule = left.scheduleType === 'DATE' ? (left.plannedDate || '') : String(left.plannedOdometer || 0).padStart(12, '0');
-            const rightSchedule = right.scheduleType === 'DATE' ? (right.plannedDate || '') : String(right.plannedOdometer || 0).padStart(12, '0');
-            return leftSchedule.localeCompare(rightSchedule);
-        });
-    const paginatedMaintenance = paginateItems(filtered, page, DEFAULT_PAGE_SIZE);
-
     const selectedVehicle = vehicles.find(vehicle => vehicle._id === form.vehicleRef);
 
     const handleSave = async () => {
-        if (!form.vehicleRef || !form.type) { addToast('error', 'Kendaraan dan tipe wajib'); return; }
-        const veh = vehicles.find(v => v._id === form.vehicleRef);
+        if (!form.vehicleRef || !form.type) {
+            addToast('error', 'Kendaraan dan tipe wajib');
+            return;
+        }
+        const vehicle = vehicles.find(item => item._id === form.vehicleRef);
         setSaving(true);
         try {
-            const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'maintenances', data: { ...form, vehiclePlate: veh?.plateNumber, status: 'SCHEDULED' } }) });
-            const d = await res.json();
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entity: 'maintenances', data: { ...form, vehiclePlate: vehicle?.plateNumber, status: 'SCHEDULED' } }),
+            });
+            const payload = await res.json();
             if (!res.ok) {
-                addToast('error', d.error || 'Gagal menjadwalkan maintenance');
+                addToast('error', payload.error || 'Gagal menjadwalkan maintenance');
                 return;
             }
-            setItems(prev => [...prev, d.data]);
-            setForm(createDefaultMaintenanceForm(vehicleFilter ? vehicles.find(vehicle => vehicle._id === vehicleFilter) || null : null));
+            setForm(createDefaultMaintenanceForm(vehicleFilter ? vehicles.find(item => item._id === vehicleFilter) || null : null));
             addToast('success', 'Maintenance dijadwalkan');
             setShowModal(false);
+            if (page !== 1) {
+                setPage(1);
+            } else {
+                await loadMaintenance();
+            }
         } catch {
             addToast('error', 'Gagal menjadwalkan maintenance');
         } finally {
@@ -178,13 +209,21 @@ export default function MaintenancePage() {
     const updateStatus = async (id: string, status: string) => {
         setUpdatingId(id);
         try {
-            const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'maintenances', action: 'update', data: { id, updates: { status, completedDate: new Date().toISOString().split('T')[0] } } }) });
-            const d = await res.json();
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'maintenances',
+                    action: 'update',
+                    data: { id, updates: { status, completedDate: new Date().toISOString().split('T')[0] } },
+                }),
+            });
+            const payload = await res.json();
             if (!res.ok) {
-                addToast('error', d.error || 'Gagal memperbarui maintenance');
+                addToast('error', payload.error || 'Gagal memperbarui maintenance');
                 return;
             }
-            setItems(prev => prev.map(m => m._id === id ? { ...m, status: status as Maintenance['status'] } : m));
+            await loadMaintenance();
             addToast('success', `Status maintenance diubah ke ${MAINTENANCE_STATUS_MAP[status]?.label}`);
         } catch {
             addToast('error', 'Gagal memperbarui maintenance');
@@ -192,10 +231,6 @@ export default function MaintenancePage() {
             setUpdatingId(current => current === id ? null : current);
         }
     };
-
-    const scheduledCount = items.filter(item => item.status === 'SCHEDULED').length;
-    const completedCount = items.filter(item => item.status === 'DONE').length;
-    const skippedCount = items.filter(item => item.status === 'SKIPPED').length;
 
     return (
         <div>
@@ -213,16 +248,16 @@ export default function MaintenancePage() {
                         <thead><tr><th>Kendaraan</th><th>Tipe Servis</th><th>Jadwal</th><th>Status</th><th>Tindak Lanjut</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                paginatedMaintenance.totalItems === 0 ? <tr><td colSpan={6}><div className="empty-state"><Wrench size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada jadwal maintenance</div></div></td></tr> :
-                                    paginatedMaintenance.items.map(m => (
-                                        <tr key={m._id}>
-                                            <td><Link href={`/fleet/vehicles/${m.vehicleRef}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{m.vehiclePlate}</Link></td>
-                                            <td>{m.type}</td>
-                                            <td>{m.scheduleType === 'DATE' ? formatDate(m.plannedDate) : `${(m.plannedOdometer || 0).toLocaleString()} km`}</td>
-                                            <td><span className={`badge badge-${MAINTENANCE_STATUS_MAP[m.status]?.color}`}><span className="badge-dot" /> {MAINTENANCE_STATUS_MAP[m.status]?.label}</span></td>
-                                            <td>{getMaintenanceNextAction(m)}</td>
+                                filteredTotalMaintenance === 0 ? <tr><td colSpan={6}><div className="empty-state"><Wrench size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada jadwal maintenance</div></div></td></tr> :
+                                    items.map(item => (
+                                        <tr key={item._id}>
+                                            <td><Link href={`/fleet/vehicles/${item.vehicleRef}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{item.vehiclePlate}</Link></td>
+                                            <td>{item.type}</td>
+                                            <td>{item.scheduleType === 'DATE' ? formatDate(item.plannedDate) : `${(item.plannedOdometer || 0).toLocaleString()} km`}</td>
+                                            <td><span className={`badge badge-${MAINTENANCE_STATUS_MAP[item.status]?.color}`}><span className="badge-dot" /> {MAINTENANCE_STATUS_MAP[item.status]?.label}</span></td>
+                                            <td>{getMaintenanceNextAction(item)}</td>
                                             <td><div className="table-actions">
-                                                {m.status === 'SCHEDULED' && <><button className="table-action-btn" onClick={() => updateStatus(m._id, 'DONE')} disabled={updatingId === m._id}>{updatingId === m._id ? 'Menyimpan...' : 'Selesai'}</button><button className="table-action-btn" onClick={() => updateStatus(m._id, 'SKIPPED')} disabled={updatingId === m._id}>{updatingId === m._id ? 'Menyimpan...' : 'Lewati'}</button></>}
+                                                {item.status === 'SCHEDULED' && <><button className="table-action-btn" onClick={() => updateStatus(item._id, 'DONE')} disabled={updatingId === item._id}>{updatingId === item._id ? 'Menyimpan...' : 'Selesai'}</button><button className="table-action-btn" onClick={() => updateStatus(item._id, 'SKIPPED')} disabled={updatingId === item._id}>{updatingId === item._id ? 'Menyimpan...' : 'Lewati'}</button></>}
                                             </div></td>
                                         </tr>
                                     ))}
@@ -231,54 +266,54 @@ export default function MaintenancePage() {
                 </div>
                 {!loading && (
                     <div className="mobile-record-list">
-                        {paginatedMaintenance.totalItems === 0 ? (
+                        {filteredTotalMaintenance === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada jadwal maintenance</div>
                                 <div className="mobile-record-subtitle">Buat jadwal servis untuk mengingatkan perawatan armada.</div>
                             </div>
-                        ) : paginatedMaintenance.items.map(m => (
-                            <div key={m._id} className="mobile-record-card">
+                        ) : items.map(item => (
+                            <div key={item._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
-                                        <div className="mobile-record-title">{m.vehiclePlate || '-'}</div>
-                                        <div className="mobile-record-subtitle">{m.type}</div>
+                                        <div className="mobile-record-title">{item.vehiclePlate || '-'}</div>
+                                        <div className="mobile-record-subtitle">{item.type}</div>
                                     </div>
-                                    <span className={`badge badge-${MAINTENANCE_STATUS_MAP[m.status]?.color}`}>
-                                        <span className="badge-dot" /> {MAINTENANCE_STATUS_MAP[m.status]?.label}
+                                    <span className={`badge badge-${MAINTENANCE_STATUS_MAP[item.status]?.color}`}>
+                                        <span className="badge-dot" /> {MAINTENANCE_STATUS_MAP[item.status]?.label}
                                     </span>
                                 </div>
                                 <div className="mobile-record-meta">
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Jadwal</span>
-                                        <span className="mobile-record-value">{m.scheduleType === 'DATE' ? formatDate(m.plannedDate) : `${(m.plannedOdometer || 0).toLocaleString()} km`}</span>
+                                        <span className="mobile-record-value">{item.scheduleType === 'DATE' ? formatDate(item.plannedDate) : `${(item.plannedOdometer || 0).toLocaleString()} km`}</span>
                                     </div>
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Tindak Lanjut</span>
-                                        <span className="mobile-record-value">{getMaintenanceNextAction(m)}</span>
+                                        <span className="mobile-record-value">{getMaintenanceNextAction(item)}</span>
                                     </div>
-                                    {m.notes && (
+                                    {item.notes && (
                                         <div className="mobile-record-kv">
                                             <span className="mobile-record-label">Catatan</span>
-                                            <span className="mobile-record-value">{m.notes}</span>
+                                            <span className="mobile-record-value">{item.notes}</span>
                                         </div>
                                     )}
                                 </div>
-                                {m.status === 'SCHEDULED' && (
+                                {item.status === 'SCHEDULED' && (
                                     <div className="mobile-record-actions">
-                                        <button className="btn btn-secondary" onClick={() => window.location.assign(`/fleet/vehicles/${m.vehicleRef}`)}>
+                                        <button className="btn btn-secondary" onClick={() => window.location.assign(`/fleet/vehicles/${item.vehicleRef}`)}>
                                             Lihat Unit
                                         </button>
-                                        <button className="btn btn-secondary" onClick={() => updateStatus(m._id, 'DONE')} disabled={updatingId === m._id}>
-                                            {updatingId === m._id ? 'Menyimpan...' : 'Selesai'}
+                                        <button className="btn btn-secondary" onClick={() => updateStatus(item._id, 'DONE')} disabled={updatingId === item._id}>
+                                            {updatingId === item._id ? 'Menyimpan...' : 'Selesai'}
                                         </button>
-                                        <button className="btn btn-secondary" onClick={() => updateStatus(m._id, 'SKIPPED')} disabled={updatingId === m._id}>
-                                            {updatingId === m._id ? 'Menyimpan...' : 'Lewati'}
+                                        <button className="btn btn-secondary" onClick={() => updateStatus(item._id, 'SKIPPED')} disabled={updatingId === item._id}>
+                                            {updatingId === item._id ? 'Menyimpan...' : 'Lewati'}
                                         </button>
                                     </div>
                                 )}
-                                {m.status !== 'SCHEDULED' && (
+                                {item.status !== 'SCHEDULED' && (
                                     <div className="mobile-record-actions">
-                                        <button className="btn btn-secondary" onClick={() => window.location.assign(`/fleet/vehicles/${m.vehicleRef}`)}>
+                                        <button className="btn btn-secondary" onClick={() => window.location.assign(`/fleet/vehicles/${item.vehicleRef}`)}>
                                             Lihat Unit
                                         </button>
                                     </div>
@@ -287,11 +322,11 @@ export default function MaintenancePage() {
                         ))}
                     </div>
                 )}
-                {paginatedMaintenance.totalItems > 0 && (
+                {filteredTotalMaintenance > 0 && (
                     <AppPagination
-                        page={paginatedMaintenance.currentPage}
+                        page={page}
                         pageSize={DEFAULT_PAGE_SIZE}
-                        totalItems={paginatedMaintenance.totalItems}
+                        totalItems={filteredTotalMaintenance}
                         onPageChange={setPage}
                         info={({ startIndex, endIndex, totalItems }) => (
                             <>Menampilkan {startIndex}-{endIndex} dari {totalItems} jadwal maintenance</>
@@ -305,7 +340,7 @@ export default function MaintenancePage() {
                         <div className="modal-header"><h3 className="modal-title">Jadwalkan Maintenance</h3><button className="modal-close" onClick={closeScheduleModal} disabled={saving}><X size={20} /></button></div>
                         <div className="modal-body">
                             <div className="form-group"><label className="form-label">Kendaraan <span className="required">*</span></label>
-                                <select className="form-select" value={form.vehicleRef} onChange={e => setForm({ ...form, vehicleRef: e.target.value })} disabled={saving}><option value="">Pilih</option>{vehicles.map(v => <option key={v._id} value={v._id}>{v.plateNumber} - {v.brandModel}</option>)}</select></div>
+                                <select className="form-select" value={form.vehicleRef} onChange={e => setForm({ ...form, vehicleRef: e.target.value })} disabled={saving}><option value="">Pilih</option>{vehicles.map(vehicle => <option key={vehicle._id} value={vehicle._id}>{vehicle.plateNumber} - {vehicle.brandModel}</option>)}</select></div>
                             {selectedVehicle && (
                                 <div style={{ padding: '0.85rem 1rem', borderRadius: '0.75rem', background: 'var(--color-gray-50)', border: '1px solid var(--color-gray-200)', marginBottom: '1rem' }}>
                                     <div className="text-muted text-sm">Unit yang dipilih</div>

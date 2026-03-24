@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useToast } from '../../layout';
@@ -8,7 +8,7 @@ import { Plus, Search, Eye, AlertTriangle, X } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { formatDateTime, INCIDENT_STATUS_MAP, URGENCY_MAP, INCIDENT_TYPE_MAP } from '@/lib/utils';
-import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
+import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { Incident, Vehicle, DeliveryOrder } from '@/lib/types';
 
 type IncidentFormState = {
@@ -64,35 +64,84 @@ export default function IncidentsPage() {
     const [vehicleFilter, setVehicleFilter] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [page, setPage] = useState(1);
+    const [filteredTotalIncidents, setFilteredTotalIncidents] = useState(0);
+    const [openIncidentCount, setOpenIncidentCount] = useState(0);
+    const [progressIncidentCount, setProgressIncidentCount] = useState(0);
+    const [resolvedIncidentCount, setResolvedIncidentCount] = useState(0);
     const [showModal, setShowModal] = useState(false);
     const [saving, setSaving] = useState(false);
     const [prefillApplied, setPrefillApplied] = useState(false);
     const [form, setForm] = useState<IncidentFormState>(createDefaultIncidentForm());
 
     useEffect(() => {
-        const fetchEntity = async <T,>(url: string) => {
-            const res = await fetch(url);
-            const payload = await res.json();
-            if (!res.ok) {
-                throw new Error(payload.error || 'Gagal memuat insiden');
-            }
-            return payload.data as T;
-        };
+        setPage(1);
+    }, [search, vehicleFilter, statusFilter]);
 
-        Promise.all([
-            fetchEntity<Incident[]>('/api/data?entity=incidents'),
-            fetchEntity<Vehicle[]>('/api/data?entity=vehicles'),
-            fetchEntity<DeliveryOrder[]>('/api/data?entity=delivery-orders'),
-        ]).then(([incidentRows, vehicleRows, deliveryOrders]) => {
-            setItems(incidentRows || []);
-            setVehicles((vehicleRows || []).filter(vehicle => vehicle.status !== 'SOLD'));
-            setDos(deliveryOrders || []);
-        }).catch(error => {
-            addToast('error', error instanceof Error ? error.message : 'Gagal memuat insiden');
-        }).finally(() => {
-            setLoading(false);
+    const buildIncidentsQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
+        const params = new URLSearchParams({
+            entity: 'incidents',
+            page: String(targetPage),
+            pageSize: String(targetPageSize),
+            sortPreset: 'work-queue',
         });
-    }, [addToast]);
+
+        if (search.trim()) {
+            params.set('q', search.trim());
+            params.set('searchFields', 'incidentNumber,vehiclePlate,driverName,relatedDONumber,locationText');
+        }
+
+        const filterObj: Record<string, string> = {};
+        if (vehicleFilter) {
+            filterObj.vehicleRef = vehicleFilter;
+        }
+        if (statusFilter) {
+            filterObj.status = statusFilter;
+        }
+        if (Object.keys(filterObj).length > 0) {
+            params.set('filter', JSON.stringify(filterObj));
+        }
+
+        return params.toString();
+    }, [page, search, vehicleFilter, statusFilter]);
+
+    const loadIncidents = useCallback(async () => {
+        setLoading(true);
+        try {
+            const fetchEntity = async <T,>(url: string) => {
+                const res = await fetch(url);
+                const payload = await res.json();
+                if (!res.ok) {
+                    throw new Error(payload.error || 'Gagal memuat insiden');
+                }
+                return payload as { data: T; meta?: { total?: number } };
+            };
+
+            const [listPayload, vehiclePayload, doPayload, openPayload, progressPayload, resolvedPayload] = await Promise.all([
+                fetchEntity<Incident[]>(`/api/data?${buildIncidentsQuery()}`),
+                fetchEntity<Vehicle[]>('/api/data?entity=vehicles'),
+                fetchEntity<DeliveryOrder[]>('/api/data?entity=delivery-orders'),
+                fetchEntity<Incident[]>('/api/data?entity=incidents&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'OPEN' }))),
+                fetchEntity<Incident[]>('/api/data?entity=incidents&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'IN_PROGRESS' }))),
+                fetchEntity<Incident[]>('/api/data?entity=incidents&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'RESOLVED' }))),
+            ]);
+
+            setItems(listPayload.data || []);
+            setFilteredTotalIncidents(listPayload.meta?.total || 0);
+            setVehicles(((vehiclePayload.data || []) as Vehicle[]).filter(vehicle => vehicle.status !== 'SOLD'));
+            setDos(doPayload.data || []);
+            setOpenIncidentCount(openPayload.meta?.total || 0);
+            setProgressIncidentCount(progressPayload.meta?.total || 0);
+            setResolvedIncidentCount(resolvedPayload.meta?.total || 0);
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat insiden');
+        } finally {
+            setLoading(false);
+        }
+    }, [addToast, buildIncidentsQuery]);
+
+    useEffect(() => {
+        void loadIncidents();
+    }, [loadIncidents]);
 
     useEffect(() => {
         if (loading || prefillApplied) {
@@ -123,10 +172,6 @@ export default function IncidentsPage() {
         }
         setPrefillApplied(true);
     }, [dos, loading, prefillApplied, searchParams, vehicles]);
-
-    useEffect(() => {
-        setPage(1);
-    }, [search, vehicleFilter, statusFilter]);
 
     const handleRelatedDOChange = (deliveryOrderRef: string) => {
         const deliveryOrder = dos.find(item => item._id === deliveryOrderRef);
@@ -178,65 +223,39 @@ export default function IncidentsPage() {
         setForm(createDefaultIncidentForm(filteredVehicle));
     };
 
-    const filtered = items
-        .filter(item => {
-            const matchesSearch =
-                !search
-                || item.incidentNumber?.toLowerCase().includes(search.toLowerCase())
-                || item.vehiclePlate?.toLowerCase().includes(search.toLowerCase())
-                || item.driverName?.toLowerCase().includes(search.toLowerCase())
-                || item.relatedDONumber?.toLowerCase().includes(search.toLowerCase())
-                || item.locationText?.toLowerCase().includes(search.toLowerCase());
-            const matchesVehicle = !vehicleFilter || item.vehicleRef === vehicleFilter;
-            const matchesStatus = !statusFilter || item.status === statusFilter;
-            return matchesSearch && matchesVehicle && matchesStatus;
-        })
-        .sort((left, right) => {
-            const statusRank = (status: Incident['status']) => {
-                if (status === 'OPEN') return 0;
-                if (status === 'IN_PROGRESS') return 1;
-                if (status === 'RESOLVED') return 2;
-                return 3;
-            };
-            const byStatus = statusRank(left.status) - statusRank(right.status);
-            if (byStatus !== 0) return byStatus;
-            return right.dateTime.localeCompare(left.dateTime);
-        });
-    const paginatedIncidents = paginateItems(filtered, page, DEFAULT_PAGE_SIZE);
-
     const handleSave = async () => {
         if ((!form.vehicleRef && !form.relatedDeliveryOrderRef) || !form.description) {
             addToast('error', 'Kendaraan atau DO terkait serta deskripsi wajib');
             return;
         }
-        const veh = vehicles.find(v => v._id === form.vehicleRef);
-        const doData = dos.find(d => d._id === form.relatedDeliveryOrderRef);
+        const vehicle = vehicles.find(item => item._id === form.vehicleRef);
+        const doData = dos.find(item => item._id === form.relatedDeliveryOrderRef);
         setSaving(true);
         try {
             const res = await fetch('/api/data', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ entity: 'incidents', data: { ...form, vehiclePlate: veh?.plateNumber, relatedDONumber: doData?.doNumber } }),
+                body: JSON.stringify({ entity: 'incidents', data: { ...form, vehiclePlate: vehicle?.plateNumber, relatedDONumber: doData?.doNumber } }),
             });
             const result = await res.json();
             if (!res.ok) {
                 addToast('error', result.error || 'Gagal membuat insiden');
                 return;
             }
-            setItems(prev => [...prev, result.data]);
-            setForm(createDefaultIncidentForm(vehicleFilter ? vehicles.find(vehicle => vehicle._id === vehicleFilter) || null : null));
+            setForm(createDefaultIncidentForm(vehicleFilter ? vehicles.find(item => item._id === vehicleFilter) || null : null));
             addToast('success', `Insiden dilaporkan: ${result.data?.incidentNumber || ''}`);
             setShowModal(false);
+            if (page !== 1) {
+                setPage(1);
+            } else {
+                await loadIncidents();
+            }
         } catch {
             addToast('error', 'Gagal membuat insiden');
         } finally {
             setSaving(false);
         }
     };
-
-    const openIncidentCount = items.filter(item => item.status === 'OPEN').length;
-    const progressIncidentCount = items.filter(item => item.status === 'IN_PROGRESS').length;
-    const resolvedIncidentCount = items.filter(item => item.status === 'RESOLVED').length;
 
     return (
         <div>
@@ -279,8 +298,8 @@ export default function IncidentsPage() {
                         <thead><tr><th>No.</th><th>Waktu</th><th>Kendaraan</th><th>Supir</th><th>DO</th><th>Tipe</th><th>Lokasi</th><th>Urgency</th><th>Status</th><th>Tindak Lanjut</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {loading ? [1, 2].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                paginatedIncidents.totalItems === 0 ? <tr><td colSpan={11}><div className="empty-state"><AlertTriangle size={48} className="empty-state-icon" /><div className="empty-state-title">Tidak ada insiden</div></div></td></tr> :
-                                    paginatedIncidents.items.map(item => (
+                                filteredTotalIncidents === 0 ? <tr><td colSpan={11}><div className="empty-state"><AlertTriangle size={48} className="empty-state-icon" /><div className="empty-state-title">Tidak ada insiden</div></div></td></tr> :
+                                    items.map(item => (
                                         <tr key={item._id}>
                                             <td><Link href={`/fleet/incidents/${item._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{item.incidentNumber}</Link></td>
                                             <td className="text-muted" style={{ whiteSpace: 'nowrap' }}>{formatDateTime(item.dateTime)}</td>
@@ -300,12 +319,12 @@ export default function IncidentsPage() {
                 </div>
                 {!loading && (
                     <div className="mobile-record-list">
-                        {paginatedIncidents.totalItems === 0 ? (
+                        {filteredTotalIncidents === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Tidak ada insiden</div>
                                 <div className="mobile-record-subtitle">Laporan insiden kendaraan akan muncul di sini.</div>
                             </div>
-                        ) : paginatedIncidents.items.map(item => (
+                        ) : items.map(item => (
                             <div key={item._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
@@ -356,11 +375,11 @@ export default function IncidentsPage() {
                         ))}
                     </div>
                 )}
-                {paginatedIncidents.totalItems > 0 && (
+                {filteredTotalIncidents > 0 && (
                     <AppPagination
-                        page={paginatedIncidents.currentPage}
+                        page={page}
                         pageSize={DEFAULT_PAGE_SIZE}
-                        totalItems={paginatedIncidents.totalItems}
+                        totalItems={filteredTotalIncidents}
                         onPageChange={setPage}
                         info={({ startIndex, endIndex, totalItems }) => (
                             <>Menampilkan {startIndex}-{endIndex} dari {totalItems} insiden</>
@@ -376,7 +395,7 @@ export default function IncidentsPage() {
                         <div className="modal-body">
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Kendaraan <span className="required">*</span></label>
-                                    <select className="form-select" value={form.vehicleRef} onChange={e => handleVehicleChange(e.target.value)} disabled={Boolean(form.relatedDeliveryOrderRef)}><option value="">Pilih</option>{vehicles.map(v => <option key={v._id} value={v._id}>{v.plateNumber}</option>)}</select>
+                                    <select className="form-select" value={form.vehicleRef} onChange={e => handleVehicleChange(e.target.value)} disabled={Boolean(form.relatedDeliveryOrderRef)}><option value="">Pilih</option>{vehicles.map(vehicle => <option key={vehicle._id} value={vehicle._id}>{vehicle.plateNumber}</option>)}</select>
                                     {form.relatedDeliveryOrderRef && (
                                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
                                             Kendaraan mengikuti DO terkait. Hapus pilihan DO dulu jika ingin mengganti kendaraan.
@@ -402,11 +421,11 @@ export default function IncidentsPage() {
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Tipe Insiden</label>
                                     <select className="form-select" value={form.incidentType} onChange={e => setForm({ ...form, incidentType: e.target.value as Incident['incidentType'] })}>
-                                        {Object.entries(INCIDENT_TYPE_MAP).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                                        {Object.entries(INCIDENT_TYPE_MAP).map(([key, value]) => <option key={key} value={key}>{value}</option>)}
                                     </select></div>
                                 <div className="form-group"><label className="form-label">Urgency</label>
                                     <select className="form-select" value={form.urgency} onChange={e => setForm({ ...form, urgency: e.target.value as Incident['urgency'] })}>
-                                        {Object.entries(URGENCY_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                                        {Object.entries(URGENCY_MAP).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}
                                     </select></div>
                             </div>
                             <div className="form-row">

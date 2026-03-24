@@ -5,7 +5,7 @@ import { useToast } from '../../layout';
 import { Plus, Search, Disc3, CheckCircle, Warehouse, ExternalLink } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import { formatDate, TIRE_ASSET_STATUS_MAP } from '@/lib/utils';
-import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
+import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import {
     formatTireSlotLabel,
     INTERNAL_TIRE_SLOT_CODES,
@@ -52,10 +52,6 @@ const DEFAULT_FORM: TireFormState = {
     externalPlateNumber: '',
 };
 
-function statusFilterMatch(event: TireEvent, filter: 'all' | TireAssetStatus) {
-    return filter === 'all' || resolveTireAssetStatus(event) === filter;
-}
-
 export default function TiresPage() {
     const { addToast } = useToast();
     const [events, setEvents] = useState<TireEvent[]>([]);
@@ -65,43 +61,83 @@ export default function TiresPage() {
     const [filterVehicle, setFilterVehicle] = useState('');
     const [filterStatus, setFilterStatus] = useState<'all' | TireAssetStatus>('all');
     const [page, setPage] = useState(1);
+    const [filteredTotalTires, setFilteredTotalTires] = useState(0);
+    const [mountedCount, setMountedCount] = useState(0);
+    const [spareCount, setSpareCount] = useState(0);
+    const [warehouseCount, setWarehouseCount] = useState(0);
+    const [loanedCount, setLoanedCount] = useState(0);
     const [showModal, setShowModal] = useState(false);
     const [editTarget, setEditTarget] = useState<TireEvent | null>(null);
     const [saving, setSaving] = useState(false);
     const [form, setForm] = useState<TireFormState>(DEFAULT_FORM);
 
-    const loadData = useCallback(async () => {
-        const fetchEntity = async <T,>(url: string) => {
-            const res = await fetch(url);
-            const payload = await res.json();
-            if (!res.ok) {
-                throw new Error(payload.error || 'Gagal memuat data ban');
-            }
-            return payload.data as T;
-        };
+    useEffect(() => {
+        setPage(1);
+    }, [search, filterVehicle, filterStatus]);
 
+    const buildTiresQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
+        const params = new URLSearchParams({
+            entity: 'tire-events',
+            page: String(targetPage),
+            pageSize: String(targetPageSize),
+        });
+
+        if (search.trim()) {
+            params.set('q', search.trim());
+            params.set('searchFields', 'tireCode,tireBrand,tireSize,vehiclePlate,notes,externalPartyName,externalPlateNumber,slotCode,slotLabel,posisi');
+        }
+
+        const filterObj: Record<string, string> = {};
+        if (filterVehicle) {
+            filterObj.vehicleRef = filterVehicle;
+        }
+        if (filterStatus !== 'all') {
+            filterObj.status = filterStatus;
+        }
+        if (Object.keys(filterObj).length > 0) {
+            params.set('filter', JSON.stringify(filterObj));
+        }
+
+        return params.toString();
+    }, [filterStatus, filterVehicle, page, search]);
+
+    const loadData = useCallback(async () => {
         setLoading(true);
         try {
-            const [tireRows, vehicleRows] = await Promise.all([
-                fetchEntity<TireEvent[]>('/api/data?entity=tire-events'),
+            const fetchEntity = async <T,>(url: string) => {
+                const res = await fetch(url);
+                const payload = await res.json();
+                if (!res.ok) {
+                    throw new Error(payload.error || 'Gagal memuat data ban');
+                }
+                return payload as { data: T; meta?: { total?: number } };
+            };
+
+            const [tirePayload, vehiclePayload, mountedPayload, sparePayload, warehousePayload, loanedPayload] = await Promise.all([
+                fetchEntity<TireEvent[]>(`/api/data?${buildTiresQuery()}`),
                 fetchEntity<Vehicle[]>('/api/data?entity=vehicles'),
+                fetchEntity<TireEvent[]>('/api/data?entity=tire-events&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'IN_USE' }))),
+                fetchEntity<TireEvent[]>('/api/data?entity=tire-events&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'SPARE' }))),
+                fetchEntity<TireEvent[]>('/api/data?entity=tire-events&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'IN_WAREHOUSE' }))),
+                fetchEntity<TireEvent[]>('/api/data?entity=tire-events&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'LOANED_OUT' }))),
             ]);
-            setEvents(tireRows || []);
-            setVehicles(vehicleRows || []);
+            setEvents(tirePayload.data || []);
+            setFilteredTotalTires(tirePayload.meta?.total || 0);
+            setVehicles(vehiclePayload.data || []);
+            setMountedCount(mountedPayload.meta?.total || 0);
+            setSpareCount(sparePayload.meta?.total || 0);
+            setWarehouseCount(warehousePayload.meta?.total || 0);
+            setLoanedCount(loanedPayload.meta?.total || 0);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat data ban');
         } finally {
             setLoading(false);
         }
-    }, [addToast]);
+    }, [addToast, buildTiresQuery]);
 
     useEffect(() => {
         void loadData();
     }, [loadData]);
-
-    useEffect(() => {
-        setPage(1);
-    }, [search, filterVehicle, filterStatus]);
 
     const selectableVehicles = vehicles.filter(vehicle => vehicle.status !== 'SOLD' || vehicle._id === editTarget?.vehicleRef);
     const internalSlots = INTERNAL_TIRE_SLOT_CODES.filter(code => form.status === 'SPARE' ? code.startsWith('SP') : !code.startsWith('SP'));
@@ -202,34 +238,17 @@ export default function TiresPage() {
             }
             setShowModal(false);
             resetForm();
-            await loadData();
+            if (page !== 1) {
+                setPage(1);
+            } else {
+                await loadData();
+            }
         } catch {
             addToast('error', 'Gagal menyimpan data ban');
         } finally {
             setSaving(false);
         }
     };
-
-    const filtered = resolvedEvents.filter(event => {
-        const text = [
-            event.tireCodeLabel,
-            event.tireBrand,
-            event.tireSize,
-            event.vehiclePlate,
-            event.placementLabel,
-            event.externalPartyName,
-            event.externalPlateNumber,
-        ].filter(Boolean).join(' ').toLowerCase();
-        const matchSearch = !search || text.includes(search.toLowerCase());
-        const matchVehicle = !filterVehicle || event.vehicleRef === filterVehicle;
-        return matchSearch && matchVehicle && statusFilterMatch(event, filterStatus);
-    });
-    const paginatedTires = paginateItems(filtered, page, DEFAULT_PAGE_SIZE);
-
-    const mountedCount = resolvedEvents.filter(event => event.status === 'IN_USE').length;
-    const spareCount = resolvedEvents.filter(event => event.status === 'SPARE').length;
-    const warehouseCount = resolvedEvents.filter(event => event.status === 'IN_WAREHOUSE').length;
-    const loanedCount = resolvedEvents.filter(event => event.status === 'LOANED_OUT').length;
 
     return (
         <div>
@@ -290,7 +309,7 @@ export default function TiresPage() {
                         </thead>
                         <tbody>
                             {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                paginatedTires.totalItems === 0 ? (
+                                filteredTotalTires === 0 ? (
                                     <tr><td colSpan={7}>
                                         <div className="empty-state">
                                             <Disc3 size={48} className="empty-state-icon" />
@@ -298,7 +317,7 @@ export default function TiresPage() {
                                             <div className="empty-state-text">Tambahkan ban per kode unik agar perpindahan antar unit dan pinjam keluar bisa dilacak.</div>
                                         </div>
                                     </td></tr>
-                                ) : paginatedTires.items.map(event => (
+                                ) : resolvedEvents.map(event => (
                                     <tr key={event._id}>
                                         <td>
                                             <div className="font-medium">{event.tireCodeLabel}</div>
@@ -329,17 +348,17 @@ export default function TiresPage() {
                 </div>
                 {!loading && (
                     <div className="mobile-record-list">
-                        {paginatedTires.totalItems === 0 ? (
+                        {filteredTotalTires === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada ban tercatat</div>
                                 <div className="mobile-record-subtitle">Tambahkan ban per kode unik agar perpindahan antar unit dan pinjam keluar bisa dilacak.</div>
                             </div>
-                        ) : paginatedTires.items.map(event => (
+                        ) : resolvedEvents.map(event => (
                             <div key={event._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
                                         <div className="mobile-record-title">{event.tireCodeLabel}</div>
-                                        <div className="mobile-record-subtitle">{event.tireBrand} • {event.tireSize}</div>
+                                        <div className="mobile-record-subtitle">{event.tireBrand} | {event.tireSize}</div>
                                     </div>
                                     <span className={`badge badge-${TIRE_ASSET_STATUS_MAP[event.status]?.color || 'gray'}`}>
                                         <span className="badge-dot" /> {TIRE_ASSET_STATUS_MAP[event.status]?.label || event.status}
@@ -374,11 +393,11 @@ export default function TiresPage() {
                         ))}
                     </div>
                 )}
-                {paginatedTires.totalItems > 0 && (
+                {filteredTotalTires > 0 && (
                     <AppPagination
-                        page={paginatedTires.currentPage}
+                        page={page}
                         pageSize={DEFAULT_PAGE_SIZE}
-                        totalItems={paginatedTires.totalItems}
+                        totalItems={filteredTotalTires}
                         onPageChange={setPage}
                         info={({ startIndex, endIndex, totalItems }) => (
                             <>
@@ -418,19 +437,20 @@ export default function TiresPage() {
                                         value={form.holderType}
                                         onChange={e => {
                                             const nextHolderType = e.target.value as TireHolderType;
-                                            updateForm('holderType', nextHolderType);
-                                            if (nextHolderType === 'EXTERNAL_VEHICLE') {
-                                                updateForm('status', 'LOANED_OUT');
-                                                updateForm('vehicleRef', '');
-                                                updateForm('slotCode', '');
-                                            } else if (nextHolderType === 'WAREHOUSE') {
-                                                updateForm('status', 'IN_WAREHOUSE');
-                                                updateForm('vehicleRef', '');
-                                                updateForm('slotCode', '');
-                                            } else {
-                                                updateForm('status', 'IN_USE');
-                                                updateForm('slotCode', '1L');
-                                            }
+                                            const nextStatus = nextHolderType === 'WAREHOUSE'
+                                                ? 'IN_WAREHOUSE'
+                                                : nextHolderType === 'EXTERNAL_VEHICLE'
+                                                    ? 'LOANED_OUT'
+                                                    : (form.status === 'IN_WAREHOUSE' || form.status === 'LOANED_OUT' ? 'IN_USE' : form.status);
+                                            setForm(prev => ({
+                                                ...prev,
+                                                holderType: nextHolderType,
+                                                status: nextStatus,
+                                                vehicleRef: nextHolderType === 'INTERNAL_VEHICLE' ? prev.vehicleRef : '',
+                                                slotCode: nextHolderType === 'INTERNAL_VEHICLE' ? prev.slotCode : '',
+                                                externalPartyName: nextHolderType === 'EXTERNAL_VEHICLE' ? prev.externalPartyName : '',
+                                                externalPlateNumber: nextHolderType === 'EXTERNAL_VEHICLE' ? prev.externalPlateNumber : '',
+                                            }));
                                         }}
                                         disabled={saving}
                                     >
@@ -439,14 +459,29 @@ export default function TiresPage() {
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Status</label>
-                                    <select className="form-select" value={form.status} onChange={e => updateForm('status', e.target.value as TireAssetStatus)} disabled={saving}>
-                                        {TIRE_STATUS_OPTIONS
-                                            .filter(option => {
-                                                if (form.holderType === 'INTERNAL_VEHICLE') return option.value === 'IN_USE' || option.value === 'SPARE';
-                                                if (form.holderType === 'EXTERNAL_VEHICLE') return option.value === 'LOANED_OUT';
-                                                return option.value === 'IN_WAREHOUSE' || option.value === 'SCRAPPED';
-                                            })
-                                            .map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                    <select
+                                        className="form-select"
+                                        value={form.status}
+                                        onChange={e => {
+                                            const nextStatus = e.target.value as TireAssetStatus;
+                                            setForm(prev => ({
+                                                ...prev,
+                                                status: nextStatus,
+                                                holderType: nextStatus === 'IN_WAREHOUSE'
+                                                    ? 'WAREHOUSE'
+                                                    : nextStatus === 'LOANED_OUT'
+                                                        ? 'EXTERNAL_VEHICLE'
+                                                        : 'INTERNAL_VEHICLE',
+                                                slotCode: nextStatus === 'IN_USE'
+                                                    ? (prev.slotCode && !prev.slotCode.startsWith('SP') ? prev.slotCode : '1L')
+                                                    : nextStatus === 'SPARE'
+                                                        ? (prev.slotCode && prev.slotCode.startsWith('SP') ? prev.slotCode : 'SP1')
+                                                        : '',
+                                            }));
+                                        }}
+                                        disabled={saving}
+                                    >
+                                        {TIRE_STATUS_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                     </select>
                                 </div>
                             </div>
@@ -461,10 +496,9 @@ export default function TiresPage() {
                                         </select>
                                     </div>
                                     <div className="form-group">
-                                        <label className="form-label">Slot Posisi</label>
+                                        <label className="form-label">Slot Ban</label>
                                         <select className="form-select" value={form.slotCode} onChange={e => updateForm('slotCode', e.target.value)} disabled={saving}>
-                                            <option value="">Pilih slot</option>
-                                            {internalSlots.map(slotCode => <option key={slotCode} value={slotCode}>{slotCode} - {formatTireSlotLabel(slotCode)}</option>)}
+                                            {internalSlots.map(code => <option key={code} value={code}>{code} - {formatTireSlotLabel(code)}</option>)}
                                         </select>
                                     </div>
                                 </div>
@@ -473,24 +507,24 @@ export default function TiresPage() {
                             {form.holderType === 'EXTERNAL_VEHICLE' && (
                                 <div className="form-row">
                                     <div className="form-group">
-                                        <label className="form-label">Nama Pihak / Truk Luar</label>
-                                        <input className="form-input" value={form.externalPartyName} onChange={e => updateForm('externalPartyName', e.target.value)} placeholder="cth: CV Transport Jaya" disabled={saving} />
+                                        <label className="form-label">Nama Pihak Luar</label>
+                                        <input className="form-input" value={form.externalPartyName} onChange={e => updateForm('externalPartyName', e.target.value)} disabled={saving} />
                                     </div>
                                     <div className="form-group">
-                                        <label className="form-label">Plat Luar</label>
-                                        <input className="form-input" value={form.externalPlateNumber} onChange={e => updateForm('externalPlateNumber', e.target.value.toUpperCase())} placeholder="cth: B 9123 XYZ" disabled={saving} />
+                                        <label className="form-label">Plat / Identitas Unit</label>
+                                        <input className="form-input" value={form.externalPlateNumber} onChange={e => updateForm('externalPlateNumber', e.target.value.toUpperCase())} disabled={saving} />
                                     </div>
                                 </div>
                             )}
 
                             <div className="form-row">
                                 <div className="form-group">
-                                    <label className="form-label">Merk / Tipe Ban</label>
-                                    <input className="form-input" value={form.tireBrand} onChange={e => updateForm('tireBrand', e.target.value)} placeholder="cth: Bridgestone R150" disabled={saving} />
+                                    <label className="form-label">Merk / Model</label>
+                                    <input className="form-input" value={form.tireBrand} onChange={e => updateForm('tireBrand', e.target.value)} disabled={saving} />
                                 </div>
                                 <div className="form-group">
-                                    <label className="form-label">Ukuran Ban</label>
-                                    <input className="form-input" value={form.tireSize} onChange={e => updateForm('tireSize', e.target.value)} placeholder="cth: 11.00-20 / 295-80R22.5" disabled={saving} />
+                                    <label className="form-label">Ukuran</label>
+                                    <input className="form-input" value={form.tireSize} onChange={e => updateForm('tireSize', e.target.value)} placeholder="295/80R22.5" disabled={saving} />
                                 </div>
                             </div>
 
@@ -500,28 +534,14 @@ export default function TiresPage() {
                                     <input type="date" className="form-input" value={form.installDate} onChange={e => updateForm('installDate', e.target.value)} disabled={saving} />
                                 </div>
                                 <div className="form-group">
-                                        <label className="form-label">Preview Lokasi</label>
-                                        <div className="detail-value" style={{ minHeight: 42, display: 'flex', alignItems: 'center' }}>
-                                        {resolveTirePlacementLabel({
-                                            holderType: form.holderType,
-                                            status: form.status,
-                                            vehiclePlate: vehicles.find(item => item._id === form.vehicleRef)?.plateNumber,
-                                            slotCode: form.slotCode,
-                                            externalPartyName: form.externalPartyName,
-                                            externalPlateNumber: form.externalPlateNumber,
-                                        })}
-                                        </div>
-                                    </div>
+                                    <label className="form-label">Catatan</label>
+                                    <input className="form-input" value={form.notes} onChange={e => updateForm('notes', e.target.value)} disabled={saving} />
                                 </div>
-
-                            <div className="form-group">
-                                <label className="form-label">Catatan</label>
-                                <textarea className="form-textarea" rows={3} value={form.notes} onChange={e => updateForm('notes', e.target.value)} placeholder="Catatan perpindahan, pinjam keluar, kondisi ban, dll." disabled={saving} />
                             </div>
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setShowModal(false)} disabled={saving}>Batal</button>
-                            <button className="btn btn-primary" onClick={handleSave} disabled={saving}><Plus size={16} /> {saving ? 'Menyimpan...' : editTarget ? 'Simpan Perubahan' : 'Simpan'}</button>
+                            <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'Menyimpan...' : 'Simpan'}</button>
                         </div>
                     </div>
                 </div>

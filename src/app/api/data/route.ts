@@ -182,6 +182,14 @@ function getListSortClause(entity: string, sortPreset?: string | null) {
         return 'select(status == "ISSUED" => 0, status == "DRAFT" => 1, status == "SETTLED" => 2, 99) asc, issuedDate desc';
     }
 
+    if (entity === 'maintenances' && sortPreset === 'work-queue') {
+        return 'select(status == "SCHEDULED" => 0, status == "DONE" => 1, status == "SKIPPED" => 2, 99) asc, coalesce(plannedDate, "9999-12-31") asc, plannedOdometer asc, _createdAt desc';
+    }
+
+    if (entity === 'incidents' && sortPreset === 'work-queue') {
+        return 'select(status == "OPEN" => 0, status == "IN_PROGRESS" => 1, status == "RESOLVED" => 2, status == "CLOSED" => 3, 99) asc, dateTime desc';
+    }
+
     return undefined;
 }
 
