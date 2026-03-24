@@ -5,6 +5,12 @@ import { useParams } from 'next/navigation';
 import { useToast } from '../../../layout';
 import { Printer, Save } from 'lucide-react';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
+import { fetchAdminData } from '@/lib/api/admin-client';
+import {
+    buildIncidentPrintHtml,
+    getAvailableIncidentStatuses,
+    sortIncidentActionLogs,
+} from '@/lib/fleet-incident-detail-support';
 import { formatDateTime, INCIDENT_STATUS_MAP, URGENCY_MAP, INCIDENT_TYPE_MAP } from '@/lib/utils';
 import type { Incident, IncidentActionLog } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
@@ -22,25 +28,16 @@ export default function IncidentDetailPage() {
     const [savingStatus, setSavingStatus] = useState(false);
 
     const loadIncidentDetail = useCallback(async () => {
-        const fetchEntity = async <T,>(url: string, fallbackMessage: string) => {
-            const res = await fetch(url);
-            const payload = await res.json();
-            if (!res.ok) {
-                throw new Error(payload.error || fallbackMessage);
-            }
-            return payload.data as T;
-        };
-
         setLoading(true);
         try {
             const filter = encodeURIComponent(JSON.stringify({ incidentRef: incidentId }));
             const [incidentData, actionLogs] = await Promise.all([
-                fetchEntity<Incident | null>(`/api/data?entity=incidents&id=${incidentId}`, 'Gagal memuat insiden'),
-                fetchEntity<IncidentActionLog[]>(`/api/data?entity=incident-action-logs&filter=${filter}`, 'Gagal memuat log insiden'),
+                fetchAdminData<Incident | null>(`/api/data?entity=incidents&id=${incidentId}`, 'Gagal memuat insiden'),
+                fetchAdminData<IncidentActionLog[]>(`/api/data?entity=incident-action-logs&filter=${filter}`, 'Gagal memuat log insiden'),
             ]);
 
             setIncident(incidentData);
-            setLogs((actionLogs || []).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()));
+            setLogs(sortIncidentActionLogs(actionLogs || []));
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail insiden');
         } finally {
@@ -90,8 +87,7 @@ export default function IncidentDetailPage() {
     if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 200 }} /></div>;
     if (!incident) return <div className="empty-state"><div className="empty-state-title">Insiden tidak ditemukan</div></div>;
 
-    const nextStatuses: Record<string, string[]> = { OPEN: ['IN_PROGRESS'], IN_PROGRESS: ['RESOLVED'], RESOLVED: ['CLOSED'] };
-    const available = nextStatuses[incident.status] || [];
+    const available = getAvailableIncidentStatuses(incident.status);
     const handlePrint = async () => {
         try {
             const company = await fetchCompanyProfile();
@@ -99,62 +95,7 @@ export default function IncidentDetailPage() {
                 title: 'Laporan Insiden Armada',
                 subtitle: incident.incidentNumber,
                 company,
-                bodyHtml: `
-                    <div style="margin-bottom:16px">
-                        <table style="width:100%;border:none"><tbody>
-                            <tr>
-                                <td style="border:none;padding:2px 8px;width:140px;font-weight:600">No. Insiden</td>
-                                <td style="border:none;padding:2px 8px">${incident.incidentNumber}</td>
-                                <td style="border:none;padding:2px 8px;width:140px;font-weight:600">Waktu</td>
-                                <td style="border:none;padding:2px 8px">${formatDateTime(incident.dateTime)}</td>
-                            </tr>
-                            <tr>
-                                <td style="border:none;padding:2px 8px;font-weight:600">Tipe</td>
-                                <td style="border:none;padding:2px 8px">${INCIDENT_TYPE_MAP[incident.incidentType] || incident.incidentType}</td>
-                                <td style="border:none;padding:2px 8px;font-weight:600">Status</td>
-                                <td style="border:none;padding:2px 8px">${INCIDENT_STATUS_MAP[incident.status]?.label || incident.status}</td>
-                            </tr>
-                            <tr>
-                                <td style="border:none;padding:2px 8px;font-weight:600">Urgensi</td>
-                                <td style="border:none;padding:2px 8px">${URGENCY_MAP[incident.urgency]?.label || incident.urgency}</td>
-                                <td style="border:none;padding:2px 8px;font-weight:600">Kendaraan</td>
-                                <td style="border:none;padding:2px 8px">${incident.vehiclePlate || '-'}</td>
-                            </tr>
-                            <tr>
-                                <td style="border:none;padding:2px 8px;font-weight:600">Driver</td>
-                                <td style="border:none;padding:2px 8px">${incident.driverName || '-'}</td>
-                                <td style="border:none;padding:2px 8px;font-weight:600">Odometer</td>
-                                <td style="border:none;padding:2px 8px">${incident.odometer?.toLocaleString('id-ID') || '-'} km</td>
-                            </tr>
-                            <tr>
-                                <td style="border:none;padding:2px 8px;font-weight:600">Lokasi</td>
-                                <td colspan="3" style="border:none;padding:2px 8px">${incident.locationText || '-'}</td>
-                            </tr>
-                            ${incident.relatedDONumber ? `<tr><td style="border:none;padding:2px 8px;font-weight:600">DO Terkait</td><td colspan="3" style="border:none;padding:2px 8px">${incident.relatedDONumber}</td></tr>` : ''}
-                        </tbody></table>
-                    </div>
-                    <div class="section-title">Kronologi</div>
-                    <div style="line-height:1.7;color:#334155">${incident.description || '-'}</div>
-                    <div class="section-title">Timeline Penanganan</div>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Waktu</th>
-                                <th>Catatan</th>
-                                <th>Petugas</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${logs.length > 0 ? logs.map((item) => `
-                                <tr>
-                                    <td>${formatDateTime(item.timestamp)}</td>
-                                    <td>${item.note || '-'}</td>
-                                    <td>${item.userName || '-'}</td>
-                                </tr>
-                            `).join('') : '<tr><td colspan="3" class="c">Belum ada log penanganan</td></tr>'}
-                        </tbody>
-                    </table>
-                `,
+                bodyHtml: buildIncidentPrintHtml(incident, logs),
             });
         } catch {
             addToast('error', 'Gagal menyiapkan dokumen cetak');

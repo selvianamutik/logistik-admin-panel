@@ -6,6 +6,13 @@ import { Save } from 'lucide-react';
 
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
+import { fetchAdminData } from '@/lib/api/admin-client';
+import {
+    buildVehicleBasePayload,
+    EMPTY_VEHICLE_FORM,
+    getSelectableVehicleServiceOptions,
+    type VehicleForm,
+} from '@/lib/fleet-vehicle-page-support';
 import { useApp, useToast } from '../../../layout';
 import type { Service } from '@/lib/types';
 
@@ -15,31 +22,14 @@ export default function VehicleNewPage() {
     const { addToast } = useToast();
     const [saving, setSaving] = useState(false);
     const [services, setServices] = useState<Service[]>([]);
-    const [form, setForm] = useState({
-        unitCode: '',
-        plateNumber: '',
-        vehicleType: 'Truck',
-        brandModel: '',
-        year: new Date().getFullYear(),
-        capacityKg: 0,
-        capacityVolume: 0,
-        serviceRef: '',
-        chassisNumber: '',
-        engineNumber: '',
-        base: '',
-        notes: '',
-    });
+    const [form, setForm] = useState<VehicleForm>(EMPTY_VEHICLE_FORM);
     const isOwner = user?.role === 'OWNER';
 
     useEffect(() => {
         const loadServices = async () => {
             try {
-                const res = await fetch('/api/data?entity=services');
-                const payload = await res.json();
-                if (!res.ok) {
-                    throw new Error(payload.error || 'Gagal memuat kategori armada');
-                }
-                setServices((payload.data || []).filter((service: Service) => service.active !== false));
+                const serviceRows = await fetchAdminData<Service[]>('/api/data?entity=services', 'Gagal memuat kategori armada');
+                setServices(getSelectableVehicleServiceOptions(serviceRows || []));
             } catch (error) {
                 addToast('error', error instanceof Error ? error.message : 'Gagal memuat kategori armada');
             }
@@ -61,19 +51,9 @@ export default function VehicleNewPage() {
         setSaving(true);
         try {
             const payload = {
-                unitCode: form.unitCode,
-                plateNumber: form.plateNumber,
-                vehicleType: form.vehicleType,
-                brandModel: form.brandModel,
-                year: form.year,
-                capacityKg: form.capacityKg,
-                capacityVolume: form.capacityVolume,
-                serviceRef: form.serviceRef || undefined,
-                base: form.base,
-                notes: form.notes,
+                ...buildVehicleBasePayload(form, isOwner),
                 status: 'ACTIVE',
                 lastOdometer: 0,
-                ...(isOwner ? { chassisNumber: form.chassisNumber, engineNumber: form.engineNumber } : {}),
             };
             const res = await fetch('/api/data', {
                 method: 'POST',

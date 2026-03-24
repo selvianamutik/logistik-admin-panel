@@ -108,6 +108,26 @@ export function getAvailableVehicleServiceOptions(params: {
     );
 }
 
+export function getSelectableVehicleServiceOptions(services: Service[], currentServiceRef = '') {
+    return services.filter(service => service.active !== false || service._id === currentServiceRef);
+}
+
+export function buildVehicleBasePayload(form: VehicleForm, isOwner: boolean) {
+    return {
+        unitCode: form.unitCode,
+        plateNumber: form.plateNumber,
+        vehicleType: form.vehicleType,
+        brandModel: form.brandModel,
+        year: form.year,
+        capacityKg: form.capacityKg,
+        capacityVolume: form.capacityVolume,
+        serviceRef: form.serviceRef || undefined,
+        base: form.base,
+        notes: form.notes,
+        ...(isOwner ? { chassisNumber: form.chassisNumber, engineNumber: form.engineNumber } : {}),
+    };
+}
+
 export function buildVehiclePrintHtml(vehicles: Vehicle[], services: Service[]) {
     return `
         <table>

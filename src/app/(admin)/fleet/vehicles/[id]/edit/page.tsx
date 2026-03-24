@@ -6,8 +6,11 @@ import { Save } from 'lucide-react';
 
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
+import { fetchAdminData } from '@/lib/api/admin-client';
 import {
+    buildVehicleBasePayload,
     EMPTY_VEHICLE_FORM,
+    getSelectableVehicleServiceOptions,
     getVehicleSections,
     mapVehicleToForm,
     type VehicleForm,
@@ -32,18 +35,9 @@ export default function VehicleEditPage() {
     useEffect(() => {
         const loadVehicle = async () => {
             try {
-                const fetchEntity = async <T,>(url: string) => {
-                    const res = await fetch(url);
-                    const payload = await res.json();
-                    if (!res.ok) {
-                        throw new Error(payload.error || 'Kendaraan tidak ditemukan');
-                    }
-                    return payload.data as T;
-                };
-
                 const [vehicle, serviceRows] = await Promise.all([
-                    fetchEntity<Vehicle | null>(`/api/data?entity=vehicles&id=${vehicleId}`),
-                    fetchEntity<Service[]>('/api/data?entity=services'),
+                    fetchAdminData<Vehicle | null>(`/api/data?entity=vehicles&id=${vehicleId}`, 'Kendaraan tidak ditemukan'),
+                    fetchAdminData<Service[]>('/api/data?entity=services', 'Gagal memuat kategori armada'),
                 ]);
 
                 if (!vehicle) {
@@ -51,7 +45,7 @@ export default function VehicleEditPage() {
                 }
 
                 setForm(mapVehicleToForm(vehicle));
-                setServices((serviceRows || []).filter(service => service.active !== false || service._id === vehicle.serviceRef));
+                setServices(getSelectableVehicleServiceOptions(serviceRows || [], vehicle.serviceRef));
             } catch (error) {
                 addToast('error', error instanceof Error ? error.message : 'Gagal memuat kendaraan');
                 router.push('/fleet/vehicles');
@@ -77,20 +71,10 @@ export default function VehicleEditPage() {
         setSaving(true);
         try {
             const updates = {
-                unitCode: form.unitCode,
-                plateNumber: form.plateNumber,
-                vehicleType: form.vehicleType,
-                brandModel: form.brandModel,
-                year: form.year,
-                capacityKg: form.capacityKg,
-                capacityVolume: form.capacityVolume,
-                serviceRef: form.serviceRef || undefined,
-                base: form.base,
-                notes: form.notes,
+                ...buildVehicleBasePayload(form, isOwner),
                 status: form.status,
                 lastOdometer: form.lastOdometer,
                 lastOdometerAt: form.lastOdometerAt || undefined,
-                ...(isOwner ? { chassisNumber: form.chassisNumber, engineNumber: form.engineNumber } : {}),
             };
 
             const res = await fetch('/api/data', {
