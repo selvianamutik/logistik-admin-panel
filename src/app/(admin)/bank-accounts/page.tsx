@@ -15,7 +15,7 @@ import AppPagination from "@/components/AppPagination";
 import CurrencyInput from "@/components/CurrencyInput";
 import { exportToExcel } from "@/lib/export";
 import { openBrandedPrint } from "@/lib/print";
-import { DEFAULT_PAGE_SIZE, paginateItems } from "@/lib/pagination";
+import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import type { BankAccount, CompanyProfile } from "@/lib/types";
 import { useToast } from "../layout";
 
@@ -145,6 +145,11 @@ export default function BankAccountsPage() {
   const [company, setCompany] = useState<CompanyProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const [totalAccounts, setTotalAccounts] = useState(0);
+  const [totalBalance, setTotalBalance] = useState(0);
+  const [totalInitial, setTotalInitial] = useState(0);
+  const [cashBalance, setCashBalance] = useState(0);
+  const [bankBalance, setBankBalance] = useState(0);
   const [showModal, setShowModal] = useState(false);
   const [showTransfer, setShowTransfer] = useState(false);
   const [savingAccount, setSavingAccount] = useState(false);
@@ -176,23 +181,74 @@ export default function BankAccountsPage() {
     }).format(n);
   const fmtN = (n: number) => new Intl.NumberFormat("id-ID").format(n);
 
+  const buildAccountsQuery = useCallback(
+    (targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) =>
+      new URLSearchParams({
+        entity: "bank-accounts",
+        page: String(targetPage),
+        pageSize: String(targetPageSize),
+        sortField: "bankName",
+        sortDir: "asc",
+        filter: JSON.stringify({ active: true }),
+      }).toString(),
+    [page],
+  );
+
+  const fetchAllAccounts = useCallback(async () => {
+    const pageSize = 200;
+    let currentPage = 1;
+    let total = 0;
+    const allItems: BankAccount[] = [];
+
+    do {
+      const res = await fetch(`/api/data?${buildAccountsQuery(currentPage, pageSize)}`);
+      const payload = await res.json();
+      if (!res.ok) {
+        throw new Error(payload.error || "Gagal memuat rekening bank");
+      }
+      const nextItems = (payload.data || []) as BankAccount[];
+      total = payload.meta?.total || nextItems.length;
+      allItems.push(...nextItems);
+      if (nextItems.length === 0) break;
+      currentPage += 1;
+    } while (allItems.length < total);
+
+    return allItems.sort((a, b) => {
+      const aCash = isCashAccount(a) ? 0 : 1;
+      const bCash = isCashAccount(b) ? 0 : 1;
+      if (aCash !== bCash) return aCash - bCash;
+      return (a.bankName || "").localeCompare(b.bankName || "");
+    });
+  }, [buildAccountsQuery]);
+
   const loadAccounts = useCallback(async () => {
-    const res = await fetch("/api/data?entity=bank-accounts");
-    const payload = await res.json();
-    if (!res.ok) {
-      throw new Error(payload.error || "Gagal memuat rekening bank");
+    const [listRes, summaryRes] = await Promise.all([
+      fetch(`/api/data?${buildAccountsQuery()}`),
+      fetch("/api/data?entity=bank-accounts-summary"),
+    ]);
+    const [listPayload, summaryPayload] = await Promise.all([
+      listRes.json(),
+      summaryRes.json(),
+    ]);
+    if (!listRes.ok) {
+      throw new Error(listPayload.error || "Gagal memuat rekening bank");
     }
-    setAccounts(
-      (payload.data || []).filter(
-        (account: BankAccount) => account.active !== false,
-      ).sort((a: BankAccount, b: BankAccount) => {
-        const aCash = isCashAccount(a) ? 0 : 1;
-        const bCash = isCashAccount(b) ? 0 : 1;
-        if (aCash !== bCash) return aCash - bCash;
-        return (a.bankName || "").localeCompare(b.bankName || "");
-      }),
-    );
-  }, []);
+    if (!summaryRes.ok) {
+      throw new Error(summaryPayload.error || "Gagal memuat ringkasan rekening");
+    }
+    const nextAccounts = ((listPayload.data || []) as BankAccount[]).sort((a, b) => {
+      const aCash = isCashAccount(a) ? 0 : 1;
+      const bCash = isCashAccount(b) ? 0 : 1;
+      if (aCash !== bCash) return aCash - bCash;
+      return (a.bankName || "").localeCompare(b.bankName || "");
+    });
+    setAccounts(nextAccounts);
+    setTotalAccounts(listPayload.meta?.total || 0);
+    setTotalBalance(summaryPayload.data?.totalBalance || 0);
+    setTotalInitial(summaryPayload.data?.totalInitial || 0);
+    setCashBalance(summaryPayload.data?.cashBalance || 0);
+    setBankBalance(summaryPayload.data?.bankBalance || 0);
+  }, [buildAccountsQuery]);
 
   useEffect(() => {
     async function load() {
@@ -393,8 +449,9 @@ export default function BankAccountsPage() {
     }
   };
 
-  const handleExportExcel = () => {
-    const rows = accounts.map((account) => ({
+  const handleExportExcel = async () => {
+    const printableAccounts = await fetchAllAccounts();
+    const rows = printableAccounts.map((account) => ({
       accountType: isCashAccount(account) ? "Kas Tunai" : "Bank",
       bankName: account.bankName,
       accountNumber: account.accountNumber,
@@ -418,23 +475,8 @@ export default function BankAccountsPage() {
     addToast("success", "Excel berhasil di-download");
   };
 
-  const totalBalance = accounts.reduce(
-    (sum, account) => sum + (account.currentBalance || 0),
-    0,
-  );
-  const totalInitial = accounts.reduce(
-    (sum, account) => sum + (account.initialBalance || 0),
-    0,
-  );
-  const cashBalance = accounts
-    .filter((account) => isCashAccount(account))
-    .reduce((sum, account) => sum + (account.currentBalance || 0), 0);
-  const bankBalance = accounts
-    .filter((account) => !isCashAccount(account))
-    .reduce((sum, account) => sum + (account.currentBalance || 0), 0);
-  const paginatedAccounts = paginateItems(accounts, page, DEFAULT_PAGE_SIZE);
-
-  const handleBrandedPrint = () => {
+  const handleBrandedPrint = async () => {
+    const printableAccounts = await fetchAllAccounts();
     const change = totalBalance - totalInitial;
     openBrandedPrint({
       title: "Laporan Rekening dan Kas",
@@ -448,7 +490,7 @@ export default function BankAccountsPage() {
                 <table>
                     <thead><tr><th>Tipe</th><th>Nama</th><th>No. Referensi</th><th>Atas Nama</th><th class="r">Saldo Awal</th><th class="r">Saldo Saat Ini</th><th class="r">Perubahan</th></tr></thead>
                     <tbody>
-                        ${accounts
+                        ${printableAccounts
                           .map((account) => {
                             const delta =
                               (account.currentBalance || 0) -
@@ -594,7 +636,7 @@ export default function BankAccountsPage() {
                 </div>
               </div>
             ))
-          : paginatedAccounts.items.map((account) => {
+          : accounts.map((account) => {
               const preset = isCashAccount(account)
                 ? BANK_PRESETS.CASH
                 : getBankPreset(account.bankName);
@@ -755,11 +797,11 @@ export default function BankAccountsPage() {
           </div>
         )}
       </div>
-      {paginatedAccounts.totalItems > 0 && (
+      {totalAccounts > 0 && (
         <AppPagination
-          page={paginatedAccounts.currentPage}
+          page={page}
           pageSize={DEFAULT_PAGE_SIZE}
-          totalItems={paginatedAccounts.totalItems}
+          totalItems={totalAccounts}
           onPageChange={setPage}
           info={({ startIndex, endIndex, totalItems }) => (
             <>Menampilkan {startIndex}-{endIndex} dari {totalItems} rekening / kas</>

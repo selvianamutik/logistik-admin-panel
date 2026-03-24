@@ -70,7 +70,7 @@ import {
     sanityList,
 } from '@/lib/sanity';
 import { getSuggestedVehicleTireLayout, resolveTireAssetStatus, resolveTireSlotCode } from '@/lib/tire-slots';
-import type { Expense, TireEvent, User, Vehicle } from '@/lib/types';
+import type { BankAccount, DriverBorongan, Expense, TireEvent, User, Vehicle } from '@/lib/types';
 import { getDriverVoucherIssuedAmount } from '@/lib/utils';
 type DashboardSummary = {
     orderStats: { total: number; open: number; partial: number; complete: number; onHold: number };
@@ -483,6 +483,82 @@ async function getExpensesSummary(session: Session, search = '') {
     };
 }
 
+async function getBankAccountsSummary() {
+    const client = getSanityClient();
+    const accounts = await client.fetch<Array<Pick<BankAccount, '_id' | 'accountType' | 'systemKey' | 'initialBalance' | 'currentBalance' | 'active'>>>(
+        `*[_type == "bankAccount" && active != false]{
+            _id,
+            accountType,
+            systemKey,
+            initialBalance,
+            currentBalance,
+            active
+        }`
+    );
+
+    const isCash = (account: Pick<BankAccount, 'accountType' | 'systemKey'>) =>
+        account.accountType === 'CASH' || account.systemKey === 'cash-on-hand';
+
+    const totalBalance = accounts.reduce((sum, account) => sum + (account.currentBalance || 0), 0);
+    const totalInitial = accounts.reduce((sum, account) => sum + (account.initialBalance || 0), 0);
+    const cashBalance = accounts.filter(isCash).reduce((sum, account) => sum + (account.currentBalance || 0), 0);
+    const bankBalance = accounts.filter(account => !isCash(account)).reduce((sum, account) => sum + (account.currentBalance || 0), 0);
+
+    return {
+        totalAccounts: accounts.length,
+        totalBalance,
+        totalInitial,
+        cashBalance,
+        bankBalance,
+    };
+}
+
+async function getAuditLogsSummary() {
+    const client = getSanityClient();
+    const today = new Date().toISOString().slice(0, 10);
+    const [totalLogs, todayLogs, loginLogs, mutationLogs] = await Promise.all([
+        client.fetch<number>(`count(*[_type == "auditLog"])`),
+        client.fetch<number>(`count(*[_type == "auditLog" && (coalesce(timestamp, _createdAt)[0..9] == $today)])`, { today }),
+        client.fetch<number>(`count(*[_type == "auditLog" && (action == "LOGIN" || action == "LOGOUT")])`),
+        client.fetch<number>(`count(*[_type == "auditLog" && action in ["CREATE", "UPDATE", "DELETE"]])`),
+    ]);
+
+    return {
+        totalLogs,
+        todayLogs,
+        loginLogs,
+        mutationLogs,
+    };
+}
+
+async function getBoronganSummary(search = '', status = '') {
+    const client = getSanityClient();
+    const items = await client.fetch<Array<Pick<DriverBorongan, '_id' | 'boronganNumber' | 'driverName' | 'status' | 'totalAmount'>>>(
+        `*[_type == "driverBorongan"]{
+            _id,
+            boronganNumber,
+            driverName,
+            status,
+            totalAmount
+        }`
+    );
+
+    const query = search.trim().toLowerCase();
+    const filtered = items.filter(item => {
+        const matchesSearch = !query ||
+            item.boronganNumber?.toLowerCase().includes(query) ||
+            item.driverName?.toLowerCase().includes(query);
+        const matchesStatus = !status || item.status === status;
+        return matchesSearch && matchesStatus;
+    });
+
+    return {
+        totalAmount: filtered.reduce((sum, item) => sum + (item.totalAmount || 0), 0),
+        unpaidCount: filtered.filter(item => item.status === 'UNPAID').length,
+        paidCount: filtered.filter(item => item.status === 'PAID').length,
+    };
+}
+
 
 export async function GET(request: Request) {
     const session = await getSession();
@@ -563,6 +639,45 @@ export async function GET(request: Request) {
             return NextResponse.json({ data: summary });
         } catch (err) {
             console.error('API GET Expense Summary Error:', err);
+            return NextResponse.json({ error: 'Server error' }, { status: 500 });
+        }
+    }
+
+    if (entity === 'bank-accounts-summary') {
+        if (!hasPermission(session.role, 'bankAccounts', 'view')) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
+        try {
+            const summary = await getBankAccountsSummary();
+            return NextResponse.json({ data: summary });
+        } catch (err) {
+            console.error('API GET Bank Account Summary Error:', err);
+            return NextResponse.json({ error: 'Server error' }, { status: 500 });
+        }
+    }
+
+    if (entity === 'audit-logs-summary') {
+        if (!hasPermission(session.role, 'auditLogs', 'view')) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
+        try {
+            const summary = await getAuditLogsSummary();
+            return NextResponse.json({ data: summary });
+        } catch (err) {
+            console.error('API GET Audit Summary Error:', err);
+            return NextResponse.json({ error: 'Server error' }, { status: 500 });
+        }
+    }
+
+    if (entity === 'driver-borongans-summary') {
+        if (!hasPermission(session.role, 'driverBorongans', 'view')) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
+        try {
+            const summary = await getBoronganSummary(searchQuery, searchParams.get('status') || '');
+            return NextResponse.json({ data: summary });
+        } catch (err) {
+            console.error('API GET Borongan Summary Error:', err);
             return NextResponse.json({ error: 'Server error' }, { status: 500 });
         }
     }

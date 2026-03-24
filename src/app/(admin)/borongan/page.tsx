@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Search, Plus, Receipt } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import { formatDate, formatCurrency } from '@/lib/utils';
-import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
+import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { DriverBorongan } from '@/lib/types';
 import { useToast } from '../layout';
 
@@ -22,16 +22,53 @@ export default function BoronganListPage() {
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [page, setPage] = useState(1);
+    const [filteredTotalBorongans, setFilteredTotalBorongans] = useState(0);
+    const [totalUpah, setTotalUpah] = useState(0);
+    const [unpaidCount, setUnpaidCount] = useState(0);
+    const [paidCount, setPaidCount] = useState(0);
+
+    const buildBoronganQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
+        const params = new URLSearchParams({
+            entity: 'driver-borongans',
+            page: String(targetPage),
+            pageSize: String(targetPageSize),
+            sortField: 'periodStart',
+            sortDir: 'desc',
+        });
+        if (search.trim()) {
+            params.set('q', search.trim());
+            params.set('searchFields', 'boronganNumber,driverName');
+        }
+        if (statusFilter) {
+            params.set('filter', JSON.stringify({ status: statusFilter }));
+            params.set('status', statusFilter);
+        }
+        return params.toString();
+    }, [page, search, statusFilter]);
 
     useEffect(() => {
         const loadBorongan = async () => {
+            setLoading(true);
             try {
-                const res = await fetch('/api/data?entity=driver-borongans');
-                const payload = await res.json();
-                if (!res.ok) {
-                    throw new Error(payload.error || 'Gagal memuat slip borongan');
+                const [listRes, summaryRes] = await Promise.all([
+                    fetch(`/api/data?${buildBoronganQuery()}`),
+                    fetch(`/api/data?entity=driver-borongans-summary${search.trim() ? `&q=${encodeURIComponent(search.trim())}` : ''}${statusFilter ? `&status=${encodeURIComponent(statusFilter)}` : ''}`),
+                ]);
+                const [listPayload, summaryPayload] = await Promise.all([
+                    listRes.json(),
+                    summaryRes.json(),
+                ]);
+                if (!listRes.ok) {
+                    throw new Error(listPayload.error || 'Gagal memuat slip borongan');
                 }
-                setItems(payload.data || []);
+                if (!summaryRes.ok) {
+                    throw new Error(summaryPayload.error || 'Gagal memuat ringkasan slip borongan');
+                }
+                setItems(listPayload.data || []);
+                setFilteredTotalBorongans(listPayload.meta?.total || 0);
+                setTotalUpah(summaryPayload.data?.totalAmount || 0);
+                setUnpaidCount(summaryPayload.data?.unpaidCount || 0);
+                setPaidCount(summaryPayload.data?.paidCount || 0);
             } catch (error) {
                 addToast('error', error instanceof Error ? error.message : 'Gagal memuat slip borongan');
             } finally {
@@ -40,23 +77,11 @@ export default function BoronganListPage() {
         };
 
         void loadBorongan();
-    }, [addToast]);
+    }, [addToast, buildBoronganQuery, search, statusFilter]);
 
     useEffect(() => {
         setPage(1);
     }, [search, statusFilter]);
-
-    const filtered = items.filter(borongan => {
-        const query = search.toLowerCase();
-        const matchesSearch = !search ||
-            borongan.boronganNumber?.toLowerCase().includes(query) ||
-            borongan.driverName?.toLowerCase().includes(query);
-        const matchesStatus = !statusFilter || borongan.status === statusFilter;
-        return matchesSearch && matchesStatus;
-    });
-    const paginatedBorongans = paginateItems(filtered, page, DEFAULT_PAGE_SIZE);
-
-    const totalUpah = filtered.reduce((sum, borongan) => sum + borongan.totalAmount, 0);
 
     return (
         <div>
@@ -84,8 +109,8 @@ export default function BoronganListPage() {
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card">
                     <div className="kpi-icon danger"><Receipt size={20} /></div>
-                    <div className="kpi-content">
-                        <div className="kpi-label">Total Upah (filter)</div>
+                        <div className="kpi-content">
+                            <div className="kpi-label">Total Upah (filter)</div>
                         <div className="kpi-value" style={{ fontSize: '1.05rem', color: 'var(--color-danger)' }}>
                             {formatCurrency(totalUpah)}
                         </div>
@@ -95,14 +120,14 @@ export default function BoronganListPage() {
                     <div className="kpi-icon warning"><Receipt size={20} /></div>
                     <div className="kpi-content">
                         <div className="kpi-label">Belum Dibayar</div>
-                        <div className="kpi-value">{filtered.filter(borongan => borongan.status === 'UNPAID').length}</div>
+                        <div className="kpi-value">{unpaidCount}</div>
                     </div>
                 </div>
                 <div className="kpi-card">
                     <div className="kpi-icon success"><Receipt size={20} /></div>
                     <div className="kpi-content">
                         <div className="kpi-label">Sudah Dibayar</div>
-                        <div className="kpi-value">{filtered.filter(borongan => borongan.status === 'PAID').length}</div>
+                        <div className="kpi-value">{paidCount}</div>
                     </div>
                 </div>
             </div>
@@ -139,7 +164,7 @@ export default function BoronganListPage() {
                                 <tr key={index}>
                                     {[1, 2, 3, 4, 5, 6, 7, 8].map(cell => <td key={cell}><div className="skeleton skeleton-text" /></td>)}
                                 </tr>
-                            )) : paginatedBorongans.totalItems === 0 ? (
+                            )) : filteredTotalBorongans === 0 ? (
                                 <tr>
                                     <td colSpan={8}>
                                         <div className="empty-state">
@@ -148,7 +173,7 @@ export default function BoronganListPage() {
                                         </div>
                                     </td>
                                 </tr>
-                            ) : paginatedBorongans.items.map(borongan => (
+                            ) : items.map(borongan => (
                                 <tr key={borongan._id}>
                                     <td>
                                         <button
@@ -180,11 +205,11 @@ export default function BoronganListPage() {
                         </tbody>
                     </table>
                 </div>
-                {paginatedBorongans.totalItems > 0 && (
+                {filteredTotalBorongans > 0 && (
                     <AppPagination
-                        page={paginatedBorongans.currentPage}
+                        page={page}
                         pageSize={DEFAULT_PAGE_SIZE}
-                        totalItems={paginatedBorongans.totalItems}
+                        totalItems={filteredTotalBorongans}
                         onPageChange={setPage}
                         info={({ startIndex, endIndex, totalItems }) => (
                             <>

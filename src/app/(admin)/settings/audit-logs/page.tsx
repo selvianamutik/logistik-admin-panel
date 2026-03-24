@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Search, ScrollText } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
-import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
+import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { AuditLog } from '@/lib/types';
 import { useToast } from '../../layout';
 
@@ -31,16 +31,51 @@ export default function AuditLogsPage() {
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [page, setPage] = useState(1);
+    const [filteredTotalLogs, setFilteredTotalLogs] = useState(0);
+    const [totalLogs, setTotalLogs] = useState(0);
+    const [todayLogs, setTodayLogs] = useState(0);
+    const [loginLogs, setLoginLogs] = useState(0);
+    const [mutationLogs, setMutationLogs] = useState(0);
+
+    const buildAuditLogsQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
+        const params = new URLSearchParams({
+            entity: 'audit-logs',
+            page: String(targetPage),
+            pageSize: String(targetPageSize),
+            sortField: 'timestamp',
+            sortDir: 'desc',
+        });
+        if (search.trim()) {
+            params.set('q', search.trim());
+            params.set('searchFields', 'changesSummary,actorUserName,actorUserRef,entityType,entityRef,action');
+        }
+        return params.toString();
+    }, [page, search]);
 
     useEffect(() => {
         const loadAuditLogs = async () => {
+            setLoading(true);
             try {
-                const res = await fetch('/api/data?entity=audit-logs');
-                const payload = await res.json();
-                if (!res.ok) {
-                    throw new Error(payload.error || 'Gagal memuat audit log');
+                const [listRes, summaryRes] = await Promise.all([
+                    fetch(`/api/data?${buildAuditLogsQuery()}`),
+                    fetch('/api/data?entity=audit-logs-summary'),
+                ]);
+                const [listPayload, summaryPayload] = await Promise.all([
+                    listRes.json(),
+                    summaryRes.json(),
+                ]);
+                if (!listRes.ok) {
+                    throw new Error(listPayload.error || 'Gagal memuat audit log');
                 }
-                setLogs(payload.data || []);
+                if (!summaryRes.ok) {
+                    throw new Error(summaryPayload.error || 'Gagal memuat ringkasan audit log');
+                }
+                setLogs(listPayload.data || []);
+                setFilteredTotalLogs(listPayload.meta?.total || 0);
+                setTotalLogs(summaryPayload.data?.totalLogs || 0);
+                setTodayLogs(summaryPayload.data?.todayLogs || 0);
+                setLoginLogs(summaryPayload.data?.loginLogs || 0);
+                setMutationLogs(summaryPayload.data?.mutationLogs || 0);
             } catch (error) {
                 addToast('error', error instanceof Error ? error.message : 'Gagal memuat audit log');
             } finally {
@@ -49,30 +84,11 @@ export default function AuditLogsPage() {
         };
 
         void loadAuditLogs();
-    }, [addToast]);
+    }, [addToast, buildAuditLogsQuery]);
 
     useEffect(() => {
         setPage(1);
     }, [search]);
-
-    const normalizedSearch = search.trim().toLowerCase();
-    const filtered = logs.filter(log => {
-        if (!normalizedSearch) return true;
-        return [
-            log.changesSummary,
-            log.actorUserName,
-            log.actorUserRef,
-            log.entityType,
-            log.entityRef,
-            log.action,
-        ].some(value => value?.toLowerCase().includes(normalizedSearch));
-    });
-    const paginatedLogs = paginateItems(filtered, page, DEFAULT_PAGE_SIZE);
-    const today = new Date().toISOString().slice(0, 10);
-    const totalLogs = logs.length;
-    const todayLogs = logs.filter(log => (log.timestamp || log._createdAt || '').slice(0, 10) === today).length;
-    const loginLogs = logs.filter(log => log.action === 'LOGIN' || log.action === 'LOGOUT').length;
-    const mutationLogs = logs.filter(log => ['CREATE', 'UPDATE', 'DELETE'].includes(log.action)).length;
 
     const actionColors: Record<string, string> = { CREATE: 'success', UPDATE: 'warning', DELETE: 'danger', LOGIN: 'info', LOGOUT: 'gray' };
 
@@ -92,8 +108,8 @@ export default function AuditLogsPage() {
                         <thead><tr><th>Waktu</th><th>User</th><th>Aksi</th><th>Entitas</th><th>Target</th><th>Ringkasan</th></tr></thead>
                         <tbody>
                             {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                paginatedLogs.totalItems === 0 ? <tr><td colSpan={6}><div className="empty-state"><ScrollText size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada log</div></div></td></tr> :
-                                    paginatedLogs.items.map(l => (
+                                filteredTotalLogs === 0 ? <tr><td colSpan={6}><div className="empty-state"><ScrollText size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada log</div></div></td></tr> :
+                                    logs.map(l => (
                                         <tr key={l._id}>
                                             <td className="text-muted" style={{ whiteSpace: 'nowrap' }}>{formatAuditDateTime(l.timestamp || l._createdAt)}</td>
                                             <td>
@@ -111,12 +127,12 @@ export default function AuditLogsPage() {
                 </div>
                 {!loading && (
                     <div className="mobile-record-list">
-                        {paginatedLogs.totalItems === 0 ? (
+                        {filteredTotalLogs === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada log</div>
                                 <div className="mobile-record-subtitle">Aktivitas penting sistem akan muncul di sini untuk kebutuhan audit.</div>
                             </div>
-                        ) : paginatedLogs.items.map(l => (
+                        ) : logs.map(l => (
                             <div key={l._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
@@ -143,11 +159,11 @@ export default function AuditLogsPage() {
                         ))}
                     </div>
                 )}
-                {paginatedLogs.totalItems > 0 && (
+                {filteredTotalLogs > 0 && (
                     <AppPagination
-                        page={paginatedLogs.currentPage}
+                        page={page}
                         pageSize={DEFAULT_PAGE_SIZE}
-                        totalItems={paginatedLogs.totalItems}
+                        totalItems={filteredTotalLogs}
                         onPageChange={setPage}
                         info={({ startIndex, endIndex, totalItems }) => (
                             <>{startIndex}-{endIndex} dari {totalItems} log tercatat</>
