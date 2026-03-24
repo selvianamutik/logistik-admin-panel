@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useToast } from '../layout';
@@ -9,16 +9,8 @@ import AppPagination from '@/components/AppPagination';
 import { formatDate, ORDER_STATUS_MAP } from '@/lib/utils';
 import { exportOrders } from '@/lib/export';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
-import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
+import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { Order, Service } from '@/lib/types';
-
-const ORDER_ACTION_PRIORITY: Record<string, number> = {
-    OPEN: 0,
-    PARTIAL: 1,
-    ON_HOLD: 2,
-    COMPLETE: 3,
-    CANCELLED: 4,
-};
 
 const getNextActionLabel = (order: Order) => {
     switch (order.status) {
@@ -47,33 +39,100 @@ export default function OrdersPage() {
     const [statusFilter, setStatusFilter] = useState('');
     const [serviceFilter, setServiceFilter] = useState('');
     const [page, setPage] = useState(1);
+    const [totalOrders, setTotalOrders] = useState(0);
+    const [queueCounts, setQueueCounts] = useState({ needDispatch: 0, inProgress: 0, onHold: 0 });
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
 
-    useEffect(() => {
-        const loadOrders = async () => {
-            try {
-                const res = await fetch('/api/data?entity=orders');
-                const payload = await res.json();
-                if (!res.ok) {
-                    throw new Error(payload.error || 'Gagal memuat order');
-                }
-                setOrders(payload.data || []);
-                const serviceRes = await fetch('/api/data?entity=services');
-                const servicePayload = await serviceRes.json();
-                if (!serviceRes.ok) {
-                    throw new Error(servicePayload.error || 'Gagal memuat kategori armada');
-                }
-                setServices(servicePayload.data || []);
-            } catch (error) {
-                addToast('error', error instanceof Error ? error.message : 'Gagal memuat order');
-            } finally {
-                setLoading(false);
-            }
-        };
+    const buildOrdersQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
+        const params = new URLSearchParams({
+            entity: 'orders',
+            page: String(targetPage),
+            pageSize: String(targetPageSize),
+            sortPreset: 'work-queue',
+        });
 
+        if (search.trim()) {
+            params.set('q', search.trim());
+            params.set('searchFields', 'masterResi,customerName,receiverName,serviceName');
+        }
+
+        const filter: Record<string, string> = {};
+        if (statusFilter) filter.status = statusFilter;
+        if (serviceFilter) filter.serviceRef = serviceFilter;
+        if (Object.keys(filter).length > 0) {
+            params.set('filter', JSON.stringify(filter));
+        }
+
+        return params.toString();
+    }, [page, search, serviceFilter, statusFilter]);
+
+    const fetchAllMatchingOrders = useCallback(async () => {
+        const pageSize = 200;
+        let currentPage = 1;
+        let total = 0;
+        const allItems: Order[] = [];
+
+        do {
+            const res = await fetch(`/api/data?${buildOrdersQuery(currentPage, pageSize)}`);
+            const payload = await res.json();
+            if (!res.ok) {
+                throw new Error(payload.error || 'Gagal memuat order');
+            }
+
+            const nextItems = (payload.data || []) as Order[];
+            total = payload.meta?.total || nextItems.length;
+            allItems.push(...nextItems);
+            if (nextItems.length === 0) break;
+            currentPage += 1;
+        } while (allItems.length < total);
+
+        return allItems;
+    }, [buildOrdersQuery]);
+
+    const loadOrders = useCallback(async () => {
+        setLoading(true);
+        try {
+            const [ordersRes, serviceRes, openRes, partialRes, holdRes] = await Promise.all([
+                fetch(`/api/data?${buildOrdersQuery()}`),
+                fetch('/api/data?entity=services&sortField=code&sortDir=asc&page=1&pageSize=500'),
+                fetch(`/api/data?entity=orders&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ status: 'OPEN' }))}`),
+                fetch(`/api/data?entity=orders&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ status: 'PARTIAL' }))}`),
+                fetch(`/api/data?entity=orders&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ status: 'ON_HOLD' }))}`),
+            ]);
+
+            const [ordersPayload, servicePayload, openPayload, partialPayload, holdPayload] = await Promise.all([
+                ordersRes.json(),
+                serviceRes.json(),
+                openRes.json(),
+                partialRes.json(),
+                holdRes.json(),
+            ]);
+
+            if (!ordersRes.ok) throw new Error(ordersPayload.error || 'Gagal memuat order');
+            if (!serviceRes.ok) throw new Error(servicePayload.error || 'Gagal memuat kategori armada');
+            if (!openRes.ok) throw new Error(openPayload.error || 'Gagal memuat statistik order');
+            if (!partialRes.ok) throw new Error(partialPayload.error || 'Gagal memuat statistik order');
+            if (!holdRes.ok) throw new Error(holdPayload.error || 'Gagal memuat statistik order');
+
+            setOrders(ordersPayload.data || []);
+            setTotalOrders(ordersPayload.meta?.total || 0);
+            setServices(servicePayload.data || []);
+            setQueueCounts({
+                needDispatch: openPayload.meta?.total || 0,
+                inProgress: partialPayload.meta?.total || 0,
+                onHold: holdPayload.meta?.total || 0,
+            });
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat order');
+        } finally {
+            setLoading(false);
+        }
+    }, [addToast, buildOrdersQuery]);
+
+    useEffect(() => {
         void loadOrders();
-    }, [addToast]);
+    }, [loadOrders]);
 
     useEffect(() => {
         setPage(1);
@@ -87,37 +146,10 @@ export default function OrdersPage() {
         return order.serviceName || '-';
     };
 
-    const availableServiceOptions = services.filter(service =>
-        service.active !== false || orders.some(order => order.serviceRef === service._id)
+    const availableServiceOptions = useMemo(
+        () => services.filter(service => service.active !== false || service._id === serviceFilter),
+        [serviceFilter, services]
     );
-
-    const filtered = orders.filter(o => {
-        const service = services.find(item => item._id === o.serviceRef);
-        const matchSearch = !search ||
-            o.masterResi?.toLowerCase().includes(search.toLowerCase()) ||
-            o.customerName?.toLowerCase().includes(search.toLowerCase()) ||
-            o.receiverName?.toLowerCase().includes(search.toLowerCase()) ||
-            o.serviceName?.toLowerCase().includes(search.toLowerCase()) ||
-            service?.code?.toLowerCase().includes(search.toLowerCase());
-        const matchStatus = !statusFilter || o.status === statusFilter;
-        const matchService = !serviceFilter || o.serviceRef === serviceFilter;
-        return matchSearch && matchStatus && matchService;
-    });
-
-    const prioritizedOrders = filtered
-        .slice()
-        .sort((a, b) => {
-            const priorityDiff = (ORDER_ACTION_PRIORITY[a.status] ?? 99) - (ORDER_ACTION_PRIORITY[b.status] ?? 99);
-            if (priorityDiff !== 0) return priorityDiff;
-            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-        });
-    const paginatedOrders = paginateItems(prioritizedOrders, page, DEFAULT_PAGE_SIZE);
-
-    const queueCounts = {
-        needDispatch: orders.filter(order => order.status === 'OPEN').length,
-        inProgress: orders.filter(order => order.status === 'PARTIAL').length,
-        onHold: orders.filter(order => order.status === 'ON_HOLD').length,
-    };
 
     const handleDelete = async (id: string) => {
         setDeletingId(id);
@@ -133,7 +165,11 @@ export default function OrdersPage() {
                 setDeleteId(null);
                 return;
             }
-            setOrders(prev => prev.filter(o => o._id !== id));
+            if (page > 1 && orders.length === 1) {
+                setPage(current => Math.max(1, current - 1));
+            } else {
+                await loadOrders();
+            }
             addToast('success', 'Order berhasil dihapus');
             setDeleteId(null);
         } catch {
@@ -152,15 +188,16 @@ export default function OrdersPage() {
                     <p className="page-subtitle">Antrian order customer. Yang perlu dibuatkan trip atau ditindaklanjuti tampil lebih dulu.</p>
                 </div>
                 <div className="page-actions">
-                    <button className="btn btn-secondary btn-sm" onClick={() => exportOrders(filtered as unknown as Record<string, unknown>[])}>
+                    <button className="btn btn-secondary btn-sm" onClick={async () => exportOrders(await fetchAllMatchingOrders() as unknown as Record<string, unknown>[])}>
                         <FileDown size={15} /> Excel
                     </button>
                     <button className="btn btn-secondary btn-sm" onClick={async () => {
                         const co = await fetchCompanyProfile();
+                        const printableOrders = await fetchAllMatchingOrders();
                         openBrandedPrint({
                             title: 'Daftar Order / Resi', company: co, bodyHtml: `
                             <table><thead><tr><th>Resi</th><th>Customer</th><th>Penerima</th><th>Alamat</th><th>Tanggal</th><th>Status</th></tr></thead>
-                            <tbody>${filtered.map(o => `<tr><td class="b">${o.masterResi}</td><td>${o.customerName || '-'}</td><td>${o.receiverName || '-'}</td><td>${o.receiverAddress || '-'}</td><td>${formatDate(o.createdAt)}</td><td>${ORDER_STATUS_MAP[o.status]?.label || o.status}</td></tr>`).join('')}</tbody></table>`
+                            <tbody>${printableOrders.map(o => `<tr><td class="b">${o.masterResi}</td><td>${o.customerName || '-'}</td><td>${o.receiverName || '-'}</td><td>${o.receiverAddress || '-'}</td><td>${formatDate(o.createdAt)}</td><td>${ORDER_STATUS_MAP[o.status]?.label || o.status}</td></tr>`).join('')}</tbody></table>`
                         });
                     }}><Printer size={15} /> Print</button>
                     <Link href="/orders/new" className="btn btn-primary">
@@ -253,7 +290,7 @@ export default function OrdersPage() {
                                         ))}
                                     </tr>
                                 ))
-                            ) : paginatedOrders.totalItems === 0 ? (
+                            ) : totalOrders === 0 ? (
                                 <tr>
                                     <td colSpan={8}>
                                         <div className="empty-state">
@@ -267,7 +304,7 @@ export default function OrdersPage() {
                                     </td>
                                 </tr>
                             ) : (
-                                paginatedOrders.items.map(order => (
+                                orders.map(order => (
                                     <tr key={order._id}>
                                         <td>
                                             <Link href={`/orders/${order._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>
@@ -308,7 +345,7 @@ export default function OrdersPage() {
                 </div>
                 {!loading && (
                     <div className="mobile-record-list">
-                        {paginatedOrders.totalItems === 0 ? (
+                        {totalOrders === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada order</div>
                                 <div className="mobile-record-subtitle">Buat order baru untuk memulai pengiriman.</div>
@@ -318,7 +355,7 @@ export default function OrdersPage() {
                                     </Link>
                                 </div>
                             </div>
-                        ) : paginatedOrders.items.map(order => (
+                        ) : orders.map(order => (
                             <div key={order._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
@@ -359,11 +396,11 @@ export default function OrdersPage() {
                     </div>
                 )}
 
-                {paginatedOrders.totalItems > 0 && (
+                {totalOrders > 0 && (
                     <AppPagination
-                        page={paginatedOrders.currentPage}
+                        page={page}
                         pageSize={DEFAULT_PAGE_SIZE}
-                        totalItems={paginatedOrders.totalItems}
+                        totalItems={totalOrders}
                         onPageChange={setPage}
                         info={({ startIndex, endIndex, totalItems }) => (
                             <>

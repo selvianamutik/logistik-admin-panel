@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Eye, Plus, Search, Receipt, Printer } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 
 import { formatDate, formatCurrency, getDriverVoucherIssuedAmount, getDriverVoucherTopUpAmount } from '@/lib/utils';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
-import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
+import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { DriverVoucher } from '@/lib/types';
 import { useToast } from '../layout';
 
@@ -15,12 +15,6 @@ const STATUS_MAP: Record<string, { label: string; cls: string }> = {
     DRAFT: { label: 'Draft', cls: 'badge-gray' },
     ISSUED: { label: 'Diberikan', cls: 'badge-blue' },
     SETTLED: { label: 'Selesai', cls: 'badge-green' },
-};
-
-const VOUCHER_ACTION_PRIORITY: Record<string, number> = {
-    ISSUED: 0,
-    DRAFT: 1,
-    SETTLED: 2,
 };
 
 const getNextVoucherAction = (voucher: DriverVoucher) => {
@@ -47,53 +41,92 @@ export default function DriverVouchersPage() {
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [page, setPage] = useState(1);
+    const [totalItems, setTotalItems] = useState(0);
+    const [queueCounts, setQueueCounts] = useState({ issued: 0, draft: 0, settled: 0 });
+
+    const buildVoucherQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
+        const params = new URLSearchParams({
+            entity: 'driver-vouchers',
+            page: String(targetPage),
+            pageSize: String(targetPageSize),
+            sortPreset: 'work-queue',
+        });
+        if (search.trim()) {
+            params.set('q', search.trim());
+            params.set('searchFields', 'bonNumber,driverName,doNumber');
+        }
+        if (statusFilter) {
+            params.set('filter', JSON.stringify({ status: statusFilter }));
+        }
+        return params.toString();
+    }, [page, search, statusFilter]);
+
+    const fetchAllMatchingVouchers = useCallback(async () => {
+        const pageSize = 200;
+        let currentPage = 1;
+        let total = 0;
+        const allItems: DriverVoucher[] = [];
+
+        do {
+            const res = await fetch(`/api/data?${buildVoucherQuery(currentPage, pageSize)}`);
+            const payload = await res.json();
+            if (!res.ok) {
+                throw new Error(payload.error || 'Gagal memuat uang jalan trip');
+            }
+
+            const nextItems = (payload.data || []) as DriverVoucher[];
+            total = payload.meta?.total || nextItems.length;
+            allItems.push(...nextItems);
+            if (nextItems.length === 0) break;
+            currentPage += 1;
+        } while (allItems.length < total);
+
+        return allItems;
+    }, [buildVoucherQuery]);
+
+    const loadVouchers = useCallback(async () => {
+        setLoading(true);
+        try {
+            const [listRes, issuedRes, draftRes, settledRes] = await Promise.all([
+                fetch(`/api/data?${buildVoucherQuery()}`),
+                fetch(`/api/data?entity=driver-vouchers&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ status: 'ISSUED' }))}`),
+                fetch(`/api/data?entity=driver-vouchers&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ status: 'DRAFT' }))}`),
+                fetch(`/api/data?entity=driver-vouchers&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ status: 'SETTLED' }))}`),
+            ]);
+
+            const [listPayload, issuedPayload, draftPayload, settledPayload] = await Promise.all([
+                listRes.json(),
+                issuedRes.json(),
+                draftRes.json(),
+                settledRes.json(),
+            ]);
+
+            if (!listRes.ok) throw new Error(listPayload.error || 'Gagal memuat uang jalan trip');
+            if (!issuedRes.ok) throw new Error(issuedPayload.error || 'Gagal memuat statistik uang jalan trip');
+            if (!draftRes.ok) throw new Error(draftPayload.error || 'Gagal memuat statistik uang jalan trip');
+            if (!settledRes.ok) throw new Error(settledPayload.error || 'Gagal memuat statistik uang jalan trip');
+
+            setItems(listPayload.data || []);
+            setTotalItems(listPayload.meta?.total || 0);
+            setQueueCounts({
+                issued: issuedPayload.meta?.total || 0,
+                draft: draftPayload.meta?.total || 0,
+                settled: settledPayload.meta?.total || 0,
+            });
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat uang jalan trip');
+        } finally {
+            setLoading(false);
+        }
+    }, [addToast, buildVoucherQuery]);
 
     useEffect(() => {
-        const loadVouchers = async () => {
-            try {
-                const res = await fetch('/api/data?entity=driver-vouchers');
-                const payload = await res.json();
-                if (!res.ok) {
-                    throw new Error(payload.error || 'Gagal memuat uang jalan trip');
-                }
-                setItems(payload.data || []);
-            } catch (error) {
-                addToast('error', error instanceof Error ? error.message : 'Gagal memuat uang jalan trip');
-            } finally {
-                setLoading(false);
-            }
-        };
-
         void loadVouchers();
-    }, [addToast]);
+    }, [loadVouchers]);
 
     useEffect(() => {
         setPage(1);
     }, [search, statusFilter]);
-
-    const filtered = items.filter(v => {
-        if (statusFilter && v.status !== statusFilter) return false;
-        if (!search) return true;
-        const s = search.toLowerCase();
-        return (
-            v.bonNumber?.toLowerCase().includes(s) ||
-            v.driverName?.toLowerCase().includes(s) ||
-            v.doNumber?.toLowerCase().includes(s)
-        );
-    }).sort((a, b) => {
-        const priorityDiff = (VOUCHER_ACTION_PRIORITY[a.status] ?? 99) - (VOUCHER_ACTION_PRIORITY[b.status] ?? 99);
-        if (priorityDiff !== 0) {
-            return priorityDiff;
-        }
-        return b.issuedDate.localeCompare(a.issuedDate);
-    });
-    const paginatedVouchers = paginateItems(filtered, page, DEFAULT_PAGE_SIZE);
-
-    const queueCounts = {
-        issued: items.filter(item => item.status === 'ISSUED').length,
-        draft: items.filter(item => item.status === 'DRAFT').length,
-        settled: items.filter(item => item.status === 'SETTLED').length,
-    };
 
     return (
         <div>
@@ -107,6 +140,7 @@ export default function DriverVouchersPage() {
                         className="btn btn-secondary btn-sm"
                         onClick={async () => {
                             const company = await fetchCompanyProfile();
+                            const printableVouchers = await fetchAllMatchingVouchers();
                             openBrandedPrint({
                                 title: 'Daftar Uang Jalan Trip',
                                 company,
@@ -129,7 +163,7 @@ export default function DriverVouchersPage() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        ${filtered.map(v => {
+                                        ${printableVouchers.map(v => {
                                             const totalClaimAmount = v.totalClaimAmount || ((v.totalSpent || 0) + (v.driverFeeAmount || 0));
                                             const initialCashGiven = v.initialCashGiven || v.cashGiven || 0;
                                             return `<tr>
@@ -232,7 +266,7 @@ export default function DriverVouchersPage() {
                                         ))}
                                     </tr>
                                 ))
-                            ) : paginatedVouchers.totalItems === 0 ? (
+                            ) : totalItems === 0 ? (
                                 <tr>
                                     <td colSpan={15}>
                                         <div className="empty-state">
@@ -243,7 +277,7 @@ export default function DriverVouchersPage() {
                                     </td>
                                 </tr>
                             ) : (
-                                paginatedVouchers.items.map(v => {
+                                items.map(v => {
                                     const status = STATUS_MAP[v.status] || { label: v.status, cls: 'badge-gray' };
                                     const totalClaimAmount = v.totalClaimAmount || ((v.totalSpent || 0) + (v.driverFeeAmount || 0));
                                     const initialCashGiven = v.initialCashGiven || v.cashGiven || 0;
@@ -310,12 +344,12 @@ export default function DriverVouchersPage() {
 
                 {!loading && (
                     <div className="mobile-record-list">
-                        {paginatedVouchers.totalItems === 0 ? (
+                        {totalItems === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada uang jalan trip</div>
                                 <div className="mobile-record-subtitle">Terbitkan uang jalan yang tertaut ke DO untuk mencatat uang jalan awal, top up, biaya perjalanan, upah trip, dan settlement akhir.</div>
                             </div>
-                        ) : paginatedVouchers.items.map(v => {
+                        ) : items.map(v => {
                             const status = STATUS_MAP[v.status] || { label: v.status, cls: 'badge-gray' };
                             const totalClaimAmount = v.totalClaimAmount || ((v.totalSpent || 0) + (v.driverFeeAmount || 0));
                             const initialCashGiven = v.initialCashGiven || v.cashGiven || 0;
@@ -389,11 +423,11 @@ export default function DriverVouchersPage() {
                     </div>
                 )}
 
-                {paginatedVouchers.totalItems > 0 && (
+                {totalItems > 0 && (
                     <AppPagination
-                        page={paginatedVouchers.currentPage}
+                        page={page}
                         pageSize={DEFAULT_PAGE_SIZE}
-                        totalItems={paginatedVouchers.totalItems}
+                        totalItems={totalItems}
                         onPageChange={setPage}
                         info={({ startIndex, endIndex, totalItems }) => (
                             <>Menampilkan {startIndex}-{endIndex} dari {totalItems} trip</>

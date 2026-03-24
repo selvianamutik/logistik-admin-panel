@@ -20,6 +20,7 @@ type SanityListOptions = {
     pageSize?: number;
     sortField?: string;
     sortDir?: 'asc' | 'desc';
+    sortClause?: string;
 };
 
 type SanityListResult<T> = {
@@ -237,12 +238,15 @@ export async function sanityList<T = Record<string, unknown>>(
     validateFilterObject(filterObj);
 
     const page = normalizePositiveInteger(options.page, 1);
-    const pageSize = normalizePositiveInteger(options.pageSize, 10, 100);
+    const pageSize = normalizePositiveInteger(options.pageSize, 10, 500);
     const offset = (page - 1) * pageSize;
     const end = offset + pageSize;
+    const sortClause = options.sortClause?.trim();
     const sortField = options.sortField?.trim() || '_createdAt';
     const sortDir = options.sortDir === 'asc' ? 'asc' : 'desc';
-    validateFieldPath(sortField, 'sort field');
+    if (!sortClause) {
+        validateFieldPath(sortField, 'sort field');
+    }
 
     const searchFields = (options.searchFields ?? [])
         .map(field => field.trim())
@@ -265,9 +269,10 @@ export async function sanityList<T = Record<string, unknown>>(
     const whereClause = conditions.length > 0
         ? `_type == $type && ${conditions.join(' && ')}`
         : `_type == $type`;
+    const orderClause = sortClause || `${sortField} ${sortDir}`;
     const query = `{
         "total": count(*[${whereClause}]),
-        "items": *[${whereClause}] | order(${sortField} ${sortDir})[$offset...$end]
+        "items": *[${whereClause}] | order(${orderClause})[$offset...$end]
     }`;
 
     const result = await getSanityClient().fetch<SanityListResult<T>>(query, params);

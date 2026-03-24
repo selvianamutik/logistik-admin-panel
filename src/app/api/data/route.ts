@@ -166,6 +166,24 @@ function getMutationPermissionAction(action?: string): keyof ModulePermissions {
     return 'create';
 }
 
+function getListSortClause(entity: string, sortPreset?: string | null) {
+    if (!sortPreset) return undefined;
+
+    if (entity === 'orders' && sortPreset === 'work-queue') {
+        return 'select(status == "OPEN" => 0, status == "PARTIAL" => 1, status == "ON_HOLD" => 2, status == "COMPLETE" => 3, status == "CANCELLED" => 4, 99) asc, createdAt desc';
+    }
+
+    if (entity === 'delivery-orders' && sortPreset === 'work-queue') {
+        return 'select(defined(pendingDriverStatus) => 0, 1) asc, select(status == "ARRIVED" => 0, status == "ON_DELIVERY" => 1, status == "HEADING_TO_PICKUP" => 2, status == "CREATED" => 3, status == "DELIVERED" => 4, status == "CANCELLED" => 5, 99) asc, date desc';
+    }
+
+    if (entity === 'driver-vouchers' && sortPreset === 'work-queue') {
+        return 'select(status == "ISSUED" => 0, status == "DRAFT" => 1, status == "SETTLED" => 2, 99) asc, issuedDate desc';
+    }
+
+    return undefined;
+}
+
 function forbidModuleAccess(session: Session, entity: string, action: keyof ModulePermissions) {
     const targetModule = getEntityModule(entity);
     if (!targetModule) return null;
@@ -318,6 +336,7 @@ export async function GET(request: Request) {
     const sortField = searchParams.get('sortField')?.trim() || undefined;
     const sortDirParam = searchParams.get('sortDir');
     const sortDir = sortDirParam === 'asc' ? 'asc' : sortDirParam === 'desc' ? 'desc' : undefined;
+    const sortPreset = searchParams.get('sortPreset');
 
     if (entity === 'dashboard-summary') {
         if (!hasPermission(session.role, 'dashboard', 'view')) {
@@ -423,6 +442,7 @@ export async function GET(request: Request) {
                     pageSize,
                     sortField,
                     sortDir,
+                    sortClause: getListSortClause(entity, sortPreset),
                 });
                 items = result.items as Record<string, unknown>[];
                 totalItems = result.total;
