@@ -15,6 +15,16 @@ import {
     type ApiSession,
     type BankAccountSummary,
 } from './data-helpers';
+import {
+    buildRouteLabel,
+    computeDriverVoucherTotals,
+    getDriverVoucherInitialCash,
+    getDriverVoucherIssuedAmount,
+    isDriverBoronganRowEmpty,
+    summarizeBoronganDeliveryOrderItems,
+    toCategoryRef,
+    type DriverBoronganDeliveryOrderItemSummarySource,
+} from './driver-workflow-support';
 
 type AuditLogFn = (
     session: Pick<ApiSession, '_id' | 'name'>,
@@ -23,59 +33,6 @@ type AuditLogFn = (
     entityRef: string,
     summary: string
 ) => void | Promise<void>;
-
-function buildRouteLabel(origin?: string, destination?: string) {
-    const from = normalizeOptionalText(origin);
-    const to = normalizeOptionalText(destination);
-    if (from && to) {
-        return `${from} -> ${to}`;
-    }
-    return from || to || undefined;
-}
-
-function computeDriverVoucherTotals(
-    cashGiven: number,
-    operationalSpent: number,
-    driverFeeAmount: number
-) {
-    const safeCashGiven = Number.isFinite(cashGiven) ? cashGiven : 0;
-    const safeOperationalSpent = Number.isFinite(operationalSpent) ? operationalSpent : 0;
-    const safeDriverFeeAmount = Number.isFinite(driverFeeAmount) ? driverFeeAmount : 0;
-    const totalClaimAmount = safeOperationalSpent + safeDriverFeeAmount;
-
-    return {
-        totalSpent: safeOperationalSpent,
-        driverFeeAmount: safeDriverFeeAmount,
-        totalClaimAmount,
-        balance: safeCashGiven - totalClaimAmount,
-    };
-}
-
-function getDriverVoucherIssuedAmount(value: {
-    totalIssuedAmount?: number | null;
-    cashGiven?: number | null;
-}) {
-    if (typeof value.totalIssuedAmount === 'number' && Number.isFinite(value.totalIssuedAmount)) {
-        return Math.max(value.totalIssuedAmount, 0);
-    }
-    if (typeof value.cashGiven === 'number' && Number.isFinite(value.cashGiven)) {
-        return Math.max(value.cashGiven, 0);
-    }
-    return 0;
-}
-
-function getDriverVoucherInitialCash(value: {
-    initialCashGiven?: number | null;
-    cashGiven?: number | null;
-}) {
-    if (typeof value.initialCashGiven === 'number' && Number.isFinite(value.initialCashGiven)) {
-        return Math.max(value.initialCashGiven, 0);
-    }
-    if (typeof value.cashGiven === 'number' && Number.isFinite(value.cashGiven)) {
-        return Math.max(value.cashGiven, 0);
-    }
-    return 0;
-}
 
 type NormalizedDriverBoronganRow = {
     doRef?: string;
@@ -109,41 +66,6 @@ type DriverBoronganOrderSource = {
     _id: string;
     receiverAddress?: string;
 };
-
-type DriverBoronganDeliveryOrderItemSource = {
-    deliveryOrderRef?: string;
-    orderItemDescription?: string;
-    orderItemQtyKoli?: number;
-    orderItemWeight?: number;
-};
-
-function summarizeBoronganDeliveryOrderItems(items: DriverBoronganDeliveryOrderItemSource[]) {
-    const descriptions = [...new Set(
-        items
-            .map(item => normalizeOptionalText(item.orderItemDescription))
-            .filter((value): value is string => Boolean(value))
-    )];
-    const collie = items.reduce((sum, item) => sum + normalizeNumber(item.orderItemQtyKoli || 0), 0);
-    const beratKg = items.reduce((sum, item) => sum + normalizeNumber(item.orderItemWeight || 0), 0);
-
-    return {
-        barang: descriptions.join(', '),
-        collie,
-        beratKg,
-    };
-}
-
-function isDriverBoronganRowEmpty(row: Record<string, unknown>) {
-    return (
-        !normalizeOptionalText(row.doRef) &&
-        !normalizeText(row.noSJ) &&
-        !normalizeText(row.tujuan) &&
-        !normalizeText(row.barang) &&
-        normalizeNumber(row.collie || 0) === 0 &&
-        normalizeNumber(row.beratKg || 0) === 0 &&
-        normalizeNumber(row.tarip || 0) === 0
-    );
-}
 
 export async function handleDriverBoronganCreate(
     session: ApiSession,
@@ -249,7 +171,7 @@ export async function handleDriverBoronganCreate(
         )
         : [];
     const deliveryOrderItems = uniqueDoRefs.length > 0
-        ? await getSanityClient().fetch<DriverBoronganDeliveryOrderItemSource[]>(
+        ? await getSanityClient().fetch<DriverBoronganDeliveryOrderItemSummarySource[]>(
             `*[_type == "deliveryOrderItem" && deliveryOrderRef in $ids]{
                 deliveryOrderRef,
                 orderItemDescription,
@@ -262,7 +184,7 @@ export async function handleDriverBoronganCreate(
 
     const deliveryOrderMap = new Map(deliveryOrders.map(item => [item._id, item]));
     const orderMap = new Map(sourceOrders.map(order => [order._id, order]));
-    const doItemMap = new Map<string, DriverBoronganDeliveryOrderItemSource[]>();
+    const doItemMap = new Map<string, DriverBoronganDeliveryOrderItemSummarySource[]>();
     for (const item of deliveryOrderItems) {
         const deliveryOrderRef = normalizeOptionalText(item.deliveryOrderRef);
         if (!deliveryOrderRef) continue;
@@ -683,14 +605,6 @@ export async function handleBoronganPayment(
         { error: 'Pembayaran borongan berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
         { status: 409 }
     );
-}
-
-function toCategoryRef(categoryName: string) {
-    const slug = categoryName
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '');
-    return `driver-voucher-${slug || 'misc'}`;
 }
 
 async function getDriverVoucherState(voucherId: string) {
