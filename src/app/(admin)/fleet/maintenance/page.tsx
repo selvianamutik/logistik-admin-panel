@@ -7,43 +7,16 @@ import { useToast } from '../../layout';
 import { Plus, Search, Wrench, Save, X } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
+import {
+    buildMaintenanceQuery,
+    createDefaultMaintenanceForm,
+    getTodayDate,
+    getMaintenanceNextAction,
+    type MaintenanceFormState,
+} from '@/lib/fleet-queue-page-support';
 import { formatDate, MAINTENANCE_STATUS_MAP } from '@/lib/utils';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { Maintenance, Vehicle } from '@/lib/types';
-
-type MaintenanceFormState = {
-    vehicleRef: string;
-    type: string;
-    scheduleType: 'DATE' | 'ODOMETER';
-    plannedDate: string;
-    plannedOdometer: number;
-    notes: string;
-};
-
-function getTodayDate() {
-    return new Date().toISOString().split('T')[0];
-}
-
-function createDefaultMaintenanceForm(vehicle?: Vehicle | null): MaintenanceFormState {
-    return {
-        vehicleRef: vehicle?._id || '',
-        type: '',
-        scheduleType: 'DATE',
-        plannedDate: getTodayDate(),
-        plannedOdometer: typeof vehicle?.lastOdometer === 'number' ? vehicle.lastOdometer : 0,
-        notes: '',
-    };
-}
-
-function getMaintenanceNextAction(item: Maintenance) {
-    if (item.status === 'SCHEDULED') {
-        return 'Kerjakan servis sesuai jadwal atau odometer yang ditetapkan';
-    }
-    if (item.status === 'SKIPPED') {
-        return 'Jadwalkan ulang bila servis ini masih dibutuhkan';
-    }
-    return 'Arsip; buat jadwal berikutnya bila sudah waktunya servis lagi';
-}
 
 export default function MaintenancePage() {
     const searchParams = useSearchParams();
@@ -69,32 +42,17 @@ export default function MaintenancePage() {
         setPage(1);
     }, [search, vehicleFilter, statusFilter]);
 
-    const buildMaintenanceQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
-        const params = new URLSearchParams({
-            entity: 'maintenances',
-            page: String(targetPage),
-            pageSize: String(targetPageSize),
-            sortPreset: 'work-queue',
-        });
-
-        if (search.trim()) {
-            params.set('q', search.trim());
-            params.set('searchFields', 'type,vehiclePlate,notes');
-        }
-
-        const filterObj: Record<string, string> = {};
-        if (vehicleFilter) {
-            filterObj.vehicleRef = vehicleFilter;
-        }
-        if (statusFilter) {
-            filterObj.status = statusFilter;
-        }
-        if (Object.keys(filterObj).length > 0) {
-            params.set('filter', JSON.stringify(filterObj));
-        }
-
-        return params.toString();
-    }, [page, search, vehicleFilter, statusFilter]);
+    const buildCurrentMaintenanceQuery = useCallback(
+        (targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) =>
+            buildMaintenanceQuery({
+                page: targetPage,
+                pageSize: targetPageSize,
+                search,
+                vehicleFilter,
+                statusFilter,
+            }),
+        [page, search, vehicleFilter, statusFilter]
+    );
 
     const loadMaintenance = useCallback(async () => {
         setLoading(true);
@@ -109,7 +67,7 @@ export default function MaintenancePage() {
             };
 
             const [listPayload, vehiclePayload, scheduledPayload, completedPayload, skippedPayload] = await Promise.all([
-                fetchEntity<Maintenance[]>(`/api/data?${buildMaintenanceQuery()}`),
+                fetchEntity<Maintenance[]>(`/api/data?${buildCurrentMaintenanceQuery()}`),
                 fetchEntity<Vehicle[]>('/api/data?entity=vehicles'),
                 fetchEntity<Maintenance[]>('/api/data?entity=maintenances&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'SCHEDULED' }))),
                 fetchEntity<Maintenance[]>('/api/data?entity=maintenances&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'DONE' }))),
@@ -127,7 +85,7 @@ export default function MaintenancePage() {
         } finally {
             setLoading(false);
         }
-    }, [addToast, buildMaintenanceQuery]);
+    }, [addToast, buildCurrentMaintenanceQuery]);
 
     useEffect(() => {
         void loadMaintenance();

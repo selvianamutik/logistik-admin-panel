@@ -7,50 +7,16 @@ import { useToast } from '../../layout';
 import { Plus, Search, Eye, AlertTriangle, X } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
+import {
+    buildIncidentsQuery,
+    buildIncidentSelectableState,
+    createDefaultIncidentForm,
+    getIncidentNextAction,
+    type IncidentFormState,
+} from '@/lib/fleet-queue-page-support';
 import { formatDateTime, INCIDENT_STATUS_MAP, URGENCY_MAP, INCIDENT_TYPE_MAP } from '@/lib/utils';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { Incident, Vehicle, DeliveryOrder } from '@/lib/types';
-
-type IncidentFormState = {
-    vehicleRef: string;
-    incidentType: Incident['incidentType'];
-    urgency: Incident['urgency'];
-    locationText: string;
-    odometer: number;
-    description: string;
-    dateTime: string;
-    relatedDeliveryOrderRef: string;
-};
-
-function getDefaultIncidentDateTime() {
-    return new Date().toISOString().slice(0, 16);
-}
-
-function createDefaultIncidentForm(vehicle?: Vehicle | null, deliveryOrder?: DeliveryOrder | null): IncidentFormState {
-    return {
-        vehicleRef: deliveryOrder?.vehicleRef || vehicle?._id || '',
-        incidentType: 'OTHER',
-        urgency: 'MEDIUM',
-        locationText: deliveryOrder?.receiverAddress || '',
-        odometer: typeof vehicle?.lastOdometer === 'number' ? vehicle.lastOdometer : 0,
-        description: '',
-        dateTime: getDefaultIncidentDateTime(),
-        relatedDeliveryOrderRef: deliveryOrder?._id || '',
-    };
-}
-
-function getIncidentNextAction(item: Incident) {
-    if (item.status === 'OPEN') {
-        return 'Tangani segera dan cek kondisi unit, driver, serta trip terkait';
-    }
-    if (item.status === 'IN_PROGRESS') {
-        return 'Lanjutkan penanganan lalu perbarui status sampai selesai';
-    }
-    if (item.status === 'RESOLVED') {
-        return 'Verifikasi hasil penanganan lalu tutup insiden bila sudah aman';
-    }
-    return 'Arsip; buka lagi hanya jika ada tindak lanjut tambahan';
-}
 
 export default function IncidentsPage() {
     const router = useRouter();
@@ -77,32 +43,17 @@ export default function IncidentsPage() {
         setPage(1);
     }, [search, vehicleFilter, statusFilter]);
 
-    const buildIncidentsQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
-        const params = new URLSearchParams({
-            entity: 'incidents',
-            page: String(targetPage),
-            pageSize: String(targetPageSize),
-            sortPreset: 'work-queue',
-        });
-
-        if (search.trim()) {
-            params.set('q', search.trim());
-            params.set('searchFields', 'incidentNumber,vehiclePlate,driverName,relatedDONumber,locationText');
-        }
-
-        const filterObj: Record<string, string> = {};
-        if (vehicleFilter) {
-            filterObj.vehicleRef = vehicleFilter;
-        }
-        if (statusFilter) {
-            filterObj.status = statusFilter;
-        }
-        if (Object.keys(filterObj).length > 0) {
-            params.set('filter', JSON.stringify(filterObj));
-        }
-
-        return params.toString();
-    }, [page, search, vehicleFilter, statusFilter]);
+    const buildCurrentIncidentsQuery = useCallback(
+        (targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) =>
+            buildIncidentsQuery({
+                page: targetPage,
+                pageSize: targetPageSize,
+                search,
+                vehicleFilter,
+                statusFilter,
+            }),
+        [page, search, vehicleFilter, statusFilter]
+    );
 
     const loadIncidents = useCallback(async () => {
         setLoading(true);
@@ -117,7 +68,7 @@ export default function IncidentsPage() {
             };
 
             const [listPayload, vehiclePayload, doPayload, openPayload, progressPayload, resolvedPayload] = await Promise.all([
-                fetchEntity<Incident[]>(`/api/data?${buildIncidentsQuery()}`),
+                fetchEntity<Incident[]>(`/api/data?${buildCurrentIncidentsQuery()}`),
                 fetchEntity<Vehicle[]>('/api/data?entity=vehicles'),
                 fetchEntity<DeliveryOrder[]>('/api/data?entity=delivery-orders'),
                 fetchEntity<Incident[]>('/api/data?entity=incidents&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'OPEN' }))),
@@ -137,7 +88,7 @@ export default function IncidentsPage() {
         } finally {
             setLoading(false);
         }
-    }, [addToast, buildIncidentsQuery]);
+    }, [addToast, buildCurrentIncidentsQuery]);
 
     useEffect(() => {
         void loadIncidents();
@@ -203,13 +154,11 @@ export default function IncidentsPage() {
         });
     };
 
-    const selectableVehicleIds = new Set(vehicles.map(vehicle => vehicle._id));
-    const selectableDos = dos.filter(deliveryOrder => !deliveryOrder.vehicleRef || selectableVehicleIds.has(deliveryOrder.vehicleRef));
-    const filteredDos = form.vehicleRef
-        ? selectableDos.filter(deliveryOrder => !deliveryOrder.vehicleRef || deliveryOrder.vehicleRef === form.vehicleRef)
-        : selectableDos;
-    const selectedVehicle = vehicles.find(vehicle => vehicle._id === form.vehicleRef) || null;
-    const selectedRelatedDO = dos.find(deliveryOrder => deliveryOrder._id === form.relatedDeliveryOrderRef) || null;
+    const { filteredDos, selectedVehicle, selectedRelatedDO } = buildIncidentSelectableState({
+        vehicles,
+        dos,
+        form,
+    });
 
     const openIncidentModal = (vehicle?: Vehicle | null, deliveryOrder?: DeliveryOrder | null) => {
         setForm(createDefaultIncidentForm(vehicle, deliveryOrder));
