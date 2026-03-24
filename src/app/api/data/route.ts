@@ -337,6 +337,8 @@ export async function GET(request: Request) {
     const sortDirParam = searchParams.get('sortDir');
     const sortDir = sortDirParam === 'asc' ? 'asc' : sortDirParam === 'desc' ? 'desc' : undefined;
     const sortPreset = searchParams.get('sortPreset');
+    const orFiltersParam = searchParams.get('orFilters');
+    const definedFieldsParam = searchParams.get('definedFields');
 
     if (entity === 'dashboard-summary') {
         if (!hasPermission(session.role, 'dashboard', 'view')) {
@@ -406,6 +408,8 @@ export async function GET(request: Request) {
         let items: Record<string, unknown>[] = [];
         let totalItems = 0;
         let filterObj: Record<string, unknown> | undefined;
+        let orFilters: Array<{ fields: string[]; value: string | number | boolean }> | undefined;
+        let definedFields: string[] | undefined;
 
         if (filter) {
             try {
@@ -416,6 +420,38 @@ export async function GET(request: Request) {
                     { status: 400 }
                 );
             }
+        }
+
+        if (orFiltersParam) {
+            try {
+                const parsed = JSON.parse(orFiltersParam) as unknown;
+                if (!Array.isArray(parsed)) {
+                    throw new Error('Or filter query tidak valid');
+                }
+                orFilters = parsed
+                    .filter((item): item is { fields: string[]; value: string | number | boolean } => (
+                        typeof item === 'object' &&
+                        item !== null &&
+                        Array.isArray((item as { fields?: unknown }).fields) &&
+                        ((item as { value?: unknown }).value !== undefined)
+                    ))
+                    .map(item => ({
+                        fields: item.fields,
+                        value: item.value,
+                    }));
+            } catch (error) {
+                return NextResponse.json(
+                    { error: error instanceof Error ? error.message : 'Or filter query tidak valid' },
+                    { status: 400 }
+                );
+            }
+        }
+
+        if (definedFieldsParam) {
+            definedFields = definedFieldsParam
+                .split(',')
+                .map(field => field.trim())
+                .filter(Boolean);
         }
 
         const needsPaginatedList =
@@ -436,6 +472,8 @@ export async function GET(request: Request) {
                     : [];
                 const result = await sanityList(docType, {
                     filterObj,
+                    orFilters,
+                    definedFields,
                     search: searchQuery || undefined,
                     searchFields,
                     page,

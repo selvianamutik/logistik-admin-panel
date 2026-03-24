@@ -14,6 +14,8 @@ type SanityConfig = {
 
 type SanityListOptions = {
     filterObj?: Record<string, unknown>;
+    orFilters?: Array<{ fields: string[]; value: string | number | boolean }>;
+    definedFields?: string[];
     search?: string;
     searchFields?: string[];
     page?: number;
@@ -28,7 +30,7 @@ type SanityListResult<T> = {
     total: number;
 };
 
-const FILTER_KEY_RE = /^[_a-zA-Z][_a-zA-Z0-9]*(?:\.[_a-zA-Z][_a-zA-Z0-9]*)*$/;
+const FILTER_KEY_RE = /^[_a-zA-Z][_a-zA-Z0-9]*(?:\[\])?(?:\.[_a-zA-Z][_a-zA-Z0-9]*(?:\[\])?)*$/;
 
 function isScalarFilterValue(value: unknown) {
     return (
@@ -235,7 +237,19 @@ export async function sanityList<T = Record<string, unknown>>(
     options: SanityListOptions = {}
 ): Promise<SanityListResult<T>> {
     const filterObj = options.filterObj ?? {};
+    const orFilters = options.orFilters ?? [];
+    const definedFields = options.definedFields ?? [];
     validateFilterObject(filterObj);
+    orFilters.forEach((orFilter, index) => {
+        if (!Array.isArray(orFilter.fields) || orFilter.fields.length === 0) {
+            throw new Error(`Invalid or filter fields at index ${index}`);
+        }
+        orFilter.fields.forEach(field => validateFieldPath(field, 'or filter field'));
+        if (!isScalarFilterValue(orFilter.value)) {
+            throw new Error(`Invalid or filter value at index ${index}`);
+        }
+    });
+    definedFields.forEach(field => validateFieldPath(field, 'defined field'));
 
     const page = normalizePositiveInteger(options.page, 1);
     const pageSize = normalizePositiveInteger(options.pageSize, 10, 500);
@@ -260,6 +274,18 @@ export async function sanityList<T = Record<string, unknown>>(
         end,
         ...filterObj,
     };
+    if (definedFields.length > 0) {
+        conditions.push(...definedFields.map(field => `defined(${field})`));
+    }
+    orFilters.forEach((orFilter, index) => {
+        params[`orFilterValue${index}`] = orFilter.value;
+    });
+
+    if (orFilters.length > 0) {
+        conditions.push(
+            ...orFilters.map((orFilter, index) => `(${orFilter.fields.map(field => `${field} == $orFilterValue${index}`).join(' || ')})`)
+        );
+    }
 
     if (options.search && searchFields.length > 0) {
         params.search = `*${options.search.trim()}*`;
