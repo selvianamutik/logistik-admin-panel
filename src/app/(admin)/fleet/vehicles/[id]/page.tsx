@@ -25,6 +25,7 @@ import type { Vehicle, Maintenance, Incident, DeliveryOrder, TireEvent, Expense 
 import PageBackButton from '@/components/PageBackButton';
 
 type VehicleTireFormState = {
+    registeredTireId: string;
     tireCode: string;
     slotCode: string;
     tireType: 'Tubeless' | 'Tube Type' | 'Solid';
@@ -38,6 +39,7 @@ const TIRE_TYPE_OPTIONS: VehicleTireFormState['tireType'][] = ['Tubeless', 'Tube
 
 function createDefaultTireForm(slotCode = '1L'): VehicleTireFormState {
     return {
+        registeredTireId: '',
         tireCode: '',
         slotCode,
         tireType: 'Tubeless',
@@ -59,6 +61,7 @@ export default function VehicleDetailPage() {
     const [incidents, setIncidents] = useState<Incident[]>([]);
     const [dos, setDos] = useState<DeliveryOrder[]>([]);
     const [tireEvents, setTireEvents] = useState<TireEvent[]>([]);
+    const [allTireEvents, setAllTireEvents] = useState<TireEvent[]>([]);
     const [expenses, setExpenses] = useState<Expense[]>([]);
     const [loading, setLoading] = useState(true);
     const [tab, setTab] = useState('profil');
@@ -82,12 +85,13 @@ export default function VehicleDetailPage() {
         try {
             const vehicleFilter = encodeURIComponent(JSON.stringify({ vehicleRef: vehicleId }));
             const expenseFilter = encodeURIComponent(JSON.stringify({ relatedVehicleRef: vehicleId }));
-            const [vehicleData, maintenanceRows, incidentRows, doRows, tireRows, expenseRows] = await Promise.all([
+            const [vehicleData, maintenanceRows, incidentRows, doRows, tireRows, allTireRows, expenseRows] = await Promise.all([
                 fetchEntity<Vehicle | null>(`/api/data?entity=vehicles&id=${vehicleId}`, 'Gagal memuat kendaraan'),
                 fetchEntity<Maintenance[]>(`/api/data?entity=maintenances&filter=${vehicleFilter}`, 'Gagal memuat maintenance'),
                 fetchEntity<Incident[]>(`/api/data?entity=incidents&filter=${vehicleFilter}`, 'Gagal memuat insiden'),
                 fetchEntity<DeliveryOrder[]>(`/api/data?entity=delivery-orders&filter=${vehicleFilter}`, 'Gagal memuat riwayat DO'),
                 fetchEntity<TireEvent[]>(`/api/data?entity=tire-events&filter=${vehicleFilter}`, 'Gagal memuat catatan ban'),
+                fetchEntity<TireEvent[]>('/api/data?entity=tire-events', 'Gagal memuat master ban'),
                 fetchEntity<Expense[]>(`/api/data?entity=expenses&filter=${expenseFilter}`, 'Gagal memuat biaya kendaraan'),
             ]);
 
@@ -96,6 +100,7 @@ export default function VehicleDetailPage() {
             setIncidents(incidentRows || []);
             setDos(doRows || []);
             setTireEvents(tireRows || []);
+            setAllTireEvents(allTireRows || []);
             setExpenses(expenseRows || []);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail kendaraan');
@@ -113,24 +118,28 @@ export default function VehicleDetailPage() {
 
     const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
     const activeDeliveryOrder = dos.find(deliveryOrder => ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status));
+    const normalizeTireRow = (event: TireEvent) => {
+        const status = resolveTireAssetStatus(event);
+        const slotCode = resolveTireSlotCode(event);
+        return {
+            ...event,
+            status,
+            tireCodeLabel: event.tireCode?.trim() || 'Belum dikodekan',
+            slotCode,
+            slotLabel: slotCode ? formatTireSlotLabel(slotCode) : undefined,
+            placementLabel: resolveTirePlacementLabel(event),
+        };
+    };
     const normalizedTireRows = tireEvents
-        .map(event => {
-            const status = resolveTireAssetStatus(event);
-            const slotCode = resolveTireSlotCode(event);
-            return {
-                ...event,
-                status,
-                tireCodeLabel: event.tireCode?.trim() || 'Belum dikodekan',
-                slotCode,
-                slotLabel: slotCode ? formatTireSlotLabel(slotCode) : undefined,
-                placementLabel: resolveTirePlacementLabel(event),
-            };
-        })
+        .map(normalizeTireRow)
         .sort((left, right) => {
             const leftSlot = left.slotCode || left.posisi || '';
             const rightSlot = right.slotCode || right.posisi || '';
             return compareTireSlotCodes(leftSlot, rightSlot);
         });
+    const normalizedAllTireRows = allTireEvents
+        .map(normalizeTireRow)
+        .sort((left, right) => left.tireCodeLabel.localeCompare(right.tireCodeLabel, 'id-ID'));
     const internalUnitTires = normalizedTireRows.filter(row => Boolean(row.slotCode) && ['IN_USE', 'SPARE'].includes(row.status));
     const layout = getSuggestedVehicleTireLayout(
         vehicle.vehicleType,
@@ -143,6 +152,20 @@ export default function VehicleDetailPage() {
     const filledSlotCount = [...mountedSlots, ...spareSlots].filter(slot => Boolean(slot.event)).length;
     const emptySlotCount = layout.allSlots.length - filledSlotCount;
     const externalAuditTires = normalizedTireRows.filter(row => !row.slotCode || !layout.allSlots.includes(row.slotCode as (typeof layout.allSlots)[number]));
+    const selectedRegisteredTire = normalizedAllTireRows.find(row => row._id === tireForm.registeredTireId);
+    const tireSelectionLocked = Boolean(editingTire || selectedRegisteredTire);
+    const availableRegisteredTires = normalizedAllTireRows.filter(row => {
+        if (editingTire) {
+            return row._id === editingTire._id;
+        }
+        if (row.status === 'SCRAPPED') {
+            return false;
+        }
+        if (row.holderType === 'INTERNAL_VEHICLE' && ['IN_USE', 'SPARE'].includes(row.status)) {
+            return false;
+        }
+        return true;
+    });
 
     const updateTireForm = <K extends keyof VehicleTireFormState>(key: K, value: VehicleTireFormState[K]) => {
         setTireForm(prev => ({ ...prev, [key]: value }));
@@ -177,6 +200,7 @@ export default function VehicleDetailPage() {
         const resolvedSlot = resolveTireSlotCode(event) || layout.allSlots[0] || '1L';
         setEditingTire(event);
         setTireForm({
+            registeredTireId: event._id,
             tireCode: event.tireCode || '',
             slotCode: resolvedSlot,
             tireType: event.tireType,
@@ -186,6 +210,32 @@ export default function VehicleDetailPage() {
             notes: event.notes || '',
         });
         setShowTireModal(true);
+    };
+
+    const handleRegisteredTireChange = (registeredTireId: string) => {
+        if (!registeredTireId) {
+            setTireForm(prev => ({
+                ...createDefaultTireForm(prev.slotCode),
+                slotCode: prev.slotCode,
+                installDate: prev.installDate,
+            }));
+            return;
+        }
+
+        const pickedTire = normalizedAllTireRows.find(row => row._id === registeredTireId);
+        if (!pickedTire) {
+            return;
+        }
+
+        setTireForm(prev => ({
+            ...prev,
+            registeredTireId,
+            tireCode: pickedTire.tireCode || '',
+            tireType: pickedTire.tireType,
+            tireBrand: pickedTire.tireBrand,
+            tireSize: pickedTire.tireSize,
+            notes: prev.notes || pickedTire.notes || '',
+        }));
     };
 
     const handleSaveTire = async () => {
@@ -210,12 +260,13 @@ export default function VehicleDetailPage() {
 
         setSavingTire(true);
         try {
+            const targetTireId = editingTire?._id || tireForm.registeredTireId;
             const res = await fetch('/api/data', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(
-                    editingTire
-                        ? { entity: 'tire-events', action: 'update', data: { id: editingTire._id, updates: payload } }
+                    targetTireId
+                        ? { entity: 'tire-events', action: 'update', data: { id: targetTireId, updates: payload } }
                         : { entity: 'tire-events', data: payload }
                 ),
             });
@@ -224,7 +275,7 @@ export default function VehicleDetailPage() {
                 addToast('error', result.error || 'Gagal menyimpan ban');
                 return;
             }
-            addToast('success', editingTire ? 'Ban pada unit berhasil diperbarui' : 'Ban berhasil dipasang ke unit');
+            addToast('success', targetTireId ? 'Ban pada unit berhasil diperbarui' : 'Ban berhasil dipasang ke unit');
             closeTireModal();
             await loadVehicleDetail();
         } catch {
@@ -602,9 +653,6 @@ export default function VehicleDetailPage() {
                                 <div style={{ padding: '0.85rem 1rem', borderRadius: '0.75rem', background: 'var(--color-gray-50)', border: '1px solid var(--color-gray-200)' }}>
                                     <div className="text-muted text-sm">Unit</div>
                                     <div className="font-medium">{vehicle.plateNumber} - {vehicle.unitCode}</div>
-                                    <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
-                                        Slot SP* otomatis dianggap serep unit. Slot lainnya dianggap ban terpasang. Untuk melepas ban dari unit ini, ubah slot atau statusnya lewat form edit.
-                                    </div>
                                 </div>
 
                                 <div className="form-row">
@@ -617,15 +665,44 @@ export default function VehicleDetailPage() {
                                         </select>
                                     </div>
                                     <div className="form-group">
+                                        <label className="form-label">Ban Terdaftar</label>
+                                        <select
+                                            className="form-select"
+                                            value={tireForm.registeredTireId}
+                                            onChange={e => handleRegisteredTireChange(e.target.value)}
+                                            disabled={savingTire || Boolean(editingTire)}
+                                        >
+                                            <option value="">Input ban baru</option>
+                                            {availableRegisteredTires.map(registeredTire => (
+                                                <option key={registeredTire._id} value={registeredTire._id}>
+                                                    {registeredTire.tireCodeLabel} - {registeredTire.tireBrand} {registeredTire.tireSize} ({registeredTire.placementLabel})
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                {selectedRegisteredTire && (
+                                    <div style={{ padding: '0.85rem 1rem', borderRadius: '0.75rem', background: 'var(--color-gray-50)', border: '1px solid var(--color-gray-200)' }}>
+                                        <div className="text-muted text-sm">Ban Terpilih</div>
+                                        <div className="font-medium">{selectedRegisteredTire.tireCodeLabel} - {selectedRegisteredTire.tireBrand} {selectedRegisteredTire.tireSize}</div>
+                                        <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
+                                            Posisi terakhir: {selectedRegisteredTire.placementLabel}
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="form-row">
+                                    <div className="form-group">
                                         <label className="form-label">Kode Ban</label>
-                                        <input className="form-input" value={tireForm.tireCode} onChange={e => updateTireForm('tireCode', e.target.value.toUpperCase())} placeholder="cth: BAN-0012" disabled={savingTire} />
+                                        <input className="form-input" value={tireForm.tireCode} onChange={e => updateTireForm('tireCode', e.target.value.toUpperCase())} placeholder="cth: BAN-0012" disabled={savingTire || tireSelectionLocked} />
                                     </div>
                                 </div>
 
                                 <div className="form-row">
                                     <div className="form-group">
                                         <label className="form-label">Jenis Ban</label>
-                                        <select className="form-select" value={tireForm.tireType} onChange={e => updateTireForm('tireType', e.target.value as VehicleTireFormState['tireType'])} disabled={savingTire}>
+                                        <select className="form-select" value={tireForm.tireType} onChange={e => updateTireForm('tireType', e.target.value as VehicleTireFormState['tireType'])} disabled={savingTire || tireSelectionLocked}>
                                             {TIRE_TYPE_OPTIONS.map(type => <option key={type} value={type}>{type}</option>)}
                                         </select>
                                     </div>
@@ -638,11 +715,11 @@ export default function VehicleDetailPage() {
                                 <div className="form-row">
                                     <div className="form-group">
                                         <label className="form-label">Merk / Model Ban</label>
-                                        <input className="form-input" value={tireForm.tireBrand} onChange={e => updateTireForm('tireBrand', e.target.value)} placeholder="cth: Bridgestone R150" disabled={savingTire} />
+                                        <input className="form-input" value={tireForm.tireBrand} onChange={e => updateTireForm('tireBrand', e.target.value)} placeholder="cth: Bridgestone R150" disabled={savingTire || tireSelectionLocked} />
                                     </div>
                                     <div className="form-group">
                                         <label className="form-label">Ukuran</label>
-                                        <input className="form-input" value={tireForm.tireSize} onChange={e => updateTireForm('tireSize', e.target.value)} placeholder="cth: 11.00-20 / 295-80R22.5" disabled={savingTire} />
+                                        <input className="form-input" value={tireForm.tireSize} onChange={e => updateTireForm('tireSize', e.target.value)} placeholder="cth: 11.00-20 / 295-80R22.5" disabled={savingTire || tireSelectionLocked} />
                                     </div>
                                 </div>
 
@@ -653,9 +730,6 @@ export default function VehicleDetailPage() {
                             </div>
                         </div>
                         <div className="modal-footer" style={{ justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap' }}>
-                            <div className="text-muted text-sm">
-                                Histori ban disimpan permanen. Untuk pindah ke gudang, pinjam keluar, atau afkir, ubah lokasi/status ban dari halaman audit ban.
-                            </div>
                             <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
                                 <button type="button" className="btn btn-secondary" onClick={closeTireModal} disabled={savingTire}>Batal</button>
                                 <button type="button" className="btn btn-primary" onClick={handleSaveTire} disabled={savingTire}>
