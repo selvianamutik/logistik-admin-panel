@@ -7,6 +7,7 @@ import { useToast } from '../../layout';
 import { Edit, Package, DollarSign, Plus, Save, Trash2, X } from 'lucide-react';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
+import { fetchAdminData } from '@/lib/api/admin-client';
 import { formatDate, formatCurrency, getReceivableNetAmount } from '@/lib/utils';
 import { formatCargoSummary, VOLUME_INPUT_UNIT_OPTIONS, WEIGHT_INPUT_UNIT_OPTIONS, type VolumeInputUnit, type WeightInputUnit } from '@/lib/measurement';
 import type { Customer, CustomerProduct, Order, FreightNota } from '@/lib/types';
@@ -57,23 +58,14 @@ export default function CustomerDetailPage() {
     const [productForm, setProductForm] = useState<CustomerProductForm>(DEFAULT_PRODUCT_FORM);
 
     useEffect(() => {
-        const fetchEntity = async <T,>(url: string) => {
-            const res = await fetch(url);
-            const result = await res.json();
-            if (!res.ok) {
-                throw new Error(result.error || 'Gagal memuat data customer');
-            }
-            return result.data as T;
-        };
-
         const loadCustomerDetail = async () => {
             setLoading(true);
             try {
                 const [cust, productRows, customerOrders, customerNotas] = await Promise.all([
-                    fetchEntity<Customer | null>(`/api/data?entity=customers&id=${customerId}`),
-                    fetchEntity<CustomerProduct[]>(`/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`),
-                    fetchEntity<Order[]>(`/api/data?entity=orders&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`),
-                    fetchEntity<FreightNota[]>(`/api/data?entity=freight-notas&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`),
+                    fetchAdminData<Customer | null>(`/api/data?entity=customers&id=${customerId}`, 'Gagal memuat data customer'),
+                    fetchAdminData<CustomerProduct[]>(`/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data customer'),
+                    fetchAdminData<Order[]>(`/api/data?entity=orders&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data customer'),
+                    fetchAdminData<FreightNota[]>(`/api/data?entity=freight-notas&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data customer'),
                 ]);
 
                 setCustomer(cust);

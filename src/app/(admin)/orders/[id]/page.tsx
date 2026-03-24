@@ -7,12 +7,11 @@ import { useToast } from '../../layout';
 import { Truck, FileText, Edit, Eye } from 'lucide-react';
 import CurrencyInput from '@/components/CurrencyInput';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
+import { fetchAdminData } from '@/lib/api/admin-client';
 import { formatDate, formatCurrency, formatNumber, getReceivableNetAmount, ORDER_STATUS_MAP, ITEM_STATUS_MAP, DO_STATUS_MAP, INVOICE_STATUS_MAP, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
 import {
     convertKgToWeightInputValue,
     convertM3ToVolumeInputValue,
-    convertVolumeToM3,
-    convertWeightToKg,
     formatCargoSummary,
     formatVolumeDisplay,
     VOLUME_INPUT_UNIT_OPTIONS,
@@ -21,100 +20,20 @@ import {
     type WeightInputUnit,
 } from '@/lib/measurement';
 import { calculateWeightPortion, getOrderItemProgress, roundQuantity } from '@/lib/order-item-progress';
+import {
+    addCargoAggregate,
+    buildSelectedNonKoliCargo,
+    createCargoAggregate,
+    formatProgressLine,
+    getActualDoItemCargo,
+    getCargoBasisValue,
+    getPlannedDoItemCargo,
+    hasCargoAggregate,
+    type CargoAggregate,
+    type SelectedShipmentMap,
+} from '@/lib/order-detail-support';
 import type { Order, OrderItem, DeliveryOrder, DeliveryOrderItem, Driver, FreightNota, FreightNotaItem, Vehicle } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
-
-type SelectedShipmentMap = Record<string, {
-    qtyKoli: string;
-    weightInputValue: string;
-    weightInputUnit: WeightInputUnit;
-    volumeInputValue: string;
-    volumeInputUnit: VolumeInputUnit;
-    holdRemaining: boolean;
-    holdReason: string;
-    holdLocation: string;
-}>;
-
-type CargoAggregate = {
-    qtyKoli: number;
-    weightKg: number;
-    volumeM3: number;
-};
-
-function createCargoAggregate(): CargoAggregate {
-    return {
-        qtyKoli: 0,
-        weightKg: 0,
-        volumeM3: 0,
-    };
-}
-
-function addCargoAggregate(base: CargoAggregate, next: Partial<CargoAggregate>) {
-    return {
-        qtyKoli: roundQuantity(base.qtyKoli + Number(next.qtyKoli || 0)),
-        weightKg: roundQuantity(base.weightKg + Number(next.weightKg || 0)),
-        volumeM3: roundQuantity(base.volumeM3 + Number(next.volumeM3 || 0), 3),
-    };
-}
-
-function getPlannedDoItemCargo(doItem: DeliveryOrderItem): CargoAggregate {
-    return {
-        qtyKoli: Number(doItem.orderItemQtyKoli || 0),
-        weightKg: Number(doItem.orderItemWeight || 0),
-        volumeM3: Number(doItem.orderItemVolumeM3 || 0),
-    };
-}
-
-function getActualDoItemCargo(doItem: DeliveryOrderItem): CargoAggregate {
-    return {
-        qtyKoli: Number(doItem.actualQtyKoli ?? doItem.orderItemQtyKoli ?? 0),
-        weightKg: Number(doItem.actualWeightKg ?? doItem.orderItemWeight ?? 0),
-        volumeM3: Number(doItem.actualVolumeM3 ?? doItem.orderItemVolumeM3 ?? 0),
-    };
-}
-
-function hasCargoAggregate(cargo: CargoAggregate) {
-    return cargo.qtyKoli > 0 || cargo.weightKg > 0 || cargo.volumeM3 > 0;
-}
-
-function buildSelectedNonKoliCargo(selection?: SelectedShipmentMap[string]): CargoAggregate {
-    if (!selection) {
-        return createCargoAggregate();
-    }
-
-    return {
-        qtyKoli: 0,
-        weightKg:
-            selection.weightInputValue.trim() && selection.weightInputUnit
-                ? roundQuantity(convertWeightToKg(Number(selection.weightInputValue), selection.weightInputUnit))
-                : 0,
-        volumeM3:
-            selection.volumeInputValue.trim() && selection.volumeInputUnit
-                ? roundQuantity(convertVolumeToM3(Number(selection.volumeInputValue), selection.volumeInputUnit), 3)
-                : 0,
-    };
-}
-
-function getCargoBasisValue(cargo: CargoAggregate) {
-    if (cargo.qtyKoli > 0) {
-        return cargo.qtyKoli;
-    }
-    if (cargo.weightKg > 0) {
-        return cargo.weightKg;
-    }
-    return cargo.volumeM3;
-}
-
-function formatProgressLine(label: string, cargo: CargoAggregate) {
-    if (!hasCargoAggregate(cargo)) {
-        return null;
-    }
-    return `${label}: ${formatCargoSummary({
-        qtyKoli: cargo.qtyKoli > 0 ? cargo.qtyKoli : undefined,
-        weightKg: cargo.weightKg > 0 ? cargo.weightKg : undefined,
-        volumeM3: cargo.volumeM3 > 0 ? cargo.volumeM3 : undefined,
-    })}`;
-}
 
 export default function OrderDetailPage() {
     const params = useParams();
@@ -153,37 +72,28 @@ export default function OrderDetailPage() {
     const [savingHold, setSavingHold] = useState(false);
 
     const loadOrderDetail = useCallback(async () => {
-        const fetchEntity = async <T,>(url: string) => {
-            const res = await fetch(url);
-            const result = await res.json();
-            if (!res.ok) {
-                throw new Error(result.error || 'Gagal memuat detail order');
-            }
-            return result.data as T;
-        };
-
         setLoading(true);
         try {
             const [orderData, itemData, deliveryOrders, vehicleData, driverData, activeDeliveryOrders] = await Promise.all([
-                fetchEntity<Order | null>(`/api/data?entity=orders&id=${orderId}`),
-                fetchEntity<OrderItem[]>(`/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`),
-                fetchEntity<DeliveryOrder[]>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`),
-                fetchEntity<Array<Pick<Vehicle, '_id' | 'unitCode' | 'plateNumber' | 'serviceRef' | 'serviceName'>>>(`/api/data?entity=vehicles&filter=${encodeURIComponent(JSON.stringify({ status: ['ACTIVE', 'IN_SERVICE'] }))}`),
-                fetchEntity<Driver[]>('/api/data?entity=drivers'),
-                fetchEntity<Array<Pick<DeliveryOrder, '_id' | 'vehicleRef' | 'driverRef' | 'status'>>>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ status: ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'] }))}`),
+                fetchAdminData<Order | null>(`/api/data?entity=orders&id=${orderId}`, 'Gagal memuat detail order'),
+                fetchAdminData<OrderItem[]>(`/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`, 'Gagal memuat detail order'),
+                fetchAdminData<DeliveryOrder[]>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`, 'Gagal memuat detail order'),
+                fetchAdminData<Array<Pick<Vehicle, '_id' | 'unitCode' | 'plateNumber' | 'serviceRef' | 'serviceName'>>>(`/api/data?entity=vehicles&filter=${encodeURIComponent(JSON.stringify({ status: ['ACTIVE', 'IN_SERVICE'] }))}`, 'Gagal memuat detail order'),
+                fetchAdminData<Driver[]>('/api/data?entity=drivers', 'Gagal memuat detail order'),
+                fetchAdminData<Array<Pick<DeliveryOrder, '_id' | 'vehicleRef' | 'driverRef' | 'status'>>>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ status: ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'] }))}`, 'Gagal memuat detail order'),
             ]);
             const deliveryOrderIds = (deliveryOrders || []).map(item => item._id);
             const [deliveryOrderItems, notaItems] = await Promise.all([
                 deliveryOrderIds.length > 0
-                    ? fetchEntity<DeliveryOrderItem[]>(`/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: deliveryOrderIds }))}`)
+                    ? fetchAdminData<DeliveryOrderItem[]>(`/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: deliveryOrderIds }))}`, 'Gagal memuat detail order')
                     : Promise.resolve([] as DeliveryOrderItem[]),
                 deliveryOrderIds.length > 0
-                    ? fetchEntity<FreightNotaItem[]>(`/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ doRef: deliveryOrderIds }))}`)
+                    ? fetchAdminData<FreightNotaItem[]>(`/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ doRef: deliveryOrderIds }))}`, 'Gagal memuat detail order')
                     : Promise.resolve([] as FreightNotaItem[]),
             ]);
             const notaIds = [...new Set((notaItems || []).map(item => item.notaRef).filter(Boolean))];
             const orderNotas = notaIds.length > 0
-                ? await fetchEntity<FreightNota[]>(`/api/data?entity=freight-notas&filter=${encodeURIComponent(JSON.stringify({ _id: notaIds }))}`)
+                ? await fetchAdminData<FreightNota[]>(`/api/data?entity=freight-notas&filter=${encodeURIComponent(JSON.stringify({ _id: notaIds }))}`, 'Gagal memuat detail order')
                 : [];
 
             setOrder(orderData);

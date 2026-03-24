@@ -7,6 +7,7 @@ import { CheckCircle, Plus, Printer, Save, Trash2, X } from 'lucide-react';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import CurrencyInput from '@/components/CurrencyInput';
 import PageBackButton from '@/components/PageBackButton';
+import { fetchAdminData } from '@/lib/api/admin-client';
 import { useToast } from '../../layout';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
 import type { BankAccount, DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem } from '@/lib/types';
@@ -54,22 +55,13 @@ export default function DriverVoucherDetailPage() {
     const [issueBankRepairRef, setIssueBankRepairRef] = useState('');
 
     const loadVoucherDetail = useCallback(async () => {
-        const fetchEntity = async <T,>(url: string) => {
-            const res = await fetch(url);
-            const payload = await res.json();
-            if (!res.ok) {
-                throw new Error(payload.error || 'Gagal memuat detail uang jalan trip');
-            }
-            return payload.data as T;
-        };
-
         setLoading(true);
         try {
             const [voucherData, voucherItems, voucherDisbursements, accounts] = await Promise.all([
-                fetchEntity<DriverVoucher | null>(`/api/data?entity=driver-vouchers&id=${params.id}`),
-                fetchEntity<DriverVoucherItem[]>(`/api/data?entity=driver-voucher-items&filter=${encodeURIComponent(JSON.stringify({ voucherRef: params.id }))}`),
-                fetchEntity<DriverVoucherDisbursement[]>(`/api/data?entity=driver-voucher-disbursements&filter=${encodeURIComponent(JSON.stringify({ voucherRef: params.id }))}`),
-                fetchEntity<BankAccount[]>('/api/data?entity=bank-accounts'),
+                fetchAdminData<DriverVoucher | null>(`/api/data?entity=driver-vouchers&id=${params.id}`, 'Gagal memuat detail uang jalan trip'),
+                fetchAdminData<DriverVoucherItem[]>(`/api/data?entity=driver-voucher-items&filter=${encodeURIComponent(JSON.stringify({ voucherRef: params.id }))}`, 'Gagal memuat detail uang jalan trip'),
+                fetchAdminData<DriverVoucherDisbursement[]>(`/api/data?entity=driver-voucher-disbursements&filter=${encodeURIComponent(JSON.stringify({ voucherRef: params.id }))}`, 'Gagal memuat detail uang jalan trip'),
+                fetchAdminData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat detail uang jalan trip'),
             ]);
             setVoucher(voucherData || null);
             setItems(voucherItems || []);

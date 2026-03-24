@@ -7,6 +7,7 @@ import { Printer, DollarSign, Landmark, Trash2, FileDown } from 'lucide-react';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import CurrencyInput from '@/components/CurrencyInput';
 import PageBackButton from '@/components/PageBackButton';
+import { fetchAdminData } from '@/lib/api/admin-client';
 import { buildFreightNotaPrintDocument, fetchCompanyProfile, formatFreightNotaDisplayNumber, openBrandedPrint } from '@/lib/print';
 import { exportFreightNotaDetail } from '@/lib/export';
 import { formatDate, formatCurrency, getReceivableNetAmount, INVOICE_ADJUSTMENT_KIND_MAP, PAYMENT_METHOD_MAP } from '@/lib/utils';
@@ -45,27 +46,18 @@ export default function NotaDetailPage() {
     const [adjustNote, setAdjustNote] = useState('');
 
     const loadNotaDetail = useCallback(async () => {
-        const fetchEntity = async <T,>(url: string) => {
-            const res = await fetch(url);
-            const result = await res.json();
-            if (!res.ok) {
-                throw new Error(result.error || 'Gagal memuat detail nota');
-            }
-            return result.data as T;
-        };
-
         setLoading(true);
         try {
             const [notaData, notaItems, paymentRows, adjustmentRows, accounts, companyData] = await Promise.all([
-                fetchEntity<FreightNota | null>(`/api/data?entity=freight-notas&id=${notaId}`),
-                fetchEntity<FreightNotaItem[]>(`/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ notaRef: notaId }))}`),
-                fetchEntity<Payment[]>(`/api/data?entity=payments&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: notaId }))}`),
-                fetchEntity<InvoiceAdjustment[]>(`/api/data?entity=invoice-adjustments&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: notaId }))}`),
-                fetchEntity<BankAccount[]>('/api/data?entity=bank-accounts'),
+                fetchAdminData<FreightNota | null>(`/api/data?entity=freight-notas&id=${notaId}`, 'Gagal memuat detail nota'),
+                fetchAdminData<FreightNotaItem[]>(`/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ notaRef: notaId }))}`, 'Gagal memuat detail nota'),
+                fetchAdminData<Payment[]>(`/api/data?entity=payments&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: notaId }))}`, 'Gagal memuat detail nota'),
+                fetchAdminData<InvoiceAdjustment[]>(`/api/data?entity=invoice-adjustments&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: notaId }))}`, 'Gagal memuat detail nota'),
+                fetchAdminData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat detail nota'),
                 fetchCompanyProfile(),
             ]);
             const customerData = notaData?.customerRef
-                ? await fetchEntity<Pick<Customer, '_id' | 'name' | 'address' | 'contactPerson' | 'phone'> | null>(`/api/data?entity=customers&id=${notaData.customerRef}`)
+                ? await fetchAdminData<Pick<Customer, '_id' | 'name' | 'address' | 'contactPerson' | 'phone'> | null>(`/api/data?entity=customers&id=${notaData.customerRef}`, 'Gagal memuat detail nota')
                 : null;
 
             setNota(notaData);
