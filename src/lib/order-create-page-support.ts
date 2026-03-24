@@ -9,6 +9,7 @@ import {
 } from './measurement';
 
 export type OrderItemForm = {
+    id?: string;
     customerProductRef: string;
     description: string;
     qtyKoli: number;

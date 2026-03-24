@@ -8,16 +8,17 @@ import CollapsibleCard from '@/components/CollapsibleCard';
 import CurrencyInput from '@/components/CurrencyInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminData } from '@/lib/api/admin-client';
+import {
+    buildBankAccountMap,
+    buildInvoiceDetailSummary,
+    INVOICE_DETAIL_STATUS_MAP,
+    resolvePaymentAccountLabel,
+    sortInvoiceAdjustments,
+} from '@/lib/invoice-detail-page-support';
 import { buildFreightNotaPrintDocument, fetchCompanyProfile, formatFreightNotaDisplayNumber, openBrandedPrint } from '@/lib/print';
 import { exportFreightNotaDetail } from '@/lib/export';
-import { formatDate, formatCurrency, getReceivableNetAmount, INVOICE_ADJUSTMENT_KIND_MAP, PAYMENT_METHOD_MAP } from '@/lib/utils';
+import { formatDate, formatCurrency, INVOICE_ADJUSTMENT_KIND_MAP, PAYMENT_METHOD_MAP } from '@/lib/utils';
 import type { FreightNota, FreightNotaItem, Payment, BankAccount, CompanyProfile, InvoiceAdjustment, Customer } from '@/lib/types';
-
-const STATUS_MAP: Record<string, { label: string; color: string }> = {
-    UNPAID: { label: 'Belum Lunas', color: 'danger' },
-    PARTIAL: { label: 'Sebagian', color: 'warning' },
-    PAID: { label: 'Lunas', color: 'success' },
-};
 export default function NotaDetailPage() {
     const params = useParams();
     const router = useRouter();
@@ -63,7 +64,7 @@ export default function NotaDetailPage() {
             setNota(notaData);
             setItems(notaItems || []);
             setPayments(paymentRows || []);
-            setAdjustments((adjustmentRows || []).sort((a, b) => b.date.localeCompare(a.date)));
+            setAdjustments(sortInvoiceAdjustments(adjustmentRows || []));
             setBankAccounts((accounts || []).filter(account => account.active !== false));
             setCompany(companyData);
             setCustomer(customerData);
@@ -78,16 +79,16 @@ export default function NotaDetailPage() {
         void loadNotaDetail();
     }, [loadNotaDetail]);
 
-    const totalPaid = payments.reduce((s, p) => s + p.amount, 0);
-    const grossAmount = nota?.totalAmount || 0;
-    const totalAdjustmentAmount = nota?.totalAdjustmentAmount || adjustments
-        .filter(item => item.status === 'APPROVED')
-        .reduce((sum, item) => sum + item.amount, 0);
-    const netAmount = nota ? getReceivableNetAmount(nota) : 0;
-    const remaining = Math.max(netAmount - totalPaid, 0);
-    const creditAmount = Math.max(totalPaid - netAmount, 0);
-    const paidPercent = netAmount > 0 ? Math.min(100, (Math.min(totalPaid, netAmount) / netAmount) * 100) : totalPaid > 0 ? 100 : 0;
-    const accountMap = new Map(bankAccounts.map(account => [account._id, account]));
+    const {
+        totalPaid,
+        grossAmount,
+        totalAdjustmentAmount,
+        netAmount,
+        remaining,
+        creditAmount,
+        paidPercent,
+    } = buildInvoiceDetailSummary({ nota, payments, adjustments });
+    const accountMap = buildBankAccountMap(bankAccounts);
 
     const handleAddPayment = async () => {
         if (payAmount <= 0) { addToast('error', 'Nominal harus lebih dari 0'); return; }
@@ -238,7 +239,7 @@ export default function NotaDetailPage() {
     if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 200 }} /></div>;
     if (!nota) return <div className="empty-state"><div className="empty-state-title">Nota tidak ditemukan</div></div>;
 
-    const statusConf = STATUS_MAP[nota.status] || { label: nota.status, color: 'secondary' };
+    const statusConf = INVOICE_DETAIL_STATUS_MAP[nota.status] || { label: nota.status, color: 'secondary' };
     const displayNotaNumber = formatFreightNotaDisplayNumber(nota, company);
 
     return (
@@ -374,14 +375,7 @@ export default function NotaDetailPage() {
                                     </div>
                                 ) : payments.map((p, i) => (
                                     (() => {
-                                        const matchedAccount = p.bankAccountRef ? accountMap.get(p.bankAccountRef) : undefined;
-                                        const accountLabel = p.bankAccountName
-                                            ? `${p.bankAccountName}${p.bankAccountNumber || matchedAccount?.accountNumber ? ` - ${p.bankAccountNumber || matchedAccount?.accountNumber}` : ''}`
-                                            : matchedAccount
-                                                ? `${matchedAccount.bankName} - ${matchedAccount.accountNumber}`
-                                                : p.method === 'CASH'
-                                                    ? 'Kas / rekening tidak tercatat'
-                                                    : '';
+                                        const accountLabel = resolvePaymentAccountLabel(p, accountMap);
                                         return (
                                     <div key={p._id} style={{ padding: '0.75rem 1rem', borderBottom: i < payments.length - 1 ? '1px solid var(--color-gray-100)' : 'none' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem' }}>

@@ -6,41 +6,10 @@ import {
     Package, Truck, FileText, AlertTriangle, Wrench, DollarSign,
     TrendingUp, Clock, ArrowUpRight
 } from 'lucide-react';
-import { formatCurrency, formatDate, getReceivableNetAmount, ORDER_STATUS_MAP, INVOICE_STATUS_MAP } from '@/lib/utils';
+import { getDashboardNotaNetAmount, getRecentNotaAction, getRecentOrderAction, type DashboardData } from '@/lib/dashboard-page-support';
+import { formatCurrency, formatDate, ORDER_STATUS_MAP, INVOICE_STATUS_MAP } from '@/lib/utils';
 import Link from 'next/link';
 import { hasPermission } from '@/lib/rbac';
-
-interface DashboardData {
-    orderStats: { total: number; open: number; partial: number; complete: number; onHold: number };
-    doStats: { total: number; onDelivery: number };
-    notaStats: { unpaid: number; totalOutstanding: number };
-    boronganStats: { unpaid: number; totalOutstanding: number };
-    voucherStats: { unsettled: number; totalIssued: number };
-    fleetStats: { openIncidents: number; maintenanceDue: number };
-    recentOrders: Array<{ _id: string; masterResi: string; customerName: string; status: string; createdAt: string }>;
-    recentNotas: Array<{ _id: string; notaNumber: string; customerName: string; status: string; totalAmount: number; totalAdjustmentAmount?: number; netAmount?: number }>;
-}
-
-const getRecentOrderAction = (status: string) => {
-    switch (status) {
-        case 'OPEN':
-            return 'Buat trip pertama';
-        case 'PARTIAL':
-            return 'Lanjutkan sisa pengiriman';
-        case 'ON_HOLD':
-            return 'Cek alasan hold';
-        case 'COMPLETE':
-            return 'Siap ditagih / arsip';
-        default:
-            return 'Buka detail order';
-    }
-};
-
-const getRecentNotaAction = (nota: DashboardData['recentNotas'][number]) => {
-    if (nota.status === 'UNPAID') return 'Tagih atau catat receipt';
-    if (nota.status === 'PARTIAL') return 'Follow up sisa pembayaran';
-    return (nota.totalAdjustmentAmount || 0) > 0 ? 'Arsip + cek potongan' : 'Arsip / cetak';
-};
 
 export default function DashboardPage() {
     const { user } = useApp();
@@ -319,7 +288,7 @@ export default function DashboardPage() {
                                                 </span>
                                             </td>
                                             <td>{getRecentNotaAction(nota)}</td>
-                                            {canSeeFinancialTotals && <td className="font-medium">{formatCurrency(getReceivableNetAmount(nota))}</td>}
+                                            {canSeeFinancialTotals && <td className="font-medium">{formatCurrency(getDashboardNotaNetAmount(nota))}</td>}
                                         </tr>
                                     ))
                                 )}
@@ -348,7 +317,7 @@ export default function DashboardPage() {
                                         <div className="mobile-record-meta">
                                             <div className="mobile-record-kv">
                                                 <span className="mobile-record-label">Tagihan Netto</span>
-                                                <span className="mobile-record-value">{formatCurrency(getReceivableNetAmount(nota))}</span>
+                                                <span className="mobile-record-value">{formatCurrency(getDashboardNotaNetAmount(nota))}</span>
                                             </div>
                                         </div>
                                     )}

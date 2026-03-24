@@ -6,41 +6,28 @@ import { useToast } from '../../../layout';
 import { Plus, Save, X } from 'lucide-react';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
+import { fetchAdminData } from '@/lib/api/admin-client';
 import type { Order, Customer, CustomerProduct, Service, DeliveryOrder, OrderItem } from '@/lib/types';
 import {
-    convertKgToWeightInputValue,
-    convertM3ToVolumeInputValue,
-    convertVolumeToM3,
-    convertWeightToKg,
     formatCargoSummary,
     VOLUME_INPUT_UNIT_OPTIONS,
     WEIGHT_INPUT_UNIT_OPTIONS,
     type VolumeInputUnit,
     type WeightInputUnit,
 } from '@/lib/measurement';
-
-type OrderItemForm = {
-    id?: string;
-    customerProductRef: string;
-    description: string;
-    qtyKoli: number;
-    weightInputValue: number;
-    weightInputUnit: WeightInputUnit;
-    volumeInputValue: number;
-    volumeInputUnit: VolumeInputUnit;
-    value: number;
-};
-
-const DEFAULT_ITEM: OrderItemForm = {
-    customerProductRef: '',
-    description: '',
-    qtyKoli: 0,
-    weightInputValue: 0,
-    weightInputUnit: 'KG',
-    volumeInputValue: 0,
-    volumeInputUnit: 'M3',
-    value: 0,
-};
+import {
+    applyCustomerProductToOrderItem,
+    createDefaultOrderItemForm,
+    type OrderItemForm,
+} from '@/lib/order-create-page-support';
+import {
+    buildOrderEditForm,
+    getOrderEditItems,
+    hasOrderItemOperationalProgress,
+    resolvePickupAddressForCustomer,
+    summarizeOrderEditTargetCargo,
+    type OrderEditFormState,
+} from '@/lib/order-edit-page-support';
 
 export default function OrderEditPage() {
     const params = useParams();
@@ -55,97 +42,23 @@ export default function OrderEditPage() {
     const [hasDeliveryOrders, setHasDeliveryOrders] = useState(false);
     const [hasOperationalProgress, setHasOperationalProgress] = useState(false);
     const [revisionReason, setRevisionReason] = useState('');
-    const [form, setForm] = useState({
-        customerRef: '', customerName: '',
-        receiverName: '', receiverPhone: '', receiverAddress: '', receiverCompany: '',
-        pickupAddress: '',
-        serviceRef: '', serviceName: '',
-        notes: ''
-    });
-    const [items, setItems] = useState<OrderItemForm[]>([{ ...DEFAULT_ITEM }]);
-
-    const syncPickupAddressForCustomer = (nextCustomerRef: string, previousForm: typeof form) => {
-        const nextCustomer = customers.find(customer => customer._id === nextCustomerRef);
-        const previousCustomer = customers.find(customer => customer._id === previousForm.customerRef);
-        const previousCustomerAddress = previousCustomer?.address?.trim() || '';
-        const currentPickup = previousForm.pickupAddress.trim();
-
-        if (!currentPickup || (previousCustomerAddress && currentPickup === previousCustomerAddress)) {
-            return nextCustomer?.address || '';
-        }
-
-        return previousForm.pickupAddress;
-    };
+    const [form, setForm] = useState<OrderEditFormState>(buildOrderEditForm(null));
+    const [items, setItems] = useState<OrderItemForm[]>([createDefaultOrderItemForm()]);
 
     useEffect(() => {
-        const fetchEntity = async <T,>(url: string) => {
-            const res = await fetch(url);
-            const payload = await res.json();
-            if (!res.ok) {
-                throw new Error(payload.error || 'Gagal memuat form edit order');
-            }
-            return payload.data as T;
-        };
-
         Promise.all([
-            fetchEntity<Order | null>(`/api/data?entity=orders&id=${orderId}`),
-            fetchEntity<Customer[]>('/api/data?entity=customers'),
-            fetchEntity<Service[]>('/api/data?entity=services'),
-            fetchEntity<DeliveryOrder[]>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`),
-            fetchEntity<OrderItem[]>(`/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`),
+            fetchAdminData<Order | null>(`/api/data?entity=orders&id=${orderId}`, 'Gagal memuat form edit order'),
+            fetchAdminData<Customer[]>('/api/data?entity=customers', 'Gagal memuat form edit order'),
+            fetchAdminData<Service[]>('/api/data?entity=services', 'Gagal memuat form edit order'),
+            fetchAdminData<DeliveryOrder[]>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`, 'Gagal memuat form edit order'),
+            fetchAdminData<OrderItem[]>(`/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`, 'Gagal memuat form edit order'),
         ]).then(([order, customerRows, serviceRows, deliveryOrders, orderItems]) => {
-            if (order) {
-                setForm({
-                    customerRef: order.customerRef,
-                    customerName: order.customerName || '',
-                    receiverName: order.receiverName,
-                    receiverPhone: order.receiverPhone,
-                    receiverAddress: order.receiverAddress,
-                    receiverCompany: order.receiverCompany || '',
-                    pickupAddress: order.pickupAddress || '',
-                    serviceRef: order.serviceRef,
-                    serviceName: order.serviceName || '',
-                    notes: order.notes || '',
-                });
-            }
-
-            const mappedItems = (orderItems || []).map<OrderItemForm>(item => ({
-                id: item._id,
-                customerProductRef: item.customerProductRef || '',
-                description: item.description || '',
-                qtyKoli: typeof item.qtyKoli === 'number' ? item.qtyKoli : 0,
-                weightInputValue:
-                    typeof item.weightInputValue === 'number' && item.weightInputValue > 0
-                        ? item.weightInputValue
-                        : typeof item.weight === 'number' && item.weight > 0
-                            ? convertKgToWeightInputValue(item.weight, item.weightInputUnit || 'KG')
-                            : 0,
-                weightInputUnit: item.weightInputUnit || 'KG',
-                volumeInputValue:
-                    typeof item.volumeInputValue === 'number' && item.volumeInputValue > 0
-                        ? item.volumeInputValue
-                        : typeof item.volume === 'number' && item.volume > 0
-                            ? convertM3ToVolumeInputValue(item.volume, item.volumeInputUnit || 'M3')
-                            : 0,
-                volumeInputUnit: item.volumeInputUnit || 'M3',
-                value: item.value || 0,
-            }));
-
-            setItems(mappedItems.length > 0 ? mappedItems : [{ ...DEFAULT_ITEM }]);
+            setForm(buildOrderEditForm(order));
+            setItems(getOrderEditItems(orderItems || []));
             setCustomers((customerRows || []).filter(customer => customer.active !== false || customer._id === order?.customerRef));
             setServices((serviceRows || []).filter(service => service.active !== false || service._id === order?.serviceRef));
             setHasDeliveryOrders((deliveryOrders || []).length > 0);
-            setHasOperationalProgress((orderItems || []).some(item =>
-                Number(item.deliveredQtyKoli || 0) > 0 ||
-                Number(item.assignedQtyKoli || 0) > 0 ||
-                Number(item.heldQtyKoli || 0) > 0 ||
-                Number(item.deliveredWeight || 0) > 0 ||
-                Number(item.assignedWeight || 0) > 0 ||
-                Number(item.heldWeight || 0) > 0 ||
-                Number(item.deliveredVolume || 0) > 0 ||
-                Number(item.assignedVolume || 0) > 0 ||
-                Number(item.heldVolume || 0) > 0
-            ));
+            setHasOperationalProgress(hasOrderItemOperationalProgress(orderItems || []));
         }).catch(error => {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat form edit order');
         }).finally(() => {
@@ -162,13 +75,12 @@ export default function OrderEditPage() {
         let cancelled = false;
         const loadCustomerProducts = async () => {
             try {
-                const res = await fetch(`/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef: form.customerRef, active: true }))}`);
-                const payload = await res.json();
-                if (!res.ok) {
-                    throw new Error(payload.error || 'Gagal memuat master barang customer');
-                }
+                const products = await fetchAdminData<CustomerProduct[]>(
+                    `/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef: form.customerRef, active: true }))}`,
+                    'Gagal memuat master barang customer'
+                );
                 if (!cancelled) {
-                    setCustomerProducts(payload.data || []);
+                    setCustomerProducts(products || []);
                 }
             } catch (error) {
                 if (!cancelled) {
@@ -188,11 +100,11 @@ export default function OrderEditPage() {
         setItems(prev => prev.map((item, i) => i === idx ? { ...item, [field]: value } : item));
     };
 
-    const addItem = () => setItems(prev => [...prev, { ...DEFAULT_ITEM }]);
+    const addItem = () => setItems(prev => [...prev, createDefaultOrderItemForm()]);
     const removeItem = (idx: number) => {
         setItems(prev => {
             const next = prev.filter((_, i) => i !== idx);
-            return next.length > 0 ? next : [{ ...DEFAULT_ITEM }];
+            return next.length > 0 ? next : [createDefaultOrderItemForm()];
         });
     };
 
@@ -202,7 +114,12 @@ export default function OrderEditPage() {
             ...prev,
             customerRef: nextCustomerRef,
             customerName: nextCustomer?.name || '',
-            pickupAddress: syncPickupAddressForCustomer(nextCustomerRef, prev),
+            pickupAddress: resolvePickupAddressForCustomer({
+                nextCustomerRef,
+                previousCustomerRef: prev.customerRef,
+                previousPickupAddress: prev.pickupAddress,
+                customers,
+            }),
         }));
         setItems(prev => prev.map(item => ({
             ...item,
@@ -212,40 +129,9 @@ export default function OrderEditPage() {
 
     const applyCustomerProductSelection = (idx: number, nextProductRef: string) => {
         const selectedProduct = customerProducts.find(product => product._id === nextProductRef);
-        setItems(prev => prev.map((item, i) => {
-            if (i !== idx) {
-                return item;
-            }
-            if (!selectedProduct) {
-                return { ...item, customerProductRef: '' };
-            }
-
-            const nextWeightUnit = selectedProduct.defaultWeightInputUnit || item.weightInputUnit || 'KG';
-            const nextVolumeUnit = selectedProduct.defaultVolumeInputUnit || item.volumeInputUnit || 'M3';
-            const nextWeightValue =
-                typeof selectedProduct.defaultWeightInputValue === 'number' && selectedProduct.defaultWeightInputValue > 0
-                    ? selectedProduct.defaultWeightInputValue
-                    : typeof selectedProduct.defaultWeight === 'number' && selectedProduct.defaultWeight > 0
-                        ? convertKgToWeightInputValue(selectedProduct.defaultWeight, nextWeightUnit)
-                        : 0;
-            const nextVolumeValue =
-                typeof selectedProduct.defaultVolumeInputValue === 'number' && selectedProduct.defaultVolumeInputValue > 0
-                    ? selectedProduct.defaultVolumeInputValue
-                    : typeof selectedProduct.defaultVolume === 'number' && selectedProduct.defaultVolume > 0
-                        ? convertM3ToVolumeInputValue(selectedProduct.defaultVolume, nextVolumeUnit)
-                        : 0;
-
-            return {
-                ...item,
-                customerProductRef: selectedProduct._id,
-                description: selectedProduct.description || selectedProduct.name || item.description,
-                qtyKoli: selectedProduct.defaultQtyKoli ?? item.qtyKoli ?? 0,
-                weightInputValue: nextWeightValue,
-                weightInputUnit: nextWeightUnit,
-                volumeInputValue: nextVolumeValue,
-                volumeInputUnit: nextVolumeUnit,
-            };
-        }));
+        setItems(prev => prev.map((item, i) => (
+            i === idx ? applyCustomerProductToOrderItem(item, selectedProduct) : item
+        )));
     };
 
     const handleSave = async (e: React.FormEvent) => {
@@ -310,11 +196,7 @@ export default function OrderEditPage() {
     if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 300 }} /></div>;
 
     const isRevisionMode = hasDeliveryOrders || hasOperationalProgress;
-    const targetCargo = items.reduce((sum, item) => ({
-        qtyKoli: sum.qtyKoli + Number(item.qtyKoli || 0),
-        weightKg: sum.weightKg + (item.weightInputValue > 0 ? convertWeightToKg(item.weightInputValue, item.weightInputUnit) : 0),
-        volumeM3: sum.volumeM3 + (item.volumeInputValue > 0 ? convertVolumeToM3(item.volumeInputValue, item.volumeInputUnit) : 0),
-    }), { qtyKoli: 0, weightKg: 0, volumeM3: 0 });
+    const targetCargo = summarizeOrderEditTargetCargo(items);
     const selectedCustomer = customers.find(customer => customer._id === form.customerRef) || null;
     const selectedService = services.find(service => service._id === form.serviceRef) || null;
 
