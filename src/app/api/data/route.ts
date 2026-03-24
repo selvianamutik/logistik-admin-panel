@@ -69,7 +69,8 @@ import {
     sanityGetCompanyProfile,
     sanityList,
 } from '@/lib/sanity';
-import type { Expense, User, Vehicle } from '@/lib/types';
+import { getSuggestedVehicleTireLayout, resolveTireAssetStatus, resolveTireSlotCode } from '@/lib/tire-slots';
+import type { Expense, TireEvent, User, Vehicle } from '@/lib/types';
 import { getDriverVoucherIssuedAmount } from '@/lib/utils';
 type DashboardSummary = {
     orderStats: { total: number; open: number; partial: number; complete: number; onHold: number };
@@ -348,6 +349,132 @@ async function getCustomersSummary(ids: string[] = []) {
     };
 }
 
+type VehicleTireSummary = {
+    filled: number;
+    expected: number;
+    missing: number;
+};
+
+function buildVehicleTireSummary(
+    vehicle: Pick<Vehicle, '_id' | 'vehicleType' | 'serviceName'>,
+    tireEvents: Array<Pick<TireEvent, 'vehicleRef' | 'status' | 'holderType' | 'slotCode' | 'posisi' | 'vehiclePlate' | 'externalPartyName' | 'externalPlateNumber'>>
+): VehicleTireSummary {
+    const activeSlotCodes = Array.from(
+        new Set(
+            tireEvents
+                .filter(event => event.vehicleRef === vehicle._id && ['IN_USE', 'SPARE'].includes(resolveTireAssetStatus(event)))
+                .map(event => resolveTireSlotCode(event) || '')
+                .filter(Boolean)
+        )
+    );
+    const layout = getSuggestedVehicleTireLayout(vehicle.vehicleType, vehicle.serviceName, activeSlotCodes);
+    const filled = activeSlotCodes.length;
+    const expected = layout.allSlots.length;
+    return {
+        filled,
+        expected,
+        missing: Math.max(expected - filled, 0),
+    };
+}
+
+async function getVehiclesSummary(ids: string[] = []) {
+    const client = getSanityClient();
+    const [vehicles, tireEvents] = await Promise.all([
+        client.fetch<Array<Pick<Vehicle, '_id' | 'status' | 'vehicleType' | 'serviceName'>>>(
+            `*[_type == "vehicle"]{ _id, status, vehicleType, serviceName }`
+        ),
+        client.fetch<Array<Pick<TireEvent, 'vehicleRef' | 'status' | 'holderType' | 'slotCode' | 'posisi' | 'vehiclePlate' | 'externalPartyName' | 'externalPlateNumber'>>>(
+            `*[_type == "tireEvent" && defined(vehicleRef)]{
+                vehicleRef,
+                status,
+                holderType,
+                slotCode,
+                posisi,
+                vehiclePlate,
+                externalPartyName,
+                externalPlateNumber
+            }`
+        ),
+    ]);
+
+    const vehicleMap = new Map(vehicles.map(vehicle => [vehicle._id, vehicle]));
+    const tireSummaries = ids.reduce<Record<string, VehicleTireSummary>>((acc, id) => {
+        const vehicle = vehicleMap.get(id);
+        if (!vehicle) return acc;
+        acc[id] = buildVehicleTireSummary(vehicle, tireEvents);
+        return acc;
+    }, {});
+
+    const totalVehicles = vehicles.length;
+    const activeVehicleCount = vehicles.filter(vehicle => vehicle.status === 'ACTIVE').length;
+    const incompleteTireCount = vehicles.reduce((sum, vehicle) => {
+        const summary = buildVehicleTireSummary(vehicle, tireEvents);
+        return sum + (summary.missing > 0 ? 1 : 0);
+    }, 0);
+
+    return {
+        totalVehicles,
+        activeVehicleCount,
+        nonOperationalCount: Math.max(totalVehicles - activeVehicleCount, 0),
+        incompleteTireCount,
+        tireSummaries,
+    };
+}
+
+async function getExpensesSummary(session: Session, search = '') {
+    const client = getSanityClient();
+    const [expenseRows, vehicleRows] = await Promise.all([
+        client.fetch<Array<Pick<Expense, 'amount' | 'categoryName' | 'privacyLevel' | 'note' | 'description' | 'relatedVehicleRef' | 'relatedVehiclePlate'>>>(
+            `*[_type == "expense"]{
+                amount,
+                categoryName,
+                privacyLevel,
+                note,
+                description,
+                relatedVehicleRef,
+                relatedVehiclePlate
+            }`
+        ),
+        client.fetch<Array<Pick<Vehicle, '_id' | 'plateNumber'>>>(`*[_type == "vehicle"]{ _id, plateNumber }`),
+    ]);
+
+    const visibleExpenses = filterExpensesByRole(expenseRows as Expense[], session.role);
+    const vehicleMap = new Map(vehicleRows.map(vehicle => [vehicle._id, vehicle.plateNumber || '']));
+    const query = search.trim().toLowerCase();
+    const filteredExpenses = !query
+        ? visibleExpenses
+        : visibleExpenses.filter(expense => {
+            const vehicleLabel =
+                expense.relatedVehiclePlate ||
+                (expense.relatedVehicleRef ? vehicleMap.get(expense.relatedVehicleRef) : '') ||
+                '';
+            return (
+                expense.note?.toLowerCase().includes(query) ||
+                expense.description?.toLowerCase().includes(query) ||
+                expense.categoryName?.toLowerCase().includes(query) ||
+                vehicleLabel.toLowerCase().includes(query)
+            );
+        });
+
+    const grandTotal = filteredExpenses.reduce((sum, expense) => sum + (typeof expense.amount === 'number' ? expense.amount : 0), 0);
+    const categoryTotals = Object.entries(
+        filteredExpenses.reduce<Record<string, number>>((acc, expense) => {
+            const key = expense.categoryName || 'Lainnya';
+            acc[key] = (acc[key] || 0) + (typeof expense.amount === 'number' ? expense.amount : 0);
+            return acc;
+        }, {})
+    )
+        .sort((left, right) => right[1] - left[1])
+        .map(([name, total]) => ({ name, total }));
+
+    return {
+        grandTotal,
+        transactionCount: filteredExpenses.length,
+        avgAmount: filteredExpenses.length > 0 ? grandTotal / filteredExpenses.length : 0,
+        categoryTotals,
+    };
+}
+
 
 export async function GET(request: Request) {
     const session = await getSession();
@@ -398,6 +525,36 @@ export async function GET(request: Request) {
             return NextResponse.json({ data: summary });
         } catch (err) {
             console.error('API GET Customer Summary Error:', err);
+            return NextResponse.json({ error: 'Server error' }, { status: 500 });
+        }
+    }
+
+    if (entity === 'vehicles-summary') {
+        if (!hasPermission(session.role, 'vehicles', 'view')) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
+        try {
+            const idsParam = searchParams.get('ids');
+            const ids = idsParam
+                ? idsParam.split(',').map(value => value.trim()).filter(Boolean)
+                : [];
+            const summary = await getVehiclesSummary(ids);
+            return NextResponse.json({ data: summary });
+        } catch (err) {
+            console.error('API GET Vehicle Summary Error:', err);
+            return NextResponse.json({ error: 'Server error' }, { status: 500 });
+        }
+    }
+
+    if (entity === 'expenses-summary') {
+        if (!hasPermission(session.role, 'expenses', 'view')) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
+        try {
+            const summary = await getExpensesSummary(session, searchQuery);
+            return NextResponse.json({ data: summary });
+        } catch (err) {
+            console.error('API GET Expense Summary Error:', err);
             return NextResponse.json({ error: 'Server error' }, { status: 500 });
         }
     }
