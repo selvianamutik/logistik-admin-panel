@@ -57,6 +57,14 @@ export default function VehicleEditPage() {
     const [form, setForm] = useState<VehicleForm>(EMPTY_FORM);
     const isOwner = user?.role === 'OWNER';
     const vehicleId = params.id as string;
+    const vehicleSections = [
+        { key: 'profil', label: 'Profil', href: `/fleet/vehicles/${vehicleId}` },
+        { key: 'do', label: 'Riwayat DO', href: `/fleet/vehicles/${vehicleId}?tab=do` },
+        { key: 'maintenance', label: 'Maintenance', href: `/fleet/vehicles/${vehicleId}?tab=maintenance` },
+        { key: 'ban', label: 'Ban', href: `/fleet/vehicles/${vehicleId}?tab=ban` },
+        { key: 'insiden', label: 'Insiden', href: `/fleet/vehicles/${vehicleId}?tab=insiden` },
+        ...(isOwner ? [{ key: 'biaya', label: 'Biaya', href: `/fleet/vehicles/${vehicleId}?tab=biaya` }] : []),
+    ];
 
     useEffect(() => {
         const loadVehicle = async () => {
@@ -170,7 +178,29 @@ export default function VehicleEditPage() {
             <div className="page-header">
                 <div className="page-header-left">
                     <PageBackButton href={`/fleet/vehicles/${vehicleId}`} />
-                    <h1 className="page-title">Edit Kendaraan</h1>
+                    <div>
+                        <h1 className="page-title">Edit Kendaraan</h1>
+                        <p className="page-subtitle">Perbarui data unit atau pindah cepat ke area kendaraan lain.</p>
+                    </div>
+                </div>
+            </div>
+            <div className="card" style={{ marginBottom: '1.5rem' }}>
+                <div className="card-body" style={{ padding: '1rem' }}>
+                    <div className="segmented-tabs" aria-label="Navigasi kendaraan" style={{ flexWrap: 'wrap' }}>
+                        <button type="button" className="segmented-tab active">
+                            Edit
+                        </button>
+                        {vehicleSections.map(section => (
+                            <button
+                                key={section.key}
+                                type="button"
+                                className="segmented-tab"
+                                onClick={() => router.push(section.href)}
+                            >
+                                {section.label}
+                            </button>
+                        ))}
+                    </div>
                 </div>
             </div>
             <form onSubmit={handleSubmit}>

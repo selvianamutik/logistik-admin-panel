@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useApp, useToast } from '../../../layout';
 import { Car, Wrench, AlertTriangle, Truck, Edit, Plus, Disc3, Warehouse, ExternalLink, Save } from 'lucide-react';
 import {
@@ -53,6 +53,7 @@ function createDefaultTireForm(slotCode = '1L'): VehicleTireFormState {
 export default function VehicleDetailPage() {
     const params = useParams();
     const router = useRouter();
+    const searchParams = useSearchParams();
     const { user } = useApp();
     const { addToast } = useToast();
     const vehicleId = params.id as string;
@@ -70,6 +71,10 @@ export default function VehicleDetailPage() {
     const [editingTire, setEditingTire] = useState<TireEvent | null>(null);
     const [savingTire, setSavingTire] = useState(false);
     const isOwner = user?.role === 'OWNER';
+    const vehicleTabs = useMemo(
+        () => ['profil', 'do', 'maintenance', 'ban', 'insiden', ...(isOwner ? ['biaya'] : [])],
+        [isOwner]
+    );
 
     const loadVehicleDetail = useCallback(async () => {
         const fetchEntity = async <T,>(url: string, fallbackMessage: string) => {
@@ -112,6 +117,15 @@ export default function VehicleDetailPage() {
     useEffect(() => {
         void loadVehicleDetail();
     }, [loadVehicleDetail]);
+
+    useEffect(() => {
+        const requestedTab = searchParams.get('tab');
+        if (requestedTab && vehicleTabs.includes(requestedTab)) {
+            setTab(requestedTab);
+            return;
+        }
+        setTab('profil');
+    }, [searchParams, vehicleTabs]);
 
     if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 300 }} /></div>;
     if (!vehicle) return <div className="empty-state"><div className="empty-state-title">Kendaraan tidak ditemukan</div></div>;
@@ -234,8 +248,19 @@ export default function VehicleDetailPage() {
             tireType: pickedTire.tireType,
             tireBrand: pickedTire.tireBrand,
             tireSize: pickedTire.tireSize,
-            notes: prev.notes || pickedTire.notes || '',
         }));
+    };
+
+    const handleTabChange = (nextTab: string) => {
+        setTab(nextTab);
+        const nextParams = new URLSearchParams(searchParams.toString());
+        if (nextTab === 'profil') {
+            nextParams.delete('tab');
+        } else {
+            nextParams.set('tab', nextTab);
+        }
+        const nextQuery = nextParams.toString();
+        router.replace(nextQuery ? `/fleet/vehicles/${vehicleId}?${nextQuery}` : `/fleet/vehicles/${vehicleId}`, { scroll: false });
     };
 
     const handleSaveTire = async () => {
@@ -361,8 +386,8 @@ export default function VehicleDetailPage() {
             </div>
 
             <div className="tabs">
-                {['profil', 'do', 'maintenance', 'ban', 'insiden', ...(isOwner ? ['biaya'] : [])].map(t => (
-                    <button key={t} className={`tab ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>
+                {vehicleTabs.map(t => (
+                    <button key={t} className={`tab ${tab === t ? 'active' : ''}`} onClick={() => handleTabChange(t)}>
                         {t === 'profil' ? 'Profil' : t === 'do' ? 'Riwayat DO' : t === 'maintenance' ? 'Maintenance' : t === 'ban' ? 'Ban' : t === 'insiden' ? 'Insiden' : 'Biaya'}
                     </button>
                 ))}
