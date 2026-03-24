@@ -243,7 +243,7 @@ export function getSidebarMenu(role: UserRole): SidebarMenuGroup[] {
         {
             label: 'Tagihan & Kas',
             items: [
-                { label: 'Tagihan / Nota', href: '/invoices', icon: 'FileText', module: 'freightNotas' },
+                { label: 'Tagihan / Nota', href: '/invoices', icon: 'Receipt', module: 'freightNotas' },
                 { label: 'Rekening & Kas', href: '/bank-accounts', icon: 'Landmark', module: 'bankAccounts' },
                 { label: 'Laporan', href: '/reports', icon: 'BarChart3', module: 'reports' },
             ],

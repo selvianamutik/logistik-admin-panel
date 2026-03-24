@@ -3,7 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Search, Plus, Receipt } from 'lucide-react';
+import AppPagination from '@/components/AppPagination';
 import { formatDate, formatCurrency } from '@/lib/utils';
+import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
 import type { DriverBorongan } from '@/lib/types';
 import { useToast } from '../layout';
 
@@ -19,6 +21,7 @@ export default function BoronganListPage() {
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
+    const [page, setPage] = useState(1);
 
     useEffect(() => {
         const loadBorongan = async () => {
@@ -39,6 +42,10 @@ export default function BoronganListPage() {
         void loadBorongan();
     }, [addToast]);
 
+    useEffect(() => {
+        setPage(1);
+    }, [search, statusFilter]);
+
     const filtered = items.filter(borongan => {
         const query = search.toLowerCase();
         const matchesSearch = !search ||
@@ -47,6 +54,7 @@ export default function BoronganListPage() {
         const matchesStatus = !statusFilter || borongan.status === statusFilter;
         return matchesSearch && matchesStatus;
     });
+    const paginatedBorongans = paginateItems(filtered, page, DEFAULT_PAGE_SIZE);
 
     const totalUpah = filtered.reduce((sum, borongan) => sum + borongan.totalAmount, 0);
 
@@ -131,7 +139,7 @@ export default function BoronganListPage() {
                                 <tr key={index}>
                                     {[1, 2, 3, 4, 5, 6, 7, 8].map(cell => <td key={cell}><div className="skeleton skeleton-text" /></td>)}
                                 </tr>
-                            )) : filtered.length === 0 ? (
+                            )) : paginatedBorongans.totalItems === 0 ? (
                                 <tr>
                                     <td colSpan={8}>
                                         <div className="empty-state">
@@ -140,7 +148,7 @@ export default function BoronganListPage() {
                                         </div>
                                     </td>
                                 </tr>
-                            ) : filtered.map(borongan => (
+                            ) : paginatedBorongans.items.map(borongan => (
                                 <tr key={borongan._id}>
                                     <td>
                                         <button
@@ -172,12 +180,18 @@ export default function BoronganListPage() {
                         </tbody>
                     </table>
                 </div>
-                {filtered.length > 0 && (
-                    <div className="pagination">
-                        <div className="pagination-info">
-                            Menampilkan {filtered.length} slip | Total upah: <strong style={{ color: 'var(--color-danger)' }}>{formatCurrency(totalUpah)}</strong>
-                        </div>
-                    </div>
+                {paginatedBorongans.totalItems > 0 && (
+                    <AppPagination
+                        page={paginatedBorongans.currentPage}
+                        pageSize={DEFAULT_PAGE_SIZE}
+                        totalItems={paginatedBorongans.totalItems}
+                        onPageChange={setPage}
+                        info={({ startIndex, endIndex, totalItems }) => (
+                            <>
+                                Menampilkan {startIndex}-{endIndex} dari {totalItems} slip | Total upah: <strong style={{ color: 'var(--color-danger)' }}>{formatCurrency(totalUpah)}</strong>
+                            </>
+                        )}
+                    />
                 )}
             </div>
         </div>

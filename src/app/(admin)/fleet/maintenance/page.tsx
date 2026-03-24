@@ -5,8 +5,10 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useToast } from '../../layout';
 import { Plus, Search, Wrench, Save, X } from 'lucide-react';
+import AppPagination from '@/components/AppPagination';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { formatDate, MAINTENANCE_STATUS_MAP } from '@/lib/utils';
+import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
 import type { Maintenance, Vehicle } from '@/lib/types';
 
 type MaintenanceFormState = {
@@ -52,6 +54,7 @@ export default function MaintenancePage() {
     const [search, setSearch] = useState('');
     const [vehicleFilter, setVehicleFilter] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
+    const [page, setPage] = useState(1);
     const [showModal, setShowModal] = useState(false);
     const [saving, setSaving] = useState(false);
     const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -107,6 +110,10 @@ export default function MaintenancePage() {
         setPrefillApplied(true);
     }, [loading, prefillApplied, searchParams, vehicles]);
 
+    useEffect(() => {
+        setPage(1);
+    }, [search, vehicleFilter, statusFilter]);
+
     const openScheduleModal = (vehicle?: Vehicle | null) => {
         setForm(createDefaultMaintenanceForm(vehicle));
         setShowModal(true);
@@ -142,6 +149,7 @@ export default function MaintenancePage() {
             const rightSchedule = right.scheduleType === 'DATE' ? (right.plannedDate || '') : String(right.plannedOdometer || 0).padStart(12, '0');
             return leftSchedule.localeCompare(rightSchedule);
         });
+    const paginatedMaintenance = paginateItems(filtered, page, DEFAULT_PAGE_SIZE);
 
     const selectedVehicle = vehicles.find(vehicle => vehicle._id === form.vehicleRef);
 
@@ -205,8 +213,8 @@ export default function MaintenancePage() {
                         <thead><tr><th>Kendaraan</th><th>Tipe Servis</th><th>Jadwal</th><th>Status</th><th>Tindak Lanjut</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                filtered.length === 0 ? <tr><td colSpan={6}><div className="empty-state"><Wrench size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada jadwal maintenance</div></div></td></tr> :
-                                    filtered.map(m => (
+                                paginatedMaintenance.totalItems === 0 ? <tr><td colSpan={6}><div className="empty-state"><Wrench size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada jadwal maintenance</div></div></td></tr> :
+                                    paginatedMaintenance.items.map(m => (
                                         <tr key={m._id}>
                                             <td><Link href={`/fleet/vehicles/${m.vehicleRef}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{m.vehiclePlate}</Link></td>
                                             <td>{m.type}</td>
@@ -223,12 +231,12 @@ export default function MaintenancePage() {
                 </div>
                 {!loading && (
                     <div className="mobile-record-list">
-                        {filtered.length === 0 ? (
+                        {paginatedMaintenance.totalItems === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada jadwal maintenance</div>
                                 <div className="mobile-record-subtitle">Buat jadwal servis untuk mengingatkan perawatan armada.</div>
                             </div>
-                        ) : filtered.map(m => (
+                        ) : paginatedMaintenance.items.map(m => (
                             <div key={m._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
@@ -278,6 +286,17 @@ export default function MaintenancePage() {
                             </div>
                         ))}
                     </div>
+                )}
+                {paginatedMaintenance.totalItems > 0 && (
+                    <AppPagination
+                        page={paginatedMaintenance.currentPage}
+                        pageSize={DEFAULT_PAGE_SIZE}
+                        totalItems={paginatedMaintenance.totalItems}
+                        onPageChange={setPage}
+                        info={({ startIndex, endIndex, totalItems }) => (
+                            <>Menampilkan {startIndex}-{endIndex} dari {totalItems} jadwal maintenance</>
+                        )}
+                    />
                 )}
             </div>
             {showModal && (

@@ -3,9 +3,11 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Eye, Plus, Search, Receipt, Printer } from 'lucide-react';
+import AppPagination from '@/components/AppPagination';
 
 import { formatDate, formatCurrency, getDriverVoucherIssuedAmount, getDriverVoucherTopUpAmount } from '@/lib/utils';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
+import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
 import type { DriverVoucher } from '@/lib/types';
 import { useToast } from '../layout';
 
@@ -44,6 +46,7 @@ export default function DriverVouchersPage() {
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
+    const [page, setPage] = useState(1);
 
     useEffect(() => {
         const loadVouchers = async () => {
@@ -64,6 +67,10 @@ export default function DriverVouchersPage() {
         void loadVouchers();
     }, [addToast]);
 
+    useEffect(() => {
+        setPage(1);
+    }, [search, statusFilter]);
+
     const filtered = items.filter(v => {
         if (statusFilter && v.status !== statusFilter) return false;
         if (!search) return true;
@@ -80,6 +87,7 @@ export default function DriverVouchersPage() {
         }
         return b.issuedDate.localeCompare(a.issuedDate);
     });
+    const paginatedVouchers = paginateItems(filtered, page, DEFAULT_PAGE_SIZE);
 
     const queueCounts = {
         issued: items.filter(item => item.status === 'ISSUED').length,
@@ -224,7 +232,7 @@ export default function DriverVouchersPage() {
                                         ))}
                                     </tr>
                                 ))
-                            ) : filtered.length === 0 ? (
+                            ) : paginatedVouchers.totalItems === 0 ? (
                                 <tr>
                                     <td colSpan={15}>
                                         <div className="empty-state">
@@ -235,7 +243,7 @@ export default function DriverVouchersPage() {
                                     </td>
                                 </tr>
                             ) : (
-                                filtered.map(v => {
+                                paginatedVouchers.items.map(v => {
                                     const status = STATUS_MAP[v.status] || { label: v.status, cls: 'badge-gray' };
                                     const totalClaimAmount = v.totalClaimAmount || ((v.totalSpent || 0) + (v.driverFeeAmount || 0));
                                     const initialCashGiven = v.initialCashGiven || v.cashGiven || 0;
@@ -302,12 +310,12 @@ export default function DriverVouchersPage() {
 
                 {!loading && (
                     <div className="mobile-record-list">
-                        {filtered.length === 0 ? (
+                        {paginatedVouchers.totalItems === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada uang jalan trip</div>
                                 <div className="mobile-record-subtitle">Terbitkan uang jalan yang tertaut ke DO untuk mencatat uang jalan awal, top up, biaya perjalanan, upah trip, dan settlement akhir.</div>
                             </div>
-                        ) : filtered.map(v => {
+                        ) : paginatedVouchers.items.map(v => {
                             const status = STATUS_MAP[v.status] || { label: v.status, cls: 'badge-gray' };
                             const totalClaimAmount = v.totalClaimAmount || ((v.totalSpent || 0) + (v.driverFeeAmount || 0));
                             const initialCashGiven = v.initialCashGiven || v.cashGiven || 0;
@@ -381,10 +389,16 @@ export default function DriverVouchersPage() {
                     </div>
                 )}
 
-                {filtered.length > 0 && (
-                    <div className="pagination">
-                        <div className="pagination-info">Menampilkan {filtered.length} dari {items.length} trip</div>
-                    </div>
+                {paginatedVouchers.totalItems > 0 && (
+                    <AppPagination
+                        page={paginatedVouchers.currentPage}
+                        pageSize={DEFAULT_PAGE_SIZE}
+                        totalItems={paginatedVouchers.totalItems}
+                        onPageChange={setPage}
+                        info={({ startIndex, endIndex, totalItems }) => (
+                            <>Menampilkan {startIndex}-{endIndex} dari {totalItems} trip</>
+                        )}
+                    />
                 )}
             </div>
         </div>

@@ -4,9 +4,11 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Search, Eye, Truck, FileDown, Printer } from 'lucide-react';
+import AppPagination from '@/components/AppPagination';
 import { formatDate, formatDateTime, DO_STATUS_MAP, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
 import { exportToExcel } from '@/lib/export';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
+import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
 import type { DeliveryOrder, Service } from '@/lib/types';
 import { useToast } from '../layout';
 
@@ -52,6 +54,7 @@ export default function DeliveryOrdersPage() {
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [serviceFilter, setServiceFilter] = useState('');
+    const [page, setPage] = useState(1);
 
     useEffect(() => {
         const loadDeliveryOrders = async () => {
@@ -77,6 +80,10 @@ export default function DeliveryOrdersPage() {
 
         void loadDeliveryOrders();
     }, [addToast]);
+
+    useEffect(() => {
+        setPage(1);
+    }, [search, statusFilter, serviceFilter]);
 
     const getRequestedServiceLabel = (deliveryOrder: DeliveryOrder) => {
         const service = services.find(item => item._id === deliveryOrder.serviceRef);
@@ -139,6 +146,7 @@ export default function DeliveryOrdersPage() {
             if (priorityDiff !== 0) return priorityDiff;
             return new Date(b.date).getTime() - new Date(a.date).getTime();
         });
+    const paginatedDeliveryOrders = paginateItems(prioritizedDeliveryOrders, page, DEFAULT_PAGE_SIZE);
 
     const queueCounts = {
         needApproval: items.filter(item => Boolean(item.pendingDriverStatus)).length,
@@ -229,9 +237,9 @@ export default function DeliveryOrdersPage() {
                         <thead><tr><th>No. SJ Customer</th><th>No. Internal</th><th>Resi</th><th>Customer</th><th>Kategori</th><th>Kendaraan</th><th>Tanggal</th><th>Status</th><th>Tindak Lanjut</th><th>Approval Driver</th><th>Drop Aktual</th><th>Tracking</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                prioritizedDeliveryOrders.length === 0 ? (
+                                paginatedDeliveryOrders.totalItems === 0 ? (
                                     <tr><td colSpan={13}><div className="empty-state"><Truck size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada surat jalan</div><div className="empty-state-text">Buat surat jalan dari halaman detail order</div></div></td></tr>
-                                ) : prioritizedDeliveryOrders.map(d => (
+                                ) : paginatedDeliveryOrders.items.map(d => (
                                     <tr key={d._id}>
                                         <td><Link href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{formatDeliveryOrderDisplayNumber(d)}</Link></td>
                                         <td className="font-mono text-muted">{d.doNumber}</td>
@@ -287,12 +295,12 @@ export default function DeliveryOrdersPage() {
                 </div>
                 {!loading && (
                     <div className="mobile-record-list">
-                        {prioritizedDeliveryOrders.length === 0 ? (
+                        {paginatedDeliveryOrders.totalItems === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada surat jalan</div>
                                 <div className="mobile-record-subtitle">Buat surat jalan dari halaman detail order.</div>
                             </div>
-                        ) : prioritizedDeliveryOrders.map(d => (
+                        ) : paginatedDeliveryOrders.items.map(d => (
                             <div key={d._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
@@ -363,7 +371,19 @@ export default function DeliveryOrdersPage() {
                         ))}
                     </div>
                 )}
-                {prioritizedDeliveryOrders.length > 0 && <div className="pagination"><div className="pagination-info">Menampilkan {prioritizedDeliveryOrders.length} surat jalan. Urutan dimulai dari trip yang paling perlu tindakan.</div></div>}
+                {paginatedDeliveryOrders.totalItems > 0 && (
+                    <AppPagination
+                        page={paginatedDeliveryOrders.currentPage}
+                        pageSize={DEFAULT_PAGE_SIZE}
+                        totalItems={paginatedDeliveryOrders.totalItems}
+                        onPageChange={setPage}
+                        info={({ startIndex, endIndex, totalItems }) => (
+                            <>
+                                Menampilkan {startIndex}-{endIndex} dari {totalItems} surat jalan. Urutan dimulai dari trip yang paling perlu tindakan.
+                            </>
+                        )}
+                    />
+                )}
             </div>
         </div>
     );

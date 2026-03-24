@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { Search, ScrollText } from 'lucide-react';
+import AppPagination from '@/components/AppPagination';
+import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
 import type { AuditLog } from '@/lib/types';
 import { useToast } from '../../layout';
 
@@ -28,6 +30,7 @@ export default function AuditLogsPage() {
     const [logs, setLogs] = useState<AuditLog[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
+    const [page, setPage] = useState(1);
 
     useEffect(() => {
         const loadAuditLogs = async () => {
@@ -48,6 +51,10 @@ export default function AuditLogsPage() {
         void loadAuditLogs();
     }, [addToast]);
 
+    useEffect(() => {
+        setPage(1);
+    }, [search]);
+
     const normalizedSearch = search.trim().toLowerCase();
     const filtered = logs.filter(log => {
         if (!normalizedSearch) return true;
@@ -60,6 +67,7 @@ export default function AuditLogsPage() {
             log.action,
         ].some(value => value?.toLowerCase().includes(normalizedSearch));
     });
+    const paginatedLogs = paginateItems(filtered, page, DEFAULT_PAGE_SIZE);
     const today = new Date().toISOString().slice(0, 10);
     const totalLogs = logs.length;
     const todayLogs = logs.filter(log => (log.timestamp || log._createdAt || '').slice(0, 10) === today).length;
@@ -84,8 +92,8 @@ export default function AuditLogsPage() {
                         <thead><tr><th>Waktu</th><th>User</th><th>Aksi</th><th>Entitas</th><th>Target</th><th>Ringkasan</th></tr></thead>
                         <tbody>
                             {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                filtered.length === 0 ? <tr><td colSpan={6}><div className="empty-state"><ScrollText size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada log</div></div></td></tr> :
-                                    filtered.map(l => (
+                                paginatedLogs.totalItems === 0 ? <tr><td colSpan={6}><div className="empty-state"><ScrollText size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada log</div></div></td></tr> :
+                                    paginatedLogs.items.map(l => (
                                         <tr key={l._id}>
                                             <td className="text-muted" style={{ whiteSpace: 'nowrap' }}>{formatAuditDateTime(l.timestamp || l._createdAt)}</td>
                                             <td>
@@ -103,12 +111,12 @@ export default function AuditLogsPage() {
                 </div>
                 {!loading && (
                     <div className="mobile-record-list">
-                        {filtered.length === 0 ? (
+                        {paginatedLogs.totalItems === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada log</div>
                                 <div className="mobile-record-subtitle">Aktivitas penting sistem akan muncul di sini untuk kebutuhan audit.</div>
                             </div>
-                        ) : filtered.map(l => (
+                        ) : paginatedLogs.items.map(l => (
                             <div key={l._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
@@ -135,7 +143,17 @@ export default function AuditLogsPage() {
                         ))}
                     </div>
                 )}
-                {filtered.length > 0 && <div className="pagination"><div className="pagination-info">{filtered.length} log tercatat</div></div>}
+                {paginatedLogs.totalItems > 0 && (
+                    <AppPagination
+                        page={paginatedLogs.currentPage}
+                        pageSize={DEFAULT_PAGE_SIZE}
+                        totalItems={paginatedLogs.totalItems}
+                        onPageChange={setPage}
+                        info={({ startIndex, endIndex, totalItems }) => (
+                            <>{startIndex}-{endIndex} dari {totalItems} log tercatat</>
+                        )}
+                    />
+                )}
             </div>
         </div>
     );

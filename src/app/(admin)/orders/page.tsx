@@ -5,9 +5,11 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useToast } from '../layout';
 import { Plus, Search, Eye, Edit, Trash2, Package, FileDown, Printer } from 'lucide-react';
+import AppPagination from '@/components/AppPagination';
 import { formatDate, ORDER_STATUS_MAP } from '@/lib/utils';
 import { exportOrders } from '@/lib/export';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
+import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
 import type { Order, Service } from '@/lib/types';
 
 const ORDER_ACTION_PRIORITY: Record<string, number> = {
@@ -44,6 +46,7 @@ export default function OrdersPage() {
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [serviceFilter, setServiceFilter] = useState('');
+    const [page, setPage] = useState(1);
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -71,6 +74,10 @@ export default function OrdersPage() {
 
         void loadOrders();
     }, [addToast]);
+
+    useEffect(() => {
+        setPage(1);
+    }, [search, statusFilter, serviceFilter]);
 
     const getServiceLabel = (order: Order) => {
         const service = services.find(item => item._id === order.serviceRef);
@@ -104,6 +111,7 @@ export default function OrdersPage() {
             if (priorityDiff !== 0) return priorityDiff;
             return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
         });
+    const paginatedOrders = paginateItems(prioritizedOrders, page, DEFAULT_PAGE_SIZE);
 
     const queueCounts = {
         needDispatch: orders.filter(order => order.status === 'OPEN').length,
@@ -245,7 +253,7 @@ export default function OrdersPage() {
                                         ))}
                                     </tr>
                                 ))
-                            ) : prioritizedOrders.length === 0 ? (
+                            ) : paginatedOrders.totalItems === 0 ? (
                                 <tr>
                                     <td colSpan={8}>
                                         <div className="empty-state">
@@ -259,7 +267,7 @@ export default function OrdersPage() {
                                     </td>
                                 </tr>
                             ) : (
-                                prioritizedOrders.map(order => (
+                                paginatedOrders.items.map(order => (
                                     <tr key={order._id}>
                                         <td>
                                             <Link href={`/orders/${order._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>
@@ -300,7 +308,7 @@ export default function OrdersPage() {
                 </div>
                 {!loading && (
                     <div className="mobile-record-list">
-                        {prioritizedOrders.length === 0 ? (
+                        {paginatedOrders.totalItems === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada order</div>
                                 <div className="mobile-record-subtitle">Buat order baru untuk memulai pengiriman.</div>
@@ -310,7 +318,7 @@ export default function OrdersPage() {
                                     </Link>
                                 </div>
                             </div>
-                        ) : prioritizedOrders.map(order => (
+                        ) : paginatedOrders.items.map(order => (
                             <div key={order._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
@@ -351,10 +359,18 @@ export default function OrdersPage() {
                     </div>
                 )}
 
-                {prioritizedOrders.length > 0 && (
-                    <div className="pagination">
-                        <div className="pagination-info">Menampilkan {prioritizedOrders.length} dari {orders.length} order. Urutan dimulai dari yang paling perlu tindakan.</div>
-                    </div>
+                {paginatedOrders.totalItems > 0 && (
+                    <AppPagination
+                        page={paginatedOrders.currentPage}
+                        pageSize={DEFAULT_PAGE_SIZE}
+                        totalItems={paginatedOrders.totalItems}
+                        onPageChange={setPage}
+                        info={({ startIndex, endIndex, totalItems }) => (
+                            <>
+                                Menampilkan {startIndex}-{endIndex} dari {totalItems} order. Urutan dimulai dari yang paling perlu tindakan.
+                            </>
+                        )}
+                    />
                 )}
             </div>
 

@@ -2,11 +2,13 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Plus, FileText, Printer, FileDown } from 'lucide-react';
+import { Search, Plus, FileText, Printer, FileDown, Receipt } from 'lucide-react';
+import AppPagination from '@/components/AppPagination';
 import CurrencyInput from '@/components/CurrencyInput';
 import { formatDate, formatCurrency, getReceivableNetAmount, PAYMENT_METHOD_MAP } from '@/lib/utils';
 import { buildFreightNotaPrintDocument, openBrandedPrint, fetchCompanyProfile, formatFreightNotaDisplayNumber } from '@/lib/print';
 import { exportFreightNotaDetail, exportInvoices } from '@/lib/export';
+import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
 import type { BankAccount, CompanyProfile, Customer, CustomerReceipt, FreightNota, FreightNotaItem, Payment } from '@/lib/types';
 
 import { useToast } from '../layout';
@@ -45,6 +47,7 @@ export default function NotaListPage() {
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
+    const [page, setPage] = useState(1);
     const [showReceiptModal, setShowReceiptModal] = useState(false);
     const [receiving, setReceiving] = useState(false);
     const [receiptCustomerRef, setReceiptCustomerRef] = useState('');
@@ -127,6 +130,10 @@ export default function NotaListPage() {
                 setLoading(false);
             });
     }, [addToast, reloadData]);
+
+    useEffect(() => {
+        setPage(1);
+    }, [search, statusFilter]);
 
     const paymentTotalsByInvoice = payments.reduce<Record<string, number>>((acc, payment) => {
         acc[payment.invoiceRef] = (acc[payment.invoiceRef] || 0) + payment.amount;
@@ -316,6 +323,7 @@ export default function NotaListPage() {
             if (priorityDiff !== 0) return priorityDiff;
             return new Date(a.issueDate).getTime() - new Date(b.issueDate).getTime();
         });
+    const paginatedNotas = paginateItems(prioritizedNotas, page, DEFAULT_PAGE_SIZE);
 
     const grandTotal = filtered.reduce((sum, nota) => sum + getReceivableNetAmount(nota), 0);
     const outstandingTotal = prioritizedNotas.reduce((sum, nota) => sum + getNotaRemaining(nota), 0);
@@ -417,28 +425,28 @@ export default function NotaListPage() {
             {/* KPI */}
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card">
-                    <div className="kpi-icon danger"><FileText size={20} /></div>
+                    <div className="kpi-icon danger"><Receipt size={20} /></div>
                     <div className="kpi-content">
                         <div className="kpi-label">Sisa Piutang</div>
                         <div className="kpi-value" style={{ fontSize: '1.05rem', color: 'var(--color-danger)' }}>{formatCurrency(outstandingTotal)}</div>
                     </div>
                 </div>
                 <div className="kpi-card">
-                    <div className="kpi-icon warning"><FileText size={20} /></div>
+                    <div className="kpi-icon warning"><Receipt size={20} /></div>
                     <div className="kpi-content">
                         <div className="kpi-label">Perlu Ditagih</div>
                         <div className="kpi-value">{queueCounts.needPayment}</div>
                     </div>
                 </div>
                 <div className="kpi-card">
-                    <div className="kpi-icon success"><FileText size={20} /></div>
+                    <div className="kpi-icon success"><Receipt size={20} /></div>
                     <div className="kpi-content">
                         <div className="kpi-label">Follow Up Parsial</div>
                         <div className="kpi-value">{queueCounts.partialPayment}</div>
                     </div>
                 </div>
                 <div className="kpi-card">
-                    <div className="kpi-icon info"><FileText size={20} /></div>
+                    <div className="kpi-icon info"><Receipt size={20} /></div>
                     <div className="kpi-content">
                         <div className="kpi-label">Kredit Customer</div>
                         <div className="kpi-value" style={{ fontSize: '1.05rem' }}>{formatCurrency(customerCreditTotal)}</div>
@@ -461,9 +469,9 @@ export default function NotaListPage() {
                         <thead><tr><th>No. Nota</th><th>Customer</th><th>Tanggal</th><th>Total Collie</th><th>Total Berat</th><th>Tagihan Netto</th><th>Status</th><th>Tindak Lanjut</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                prioritizedNotas.length === 0 ? (
+                                paginatedNotas.totalItems === 0 ? (
                                     <tr><td colSpan={9}><div className="empty-state"><FileText size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada nota</div><div className="empty-state-text">Klik tombol &quot;Buat Nota&quot; untuk membuat nota baru</div></div></td></tr>
-                                ) : prioritizedNotas.map(n => (
+                                ) : paginatedNotas.items.map(n => (
                                     <tr key={n._id}>
                                         <td>
                                             <button
@@ -500,12 +508,12 @@ export default function NotaListPage() {
                 </div>
                 {!loading && (
                     <div className="mobile-record-list">
-                        {prioritizedNotas.length === 0 ? (
+                        {paginatedNotas.totalItems === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada nota</div>
                                 <div className="mobile-record-subtitle">Klik tombol Buat Nota untuk membuat nota baru.</div>
                             </div>
-                        ) : prioritizedNotas.map(n => (
+                        ) : paginatedNotas.items.map(n => (
                             <div key={n._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
@@ -547,7 +555,19 @@ export default function NotaListPage() {
                         ))}
                     </div>
                 )}
-                {prioritizedNotas.length > 0 && <div className="pagination"><div className="pagination-info">Menampilkan {prioritizedNotas.length} nota. Urutan dimulai dari tagihan yang paling perlu ditindaklanjuti. Total netto terfilter: <strong style={{ color: 'var(--color-danger)' }}>{formatCurrency(grandTotal)}</strong></div></div>}
+                {paginatedNotas.totalItems > 0 && (
+                    <AppPagination
+                        page={paginatedNotas.currentPage}
+                        pageSize={DEFAULT_PAGE_SIZE}
+                        totalItems={paginatedNotas.totalItems}
+                        onPageChange={setPage}
+                        info={({ startIndex, endIndex, totalItems }) => (
+                            <>
+                                Menampilkan {startIndex}-{endIndex} dari {totalItems} nota. Urutan dimulai dari tagihan yang paling perlu ditindaklanjuti. Total netto terfilter: <strong style={{ color: 'var(--color-danger)' }}>{formatCurrency(grandTotal)}</strong>
+                            </>
+                        )}
+                    />
+                )}
             </div>
             {showReceiptModal && (
                 <div className="modal-overlay" onClick={() => { if (!receiving) setShowReceiptModal(false); }}>

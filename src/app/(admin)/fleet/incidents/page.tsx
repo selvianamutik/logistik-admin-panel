@@ -5,8 +5,10 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useToast } from '../../layout';
 import { Plus, Search, Eye, AlertTriangle, X } from 'lucide-react';
+import AppPagination from '@/components/AppPagination';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { formatDateTime, INCIDENT_STATUS_MAP, URGENCY_MAP, INCIDENT_TYPE_MAP } from '@/lib/utils';
+import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
 import type { Incident, Vehicle, DeliveryOrder } from '@/lib/types';
 
 type IncidentFormState = {
@@ -61,6 +63,7 @@ export default function IncidentsPage() {
     const [search, setSearch] = useState('');
     const [vehicleFilter, setVehicleFilter] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
+    const [page, setPage] = useState(1);
     const [showModal, setShowModal] = useState(false);
     const [saving, setSaving] = useState(false);
     const [prefillApplied, setPrefillApplied] = useState(false);
@@ -120,6 +123,10 @@ export default function IncidentsPage() {
         }
         setPrefillApplied(true);
     }, [dos, loading, prefillApplied, searchParams, vehicles]);
+
+    useEffect(() => {
+        setPage(1);
+    }, [search, vehicleFilter, statusFilter]);
 
     const handleRelatedDOChange = (deliveryOrderRef: string) => {
         const deliveryOrder = dos.find(item => item._id === deliveryOrderRef);
@@ -195,6 +202,7 @@ export default function IncidentsPage() {
             if (byStatus !== 0) return byStatus;
             return right.dateTime.localeCompare(left.dateTime);
         });
+    const paginatedIncidents = paginateItems(filtered, page, DEFAULT_PAGE_SIZE);
 
     const handleSave = async () => {
         if ((!form.vehicleRef && !form.relatedDeliveryOrderRef) || !form.description) {
@@ -271,8 +279,8 @@ export default function IncidentsPage() {
                         <thead><tr><th>No.</th><th>Waktu</th><th>Kendaraan</th><th>Supir</th><th>DO</th><th>Tipe</th><th>Lokasi</th><th>Urgency</th><th>Status</th><th>Tindak Lanjut</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {loading ? [1, 2].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                filtered.length === 0 ? <tr><td colSpan={11}><div className="empty-state"><AlertTriangle size={48} className="empty-state-icon" /><div className="empty-state-title">Tidak ada insiden</div></div></td></tr> :
-                                    filtered.map(item => (
+                                paginatedIncidents.totalItems === 0 ? <tr><td colSpan={11}><div className="empty-state"><AlertTriangle size={48} className="empty-state-icon" /><div className="empty-state-title">Tidak ada insiden</div></div></td></tr> :
+                                    paginatedIncidents.items.map(item => (
                                         <tr key={item._id}>
                                             <td><Link href={`/fleet/incidents/${item._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{item.incidentNumber}</Link></td>
                                             <td className="text-muted" style={{ whiteSpace: 'nowrap' }}>{formatDateTime(item.dateTime)}</td>
@@ -292,12 +300,12 @@ export default function IncidentsPage() {
                 </div>
                 {!loading && (
                     <div className="mobile-record-list">
-                        {filtered.length === 0 ? (
+                        {paginatedIncidents.totalItems === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Tidak ada insiden</div>
                                 <div className="mobile-record-subtitle">Laporan insiden kendaraan akan muncul di sini.</div>
                             </div>
-                        ) : filtered.map(item => (
+                        ) : paginatedIncidents.items.map(item => (
                             <div key={item._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
@@ -347,6 +355,17 @@ export default function IncidentsPage() {
                             </div>
                         ))}
                     </div>
+                )}
+                {paginatedIncidents.totalItems > 0 && (
+                    <AppPagination
+                        page={paginatedIncidents.currentPage}
+                        pageSize={DEFAULT_PAGE_SIZE}
+                        totalItems={paginatedIncidents.totalItems}
+                        onPageChange={setPage}
+                        info={({ startIndex, endIndex, totalItems }) => (
+                            <>Menampilkan {startIndex}-{endIndex} dari {totalItems} insiden</>
+                        )}
+                    />
                 )}
             </div>
 

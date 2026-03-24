@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useApp, useToast } from '../layout';
 import { Plus, Edit, Tags, Save, X } from 'lucide-react';
+import AppPagination from '@/components/AppPagination';
+import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
 import type { ExpenseCategory } from '@/lib/types';
 
 export default function ExpenseCategoriesPage() {
@@ -10,6 +12,7 @@ export default function ExpenseCategoriesPage() {
     const { addToast } = useToast();
     const [items, setItems] = useState<ExpenseCategory[]>([]);
     const [loading, setLoading] = useState(true);
+    const [page, setPage] = useState(1);
     const [showModal, setShowModal] = useState(false);
     const [editItem, setEditItem] = useState<ExpenseCategory | null>(null);
     const [saving, setSaving] = useState(false);
@@ -36,6 +39,8 @@ export default function ExpenseCategoriesPage() {
 
         void loadCategories();
     }, [addToast]);
+
+    const paginatedCategories = paginateItems(items, page, DEFAULT_PAGE_SIZE);
 
     const openNew = () => { setEditItem(null); setName(''); setShowModal(true); };
     const openEdit = (c: ExpenseCategory) => { setEditItem(c); setName(c.name); setShowModal(true); };
@@ -84,14 +89,26 @@ export default function ExpenseCategoriesPage() {
                 <thead><tr><th>Nama Kategori</th><th>Status</th><th>Aksi</th></tr></thead>
                 <tbody>
                     {loading ? [1, 2].map(i => <tr key={i}>{[1, 2, 3].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                        items.length === 0 ? <tr><td colSpan={3}><div className="empty-state"><Tags size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada kategori</div></div></td></tr> :
-                            items.map(c => (
+                        paginatedCategories.totalItems === 0 ? <tr><td colSpan={3}><div className="empty-state"><Tags size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada kategori</div></div></td></tr> :
+                            paginatedCategories.items.map(c => (
                                 <tr key={c._id}><td className="font-semibold">{c.name}</td>
                                     <td><span className={`badge ${c.active !== false ? 'badge-success' : 'badge-gray'}`}>{c.active !== false ? 'Aktif' : 'Non-Aktif'}</span></td>
                                     <td>{isOwner ? <button className="table-action-btn" onClick={() => openEdit(c)}><Edit size={14} /> Edit</button> : <span className="text-muted">Lihat saja</span>}</td></tr>
                             ))}
                 </tbody>
-            </table></div></div>
+            </table></div>
+                {paginatedCategories.totalItems > 0 && (
+                    <AppPagination
+                        page={paginatedCategories.currentPage}
+                        pageSize={DEFAULT_PAGE_SIZE}
+                        totalItems={paginatedCategories.totalItems}
+                        onPageChange={setPage}
+                        info={({ startIndex, endIndex, totalItems }) => (
+                            <>Menampilkan {startIndex}-{endIndex} dari {totalItems} kategori biaya</>
+                        )}
+                    />
+                )}
+            </div>
             {showModal && (
                 <div className="modal-overlay" onClick={() => { if (!saving) setShowModal(false); }}><div className="modal" onClick={e => e.stopPropagation()}>
                     <div className="modal-header"><h3 className="modal-title">{editItem ? 'Edit' : 'Tambah'} Kategori</h3><button className="modal-close" onClick={() => setShowModal(false)} disabled={saving}><X size={20} /></button></div>

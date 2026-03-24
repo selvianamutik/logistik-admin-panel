@@ -3,7 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useToast } from '../../layout';
 import { Plus, Search, UserCircle, Save, X, Edit2, ToggleLeft, ToggleRight, Smartphone } from 'lucide-react';
+import AppPagination from '@/components/AppPagination';
 import { formatDateTime } from '@/lib/utils';
+import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
 import type { Driver, User } from '@/lib/types';
 
 type DriverMobileAccount = Pick<User, '_id' | 'name' | 'email' | 'active' | 'driverRef' | 'driverName' | 'lastLoginAt'>;
@@ -14,6 +16,7 @@ export default function DriversPage() {
     const [accounts, setAccounts] = useState<DriverMobileAccount[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
+    const [page, setPage] = useState(1);
     const [showModal, setShowModal] = useState(false);
     const [showAccessModal, setShowAccessModal] = useState(false);
     const [editId, setEditId] = useState<string | null>(null);
@@ -54,7 +57,12 @@ export default function DriversPage() {
         void loadDrivers();
     }, [addToast]);
 
+    useEffect(() => {
+        setPage(1);
+    }, [search]);
+
     const filtered = items.filter(d => !search || d.name.toLowerCase().includes(search.toLowerCase()) || d.phone.includes(search) || d.licenseNumber.toLowerCase().includes(search.toLowerCase()));
+    const paginatedDrivers = paginateItems(filtered, page, DEFAULT_PAGE_SIZE);
     const accountByDriverRef = new Map(accounts.filter(account => account.driverRef).map(account => [account.driverRef as string, account]));
     const isDriverActive = (driver: Pick<Driver, 'active'>) => driver.active !== false;
     const isAccountActive = (account: Pick<DriverMobileAccount, 'active'>) => account.active !== false;
@@ -258,8 +266,8 @@ export default function DriversPage() {
                         <thead><tr><th>Nama</th><th>No. HP</th><th>No. SIM</th><th>SIM Berlaku</th><th>Akses Mobile</th><th>Status</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                filtered.length === 0 ? <tr><td colSpan={7}><div className="empty-state"><UserCircle size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada supir</div></div></td></tr> :
-                                    filtered.map(d => (
+                                paginatedDrivers.totalItems === 0 ? <tr><td colSpan={7}><div className="empty-state"><UserCircle size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada supir</div></div></td></tr> :
+                                    paginatedDrivers.items.map(d => (
                                         (() => {
                                             const account = accountByDriverRef.get(d._id);
                                             return (
@@ -309,12 +317,12 @@ export default function DriversPage() {
                 </div>
                 {!loading && (
                     <div className="mobile-record-list">
-                        {filtered.length === 0 ? (
+                        {paginatedDrivers.totalItems === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada supir</div>
                                 <div className="mobile-record-subtitle">Tambahkan supir agar bisa dipakai di surat jalan dan tracking driver.</div>
                             </div>
-                        ) : filtered.map(d => {
+                        ) : paginatedDrivers.items.map(d => {
                             const account = accountByDriverRef.get(d._id);
                             return (
                                 <div key={d._id} className="mobile-record-card">
@@ -360,7 +368,17 @@ export default function DriversPage() {
                         })}
                     </div>
                 )}
-                {filtered.length > 0 && <div className="pagination"><div className="pagination-info">Menampilkan {filtered.length} dari {items.length} supir</div></div>}
+                {paginatedDrivers.totalItems > 0 && (
+                    <AppPagination
+                        page={paginatedDrivers.currentPage}
+                        pageSize={DEFAULT_PAGE_SIZE}
+                        totalItems={paginatedDrivers.totalItems}
+                        onPageChange={setPage}
+                        info={({ startIndex, endIndex, totalItems }) => (
+                            <>Menampilkan {startIndex}-{endIndex} dari {totalItems} supir</>
+                        )}
+                    />
+                )}
             </div>
 
             {showModal && (

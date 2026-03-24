@@ -3,10 +3,12 @@
 import { useState, useEffect } from 'react';
 import { useToast, useApp } from '../layout';
 import { Plus, Search, Wallet, Save, X, FileDown, Printer } from 'lucide-react';
+import AppPagination from '@/components/AppPagination';
 import CurrencyInput from '@/components/CurrencyInput';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { exportExpenses } from '@/lib/export';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
+import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
 import type { BankAccount, Expense, ExpenseCategory, Vehicle } from '@/lib/types';
 
 export default function ExpensesPage() {
@@ -18,6 +20,7 @@ export default function ExpensesPage() {
     const [vehicles, setVehicles] = useState<Vehicle[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
+    const [page, setPage] = useState(1);
     const [showModal, setShowModal] = useState(false);
     const [saving, setSaving] = useState(false);
     const [form, setForm] = useState({
@@ -59,6 +62,10 @@ export default function ExpensesPage() {
         });
     }, [addToast]);
 
+    useEffect(() => {
+        setPage(1);
+    }, [search]);
+
     const isOwner = user?.role === 'OWNER';
     const vehicleMap = new Map(vehicles.map(vehicle => [vehicle._id, vehicle]));
     const filtered = items.filter(e => {
@@ -74,6 +81,7 @@ export default function ExpensesPage() {
             e.categoryName?.toLowerCase().includes(query) ||
             vehicleLabel.toLowerCase().includes(query);
     });
+    const paginatedExpenses = paginateItems(filtered, page, DEFAULT_PAGE_SIZE);
 
     const handleSave = async () => {
         if (!form.categoryRef || !form.amount) { addToast('error', 'Kategori dan nominal wajib'); return; }
@@ -202,8 +210,8 @@ export default function ExpensesPage() {
                         <thead><tr><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th>Jumlah</th>{isOwner && <th>Privacy</th>}</tr></thead>
                         <tbody>
                             {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                filtered.length === 0 ? <tr><td colSpan={isOwner ? 5 : 4}><div className="empty-state"><Wallet size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada pengeluaran</div></div></td></tr> :
-                                    filtered.map(e => (
+                                paginatedExpenses.totalItems === 0 ? <tr><td colSpan={isOwner ? 5 : 4}><div className="empty-state"><Wallet size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada pengeluaran</div></div></td></tr> :
+                                    paginatedExpenses.items.map(e => (
                                         <tr key={e._id}>
                                             <td className="text-muted">{formatDate(e.date)}</td>
                                             <td><span className="badge badge-gray">{e.categoryName}</span></td>
@@ -239,7 +247,7 @@ export default function ExpensesPage() {
                                         </tr>
                                     ))}
                             {/* Total row */}
-                            {!loading && filtered.length > 0 && (
+                            {!loading && paginatedExpenses.totalItems > 0 && (
                                 <tr style={{ background: 'var(--color-bg-secondary)', borderTop: '2px solid var(--color-border)' }}>
                                     <td colSpan={isOwner ? 3 : 3} className="font-semibold" style={{ textAlign: 'right', color: 'var(--color-text-secondary)', fontSize: '0.85rem' }}>TOTAL</td>
                                     <td className="font-semibold" style={{ color: 'var(--color-danger)', fontSize: '1rem' }}>{formatCurrency(grandTotal)}</td>
@@ -251,13 +259,13 @@ export default function ExpensesPage() {
                 </div>
                 {!loading && (
                     <div className="mobile-record-list">
-                        {filtered.length === 0 ? (
+                        {paginatedExpenses.totalItems === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada pengeluaran</div>
                                 <div className="mobile-record-subtitle">Catat pengeluaran pertama untuk mulai melihat rangkuman kas operasional.</div>
                             </div>
                         ) : (
-                            filtered.map(e => {
+                            paginatedExpenses.items.map(e => {
                                 const vehicleLabel =
                                     e.relatedVehiclePlate ||
                                     (e.relatedVehicleRef ? vehicleMap.get(e.relatedVehicleRef)?.plateNumber : '') ||
@@ -304,7 +312,19 @@ export default function ExpensesPage() {
                         )}
                     </div>
                 )}
-                {filtered.length > 0 && <div className="pagination"><div className="pagination-info">Menampilkan {filtered.length} transaksi | Total: <strong style={{ color: 'var(--color-danger)' }}>{formatCurrency(grandTotal)}</strong></div></div>}
+                {paginatedExpenses.totalItems > 0 && (
+                    <AppPagination
+                        page={paginatedExpenses.currentPage}
+                        pageSize={DEFAULT_PAGE_SIZE}
+                        totalItems={paginatedExpenses.totalItems}
+                        onPageChange={setPage}
+                        info={({ startIndex, endIndex, totalItems }) => (
+                            <>
+                                Menampilkan {startIndex}-{endIndex} dari {totalItems} transaksi | Total: <strong style={{ color: 'var(--color-danger)' }}>{formatCurrency(grandTotal)}</strong>
+                            </>
+                        )}
+                    />
+                )}
             </div>
 
 

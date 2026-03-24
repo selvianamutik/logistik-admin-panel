@@ -3,7 +3,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '../../layout';
 import { Plus, Search, Disc3, CheckCircle, Warehouse, ExternalLink } from 'lucide-react';
+import AppPagination from '@/components/AppPagination';
 import { formatDate, TIRE_ASSET_STATUS_MAP } from '@/lib/utils';
+import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
 import {
     formatTireSlotLabel,
     INTERNAL_TIRE_SLOT_CODES,
@@ -62,6 +64,7 @@ export default function TiresPage() {
     const [search, setSearch] = useState('');
     const [filterVehicle, setFilterVehicle] = useState('');
     const [filterStatus, setFilterStatus] = useState<'all' | TireAssetStatus>('all');
+    const [page, setPage] = useState(1);
     const [showModal, setShowModal] = useState(false);
     const [editTarget, setEditTarget] = useState<TireEvent | null>(null);
     const [saving, setSaving] = useState(false);
@@ -95,6 +98,10 @@ export default function TiresPage() {
     useEffect(() => {
         void loadData();
     }, [loadData]);
+
+    useEffect(() => {
+        setPage(1);
+    }, [search, filterVehicle, filterStatus]);
 
     const selectableVehicles = vehicles.filter(vehicle => vehicle.status !== 'SOLD' || vehicle._id === editTarget?.vehicleRef);
     const internalSlots = INTERNAL_TIRE_SLOT_CODES.filter(code => form.status === 'SPARE' ? code.startsWith('SP') : !code.startsWith('SP'));
@@ -217,6 +224,7 @@ export default function TiresPage() {
         const matchVehicle = !filterVehicle || event.vehicleRef === filterVehicle;
         return matchSearch && matchVehicle && statusFilterMatch(event, filterStatus);
     });
+    const paginatedTires = paginateItems(filtered, page, DEFAULT_PAGE_SIZE);
 
     const mountedCount = resolvedEvents.filter(event => event.status === 'IN_USE').length;
     const spareCount = resolvedEvents.filter(event => event.status === 'SPARE').length;
@@ -282,7 +290,7 @@ export default function TiresPage() {
                         </thead>
                         <tbody>
                             {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                filtered.length === 0 ? (
+                                paginatedTires.totalItems === 0 ? (
                                     <tr><td colSpan={7}>
                                         <div className="empty-state">
                                             <Disc3 size={48} className="empty-state-icon" />
@@ -290,7 +298,7 @@ export default function TiresPage() {
                                             <div className="empty-state-text">Tambahkan ban per kode unik agar perpindahan antar unit dan pinjam keluar bisa dilacak.</div>
                                         </div>
                                     </td></tr>
-                                ) : filtered.map(event => (
+                                ) : paginatedTires.items.map(event => (
                                     <tr key={event._id}>
                                         <td>
                                             <div className="font-medium">{event.tireCodeLabel}</div>
@@ -321,12 +329,12 @@ export default function TiresPage() {
                 </div>
                 {!loading && (
                     <div className="mobile-record-list">
-                        {filtered.length === 0 ? (
+                        {paginatedTires.totalItems === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada ban tercatat</div>
                                 <div className="mobile-record-subtitle">Tambahkan ban per kode unik agar perpindahan antar unit dan pinjam keluar bisa dilacak.</div>
                             </div>
-                        ) : filtered.map(event => (
+                        ) : paginatedTires.items.map(event => (
                             <div key={event._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
@@ -366,10 +374,18 @@ export default function TiresPage() {
                         ))}
                     </div>
                 )}
-                {filtered.length > 0 && (
-                    <div className="pagination">
-                        <div className="pagination-info">{mountedCount} terpasang | {spareCount} serep | {loanedCount} dipinjam | {warehouseCount} gudang</div>
-                    </div>
+                {paginatedTires.totalItems > 0 && (
+                    <AppPagination
+                        page={paginatedTires.currentPage}
+                        pageSize={DEFAULT_PAGE_SIZE}
+                        totalItems={paginatedTires.totalItems}
+                        onPageChange={setPage}
+                        info={({ startIndex, endIndex, totalItems }) => (
+                            <>
+                                Menampilkan {startIndex}-{endIndex} dari {totalItems} ban | {mountedCount} terpasang | {spareCount} serep | {loanedCount} dipinjam | {warehouseCount} gudang
+                            </>
+                        )}
+                    />
                 )}
             </div>
 

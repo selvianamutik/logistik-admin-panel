@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useToast } from '../../layout';
 import { Plus, Edit, Save, X, RefreshCw } from 'lucide-react';
+import AppPagination from '@/components/AppPagination';
+import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
 import type { User } from '@/lib/types';
 import { INTERNAL_USER_ROLE_OPTIONS, type InternalUserRole } from '@/lib/rbac';
 
@@ -27,6 +29,7 @@ export default function UsersPage() {
     const { addToast } = useToast();
     const [users, setUsers] = useState<InternalUser[]>([]);
     const [loading, setLoading] = useState(true);
+    const [page, setPage] = useState(1);
     const [showModal, setShowModal] = useState(false);
     const [editUser, setEditUser] = useState<InternalUser | null>(null);
     const [saving, setSaving] = useState(false);
@@ -57,6 +60,8 @@ export default function UsersPage() {
 
         void loadUsers();
     }, [addToast]);
+
+    const paginatedUsers = paginateItems(users, page, DEFAULT_PAGE_SIZE);
 
     const openNew = () => { setEditUser(null); setForm({ name: '', email: '', role: 'OPERASIONAL', password: '' }); setShowModal(true); };
     const openEdit = (u: InternalUser) => { setEditUser(u); setForm({ name: u.name, email: u.email, role: u.role, password: '' }); setShowModal(true); };
@@ -147,7 +152,9 @@ export default function UsersPage() {
                         <thead><tr><th>Nama</th><th>Email</th><th>Role</th><th>Status</th><th>Tindak Lanjut</th><th>Aksi</th></tr></thead>
                         <tbody suppressHydrationWarning>
                             {loading ? [1, 2].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                users.map(u => (
+                                paginatedUsers.totalItems === 0 ? (
+                                    <tr><td colSpan={6}><div className="empty-state"><div className="empty-state-title">Belum ada user internal</div></div></td></tr>
+                                ) : paginatedUsers.items.map(u => (
                                     <tr key={u._id}>
                                         <td className="font-semibold">{u.name}</td><td>{u.email}</td>
                                         <td><span className={`badge ${u.role === 'OWNER' ? 'badge-purple' : 'badge-info'}`}>{ROLE_LABELS[u.role]}</span></td>
@@ -164,12 +171,12 @@ export default function UsersPage() {
                 </div>
                 {!loading && (
                     <div className="mobile-record-list">
-                        {users.length === 0 ? (
+                        {paginatedUsers.totalItems === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada user internal</div>
                                 <div className="mobile-record-subtitle">Tambahkan user admin atau owner baru untuk akses internal sistem.</div>
                             </div>
-                        ) : users.map(u => (
+                        ) : paginatedUsers.items.map(u => (
                             <div key={u._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
@@ -199,6 +206,17 @@ export default function UsersPage() {
                             </div>
                         ))}
                     </div>
+                )}
+                {paginatedUsers.totalItems > 0 && (
+                    <AppPagination
+                        page={paginatedUsers.currentPage}
+                        pageSize={DEFAULT_PAGE_SIZE}
+                        totalItems={paginatedUsers.totalItems}
+                        onPageChange={setPage}
+                        info={({ startIndex, endIndex, totalItems }) => (
+                            <>Menampilkan {startIndex}-{endIndex} dari {totalItems} user</>
+                        )}
+                    />
                 )}
             </div>
 

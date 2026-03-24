@@ -4,10 +4,12 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useToast } from '../layout';
 import { Plus, Search, Edit, Trash2, Users, Save, X, FileDown, Printer } from 'lucide-react';
+import AppPagination from '@/components/AppPagination';
 
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { exportToExcel } from '@/lib/export';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
+import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
 import type { Customer, CustomerProduct } from '@/lib/types';
 
 export default function CustomersPage() {
@@ -16,6 +18,7 @@ export default function CustomersPage() {
     const [customerProductCounts, setCustomerProductCounts] = useState<Record<string, number>>({});
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
+    const [page, setPage] = useState(1);
     const [showModal, setShowModal] = useState(false);
     const [saving, setSaving] = useState(false);
     const [editItem, setEditItem] = useState<Customer | null>(null);
@@ -57,12 +60,17 @@ export default function CustomersPage() {
         void loadCustomers();
     }, [addToast]);
 
+    useEffect(() => {
+        setPage(1);
+    }, [search]);
+
     const filtered = items.filter(c =>
         !search ||
         c.name?.toLowerCase().includes(search.toLowerCase()) ||
         c.contactPerson?.toLowerCase().includes(search.toLowerCase()) ||
         c.deliveryOrderPrefix?.toLowerCase().includes(search.toLowerCase())
     );
+    const paginatedCustomers = paginateItems(filtered, page, DEFAULT_PAGE_SIZE);
     const totalProducts = Object.values(customerProductCounts).reduce((sum, count) => sum + count, 0);
     const customersNeedingCatalog = items.filter(customer => (customerProductCounts[customer._id] || 0) === 0).length;
     const customersWithCustomPrefix = items.filter(customer => (customer.deliveryOrderPrefix || 'SJ') !== 'SJ').length;
@@ -291,7 +299,7 @@ export default function CustomersPage() {
                                         ))}
                                     </tr>
                                 ))
-                            ) : filtered.length === 0 ? (
+                            ) : paginatedCustomers.totalItems === 0 ? (
                                 <tr>
                                     <td colSpan={9}>
                                         <div className="empty-state">
@@ -301,7 +309,7 @@ export default function CustomersPage() {
                                     </td>
                                 </tr>
                             ) : (
-                                filtered.map(customer => (
+                                paginatedCustomers.items.map(customer => (
                                     <tr key={customer._id}>
                                         <td className="font-semibold">
                                             <Link href={`/customers/${customer._id}`} style={{ color: 'var(--color-primary)' }}>
@@ -337,7 +345,7 @@ export default function CustomersPage() {
 
                 {!loading && (
                     <div className="mobile-record-list">
-                        {filtered.length === 0 ? (
+                        {paginatedCustomers.totalItems === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada customer</div>
                                 <div className="mobile-record-subtitle">Tambahkan customer baru untuk mulai membuat order, surat jalan, dan master barang khusus customer.</div>
@@ -347,7 +355,7 @@ export default function CustomersPage() {
                                     </button>
                                 </div>
                             </div>
-                        ) : filtered.map(customer => (
+                        ) : paginatedCustomers.items.map(customer => (
                             <div key={customer._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
@@ -388,6 +396,17 @@ export default function CustomersPage() {
                             </div>
                         ))}
                     </div>
+                )}
+                {paginatedCustomers.totalItems > 0 && (
+                    <AppPagination
+                        page={paginatedCustomers.currentPage}
+                        pageSize={DEFAULT_PAGE_SIZE}
+                        totalItems={paginatedCustomers.totalItems}
+                        onPageChange={setPage}
+                        info={({ startIndex, endIndex, totalItems }) => (
+                            <>Menampilkan {startIndex}-{endIndex} dari {totalItems} customer</>
+                        )}
+                    />
                 )}
             </div>
 

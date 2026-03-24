@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useApp, useToast } from '../layout';
 import { Plus, Edit, Layers, Save, X } from 'lucide-react';
+import AppPagination from '@/components/AppPagination';
+import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
 import type { Service } from '@/lib/types';
 
 export default function ServicesPage() {
@@ -10,6 +12,7 @@ export default function ServicesPage() {
     const { addToast } = useToast();
     const [items, setItems] = useState<Service[]>([]);
     const [loading, setLoading] = useState(true);
+    const [page, setPage] = useState(1);
     const [showModal, setShowModal] = useState(false);
     const [editItem, setEditItem] = useState<Service | null>(null);
     const [saving, setSaving] = useState(false);
@@ -36,6 +39,8 @@ export default function ServicesPage() {
 
         void loadServices();
     }, [addToast]);
+
+    const paginatedServices = paginateItems(items, page, DEFAULT_PAGE_SIZE);
 
     const openNew = () => { setEditItem(null); setForm({ code: '', name: '', description: '', active: true }); setShowModal(true); };
     const openEdit = (s: Service) => { setEditItem(s); setForm({ code: s.code || '', name: s.name, description: s.description, active: s.active !== false }); setShowModal(true); };
@@ -84,14 +89,26 @@ export default function ServicesPage() {
                 <thead><tr><th>Kode</th><th>Nama</th><th>Deskripsi</th><th>Status</th><th>Aksi</th></tr></thead>
                 <tbody>
                     {loading ? [1, 2].map(i => <tr key={i}>{[1, 2, 3, 4, 5].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                        items.length === 0 ? <tr><td colSpan={5}><div className="empty-state"><Layers size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada kategori armada</div></div></td></tr> :
-                            items.map(s => (
+                        paginatedServices.totalItems === 0 ? <tr><td colSpan={5}><div className="empty-state"><Layers size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada kategori armada</div></div></td></tr> :
+                            paginatedServices.items.map(s => (
                                 <tr key={s._id}><td className="font-mono">{s.code}</td><td className="font-semibold">{s.name}</td><td className="text-muted">{s.description}</td>
                                     <td><span className={`badge ${s.active !== false ? 'badge-success' : 'badge-gray'}`}>{s.active !== false ? 'Aktif' : 'Non-Aktif'}</span></td>
                                     <td>{isOwner ? <button className="table-action-btn" onClick={() => openEdit(s)}><Edit size={14} /> Edit</button> : <span className="text-muted">Lihat saja</span>}</td></tr>
                             ))}
                 </tbody>
-            </table></div></div>
+            </table></div>
+                {paginatedServices.totalItems > 0 && (
+                    <AppPagination
+                        page={paginatedServices.currentPage}
+                        pageSize={DEFAULT_PAGE_SIZE}
+                        totalItems={paginatedServices.totalItems}
+                        onPageChange={setPage}
+                        info={({ startIndex, endIndex, totalItems }) => (
+                            <>Menampilkan {startIndex}-{endIndex} dari {totalItems} kategori armada</>
+                        )}
+                    />
+                )}
+            </div>
             {showModal && (
                 <div className="modal-overlay" onClick={() => { if (!saving) setShowModal(false); }}><div className="modal" onClick={e => e.stopPropagation()}>
                     <div className="modal-header"><h3 className="modal-title">{editItem ? 'Edit' : 'Tambah'} Kategori Armada</h3><button className="modal-close" onClick={() => setShowModal(false)} disabled={saving}><X size={20} /></button></div>

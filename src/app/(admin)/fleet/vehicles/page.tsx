@@ -4,11 +4,13 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Plus, Search, Eye, Edit, Car, FileDown, Printer } from 'lucide-react';
+import AppPagination from '@/components/AppPagination';
 
 import { useToast } from '../../layout';
 import { VEHICLE_STATUS_MAP, formatDate } from '@/lib/utils';
 import { exportVehicles } from '@/lib/export';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
+import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
 import { getSuggestedVehicleTireLayout, resolveTireAssetStatus, resolveTireSlotCode } from '@/lib/tire-slots';
 import type { Service, TireEvent, Vehicle } from '@/lib/types';
 
@@ -22,6 +24,7 @@ export default function VehiclesPage() {
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [serviceFilter, setServiceFilter] = useState('');
+    const [page, setPage] = useState(1);
 
     useEffect(() => {
         const loadVehicles = async () => {
@@ -53,6 +56,10 @@ export default function VehiclesPage() {
         void loadVehicles();
     }, [addToast]);
 
+    useEffect(() => {
+        setPage(1);
+    }, [search, statusFilter, serviceFilter]);
+
     const getServiceLabel = (vehicle: Vehicle) => {
         const service = services.find(item => item._id === vehicle.serviceRef);
         if (service) {
@@ -77,6 +84,7 @@ export default function VehiclesPage() {
         const matchesService = !serviceFilter || vehicle.serviceRef === serviceFilter;
         return matchesSearch && matchesStatus && matchesService;
     });
+    const paginatedVehicles = paginateItems(filtered, page, DEFAULT_PAGE_SIZE);
 
     const buildTireSummary = (vehicle: Vehicle) => {
         const activeSlotCodes = tireEvents
@@ -165,8 +173,8 @@ export default function VehiclesPage() {
                         <thead><tr><th>Kode</th><th>Plat Nomor</th><th>Merk/Model</th><th>Kategori Armada</th><th>Tipe</th><th>Ban Unit</th><th>Tahun</th><th>Status</th><th>Tindak Lanjut</th><th>Odometer</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                filtered.length === 0 ? <tr><td colSpan={11}><div className="empty-state"><Car size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada kendaraan</div></div></td></tr> :
-                                    filtered.map(vehicle => {
+                                paginatedVehicles.totalItems === 0 ? <tr><td colSpan={11}><div className="empty-state"><Car size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada kendaraan</div></div></td></tr> :
+                                    paginatedVehicles.items.map(vehicle => {
                                         const summary = tireSummaryByVehicle.get(vehicle._id);
                                         return (
                                             <tr key={vehicle._id}>
@@ -199,12 +207,12 @@ export default function VehiclesPage() {
                 </div>
                 {!loading && (
                     <div className="mobile-record-list">
-                        {filtered.length === 0 ? (
+                        {paginatedVehicles.totalItems === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada kendaraan</div>
                                 <div className="mobile-record-subtitle">Tambahkan kendaraan untuk mulai mengelola armada.</div>
                             </div>
-                        ) : filtered.map(vehicle => {
+                        ) : paginatedVehicles.items.map(vehicle => {
                             const summary = tireSummaryByVehicle.get(vehicle._id);
                             return (
                                 <div key={vehicle._id} className="mobile-record-card">
@@ -262,7 +270,17 @@ export default function VehiclesPage() {
                         })}
                     </div>
                 )}
-                {filtered.length > 0 && <div className="pagination"><div className="pagination-info">Menampilkan {filtered.length} kendaraan</div></div>}
+                {paginatedVehicles.totalItems > 0 && (
+                    <AppPagination
+                        page={paginatedVehicles.currentPage}
+                        pageSize={DEFAULT_PAGE_SIZE}
+                        totalItems={paginatedVehicles.totalItems}
+                        onPageChange={setPage}
+                        info={({ startIndex, endIndex, totalItems }) => (
+                            <>Menampilkan {startIndex}-{endIndex} dari {totalItems} kendaraan</>
+                        )}
+                    />
+                )}
             </div>
         </div>
     );

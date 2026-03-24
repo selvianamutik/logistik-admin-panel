@@ -11,9 +11,11 @@ import {
   Printer,
   Trash2,
 } from "lucide-react";
+import AppPagination from "@/components/AppPagination";
 import CurrencyInput from "@/components/CurrencyInput";
 import { exportToExcel } from "@/lib/export";
 import { openBrandedPrint } from "@/lib/print";
+import { DEFAULT_PAGE_SIZE, paginateItems } from "@/lib/pagination";
 import type { BankAccount, CompanyProfile } from "@/lib/types";
 import { useToast } from "../layout";
 
@@ -142,6 +144,7 @@ export default function BankAccountsPage() {
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [company, setCompany] = useState<CompanyProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
   const [showTransfer, setShowTransfer] = useState(false);
   const [savingAccount, setSavingAccount] = useState(false);
@@ -429,6 +432,7 @@ export default function BankAccountsPage() {
   const bankBalance = accounts
     .filter((account) => !isCashAccount(account))
     .reduce((sum, account) => sum + (account.currentBalance || 0), 0);
+  const paginatedAccounts = paginateItems(accounts, page, DEFAULT_PAGE_SIZE);
 
   const handleBrandedPrint = () => {
     const change = totalBalance - totalInitial;
@@ -590,7 +594,7 @@ export default function BankAccountsPage() {
                 </div>
               </div>
             ))
-          : accounts.map((account) => {
+          : paginatedAccounts.items.map((account) => {
               const preset = isCashAccount(account)
                 ? BANK_PRESETS.CASH
                 : getBankPreset(account.bankName);
@@ -751,6 +755,17 @@ export default function BankAccountsPage() {
           </div>
         )}
       </div>
+      {paginatedAccounts.totalItems > 0 && (
+        <AppPagination
+          page={paginatedAccounts.currentPage}
+          pageSize={DEFAULT_PAGE_SIZE}
+          totalItems={paginatedAccounts.totalItems}
+          onPageChange={setPage}
+          info={({ startIndex, endIndex, totalItems }) => (
+            <>Menampilkan {startIndex}-{endIndex} dari {totalItems} rekening / kas</>
+          )}
+        />
+      )}
 
       {showModal && (
         <div className="modal-overlay" onClick={() => { if (!savingAccount) setShowModal(false); }}>
