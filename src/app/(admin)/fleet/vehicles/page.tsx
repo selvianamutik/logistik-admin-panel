@@ -7,17 +7,19 @@ import { Plus, Search, Eye, Edit, Car, FileDown, Printer } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 
 import { useToast } from '../../layout';
-import { VEHICLE_STATUS_MAP, formatDate } from '@/lib/utils';
+import {
+    buildVehiclePrintHtml,
+    buildVehiclesQuery,
+    getAvailableVehicleServiceOptions,
+    getVehicleNextAction,
+    getVehicleServiceLabel,
+    type VehicleTireSummary,
+} from '@/lib/fleet-vehicle-page-support';
+import { VEHICLE_STATUS_MAP } from '@/lib/utils';
 import { exportVehicles } from '@/lib/export';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { Service, Vehicle } from '@/lib/types';
-
-type VehicleTireSummary = {
-    filled: number;
-    expected: number;
-    missing: number;
-};
 
 export default function VehiclesPage() {
     const router = useRouter();
@@ -39,33 +41,17 @@ export default function VehiclesPage() {
         setPage(1);
     }, [search, statusFilter, serviceFilter]);
 
-    const buildVehiclesQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
-        const params = new URLSearchParams({
-            entity: 'vehicles',
-            page: String(targetPage),
-            pageSize: String(targetPageSize),
-            sortField: 'plateNumber',
-            sortDir: 'asc',
-        });
-
-        if (search.trim()) {
-            params.set('q', search.trim());
-            params.set('searchFields', 'plateNumber,brandModel,unitCode,serviceName');
-        }
-
-        const filterObj: Record<string, string> = {};
-        if (statusFilter) {
-            filterObj.status = statusFilter;
-        }
-        if (serviceFilter) {
-            filterObj.serviceRef = serviceFilter;
-        }
-        if (Object.keys(filterObj).length > 0) {
-            params.set('filter', JSON.stringify(filterObj));
-        }
-
-        return params.toString();
-    }, [page, search, statusFilter, serviceFilter]);
+    const buildCurrentVehiclesQuery = useCallback(
+        (targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) =>
+            buildVehiclesQuery({
+                page: targetPage,
+                pageSize: targetPageSize,
+                search,
+                statusFilter,
+                serviceFilter,
+            }),
+        [page, search, statusFilter, serviceFilter]
+    );
 
     const fetchAllMatchingVehicles = useCallback(async () => {
         const pageSize = 200;
@@ -74,7 +60,7 @@ export default function VehiclesPage() {
         const allItems: Vehicle[] = [];
 
         do {
-            const res = await fetch(`/api/data?${buildVehiclesQuery(currentPage, pageSize)}`);
+            const res = await fetch(`/api/data?${buildCurrentVehiclesQuery(currentPage, pageSize)}`);
             const payload = await res.json();
             if (!res.ok) {
                 throw new Error(payload.error || 'Gagal memuat data kendaraan');
@@ -88,13 +74,13 @@ export default function VehiclesPage() {
         } while (allItems.length < total);
 
         return allItems;
-    }, [buildVehiclesQuery]);
+    }, [buildCurrentVehiclesQuery]);
 
     const loadVehicles = useCallback(async () => {
         setLoading(true);
         try {
             const [listRes, serviceRes] = await Promise.all([
-                fetch(`/api/data?${buildVehiclesQuery()}`),
+                fetch(`/api/data?${buildCurrentVehiclesQuery()}`),
                 fetch('/api/data?entity=services'),
             ]);
             const [listPayload, servicePayload] = await Promise.all([listRes.json(), serviceRes.json()]);
@@ -126,34 +112,17 @@ export default function VehiclesPage() {
         } finally {
             setLoading(false);
         }
-    }, [addToast, buildVehiclesQuery]);
+    }, [addToast, buildCurrentVehiclesQuery]);
 
     useEffect(() => {
         void loadVehicles();
     }, [loadVehicles]);
 
-    const getServiceLabel = (vehicle: Vehicle) => {
-        const service = services.find(item => item._id === vehicle.serviceRef);
-        if (service) {
-            return `${service.code} - ${service.name}`;
-        }
-        return vehicle.serviceName || '-';
-    };
-
-    const availableServiceOptions = services.filter(service =>
-        service.active !== false || service._id === serviceFilter || items.some(vehicle => vehicle.serviceRef === service._id)
-    );
-
-    const getVehicleNextAction = (vehicle: Vehicle) => {
-        const summary = tireSummaryByVehicle[vehicle._id];
-        if (vehicle.status !== 'ACTIVE') {
-            return 'Cek status unit sebelum dipakai untuk trip baru';
-        }
-        if (summary && summary.missing > 0) {
-            return `Lengkapi ${summary.missing} slot ban yang masih kosong`;
-        }
-        return 'Siap dipakai; buka profil unit bila perlu servis atau insiden';
-    };
+    const availableServiceOptions = getAvailableVehicleServiceOptions({
+        services,
+        serviceFilter,
+        vehicles: items,
+    });
 
     return (
         <div>
@@ -177,9 +146,7 @@ export default function VehiclesPage() {
                             openBrandedPrint({
                                 title: 'Daftar Kendaraan',
                                 company,
-                                bodyHtml: `
-                                <table><thead><tr><th>Kode</th><th>Plat Nomor</th><th>Merk/Model</th><th>Kategori</th><th>Tipe</th><th>Tahun</th><th>Status</th><th>Odometer</th><th>Tgl Update</th></tr></thead>
-                                <tbody>${printableVehicles.map(vehicle => `<tr><td class="b">${vehicle.unitCode || '-'}</td><td>${vehicle.plateNumber}</td><td>${vehicle.brandModel}</td><td>${getServiceLabel(vehicle)}</td><td>${vehicle.vehicleType}</td><td>${vehicle.year}</td><td>${VEHICLE_STATUS_MAP[vehicle.status]?.label || vehicle.status}</td><td class="r">${vehicle.lastOdometer ? `${vehicle.lastOdometer.toLocaleString('id-ID')} km` : '-'}</td><td>${formatDate(vehicle.lastOdometerAt)}</td></tr>`).join('')}</tbody></table>`,
+                                bodyHtml: buildVehiclePrintHtml(printableVehicles, services),
                             });
                         }}
                     >
@@ -222,7 +189,7 @@ export default function VehiclesPage() {
                                                 <td className="font-mono text-muted">{vehicle.unitCode}</td>
                                                 <td className="font-semibold">{vehicle.plateNumber}</td>
                                                 <td>{vehicle.brandModel}</td>
-                                                <td>{getServiceLabel(vehicle)}</td>
+                                                <td>{getVehicleServiceLabel(vehicle, services)}</td>
                                                 <td>{vehicle.vehicleType}</td>
                                                 <td>
                                                     {summary ? (
@@ -234,7 +201,7 @@ export default function VehiclesPage() {
                                                 </td>
                                                 <td>{vehicle.year}</td>
                                                 <td><span className={`badge badge-${VEHICLE_STATUS_MAP[vehicle.status]?.color}`}><span className="badge-dot" /> {VEHICLE_STATUS_MAP[vehicle.status]?.label}</span></td>
-                                                <td>{getVehicleNextAction(vehicle)}</td>
+                                                <td>{getVehicleNextAction(vehicle, tireSummaryByVehicle)}</td>
                                                 <td>{vehicle.lastOdometer ? `${vehicle.lastOdometer.toLocaleString('id-ID')} km` : '-'}</td>
                                                 <td><div className="table-actions">
                                                     <button className="table-action-btn" onClick={() => router.push(`/fleet/vehicles/${vehicle._id}`)}><Eye size={14} /> Lihat</button>
@@ -273,7 +240,7 @@ export default function VehiclesPage() {
                                         </div>
                                         <div className="mobile-record-kv">
                                             <span className="mobile-record-label">Kategori Armada</span>
-                                            <span className="mobile-record-value">{getServiceLabel(vehicle)}</span>
+                                            <span className="mobile-record-value">{getVehicleServiceLabel(vehicle, services)}</span>
                                         </div>
                                         <div className="mobile-record-kv">
                                             <span className="mobile-record-label">Tipe</span>
@@ -287,7 +254,7 @@ export default function VehiclesPage() {
                                         </div>
                                         <div className="mobile-record-kv">
                                             <span className="mobile-record-label">Tindak Lanjut</span>
-                                            <span className="mobile-record-value">{getVehicleNextAction(vehicle)}</span>
+                                            <span className="mobile-record-value">{getVehicleNextAction(vehicle, tireSummaryByVehicle)}</span>
                                         </div>
                                         <div className="mobile-record-kv">
                                             <span className="mobile-record-label">Tahun</span>

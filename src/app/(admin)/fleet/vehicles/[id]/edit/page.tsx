@@ -6,45 +6,15 @@ import { Save } from 'lucide-react';
 
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
+import {
+    EMPTY_VEHICLE_FORM,
+    getVehicleSections,
+    mapVehicleToForm,
+    type VehicleForm,
+} from '@/lib/fleet-vehicle-page-support';
 import { useApp, useToast } from '../../../../layout';
 import { VEHICLE_STATUS_MAP } from '@/lib/utils';
 import type { Service, Vehicle, VehicleStatus } from '@/lib/types';
-
-type VehicleForm = {
-    unitCode: string;
-    plateNumber: string;
-    vehicleType: string;
-    brandModel: string;
-    year: number;
-    capacityKg: number;
-    capacityVolume: number;
-    serviceRef: string;
-    chassisNumber: string;
-    engineNumber: string;
-    base: string;
-    notes: string;
-    status: VehicleStatus;
-    lastOdometer: number;
-    lastOdometerAt: string;
-};
-
-const EMPTY_FORM: VehicleForm = {
-    unitCode: '',
-    plateNumber: '',
-    vehicleType: 'Truck',
-    brandModel: '',
-    year: new Date().getFullYear(),
-    capacityKg: 0,
-    capacityVolume: 0,
-    serviceRef: '',
-    chassisNumber: '',
-    engineNumber: '',
-    base: '',
-    notes: '',
-    status: 'ACTIVE',
-    lastOdometer: 0,
-    lastOdometerAt: '',
-};
 
 export default function VehicleEditPage() {
     const params = useParams();
@@ -54,17 +24,10 @@ export default function VehicleEditPage() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [services, setServices] = useState<Service[]>([]);
-    const [form, setForm] = useState<VehicleForm>(EMPTY_FORM);
+    const [form, setForm] = useState<VehicleForm>(EMPTY_VEHICLE_FORM);
     const isOwner = user?.role === 'OWNER';
     const vehicleId = params.id as string;
-    const vehicleSections = [
-        { key: 'profil', label: 'Profil', href: `/fleet/vehicles/${vehicleId}` },
-        { key: 'do', label: 'Riwayat DO', href: `/fleet/vehicles/${vehicleId}?tab=do` },
-        { key: 'maintenance', label: 'Maintenance', href: `/fleet/vehicles/${vehicleId}?tab=maintenance` },
-        { key: 'ban', label: 'Ban', href: `/fleet/vehicles/${vehicleId}?tab=ban` },
-        { key: 'insiden', label: 'Insiden', href: `/fleet/vehicles/${vehicleId}?tab=insiden` },
-        ...(isOwner ? [{ key: 'biaya', label: 'Biaya', href: `/fleet/vehicles/${vehicleId}?tab=biaya` }] : []),
-    ];
+    const vehicleSections = getVehicleSections(vehicleId, isOwner);
 
     useEffect(() => {
         const loadVehicle = async () => {
@@ -87,23 +50,7 @@ export default function VehicleEditPage() {
                     throw new Error('Kendaraan tidak ditemukan');
                 }
 
-                setForm({
-                    unitCode: vehicle.unitCode || '',
-                    plateNumber: vehicle.plateNumber || '',
-                    vehicleType: vehicle.vehicleType || 'Truck',
-                    brandModel: vehicle.brandModel || '',
-                    year: vehicle.year || new Date().getFullYear(),
-                    capacityKg: vehicle.capacityKg || 0,
-                    capacityVolume: vehicle.capacityVolume || 0,
-                    serviceRef: vehicle.serviceRef || '',
-                    chassisNumber: vehicle.chassisNumber || '',
-                    engineNumber: vehicle.engineNumber || '',
-                    base: vehicle.base || '',
-                    notes: vehicle.notes || '',
-                    status: vehicle.status || 'ACTIVE',
-                    lastOdometer: vehicle.lastOdometer || 0,
-                    lastOdometerAt: vehicle.lastOdometerAt || '',
-                });
+                setForm(mapVehicleToForm(vehicle));
                 setServices((serviceRows || []).filter(service => service.active !== false || service._id === vehicle.serviceRef));
             } catch (error) {
                 addToast('error', error instanceof Error ? error.message : 'Gagal memuat kendaraan');
