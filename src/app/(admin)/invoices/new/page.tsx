@@ -7,63 +7,18 @@ import { Plus, Save, Trash2 } from 'lucide-react';
 import CurrencyInput from '@/components/CurrencyInput';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
+import { fetchAdminData } from '@/lib/api/admin-client';
+import {
+    buildNotaRowFromDeliveryOrder,
+    createEmptyNotaRow,
+    getSuggestedNotaDueDate,
+    isEmptyNotaRow,
+    type NotaItemRow,
+} from '@/lib/invoice-create-page-support';
 import type { CompanyProfile, Customer, DeliveryOrder, DeliveryOrderItem, Order } from '@/lib/types';
 import { formatCurrency, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
 
 import { useToast } from '../../layout';
-
-interface NotaItemRow {
-    id: string;
-    doRef: string;
-    doNumber: string;
-    vehiclePlate: string;
-    date: string;
-    noSJ: string;
-    dari: string;
-    tujuan: string;
-    barang: string;
-    collie: number;
-    beratKg: number;
-    tarip: number;
-    uangRp: number;
-    ket: string;
-}
-
-function createEmptyRow(): NotaItemRow {
-    return {
-        id: Math.random().toString(36).slice(2),
-        doRef: '',
-        doNumber: '',
-        vehiclePlate: '',
-        date: new Date().toISOString().split('T')[0],
-        noSJ: '',
-        dari: '',
-        tujuan: '',
-        barang: '',
-        collie: 0,
-        beratKg: 0,
-        tarip: 0,
-        uangRp: 0,
-        ket: '',
-    };
-}
-
-function isEmptyRow(row: NotaItemRow) {
-    return (
-        !row.doRef &&
-        !row.doNumber &&
-        !row.vehiclePlate &&
-        !row.noSJ &&
-        !row.dari &&
-        !row.tujuan &&
-        !row.barang &&
-        !row.ket &&
-        (row.collie || 0) === 0 &&
-        (row.beratKg || 0) === 0 &&
-        (row.tarip || 0) === 0 &&
-        (row.uangRp || 0) === 0
-    );
-}
 
 export default function NewNotaPage() {
     const router = useRouter();
@@ -82,27 +37,18 @@ export default function NewNotaPage() {
     const [dueDate, setDueDate] = useState('');
     const [dueDateTouched, setDueDateTouched] = useState(false);
     const [notes, setNotes] = useState('');
-    const [rows, setRows] = useState<NotaItemRow[]>([createEmptyRow()]);
+    const [rows, setRows] = useState<NotaItemRow[]>([createEmptyNotaRow()]);
 
     useEffect(() => {
         async function loadData() {
-            const fetchEntity = async <T,>(url: string, fallbackMessage: string) => {
-                const res = await fetch(url);
-                const payload = await res.json();
-                if (!res.ok) {
-                    throw new Error(payload.error || fallbackMessage);
-                }
-                return payload.data as T;
-            };
-
             try {
                 const [cust, comp, dos, ords, doItems, notaItems] = await Promise.all([
-                    fetchEntity<Customer[]>('/api/data?entity=customers', 'Gagal memuat customer'),
-                    fetchEntity<CompanyProfile | null>('/api/data?entity=company', 'Gagal memuat profil perusahaan'),
-                    fetchEntity<DeliveryOrder[]>('/api/data?entity=delivery-orders', 'Gagal memuat surat jalan'),
-                    fetchEntity<Order[]>('/api/data?entity=orders', 'Gagal memuat order'),
-                    fetchEntity<DeliveryOrderItem[]>('/api/data?entity=delivery-order-items', 'Gagal memuat item DO'),
-                    fetchEntity<Array<{ doRef?: string }>>('/api/data?entity=freight-nota-items', 'Gagal memuat pemakaian DO nota'),
+                    fetchAdminData<Customer[]>('/api/data?entity=customers', 'Gagal memuat customer'),
+                    fetchAdminData<CompanyProfile | null>('/api/data?entity=company', 'Gagal memuat profil perusahaan'),
+                    fetchAdminData<DeliveryOrder[]>('/api/data?entity=delivery-orders', 'Gagal memuat surat jalan'),
+                    fetchAdminData<Order[]>('/api/data?entity=orders', 'Gagal memuat order'),
+                    fetchAdminData<DeliveryOrderItem[]>('/api/data?entity=delivery-order-items', 'Gagal memuat item DO'),
+                    fetchAdminData<Array<{ doRef?: string }>>('/api/data?entity=freight-nota-items', 'Gagal memuat pemakaian DO nota'),
                 ]);
                 setCustomers((cust || []).filter(customer => customer.active !== false));
                 setCompany(comp || null);
@@ -122,61 +68,18 @@ export default function NewNotaPage() {
         void loadData();
     }, [addToast]);
 
-    const calculateDueDate = (baseDate: string, termDays: number) => {
-        const parsed = new Date(baseDate);
-        if (Number.isNaN(parsed.getTime())) {
-            return '';
-        }
-        parsed.setDate(parsed.getDate() + termDays);
-        return parsed.toISOString().slice(0, 10);
-    };
-
     useEffect(() => {
-        if (dueDateTouched) return;
-        const customer = customerRef
-            ? customers.find(item => item._id === customerRef)
-            : null;
-        const customerTerm = customer && Number.isFinite(customer.defaultPaymentTerm) && customer.defaultPaymentTerm >= 0
-            ? customer.defaultPaymentTerm
-            : null;
-        const companyTerm = company?.invoiceSettings?.dueDateDays ?? company?.invoiceSettings?.defaultTermDays;
-        const termDays = customerTerm ?? (
-            typeof companyTerm === 'number' && Number.isFinite(companyTerm) && companyTerm >= 0
-                ? companyTerm
-                : null
-        );
-        if (termDays === null) return;
-        setDueDate(calculateDueDate(issueDate, termDays));
+        const nextDueDate = getSuggestedNotaDueDate({
+            customerRef,
+            customers,
+            company,
+            issueDate,
+            dueDateTouched,
+        });
+        if (nextDueDate) {
+            setDueDate(nextDueDate);
+        }
     }, [company, customerRef, customers, dueDateTouched, issueDate]);
-
-    const buildNotaRowFromDO = (deliveryOrder: DeliveryOrder): NotaItemRow => {
-        const relatedOrder = orders.find(order => order._id === deliveryOrder.orderRef);
-        const relatedItems = deliveryOrderItems.filter(item => item.deliveryOrderRef === deliveryOrder._id);
-        const descriptions = [...new Set(
-            relatedItems
-                .map(item => item.orderItemDescription?.trim())
-                .filter((value): value is string => Boolean(value))
-        )];
-        const collie = relatedItems.reduce((sum, item) => sum + Number(item.actualQtyKoli ?? item.orderItemQtyKoli ?? 0), 0);
-        const beratKg = relatedItems.reduce((sum, item) => sum + Number(item.actualWeightKg ?? item.orderItemWeight ?? 0), 0);
-
-        return {
-            id: Math.random().toString(36).slice(2),
-            doRef: deliveryOrder._id,
-            doNumber: deliveryOrder.doNumber || '',
-            vehiclePlate: deliveryOrder.vehiclePlate || '',
-            date: deliveryOrder.date || new Date().toISOString().split('T')[0],
-            noSJ: formatDeliveryOrderDisplayNumber(deliveryOrder),
-            dari: deliveryOrder.pickupAddress || relatedOrder?.pickupAddress || '',
-            tujuan: deliveryOrder.receiverAddress || relatedOrder?.receiverAddress || '',
-            barang: descriptions.join(', '),
-            collie,
-            beratKg,
-            tarip: 0,
-            uangRp: 0,
-            ket: '',
-        };
-    };
 
     const updateRow = (id: string, field: keyof NotaItemRow, value: string | number) => {
         setRows(previous =>
@@ -212,7 +115,11 @@ export default function NewNotaPage() {
             return;
         }
 
-        const nextRow = buildNotaRowFromDO(deliveryOrder);
+        const nextRow = buildNotaRowFromDeliveryOrder({
+            deliveryOrder,
+            orders,
+            deliveryOrderItems,
+        });
         if (!customerRef && relatedOrder?.customerRef) {
             const resolvedCustomerName =
                 relatedOrder.customerName ||
@@ -225,7 +132,7 @@ export default function NewNotaPage() {
         }
 
         setRows(previous => {
-            const emptyIndex = previous.findIndex(isEmptyRow);
+            const emptyIndex = previous.findIndex(isEmptyNotaRow);
             if (emptyIndex === -1) {
                 return [...previous, nextRow];
             }
@@ -239,7 +146,7 @@ export default function NewNotaPage() {
     const removeRow = (id: string) => {
         setRows(previous => {
             const next = previous.filter(row => row.id !== id);
-            return next.length > 0 ? next : [createEmptyRow()];
+            return next.length > 0 ? next : [createEmptyNotaRow()];
         });
     };
 
@@ -253,7 +160,7 @@ export default function NewNotaPage() {
             addToast('error', 'Nama customer wajib diisi');
             return;
         }
-        const filledRows = rows.filter(row => !isEmptyRow(row));
+        const filledRows = rows.filter(row => !isEmptyNotaRow(row));
         if (filledRows.length === 0) {
             addToast('error', 'Minimal 1 baris perjalanan');
             return;
@@ -520,9 +427,9 @@ export default function NewNotaPage() {
             <div className="card" style={{ marginTop: '1.5rem' }}>
                 <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span className="card-header-title">Perincian Perjalanan</span>
-                    <button className="btn btn-secondary btn-sm" onClick={() => setRows(previous => [...previous, createEmptyRow()])}>
-                        <Plus size={14} /> Tambah Baris
-                    </button>
+                                    <button className="btn btn-secondary btn-sm" onClick={() => setRows(previous => [...previous, createEmptyNotaRow()])}>
+                                        <Plus size={14} /> Tambah Baris
+                                    </button>
                 </div>
                 <div className="table-wrapper" style={{ overflowX: 'auto' }}>
                     <table style={{ minWidth: 900 }}>

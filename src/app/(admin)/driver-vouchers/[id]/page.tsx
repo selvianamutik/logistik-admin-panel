@@ -8,18 +8,18 @@ import CollapsibleCard from '@/components/CollapsibleCard';
 import CurrencyInput from '@/components/CurrencyInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminData } from '@/lib/api/admin-client';
+import {
+    buildDriverVoucherDetailSummary,
+    buildDriverVoucherPrintHtml,
+    createDefaultDriverVoucherItemForm,
+    createDefaultDriverVoucherTopUpForm,
+    DRIVER_VOUCHER_EXPENSE_CATEGORIES,
+    sortDriverVoucherDisbursements,
+} from '@/lib/driver-voucher-detail-support';
 import { useToast } from '../../layout';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
 import type { BankAccount, DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem } from '@/lib/types';
-import { formatCurrency, formatDate, getDriverVoucherInitialCash, getDriverVoucherIssuedAmount, getDriverVoucherTopUpAmount } from '@/lib/utils';
-
-const STATUS_MAP: Record<string, { label: string; cls: string }> = {
-    DRAFT: { label: 'Draft', cls: 'badge-gray' },
-    ISSUED: { label: 'Diberikan', cls: 'badge-blue' },
-    SETTLED: { label: 'Selesai', cls: 'badge-green' },
-};
-
-const EXPENSE_CATEGORIES = ['BBM / Solar', 'Tol & Parkir', 'Parkir', 'Makan', 'Menginap', 'Bongkar Muat', 'Perbaikan', 'Lain-lain'];
+import { formatCurrency, formatDate } from '@/lib/utils';
 
 export default function DriverVoucherDetailPage() {
     const params = useParams();
@@ -38,18 +38,8 @@ export default function DriverVoucherDetailPage() {
     const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
     const [deletingDisbursementId, setDeletingDisbursementId] = useState<string | null>(null);
     const [repairingIssueLedger, setRepairingIssueLedger] = useState(false);
-    const [itemForm, setItemForm] = useState({
-        expenseDate: new Date().toISOString().slice(0, 10),
-        category: 'BBM / Solar',
-        description: '',
-        amount: 0,
-    });
-    const [topUpForm, setTopUpForm] = useState({
-        date: new Date().toISOString().slice(0, 10),
-        bankAccountRef: '',
-        amount: 0,
-        note: '',
-    });
+    const [itemForm, setItemForm] = useState(createDefaultDriverVoucherItemForm());
+    const [topUpForm, setTopUpForm] = useState(createDefaultDriverVoucherTopUpForm());
     const [settlementDate, setSettlementDate] = useState(new Date().toISOString().slice(0, 10));
     const [settlementBankRef, setSettlementBankRef] = useState('');
     const [issueBankRepairRef, setIssueBankRepairRef] = useState('');
@@ -65,7 +55,7 @@ export default function DriverVoucherDetailPage() {
             ]);
             setVoucher(voucherData || null);
             setItems(voucherItems || []);
-            setDisbursements((voucherDisbursements || []).sort((a, b) => `${a.date}-${a.kind}`.localeCompare(`${b.date}-${b.kind}`)));
+            setDisbursements(sortDriverVoucherDisbursements(voucherDisbursements || []));
             setBankAccounts((accounts || []).filter((account) => account.active !== false));
             setIssueBankRepairRef(voucherData?.issueBankRef || '');
         } catch (error) {
@@ -79,14 +69,19 @@ export default function DriverVoucherDetailPage() {
         void loadVoucherDetail();
     }, [loadVoucherDetail]);
 
-    const operationalSpent = items.reduce((sum, item) => sum + item.amount, 0);
-    const driverFeeAmount = voucher?.driverFeeAmount || 0;
-    const totalClaimAmount = operationalSpent + driverFeeAmount;
-    const initialCashGiven = getDriverVoucherInitialCash(voucher || {});
-    const totalIssuedAmount = getDriverVoucherIssuedAmount(voucher || {});
-    const topUpAmount = getDriverVoucherTopUpAmount(voucher || {});
-    const balance = totalIssuedAmount - totalClaimAmount;
-    const isSettled = voucher?.status === 'SETTLED';
+    const {
+        operationalSpent,
+        driverFeeAmount,
+        totalClaimAmount,
+        initialCashGiven,
+        totalIssuedAmount,
+        topUpAmount,
+        balance,
+        isSettled,
+        statusConfig,
+        settlementLabel,
+        settlementPrimaryLabel,
+    } = buildDriverVoucherDetailSummary(voucher, items);
 
     const handleAddItem = async () => {
         if (!itemForm.amount || itemForm.amount <= 0) {
@@ -121,12 +116,7 @@ export default function DriverVoucherDetailPage() {
             }
             addToast('success', 'Item pengeluaran ditambahkan');
             setShowAddItem(false);
-            setItemForm({
-                expenseDate: new Date().toISOString().slice(0, 10),
-                category: 'BBM / Solar',
-                description: '',
-                amount: 0,
-            });
+            setItemForm(createDefaultDriverVoucherItemForm());
         } catch {
             addToast('error', 'Gagal menambah item');
         } finally {
@@ -166,12 +156,7 @@ export default function DriverVoucherDetailPage() {
 
     const openTopUpModal = () => {
         if (!voucher) return;
-        setTopUpForm({
-            date: new Date().toISOString().slice(0, 10),
-            bankAccountRef: voucher.issueBankRef || '',
-            amount: 0,
-            note: '',
-        });
+        setTopUpForm(createDefaultDriverVoucherTopUpForm(voucher.issueBankRef || ''));
         setShowTopUpModal(true);
     };
 
@@ -214,16 +199,11 @@ export default function DriverVoucherDetailPage() {
             }
             if (result.data) {
                 setDisbursements(prev =>
-                    [...prev, result.data].sort((a, b) => `${a.date}-${a.kind}`.localeCompare(`${b.date}-${b.kind}`))
+                    sortDriverVoucherDisbursements([...prev, result.data])
                 );
             }
             setShowTopUpModal(false);
-            setTopUpForm({
-                date: new Date().toISOString().slice(0, 10),
-                bankAccountRef: voucher.issueBankRef || '',
-                amount: 0,
-                note: '',
-            });
+            setTopUpForm(createDefaultDriverVoucherTopUpForm(voucher.issueBankRef || ''));
             addToast('success', 'Tambahan bon berhasil dicatat');
         } catch {
             addToast('error', 'Gagal menambah bon');
@@ -345,50 +325,13 @@ export default function DriverVoucherDetailPage() {
         openBrandedPrint({
             title: `Uang Jalan Trip ${voucher?.bonNumber}`,
             company,
-            bodyHtml: `
-            <div style="margin-bottom:16px">
-                <table style="width:100%;border:none"><tbody>
-                <tr><td style="border:none;padding:2px 8px;width:130px;font-weight:600">No. Bon</td><td style="border:none;padding:2px 8px">${voucher?.bonNumber}</td>
-                    <td style="border:none;padding:2px 8px;width:130px;font-weight:600">Tanggal</td><td style="border:none;padding:2px 8px">${formatDate(voucher?.issuedDate || '')}</td></tr>
-                <tr><td style="border:none;padding:2px 8px;font-weight:600">Supir</td><td style="border:none;padding:2px 8px">${voucher?.driverName || '-'}</td>
-                    <td style="border:none;padding:2px 8px;font-weight:600">Kendaraan</td><td style="border:none;padding:2px 8px">${voucher?.vehiclePlate || '-'}</td></tr>
-                <tr><td style="border:none;padding:2px 8px;font-weight:600">DO</td><td style="border:none;padding:2px 8px">${voucher?.doNumber || '-'}</td>
-                    <td style="border:none;padding:2px 8px;font-weight:600">Rute</td><td style="border:none;padding:2px 8px">${voucher?.route || '-'}</td></tr>
-                <tr><td style="border:none;padding:2px 8px;font-weight:600">Uang Jalan Awal</td><td style="border:none;padding:2px 8px;font-weight:700;font-size:1.05em">${formatCurrency(initialCashGiven)}</td>
-                    <td style="border:none;padding:2px 8px;font-weight:600">Top Up Uang Jalan</td><td style="border:none;padding:2px 8px">${formatCurrency(topUpAmount)}</td></tr>
-                <tr><td style="border:none;padding:2px 8px;font-weight:600">Total Uang Diberikan</td><td style="border:none;padding:2px 8px;font-weight:700">${formatCurrency(totalIssuedAmount)}</td>
-                    <td style="border:none;padding:2px 8px;font-weight:600">Rekening Sumber</td><td style="border:none;padding:2px 8px">${voucher?.issueBankName || '-'}</td></tr>
-                <tr><td style="border:none;padding:2px 8px;font-weight:600">Upah Trip</td><td style="border:none;padding:2px 8px">${formatCurrency(driverFeeAmount)}</td>
-                    <td style="border:none;padding:2px 8px;font-weight:600">Biaya Perjalanan</td><td style="border:none;padding:2px 8px">${formatCurrency(operationalSpent)}</td></tr>
-                <tr><td style="border:none;padding:2px 8px;font-weight:600">Status</td><td style="border:none;padding:2px 8px">${STATUS_MAP[voucher?.status || '']?.label || voucher?.status}</td>
-                    <td style="border:none;padding:2px 8px;font-weight:600">Rekening Settlement</td><td style="border:none;padding:2px 8px">${voucher?.settlementBankName || '-'}</td></tr>
-                </tbody></table>
-            </div>
-            ${disbursements.length > 0 ? `<div style="margin-bottom:16px"><div style="font-weight:700;margin-bottom:8px">Riwayat Pencairan Uang Jalan</div><table><thead><tr><th>No</th><th>Tanggal</th><th>Jenis</th><th>Sumber Dana</th><th>Catatan</th><th class="r">Jumlah</th></tr></thead><tbody>${disbursements.map((item, index) => `<tr><td>${index + 1}</td><td>${formatDate(item.date)}</td><td>${item.kind === 'INITIAL' ? 'Uang Jalan Awal' : 'Top Up Uang Jalan'}</td><td>${item.bankAccountName || '-'}</td><td>${item.note || '-'}</td><td class="r">${formatCurrency(item.amount)}</td></tr>`).join('')}</tbody></table></div>` : ''}
-            <table><thead><tr><th>No</th><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th class="r">Jumlah</th></tr></thead>
-            <tbody>${items.map((item, index) => `<tr><td>${index + 1}</td><td>${item.expenseDate ? formatDate(item.expenseDate) : '-'}</td><td class="b">${item.category}</td><td>${item.description || '-'}</td><td class="r">${formatCurrency(item.amount)}</td></tr>`).join('')}
-            <tr style="border-top:2px solid #1e293b"><td colspan="4" class="r b">Total Biaya Perjalanan</td><td class="r b">${formatCurrency(operationalSpent)}</td></tr>
-            <tr><td colspan="4" class="r b">Upah Trip</td><td class="r">${formatCurrency(driverFeeAmount)}</td></tr>
-            <tr><td colspan="4" class="r b">Total Hak Trip</td><td class="r">${formatCurrency(totalClaimAmount)}</td></tr>
-            <tr><td colspan="4" class="r b">Uang Jalan Awal</td><td class="r">${formatCurrency(initialCashGiven)}</td></tr>
-            <tr><td colspan="4" class="r b">Top Up Uang Jalan</td><td class="r">${formatCurrency(topUpAmount)}</td></tr>
-            <tr><td colspan="4" class="r b">Total Uang Diberikan</td><td class="r">${formatCurrency(totalIssuedAmount)}</td></tr>
-            <tr style="border-top:2px solid #1e293b"><td colspan="4" class="r b">${balance >= 0 ? 'Sisa Dikembalikan' : 'Tambahan Bayar ke Supir'}</td><td class="r b" style="color:${balance < 0 ? '#ef4444' : '#16a34a'}">${formatCurrency(Math.abs(balance))}</td></tr>
-            </tbody></table>
-            <div style="margin-top:40px;display:flex;justify-content:space-between">
-                <div style="text-align:center;width:200px"><div style="margin-bottom:60px">Supir,</div><div style="border-top:1px solid #333;padding-top:4px">(${voucher?.driverName || '________________'})</div></div>
-                <div style="text-align:center;width:200px"><div style="margin-bottom:60px">Mengetahui,</div><div style="border-top:1px solid #333;padding-top:4px">(________________)</div></div>
-            </div>`,
+            bodyHtml: voucher ? buildDriverVoucherPrintHtml({ voucher, items, disbursements, summary: buildDriverVoucherDetailSummary(voucher, items) }) : '',
         });
     };
 
     if (loading || !voucher) {
         return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 300 }} /></div>;
     }
-
-    const statusConfig = STATUS_MAP[voucher.status] || { label: voucher.status, cls: 'badge-gray' };
-    const settlementLabel = balance > 0 ? 'Sisa akan kembali ke rekening atau kas perusahaan' : balance < 0 ? 'Perusahaan masih perlu menambah pembayaran ke supir' : 'Tidak ada selisih';
-    const settlementPrimaryLabel = balance > 0 ? 'Selesaikan & Catat Pengembalian' : balance < 0 ? 'Selesaikan & Tambah Bayar Supir' : 'Selesaikan Trip';
 
     return (
         <div>
@@ -590,7 +533,7 @@ export default function DriverVoucherDetailPage() {
                             <div className="form-group">
                                 <label className="form-label">Kategori</label>
                                 <select className="form-select" value={itemForm.category} onChange={event => setItemForm({ ...itemForm, category: event.target.value })}>
-                                    {EXPENSE_CATEGORIES.map(category => <option key={category} value={category}>{category}</option>)}
+                                    {DRIVER_VOUCHER_EXPENSE_CATEGORIES.map(category => <option key={category} value={category}>{category}</option>)}
                                 </select>
                             </div>
                             <div className="form-group">

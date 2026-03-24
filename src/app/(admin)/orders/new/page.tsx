@@ -6,40 +6,23 @@ import { useToast } from '../../layout';
 import { Save, Plus, X } from 'lucide-react';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
+import { fetchAdminData } from '@/lib/api/admin-client';
 import type { Customer, CustomerProduct, Service } from '@/lib/types';
 import {
-    convertKgToWeightInputValue,
-    convertM3ToVolumeInputValue,
-    convertVolumeToM3,
-    convertWeightToKg,
+    applyCustomerProductToOrderItem,
+    createDefaultOrderItemForm,
+    getDraftOrderItems,
+    resetCustomerScopedOrderItems,
+    summarizeDraftOrderCargo,
+    type OrderItemForm,
+} from '@/lib/order-create-page-support';
+import {
     formatCargoSummary,
     VOLUME_INPUT_UNIT_OPTIONS,
     WEIGHT_INPUT_UNIT_OPTIONS,
     type VolumeInputUnit,
     type WeightInputUnit,
 } from '@/lib/measurement';
-
-type OrderItemForm = {
-    customerProductRef: string;
-    description: string;
-    qtyKoli: number;
-    weightInputValue: number;
-    weightInputUnit: WeightInputUnit;
-    volumeInputValue: number;
-    volumeInputUnit: VolumeInputUnit;
-    value: number;
-};
-
-const DEFAULT_ITEM: OrderItemForm = {
-    customerProductRef: '',
-    description: '',
-    qtyKoli: 0,
-    weightInputValue: 0,
-    weightInputUnit: 'KG',
-    volumeInputValue: 0,
-    volumeInputUnit: 'M3',
-    value: 0,
-};
 
 export default function NewOrderPage() {
     const router = useRouter();
@@ -58,36 +41,17 @@ export default function NewOrderPage() {
     const [receiverCompany, setReceiverCompany] = useState('');
     const [pickupAddress, setPickupAddress] = useState('');
     const [notes, setNotes] = useState('');
-    const [items, setItems] = useState<OrderItemForm[]>([{ ...DEFAULT_ITEM }]);
+    const [items, setItems] = useState<OrderItemForm[]>([createDefaultOrderItemForm()]);
 
-    const draftItems = items.filter(item =>
-        item.description.trim() ||
-        item.customerProductRef ||
-        item.qtyKoli > 0 ||
-        item.weightInputValue > 0 ||
-        item.volumeInputValue > 0
-    );
-    const draftCargo = draftItems.reduce((sum, item) => ({
-        qtyKoli: sum.qtyKoli + Number(item.qtyKoli || 0),
-        weightKg: sum.weightKg + (item.weightInputValue > 0 ? convertWeightToKg(item.weightInputValue, item.weightInputUnit) : 0),
-        volumeM3: sum.volumeM3 + (item.volumeInputValue > 0 ? convertVolumeToM3(item.volumeInputValue, item.volumeInputUnit) : 0),
-    }), { qtyKoli: 0, weightKg: 0, volumeM3: 0 });
+    const draftItems = getDraftOrderItems(items);
+    const draftCargo = summarizeDraftOrderCargo(items);
     const selectedCustomer = customers.find(customer => customer._id === customerRef) || null;
     const selectedService = services.find(service => service._id === serviceRef) || null;
 
     useEffect(() => {
-        const fetchEntity = async <T,>(url: string) => {
-            const res = await fetch(url);
-            const payload = await res.json();
-            if (!res.ok) {
-                throw new Error(payload.error || 'Gagal memuat form order');
-            }
-            return payload.data as T;
-        };
-
         Promise.all([
-            fetchEntity<Customer[]>('/api/data?entity=customers'),
-            fetchEntity<Service[]>('/api/data?entity=services'),
+            fetchAdminData<Customer[]>('/api/data?entity=customers', 'Gagal memuat form order'),
+            fetchAdminData<Service[]>('/api/data?entity=services', 'Gagal memuat form order'),
         ]).then(([customerRows, serviceRows]) => {
             setCustomers((customerRows || []).filter(customer => customer.active !== false));
             setServices((serviceRows || []).filter(service => service.active !== false));
@@ -127,7 +91,7 @@ export default function NewOrderPage() {
         };
     }, [addToast, customerRef]);
 
-    const addItem = () => setItems(prev => [...prev, { ...DEFAULT_ITEM }]);
+    const addItem = () => setItems(prev => [...prev, createDefaultOrderItemForm()]);
     const removeItem = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx));
     const updateItem = <K extends keyof OrderItemForm>(idx: number, field: K, value: OrderItemForm[K]) => {
         setItems(prev => prev.map((item, i) => i === idx ? { ...item, [field]: value } : item));
@@ -138,11 +102,7 @@ export default function NewOrderPage() {
         const previousCustomerAddress = previousCustomer?.address?.trim() || '';
 
         setCustomerRef(nextCustomerRef);
-        setItems(prev => prev.map(item => (
-            item.customerProductRef
-                ? { ...DEFAULT_ITEM }
-                : item
-        )));
+        setItems(prev => resetCustomerScopedOrderItems(prev));
         setPickupAddress(previous => {
             const currentPickup = previous.trim();
             if (!currentPickup || (previousCustomerAddress && currentPickup === previousCustomerAddress)) {
@@ -158,33 +118,7 @@ export default function NewOrderPage() {
             if (i !== idx) {
                 return item;
             }
-            if (!selectedProduct) {
-                return { ...item, customerProductRef: '' };
-            }
-            const nextWeightUnit = selectedProduct.defaultWeightInputUnit || item.weightInputUnit || 'KG';
-            const nextVolumeUnit = selectedProduct.defaultVolumeInputUnit || item.volumeInputUnit || 'M3';
-            const nextWeightValue =
-                typeof selectedProduct.defaultWeightInputValue === 'number' && selectedProduct.defaultWeightInputValue > 0
-                    ? selectedProduct.defaultWeightInputValue
-                    : typeof selectedProduct.defaultWeight === 'number' && selectedProduct.defaultWeight > 0
-                        ? convertKgToWeightInputValue(selectedProduct.defaultWeight, nextWeightUnit)
-                        : 0;
-            const nextVolumeValue =
-                typeof selectedProduct.defaultVolumeInputValue === 'number' && selectedProduct.defaultVolumeInputValue > 0
-                    ? selectedProduct.defaultVolumeInputValue
-                    : typeof selectedProduct.defaultVolume === 'number' && selectedProduct.defaultVolume > 0
-                        ? convertM3ToVolumeInputValue(selectedProduct.defaultVolume, nextVolumeUnit)
-                        : 0;
-            return {
-                ...item,
-                customerProductRef: selectedProduct._id,
-                description: selectedProduct.description || selectedProduct.name || item.description,
-                qtyKoli: selectedProduct.defaultQtyKoli ?? item.qtyKoli ?? 0,
-                weightInputValue: nextWeightValue,
-                weightInputUnit: nextWeightUnit,
-                volumeInputValue: nextVolumeValue,
-                volumeInputUnit: nextVolumeUnit,
-            };
+            return applyCustomerProductToOrderItem(item, selectedProduct);
         }));
     };
 
