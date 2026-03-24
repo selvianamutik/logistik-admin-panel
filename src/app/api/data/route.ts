@@ -67,6 +67,7 @@ import {
     sanityGetByFilter,
     sanityGetById,
     sanityGetCompanyProfile,
+    sanityList,
 } from '@/lib/sanity';
 import type { Expense, User, Vehicle } from '@/lib/types';
 import { getDriverVoucherIssuedAmount } from '@/lib/utils';
@@ -309,6 +310,14 @@ export async function GET(request: Request) {
     const entity = searchParams.get('entity');
     const id = searchParams.get('id');
     const filter = searchParams.get('filter');
+    const pageParam = searchParams.get('page');
+    const pageSizeParam = searchParams.get('pageSize');
+    const searchQuery = searchParams.get('q')?.trim() || '';
+    const searchFieldsParam = searchParams.get('searchFields');
+    const countOnly = searchParams.get('countOnly') === '1';
+    const sortField = searchParams.get('sortField')?.trim() || undefined;
+    const sortDirParam = searchParams.get('sortDir');
+    const sortDir = sortDirParam === 'asc' ? 'asc' : sortDirParam === 'desc' ? 'desc' : undefined;
 
     if (entity === 'dashboard-summary') {
         if (!hasPermission(session.role, 'dashboard', 'view')) {
@@ -376,19 +385,59 @@ export async function GET(request: Request) {
         }
 
         let items: Record<string, unknown>[] = [];
+        let totalItems = 0;
+        let filterObj: Record<string, unknown> | undefined;
 
         if (filter) {
             try {
-                const filterObj = JSON.parse(filter) as Record<string, unknown>;
-                items = await sanityGetByFilter(docType, filterObj);
+                filterObj = JSON.parse(filter) as Record<string, unknown>;
             } catch (error) {
                 return NextResponse.json(
                     { error: error instanceof Error ? error.message : 'Filter query tidak valid' },
                     { status: 400 }
                 );
             }
+        }
+
+        const needsPaginatedList =
+            countOnly ||
+            pageParam !== null ||
+            pageSizeParam !== null ||
+            Boolean(searchQuery) ||
+            Boolean(searchFieldsParam) ||
+            Boolean(sortField) ||
+            Boolean(sortDir);
+
+        if (needsPaginatedList) {
+            try {
+                const page = pageParam ? Number.parseInt(pageParam, 10) : 1;
+                const pageSize = pageSizeParam ? Number.parseInt(pageSizeParam, 10) : 10;
+                const searchFields = searchFieldsParam
+                    ? searchFieldsParam.split(',').map(field => field.trim()).filter(Boolean)
+                    : [];
+                const result = await sanityList(docType, {
+                    filterObj,
+                    search: searchQuery || undefined,
+                    searchFields,
+                    page,
+                    pageSize,
+                    sortField,
+                    sortDir,
+                });
+                items = result.items as Record<string, unknown>[];
+                totalItems = result.total;
+            } catch (error) {
+                return NextResponse.json(
+                    { error: error instanceof Error ? error.message : 'Pagination query tidak valid' },
+                    { status: 400 }
+                );
+            }
+        } else if (filterObj) {
+            items = await sanityGetByFilter(docType, filterObj);
+            totalItems = items.length;
         } else {
             items = await sanityGetAll(docType);
+            totalItems = items.length;
         }
 
         if (entity === 'users') {
@@ -414,6 +463,28 @@ export async function GET(request: Request) {
                     (typeof right._createdAt === 'string' && right._createdAt) ||
                     '';
                 return rightTime.localeCompare(leftTime);
+            });
+        }
+
+        if (countOnly) {
+            return NextResponse.json({
+                data: [],
+                meta: {
+                    page: pageParam ? Number.parseInt(pageParam, 10) || 1 : 1,
+                    pageSize: pageSizeParam ? Number.parseInt(pageSizeParam, 10) || 10 : 10,
+                    total: totalItems,
+                },
+            });
+        }
+
+        if (needsPaginatedList) {
+            return NextResponse.json({
+                data: items,
+                meta: {
+                    page: pageParam ? Number.parseInt(pageParam, 10) || 1 : 1,
+                    pageSize: pageSizeParam ? Number.parseInt(pageSizeParam, 10) || 10 : 10,
+                    total: totalItems,
+                },
             });
         }
 

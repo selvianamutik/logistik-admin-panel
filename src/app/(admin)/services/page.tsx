@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useApp, useToast } from '../layout';
 import { Plus, Edit, Layers, Save, X } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
-import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
+import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { Service } from '@/lib/types';
 
 export default function ServicesPage() {
@@ -13,34 +13,45 @@ export default function ServicesPage() {
     const [items, setItems] = useState<Service[]>([]);
     const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(1);
+    const [totalItems, setTotalItems] = useState(0);
+    const [inactiveCount, setInactiveCount] = useState(0);
     const [showModal, setShowModal] = useState(false);
     const [editItem, setEditItem] = useState<Service | null>(null);
     const [saving, setSaving] = useState(false);
     const [form, setForm] = useState({ code: '', name: '', description: '', active: true });
     const isOwner = user?.role === 'OWNER';
-    const activeCount = items.filter(item => item.active !== false).length;
-    const inactiveCount = items.filter(item => item.active === false).length;
+    const activeCount = totalItems - inactiveCount;
+
+    const loadServices = useCallback(async () => {
+        setLoading(true);
+        try {
+            const [listRes, inactiveRes] = await Promise.all([
+                fetch(`/api/data?entity=services&page=${page}&pageSize=${DEFAULT_PAGE_SIZE}&sortField=code&sortDir=asc`),
+                fetch(`/api/data?entity=services&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ active: false }))}`),
+            ]);
+
+            const [listPayload, inactivePayload] = await Promise.all([listRes.json(), inactiveRes.json()]);
+
+            if (!listRes.ok) {
+                throw new Error(listPayload.error || 'Gagal memuat kategori armada');
+            }
+            if (!inactiveRes.ok) {
+                throw new Error(inactivePayload.error || 'Gagal memuat statistik kategori armada');
+            }
+
+            setItems(listPayload.data || []);
+            setTotalItems(listPayload.meta?.total || 0);
+            setInactiveCount(inactivePayload.meta?.total || 0);
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat kategori armada');
+        } finally {
+            setLoading(false);
+        }
+    }, [addToast, page]);
 
     useEffect(() => {
-        const loadServices = async () => {
-            try {
-                const res = await fetch('/api/data?entity=services');
-                const payload = await res.json();
-                if (!res.ok) {
-                    throw new Error(payload.error || 'Gagal memuat kategori armada');
-                }
-                setItems(payload.data || []);
-            } catch (error) {
-                addToast('error', error instanceof Error ? error.message : 'Gagal memuat kategori armada');
-            } finally {
-                setLoading(false);
-            }
-        };
-
         void loadServices();
-    }, [addToast]);
-
-    const paginatedServices = paginateItems(items, page, DEFAULT_PAGE_SIZE);
+    }, [loadServices]);
 
     const openNew = () => { setEditItem(null); setForm({ code: '', name: '', description: '', active: true }); setShowModal(true); };
     const openEdit = (s: Service) => { setEditItem(s); setForm({ code: s.code || '', name: s.name, description: s.description, active: s.active !== false }); setShowModal(true); };
@@ -57,7 +68,7 @@ export default function ServicesPage() {
                     addToast('error', payload.error || 'Gagal memperbarui kategori armada');
                     return;
                 }
-                setItems(prev => prev.map(s => s._id === editItem._id ? payload.data as Service : s));
+                await loadServices();
                 addToast('success', 'Kategori armada diperbarui');
             } else {
                 const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'services', data: form }) });
@@ -66,7 +77,12 @@ export default function ServicesPage() {
                     addToast('error', payload.error || 'Gagal menambah kategori armada');
                     return;
                 }
-                setItems(prev => [...prev, payload.data as Service]); addToast('success', 'Kategori armada ditambahkan');
+                if (page !== 1) {
+                    setPage(1);
+                } else {
+                    await loadServices();
+                }
+                addToast('success', 'Kategori armada ditambahkan');
             }
             setShowModal(false);
         } catch {
@@ -89,19 +105,19 @@ export default function ServicesPage() {
                 <thead><tr><th>Kode</th><th>Nama</th><th>Deskripsi</th><th>Status</th><th>Aksi</th></tr></thead>
                 <tbody>
                     {loading ? [1, 2].map(i => <tr key={i}>{[1, 2, 3, 4, 5].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                        paginatedServices.totalItems === 0 ? <tr><td colSpan={5}><div className="empty-state"><Layers size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada kategori armada</div></div></td></tr> :
-                            paginatedServices.items.map(s => (
+                        totalItems === 0 ? <tr><td colSpan={5}><div className="empty-state"><Layers size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada kategori armada</div></div></td></tr> :
+                            items.map(s => (
                                 <tr key={s._id}><td className="font-mono">{s.code}</td><td className="font-semibold">{s.name}</td><td className="text-muted">{s.description}</td>
                                     <td><span className={`badge ${s.active !== false ? 'badge-success' : 'badge-gray'}`}>{s.active !== false ? 'Aktif' : 'Non-Aktif'}</span></td>
                                     <td>{isOwner ? <button className="table-action-btn" onClick={() => openEdit(s)}><Edit size={14} /> Edit</button> : <span className="text-muted">Lihat saja</span>}</td></tr>
                             ))}
                 </tbody>
             </table></div>
-                {paginatedServices.totalItems > 0 && (
+                {totalItems > 0 && (
                     <AppPagination
-                        page={paginatedServices.currentPage}
+                        page={page}
                         pageSize={DEFAULT_PAGE_SIZE}
-                        totalItems={paginatedServices.totalItems}
+                        totalItems={totalItems}
                         onPageChange={setPage}
                         info={({ startIndex, endIndex, totalItems }) => (
                             <>Menampilkan {startIndex}-{endIndex} dari {totalItems} kategori armada</>

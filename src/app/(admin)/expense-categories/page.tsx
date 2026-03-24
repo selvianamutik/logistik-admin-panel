@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useApp, useToast } from '../layout';
 import { Plus, Edit, Tags, Save, X } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
-import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
+import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { ExpenseCategory } from '@/lib/types';
 
 export default function ExpenseCategoriesPage() {
@@ -13,34 +13,44 @@ export default function ExpenseCategoriesPage() {
     const [items, setItems] = useState<ExpenseCategory[]>([]);
     const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(1);
+    const [totalItems, setTotalItems] = useState(0);
+    const [inactiveCount, setInactiveCount] = useState(0);
     const [showModal, setShowModal] = useState(false);
     const [editItem, setEditItem] = useState<ExpenseCategory | null>(null);
     const [saving, setSaving] = useState(false);
     const [name, setName] = useState('');
     const isOwner = user?.role === 'OWNER';
-    const activeCount = items.filter(item => item.active !== false).length;
-    const inactiveCount = items.filter(item => item.active === false).length;
+    const activeCount = totalItems - inactiveCount;
+
+    const loadCategories = useCallback(async () => {
+        setLoading(true);
+        try {
+            const [listRes, inactiveRes] = await Promise.all([
+                fetch(`/api/data?entity=expense-categories&page=${page}&pageSize=${DEFAULT_PAGE_SIZE}&sortField=name&sortDir=asc`),
+                fetch(`/api/data?entity=expense-categories&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ active: false }))}`),
+            ]);
+            const [listPayload, inactivePayload] = await Promise.all([listRes.json(), inactiveRes.json()]);
+
+            if (!listRes.ok) {
+                throw new Error(listPayload.error || 'Gagal memuat kategori biaya');
+            }
+            if (!inactiveRes.ok) {
+                throw new Error(inactivePayload.error || 'Gagal memuat statistik kategori biaya');
+            }
+
+            setItems(listPayload.data || []);
+            setTotalItems(listPayload.meta?.total || 0);
+            setInactiveCount(inactivePayload.meta?.total || 0);
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat kategori biaya');
+        } finally {
+            setLoading(false);
+        }
+    }, [addToast, page]);
 
     useEffect(() => {
-        const loadCategories = async () => {
-            try {
-                const res = await fetch('/api/data?entity=expense-categories');
-                const payload = await res.json();
-                if (!res.ok) {
-                    throw new Error(payload.error || 'Gagal memuat kategori biaya');
-                }
-                setItems(payload.data || []);
-            } catch (error) {
-                addToast('error', error instanceof Error ? error.message : 'Gagal memuat kategori biaya');
-            } finally {
-                setLoading(false);
-            }
-        };
-
         void loadCategories();
-    }, [addToast]);
-
-    const paginatedCategories = paginateItems(items, page, DEFAULT_PAGE_SIZE);
+    }, [loadCategories]);
 
     const openNew = () => { setEditItem(null); setName(''); setShowModal(true); };
     const openEdit = (c: ExpenseCategory) => { setEditItem(c); setName(c.name); setShowModal(true); };
@@ -57,7 +67,7 @@ export default function ExpenseCategoriesPage() {
                     addToast('error', payload.error || 'Gagal memperbarui kategori biaya');
                     return;
                 }
-                setItems(prev => prev.map(c => c._id === editItem._id ? payload.data as ExpenseCategory : c));
+                await loadCategories();
                 addToast('success', 'Kategori diperbarui');
             } else {
                 const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'expense-categories', data: { name, active: true } }) });
@@ -66,7 +76,12 @@ export default function ExpenseCategoriesPage() {
                     addToast('error', payload.error || 'Gagal menambah kategori biaya');
                     return;
                 }
-                setItems(prev => [...prev, payload.data as ExpenseCategory]); addToast('success', 'Kategori ditambahkan');
+                if (page !== 1) {
+                    setPage(1);
+                } else {
+                    await loadCategories();
+                }
+                addToast('success', 'Kategori ditambahkan');
             }
             setShowModal(false);
         } catch {
@@ -89,19 +104,19 @@ export default function ExpenseCategoriesPage() {
                 <thead><tr><th>Nama Kategori</th><th>Status</th><th>Aksi</th></tr></thead>
                 <tbody>
                     {loading ? [1, 2].map(i => <tr key={i}>{[1, 2, 3].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                        paginatedCategories.totalItems === 0 ? <tr><td colSpan={3}><div className="empty-state"><Tags size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada kategori</div></div></td></tr> :
-                            paginatedCategories.items.map(c => (
+                        totalItems === 0 ? <tr><td colSpan={3}><div className="empty-state"><Tags size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada kategori</div></div></td></tr> :
+                            items.map(c => (
                                 <tr key={c._id}><td className="font-semibold">{c.name}</td>
                                     <td><span className={`badge ${c.active !== false ? 'badge-success' : 'badge-gray'}`}>{c.active !== false ? 'Aktif' : 'Non-Aktif'}</span></td>
                                     <td>{isOwner ? <button className="table-action-btn" onClick={() => openEdit(c)}><Edit size={14} /> Edit</button> : <span className="text-muted">Lihat saja</span>}</td></tr>
                             ))}
                 </tbody>
             </table></div>
-                {paginatedCategories.totalItems > 0 && (
+                {totalItems > 0 && (
                     <AppPagination
-                        page={paginatedCategories.currentPage}
+                        page={page}
                         pageSize={DEFAULT_PAGE_SIZE}
-                        totalItems={paginatedCategories.totalItems}
+                        totalItems={totalItems}
                         onPageChange={setPage}
                         info={({ startIndex, endIndex, totalItems }) => (
                             <>Menampilkan {startIndex}-{endIndex} dari {totalItems} kategori biaya</>

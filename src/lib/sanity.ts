@@ -12,6 +12,21 @@ type SanityConfig = {
     token?: string;
 };
 
+type SanityListOptions = {
+    filterObj?: Record<string, unknown>;
+    search?: string;
+    searchFields?: string[];
+    page?: number;
+    pageSize?: number;
+    sortField?: string;
+    sortDir?: 'asc' | 'desc';
+};
+
+type SanityListResult<T> = {
+    items: T[];
+    total: number;
+};
+
 const FILTER_KEY_RE = /^[_a-zA-Z][_a-zA-Z0-9]*(?:\.[_a-zA-Z][_a-zA-Z0-9]*)*$/;
 
 function isScalarFilterValue(value: unknown) {
@@ -20,6 +35,54 @@ function isScalarFilterValue(value: unknown) {
         typeof value === 'number' ||
         typeof value === 'boolean'
     );
+}
+
+function normalizePositiveInteger(value: unknown, fallback: number, max?: number) {
+    const parsed = typeof value === 'number' ? value : Number.parseInt(String(value), 10);
+    if (!Number.isFinite(parsed) || parsed < 1) {
+        return fallback;
+    }
+    if (typeof max === 'number' && parsed > max) {
+        return max;
+    }
+    return parsed;
+}
+
+function validateFieldPath(field: string, label: string) {
+    if (!FILTER_KEY_RE.test(field)) {
+        throw new Error(`Invalid ${label}: ${field}`);
+    }
+}
+
+function buildListConditions(filterObj: Record<string, unknown>) {
+    return Object.entries(filterObj)
+        .filter(([, value]) => {
+            if (Array.isArray(value)) {
+                return value.length > 0;
+            }
+            return value !== '' && value !== null && value !== undefined;
+        })
+        .map(([key, value]) => (Array.isArray(value) ? `${key} in $${key}` : `${key} == $${key}`));
+}
+
+function validateFilterObject(filterObj: Record<string, unknown>) {
+    for (const [key, value] of Object.entries(filterObj)) {
+        validateFieldPath(key, 'filter field');
+
+        if (Array.isArray(value)) {
+            if (value.length === 0) {
+                continue;
+            }
+            if (!value.every(isScalarFilterValue)) {
+                throw new Error(`Invalid filter value for: ${key}`);
+            }
+            continue;
+        }
+
+        if (value !== '' && value !== null && value !== undefined && !isScalarFilterValue(value)) {
+            throw new Error(`Invalid filter value for: ${key}`);
+        }
+    }
 }
 
 function cleanEnv(value: string | undefined): string | undefined {
@@ -151,35 +214,10 @@ export async function sanityGetByFilter<T = Record<string, unknown>>(
     docType: string,
     filterObj: Record<string, unknown>
 ): Promise<T[]> {
-    for (const [key, value] of Object.entries(filterObj)) {
-        if (!FILTER_KEY_RE.test(key)) {
-            throw new Error(`Invalid filter field: ${key}`);
-        }
-
-        if (Array.isArray(value)) {
-            if (value.length === 0) {
-                continue;
-            }
-            if (!value.every(isScalarFilterValue)) {
-                throw new Error(`Invalid filter value for: ${key}`);
-            }
-            continue;
-        }
-
-        if (value !== '' && value !== null && value !== undefined && !isScalarFilterValue(value)) {
-            throw new Error(`Invalid filter value for: ${key}`);
-        }
-    }
+    validateFilterObject(filterObj);
 
     // Build dynamic GROQ filter conditions
-    const conditions = Object.entries(filterObj)
-        .filter(([, value]) => {
-            if (Array.isArray(value)) {
-                return value.length > 0;
-            }
-            return value !== '' && value !== null && value !== undefined;
-        })
-        .map(([key, value]) => (Array.isArray(value) ? `${key} in $${key}` : `${key} == $${key}`));
+    const conditions = buildListConditions(filterObj);
 
     if (conditions.length === 0) {
         return sanityGetAll<T>(docType);
@@ -189,6 +227,54 @@ export async function sanityGetByFilter<T = Record<string, unknown>>(
     const query = `*[_type == $type && ${filterStr}] | order(_createdAt desc)`;
     const params = { type: docType, ...filterObj };
     return getSanityClient().fetch<T[]>(query, params);
+}
+
+export async function sanityList<T = Record<string, unknown>>(
+    docType: string,
+    options: SanityListOptions = {}
+): Promise<SanityListResult<T>> {
+    const filterObj = options.filterObj ?? {};
+    validateFilterObject(filterObj);
+
+    const page = normalizePositiveInteger(options.page, 1);
+    const pageSize = normalizePositiveInteger(options.pageSize, 10, 100);
+    const offset = (page - 1) * pageSize;
+    const end = offset + pageSize;
+    const sortField = options.sortField?.trim() || '_createdAt';
+    const sortDir = options.sortDir === 'asc' ? 'asc' : 'desc';
+    validateFieldPath(sortField, 'sort field');
+
+    const searchFields = (options.searchFields ?? [])
+        .map(field => field.trim())
+        .filter(Boolean);
+    searchFields.forEach(field => validateFieldPath(field, 'search field'));
+
+    const conditions = buildListConditions(filterObj);
+    const params: Record<string, unknown> = {
+        type: docType,
+        offset,
+        end,
+        ...filterObj,
+    };
+
+    if (options.search && searchFields.length > 0) {
+        params.search = `*${options.search.trim()}*`;
+        conditions.push(`(${searchFields.map(field => `${field} match $search`).join(' || ')})`);
+    }
+
+    const whereClause = conditions.length > 0
+        ? `_type == $type && ${conditions.join(' && ')}`
+        : `_type == $type`;
+    const query = `{
+        "total": count(*[${whereClause}]),
+        "items": *[${whereClause}] | order(${sortField} ${sortDir})[$offset...$end]
+    }`;
+
+    const result = await getSanityClient().fetch<SanityListResult<T>>(query, params);
+    return {
+        items: Array.isArray(result?.items) ? result.items : [],
+        total: typeof result?.total === 'number' ? result.total : 0,
+    };
 }
 
 // ── Mutation: Create document ──

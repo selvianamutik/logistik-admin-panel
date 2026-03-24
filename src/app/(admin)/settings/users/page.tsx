@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useToast } from '../../layout';
 import { Plus, Edit, Save, X, RefreshCw } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
-import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
+import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { User } from '@/lib/types';
 import { INTERNAL_USER_ROLE_OPTIONS, type InternalUserRole } from '@/lib/rbac';
 
@@ -30,38 +30,93 @@ export default function UsersPage() {
     const [users, setUsers] = useState<InternalUser[]>([]);
     const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(1);
+    const [totalUsers, setTotalUsers] = useState(0);
+    const [inactiveUsers, setInactiveUsers] = useState(0);
+    const [ownerUsers, setOwnerUsers] = useState(0);
+    const [operationalUsers, setOperationalUsers] = useState(0);
+    const [financeUsers, setFinanceUsers] = useState(0);
+    const [armadaUsers, setArmadaUsers] = useState(0);
     const [showModal, setShowModal] = useState(false);
     const [editUser, setEditUser] = useState<InternalUser | null>(null);
     const [saving, setSaving] = useState(false);
     const [togglingUserId, setTogglingUserId] = useState<string | null>(null);
     const [form, setForm] = useState({ name: '', email: '', role: 'OPERASIONAL' as InternalUserRole, password: '' });
-    const activeUsers = users.filter(user => user.active !== false).length;
-    const inactiveUsers = users.filter(user => user.active === false).length;
-    const ownerUsers = users.filter(user => user.role === 'OWNER').length;
-    const operationalUsers = users.filter(user => user.role === 'OPERASIONAL').length;
-    const financeUsers = users.filter(user => user.role === 'FINANCE').length;
-    const armadaUsers = users.filter(user => user.role === 'ARMADA').length;
+    const activeUsers = totalUsers - inactiveUsers;
+
+    const internalRoleFilter = JSON.stringify({ role: INTERNAL_USER_ROLE_OPTIONS });
+
+    const loadUsers = useCallback(async () => {
+        setLoading(true);
+        try {
+            const [
+                listRes,
+                totalRes,
+                inactiveRes,
+                ownerRes,
+                operationalRes,
+                financeRes,
+                armadaRes,
+            ] = await Promise.all([
+                fetch(`/api/data?entity=users&page=${page}&pageSize=${DEFAULT_PAGE_SIZE}&filter=${encodeURIComponent(internalRoleFilter)}`),
+                fetch(`/api/data?entity=users&countOnly=1&filter=${encodeURIComponent(internalRoleFilter)}`),
+                fetch(`/api/data?entity=users&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ role: INTERNAL_USER_ROLE_OPTIONS, active: false }))}`),
+                fetch(`/api/data?entity=users&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ role: 'OWNER' }))}`),
+                fetch(`/api/data?entity=users&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ role: 'OPERASIONAL' }))}`),
+                fetch(`/api/data?entity=users&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ role: 'FINANCE' }))}`),
+                fetch(`/api/data?entity=users&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ role: 'ARMADA' }))}`),
+            ]);
+
+            const [
+                listPayload,
+                totalPayload,
+                inactivePayload,
+                ownerPayload,
+                operationalPayload,
+                financePayload,
+                armadaPayload,
+            ] = await Promise.all([
+                listRes.json(),
+                totalRes.json(),
+                inactiveRes.json(),
+                ownerRes.json(),
+                operationalRes.json(),
+                financeRes.json(),
+                armadaRes.json(),
+            ]);
+
+            if (!listRes.ok) {
+                throw new Error(listPayload.error || 'Gagal memuat data user');
+            }
+            for (const [res, payload, message] of [
+                [totalRes, totalPayload, 'Gagal memuat total user'],
+                [inactiveRes, inactivePayload, 'Gagal memuat user nonaktif'],
+                [ownerRes, ownerPayload, 'Gagal memuat total owner'],
+                [operationalRes, operationalPayload, 'Gagal memuat total operasional'],
+                [financeRes, financePayload, 'Gagal memuat total finance'],
+                [armadaRes, armadaPayload, 'Gagal memuat total armada'],
+            ] as const) {
+                if (!res.ok) {
+                    throw new Error(payload.error || message);
+                }
+            }
+
+            setUsers((listPayload.data || []).filter((item: User): item is InternalUser => item.role !== 'DRIVER'));
+            setTotalUsers(totalPayload.meta?.total || 0);
+            setInactiveUsers(inactivePayload.meta?.total || 0);
+            setOwnerUsers(ownerPayload.meta?.total || 0);
+            setOperationalUsers(operationalPayload.meta?.total || 0);
+            setFinanceUsers(financePayload.meta?.total || 0);
+            setArmadaUsers(armadaPayload.meta?.total || 0);
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat data user');
+        } finally {
+            setLoading(false);
+        }
+    }, [addToast, page, internalRoleFilter]);
 
     useEffect(() => {
-        const loadUsers = async () => {
-            try {
-                const res = await fetch('/api/data?entity=users');
-                const payload = await res.json();
-                if (!res.ok) {
-                    throw new Error(payload.error || 'Gagal memuat data user');
-                }
-                setUsers((payload.data || []).filter((item: User): item is InternalUser => item.role !== 'DRIVER'));
-            } catch (error) {
-                addToast('error', error instanceof Error ? error.message : 'Gagal memuat data user');
-            } finally {
-                setLoading(false);
-            }
-        };
-
         void loadUsers();
-    }, [addToast]);
-
-    const paginatedUsers = paginateItems(users, page, DEFAULT_PAGE_SIZE);
+    }, [loadUsers]);
 
     const openNew = () => { setEditUser(null); setForm({ name: '', email: '', role: 'OPERASIONAL', password: '' }); setShowModal(true); };
     const openEdit = (u: InternalUser) => { setEditUser(u); setForm({ name: u.name, email: u.email, role: u.role, password: '' }); setShowModal(true); };
@@ -85,7 +140,7 @@ export default function UsersPage() {
                     addToast('error', payload.error || 'Gagal memperbarui user');
                     return;
                 }
-                setUsers(prev => prev.map(u => u._id === editUser._id ? payload.data as InternalUser : u));
+                await loadUsers();
                 addToast('success', 'User diperbarui');
             } else {
                 const res = await fetch('/api/data', {
@@ -98,7 +153,11 @@ export default function UsersPage() {
                     addToast('error', payload.error || 'Gagal menambah user');
                     return;
                 }
-                setUsers(prev => [...prev, payload.data as InternalUser]);
+                if (page !== 1) {
+                    setPage(1);
+                } else {
+                    await loadUsers();
+                }
                 addToast('success', 'User ditambahkan');
             }
             setShowModal(false);
@@ -123,7 +182,7 @@ export default function UsersPage() {
                 addToast('error', payload.error || 'Gagal memperbarui status user');
                 return;
             }
-            setUsers(prev => prev.map(x => x._id === u._id ? payload.data as InternalUser : x));
+            await loadUsers();
             addToast('success', `User ${currentlyActive ? 'dinonaktifkan' : 'diaktifkan'}`);
         } catch {
             addToast('error', 'Gagal memperbarui status user');
@@ -152,9 +211,9 @@ export default function UsersPage() {
                         <thead><tr><th>Nama</th><th>Email</th><th>Role</th><th>Status</th><th>Tindak Lanjut</th><th>Aksi</th></tr></thead>
                         <tbody suppressHydrationWarning>
                             {loading ? [1, 2].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                paginatedUsers.totalItems === 0 ? (
+                                totalUsers === 0 ? (
                                     <tr><td colSpan={6}><div className="empty-state"><div className="empty-state-title">Belum ada user internal</div></div></td></tr>
-                                ) : paginatedUsers.items.map(u => (
+                                ) : users.map(u => (
                                     <tr key={u._id}>
                                         <td className="font-semibold">{u.name}</td><td>{u.email}</td>
                                         <td><span className={`badge ${u.role === 'OWNER' ? 'badge-purple' : 'badge-info'}`}>{ROLE_LABELS[u.role]}</span></td>
@@ -171,12 +230,12 @@ export default function UsersPage() {
                 </div>
                 {!loading && (
                     <div className="mobile-record-list">
-                        {paginatedUsers.totalItems === 0 ? (
+                        {totalUsers === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada user internal</div>
                                 <div className="mobile-record-subtitle">Tambahkan user admin atau owner baru untuk akses internal sistem.</div>
                             </div>
-                        ) : paginatedUsers.items.map(u => (
+                        ) : users.map(u => (
                             <div key={u._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
@@ -207,11 +266,11 @@ export default function UsersPage() {
                         ))}
                     </div>
                 )}
-                {paginatedUsers.totalItems > 0 && (
+                {totalUsers > 0 && (
                     <AppPagination
-                        page={paginatedUsers.currentPage}
+                        page={page}
                         pageSize={DEFAULT_PAGE_SIZE}
-                        totalItems={paginatedUsers.totalItems}
+                        totalItems={totalUsers}
                         onPageChange={setPage}
                         info={({ startIndex, endIndex, totalItems }) => (
                             <>Menampilkan {startIndex}-{endIndex} dari {totalItems} user</>
