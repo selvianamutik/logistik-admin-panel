@@ -8,7 +8,7 @@ import CurrencyInput from '@/components/CurrencyInput';
 import { formatDate, formatCurrency, getReceivableNetAmount, PAYMENT_METHOD_MAP } from '@/lib/utils';
 import { buildFreightNotaPrintDocument, openBrandedPrint, fetchCompanyProfile, formatFreightNotaDisplayNumber } from '@/lib/print';
 import { exportFreightNotaDetail, exportInvoices } from '@/lib/export';
-import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
+import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { BankAccount, CompanyProfile, Customer, CustomerReceipt, FreightNota, FreightNotaItem, Payment } from '@/lib/types';
 
 import { useToast } from '../layout';
@@ -17,12 +17,6 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
     UNPAID: { label: 'Belum Lunas', color: 'danger' },
     PARTIAL: { label: 'Sebagian', color: 'warning' },
     PAID: { label: 'Lunas', color: 'success' },
-};
-
-const INVOICE_ACTION_PRIORITY: Record<string, number> = {
-    UNPAID: 0,
-    PARTIAL: 1,
-    PAID: 2,
 };
 
 const getNextInvoiceAction = (nota: FreightNota, remainingAmount: number) => {
@@ -48,6 +42,15 @@ export default function NotaListPage() {
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [page, setPage] = useState(1);
+    const [totalInvoices, setTotalInvoices] = useState(0);
+    const [summary, setSummary] = useState({
+        filteredNetTotal: 0,
+        filteredOutstandingTotal: 0,
+        unpaidCount: 0,
+        partialCount: 0,
+        paidCount: 0,
+        customerCreditTotal: 0,
+    });
     const [showReceiptModal, setShowReceiptModal] = useState(false);
     const [receiving, setReceiving] = useState(false);
     const [receiptCustomerRef, setReceiptCustomerRef] = useState('');
@@ -57,69 +60,117 @@ export default function NotaListPage() {
     const [receiptNote, setReceiptNote] = useState('');
     const [receiptBankRef, setReceiptBankRef] = useState('');
     const [receiptAllocations, setReceiptAllocations] = useState<Record<string, number>>({});
+    const [receiptOpenNotas, setReceiptOpenNotas] = useState<FreightNota[]>([]);
+    const [receiptOpenPayments, setReceiptOpenPayments] = useState<Payment[]>([]);
+    const [receiptNotesLoading, setReceiptNotesLoading] = useState(false);
 
-    const reloadData = useCallback(async () => {
-        const fetchNotas = async () => {
-            const res = await fetch('/api/data?entity=freight-notas');
+    const buildInvoicesQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
+        const params = new URLSearchParams({
+            entity: 'freight-notas',
+            page: String(targetPage),
+            pageSize: String(targetPageSize),
+            sortPreset: 'work-queue',
+        });
+
+        if (search.trim()) {
+            params.set('q', search.trim());
+            params.set('searchFields', 'notaNumber,customerName');
+        }
+
+        if (statusFilter) {
+            params.set('filter', JSON.stringify({ status: statusFilter }));
+        }
+
+        return params.toString();
+    }, [page, search, statusFilter]);
+
+    const fetchAllMatchingInvoices = useCallback(async () => {
+        const pageSize = 200;
+        let currentPage = 1;
+        let total = 0;
+        const allItems: FreightNota[] = [];
+
+        do {
+            const res = await fetch(`/api/data?${buildInvoicesQuery(currentPage, pageSize)}`);
             const payload = await res.json();
             if (!res.ok) {
                 throw new Error(payload.error || 'Gagal memuat nota ongkos');
             }
-            return payload.data as FreightNota[];
-        };
 
-        const fetchPayments = async () => {
-            const res = await fetch('/api/data?entity=payments');
-            const payload = await res.json();
-            if (!res.ok) {
-                throw new Error(payload.error || 'Gagal memuat pembayaran');
-            }
-            return payload.data as Payment[];
-        };
+            const nextItems = (payload.data || []) as FreightNota[];
+            total = payload.meta?.total || nextItems.length;
+            allItems.push(...nextItems);
+            if (nextItems.length === 0) break;
+            currentPage += 1;
+        } while (allItems.length < total);
 
-        const fetchCustomers = async () => {
-            const res = await fetch('/api/data?entity=customers');
-            const payload = await res.json();
-            if (!res.ok) {
-                throw new Error(payload.error || 'Gagal memuat customer');
-            }
-            return payload.data as Customer[];
-        };
+        return allItems;
+    }, [buildInvoicesQuery]);
 
-        const fetchCustomerReceipts = async () => {
-            const res = await fetch('/api/data?entity=customer-receipts');
-            const payload = await res.json();
-            if (!res.ok) {
-                throw new Error(payload.error || 'Gagal memuat receipt customer');
-            }
-            return payload.data as CustomerReceipt[];
-        };
+    const reloadData = useCallback(async () => {
+        setLoading(true);
+        const summaryParams = new URLSearchParams({ entity: 'freight-notas-summary' });
+        if (search.trim()) {
+            summaryParams.set('q', search.trim());
+        }
+        if (statusFilter) {
+            summaryParams.set('status', statusFilter);
+        }
 
-        const fetchBankAccounts = async () => {
-            const res = await fetch('/api/data?entity=bank-accounts');
-            const payload = await res.json();
-            if (!res.ok) {
-                throw new Error(payload.error || 'Gagal memuat rekening');
-            }
-            return payload.data as BankAccount[];
-        };
-
-        const [notaRows, paymentRows, customerRows, receiptRows, bankRows, companyPayload] = await Promise.all([
-            fetchNotas(),
-            fetchPayments(),
-            fetchCustomers(),
-            fetchCustomerReceipts(),
-            fetchBankAccounts(),
+        const [notaRes, summaryRes, customerRes, receiptRes, bankRes, companyPayload] = await Promise.all([
+            fetch(`/api/data?${buildInvoicesQuery()}`),
+            fetch(`/api/data?${summaryParams.toString()}`),
+            fetch('/api/data?entity=customers'),
+            fetch('/api/data?entity=customer-receipts'),
+            fetch('/api/data?entity=bank-accounts'),
             fetchCompanyProfile(),
         ]);
 
-        setItems(notaRows || []);
-        setPayments(paymentRows || []);
-        setCustomers((customerRows || []).filter(customer => customer.active !== false));
-        setCustomerReceipts(receiptRows || []);
-        setBankAccounts((bankRows || []).filter(account => account.active !== false));
+        const [notaPayload, summaryPayload, customerPayload, receiptPayload, bankPayload] = await Promise.all([
+            notaRes.json(),
+            summaryRes.json(),
+            customerRes.json(),
+            receiptRes.json(),
+            bankRes.json(),
+        ]);
+
+        if (!notaRes.ok) throw new Error(notaPayload.error || 'Gagal memuat nota ongkos');
+        if (!summaryRes.ok) throw new Error(summaryPayload.error || 'Gagal memuat ringkasan nota');
+        if (!customerRes.ok) throw new Error(customerPayload.error || 'Gagal memuat customer');
+        if (!receiptRes.ok) throw new Error(receiptPayload.error || 'Gagal memuat receipt customer');
+        if (!bankRes.ok) throw new Error(bankPayload.error || 'Gagal memuat rekening');
+
+        const notaRows = (notaPayload.data || []) as FreightNota[];
+        const notaIds = notaRows.map(nota => nota._id).filter(Boolean);
+        let paymentRows: Payment[] = [];
+
+        if (notaIds.length > 0) {
+            const paymentsRes = await fetch(
+                `/api/data?entity=payments&page=1&pageSize=500&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: notaIds }))}`
+            );
+            const paymentsPayload = await paymentsRes.json();
+            if (!paymentsRes.ok) {
+                throw new Error(paymentsPayload.error || 'Gagal memuat pembayaran nota');
+            }
+            paymentRows = (paymentsPayload.data || []) as Payment[];
+        }
+
+        setItems(notaRows);
+        setPayments(paymentRows);
+        setTotalInvoices(notaPayload.meta?.total || 0);
+        setSummary({
+            filteredNetTotal: summaryPayload.data?.filteredNetTotal || 0,
+            filteredOutstandingTotal: summaryPayload.data?.filteredOutstandingTotal || 0,
+            unpaidCount: summaryPayload.data?.unpaidCount || 0,
+            partialCount: summaryPayload.data?.partialCount || 0,
+            paidCount: summaryPayload.data?.paidCount || 0,
+            customerCreditTotal: summaryPayload.data?.customerCreditTotal || 0,
+        });
+        setCustomers(((customerPayload.data || []) as Customer[]).filter(customer => customer.active !== false));
+        setCustomerReceipts((receiptPayload.data || []) as CustomerReceipt[]);
+        setBankAccounts(((bankPayload.data || []) as BankAccount[]).filter(account => account.active !== false));
         setCompany(companyPayload);
-    }, []);
+    }, [buildInvoicesQuery, search, statusFilter]);
 
     useEffect(() => {
         reloadData()
@@ -149,26 +200,23 @@ export default function NotaListPage() {
             return map;
         }, new Map()).values()
     );
-    for (const nota of items) {
-        const key = nota.customerRef || nota.customerName;
-        if (!key || receiptCustomerOptions.some(option => option.ref === key)) {
-            continue;
-        }
-        receiptCustomerOptions.push({ ref: key, name: nota.customerName || key });
-    }
     receiptCustomerOptions.sort((a, b) => a.name.localeCompare(b.name));
 
-    const receiptOpenNotas = items
-        .filter(nota => (nota.customerRef || nota.customerName) === receiptCustomerRef)
+    const selectedReceiptCustomer = receiptCustomerOptions.find(option => option.ref === receiptCustomerRef) || null;
+    const receiptPaymentTotals = receiptOpenPayments.reduce<Record<string, number>>((acc, payment) => {
+        acc[payment.invoiceRef] = (acc[payment.invoiceRef] || 0) + payment.amount;
+        return acc;
+    }, {});
+    const receiptOpenNotaItems = receiptOpenNotas
         .map(nota => ({
             nota,
-            paidAmount: paymentTotalsByInvoice[nota._id] || 0,
+            paidAmount: receiptPaymentTotals[nota._id] || 0,
             netAmount: getReceivableNetAmount(nota),
-            remainingAmount: getNotaRemaining(nota),
+            remainingAmount: Math.max(getReceivableNetAmount(nota) - (receiptPaymentTotals[nota._id] || 0), 0),
         }))
         .filter(item => item.remainingAmount > 0)
         .sort((a, b) => a.nota.issueDate.localeCompare(b.nota.issueDate));
-    const singleOpenNota = receiptOpenNotas.length === 1 ? receiptOpenNotas[0] : null;
+    const singleOpenNota = receiptOpenNotaItems.length === 1 ? receiptOpenNotaItems[0] : null;
     const hasSingleOpenNota = Boolean(singleOpenNota);
 
     const totalAllocated = Object.values(receiptAllocations).reduce((sum, amount) => sum + amount, 0);
@@ -182,13 +230,88 @@ export default function NotaListPage() {
         return acc;
     }, {});
     const selectedCustomerStoredCredit = customerCreditByRef[receiptCustomerRef] || 0;
-    const selectedCustomerOpenTotal = receiptOpenNotas.reduce((sum, item) => sum + item.remainingAmount, 0);
-    const receiptOpenCount = receiptOpenNotas.length;
+    const selectedCustomerOpenTotal = receiptOpenNotaItems.reduce((sum, item) => sum + item.remainingAmount, 0);
+    const receiptOpenCount = receiptOpenNotaItems.length;
     const receiptPrimaryLabel = receiptOpenCount === 0
         ? 'Simpan Kredit Customer'
         : unappliedReceiptAmount > 0
             ? 'Simpan Receipt & Kredit'
             : 'Simpan Receipt';
+
+    useEffect(() => {
+        if (!showReceiptModal || !receiptCustomerRef) {
+            setReceiptOpenNotas([]);
+            setReceiptOpenPayments([]);
+            setReceiptNotesLoading(false);
+            return;
+        }
+
+        let cancelled = false;
+
+        const loadReceiptOpenNotas = async () => {
+            setReceiptNotesLoading(true);
+            try {
+                const fetchNotaBatch = async (filterObj: Record<string, unknown>) => {
+                    const params = new URLSearchParams({
+                        entity: 'freight-notas',
+                        page: '1',
+                        pageSize: '200',
+                        sortPreset: 'work-queue',
+                        filter: JSON.stringify(filterObj),
+                    });
+                    const res = await fetch(`/api/data?${params.toString()}`);
+                    const payload = await res.json();
+                    if (!res.ok) {
+                        throw new Error(payload.error || 'Gagal memuat nota terbuka customer');
+                    }
+                    return (payload.data || []) as FreightNota[];
+                };
+
+                const [byCustomerRef, byCustomerName] = await Promise.all([
+                    fetchNotaBatch({ customerRef: receiptCustomerRef, status: ['UNPAID', 'PARTIAL'] }),
+                    selectedReceiptCustomer?.name
+                        ? fetchNotaBatch({ customerName: selectedReceiptCustomer.name, status: ['UNPAID', 'PARTIAL'] })
+                        : Promise.resolve([] as FreightNota[]),
+                ]);
+
+                const notaMap = new Map<string, FreightNota>();
+                [...byCustomerRef, ...byCustomerName].forEach(nota => {
+                    notaMap.set(nota._id, nota);
+                });
+                const notaRows = Array.from(notaMap.values());
+                const notaIds = notaRows.map(nota => nota._id).filter(Boolean);
+                let paymentRows: Payment[] = [];
+
+                if (notaIds.length > 0) {
+                    const paymentsRes = await fetch(
+                        `/api/data?entity=payments&page=1&pageSize=500&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: notaIds }))}`
+                    );
+                    const paymentsPayload = await paymentsRes.json();
+                    if (!paymentsRes.ok) {
+                        throw new Error(paymentsPayload.error || 'Gagal memuat pembayaran receipt');
+                    }
+                    paymentRows = (paymentsPayload.data || []) as Payment[];
+                }
+
+                if (cancelled) return;
+                setReceiptOpenNotas(notaRows);
+                setReceiptOpenPayments(paymentRows);
+            } catch (error) {
+                if (cancelled) return;
+                addToast('error', error instanceof Error ? error.message : 'Gagal memuat nota terbuka customer');
+            } finally {
+                if (!cancelled) {
+                    setReceiptNotesLoading(false);
+                }
+            }
+        };
+
+        void loadReceiptOpenNotas();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [addToast, receiptCustomerRef, selectedReceiptCustomer?.name, showReceiptModal]);
 
     useEffect(() => {
         if (!singleOpenNota) {
@@ -239,7 +362,7 @@ export default function NotaListPage() {
     };
 
     const handleCreateCustomerReceipt = async () => {
-        const allocations = receiptOpenNotas
+        const allocations = receiptOpenNotaItems
             .map(item => ({
                 invoiceRef: item.nota._id,
                 amount: receiptAllocations[item.nota._id] || 0,
@@ -305,36 +428,12 @@ export default function NotaListPage() {
         }
     };
 
-    const filtered = items.filter(n => {
-        const query = search.toLowerCase();
-        const displayNumber = formatFreightNotaDisplayNumber(n, company).toLowerCase();
-        const m = !search ||
-            n.notaNumber?.toLowerCase().includes(query) ||
-            n.customerName?.toLowerCase().includes(query) ||
-            displayNumber.includes(query);
-        const s = !statusFilter || n.status === statusFilter;
-        return m && s;
-    });
-
-    const prioritizedNotas = filtered
-        .slice()
-        .sort((a, b) => {
-            const priorityDiff = (INVOICE_ACTION_PRIORITY[a.status] ?? 99) - (INVOICE_ACTION_PRIORITY[b.status] ?? 99);
-            if (priorityDiff !== 0) return priorityDiff;
-            return new Date(a.issueDate).getTime() - new Date(b.issueDate).getTime();
-        });
-    const paginatedNotas = paginateItems(prioritizedNotas, page, DEFAULT_PAGE_SIZE);
-
-    const grandTotal = filtered.reduce((sum, nota) => sum + getReceivableNetAmount(nota), 0);
-    const outstandingTotal = prioritizedNotas.reduce((sum, nota) => sum + getNotaRemaining(nota), 0);
-    const customerCreditTotal = customerReceipts.reduce(
-        (sum, receipt) => sum + (typeof receipt.unappliedAmount === 'number' ? receipt.unappliedAmount : 0),
-        0
-    );
+    const grandTotal = summary.filteredNetTotal;
+    const outstandingTotal = summary.filteredOutstandingTotal;
     const queueCounts = {
-        needPayment: items.filter(nota => nota.status === 'UNPAID').length,
-        partialPayment: items.filter(nota => nota.status === 'PARTIAL').length,
-        paid: items.filter(nota => nota.status === 'PAID').length,
+        needPayment: summary.unpaidCount,
+        partialPayment: summary.partialCount,
+        paid: summary.paidCount,
     };
 
     const fetchNotaItems = async (notaId: string) => {
@@ -404,17 +503,26 @@ export default function NotaListPage() {
                     <button className="btn btn-success" onClick={openReceiptModal}><Plus size={18} /> Terima Pembayaran</button>
                     <button
                         className="btn btn-secondary btn-sm"
-                        onClick={() => exportInvoices(filtered as unknown as Record<string, unknown>[])}
+                        onClick={async () => {
+                            try {
+                                const allMatchingNotas = await fetchAllMatchingInvoices();
+                                await exportInvoices(allMatchingNotas as unknown as Record<string, unknown>[]);
+                                addToast('success', 'Excel daftar nota berhasil di-download');
+                            } catch (error) {
+                                addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan Excel daftar nota');
+                            }
+                        }}
                     >
                         <FileDown size={15} /> Excel
                     </button>
                     <button className="btn btn-secondary btn-sm" onClick={async () => {
                         const co = company ?? await fetchCompanyProfile();
+                        const allMatchingNotas = await fetchAllMatchingInvoices();
                         setCompany(co);
                         openBrandedPrint({
                             title: 'Daftar Nota Ongkos Angkut', company: co, bodyHtml: `
                             <table><thead><tr><th>No. Nota</th><th>Customer</th><th>Tanggal</th><th>Total Collie</th><th>Total Berat</th><th class="r">Tagihan Netto</th><th>Status</th></tr></thead>
-                            <tbody>${prioritizedNotas.map(n => `<tr><td><div class="b">${formatFreightNotaDisplayNumber(n, co)}</div><div style="font-size:11px;color:#64748b">${n.notaNumber}</div></td><td>${n.customerName}</td><td>${formatDate(n.issueDate)}</td><td>${n.totalCollie || 0}</td><td>${n.totalWeightKg || 0} kg</td><td class="r b">${formatCurrency(getReceivableNetAmount(n))}</td><td>${STATUS_MAP[n.status]?.label || n.status}</td></tr>`).join('')}
+                            <tbody>${allMatchingNotas.map(n => `<tr><td><div class="b">${formatFreightNotaDisplayNumber(n, co)}</div><div style="font-size:11px;color:#64748b">${n.notaNumber}</div></td><td>${n.customerName}</td><td>${formatDate(n.issueDate)}</td><td>${n.totalCollie || 0}</td><td>${n.totalWeightKg || 0} kg</td><td class="r b">${formatCurrency(getReceivableNetAmount(n))}</td><td>${STATUS_MAP[n.status]?.label || n.status}</td></tr>`).join('')}
                             <tr style="border-top:2px solid #1e293b"><td colspan="5" class="r b">TOTAL</td><td class="r b">${formatCurrency(grandTotal)}</td><td></td></tr></tbody></table>`
                         });
                     }}><Printer size={15} /> Print</button>
@@ -449,7 +557,7 @@ export default function NotaListPage() {
                     <div className="kpi-icon info"><Receipt size={20} /></div>
                     <div className="kpi-content">
                         <div className="kpi-label">Kredit Customer</div>
-                        <div className="kpi-value" style={{ fontSize: '1.05rem' }}>{formatCurrency(customerCreditTotal)}</div>
+                        <div className="kpi-value" style={{ fontSize: '1.05rem' }}>{formatCurrency(summary.customerCreditTotal)}</div>
                     </div>
                 </div>
             </div>
@@ -469,9 +577,9 @@ export default function NotaListPage() {
                         <thead><tr><th>No. Nota</th><th>Customer</th><th>Tanggal</th><th>Total Collie</th><th>Total Berat</th><th>Tagihan Netto</th><th>Status</th><th>Tindak Lanjut</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                paginatedNotas.totalItems === 0 ? (
+                                totalInvoices === 0 ? (
                                     <tr><td colSpan={9}><div className="empty-state"><FileText size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada nota</div><div className="empty-state-text">Klik tombol &quot;Buat Nota&quot; untuk membuat nota baru</div></div></td></tr>
-                                ) : paginatedNotas.items.map(n => (
+                                ) : items.map(n => (
                                     <tr key={n._id}>
                                         <td>
                                             <button
@@ -508,12 +616,12 @@ export default function NotaListPage() {
                 </div>
                 {!loading && (
                     <div className="mobile-record-list">
-                        {paginatedNotas.totalItems === 0 ? (
+                        {totalInvoices === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada nota</div>
                                 <div className="mobile-record-subtitle">Klik tombol Buat Nota untuk membuat nota baru.</div>
                             </div>
-                        ) : paginatedNotas.items.map(n => (
+                        ) : items.map(n => (
                             <div key={n._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
@@ -555,11 +663,11 @@ export default function NotaListPage() {
                         ))}
                     </div>
                 )}
-                {paginatedNotas.totalItems > 0 && (
+                {totalInvoices > 0 && (
                     <AppPagination
-                        page={paginatedNotas.currentPage}
+                        page={page}
                         pageSize={DEFAULT_PAGE_SIZE}
-                        totalItems={paginatedNotas.totalItems}
+                        totalItems={totalInvoices}
                         onPageChange={setPage}
                         info={({ startIndex, endIndex, totalItems }) => (
                             <>
@@ -660,7 +768,12 @@ export default function NotaListPage() {
                                     <div className="empty-state-title">Pilih customer</div>
                                     <div className="empty-state-text">Daftar nota terbuka dan kredit customer akan muncul setelah customer dipilih.</div>
                                 </div>
-                            ) : receiptOpenNotas.length === 0 ? (
+                            ) : receiptNotesLoading ? (
+                                <div className="empty-state">
+                                    <div className="empty-state-title">Memuat nota terbuka</div>
+                                    <div className="empty-state-text">Sedang mengambil sisa tagihan customer ini.</div>
+                                </div>
+                            ) : receiptOpenNotaItems.length === 0 ? (
                                 <div className="empty-state">
                                     <div className="empty-state-title">Tidak ada nota terbuka</div>
                                     <div className="empty-state-text">Customer ini tidak punya sisa tagihan netto. Kamu tetap bisa menyimpan receipt ini sebagai kredit customer.</div>
@@ -680,7 +793,7 @@ export default function NotaListPage() {
                                     <table style={{ minWidth: 720 }}>
                                         <thead><tr><th>No. Nota</th><th>Tgl</th><th>Netto</th><th>Sudah Dibayar</th><th>Sisa</th><th>Alokasi Receipt</th></tr></thead>
                                         <tbody>
-                                            {receiptOpenNotas.map(item => (
+                                            {receiptOpenNotaItems.map(item => (
                                                 <tr key={item.nota._id}>
                                                     <td>
                                                         <div className="font-semibold">{formatFreightNotaDisplayNumber(item.nota, company)}</div>
