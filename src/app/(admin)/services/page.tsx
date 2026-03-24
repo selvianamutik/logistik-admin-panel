@@ -94,7 +94,7 @@ export default function ServicesPage() {
 
     return (
         <div>
-            <div className="page-header"><div className="page-header-left"><h1 className="page-title">Kategori Truk / Armada</h1><p className="page-subtitle">Master kategori armada yang diminta customer pada order</p></div>
+            <div className="page-header"><div className="page-header-left"><h1 className="page-title">Kategori Truk / Armada</h1></div>
                 <div className="page-actions">{isOwner && <button className="btn btn-primary" onClick={openNew}><Plus size={18} /> Tambah Kategori</button>}</div></div>
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Kategori Aktif</div><div className="kpi-value">{activeCount}</div></div></div>
@@ -129,15 +129,9 @@ export default function ServicesPage() {
                 <div className="modal-overlay" onClick={() => { if (!saving) setShowModal(false); }}><div className="modal" onClick={e => e.stopPropagation()}>
                     <div className="modal-header"><h3 className="modal-title">{editItem ? 'Edit' : 'Tambah'} Kategori Armada</h3><button className="modal-close" onClick={() => setShowModal(false)} disabled={saving}><X size={20} /></button></div>
                     <div className="modal-body">
-                        <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: '0.8rem', color: 'var(--color-gray-600)' }}>
-                            Pakai kode yang stabil karena prefix ini ikut dipakai untuk kode unit kendaraan, misalnya <strong>CDD-001</strong> atau <strong>FUS-001</strong>.
-                        </div>
                         <div className="form-group">
                             <label className="form-label">Kode Kategori</label>
                             <input className="form-input" value={form.code} onChange={e => setForm({ ...form, code: e.target.value.toUpperCase() })} placeholder="Contoh: CDD / FUS / CDB" />
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                Prefix ini dipakai untuk membentuk kode unit kendaraan, misalnya `CDD-001`.
-                            </div>
                         </div>
                         <div className="form-group"><label className="form-label">Nama Kategori</label><input className="form-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Contoh: CDD Box / Fuso / Tronton" /></div>
                         <div className="form-group"><label className="form-label">Deskripsi</label><textarea className="form-textarea" rows={2} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Digunakan untuk memfilter kendaraan saat membuat surat jalan" /></div>

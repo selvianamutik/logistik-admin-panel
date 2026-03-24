@@ -332,9 +332,6 @@ export default function BankAccountsPage() {
       <div className="page-header">
         <div className="page-header-left">
           <h1 className="page-title">Rekening &amp; Kas</h1>
-          <p className="page-subtitle">
-            Pantau posisi uang operasional di rekening bank dan kas tunai.
-          </p>
         </div>
         <div className="page-actions">
           <button

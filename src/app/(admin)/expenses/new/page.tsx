@@ -145,9 +145,6 @@ export default function ExpenseNewPage() {
                                 <option value="">-- Tidak dipilih --</option>
                                 {bankAccounts.map(a => <option key={a._id} value={a._id}>{a.bankName} - {a.accountNumber}{a.accountType === 'CASH' ? ' (Kas Tunai)' : ''}</option>)}
                             </select>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                Pilih <strong>Kas Tunai</strong> kalau pengeluaran dibayar tunai dan kamu ingin saldo kas ikut berkurang di arus kas.
-                            </div>
                         </div>
                     </div>
                 </div>

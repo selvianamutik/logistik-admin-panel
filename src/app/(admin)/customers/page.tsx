@@ -216,7 +216,6 @@ export default function CustomersPage() {
             <div className="page-header">
                 <div className="page-header-left">
                     <h1 className="page-title">Customer</h1>
-                    <p className="page-subtitle">Kelola pelanggan, prefix surat jalan, dan master barang per customer</p>
                 </div>
                 <div className="page-actions">
                     <button
@@ -469,9 +468,6 @@ export default function CustomersPage() {
                             <button className="modal-close" onClick={() => setShowModal(false)} disabled={saving}><X size={20} /></button>
                         </div>
                         <div className="modal-body">
-                            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: '0.8rem', color: 'var(--color-gray-600)' }}>
-                                Simpan customer dulu, lalu lanjutkan ke detail customer untuk menambahkan master barang jika customer ini sering kirim barang yang sama.
-                            </div>
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Nama <span className="required">*</span></label>

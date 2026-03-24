@@ -64,7 +64,6 @@ export default function DashboardPage() {
                 <div className="page-header">
                     <div className="page-header-left">
                         <h1 className="page-title">Dashboard</h1>
-                        <p className="page-subtitle">Ringkasan operasional harian dan tindak lanjut utama.</p>
                     </div>
                 </div>
                 <div className="card">
@@ -98,14 +97,6 @@ export default function DashboardPage() {
             <div className="page-header">
                 <div className="page-header-left">
                     <h1 className="page-title">Dashboard</h1>
-                    <p className="page-subtitle">Pantau order, pengiriman, piutang, armada, dan kas yang perlu ditindaklanjuti hari ini.</p>
-                </div>
-            </div>
-
-            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', border: '1px solid var(--color-gray-200)', marginBottom: 'var(--space-6)' }}>
-                <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Cara baca dashboard ini</div>
-                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                    Halaman ini bukan laporan lengkap. Fokuskan dulu ke kartu yang angkanya masih tinggi, lalu buka daftar terkait untuk menindaklanjuti order, trip, tagihan, atau armada yang perlu perhatian hari ini.
                 </div>
             </div>
 

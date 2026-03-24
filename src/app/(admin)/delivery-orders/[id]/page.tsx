@@ -380,7 +380,6 @@ export default function DODetailPage() {
                                 <span className="badge-dot" /> {DO_STATUS_MAP[doData.status]?.label}
                             </span>
                         </h1>
-                        <p className="page-subtitle">Pantau trip, lanjutkan status, dan selesaikan POD bila pengiriman sudah selesai</p>
                     </div>
                 </div>
                 <div className="page-actions">
@@ -770,9 +769,6 @@ export default function DODetailPage() {
                             )}
                             {isCompletingDelivery && (
                                 <>
-                                    <div style={{ background: 'var(--color-success-light)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: '0.8rem', color: 'var(--color-success)' }}>
-                                        Status selesai ditetapkan oleh admin. Isi POD dan muatan aktual di bawah ini. Muatan <strong>Rencana Trip</strong> pada DO ini hanya estimasi. Sistem akan memakai <strong>Muatan Aktual</strong> sebagai realisasi akhir DO, mengembalikan selisih rencana ke pending bila perlu, lalu menandai DO sebagai <strong>Delivered</strong>.
-                                    </div>
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
                                         <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
                                             <div className="text-muted text-sm">Item dalam trip</div>

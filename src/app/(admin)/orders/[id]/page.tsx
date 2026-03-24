@@ -350,7 +350,6 @@ export default function OrderDetailPage() {
                                 <span className="badge-dot" /> {ORDER_STATUS_MAP[order.status]?.label}
                             </span>
                         </h1>
-                        <p className="page-subtitle">Detail pengirim, penerima, dan pengiriman</p>
                     </div>
                 </div>
                 <div className="page-actions">
@@ -772,11 +771,11 @@ export default function OrderDetailPage() {
                                     <option value="">-- Opsional, pilih supir --</option>
                                     {availableDrivers.map(driver => <option key={driver._id} value={driver._id}>{driver.name}{driver.phone ? ` - ${driver.phone}` : ''}</option>)}
                                 </select>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                    {availableDrivers.length === 0
-                                        ? 'Tidak ada supir kosong. Semua supir aktif sedang dipakai DO yang belum selesai.'
-                                        : 'Hanya supir yang sedang kosong yang ditampilkan. Supir yang masih terikat ke DO aktif tidak bisa dipakai untuk trip baru.'}
-                                </div>
+                                {availableDrivers.length === 0 && (
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                        Tidak ada supir kosong. Semua supir aktif sedang dipakai DO yang belum selesai.
+                                    </div>
+                                )}
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Upah Trip</label>
@@ -786,18 +785,12 @@ export default function OrderDetailPage() {
                                     placeholder="Ketik upah trip bila sudah diketahui"
                                     disabled={creatingDO}
                                 />
-                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                    Isi kalau nominal upah trip sudah diketahui supaya DO bisa langsung muncul saat terbitkan Uang Jalan Trip. Kalau belum, tetap bisa diisi nanti dari form Uang Jalan Trip.
-                                </div>
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Catatan</label>
                                 <textarea className="form-textarea" rows={2} value={doNotes} onChange={e => setDoNotes(e.target.value)} placeholder="Catatan opsional..." disabled={creatingDO} />
                             </div>
                             <div className="form-section-title">Pilih Item untuk DO</div>
-                            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: '0.8rem', color: 'var(--color-gray-600)' }}>
-                                Untuk pengiriman normal, cukup pilih kendaraan, supir, centang item yang jalan, lalu cek koli kirim. Opsi tahan sisa hanya dipakai kalau ada barang yang belum bisa lanjut.
-                            </div>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
                                 <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
                                     <div className="text-muted text-sm">Item dipilih</div>

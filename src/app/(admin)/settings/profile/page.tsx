@@ -35,7 +35,7 @@ export default function ProfilePage() {
 
     return (
         <div>
-            <div className="page-header"><div className="page-header-left"><h1 className="page-title">Profil Saya</h1><p className="page-subtitle">Kelola informasi akun Anda</p></div></div>
+            <div className="page-header"><div className="page-header-left"><h1 className="page-title">Profil Saya</h1></div></div>
             <div className="card" style={{ maxWidth: 520 }}>
                 <div className="card-body">
                     <form onSubmit={handleSubmit}>

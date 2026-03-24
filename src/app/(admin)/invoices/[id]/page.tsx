@@ -255,7 +255,6 @@ export default function NotaDetailPage() {
                     <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
                         Nomor sistem: {nota.notaNumber}
                     </div>
-                    <p className="page-subtitle">Lihat sisa tagihan, catat pembayaran, dan tambahkan potongan bila memang ada</p>
                 </div>
                 </div>
                 <div className="page-actions" style={{ gap: '0.4rem' }}>

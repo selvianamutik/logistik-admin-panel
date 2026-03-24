@@ -111,7 +111,6 @@ export default function VehicleEditPage() {
                     <PageBackButton href={`/fleet/vehicles/${vehicleId}`} />
                     <div>
                         <h1 className="page-title">Edit Kendaraan</h1>
-                        <p className="page-subtitle">Perbarui data unit atau pindah cepat ke area kendaraan lain.</p>
                     </div>
                 </div>
             </div>

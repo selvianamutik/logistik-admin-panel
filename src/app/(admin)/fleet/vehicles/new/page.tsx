@@ -105,9 +105,6 @@ export default function VehicleNewPage() {
                                         <option value="">Pilih kategori armada</option>
                                         {services.map(service => <option key={service._id} value={service._id}>{service.code} - {service.name}</option>)}
                                     </select>
-                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                        Kategori ini dipakai untuk mencocokkan kendaraan dengan order saat membuat surat jalan. Kode unit akan mengikuti prefix kode kategori.
-                                    </div>
                                 </div>
                                 <div className="form-group"><label className="form-label">Base / Lokasi</label><input className="form-input" value={form.base} onChange={e => setForm({ ...form, base: e.target.value })} placeholder="Jakarta" /></div>
                             </div>

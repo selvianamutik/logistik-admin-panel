@@ -97,7 +97,7 @@ export default function CompanyPage() {
 
     return (
         <div>
-            <div className="page-header"><div className="page-header-left"><h1 className="page-title">Perusahaan &amp; Dokumen</h1><p className="page-subtitle">Kelola identitas perusahaan, branding aplikasi, dan nomor dokumen harian.</p></div>
+            <div className="page-header"><div className="page-header-left"><h1 className="page-title">Perusahaan &amp; Dokumen</h1></div>
                 <div className="page-actions"><button className="btn btn-primary" onClick={handleSave} disabled={saving}><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}</button></div></div>
 
             <div className="detail-grid">

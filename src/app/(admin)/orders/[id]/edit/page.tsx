@@ -213,11 +213,6 @@ export default function OrderEditPage() {
                 <div style={{ fontWeight: 600, marginBottom: '0.35rem', color: isRevisionMode ? '#92400e' : 'inherit' }}>
                     {isRevisionMode ? 'Mode revisi target order' : 'Mode edit order biasa'}
                 </div>
-                <div style={{ fontSize: '0.82rem', color: isRevisionMode ? '#92400e' : 'var(--text-muted)' }}>
-                    {isRevisionMode
-                        ? 'Order ini sudah punya progress. Identitas barang dan pihak terkait tetap dikunci agar histori trip tidak berubah diam-diam. Di layar ini kamu hanya merevisi target koli, berat, volume, dan catatan dengan alasan yang jelas.'
-                        : 'Order ini belum punya progress operasional. Data pengirim, penerima, armada, dan item masih bisa diperbarui seperti biasa.'}
-                </div>
             </div>
 
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>

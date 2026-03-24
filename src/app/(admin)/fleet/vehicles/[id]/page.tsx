@@ -293,9 +293,6 @@ export default function VehicleDetailPage() {
                 </>
             ) : (
                 <>
-                    <div className="text-muted text-sm">
-                        Slot ini belum terisi. Lengkapi ban kendaraan ini dari depan kiri sampai serep supaya kondisi unit mudah dicek staff lapangan.
-                    </div>
                     <div>
                         <button className="btn btn-primary" type="button" onClick={() => openNewTire(slotCode)}>
                             <Plus size={14} /> Isi Slot
@@ -381,7 +378,6 @@ export default function VehicleDetailPage() {
                     <div className="card-header">
                         <div>
                             <span className="card-header-title">Riwayat Trip Unit</span>
-                            <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>Pantau trip yang pernah memakai kendaraan ini, termasuk trip aktif yang sedang berjalan.</div>
                         </div>
                     </div>
                     <div className="card-body">
@@ -395,7 +391,6 @@ export default function VehicleDetailPage() {
                             {dos.length === 0 ? (
                                 <div className="mobile-record-card">
                                     <div className="mobile-record-title">Belum ada riwayat trip</div>
-                                    <div className="mobile-record-subtitle">Trip yang memakai kendaraan ini akan muncul di sini.</div>
                                 </div>
                             ) : dos.map(d => (
                                 <div key={d._id} className="mobile-record-card">
@@ -483,9 +478,6 @@ export default function VehicleDetailPage() {
                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
                                 <div style={{ display: 'grid', gap: '0.35rem' }}>
                                     <div className="form-section-title" style={{ marginBottom: 0 }}>Layout Ban Unit</div>
-                                    <div className="text-muted">
-                                        Lengkapi ban kendaraan ini per slot mulai dari depan kiri, kanan, lalu as berikutnya. Halaman audit ban global tetap dipakai untuk ban gudang, pinjam keluar, atau histori lintas unit. Ban tidak dihapus dari sini agar histori aset tetap utuh.
-                                    </div>
                                 </div>
                                 <button className="btn btn-secondary" type="button" onClick={() => router.push('/fleet/tires')}>
                                     <ExternalLink size={14} /> Audit Semua Ban

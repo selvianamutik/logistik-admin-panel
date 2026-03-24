@@ -213,7 +213,6 @@ export default function CustomerDetailPage() {
                     <PageBackButton href="/customers" />
                     <div>
                         <h1 className="page-title">{customer.name}</h1>
-                        <p className="page-subtitle">Kelola profil customer, barang langganan, dan cek histori singkat order serta nota.</p>
                     </div>
                 </div>
                 <div className="page-actions">
@@ -292,7 +291,6 @@ export default function CustomerDetailPage() {
 
             <CollapsibleCard
                 title={`Master Barang Customer (${customerProducts.length})`}
-                subtitle="Bagian ini paling sering dipakai untuk mempercepat input order customer ini."
                 defaultOpen
             >
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
@@ -347,7 +345,6 @@ export default function CustomerDetailPage() {
                     {customerProducts.length === 0 ? (
                         <div className="mobile-record-card">
                             <div className="mobile-record-title">Belum ada master barang</div>
-                            <div className="mobile-record-subtitle">Tambahkan barang langganan customer ini agar form order bisa autofill lebih cepat.</div>
                             <div className="mobile-record-actions">
                                 <button className="btn btn-primary" onClick={openNewProduct}>
                                     <Plus size={16} /> Tambah Barang

@@ -185,7 +185,6 @@ export default function OrdersPage() {
             <div className="page-header">
                 <div className="page-header-left">
                     <h1 className="page-title">Order / Resi</h1>
-                    <p className="page-subtitle">Antrian order customer. Yang perlu dibuatkan trip atau ditindaklanjuti tampil lebih dulu.</p>
                 </div>
                 <div className="page-actions">
                     <button className="btn btn-secondary btn-sm" onClick={async () => exportOrders(await fetchAllMatchingOrders() as unknown as Record<string, unknown>[])}>

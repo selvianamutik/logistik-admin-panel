@@ -42,7 +42,7 @@ export default function PasswordPage() {
 
     return (
         <div>
-            <div className="page-header"><div className="page-header-left"><h1 className="page-title">Ubah Password</h1><p className="page-subtitle">Perbarui password akun Anda</p></div></div>
+            <div className="page-header"><div className="page-header-left"><h1 className="page-title">Ubah Password</h1></div></div>
             <div className="card" style={{ maxWidth: 520 }}>
                 <div className="card-body">
                     <form onSubmit={handleSubmit}>

@@ -211,7 +211,6 @@ export default function IncidentsPage() {
             <div className="page-header">
                 <div className="page-header-left">
                     <h1 className="page-title">Insiden Kendaraan</h1>
-                    <p className="page-subtitle">Antrian insiden armada yang perlu ditangani, diverifikasi, atau diarsipkan.</p>
                 </div>
                 <div className="page-actions">
                     <button className="btn btn-primary" onClick={() => openIncidentModal(vehicleFilter ? vehicles.find(vehicle => vehicle._id === vehicleFilter) || null : null)}>

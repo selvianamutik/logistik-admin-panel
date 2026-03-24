@@ -201,7 +201,6 @@ export default function TiresPage() {
             <div className="page-header">
                 <div className="page-header-left">
                     <h1 className="page-title">Audit Semua Ban</h1>
-                    <p className="page-subtitle">Pantau ban lintas kendaraan, gudang, dan pinjam keluar. Pengisian slot unit sebaiknya dilakukan dari detail kendaraan.</p>
                 </div>
                 <div className="page-actions">
                     <button className="btn btn-primary" onClick={openAdd}><Plus size={16} /> Catat Ban</button>
@@ -213,14 +212,6 @@ export default function TiresPage() {
                 <div className="kpi-card"><div className="kpi-icon info"><Disc3 size={20} /></div><div className="kpi-content"><div className="kpi-label">Serep</div><div className="kpi-value">{spareCount}</div></div></div>
                 <div className="kpi-card"><div className="kpi-icon warning"><ExternalLink size={20} /></div><div className="kpi-content"><div className="kpi-label">Dipinjam Keluar</div><div className="kpi-value">{loanedCount}</div></div></div>
                 <div className="kpi-card"><div className="kpi-icon primary"><Warehouse size={20} /></div><div className="kpi-content"><div className="kpi-label">Di Gudang</div><div className="kpi-value">{warehouseCount}</div></div></div>
-            </div>
-
-            <div className="card" style={{ marginBottom: '1.5rem' }}>
-                <div className="card-body">
-                    <div className="text-muted">
-                        Untuk melengkapi ban per unit secara berurutan seperti depan kiri, kanan, dan serep, buka dulu halaman detail kendaraan. Halaman ini dipakai untuk audit seluruh ban, termasuk gudang dan pinjam keluar. Riwayat ban tidak dihapus; ubah lokasi atau statusnya jika ban pindah.
-                    </div>
-                </div>
             </div>
 
             <div className="table-container">
@@ -260,7 +251,6 @@ export default function TiresPage() {
                                         <div className="empty-state">
                                             <Disc3 size={48} className="empty-state-icon" />
                                             <div className="empty-state-title">Belum ada ban tercatat</div>
-                                            <div className="empty-state-text">Tambahkan ban per kode unik agar perpindahan antar unit dan pinjam keluar bisa dilacak.</div>
                                         </div>
                                     </td></tr>
                                 ) : resolvedEvents.map(event => (
@@ -297,7 +287,6 @@ export default function TiresPage() {
                         {filteredTotalTires === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada ban tercatat</div>
-                                <div className="mobile-record-subtitle">Tambahkan ban per kode unik agar perpindahan antar unit dan pinjam keluar bisa dilacak.</div>
                             </div>
                         ) : resolvedEvents.map(event => (
                             <div key={event._id} className="mobile-record-card">

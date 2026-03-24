@@ -177,7 +177,6 @@ export default function NewOrderPage() {
                 <div className="page-header-left">
                     <PageBackButton href="/orders" />
                     <h1 className="page-title">Buat Order Baru</h1>
-                    <p className="page-subtitle">Pilih customer, isi tujuan, lalu tambah barang yang akan dikirim</p>
                 </div>
             </div>
 

@@ -136,7 +136,6 @@ export default function DeliveryOrdersPage() {
             <div className="page-header">
                 <div className="page-header-left">
                     <h1 className="page-title">Surat Jalan</h1>
-                    <p className="page-subtitle">Antrian trip pengiriman. Trip yang perlu dipantau atau diselesaikan tampil lebih dulu.</p>
                 </div>
                 <div className="page-actions">
                     <button className="btn btn-secondary btn-sm" onClick={async () => {

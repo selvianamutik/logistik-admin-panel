@@ -192,7 +192,7 @@ export default function MaintenancePage() {
 
     return (
         <div>
-            <div className="page-header"><div className="page-header-left"><h1 className="page-title">Maintenance</h1><p className="page-subtitle">Antrian servis kendaraan yang perlu dikerjakan, dilewati, atau diarsipkan.</p></div>
+            <div className="page-header"><div className="page-header-left"><h1 className="page-title">Maintenance</h1></div>
                 <div className="page-actions"><button className="btn btn-primary" onClick={() => openScheduleModal(vehicleFilter ? vehicles.find(vehicle => vehicle._id === vehicleFilter) || null : null)}><Plus size={18} /> Jadwalkan Servis</button></div></div>
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card"><div className="kpi-icon warning"><Wrench size={20} /></div><div className="kpi-content"><div className="kpi-label">Terjadwal</div><div className="kpi-value">{scheduledCount}</div></div></div>

@@ -88,7 +88,6 @@ export default function BoronganListPage() {
             <div className="page-header">
                 <div className="page-header-left">
                     <h1 className="page-title">Borongan Supir Legacy</h1>
-                    <p className="page-subtitle">Modul lama. Workflow aktif gaji trip sekarang dipusatkan di Uang Jalan Trip / settlement trip.</p>
                 </div>
                 <div className="page-actions">
                     <button type="button" className="btn btn-primary" onClick={() => router.push('/driver-vouchers/new')}>

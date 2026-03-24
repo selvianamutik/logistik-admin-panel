@@ -273,7 +273,7 @@ export default function DriversPage() {
 
     return (
         <div>
-            <div className="page-header"><div className="page-header-left"><h1 className="page-title">Supir</h1><p className="page-subtitle">Kelola data supir perusahaan</p></div>
+            <div className="page-header"><div className="page-header-left"><h1 className="page-title">Supir</h1></div>
                 <div className="page-actions">
                     <button className="btn btn-primary" onClick={() => { setEditId(null); setShowModal(true); }}><Plus size={18} /> Tambah Supir</button>
                 </div></div>
@@ -341,7 +341,6 @@ export default function DriversPage() {
                         {totalDrivers === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada supir</div>
-                                <div className="mobile-record-subtitle">Tambahkan supir agar bisa dipakai di surat jalan dan tracking driver.</div>
                             </div>
                         ) : items.map(driver => {
                             const account = accountByDriverRef.get(driver._id);

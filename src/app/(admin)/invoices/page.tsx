@@ -497,7 +497,6 @@ export default function NotaListPage() {
             <div className="page-header">
                 <div className="page-header-left">
                     <h1 className="page-title">Nota Ongkos Angkut</h1>
-                    <p className="page-subtitle">Antrian tagihan customer. Nota yang masih perlu ditagih atau difollow up pembayaran tampil lebih dulu.</p>
                 </div>
                 <div className="page-actions">
                     <button className="btn btn-success" onClick={openReceiptModal}><Plus size={18} /> Terima Pembayaran</button>

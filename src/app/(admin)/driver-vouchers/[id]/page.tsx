@@ -460,7 +460,6 @@ export default function DriverVoucherDetailPage() {
                         {disbursements.length === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada riwayat pencairan uang jalan</div>
-                                <div className="mobile-record-subtitle">Top up akan muncul di sini agar histori pencairan uang tetap rapi.</div>
                             </div>
                         ) : disbursements.map(item => (
                             <div key={item._id} className="mobile-record-card">

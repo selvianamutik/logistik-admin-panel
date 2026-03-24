@@ -195,7 +195,7 @@ export default function ExpensesPage() {
 
     return (
         <div>
-            <div className="page-header"><div className="page-header-left"><h1 className="page-title">Pengeluaran</h1><p className="page-subtitle">Kelola catatan pengeluaran</p></div>
+            <div className="page-header"><div className="page-header-left"><h1 className="page-title">Pengeluaran</h1></div>
                 <div className="page-actions">
                     <button className="btn btn-secondary btn-sm" onClick={async () => exportExpenses(await fetchAllMatchingExpenses() as unknown as Record<string, unknown>[])}><FileDown size={15} /> Excel</button>
                     <button className="btn btn-secondary btn-sm" onClick={async () => {

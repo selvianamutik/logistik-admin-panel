@@ -129,7 +129,6 @@ export default function VehiclesPage() {
             <div className="page-header">
                 <div className="page-header-left">
                     <h1 className="page-title">Kendaraan</h1>
-                    <p className="page-subtitle">Pantau unit siap jalan, kelengkapan ban, dan buka profil unit bila perlu servis atau insiden.</p>
                 </div>
                 <div className="page-actions">
                     <button

@@ -94,7 +94,7 @@ export default function AuditLogsPage() {
 
     return (
         <div>
-            <div className="page-header"><div className="page-header-left"><h1 className="page-title">Audit Log</h1><p className="page-subtitle">Riwayat aktivitas penting sistem</p></div></div>
+            <div className="page-header"><div className="page-header-left"><h1 className="page-title">Audit Log</h1></div></div>
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Total Log</div><div className="kpi-value">{totalLogs}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Hari Ini</div><div className="kpi-value">{todayLogs}</div></div></div>

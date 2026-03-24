@@ -193,7 +193,7 @@ export default function UsersPage() {
 
     return (
         <div>
-            <div className="page-header"><div className="page-header-left"><h1 className="page-title">User Management</h1><p className="page-subtitle">Kelola user internal sistem</p></div>
+            <div className="page-header"><div className="page-header-left"><h1 className="page-title">User Management</h1></div>
                 <div className="page-actions"><button className="btn btn-primary" onClick={openNew}><Plus size={18} /> Tambah User</button></div></div>
 
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>

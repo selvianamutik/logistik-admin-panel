@@ -231,7 +231,6 @@ export default function ReportsPage() {
       <div className="page-header">
         <div className="page-header-left">
           <h1 className="page-title">Laporan Keuangan</h1>
-          <p className="page-subtitle">Lihat laba rugi, arus kas, piutang aktif, dan uang jalan trip yang masih berjalan.</p>
         </div>
         <div className="page-actions">
           <button

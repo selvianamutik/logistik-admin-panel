@@ -159,7 +159,6 @@ export default function NewDriverVoucherPage() {
                 <div className="page-header-left">
                     <PageBackButton href="/driver-vouchers" />
                     <h1 className="page-title">Terbitkan Uang Jalan Trip</h1>
-                    <p className="page-subtitle">Pilih trip, tentukan sumber dana, lalu keluarkan uang jalan awal untuk driver</p>
                 </div>
             </div>
 

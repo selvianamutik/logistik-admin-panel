@@ -133,7 +133,6 @@ export default function DriverVouchersPage() {
             <div className="page-header">
                 <div className="page-header-left">
                     <h1 className="page-title">Uang Jalan Trip</h1>
-                    <p className="page-subtitle">Antrian trip yang masih berjalan tampil lebih dulu. Modul ini dipakai untuk uang jalan awal, top up, biaya aktual, upah trip, dan settlement akhir.</p>
                 </div>
                 <div className="page-actions">
                     <button
