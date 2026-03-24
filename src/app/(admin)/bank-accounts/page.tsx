@@ -12,11 +12,16 @@ import {
   Trash2,
 } from "lucide-react";
 import AppPagination from "@/components/AppPagination";
+import BankLogo from "@/components/BankLogo";
 import CurrencyInput from "@/components/CurrencyInput";
 import {
   BANK_PRESETS,
   buildBankAccountExportRows,
+  buildBankAccountsQuery,
   buildBankAccountPrintHtml,
+  createDefaultBankAccountForm,
+  createDefaultBankTransferForm,
+  formatBankAccountCurrency,
   getAccountNextAction,
   getBankPreset,
   isCashAccount,
@@ -27,55 +32,6 @@ import { openBrandedPrint } from "@/lib/print";
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import type { BankAccount, CompanyProfile } from "@/lib/types";
 import { useToast } from "../layout";
-
-function BankLogo({ name }: { name: string }) {
-  const preset = getBankPreset(name);
-  if (preset.logo) {
-    return (
-      <div
-        style={{
-          width: 40,
-          height: 40,
-          borderRadius: "0.5rem",
-          background: "#fff",
-          border: "1px solid #e2e8f0",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          overflow: "hidden",
-          padding: 4,
-          flexShrink: 0,
-        }}
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={preset.logo}
-          alt={name}
-          style={{ width: "100%", height: "100%", objectFit: "contain" }}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div
-      style={{
-        width: 40,
-        height: 40,
-        borderRadius: "0.5rem",
-        background: preset.gradient,
-        color: "#fff",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontWeight: 800,
-        flexShrink: 0,
-      }}
-    >
-      {name.slice(0, 3).toUpperCase()}
-    </div>
-  );
-}
 
 export default function BankAccountsPage() {
   const { addToast } = useToast();
@@ -97,36 +53,11 @@ export default function BankAccountsPage() {
   );
   const [editAccount, setEditAccount] = useState<BankAccount | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-  const [form, setForm] = useState({
-    bankName: "",
-    accountNumber: "",
-    accountHolder: "",
-    initialBalance: 0,
-    notes: "",
-  });
-  const [transferForm, setTransferForm] = useState({
-    fromAccountRef: "",
-    toAccountRef: "",
-    amount: 0,
-    date: new Date().toISOString().slice(0, 10),
-  });
-
-  const fmt = (n: number) =>
-    new Intl.NumberFormat("id-ID", {
-      style: "currency",
-      currency: "IDR",
-      minimumFractionDigits: 0,
-    }).format(n);
+  const [form, setForm] = useState(createDefaultBankAccountForm());
+  const [transferForm, setTransferForm] = useState(createDefaultBankTransferForm());
   const buildAccountsQuery = useCallback(
     (targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) =>
-      new URLSearchParams({
-        entity: "bank-accounts",
-        page: String(targetPage),
-        pageSize: String(targetPageSize),
-        sortField: "bankName",
-        sortDir: "asc",
-        filter: JSON.stringify({ active: true }),
-      }).toString(),
+      buildBankAccountsQuery({ page: targetPage, pageSize: targetPageSize }),
     [page],
   );
 
@@ -210,13 +141,7 @@ export default function BankAccountsPage() {
 
   const openNew = () => {
     setEditAccount(null);
-    setForm({
-      bankName: "",
-      accountNumber: "",
-      accountHolder: "",
-      initialBalance: 0,
-      notes: "",
-    });
+    setForm(createDefaultBankAccountForm());
     setShowModal(true);
   };
 
@@ -360,12 +285,7 @@ export default function BankAccountsPage() {
       }
 
       setShowTransfer(false);
-      setTransferForm({
-        fromAccountRef: "",
-        toAccountRef: "",
-        amount: 0,
-        date: new Date().toISOString().slice(0, 10),
-      });
+      setTransferForm(createDefaultBankTransferForm());
       addToast("success", "Transfer berhasil");
       await refreshAccounts();
     } catch {
@@ -451,7 +371,7 @@ export default function BankAccountsPage() {
               Total Saldo
             </div>
             <div style={{ fontSize: "1.6rem", fontWeight: 700 }}>
-              {fmt(totalBalance)}
+              {formatBankAccountCurrency(totalBalance)}
             </div>
           </div>
         </div>
@@ -464,7 +384,7 @@ export default function BankAccountsPage() {
               Saldo Bank
             </div>
             <div style={{ fontSize: "1.6rem", fontWeight: 700 }}>
-              {fmt(bankBalance)}
+              {formatBankAccountCurrency(bankBalance)}
             </div>
           </div>
         </div>
@@ -477,7 +397,7 @@ export default function BankAccountsPage() {
               Saldo Kas Tunai
             </div>
             <div style={{ fontSize: "1.6rem", fontWeight: 700 }}>
-              {fmt(cashBalance)}
+              {formatBankAccountCurrency(cashBalance)}
             </div>
           </div>
         </div>
@@ -500,7 +420,7 @@ export default function BankAccountsPage() {
               }}
             >
               {totalBalance - totalInitial >= 0 ? "+" : ""}
-              {fmt(totalBalance - totalInitial)}
+              {formatBankAccountCurrency(totalBalance - totalInitial)}
             </div>
           </div>
         </div>
@@ -627,7 +547,7 @@ export default function BankAccountsPage() {
                         Saldo
                       </div>
                       <div style={{ fontSize: "1.35rem", fontWeight: 700 }}>
-                        {fmt(account.currentBalance || 0)}
+                        {formatBankAccountCurrency(account.currentBalance || 0)}
                       </div>
                       <div
                         style={{
@@ -636,7 +556,7 @@ export default function BankAccountsPage() {
                         }}
                       >
                         {diff >= 0 ? "+" : ""}
-                        {fmt(diff)} dari saldo awal
+                        {formatBankAccountCurrency(diff)} dari saldo awal
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: "0.4rem" }}>
@@ -908,7 +828,7 @@ export default function BankAccountsPage() {
                   {accounts.map((account) => (
                     <option key={account._id} value={account._id}>
                       {account.bankName} - {account.accountNumber} (
-                      {fmt(account.currentBalance || 0)})
+                      {formatBankAccountCurrency(account.currentBalance || 0)})
                     </option>
                   ))}
                 </select>
@@ -936,7 +856,7 @@ export default function BankAccountsPage() {
                     .map((account) => (
                       <option key={account._id} value={account._id}>
                         {account.bankName} - {account.accountNumber} (
-                        {fmt(account.currentBalance || 0)})
+                        {formatBankAccountCurrency(account.currentBalance || 0)})
                       </option>
                     ))}
                 </select>

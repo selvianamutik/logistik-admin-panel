@@ -6,35 +6,22 @@ import { useRouter } from 'next/navigation';
 import { Search, Eye, Truck, FileDown, Printer } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import { formatDate, formatDateTime, DO_STATUS_MAP, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
+import {
+    buildDeliveryOrderExportRows,
+    buildDeliveryOrdersPrintHtml,
+    buildDeliveryOrdersQuery as buildDeliveryOrdersQueryString,
+    getDeliveryOrderApprovalSummary,
+    getDeliveryOrderDropSummary,
+    getDeliveryOrderServiceLabel,
+    getDeliveryOrderTrackingSummary,
+    getNextDeliveryOrderAction,
+    getSelectableDeliveryOrderServices,
+} from '@/lib/delivery-order-page-support';
 import { exportToExcel } from '@/lib/export';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { DeliveryOrder, Service } from '@/lib/types';
 import { useToast } from '../layout';
-
-const getNextDeliveryOrderAction = (deliveryOrder: DeliveryOrder) => {
-    if (deliveryOrder.pendingDriverStatus) {
-        return 'Approve / tolak update driver';
-    }
-    switch (deliveryOrder.status) {
-        case 'ARRIVED':
-            return 'Selesaikan trip';
-        case 'ON_DELIVERY':
-            return deliveryOrder.trackingState === 'ACTIVE' || deliveryOrder.trackingState === 'PAUSED'
-                ? 'Pantau perjalanan'
-                : 'Aktifkan tracking / pantau';
-        case 'HEADING_TO_PICKUP':
-            return 'Pantau menuju pickup';
-        case 'CREATED':
-            return 'Pastikan trip siap berangkat';
-        case 'DELIVERED':
-            return 'Cek POD / arsip';
-        case 'CANCELLED':
-            return 'Tidak ada tindak lanjut';
-        default:
-            return 'Buka detail trip';
-    }
-};
 
 export default function DeliveryOrdersPage() {
     const router = useRouter();
@@ -58,49 +45,15 @@ export default function DeliveryOrdersPage() {
         setPage(1);
     }, [search, statusFilter, serviceFilter]);
 
-    const buildDeliveryOrdersQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
-        const params = new URLSearchParams({
-            entity: 'delivery-orders',
-            page: String(targetPage),
-            pageSize: String(targetPageSize),
-            sortPreset: 'work-queue',
-        });
-
-        if (search.trim()) {
-            params.set('q', search.trim());
-            params.set('searchFields', [
-                'doNumber',
-                'customerDoNumber',
-                'customerName',
-                'vehiclePlate',
-                'driverName',
-                'serviceName',
-                'vehicleServiceName',
-                'vehicleCategoryOverrideReason',
-                'actualDropPoints[].locationName',
-                'actualDropPoints[].locationAddress',
-            ].join(','));
-        }
-
-        const filter: Record<string, unknown> = {};
-        if (statusFilter) {
-            filter.status = statusFilter;
-        }
-        if (Object.keys(filter).length > 0) {
-            params.set('filter', JSON.stringify(filter));
-        }
-
-        const orFilters: Array<{ fields: string[]; value: string | number | boolean }> = [];
-        if (serviceFilter) {
-            orFilters.push({ fields: ['serviceRef', 'vehicleServiceRef'], value: serviceFilter });
-        }
-
-        if (orFilters.length > 0) {
-            params.set('orFilters', JSON.stringify(orFilters));
-        }
-
-        return params.toString();
-    }, [page, search, serviceFilter, statusFilter]);
+    const buildDeliveryOrdersQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => (
+        buildDeliveryOrdersQueryString({
+            page: targetPage,
+            pageSize: targetPageSize,
+            search,
+            statusFilter,
+            serviceFilter,
+        })
+    ), [page, search, serviceFilter, statusFilter]);
 
     const fetchAllMatchingDeliveryOrders = useCallback(async () => {
         const pageSize = 200;
@@ -173,36 +126,9 @@ export default function DeliveryOrdersPage() {
         void loadDeliveryOrders();
     }, [loadDeliveryOrders]);
 
-    const getRequestedServiceLabel = (deliveryOrder: DeliveryOrder) => {
-        const service = services.find(item => item._id === deliveryOrder.serviceRef);
-        if (service) {
-            return `${service.code} - ${service.name}`;
-        }
-        return deliveryOrder.serviceName || '-';
-    };
-
-    const getActualServiceLabel = (deliveryOrder: DeliveryOrder) => {
-        if (deliveryOrder.vehicleServiceRef) {
-            const service = services.find(item => item._id === deliveryOrder.vehicleServiceRef);
-            if (service) {
-                return `${service.code} - ${service.name}`;
-            }
-        }
-        return deliveryOrder.vehicleServiceName || getRequestedServiceLabel(deliveryOrder);
-    };
-
-    const getServiceLabel = (deliveryOrder: DeliveryOrder) => {
-        const requested = getRequestedServiceLabel(deliveryOrder);
-        const actual = getActualServiceLabel(deliveryOrder);
-        if (deliveryOrder.vehicleCategoryOverrideReason && actual !== requested) {
-            return `${requested} -> ${actual}`;
-        }
-        return requested;
-    };
-
     const availableServiceOptions = useMemo(
-        () => services.filter(service => service.active !== false || service._id === serviceFilter),
-        [serviceFilter, services]
+        () => getSelectableDeliveryOrderServices({ services, serviceFilter, deliveryOrders: items }),
+        [items, serviceFilter, services]
     );
 
     return (
@@ -214,24 +140,25 @@ export default function DeliveryOrdersPage() {
                 </div>
                 <div className="page-actions">
                     <button className="btn btn-secondary btn-sm" onClick={async () => {
-                        exportToExcel(await fetchAllMatchingDeliveryOrders() as unknown as Record<string, unknown>[], [
+                        const printableDeliveryOrders = await fetchAllMatchingDeliveryOrders();
+                        exportToExcel(buildDeliveryOrderExportRows(printableDeliveryOrders, services) as unknown as Record<string, unknown>[], [
                             { header: 'No. SJ Customer', key: 'customerDoNumber', width: 22 },
                             { header: 'No. DO', key: 'doNumber', width: 18 },
                             { header: 'Resi', key: 'masterResi', width: 18 },
                             { header: 'Customer', key: 'customerName', width: 25 },
+                            { header: 'Kategori', key: 'serviceLabel', width: 24 },
                             { header: 'Kendaraan', key: 'vehiclePlate', width: 15 },
                             { header: 'Driver', key: 'driverName', width: 20 },
                             { header: 'Tanggal', key: 'date', width: 15 },
                             { header: 'Status', key: 'status', width: 15 },
+                            { header: 'Drop Aktual', key: 'actualDropPoints', width: 14 },
                         ], `surat-jalan-${new Date().toISOString().split('T')[0]}`, 'Surat Jalan');
                     }}><FileDown size={15} /> Excel</button>
                     <button className="btn btn-secondary btn-sm" onClick={async () => {
                         const co = await fetchCompanyProfile();
                         const printableDeliveryOrders = await fetchAllMatchingDeliveryOrders();
                         openBrandedPrint({
-                            title: 'Daftar Surat Jalan', company: co, bodyHtml: `
-                            <table><thead><tr><th>No. SJ Customer</th><th>No. Internal</th><th>Resi</th><th>Customer</th><th>Kendaraan</th><th>Driver</th><th>Tanggal</th><th>Status</th><th>Drop Aktual</th></tr></thead>
-                            <tbody>${printableDeliveryOrders.map(d => `<tr><td class="b">${d.customerDoNumber || d.doNumber || '-'}</td><td>${d.doNumber}</td><td>${d.masterResi || '-'}</td><td>${d.customerName || '-'}</td><td>${d.vehiclePlate || '-'}</td><td>${d.driverName || '-'}</td><td>${formatDate(d.date)}</td><td>${DO_STATUS_MAP[d.status]?.label || d.status}</td><td>${d.actualDropPoints?.length ? `${d.actualDropPoints.length} titik` : '-'}</td></tr>`).join('')}</tbody></table>`
+                            title: 'Daftar Surat Jalan', company: co, bodyHtml: buildDeliveryOrdersPrintHtml(printableDeliveryOrders, services),
                         });
                     }}><Printer size={15} /> Print</button>
                 </div>
@@ -297,7 +224,7 @@ export default function DeliveryOrdersPage() {
                                         <td><Link href={`/orders/${d.orderRef}`} className="text-muted">{d.masterResi}</Link></td>
                                         <td>{d.customerName}</td>
                                         <td>
-                                            <div>{getServiceLabel(d)}</div>
+                                            <div>{getDeliveryOrderServiceLabel(d, services)}</div>
                                             {d.vehicleCategoryOverrideReason && (
                                                 <div className="text-muted text-sm">Override tercatat</div>
                                             )}
@@ -374,7 +301,7 @@ export default function DeliveryOrdersPage() {
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Kategori</span>
                                         <span className="mobile-record-value">
-                                            {getServiceLabel(d)}
+                                            {getDeliveryOrderServiceLabel(d, services)}
                                             {d.vehicleCategoryOverrideReason ? ' | Override tercatat' : ''}
                                         </span>
                                     </div>
@@ -388,29 +315,17 @@ export default function DeliveryOrdersPage() {
                                     </div>
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Tracking</span>
-                                        <span className="mobile-record-value">
-                                            {d.trackingState === 'ACTIVE' || d.trackingState === 'PAUSED'
-                                                ? `${d.trackingState} | ${d.trackingLastSeenAt ? formatDateTime(d.trackingLastSeenAt) : 'Belum ada update'}`
-                                                : 'Belum aktif'}
-                                        </span>
+                                        <span className="mobile-record-value">{getDeliveryOrderTrackingSummary(d)}</span>
                                     </div>
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Drop Aktual</span>
-                                        <span className="mobile-record-value">
-                                            {d.actualDropPoints?.length
-                                                ? `${d.actualDropPoints.length} titik | ${d.actualDropPoints[0]?.locationName || '-'}`
-                                                : 'Belum dicatat'}
-                                        </span>
+                                        <span className="mobile-record-value">{getDeliveryOrderDropSummary(d)}</span>
                                     </div>
                                 </div>
                                 <div className="mobile-record-meta">
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Approval Driver</span>
-                                        <span className="mobile-record-value">
-                                            {d.pendingDriverStatus
-                                                ? `${DO_STATUS_MAP[d.pendingDriverStatus]?.label || d.pendingDriverStatus} | ${d.pendingDriverStatusRequestedAt ? formatDateTime(d.pendingDriverStatusRequestedAt) : 'Menunggu approval'}`
-                                                : 'Tidak ada'}
-                                        </span>
+                                        <span className="mobile-record-value">{getDeliveryOrderApprovalSummary(d)}</span>
                                     </div>
                                 </div>
                                 <div className="mobile-record-actions">

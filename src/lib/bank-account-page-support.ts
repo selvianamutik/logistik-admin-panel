@@ -1,4 +1,20 @@
+import { DEFAULT_PAGE_SIZE } from './pagination';
 import type { BankAccount } from './types';
+
+export type BankAccountFormState = {
+  bankName: string;
+  accountNumber: string;
+  accountHolder: string;
+  initialBalance: number;
+  notes: string;
+};
+
+export type BankTransferFormState = {
+  fromAccountRef: string;
+  toAccountRef: string;
+  amount: number;
+  date: string;
+};
 
 export const BANK_PRESETS: Record<
   string,
@@ -53,6 +69,47 @@ export function getBankPreset(bankName: string) {
       bankName.toUpperCase().includes(candidate.toUpperCase()),
   );
   return BANK_PRESETS[key || "OTHER"];
+}
+
+export function formatBankAccountCurrency(amount: number) {
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    minimumFractionDigits: 0,
+  }).format(amount);
+}
+
+export function buildBankAccountsQuery(params: {
+  page?: number;
+  pageSize?: number;
+}) {
+  return new URLSearchParams({
+    entity: "bank-accounts",
+    page: String(params.page ?? 1),
+    pageSize: String(params.pageSize ?? DEFAULT_PAGE_SIZE),
+    sortField: "bankName",
+    sortDir: "asc",
+    filter: JSON.stringify({ active: true }),
+  }).toString();
+}
+
+export function createDefaultBankAccountForm(): BankAccountFormState {
+  return {
+    bankName: "",
+    accountNumber: "",
+    accountHolder: "",
+    initialBalance: 0,
+    notes: "",
+  };
+}
+
+export function createDefaultBankTransferForm(): BankTransferFormState {
+  return {
+    fromAccountRef: "",
+    toAccountRef: "",
+    amount: 0,
+    date: new Date().toISOString().slice(0, 10),
+  };
 }
 
 export function getAccountNextAction(account: BankAccount) {
