@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useToast } from '../../layout';
 import { Plus, Search, UserCircle, Save, X, Edit2, ToggleLeft, ToggleRight, Smartphone } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import { formatDateTime } from '@/lib/utils';
-import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
+import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { Driver, User } from '@/lib/types';
 
 type DriverMobileAccount = Pick<User, '_id' | 'name' | 'email' | 'active' | 'driverRef' | 'driverName' | 'lastLoginAt'>;
@@ -17,6 +17,10 @@ export default function DriversPage() {
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [page, setPage] = useState(1);
+    const [totalDrivers, setTotalDrivers] = useState(0);
+    const [activeDrivers, setActiveDrivers] = useState(0);
+    const [mobileReadyDrivers, setMobileReadyDrivers] = useState(0);
+    const [inactiveDrivers, setInactiveDrivers] = useState(0);
     const [showModal, setShowModal] = useState(false);
     const [showAccessModal, setShowAccessModal] = useState(false);
     const [editId, setEditId] = useState<string | null>(null);
@@ -28,73 +32,110 @@ export default function DriversPage() {
     const [accountForm, setAccountForm] = useState({ accountId: '', name: '', email: '', password: '', active: true });
 
     useEffect(() => {
-        const loadDrivers = async () => {
-            try {
-                const [driverRes, accountRes] = await Promise.all([
-                    fetch('/api/data?entity=drivers'),
-                    fetch('/api/driver/accounts'),
-                ]);
-
-                const driverPayload = await driverRes.json();
-                const accountPayload = await accountRes.json();
-
-                if (!driverRes.ok) {
-                    throw new Error(driverPayload.error || 'Gagal memuat data supir');
-                }
-                if (!accountRes.ok) {
-                    throw new Error(accountPayload.error || 'Gagal memuat akses mobile driver');
-                }
-
-                setItems(driverPayload.data || []);
-                setAccounts(accountPayload.data || []);
-            } catch (error) {
-                addToast('error', error instanceof Error ? error.message : 'Gagal memuat data supir');
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        void loadDrivers();
-    }, [addToast]);
-
-    useEffect(() => {
         setPage(1);
     }, [search]);
 
-    const filtered = items.filter(d => !search || d.name.toLowerCase().includes(search.toLowerCase()) || d.phone.includes(search) || d.licenseNumber.toLowerCase().includes(search.toLowerCase()));
-    const paginatedDrivers = paginateItems(filtered, page, DEFAULT_PAGE_SIZE);
+    const buildDriversQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
+        const params = new URLSearchParams({
+            entity: 'drivers',
+            page: String(targetPage),
+            pageSize: String(targetPageSize),
+            sortField: 'name',
+            sortDir: 'asc',
+        });
+        if (search.trim()) {
+            params.set('q', search.trim());
+            params.set('searchFields', 'name,phone,licenseNumber');
+        }
+        return params.toString();
+    }, [page, search]);
+
+    const loadDrivers = useCallback(async () => {
+        setLoading(true);
+        try {
+            const listRes = await fetch(`/api/data?${buildDriversQuery()}`);
+            const listPayload = await listRes.json();
+            if (!listRes.ok) {
+                throw new Error(listPayload.error || 'Gagal memuat data supir');
+            }
+
+            const drivers = (listPayload.data || []) as Driver[];
+            const driverRefs = drivers.map(driver => driver._id).join(',');
+
+            const [accountsRes, activeRes, inactiveRes, mobileReadyRes] = await Promise.all([
+                fetch(`/api/driver/accounts${driverRefs ? `?driverRefs=${encodeURIComponent(driverRefs)}` : ''}`),
+                fetch(`/api/data?entity=drivers&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ active: true }))}`),
+                fetch(`/api/data?entity=drivers&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ active: false }))}`),
+                fetch('/api/driver/accounts?countOnly=1&activeOnly=1'),
+            ]);
+
+            const [accountsPayload, activePayload, inactivePayload, mobileReadyPayload] = await Promise.all([
+                accountsRes.json(),
+                activeRes.json(),
+                inactiveRes.json(),
+                mobileReadyRes.json(),
+            ]);
+
+            if (!accountsRes.ok) throw new Error(accountsPayload.error || 'Gagal memuat akses mobile driver');
+            if (!activeRes.ok) throw new Error(activePayload.error || 'Gagal memuat statistik supir');
+            if (!inactiveRes.ok) throw new Error(inactivePayload.error || 'Gagal memuat statistik supir');
+            if (!mobileReadyRes.ok) throw new Error(mobileReadyPayload.error || 'Gagal memuat statistik app driver');
+
+            setItems(drivers);
+            setTotalDrivers(listPayload.meta?.total || 0);
+            setAccounts(accountsPayload.data || []);
+            setActiveDrivers(activePayload.meta?.total || 0);
+            setInactiveDrivers(inactivePayload.meta?.total || 0);
+            setMobileReadyDrivers(mobileReadyPayload.meta?.total || 0);
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat data supir');
+        } finally {
+            setLoading(false);
+        }
+    }, [addToast, buildDriversQuery]);
+
+    useEffect(() => {
+        void loadDrivers();
+    }, [loadDrivers]);
+
     const accountByDriverRef = new Map(accounts.filter(account => account.driverRef).map(account => [account.driverRef as string, account]));
     const isDriverActive = (driver: Pick<Driver, 'active'>) => driver.active !== false;
     const isAccountActive = (account: Pick<DriverMobileAccount, 'active'>) => account.active !== false;
-    const activeDrivers = items.filter(driver => isDriverActive(driver)).length;
-    const mobileReadyDrivers = items.filter(driver => {
-        const account = accountByDriverRef.get(driver._id);
-        return isDriverActive(driver) && !!account && isAccountActive(account);
-    }).length;
-    const inactiveDrivers = items.filter(driver => !isDriverActive(driver)).length;
+
+    const closeModal = () => {
+        if (savingDriver) return;
+        setShowModal(false);
+        setEditId(null);
+        setForm({ name: '', phone: '', licenseNumber: '', ktpNumber: '', simExpiry: '', address: '', active: true });
+    };
 
     const handleSave = async () => {
-        if (!form.name || !form.phone) { addToast('error', 'Nama dan no. HP wajib diisi'); return; }
+        if (!form.name || !form.phone) {
+            addToast('error', 'Nama dan no. HP wajib diisi');
+            return;
+        }
         setSavingDriver(true);
         try {
             const res = await fetch('/api/data', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(editId
-                    ? { entity: 'drivers', action: 'update', data: { id: editId, updates: form } }
-                    : { entity: 'drivers', data: form })
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(
+                    editId
+                        ? { entity: 'drivers', action: 'update', data: { id: editId, updates: form } }
+                        : { entity: 'drivers', data: form }
+                ),
             });
-            const d = await res.json();
+            const payload = await res.json();
             if (!res.ok) {
-                addToast('error', d.error || 'Gagal menyimpan data supir');
+                addToast('error', payload.error || 'Gagal menyimpan data supir');
                 return;
             }
-            if (editId) {
-                setItems(prev => prev.map(i => i._id === editId ? d.data : i));
-                addToast('success', 'Supir diperbarui');
+            if (!editId && page !== 1) {
+                setPage(1);
             } else {
-                setItems(prev => [...prev, d.data]);
-                addToast('success', 'Supir ditambahkan');
+                await loadDrivers();
             }
+            addToast('success', editId ? 'Supir diperbarui' : 'Supir ditambahkan');
             closeModal();
         } catch {
             addToast('error', 'Gagal menyimpan data supir');
@@ -107,38 +148,25 @@ export default function DriversPage() {
         const currentlyActive = isDriverActive(driver);
         setTogglingDriverId(driver._id);
         try {
-            const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'drivers', action: 'update', data: { id: driver._id, updates: { active: !currentlyActive } } }) });
-            const d = await res.json();
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entity: 'drivers', action: 'update', data: { id: driver._id, updates: { active: !currentlyActive } } }),
+            });
+            const payload = await res.json();
             if (!res.ok) {
-                addToast('error', d.error || 'Gagal memperbarui status supir');
+                addToast('error', payload.error || 'Gagal memperbarui status supir');
                 return;
             }
-            setItems(prev => prev.map(i => i._id === driver._id ? d.data : i));
-            if (currentlyActive) {
-                const disabledAccountIds = Array.isArray(d.meta?.disabledDriverAccountIds)
-                    ? d.meta.disabledDriverAccountIds.filter((value: unknown): value is string => typeof value === 'string')
-                    : [];
-                const syncedAccountIds = Array.isArray(d.meta?.syncedDriverAccountIds)
-                    ? d.meta.syncedDriverAccountIds.filter((value: unknown): value is string => typeof value === 'string')
-                    : [];
-                const nextDriverName = typeof d.data?.name === 'string' ? d.data.name : driver.name;
-                const accountIdsToSync = new Set([...disabledAccountIds, ...syncedAccountIds]);
-                if (accountIdsToSync.size > 0) {
-                    setAccounts(prev => prev.map(account => (
-                        accountIdsToSync.has(account._id)
-                            ? {
-                                ...account,
-                                driverName: nextDriverName,
-                                active: disabledAccountIds.includes(account._id) ? false : account.active,
-                            }
-                            : account
-                    )));
-                }
 
-                const stoppedTrackingCount = typeof d.meta?.stoppedTrackingCount === 'number' ? d.meta.stoppedTrackingCount : 0;
+            await loadDrivers();
+
+            if (currentlyActive) {
+                const stoppedTrackingCount = typeof payload.meta?.stoppedTrackingCount === 'number' ? payload.meta.stoppedTrackingCount : 0;
+                const disabledAccounts = Array.isArray(payload.meta?.disabledDriverAccountIds) ? payload.meta.disabledDriverAccountIds.length : 0;
                 const messageParts = ['Supir dinon-aktifkan'];
-                if (disabledAccountIds.length > 0) {
-                    messageParts.push(`${disabledAccountIds.length} akun mobile ikut dinonaktifkan`);
+                if (disabledAccounts > 0) {
+                    messageParts.push(`${disabledAccounts} akun mobile ikut dinonaktifkan`);
                 }
                 if (stoppedTrackingCount > 0) {
                     messageParts.push(`${stoppedTrackingCount} tracking aktif dihentikan`);
@@ -217,10 +245,7 @@ export default function DriversPage() {
                 return;
             }
 
-            setAccounts(prev => {
-                const next = prev.filter(item => item._id !== payload.data._id);
-                return [...next, payload.data as DriverMobileAccount].sort((a, b) => a.name.localeCompare(b.name));
-            });
+            await loadDrivers();
             const stoppedTrackingCount = typeof payload.meta?.stoppedTrackingCount === 'number' ? payload.meta.stoppedTrackingCount : 0;
             const successMessage = accountForm.accountId
                 ? stoppedTrackingCount > 0
@@ -236,16 +261,18 @@ export default function DriversPage() {
         }
     };
 
-    const openEdit = (d: Driver) => {
-        setEditId(d._id);
-        setForm({ name: d.name, phone: d.phone, licenseNumber: d.licenseNumber, ktpNumber: d.ktpNumber || '', simExpiry: d.simExpiry || '', address: d.address || '', active: d.active !== false });
+    const openEdit = (driver: Driver) => {
+        setEditId(driver._id);
+        setForm({
+            name: driver.name,
+            phone: driver.phone,
+            licenseNumber: driver.licenseNumber,
+            ktpNumber: driver.ktpNumber || '',
+            simExpiry: driver.simExpiry || '',
+            address: driver.address || '',
+            active: driver.active !== false,
+        });
         setShowModal(true);
-    };
-    const closeModal = () => {
-        if (savingDriver) return;
-        setShowModal(false);
-        setEditId(null);
-        setForm({ name: '', phone: '', licenseNumber: '', ktpNumber: '', simExpiry: '', address: '', active: true });
     };
 
     return (
@@ -266,101 +293,99 @@ export default function DriversPage() {
                         <thead><tr><th>Nama</th><th>No. HP</th><th>No. SIM</th><th>SIM Berlaku</th><th>Akses Mobile</th><th>Status</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                paginatedDrivers.totalItems === 0 ? <tr><td colSpan={7}><div className="empty-state"><UserCircle size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada supir</div></div></td></tr> :
-                                    paginatedDrivers.items.map(d => (
-                                        (() => {
-                                            const account = accountByDriverRef.get(d._id);
-                                            return (
-                                        <tr key={d._id}>
-                                            <td className="font-medium">{d.name}</td>
-                                            <td>{d.phone}</td>
-                                            <td>{d.licenseNumber || '-'}</td>
-                                            <td className="text-muted">{d.simExpiry || '-'}</td>
-                                            <td>
-                                                {account ? (
-                                                    <div>
-                                                        <div className="font-medium" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                                                            <Smartphone size={14} /> {account.email}
+                                totalDrivers === 0 ? <tr><td colSpan={7}><div className="empty-state"><UserCircle size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada supir</div></div></td></tr> :
+                                    items.map(driver => {
+                                        const account = accountByDriverRef.get(driver._id);
+                                        return (
+                                            <tr key={driver._id}>
+                                                <td className="font-medium">{driver.name}</td>
+                                                <td>{driver.phone}</td>
+                                                <td>{driver.licenseNumber || '-'}</td>
+                                                <td className="text-muted">{driver.simExpiry || '-'}</td>
+                                                <td>
+                                                    {account ? (
+                                                        <div>
+                                                            <div className="font-medium" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                                                <Smartphone size={14} /> {account.email}
+                                                            </div>
+                                                            <div className="text-muted text-sm">
+                                                                {isAccountActive(account) ? 'Aktif' : 'Non-aktif'}
+                                                                {account.lastLoginAt ? ` | Login terakhir ${formatDateTime(account.lastLoginAt)}` : ' | Belum pernah login'}
+                                                            </div>
                                                         </div>
-                                                        <div className="text-muted text-sm">
-                                                            {isAccountActive(account) ? 'Aktif' : 'Non-aktif'}
-                                                            {account.lastLoginAt ? ` | Login terakhir ${formatDateTime(account.lastLoginAt)}` : ' | Belum pernah login'}
-                                                        </div>
+                                                    ) : (
+                                                        <span className="text-muted">Belum ada akun mobile</span>
+                                                    )}
+                                                </td>
+                                                <td><span className={`badge ${isDriverActive(driver) ? 'badge-green' : 'badge-gray'}`}>{isDriverActive(driver) ? 'Aktif' : 'Non-aktif'}</span></td>
+                                                <td>
+                                                    <div style={{ display: 'flex', gap: '0.25rem' }}>
+                                                        <button className="btn btn-ghost btn-sm" onClick={() => openEdit(driver)} title="Edit"><Edit2 size={14} /></button>
+                                                        <button
+                                                            className="btn btn-ghost btn-sm"
+                                                            onClick={() => openAccessModal(driver)}
+                                                            title={isDriverActive(driver) ? 'Atur akses mobile' : 'Aktifkan supir dulu untuk mengatur akses mobile'}
+                                                            disabled={!isDriverActive(driver) || togglingDriverId === driver._id}
+                                                        >
+                                                            <Smartphone size={14} />
+                                                        </button>
+                                                        <button className="btn btn-ghost btn-sm" onClick={() => toggleActive(driver)} title={isDriverActive(driver) ? 'Nonaktifkan' : 'Aktifkan'} disabled={togglingDriverId === driver._id}>
+                                                            {isDriverActive(driver) ? <ToggleRight size={14} className="text-green" /> : <ToggleLeft size={14} />}
+                                                        </button>
                                                     </div>
-                                                ) : (
-                                                    <span className="text-muted">Belum ada akun mobile</span>
-                                                )}
-                                            </td>
-                                            <td><span className={`badge ${isDriverActive(d) ? 'badge-green' : 'badge-gray'}`}>{isDriverActive(d) ? 'Aktif' : 'Non-aktif'}</span></td>
-                                            <td>
-                                                <div style={{ display: 'flex', gap: '0.25rem' }}>
-                                                    <button className="btn btn-ghost btn-sm" onClick={() => openEdit(d)} title="Edit"><Edit2 size={14} /></button>
-                                                    <button
-                                                        className="btn btn-ghost btn-sm"
-                                                        onClick={() => openAccessModal(d)}
-                                                        title={isDriverActive(d) ? 'Atur akses mobile' : 'Aktifkan supir dulu untuk mengatur akses mobile'}
-                                                        disabled={!isDriverActive(d) || togglingDriverId === d._id}
-                                                    >
-                                                        <Smartphone size={14} />
-                                                    </button>
-                                                    <button className="btn btn-ghost btn-sm" onClick={() => toggleActive(d)} title={isDriverActive(d) ? 'Nonaktifkan' : 'Aktifkan'} disabled={togglingDriverId === d._id}>
-                                                        {isDriverActive(d) ? <ToggleRight size={14} className="text-green" /> : <ToggleLeft size={14} />}
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                            );
-                                        })()
-                                    ))}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
                         </tbody>
                     </table>
                 </div>
                 {!loading && (
                     <div className="mobile-record-list">
-                        {paginatedDrivers.totalItems === 0 ? (
+                        {totalDrivers === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada supir</div>
                                 <div className="mobile-record-subtitle">Tambahkan supir agar bisa dipakai di surat jalan dan tracking driver.</div>
                             </div>
-                        ) : paginatedDrivers.items.map(d => {
-                            const account = accountByDriverRef.get(d._id);
+                        ) : items.map(driver => {
+                            const account = accountByDriverRef.get(driver._id);
                             return (
-                                <div key={d._id} className="mobile-record-card">
+                                <div key={driver._id} className="mobile-record-card">
                                     <div className="mobile-record-header">
                                         <div>
-                                            <div className="mobile-record-title">{d.name}</div>
-                                            <div className="mobile-record-subtitle">{d.phone} • {d.licenseNumber || 'SIM belum diisi'}</div>
+                                            <div className="mobile-record-title">{driver.name}</div>
+                                            <div className="mobile-record-subtitle">{driver.phone} | {driver.licenseNumber || 'SIM belum diisi'}</div>
                                         </div>
-                                        <span className={`badge ${isDriverActive(d) ? 'badge-green' : 'badge-gray'}`}>{isDriverActive(d) ? 'Aktif' : 'Non-aktif'}</span>
+                                        <span className={`badge ${isDriverActive(driver) ? 'badge-green' : 'badge-gray'}`}>{isDriverActive(driver) ? 'Aktif' : 'Non-aktif'}</span>
                                     </div>
                                     <div className="mobile-record-meta">
                                         <div className="mobile-record-kv">
                                             <span className="mobile-record-label">SIM Berlaku</span>
-                                            <span className="mobile-record-value">{d.simExpiry || '-'}</span>
+                                            <span className="mobile-record-value">{driver.simExpiry || '-'}</span>
                                         </div>
                                         <div className="mobile-record-kv">
                                             <span className="mobile-record-label">Akses Mobile</span>
                                             <span className="mobile-record-value">
                                                 {account
-                                                    ? `${account.email} • ${isAccountActive(account) ? 'Aktif' : 'Non-aktif'}${account.lastLoginAt ? ` • Login ${formatDateTime(account.lastLoginAt)}` : ''}`
+                                                    ? `${account.email} | ${isAccountActive(account) ? 'Aktif' : 'Non-aktif'}${account.lastLoginAt ? ` | Login ${formatDateTime(account.lastLoginAt)}` : ''}`
                                                     : 'Belum ada akun mobile'}
                                             </span>
                                         </div>
                                     </div>
                                     <div className="mobile-record-actions">
-                                        <button className="btn btn-secondary" onClick={() => openEdit(d)}>
+                                        <button className="btn btn-secondary" onClick={() => openEdit(driver)}>
                                             <Edit2 size={14} /> Edit
                                         </button>
                                         <button
                                             className="btn btn-secondary"
-                                            onClick={() => openAccessModal(d)}
-                                            disabled={!isDriverActive(d) || togglingDriverId === d._id}
+                                            onClick={() => openAccessModal(driver)}
+                                            disabled={!isDriverActive(driver) || togglingDriverId === driver._id}
                                         >
                                             <Smartphone size={14} /> Akses Mobile
                                         </button>
-                                        <button className="btn btn-secondary" onClick={() => toggleActive(d)} disabled={togglingDriverId === d._id}>
-                                            {isDriverActive(d) ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
-                                            {togglingDriverId === d._id ? 'Menyimpan...' : (isDriverActive(d) ? 'Nonaktifkan' : 'Aktifkan')}
+                                        <button className="btn btn-secondary" onClick={() => toggleActive(driver)} disabled={togglingDriverId === driver._id}>
+                                            {isDriverActive(driver) ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
+                                            {togglingDriverId === driver._id ? 'Menyimpan...' : (isDriverActive(driver) ? 'Nonaktifkan' : 'Aktifkan')}
                                         </button>
                                     </div>
                                 </div>
@@ -368,11 +393,11 @@ export default function DriversPage() {
                         })}
                     </div>
                 )}
-                {paginatedDrivers.totalItems > 0 && (
+                {totalDrivers > 0 && (
                     <AppPagination
-                        page={paginatedDrivers.currentPage}
+                        page={page}
                         pageSize={DEFAULT_PAGE_SIZE}
-                        totalItems={paginatedDrivers.totalItems}
+                        totalItems={totalDrivers}
                         onPageChange={setPage}
                         info={({ startIndex, endIndex, totalItems }) => (
                             <>Menampilkan {startIndex}-{endIndex} dari {totalItems} supir</>

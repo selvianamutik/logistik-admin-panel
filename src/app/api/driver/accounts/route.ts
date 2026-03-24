@@ -124,14 +124,40 @@ async function deactivateDriverAccountAtomically(input: {
     return { stoppedTrackingCount: trackedDeliveryOrders.length };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
     const auth = await requireInternalSession(['OWNER', 'ARMADA']);
     if ('error' in auth) {
         return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
 
+    const { searchParams } = new URL(request.url);
+    const driverRefsParam = searchParams.get('driverRefs');
+    const countOnly = searchParams.get('countOnly') === '1';
+    const activeOnly = searchParams.get('activeOnly') === '1';
+    const driverRefs = driverRefsParam
+        ? driverRefsParam.split(',').map(value => value.trim()).filter(Boolean)
+        : [];
+
+    const conditions = ['_type == "user"', 'role == "DRIVER"'];
+    const params: Record<string, unknown> = {};
+
+    if (activeOnly) {
+        conditions.push('active != false');
+    }
+    if (driverRefs.length > 0) {
+        conditions.push('driverRef in $driverRefs');
+        params.driverRefs = driverRefs;
+    }
+
+    const whereClause = conditions.join(' && ');
+
+    if (countOnly) {
+        const total = await getSanityClient().fetch<number>(`count(*[${whereClause}])`, params);
+        return NextResponse.json({ data: [], meta: { total } });
+    }
+
     const accounts = await getSanityClient().fetch<Array<Pick<User, '_id' | 'name' | 'email' | 'active' | 'driverRef' | 'driverName' | 'lastLoginAt'>>>(
-        `*[_type == "user" && role == "DRIVER"] | order(name asc){
+        `*[${whereClause}] | order(name asc){
             _id,
             name,
             email,
@@ -139,7 +165,8 @@ export async function GET() {
             driverRef,
             driverName,
             lastLoginAt
-        }`
+        }`,
+        params
     );
 
     return NextResponse.json({ data: accounts });

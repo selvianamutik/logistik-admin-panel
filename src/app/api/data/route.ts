@@ -316,6 +316,38 @@ async function getDashboardSummary(session: Session): Promise<DashboardSummary> 
     };
 }
 
+async function getCustomersSummary(ids: string[] = []) {
+    const client = getSanityClient();
+    const [totalCustomers, totalProducts, customersWithCustomPrefix, customersWithProductsRaw, productRefs] = await Promise.all([
+        client.fetch<number>(`count(*[_type == "customer"])`),
+        client.fetch<number>(`count(*[_type == "customerProduct"])`),
+        client.fetch<number>(`count(*[_type == "customer" && defined(deliveryOrderPrefix) && deliveryOrderPrefix != "" && deliveryOrderPrefix != "SJ"])`),
+        client.fetch<string[]>(`array::unique(*[_type == "customerProduct" && defined(customerRef)].customerRef)`),
+        ids.length > 0
+            ? client.fetch<Array<{ customerRef?: string }>>(
+                `*[_type == "customerProduct" && customerRef in $ids]{ customerRef }`,
+                { ids }
+            )
+            : Promise.resolve([]),
+    ]);
+
+    const productCounts = productRefs.reduce<Record<string, number>>((acc, product) => {
+        if (!product.customerRef) return acc;
+        acc[product.customerRef] = (acc[product.customerRef] || 0) + 1;
+        return acc;
+    }, {});
+
+    const customersWithProducts = Array.isArray(customersWithProductsRaw) ? customersWithProductsRaw.length : 0;
+
+    return {
+        totalCustomers,
+        totalProducts,
+        customersWithCustomPrefix,
+        customersNeedingCatalog: Math.max(totalCustomers - customersWithProducts, 0),
+        productCounts,
+    };
+}
+
 
 export async function GET(request: Request) {
     const session = await getSession();
@@ -349,6 +381,23 @@ export async function GET(request: Request) {
             return NextResponse.json({ data: summary });
         } catch (err) {
             console.error('API GET Dashboard Summary Error:', err);
+            return NextResponse.json({ error: 'Server error' }, { status: 500 });
+        }
+    }
+
+    if (entity === 'customers-summary') {
+        if (!hasPermission(session.role, 'customers', 'view')) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
+        try {
+            const idsParam = searchParams.get('ids');
+            const ids = idsParam
+                ? idsParam.split(',').map(value => value.trim()).filter(Boolean)
+                : [];
+            const summary = await getCustomersSummary(ids);
+            return NextResponse.json({ data: summary });
+        } catch (err) {
+            console.error('API GET Customer Summary Error:', err);
             return NextResponse.json({ error: 'Server error' }, { status: 500 });
         }
     }

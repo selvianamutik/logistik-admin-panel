@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useToast } from '../layout';
 import { Plus, Search, Edit, Trash2, Users, Save, X, FileDown, Printer } from 'lucide-react';
@@ -9,8 +9,8 @@ import AppPagination from '@/components/AppPagination';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { exportToExcel } from '@/lib/export';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
-import { DEFAULT_PAGE_SIZE, paginateItems } from '@/lib/pagination';
-import type { Customer, CustomerProduct } from '@/lib/types';
+import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
+import type { Customer } from '@/lib/types';
 
 export default function CustomersPage() {
     const { addToast } = useToast();
@@ -19,6 +19,11 @@ export default function CustomersPage() {
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [page, setPage] = useState(1);
+    const [filteredTotalCustomers, setFilteredTotalCustomers] = useState(0);
+    const [totalCustomers, setTotalCustomers] = useState(0);
+    const [totalProducts, setTotalProducts] = useState(0);
+    const [customersNeedingCatalog, setCustomersNeedingCatalog] = useState(0);
+    const [customersWithCustomPrefix, setCustomersWithCustomPrefix] = useState(0);
     const [showModal, setShowModal] = useState(false);
     const [saving, setSaving] = useState(false);
     const [editItem, setEditItem] = useState<Customer | null>(null);
@@ -26,54 +31,84 @@ export default function CustomersPage() {
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
 
-    useEffect(() => {
-        const fetchEntity = async <T,>(url: string) => {
-            const res = await fetch(url);
+    const buildCustomersQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
+        const params = new URLSearchParams({
+            entity: 'customers',
+            page: String(targetPage),
+            pageSize: String(targetPageSize),
+            sortField: 'name',
+            sortDir: 'asc',
+        });
+
+        if (search.trim()) {
+            params.set('q', search.trim());
+            params.set('searchFields', 'name,contactPerson,deliveryOrderPrefix');
+        }
+
+        return params.toString();
+    }, [page, search]);
+
+    const fetchAllMatchingCustomers = useCallback(async () => {
+        const pageSize = 200;
+        let currentPage = 1;
+        let total = 0;
+        const allItems: Customer[] = [];
+
+        do {
+            const res = await fetch(`/api/data?${buildCustomersQuery(currentPage, pageSize)}`);
             const payload = await res.json();
             if (!res.ok) {
                 throw new Error(payload.error || 'Gagal memuat customer');
             }
-            return payload.data as T;
-        };
 
-        const loadCustomers = async () => {
-            try {
-                const [customers, products] = await Promise.all([
-                    fetchEntity<Customer[]>('/api/data?entity=customers'),
-                    fetchEntity<CustomerProduct[]>('/api/data?entity=customer-products'),
-                ]);
-                setItems(customers || []);
-                setCustomerProductCounts(
-                    (products || []).reduce<Record<string, number>>((acc, product) => {
-                        if (!product.customerRef) return acc;
-                        acc[product.customerRef] = (acc[product.customerRef] || 0) + 1;
-                        return acc;
-                    }, {})
-                );
-            } catch (error) {
-                addToast('error', error instanceof Error ? error.message : 'Gagal memuat customer');
-            } finally {
-                setLoading(false);
+            const nextItems = (payload.data || []) as Customer[];
+            total = payload.meta?.total || nextItems.length;
+            allItems.push(...nextItems);
+            if (nextItems.length === 0) break;
+            currentPage += 1;
+        } while (allItems.length < total);
+
+        return allItems;
+    }, [buildCustomersQuery]);
+
+    const loadCustomers = useCallback(async () => {
+        setLoading(true);
+        try {
+            const listRes = await fetch(`/api/data?${buildCustomersQuery()}`);
+            const listPayload = await listRes.json();
+            if (!listRes.ok) {
+                throw new Error(listPayload.error || 'Gagal memuat customer');
             }
-        };
 
+            const customers = (listPayload.data || []) as Customer[];
+            const idsParam = customers.map(customer => customer._id).join(',');
+            const summaryRes = await fetch(`/api/data?entity=customers-summary${idsParam ? `&ids=${encodeURIComponent(idsParam)}` : ''}`);
+            const summaryPayload = await summaryRes.json();
+            if (!summaryRes.ok) {
+                throw new Error(summaryPayload.error || 'Gagal memuat ringkasan customer');
+            }
+
+            setItems(customers);
+            setFilteredTotalCustomers(listPayload.meta?.total || 0);
+            setCustomerProductCounts(summaryPayload.data?.productCounts || {});
+            setTotalCustomers(summaryPayload.data?.totalCustomers || 0);
+            setTotalProducts(summaryPayload.data?.totalProducts || 0);
+            setCustomersNeedingCatalog(summaryPayload.data?.customersNeedingCatalog || 0);
+            setCustomersWithCustomPrefix(summaryPayload.data?.customersWithCustomPrefix || 0);
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat customer');
+        } finally {
+            setLoading(false);
+        }
+    }, [addToast, buildCustomersQuery]);
+
+    useEffect(() => {
         void loadCustomers();
-    }, [addToast]);
+    }, [loadCustomers]);
 
     useEffect(() => {
         setPage(1);
     }, [search]);
-
-    const filtered = items.filter(c =>
-        !search ||
-        c.name?.toLowerCase().includes(search.toLowerCase()) ||
-        c.contactPerson?.toLowerCase().includes(search.toLowerCase()) ||
-        c.deliveryOrderPrefix?.toLowerCase().includes(search.toLowerCase())
-    );
-    const paginatedCustomers = paginateItems(filtered, page, DEFAULT_PAGE_SIZE);
-    const totalProducts = Object.values(customerProductCounts).reduce((sum, count) => sum + count, 0);
-    const customersNeedingCatalog = items.filter(customer => (customerProductCounts[customer._id] || 0) === 0).length;
-    const customersWithCustomPrefix = items.filter(customer => (customer.deliveryOrderPrefix || 'SJ') !== 'SJ').length;
 
     const openNew = () => {
         setEditItem(null);
@@ -119,7 +154,7 @@ export default function CustomersPage() {
                     addToast('error', result.error || 'Gagal memperbarui customer');
                     return;
                 }
-                setItems(prev => prev.map(customer => customer._id === editItem._id ? { ...customer, ...form } : customer));
+                await loadCustomers();
                 addToast('success', 'Customer diperbarui');
             } else {
                 const res = await fetch('/api/data', {
@@ -132,7 +167,11 @@ export default function CustomersPage() {
                     addToast('error', result.error || 'Gagal menambahkan customer');
                     return;
                 }
-                setItems(prev => [...prev, result.data]);
+                if (page !== 1) {
+                    setPage(1);
+                } else {
+                    await loadCustomers();
+                }
                 addToast('success', 'Customer ditambahkan');
             }
             setShowModal(false);
@@ -157,7 +196,11 @@ export default function CustomersPage() {
                 setDeleteId(null);
                 return;
             }
-            setItems(prev => prev.filter(customer => customer._id !== id));
+            if (page > 1 && items.length === 1) {
+                setPage(current => Math.max(1, current - 1));
+            } else {
+                await loadCustomers();
+            }
             setDeleteId(null);
             addToast('success', 'Customer dihapus');
         } catch {
@@ -178,8 +221,8 @@ export default function CustomersPage() {
                 <div className="page-actions">
                     <button
                         className="btn btn-secondary btn-sm"
-                        onClick={() => {
-                            exportToExcel(filtered as unknown as Record<string, unknown>[], [
+                        onClick={async () => {
+                            exportToExcel(await fetchAllMatchingCustomers() as unknown as Record<string, unknown>[], [
                                 { header: 'Nama', key: 'name', width: 25 },
                                 { header: 'Kontak', key: 'contactPerson', width: 20 },
                                 { header: 'Telepon', key: 'phone', width: 18 },
@@ -195,6 +238,14 @@ export default function CustomersPage() {
                         className="btn btn-secondary btn-sm"
                         onClick={async () => {
                             const company = await fetchCompanyProfile();
+                            const printableCustomers = await fetchAllMatchingCustomers();
+                            const printableIds = printableCustomers.map(customer => customer._id).join(',');
+                            const summaryRes = await fetch(`/api/data?entity=customers-summary${printableIds ? `&ids=${encodeURIComponent(printableIds)}` : ''}`);
+                            const summaryPayload = await summaryRes.json();
+                            if (!summaryRes.ok) {
+                                throw new Error(summaryPayload.error || 'Gagal memuat ringkasan customer');
+                            }
+                            const printableCounts = summaryPayload.data?.productCounts || {};
                             openBrandedPrint({
                                 title: 'Daftar Customer',
                                 company,
@@ -212,14 +263,14 @@ export default function CustomersPage() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        ${filtered.map(customer => `<tr>
+                                        ${printableCustomers.map(customer => `<tr>
                                             <td class="b">${customer.name}</td>
                                             <td>${customer.contactPerson || '-'}</td>
                                             <td>${customer.phone || '-'}</td>
                                             <td>${customer.email || '-'}</td>
                                             <td>${customer.address || '-'}</td>
                                             <td>${customer.deliveryOrderPrefix || 'SJ'}</td>
-                                            <td>${customerProductCounts[customer._id] || 0} barang</td>
+                                            <td>${printableCounts[customer._id] || 0} barang</td>
                                         </tr>`).join('')}
                                     </tbody>
                                 </table>`,
@@ -239,7 +290,7 @@ export default function CustomersPage() {
                     <div className="kpi-icon info"><Users size={20} /></div>
                     <div className="kpi-content">
                         <div className="kpi-label">Total Customer</div>
-                        <div className="kpi-value">{items.length}</div>
+                        <div className="kpi-value">{totalCustomers}</div>
                     </div>
                 </div>
                 <div className="kpi-card">
@@ -299,7 +350,7 @@ export default function CustomersPage() {
                                         ))}
                                     </tr>
                                 ))
-                            ) : paginatedCustomers.totalItems === 0 ? (
+                            ) : filteredTotalCustomers === 0 ? (
                                 <tr>
                                     <td colSpan={9}>
                                         <div className="empty-state">
@@ -309,7 +360,7 @@ export default function CustomersPage() {
                                     </td>
                                 </tr>
                             ) : (
-                                paginatedCustomers.items.map(customer => (
+                                items.map(customer => (
                                     <tr key={customer._id}>
                                         <td className="font-semibold">
                                             <Link href={`/customers/${customer._id}`} style={{ color: 'var(--color-primary)' }}>
@@ -345,7 +396,7 @@ export default function CustomersPage() {
 
                 {!loading && (
                     <div className="mobile-record-list">
-                        {paginatedCustomers.totalItems === 0 ? (
+                        {filteredTotalCustomers === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada customer</div>
                                 <div className="mobile-record-subtitle">Tambahkan customer baru untuk mulai membuat order, surat jalan, dan master barang khusus customer.</div>
@@ -355,7 +406,7 @@ export default function CustomersPage() {
                                     </button>
                                 </div>
                             </div>
-                        ) : paginatedCustomers.items.map(customer => (
+                        ) : items.map(customer => (
                             <div key={customer._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
@@ -397,11 +448,11 @@ export default function CustomersPage() {
                         ))}
                     </div>
                 )}
-                {paginatedCustomers.totalItems > 0 && (
+                {filteredTotalCustomers > 0 && (
                     <AppPagination
-                        page={paginatedCustomers.currentPage}
+                        page={page}
                         pageSize={DEFAULT_PAGE_SIZE}
-                        totalItems={paginatedCustomers.totalItems}
+                        totalItems={filteredTotalCustomers}
                         onPageChange={setPage}
                         info={({ startIndex, endIndex, totalItems }) => (
                             <>Menampilkan {startIndex}-{endIndex} dari {totalItems} customer</>
