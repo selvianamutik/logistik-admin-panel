@@ -345,6 +345,36 @@ class _TrackingHomePageState extends State<TrackingHomePage> {
     return 'start';
   }
 
+  Future<void> _confirmLogout() async {
+    final lockedTrip = _trips.firstWhereOrNull(
+      (trip) => trip.trackingState == 'ACTIVE' || trip.trackingState == 'PAUSED',
+    );
+    if (lockedTrip != null) {
+      final shouldLogout = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Keluar aplikasi driver?'),
+          content: Text(
+            'Kamu masih terikat ke ${lockedTrip.doNumber}. Keluar sekarang akan menghentikan ping lokasi dari HP ini sampai login lagi.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Batal'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Keluar'),
+            ),
+          ],
+        ),
+      );
+      if (shouldLogout != true || !mounted) return;
+    }
+
+    widget.onLogout();
+  }
+
   // ── Build ──────────────────────────────────────────────────
 
   @override
@@ -378,7 +408,7 @@ class _TrackingHomePageState extends State<TrackingHomePage> {
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: OutlinedButton.icon(
-              onPressed: widget.onLogout,
+              onPressed: _confirmLogout,
               icon: const Icon(Icons.logout_rounded, size: 15),
               label: const Text('Keluar'),
               style: OutlinedButton.styleFrom(

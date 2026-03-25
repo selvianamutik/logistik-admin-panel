@@ -340,15 +340,19 @@ export default function DriverPortalPage() {
 
     const handleLogout = async () => {
         if (lockedTrackingDo) {
-            setFeedback({
-                type: 'info',
-                message: `Kamu masih terikat ke ${lockedTrackingDo.doNumber}. Driver tidak boleh keluar sebelum admin menyelesaikan DO ini.`,
-            });
-            return;
+            const confirmed = window.confirm(
+                `Kamu masih terikat ke ${lockedTrackingDo.doNumber}. Keluar sekarang akan menghentikan tracking live di browser ini sampai kamu login lagi. Lanjut keluar?`
+            );
+            if (!confirmed) {
+                return;
+            }
         }
-        await fetch('/api/driver/logout', { method: 'POST' });
-        router.push('/driver/login');
-        router.refresh();
+        try {
+            await fetch('/api/driver/logout', { method: 'POST' });
+        } finally {
+            router.push('/driver/login');
+            router.refresh();
+        }
     };
 
     const handleDeliveryProgress = useCallback(
@@ -393,7 +397,7 @@ export default function DriverPortalPage() {
                     <h1>{companyName}</h1>
                     <p>{driver?.name || user?.name} | {driver?.phone || '-'}</p>
                 </div>
-                <button className="btn btn-secondary btn-sm" onClick={handleLogout} disabled={Boolean(lockedTrackingDo)}>
+                <button className="btn btn-secondary btn-sm" onClick={handleLogout}>
                     <LogOut size={15} /> Keluar
                 </button>
             </section>
