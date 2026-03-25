@@ -26,6 +26,7 @@ import {
 import {
     normalizeBankAccountPayload,
     normalizeCustomerPayload,
+    normalizeCustomerPickupPayload,
     normalizeCustomerProductPayload,
     normalizeCustomerRecipientPayload,
 } from './generic-workflow-support';
@@ -62,18 +63,18 @@ type AuditLogFn = (
     summary: string
 ) => void | Promise<void>;
 
-async function clearOtherCustomerRecipientDefaults(customerRef: string, keepId: string) {
-    const otherRecipientIds = await getSanityClient().fetch<Array<{ _id: string }>>(
-        `*[_type == "customerRecipient" && customerRef == $customerRef && _id != $keepId && isDefault == true]{ _id }`,
-        { customerRef, keepId }
+async function clearOtherCustomerScopedDefaults(docType: 'customerRecipient' | 'customerPickupLocation', customerRef: string, keepId: string) {
+    const otherDocIds = await getSanityClient().fetch<Array<{ _id: string }>>(
+        `*[_type == $docType && customerRef == $customerRef && _id != $keepId && isDefault == true]{ _id }`,
+        { docType, customerRef, keepId }
     );
-    if (otherRecipientIds.length === 0) {
+    if (otherDocIds.length === 0) {
         return;
     }
 
     const transaction = getSanityClient().transaction();
-    for (const recipient of otherRecipientIds) {
-        transaction.patch(recipient._id, patch => patch.set({ isDefault: false }));
+    for (const doc of otherDocIds) {
+        transaction.patch(doc._id, patch => patch.set({ isDefault: false }));
     }
     await transaction.commit();
 }
@@ -255,6 +256,7 @@ export async function handleGenericUpdate(
             'customerRef',
             'customerName',
             'customerRecipientRef',
+            'customerPickupRef',
             'receiverName',
             'receiverPhone',
             'receiverAddress',
@@ -364,6 +366,22 @@ export async function handleGenericUpdate(
         }
     }
 
+    if (entity === 'customer-pickups') {
+        const existingCustomerPickup = await sanityGetById<Record<string, unknown>>(id);
+        if (!existingCustomerPickup) {
+            return NextResponse.json({ error: 'Master pickup tidak ditemukan' }, { status: 404 });
+        }
+
+        try {
+            Object.assign(updates, await normalizeCustomerPickupPayload(updates, existingCustomerPickup));
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Data master pickup tidak valid' },
+                { status: 400 }
+            );
+        }
+    }
+
     if (entity === 'order-items') {
         return NextResponse.json(
             { error: 'Item order harus diubah lewat workflow order/revisi resmi agar progres DO, hold, dan resi tetap sinkron' },
@@ -467,7 +485,14 @@ export async function handleGenericUpdate(
     if (entity === 'customer-recipients' && normalizedUpdates.isDefault === true) {
         const updatedRecipient = updated as { customerRef?: string; _id?: string };
         if (typeof updatedRecipient.customerRef === 'string' && typeof updatedRecipient._id === 'string') {
-            await clearOtherCustomerRecipientDefaults(updatedRecipient.customerRef, updatedRecipient._id);
+            await clearOtherCustomerScopedDefaults('customerRecipient', updatedRecipient.customerRef, updatedRecipient._id);
+        }
+    }
+
+    if (entity === 'customer-pickups' && normalizedUpdates.isDefault === true) {
+        const updatedPickup = updated as { customerRef?: string; _id?: string };
+        if (typeof updatedPickup.customerRef === 'string' && typeof updatedPickup._id === 'string') {
+            await clearOtherCustomerScopedDefaults('customerPickupLocation', updatedPickup.customerRef, updatedPickup._id);
         }
     }
 
@@ -554,6 +579,21 @@ export async function handleGenericDelete(
         );
         if (relatedOrder) {
             return NextResponse.json({ error: 'Master penerima yang sudah dipakai order tidak boleh dihapus' }, { status: 409 });
+        }
+    }
+
+    if (entity === 'customer-pickups') {
+        const id = typeof data.id === 'string' ? data.id : '';
+        if (!id) {
+            return NextResponse.json({ error: 'Master pickup tidak valid' }, { status: 400 });
+        }
+
+        const relatedOrder = await getSanityClient().fetch<{ _id: string } | null>(
+            `*[_type == "order" && customerPickupRef == $ref][0]{ _id }`,
+            { ref: id }
+        );
+        if (relatedOrder) {
+            return NextResponse.json({ error: 'Master pickup yang sudah dipakai order tidak boleh dihapus' }, { status: 409 });
         }
     }
 
@@ -731,6 +771,17 @@ export async function handleGenericCreate(
         }
     }
 
+    if (entity === 'customer-pickups') {
+        try {
+            Object.assign(newDoc, await normalizeCustomerPickupPayload(data));
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Data master pickup tidak valid' },
+                { status: 400 }
+            );
+        }
+    }
+
     if (entity === 'expense-categories') {
         Object.assign(newDoc, await normalizeExpenseCategoryPayload(data));
     }
@@ -778,7 +829,11 @@ export async function handleGenericCreate(
     const newId = (created as Record<string, unknown>)._id as string;
 
     if (entity === 'customer-recipients' && newDoc.isDefault === true && typeof newDoc.customerRef === 'string') {
-        await clearOtherCustomerRecipientDefaults(newDoc.customerRef, newId);
+        await clearOtherCustomerScopedDefaults('customerRecipient', newDoc.customerRef, newId);
+    }
+
+    if (entity === 'customer-pickups' && newDoc.isDefault === true && typeof newDoc.customerRef === 'string') {
+        await clearOtherCustomerScopedDefaults('customerPickupLocation', newDoc.customerRef, newId);
     }
 
     if (entity === 'bank-accounts') {

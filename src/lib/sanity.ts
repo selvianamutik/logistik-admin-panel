@@ -167,6 +167,7 @@ export const SANITY_TYPE_MAP: Record<string, string> = {
     customers: 'customer',
     'customer-products': 'customerProduct',
     'customer-recipients': 'customerRecipient',
+    'customer-pickups': 'customerPickupLocation',
     services: 'service',
     'expense-categories': 'expenseCategory',
     drivers: 'driver',

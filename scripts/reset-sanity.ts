@@ -47,6 +47,7 @@ const RESET_TYPES = [
     'driver',
     'vehicle',
     'customerRecipient',
+    'customerPickupLocation',
     'customerProduct',
     'customer',
     'service',

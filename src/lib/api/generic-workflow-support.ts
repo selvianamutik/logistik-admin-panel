@@ -375,3 +375,81 @@ export async function normalizeCustomerRecipientPayload(data: Record<string, unk
 
     return next;
 }
+
+export async function normalizeCustomerPickupPayload(data: Record<string, unknown>, existing?: Record<string, unknown>) {
+    const next: Record<string, unknown> = {};
+    const existingId = typeof existing?._id === 'string' ? existing._id : undefined;
+    const customerRef =
+        Object.prototype.hasOwnProperty.call(data, 'customerRef') || !existing
+            ? normalizeText(data.customerRef)
+            : normalizeOptionalText(existing?.customerRef) || '';
+    if (!customerRef) {
+        throw new Error('Customer pickup wajib dipilih');
+    }
+
+    const customer = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(customerRef);
+    if (!customer) {
+        throw new Error('Customer pickup tidak ditemukan');
+    }
+    if (customer.active === false && (!existing || customerRef !== normalizeOptionalText(existing.customerRef))) {
+        throw new Error('Customer tidak aktif dan tidak bisa dipakai untuk master pickup baru');
+    }
+
+    const label =
+        Object.prototype.hasOwnProperty.call(data, 'label') || !existing
+            ? normalizeText(data.label)
+            : normalizeOptionalText(existing?.label) || '';
+    if (!label) {
+        throw new Error('Label master pickup wajib diisi');
+    }
+
+    const duplicateLabel = await getSanityClient().fetch<{ _id: string } | null>(
+        `*[_type == "customerPickupLocation" && customerRef == $customerRef && label == $label && _id != $excludeId][0]{ _id }`,
+        { customerRef, label, excludeId: existingId || '' }
+    );
+    if (duplicateLabel) {
+        throw new Error('Label master pickup sudah digunakan untuk customer ini');
+    }
+
+    const pickupAddress =
+        Object.prototype.hasOwnProperty.call(data, 'pickupAddress') || !existing
+            ? normalizeText(data.pickupAddress)
+            : normalizeOptionalText(existing?.pickupAddress) || '';
+    if (!pickupAddress) {
+        throw new Error('Alamat pickup wajib diisi');
+    }
+
+    const nextActive =
+        Object.prototype.hasOwnProperty.call(data, 'active') || !existing
+            ? (() => {
+                if (data.active !== undefined && typeof data.active !== 'boolean') {
+                    throw new Error('Status master pickup tidak valid');
+                }
+                return typeof data.active === 'boolean' ? data.active : true;
+            })()
+            : Boolean(existing?.active !== false);
+    const nextDefault =
+        nextActive === false
+            ? false
+            : Object.prototype.hasOwnProperty.call(data, 'isDefault') || !existing
+                ? (() => {
+                    if (data.isDefault !== undefined && typeof data.isDefault !== 'boolean') {
+                        throw new Error('Status default master pickup tidak valid');
+                    }
+                    return typeof data.isDefault === 'boolean' ? data.isDefault : false;
+                })()
+                : Boolean(existing?.isDefault);
+
+    next.customerRef = customerRef;
+    next.customerName = customer.name || '';
+    next.label = label;
+    next.pickupAddress = pickupAddress;
+    next.notes =
+        Object.prototype.hasOwnProperty.call(data, 'notes') || !existing
+            ? normalizeOptionalText(data.notes)
+            : normalizeOptionalText(existing?.notes);
+    next.active = nextActive;
+    next.isDefault = nextDefault;
+
+    return next;
+}

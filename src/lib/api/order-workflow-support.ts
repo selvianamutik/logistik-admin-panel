@@ -162,6 +162,14 @@ export type ResolvedCustomerRecipientData = {
     active?: boolean;
 };
 
+export type ResolvedCustomerPickupData = {
+    _id: string;
+    customerRef?: string;
+    label?: string;
+    pickupAddress?: string;
+    active?: boolean;
+};
+
 const DELIVERY_ACTUAL_DROP_TYPES = new Set<DeliveryActualDropType>([
     'DROP',
     'HOLD',
@@ -270,6 +278,25 @@ export async function resolveOrderRecipientData(customerRef: string, customerRec
     }
 
     return recipient;
+}
+
+export async function resolveOrderPickupData(customerRef: string, customerPickupRef?: string) {
+    if (!customerPickupRef) {
+        return null;
+    }
+
+    const pickup = await sanityGetById<ResolvedCustomerPickupData>(customerPickupRef);
+    if (!pickup || pickup._id !== customerPickupRef) {
+        throw new Error('Master pickup customer tidak ditemukan');
+    }
+    if (normalizeOptionalText((pickup as { customerRef?: string }).customerRef) !== customerRef) {
+        throw new Error('Master pickup tidak sesuai dengan customer yang dipilih');
+    }
+    if (pickup.active === false) {
+        throw new Error('Master pickup customer tidak aktif');
+    }
+
+    return pickup;
 }
 
 export async function normalizeOrderItemsInput(customerRef: string, rawItems: unknown[]) {

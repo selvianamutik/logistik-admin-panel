@@ -136,6 +136,18 @@ export interface CustomerRecipient {
   isDefault?: boolean;
 }
 
+export interface CustomerPickupLocation {
+  _id: string;
+  _type: 'customerPickupLocation';
+  customerRef: string;
+  customerName?: string;
+  label: string;
+  pickupAddress: string;
+  notes?: string;
+  active: boolean;
+  isDefault?: boolean;
+}
+
 // ── Service ──
 export interface Service {
   _id: string;
@@ -242,6 +254,7 @@ export interface Order {
   customerRef: string;
   customerName?: string;
   customerRecipientRef?: string;
+  customerPickupRef?: string;
   receiverName: string;
   receiverPhone: string;
   receiverAddress: string;

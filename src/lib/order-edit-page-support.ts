@@ -15,6 +15,7 @@ export type OrderEditFormState = {
     customerRef: string;
     customerName: string;
     customerRecipientRef: string;
+    customerPickupRef: string;
     receiverName: string;
     receiverPhone: string;
     receiverAddress: string;
@@ -26,12 +27,16 @@ export type OrderEditFormState = {
     saveRecipientToMaster: boolean;
     saveRecipientAsDefault: boolean;
     recipientMasterLabel: string;
+    savePickupToMaster: boolean;
+    savePickupAsDefault: boolean;
+    pickupMasterLabel: string;
 };
 
 export const DEFAULT_ORDER_EDIT_FORM: OrderEditFormState = {
     customerRef: '',
     customerName: '',
     customerRecipientRef: '',
+    customerPickupRef: '',
     receiverName: '',
     receiverPhone: '',
     receiverAddress: '',
@@ -43,6 +48,9 @@ export const DEFAULT_ORDER_EDIT_FORM: OrderEditFormState = {
     saveRecipientToMaster: false,
     saveRecipientAsDefault: false,
     recipientMasterLabel: '',
+    savePickupToMaster: false,
+    savePickupAsDefault: false,
+    pickupMasterLabel: '',
 };
 
 export function buildOrderEditForm(order: Order | null): OrderEditFormState {
@@ -54,6 +62,7 @@ export function buildOrderEditForm(order: Order | null): OrderEditFormState {
         customerRef: order.customerRef,
         customerName: order.customerName || '',
         customerRecipientRef: order.customerRecipientRef || '',
+        customerPickupRef: order.customerPickupRef || '',
         receiverName: order.receiverName,
         receiverPhone: order.receiverPhone,
         receiverAddress: order.receiverAddress,
@@ -65,6 +74,9 @@ export function buildOrderEditForm(order: Order | null): OrderEditFormState {
         saveRecipientToMaster: false,
         saveRecipientAsDefault: false,
         recipientMasterLabel: '',
+        savePickupToMaster: false,
+        savePickupAsDefault: false,
+        pickupMasterLabel: '',
     };
 }
 

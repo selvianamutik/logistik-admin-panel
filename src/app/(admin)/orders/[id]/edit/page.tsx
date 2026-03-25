@@ -7,7 +7,7 @@ import { Plus, Save, X } from 'lucide-react';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminData } from '@/lib/api/admin-client';
-import type { Order, Customer, CustomerProduct, CustomerRecipient, Service, DeliveryOrder, OrderItem } from '@/lib/types';
+import type { Order, Customer, CustomerPickupLocation, CustomerProduct, CustomerRecipient, Service, DeliveryOrder, OrderItem } from '@/lib/types';
 import {
     formatCargoSummary,
     VOLUME_INPUT_UNIT_OPTIONS,
@@ -16,10 +16,13 @@ import {
     type WeightInputUnit,
 } from '@/lib/measurement';
 import {
+    applyCustomerPickupSnapshot,
     applyCustomerRecipientSnapshot,
     applyCustomerProductToOrderItem,
     createDefaultOrderItemForm,
+    findDefaultCustomerPickup,
     findDefaultCustomerRecipient,
+    sortCustomerPickups,
     sortCustomerRecipients,
     type OrderItemForm,
 } from '@/lib/order-create-page-support';
@@ -42,10 +45,12 @@ export default function OrderEditPage() {
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
     const [customerRecipients, setCustomerRecipients] = useState<CustomerRecipient[]>([]);
+    const [customerPickups, setCustomerPickups] = useState<CustomerPickupLocation[]>([]);
     const [services, setServices] = useState<Service[]>([]);
     const [hasDeliveryOrders, setHasDeliveryOrders] = useState(false);
     const [hasOperationalProgress, setHasOperationalProgress] = useState(false);
     const [shouldAutoApplyDefaultRecipient, setShouldAutoApplyDefaultRecipient] = useState(false);
+    const [shouldAutoApplyDefaultPickup, setShouldAutoApplyDefaultPickup] = useState(false);
     const [revisionReason, setRevisionReason] = useState('');
     const [form, setForm] = useState<OrderEditFormState>(buildOrderEditForm(null));
     const [items, setItems] = useState<OrderItemForm[]>([createDefaultOrderItemForm()]);
@@ -75,13 +80,14 @@ export default function OrderEditPage() {
         if (!form.customerRef) {
             setCustomerProducts([]);
             setCustomerRecipients([]);
+            setCustomerPickups([]);
             return;
         }
 
         let cancelled = false;
         const loadCustomerScopedMasters = async () => {
             try {
-                const [products, recipients] = await Promise.all([
+                const [products, recipients, pickups] = await Promise.all([
                     fetchAdminData<CustomerProduct[]>(
                         `/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef: form.customerRef, active: true }))}`,
                         'Gagal memuat master customer'
@@ -90,15 +96,21 @@ export default function OrderEditPage() {
                         `/api/data?entity=customer-recipients&filter=${encodeURIComponent(JSON.stringify({ customerRef: form.customerRef, active: true }))}`,
                         'Gagal memuat master customer'
                     ),
+                    fetchAdminData<CustomerPickupLocation[]>(
+                        `/api/data?entity=customer-pickups&filter=${encodeURIComponent(JSON.stringify({ customerRef: form.customerRef, active: true }))}`,
+                        'Gagal memuat master customer'
+                    ),
                 ]);
                 if (!cancelled) {
                     setCustomerProducts(products || []);
                     setCustomerRecipients(recipients || []);
+                    setCustomerPickups(pickups || []);
                 }
             } catch (error) {
                 if (!cancelled) {
                     setCustomerProducts([]);
                     setCustomerRecipients([]);
+                    setCustomerPickups([]);
                     addToast('error', error instanceof Error ? error.message : 'Gagal memuat master customer');
                 }
             }
@@ -134,6 +146,27 @@ export default function OrderEditPage() {
         setShouldAutoApplyDefaultRecipient(false);
     }, [customerRecipients, form.customerRecipientRef, form.customerRef, shouldAutoApplyDefaultRecipient]);
 
+    useEffect(() => {
+        if (!shouldAutoApplyDefaultPickup || !form.customerRef || form.customerPickupRef) {
+            return;
+        }
+        const defaultPickup = findDefaultCustomerPickup(customerPickups);
+        if (!defaultPickup) {
+            setShouldAutoApplyDefaultPickup(false);
+            return;
+        }
+        const snapshot = applyCustomerPickupSnapshot(defaultPickup);
+        setForm(prev => ({
+            ...prev,
+            customerPickupRef: defaultPickup._id,
+            pickupAddress: snapshot.pickupAddress,
+            savePickupToMaster: false,
+            savePickupAsDefault: false,
+            pickupMasterLabel: '',
+        }));
+        setShouldAutoApplyDefaultPickup(false);
+    }, [customerPickups, form.customerPickupRef, form.customerRef, shouldAutoApplyDefaultPickup]);
+
     const updateItem = <K extends keyof OrderItemForm>(idx: number, field: K, value: OrderItemForm[K]) => {
         setItems(prev => prev.map((item, i) => i === idx ? { ...item, [field]: value } : item));
     };
@@ -153,6 +186,7 @@ export default function OrderEditPage() {
             customerRef: nextCustomerRef,
             customerName: nextCustomer?.name || '',
             customerRecipientRef: '',
+            customerPickupRef: '',
             pickupAddress: resolvePickupAddressForCustomer({
                 nextCustomerRef,
                 previousCustomerRef: prev.customerRef,
@@ -163,11 +197,15 @@ export default function OrderEditPage() {
             receiverPhone: '',
             receiverAddress: '',
             receiverCompany: '',
+            savePickupToMaster: false,
+            savePickupAsDefault: false,
+            pickupMasterLabel: '',
             saveRecipientToMaster: false,
             saveRecipientAsDefault: false,
             recipientMasterLabel: '',
         }));
         setShouldAutoApplyDefaultRecipient(Boolean(nextCustomerRef));
+        setShouldAutoApplyDefaultPickup(Boolean(nextCustomerRef));
         setItems(prev => prev.map(item => ({
             ...item,
             customerProductRef: '',
@@ -191,12 +229,35 @@ export default function OrderEditPage() {
         }));
     };
 
+    const handleCustomerPickupChange = (nextPickupRef: string) => {
+        setShouldAutoApplyDefaultPickup(false);
+        const pickup = customerPickups.find(item => item._id === nextPickupRef);
+        const snapshot = applyCustomerPickupSnapshot(pickup);
+        setForm(prev => ({
+            ...prev,
+            customerPickupRef: nextPickupRef,
+            pickupAddress: snapshot.pickupAddress,
+            savePickupToMaster: false,
+            savePickupAsDefault: false,
+            pickupMasterLabel: '',
+        }));
+    };
+
     const updateReceiverField = (field: 'receiverName' | 'receiverPhone' | 'receiverAddress' | 'receiverCompany', value: string) => {
         setShouldAutoApplyDefaultRecipient(false);
         setForm(prev => ({
             ...prev,
             customerRecipientRef: prev.customerRecipientRef ? '' : prev.customerRecipientRef,
             [field]: value,
+        }));
+    };
+
+    const updatePickupAddress = (value: string) => {
+        setShouldAutoApplyDefaultPickup(false);
+        setForm(prev => ({
+            ...prev,
+            customerPickupRef: prev.customerPickupRef ? '' : prev.customerPickupRef,
+            pickupAddress: value,
         }));
     };
 
@@ -258,6 +319,33 @@ export default function OrderEditPage() {
                 }
                 recipientRefForSubmit = recipientPayload.data?._id || recipientPayload.id || '';
             }
+            let pickupRefForSubmit = form.customerPickupRef;
+            if (!isRevisionMode && form.savePickupToMaster && !pickupRefForSubmit) {
+                if (!form.pickupMasterLabel.trim()) {
+                    addToast('error', 'Label master pickup wajib diisi jika ingin disimpan ke master');
+                    setSaving(false);
+                    return;
+                }
+                const pickupRes = await fetch('/api/data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        entity: 'customer-pickups',
+                        data: {
+                            customerRef: form.customerRef,
+                            label: form.pickupMasterLabel,
+                            pickupAddress: form.pickupAddress,
+                            active: true,
+                            isDefault: form.savePickupAsDefault,
+                        },
+                    }),
+                });
+                const pickupPayload = await pickupRes.json();
+                if (!pickupRes.ok) {
+                    throw new Error(pickupPayload.error || 'Gagal menyimpan master pickup');
+                }
+                pickupRefForSubmit = pickupPayload.data?._id || pickupPayload.id || '';
+            }
             const payloadData = isRevisionMode
                 ? {
                     id: orderId,
@@ -272,7 +360,7 @@ export default function OrderEditPage() {
                         volumeInputUnit: item.volumeInputUnit,
                     })),
                 }
-                : { id: orderId, ...form, customerRecipientRef: recipientRefForSubmit, items: validItems };
+                : { id: orderId, ...form, customerRecipientRef: recipientRefForSubmit, customerPickupRef: pickupRefForSubmit, items: validItems };
 
             const res = await fetch('/api/data', {
                 method: 'POST',
@@ -303,6 +391,7 @@ export default function OrderEditPage() {
     const selectedCustomer = customers.find(customer => customer._id === form.customerRef) || null;
     const selectedService = services.find(service => service._id === form.serviceRef) || null;
     const sortedCustomerRecipients = sortCustomerRecipients(customerRecipients);
+    const sortedCustomerPickups = sortCustomerPickups(customerPickups);
 
     return (
         <div>
@@ -369,9 +458,53 @@ export default function OrderEditPage() {
                                 </select>
                             </div>
                             <div className="form-group">
-                                <label className="form-label">Alamat Pickup</label>
-                                <textarea className="form-textarea" rows={2} value={form.pickupAddress} onChange={e => setForm(prev => ({ ...prev, pickupAddress: e.target.value }))} disabled={isRevisionMode} />
+                                <label className="form-label">Pickup Customer</label>
+                                <select className="form-select" value={form.customerPickupRef} onChange={e => handleCustomerPickupChange(e.target.value)} disabled={isRevisionMode || !form.customerRef}>
+                                    <option value="">{form.customerRef ? (customerPickups.length > 0 ? 'Pilih dari master pickup customer (opsional)' : 'Belum ada master pickup customer') : 'Pilih customer dulu'}</option>
+                                    {sortedCustomerPickups.map(pickup => (
+                                        <option key={pickup._id} value={pickup._id}>
+                                            {pickup.isDefault ? '[Default] ' : ''}{pickup.label}
+                                        </option>
+                                    ))}
+                                </select>
                             </div>
+                            <div className="form-group">
+                                <label className="form-label">Alamat Pickup</label>
+                                <textarea className="form-textarea" rows={2} value={form.pickupAddress} onChange={e => updatePickupAddress(e.target.value)} disabled={isRevisionMode} />
+                            </div>
+                            {!isRevisionMode && form.customerRef && !form.customerPickupRef && (
+                                <div style={{ display: 'grid', gap: '0.75rem', padding: '0.85rem 1rem', border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', background: 'var(--color-gray-50)' }}>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={form.savePickupToMaster}
+                                            onChange={e => setForm(prev => ({ ...prev, savePickupToMaster: e.target.checked }))}
+                                        />
+                                        <span>Simpan pickup ini ke master customer</span>
+                                    </label>
+                                    {form.savePickupToMaster && (
+                                        <>
+                                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                                <label className="form-label">Label Master Pickup <span className="required">*</span></label>
+                                                <input
+                                                    className="form-input"
+                                                    value={form.pickupMasterLabel}
+                                                    onChange={e => setForm(prev => ({ ...prev, pickupMasterLabel: e.target.value }))}
+                                                    placeholder="Contoh: Gudang Gresik / Pabrik Waru"
+                                                />
+                                            </div>
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={form.savePickupAsDefault}
+                                                    onChange={e => setForm(prev => ({ ...prev, savePickupAsDefault: e.target.checked }))}
+                                                />
+                                                <span>Jadikan default untuk customer ini</span>
+                                            </label>
+                                        </>
+                                    )}
+                                </div>
+                            )}
                             <div className="form-group">
                                 <label className="form-label">Catatan</label>
                                 <textarea className="form-textarea" rows={3} value={form.notes} onChange={e => setForm(prev => ({ ...prev, notes: e.target.value }))} />

@@ -88,6 +88,7 @@ const ENTITY_MODULE_MAP: Partial<Record<keyof typeof SANITY_TYPE_MAP, AppModule>
     customers: 'customers',
     'customer-products': 'customers',
     'customer-recipients': 'customers',
+    'customer-pickups': 'customers',
     services: 'services',
     'expense-categories': 'expenseCategories',
     drivers: 'drivers',

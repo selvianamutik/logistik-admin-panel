@@ -10,7 +10,7 @@ import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { fetchAdminData } from '@/lib/api/admin-client';
 import { formatDate, formatCurrency, getReceivableNetAmount } from '@/lib/utils';
 import { formatCargoSummary, VOLUME_INPUT_UNIT_OPTIONS, WEIGHT_INPUT_UNIT_OPTIONS, type VolumeInputUnit, type WeightInputUnit } from '@/lib/measurement';
-import type { Customer, CustomerProduct, CustomerRecipient, Order, FreightNota } from '@/lib/types';
+import type { Customer, CustomerPickupLocation, CustomerProduct, CustomerRecipient, Order, FreightNota } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
 
 type CustomerProductForm = {
@@ -32,6 +32,14 @@ type CustomerRecipientForm = {
     receiverPhone: string;
     receiverAddress: string;
     receiverCompany: string;
+    notes: string;
+    active: boolean;
+    isDefault: boolean;
+};
+
+type CustomerPickupForm = {
+    label: string;
+    pickupAddress: string;
     notes: string;
     active: boolean;
     isDefault: boolean;
@@ -61,6 +69,14 @@ const DEFAULT_RECIPIENT_FORM: CustomerRecipientForm = {
     isDefault: false,
 };
 
+const DEFAULT_PICKUP_FORM: CustomerPickupForm = {
+    label: '',
+    pickupAddress: '',
+    notes: '',
+    active: true,
+    isDefault: false,
+};
+
 export default function CustomerDetailPage() {
     const params = useParams();
     const { addToast } = useToast();
@@ -68,6 +84,7 @@ export default function CustomerDetailPage() {
     const [customer, setCustomer] = useState<Customer | null>(null);
     const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
     const [customerRecipients, setCustomerRecipients] = useState<CustomerRecipient[]>([]);
+    const [customerPickups, setCustomerPickups] = useState<CustomerPickupLocation[]>([]);
     const [orders, setOrders] = useState<Order[]>([]);
     const [notas, setNotas] = useState<FreightNota[]>([]);
     const [loading, setLoading] = useState(true);
@@ -81,18 +98,24 @@ export default function CustomerDetailPage() {
     const [savingRecipient, setSavingRecipient] = useState(false);
     const [deletingRecipientId, setDeletingRecipientId] = useState<string | null>(null);
     const [editRecipient, setEditRecipient] = useState<CustomerRecipient | null>(null);
+    const [showPickupModal, setShowPickupModal] = useState(false);
+    const [savingPickup, setSavingPickup] = useState(false);
+    const [deletingPickupId, setDeletingPickupId] = useState<string | null>(null);
+    const [editPickup, setEditPickup] = useState<CustomerPickupLocation | null>(null);
     const [form, setForm] = useState({ name: '', address: '', contactPerson: '', phone: '', email: '', npwp: '', deliveryOrderPrefix: 'SJ' });
     const [productForm, setProductForm] = useState<CustomerProductForm>(DEFAULT_PRODUCT_FORM);
     const [recipientForm, setRecipientForm] = useState<CustomerRecipientForm>(DEFAULT_RECIPIENT_FORM);
+    const [pickupForm, setPickupForm] = useState<CustomerPickupForm>(DEFAULT_PICKUP_FORM);
 
     useEffect(() => {
         const loadCustomerDetail = async () => {
             setLoading(true);
             try {
-                const [cust, productRows, recipientRows, customerOrders, customerNotas] = await Promise.all([
+                const [cust, productRows, recipientRows, pickupRows, customerOrders, customerNotas] = await Promise.all([
                     fetchAdminData<Customer | null>(`/api/data?entity=customers&id=${customerId}`, 'Gagal memuat data customer'),
                     fetchAdminData<CustomerProduct[]>(`/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data customer'),
                     fetchAdminData<CustomerRecipient[]>(`/api/data?entity=customer-recipients&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data customer'),
+                    fetchAdminData<CustomerPickupLocation[]>(`/api/data?entity=customer-pickups&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data customer'),
                     fetchAdminData<Order[]>(`/api/data?entity=orders&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data customer'),
                     fetchAdminData<FreightNota[]>(`/api/data?entity=freight-notas&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data customer'),
                 ]);
@@ -100,6 +123,7 @@ export default function CustomerDetailPage() {
                 setCustomer(cust);
                 setCustomerProducts(productRows || []);
                 setCustomerRecipients(recipientRows || []);
+                setCustomerPickups(pickupRows || []);
                 setOrders(customerOrders || []);
                 setNotas(customerNotas || []);
                 if (cust) {
@@ -165,6 +189,24 @@ export default function CustomerDetailPage() {
             isDefault: recipient.isDefault === true,
         });
         setShowRecipientModal(true);
+    };
+
+    const openNewPickup = () => {
+        setEditPickup(null);
+        setPickupForm({ ...DEFAULT_PICKUP_FORM, isDefault: customerPickups.length === 0 });
+        setShowPickupModal(true);
+    };
+
+    const openEditPickup = (pickup: CustomerPickupLocation) => {
+        setEditPickup(pickup);
+        setPickupForm({
+            label: pickup.label || '',
+            pickupAddress: pickup.pickupAddress || '',
+            notes: pickup.notes || '',
+            active: pickup.active !== false,
+            isDefault: pickup.isDefault === true,
+        });
+        setShowPickupModal(true);
     };
 
     const handleSaveProduct = async () => {
@@ -296,6 +338,71 @@ export default function CustomerDetailPage() {
         }
     };
 
+    const handleSavePickup = async () => {
+        if (!pickupForm.label.trim() || !pickupForm.pickupAddress.trim()) {
+            addToast('error', 'Label dan alamat pickup wajib diisi');
+            return;
+        }
+
+        setSavingPickup(true);
+        try {
+            const payload = {
+                customerRef: customerId,
+                ...pickupForm,
+            };
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(
+                    editPickup
+                        ? { entity: 'customer-pickups', action: 'update', data: { id: editPickup._id, updates: payload } }
+                        : { entity: 'customer-pickups', data: payload }
+                ),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menyimpan master pickup');
+                return;
+            }
+
+            const savedPickup = result.data as CustomerPickupLocation;
+            setCustomerPickups(prev => {
+                const next = editPickup
+                    ? prev.map(item => item._id === editPickup._id ? savedPickup : item)
+                    : [savedPickup, ...prev];
+                return savedPickup.isDefault ? next.map(item => item._id === savedPickup._id ? item : { ...item, isDefault: false }) : next;
+            });
+            setShowPickupModal(false);
+            addToast('success', editPickup ? 'Master pickup diperbarui' : 'Master pickup ditambahkan');
+        } catch {
+            addToast('error', 'Gagal menyimpan master pickup');
+        } finally {
+            setSavingPickup(false);
+        }
+    };
+
+    const handleDeletePickup = async (pickupId: string) => {
+        setDeletingPickupId(pickupId);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entity: 'customer-pickups', action: 'delete', data: { id: pickupId } }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menghapus master pickup');
+                return;
+            }
+            setCustomerPickups(prev => prev.filter(item => item._id !== pickupId));
+            addToast('success', 'Master pickup dihapus');
+        } catch {
+            addToast('error', 'Gagal menghapus master pickup');
+        } finally {
+            setDeletingPickupId(null);
+        }
+    };
+
     const handleSave = async () => {
         setSaving(true);
         try {
@@ -322,6 +429,12 @@ export default function CustomerDetailPage() {
     const activeNotaCount = notas.filter(nota => nota.status !== 'PAID').length;
     const totalNotaNetAmount = notas.reduce((sum, nota) => sum + getReceivableNetAmount(nota), 0);
     const sortedRecipients = [...customerRecipients].sort((a, b) => {
+        if (Boolean(a.isDefault) !== Boolean(b.isDefault)) {
+            return a.isDefault ? -1 : 1;
+        }
+        return (a.label || '').localeCompare(b.label || '');
+    });
+    const sortedPickups = [...customerPickups].sort((a, b) => {
         if (Boolean(a.isDefault) !== Boolean(b.isDefault)) {
             return a.isDefault ? -1 : 1;
         }
@@ -501,6 +614,96 @@ export default function CustomerDetailPage() {
                                 </button>
                                 <button className="btn btn-danger" onClick={() => handleDeleteRecipient(recipient._id)} disabled={deletingRecipientId === recipient._id}>
                                     <Trash2 size={14} /> {deletingRecipientId === recipient._id ? 'Menghapus...' : 'Hapus'}
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </CollapsibleCard>
+
+            <CollapsibleCard
+                title={`Master Pickup (${customerPickups.length})`}
+                defaultOpen
+            >
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
+                    <button className="btn btn-primary btn-sm" onClick={openNewPickup}>
+                        <Plus size={14} /> Tambah Pickup
+                    </button>
+                </div>
+                <div className="table-wrapper table-desktop-only">
+                    <table>
+                        <thead><tr><th>Label</th><th>Alamat Pickup</th><th>Status</th><th>Aksi</th></tr></thead>
+                        <tbody>
+                            {customerPickups.length === 0 ? (
+                                <tr><td colSpan={4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada master pickup untuk customer ini</td></tr>
+                            ) : (
+                                sortedPickups.map(pickup => (
+                                    <tr key={pickup._id}>
+                                        <td>
+                                            <div style={{ fontWeight: 600, display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                <span>{pickup.label}</span>
+                                                {pickup.isDefault && <span className="badge badge-info">Default</span>}
+                                            </div>
+                                            {pickup.notes && (
+                                                <div className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>{pickup.notes}</div>
+                                            )}
+                                        </td>
+                                        <td>
+                                            <div style={{ whiteSpace: 'pre-wrap' }}>{pickup.pickupAddress}</div>
+                                        </td>
+                                        <td><span className={`badge ${pickup.active !== false ? 'badge-green' : 'badge-gray'}`}>{pickup.active !== false ? 'Aktif' : 'Nonaktif'}</span></td>
+                                        <td>
+                                            <div className="table-actions">
+                                                <button className="table-action-btn" onClick={() => openEditPickup(pickup)}><Edit size={14} /> Edit</button>
+                                                <button className="table-action-btn danger" onClick={() => handleDeletePickup(pickup._id)} disabled={deletingPickupId === pickup._id}>
+                                                    <Trash2 size={14} /> {deletingPickupId === pickup._id ? 'Menghapus...' : 'Hapus'}
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+                <div className="mobile-record-list">
+                    {customerPickups.length === 0 ? (
+                        <div className="mobile-record-card">
+                            <div className="mobile-record-title">Belum ada master pickup</div>
+                            <div className="mobile-record-actions">
+                                <button className="btn btn-primary" onClick={openNewPickup}>
+                                    <Plus size={16} /> Tambah Pickup
+                                </button>
+                            </div>
+                        </div>
+                    ) : sortedPickups.map(pickup => (
+                        <div key={pickup._id} className="mobile-record-card">
+                            <div className="mobile-record-header">
+                                <div>
+                                    <div className="mobile-record-title">{pickup.label}</div>
+                                    <div className="mobile-record-subtitle">{pickup.pickupAddress}</div>
+                                </div>
+                                <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                                    {pickup.isDefault && <span className="badge badge-info">Default</span>}
+                                    <span className={`badge ${pickup.active !== false ? 'badge-green' : 'badge-gray'}`}>{pickup.active !== false ? 'Aktif' : 'Nonaktif'}</span>
+                                </div>
+                            </div>
+                            <div className="mobile-record-meta">
+                                <div className="mobile-record-kv">
+                                    <span className="mobile-record-label">Alamat</span>
+                                    <span className="mobile-record-value">{pickup.pickupAddress}</span>
+                                </div>
+                                <div className="mobile-record-kv">
+                                    <span className="mobile-record-label">Catatan</span>
+                                    <span className="mobile-record-value">{pickup.notes || '-'}</span>
+                                </div>
+                            </div>
+                            <div className="mobile-record-actions">
+                                <button className="btn btn-secondary" onClick={() => openEditPickup(pickup)}>
+                                    <Edit size={14} /> Edit
+                                </button>
+                                <button className="btn btn-danger" onClick={() => handleDeletePickup(pickup._id)} disabled={deletingPickupId === pickup._id}>
+                                    <Trash2 size={14} /> {deletingPickupId === pickup._id ? 'Menghapus...' : 'Hapus'}
                                 </button>
                             </div>
                         </div>
@@ -759,6 +962,51 @@ export default function CustomerDetailPage() {
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setShowRecipientModal(false)} disabled={savingRecipient}>Batal</button>
                             <button className="btn btn-primary" onClick={handleSaveRecipient} disabled={savingRecipient}><Save size={16} /> {savingRecipient ? 'Menyimpan...' : 'Simpan'}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showPickupModal && (
+                <div className="modal-overlay" onClick={() => { if (!savingPickup) setShowPickupModal(false); }}>
+                    <div className="modal" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">{editPickup ? 'Edit Master Pickup' : 'Tambah Master Pickup'}</h3>
+                            <button className="modal-close" onClick={() => setShowPickupModal(false)} disabled={savingPickup}><X size={20} /></button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="form-group">
+                                <label className="form-label">Label Pickup <span className="required">*</span></label>
+                                <input className="form-input" value={pickupForm.label} onChange={e => setPickupForm(prev => ({ ...prev, label: e.target.value }))} placeholder="Contoh: Gudang Sidoarjo / Plant Waru" />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Alamat Pickup <span className="required">*</span></label>
+                                <textarea className="form-textarea" rows={3} value={pickupForm.pickupAddress} onChange={e => setPickupForm(prev => ({ ...prev, pickupAddress: e.target.value }))} />
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Status</label>
+                                    <select className="form-select" value={pickupForm.active ? 'ACTIVE' : 'INACTIVE'} onChange={e => setPickupForm(prev => ({ ...prev, active: e.target.value === 'ACTIVE', isDefault: e.target.value === 'ACTIVE' ? prev.isDefault : false }))}>
+                                        <option value="ACTIVE">Aktif</option>
+                                        <option value="INACTIVE">Nonaktif</option>
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Default</label>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.65rem' }}>
+                                        <input type="checkbox" checked={pickupForm.isDefault} onChange={e => setPickupForm(prev => ({ ...prev, isDefault: e.target.checked, active: e.target.checked ? true : prev.active }))} />
+                                        <span>Jadikan pickup default customer</span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Catatan</label>
+                                <input className="form-input" value={pickupForm.notes} onChange={e => setPickupForm(prev => ({ ...prev, notes: e.target.value }))} placeholder="Opsional" />
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setShowPickupModal(false)} disabled={savingPickup}>Batal</button>
+                            <button className="btn btn-primary" onClick={handleSavePickup} disabled={savingPickup}><Save size={16} /> {savingPickup ? 'Menyimpan...' : 'Simpan'}</button>
                         </div>
                     </div>
                 </div>

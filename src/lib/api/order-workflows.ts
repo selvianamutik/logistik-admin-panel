@@ -38,12 +38,14 @@ import {
     normalizeDeliveryOrderActualCargoInputs,
     normalizeDeliveryOrderSelections,
     resolveOrderPartyData,
+    resolveOrderPickupData,
     resolveOrderRecipientData,
     summarizeSelection,
     type NormalizedActualCargoInput,
     type NormalizedOrderItemInput,
     type OrderItemProgressSnapshot,
     type OrderItemStatusSummary,
+    type ResolvedCustomerPickupData,
     type ResolvedCustomerRecipientData,
     type ResolvedOrderPartyData,
 } from './order-workflow-support';
@@ -334,6 +336,7 @@ export async function handleOrderCreate(
     const customerRef = normalizeText(data.customerRef);
     const serviceRef = normalizeOptionalText(data.serviceRef);
     const customerRecipientRef = normalizeOptionalText(data.customerRecipientRef);
+    const customerPickupRef = normalizeOptionalText(data.customerPickupRef);
     if (!customerRef) {
         return NextResponse.json({ error: 'Customer, penerima, dan alamat tujuan wajib diisi' }, { status: 400 });
     }
@@ -341,12 +344,14 @@ export async function handleOrderCreate(
     let customer: ResolvedOrderPartyData['customer'];
     let serviceName: string | undefined;
     let customerRecipient: ResolvedCustomerRecipientData | null = null;
+    let customerPickup: ResolvedCustomerPickupData | null = null;
     let items: NormalizedOrderItemInput[];
     try {
         const party = await resolveOrderPartyData(customerRef, serviceRef);
         customer = party.customer;
         serviceName = party.serviceName;
         customerRecipient = await resolveOrderRecipientData(customerRef, customerRecipientRef);
+        customerPickup = await resolveOrderPickupData(customerRef, customerPickupRef);
         items = await normalizeOrderItemsInput(customerRef, Array.isArray(data.items) ? data.items : []);
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Data order tidak valid';
@@ -369,11 +374,12 @@ export async function handleOrderCreate(
         customerRef,
         customerName: customer.name,
         customerRecipientRef: customerRecipientRef || undefined,
+        customerPickupRef: customerPickupRef || undefined,
         receiverName,
         receiverPhone: normalizeOptionalText(data.receiverPhone) || normalizeOptionalText(customerRecipient?.receiverPhone) || '',
         receiverAddress,
         receiverCompany: normalizeOptionalText(data.receiverCompany) || normalizeOptionalText(customerRecipient?.receiverCompany),
-        pickupAddress: normalizeOptionalText(data.pickupAddress) || customer.address || undefined,
+        pickupAddress: normalizeOptionalText(data.pickupAddress) || normalizeOptionalText(customerPickup?.pickupAddress) || customer.address || undefined,
         serviceRef: serviceRef || '',
         serviceName,
         notes: normalizeOptionalText(data.notes),
@@ -428,6 +434,7 @@ export async function handleOrderUpdateWithItems(
     const customerRef = normalizeText(data.customerRef);
     const serviceRef = normalizeOptionalText(data.serviceRef);
     const customerRecipientRef = normalizeOptionalText(data.customerRecipientRef);
+    const customerPickupRef = normalizeOptionalText(data.customerPickupRef);
 
     if (!id || !customerRef) {
         return NextResponse.json({ error: 'Order, customer, penerima, dan alamat tujuan wajib diisi' }, { status: 400 });
@@ -493,12 +500,14 @@ export async function handleOrderUpdateWithItems(
     let customer: ResolvedOrderPartyData['customer'];
     let serviceName: string | undefined;
     let customerRecipient: ResolvedCustomerRecipientData | null = null;
+    let customerPickup: ResolvedCustomerPickupData | null = null;
     let items: NormalizedOrderItemInput[];
     try {
         const party = await resolveOrderPartyData(customerRef, serviceRef);
         customer = party.customer;
         serviceName = party.serviceName;
         customerRecipient = await resolveOrderRecipientData(customerRef, customerRecipientRef);
+        customerPickup = await resolveOrderPickupData(customerRef, customerPickupRef);
         items = await normalizeOrderItemsInput(customerRef, Array.isArray(data.items) ? data.items : []);
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Data order tidak valid';
@@ -518,11 +527,12 @@ export async function handleOrderUpdateWithItems(
             customerRef,
             customerName: customer.name,
             customerRecipientRef: customerRecipientRef || undefined,
+            customerPickupRef: customerPickupRef || undefined,
             receiverName,
             receiverPhone: normalizeOptionalText(data.receiverPhone) || normalizeOptionalText(customerRecipient?.receiverPhone) || '',
             receiverAddress,
             receiverCompany: normalizeOptionalText(data.receiverCompany) || normalizeOptionalText(customerRecipient?.receiverCompany),
-            pickupAddress: normalizeOptionalText(data.pickupAddress) || customer.address || undefined,
+            pickupAddress: normalizeOptionalText(data.pickupAddress) || normalizeOptionalText(customerPickup?.pickupAddress) || customer.address || undefined,
             serviceRef: serviceRef || '',
             serviceName,
             notes: normalizeOptionalText(data.notes),

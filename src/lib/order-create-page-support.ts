@@ -1,4 +1,4 @@
-import type { CustomerProduct, CustomerRecipient } from './types';
+import type { CustomerPickupLocation, CustomerProduct, CustomerRecipient } from './types';
 import {
     convertKgToWeightInputValue,
     convertM3ToVolumeInputValue,
@@ -118,4 +118,23 @@ export function sortCustomerRecipients(recipients: CustomerRecipient[]) {
 
 export function findDefaultCustomerRecipient(recipients: CustomerRecipient[]) {
     return recipients.find(recipient => recipient.active !== false && recipient.isDefault) || null;
+}
+
+export function applyCustomerPickupSnapshot(selectedPickup: CustomerPickupLocation | undefined) {
+    return {
+        pickupAddress: selectedPickup?.pickupAddress || '',
+    };
+}
+
+export function sortCustomerPickups(pickups: CustomerPickupLocation[]) {
+    return [...pickups].sort((a, b) => {
+        if (Boolean(a.isDefault) !== Boolean(b.isDefault)) {
+            return a.isDefault ? -1 : 1;
+        }
+        return (a.label || '').localeCompare(b.label || '');
+    });
+}
+
+export function findDefaultCustomerPickup(pickups: CustomerPickupLocation[]) {
+    return pickups.find(pickup => pickup.active !== false && pickup.isDefault) || null;
 }
