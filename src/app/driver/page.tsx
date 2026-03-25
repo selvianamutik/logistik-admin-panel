@@ -22,7 +22,7 @@ type DriverSessionResponse = {
 };
 
 type DriverPortalError = Error & { status?: number };
-type DriverProgressStatus = Extract<DeliveryOrder['status'], 'ON_DELIVERY' | 'ARRIVED'>;
+type DriverProgressStatus = Extract<DeliveryOrder['status'], 'ON_DELIVERY' | 'ARRIVED' | 'DELIVERED'>;
 
 function createDriverPortalError(status: number, message: string) {
     const error = new Error(message) as DriverPortalError;
@@ -48,7 +48,12 @@ function canDriverStartTracking(status: DeliveryOrder['status']) {
 }
 
 function getNextDriverProgressStatus(order: DeliveryOrder): DriverProgressStatus | null {
-    if (order.trackingState !== 'ACTIVE' || order.status === 'DELIVERED' || order.status === 'CANCELLED') {
+    if (
+        order.trackingState !== 'ACTIVE' ||
+        order.status === 'DELIVERED' ||
+        order.status === 'CANCELLED' ||
+        order.pendingDriverStatus === 'DELIVERED'
+    ) {
         return null;
     }
 
@@ -57,19 +62,37 @@ function getNextDriverProgressStatus(order: DeliveryOrder): DriverProgressStatus
             return 'ON_DELIVERY';
         case 'ON_DELIVERY':
             return 'ARRIVED';
+        case 'ARRIVED':
+            return 'DELIVERED';
         default:
             return null;
     }
 }
 
 function getDriverProgressButtonLabel(nextStatus: DriverProgressStatus) {
-    return nextStatus === 'ON_DELIVERY' ? 'Tandai Dalam Pengiriman' : 'Tandai Sudah Tiba';
+    switch (nextStatus) {
+        case 'ON_DELIVERY':
+            return 'Tandai Dalam Pengiriman';
+        case 'ARRIVED':
+            return 'Tandai Sudah Tiba';
+        case 'DELIVERED':
+            return 'Ajukan Selesai';
+        default:
+            return 'Lanjutkan Trip';
+    }
 }
 
 function getDriverProgressSuccessMessage(nextStatus: DriverProgressStatus) {
-    return nextStatus === 'ON_DELIVERY'
-        ? 'Status DO diperbarui menjadi dalam pengiriman.'
-        : 'Status DO diperbarui menjadi sudah tiba.';
+    switch (nextStatus) {
+        case 'ON_DELIVERY':
+            return 'Status DO diperbarui menjadi dalam pengiriman.';
+        case 'ARRIVED':
+            return 'Status DO diperbarui menjadi sudah tiba.';
+        case 'DELIVERED':
+            return 'Permintaan selesai dikirim. Menunggu approval admin.';
+        default:
+            return 'Status DO berhasil diperbarui.';
+    }
 }
 
 export default function DriverPortalPage() {
@@ -473,7 +496,11 @@ export default function DriverPortalPage() {
                                     <div className="driver-action-row">
                                         {item.trackingState === 'ACTIVE' ? (
                                             <>
-                                                {nextProgressStatus && (
+                                                {item.pendingDriverStatus === 'DELIVERED' ? (
+                                                    <div className="text-muted text-sm" style={{ flex: 1, lineHeight: 1.5 }}>
+                                                        Driver sudah mengajukan selesai. Menunggu approval admin sebelum trip benar-benar ditutup.
+                                                    </div>
+                                                ) : nextProgressStatus && (
                                                     <button
                                                         className="btn btn-secondary btn-sm"
                                                         onClick={() => void handleDeliveryProgress(item._id, nextProgressStatus)}
