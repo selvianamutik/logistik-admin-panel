@@ -37,6 +37,7 @@ export default function NewOrderPage() {
     const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
     const [customerRecipients, setCustomerRecipients] = useState<CustomerRecipient[]>([]);
     const [customerPickups, setCustomerPickups] = useState<CustomerPickupLocation[]>([]);
+    const [customerScopedMastersLoaded, setCustomerScopedMastersLoaded] = useState(false);
     const [services, setServices] = useState<Service[]>([]);
     const [loading, setLoading] = useState(false);
 
@@ -85,10 +86,12 @@ export default function NewOrderPage() {
             setCustomerProducts([]);
             setCustomerRecipients([]);
             setCustomerPickups([]);
+            setCustomerScopedMastersLoaded(false);
             return;
         }
 
         let cancelled = false;
+        setCustomerScopedMastersLoaded(false);
         const loadCustomerScopedMasters = async () => {
             try {
                 const [productRows, recipientRows, pickupRows] = await Promise.all([
@@ -109,12 +112,14 @@ export default function NewOrderPage() {
                     setCustomerProducts(productRows || []);
                     setCustomerRecipients(recipientRows || []);
                     setCustomerPickups(pickupRows || []);
+                    setCustomerScopedMastersLoaded(true);
                 }
             } catch (error) {
                 if (!cancelled) {
                     setCustomerProducts([]);
                     setCustomerRecipients([]);
                     setCustomerPickups([]);
+                    setCustomerScopedMastersLoaded(true);
                     addToast('error', error instanceof Error ? error.message : 'Gagal memuat master customer');
                 }
             }
@@ -127,7 +132,7 @@ export default function NewOrderPage() {
     }, [addToast, customerRef]);
 
     useEffect(() => {
-        if (!shouldAutoApplyDefaultRecipient || !customerRef || customerRecipientRef) {
+        if (!customerScopedMastersLoaded || !shouldAutoApplyDefaultRecipient || !customerRef || customerRecipientRef) {
             return;
         }
         const defaultRecipient = findDefaultCustomerRecipient(customerRecipients);
@@ -145,10 +150,10 @@ export default function NewOrderPage() {
         setSaveRecipientAsDefault(false);
         setRecipientMasterLabel('');
         setShouldAutoApplyDefaultRecipient(false);
-    }, [customerRecipientRef, customerRecipients, customerRef, shouldAutoApplyDefaultRecipient]);
+    }, [customerRecipientRef, customerRecipients, customerRef, customerScopedMastersLoaded, shouldAutoApplyDefaultRecipient]);
 
     useEffect(() => {
-        if (!shouldAutoApplyDefaultPickup || !customerRef || customerPickupRef) {
+        if (!customerScopedMastersLoaded || !shouldAutoApplyDefaultPickup || !customerRef || customerPickupRef) {
             return;
         }
         const defaultPickup = findDefaultCustomerPickup(customerPickups);
@@ -163,7 +168,7 @@ export default function NewOrderPage() {
         setSavePickupAsDefault(false);
         setPickupMasterLabel('');
         setShouldAutoApplyDefaultPickup(false);
-    }, [customerPickupRef, customerPickups, customerRef, shouldAutoApplyDefaultPickup]);
+    }, [customerPickupRef, customerPickups, customerRef, customerScopedMastersLoaded, shouldAutoApplyDefaultPickup]);
 
     const addItem = () => setItems(prev => [...prev, createDefaultOrderItemForm()]);
     const removeItem = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx));

@@ -46,6 +46,7 @@ export default function OrderEditPage() {
     const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
     const [customerRecipients, setCustomerRecipients] = useState<CustomerRecipient[]>([]);
     const [customerPickups, setCustomerPickups] = useState<CustomerPickupLocation[]>([]);
+    const [customerScopedMastersLoaded, setCustomerScopedMastersLoaded] = useState(false);
     const [services, setServices] = useState<Service[]>([]);
     const [hasDeliveryOrders, setHasDeliveryOrders] = useState(false);
     const [hasOperationalProgress, setHasOperationalProgress] = useState(false);
@@ -81,10 +82,12 @@ export default function OrderEditPage() {
             setCustomerProducts([]);
             setCustomerRecipients([]);
             setCustomerPickups([]);
+            setCustomerScopedMastersLoaded(false);
             return;
         }
 
         let cancelled = false;
+        setCustomerScopedMastersLoaded(false);
         const loadCustomerScopedMasters = async () => {
             try {
                 const [products, recipients, pickups] = await Promise.all([
@@ -105,12 +108,14 @@ export default function OrderEditPage() {
                     setCustomerProducts(products || []);
                     setCustomerRecipients(recipients || []);
                     setCustomerPickups(pickups || []);
+                    setCustomerScopedMastersLoaded(true);
                 }
             } catch (error) {
                 if (!cancelled) {
                     setCustomerProducts([]);
                     setCustomerRecipients([]);
                     setCustomerPickups([]);
+                    setCustomerScopedMastersLoaded(true);
                     addToast('error', error instanceof Error ? error.message : 'Gagal memuat master customer');
                 }
             }
@@ -123,7 +128,7 @@ export default function OrderEditPage() {
     }, [addToast, form.customerRef]);
 
     useEffect(() => {
-        if (!shouldAutoApplyDefaultRecipient || !form.customerRef || form.customerRecipientRef) {
+        if (!customerScopedMastersLoaded || !shouldAutoApplyDefaultRecipient || !form.customerRef || form.customerRecipientRef) {
             return;
         }
         const defaultRecipient = findDefaultCustomerRecipient(customerRecipients);
@@ -144,10 +149,10 @@ export default function OrderEditPage() {
             recipientMasterLabel: '',
         }));
         setShouldAutoApplyDefaultRecipient(false);
-    }, [customerRecipients, form.customerRecipientRef, form.customerRef, shouldAutoApplyDefaultRecipient]);
+    }, [customerRecipients, customerScopedMastersLoaded, form.customerRecipientRef, form.customerRef, shouldAutoApplyDefaultRecipient]);
 
     useEffect(() => {
-        if (!shouldAutoApplyDefaultPickup || !form.customerRef || form.customerPickupRef) {
+        if (!customerScopedMastersLoaded || !shouldAutoApplyDefaultPickup || !form.customerRef || form.customerPickupRef) {
             return;
         }
         const defaultPickup = findDefaultCustomerPickup(customerPickups);
@@ -165,7 +170,7 @@ export default function OrderEditPage() {
             pickupMasterLabel: '',
         }));
         setShouldAutoApplyDefaultPickup(false);
-    }, [customerPickups, form.customerPickupRef, form.customerRef, shouldAutoApplyDefaultPickup]);
+    }, [customerPickups, customerScopedMastersLoaded, form.customerPickupRef, form.customerRef, shouldAutoApplyDefaultPickup]);
 
     const updateItem = <K extends keyof OrderItemForm>(idx: number, field: K, value: OrderItemForm[K]) => {
         setItems(prev => prev.map((item, i) => i === idx ? { ...item, [field]: value } : item));

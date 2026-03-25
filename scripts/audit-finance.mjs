@@ -74,7 +74,7 @@ async function main() {
         "invoices": *[_type == "invoice"]{ _id, invoiceNumber, totalAmount, totalAdjustmentAmount, netAmount, status },
         "freightNotas": *[_type == "freightNota"]{ _id, notaNumber, totalAmount, totalAdjustmentAmount, netAmount, status },
         "payments": *[_type == "payment"]{ _id, invoiceRef, receiptRef, amount, date },
-        "customerReceipts": *[_type == "customerReceipt"]{ _id, receiptNumber, totalAmount, allocationCount, customerRef, customerName, method, bankAccountRef },
+        "customerReceipts": *[_type == "customerReceipt"]{ _id, receiptNumber, totalAmount, unappliedAmount, allocationCount, customerRef, customerName, method, bankAccountRef },
         "invoiceAdjustments": *[_type == "invoiceAdjustment"]{ _id, invoiceRef, amount, status },
         "borongans": *[_type == "driverBorongan"]{ _id, boronganNumber, totalAmount, status },
         "driverBoronganItems": *[_type == "driverBoronganItem"]{ _id, boronganRef, doRef, doNumber },
@@ -133,11 +133,15 @@ async function main() {
     for (const receipt of data.customerReceipts) {
         const allocations = receiptPaymentGroups.get(receipt._id) || [];
         const allocatedTotal = sum(allocations, item => item.amount || 0);
-        if (allocations.length === 0) {
+        const unappliedAmount = receipt.unappliedAmount || 0;
+        const resolvedTotal = allocatedTotal + unappliedAmount;
+        if (allocations.length === 0 && unappliedAmount === 0) {
             receivableFindings.push(`Receipt ${receipt.receiptNumber || receipt._id} tidak punya alokasi payment`);
         }
-        if (allocatedTotal !== (receipt.totalAmount || 0)) {
-            receivableFindings.push(`Receipt ${receipt.receiptNumber || receipt._id} total ${fmtCurrency(receipt.totalAmount)} tidak cocok dengan alokasi ${fmtCurrency(allocatedTotal)}`);
+        if (resolvedTotal !== (receipt.totalAmount || 0)) {
+            receivableFindings.push(
+                `Receipt ${receipt.receiptNumber || receipt._id} total ${fmtCurrency(receipt.totalAmount)} tidak cocok dengan alokasi ${fmtCurrency(allocatedTotal)} + kredit ${fmtCurrency(unappliedAmount)}`
+            );
         }
         if ((receipt.allocationCount || 0) !== allocations.length) {
             receivableFindings.push(`Receipt ${receipt.receiptNumber || receipt._id} allocationCount ${receipt.allocationCount || 0} tidak cocok dengan ${allocations.length} payment`);
