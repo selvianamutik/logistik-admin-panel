@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { createSession, hashPassword, isPasswordHashMigrated, verifyPassword } from '@/lib/auth';
 import { writeAuditLog } from '@/lib/api/data-helpers';
 import { getDriverAppContext, sanitizeDriverForMobile } from '@/lib/api/driver-portal';
-import { clearFailedAttempts, getRequestIp, recordFailedAttempt } from '@/lib/api/rate-limit';
+import { clearFailedAttempts, getRequestIp, recordLoginAttempt } from '@/lib/api/rate-limit';
 import { sanityGetById, sanityUpdate, getSanityClient } from '@/lib/sanity';
 import type { Driver, User } from '@/lib/types';
 
@@ -36,24 +36,25 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Email dan password wajib diisi' }, { status: 400 });
         }
 
+        const rateLimitStatus = await recordLoginAttempt(
+            rateLimitKey,
+            LOGIN_ATTEMPT_LIMIT,
+            LOGIN_WINDOW_MS
+        );
+        if (rateLimitStatus.limited) {
+            return tooManyAttemptsResponse(rateLimitStatus.retryAfterSeconds);
+        }
+
         const user = await getSanityClient().fetch<User | null>(
             `*[_type == "user" && lower(email) == $email && active == true][0]`,
             { email: normalizedEmail }
         );
 
         if (!user) {
-            const attempt = recordFailedAttempt(rateLimitKey, LOGIN_ATTEMPT_LIMIT, LOGIN_WINDOW_MS);
-            if (attempt.limited) {
-                return tooManyAttemptsResponse(attempt.retryAfterSeconds);
-            }
             return NextResponse.json({ error: 'Email atau password salah' }, { status: 401 });
         }
 
         if (user.role !== 'DRIVER') {
-            const attempt = recordFailedAttempt(rateLimitKey, LOGIN_ATTEMPT_LIMIT, LOGIN_WINDOW_MS);
-            if (attempt.limited) {
-                return tooManyAttemptsResponse(attempt.retryAfterSeconds);
-            }
             return NextResponse.json({ error: 'Akun ini bukan akun mobile driver' }, { status: 403 });
         }
 
@@ -63,10 +64,6 @@ export async function POST(request: Request) {
 
         const isValid = await verifyPassword(password, user.passwordHash);
         if (!isValid) {
-            const attempt = recordFailedAttempt(rateLimitKey, LOGIN_ATTEMPT_LIMIT, LOGIN_WINDOW_MS);
-            if (attempt.limited) {
-                return tooManyAttemptsResponse(attempt.retryAfterSeconds);
-            }
             return NextResponse.json({ error: 'Email atau password salah' }, { status: 401 });
         }
 
@@ -86,7 +83,7 @@ export async function POST(request: Request) {
             ...(nextPasswordHash ? { passwordHash: nextPasswordHash } : {}),
         });
 
-        clearFailedAttempts(rateLimitKey);
+        await clearFailedAttempts(rateLimitKey);
 
         const token = await createSession({
             ...user,

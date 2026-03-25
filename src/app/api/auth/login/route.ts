@@ -6,7 +6,7 @@ import { NextResponse } from 'next/server';
 import { getSanityClient, sanityGetById, sanityUpdate } from '@/lib/sanity';
 import { verifyPassword, createSession, hashPassword, isPasswordHashMigrated, setSessionCookie } from '@/lib/auth';
 import { writeAuditLog } from '@/lib/api/data-helpers';
-import { clearFailedAttempts, getRequestIp, recordFailedAttempt } from '@/lib/api/rate-limit';
+import { clearFailedAttempts, getRequestIp, recordLoginAttempt } from '@/lib/api/rate-limit';
 import { ensureSameOriginRequest } from '@/lib/api/request-security';
 import { DRIVER_SESSION_COOKIE, SESSION_COOKIE } from '@/lib/session';
 import type { Driver, User } from '@/lib/types';
@@ -58,6 +58,14 @@ export async function POST(request: Request) {
         }
 
         const rateLimitKey = buildLoginRateLimitKey(request, normalizedEmail, loginScope);
+        const rateLimitStatus = await recordLoginAttempt(
+            rateLimitKey,
+            LOGIN_ATTEMPT_LIMIT,
+            LOGIN_WINDOW_MS
+        );
+        if (rateLimitStatus.limited) {
+            return tooManyAttemptsResponse(rateLimitStatus.retryAfterSeconds);
+        }
 
         // Find user from Sanity
         const user = await getSanityClient().fetch<User | null>(
@@ -66,16 +74,12 @@ export async function POST(request: Request) {
         );
 
         if (!user) {
-            const attempt = recordFailedAttempt(rateLimitKey, LOGIN_ATTEMPT_LIMIT, LOGIN_WINDOW_MS);
-            if (attempt.limited) return tooManyAttemptsResponse(attempt.retryAfterSeconds);
             return NextResponse.json({ error: 'Email atau password salah' }, { status: 401 });
         }
 
         // Verify password — normalizedPassword is string ✅
         const isValid = await verifyPassword(normalizedPassword, user.passwordHash);
         if (!isValid) {
-            const attempt = recordFailedAttempt(rateLimitKey, LOGIN_ATTEMPT_LIMIT, LOGIN_WINDOW_MS);
-            if (attempt.limited) return tooManyAttemptsResponse(attempt.retryAfterSeconds);
             return NextResponse.json({ error: 'Email atau password salah' }, { status: 401 });
         }
 
@@ -114,7 +118,7 @@ export async function POST(request: Request) {
             }
         }
 
-        clearFailedAttempts(rateLimitKey);
+        await clearFailedAttempts(rateLimitKey);
 
         const lastLoginAt = new Date().toISOString();
         await sanityUpdate(user._id, {

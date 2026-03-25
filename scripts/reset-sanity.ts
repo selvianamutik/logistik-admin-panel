@@ -20,6 +20,7 @@ const client = createClient({
 const RESET_TYPES = [
     'auditLog',
     'incidentActionLog',
+    'loginRateLimit',
     'incident',
     'trackingLog',
     'driverVoucherDisbursement',
