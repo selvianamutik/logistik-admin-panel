@@ -15,6 +15,7 @@
 /coverage
 /.playwright-cli/
 /test-results/
+/output/
 /output/playwright/
 /output/*.log
 /output/*.pid
