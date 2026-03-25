@@ -6,7 +6,7 @@ import { Save } from 'lucide-react';
 
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
-import { fetchAdminData } from '@/lib/api/admin-client';
+import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import {
     buildVehicleBasePayload,
     EMPTY_VEHICLE_FORM,
@@ -28,7 +28,7 @@ export default function VehicleNewPage() {
     useEffect(() => {
         const loadServices = async () => {
             try {
-                const serviceRows = await fetchAdminData<Service[]>('/api/data?entity=services', 'Gagal memuat kategori armada');
+                const serviceRows = await fetchAdminCollectionData<Service[]>('/api/data?entity=services', 'Gagal memuat kategori armada');
                 setServices(getSelectableVehicleServiceOptions(serviceRows || []));
             } catch (error) {
                 addToast('error', error instanceof Error ? error.message : 'Gagal memuat kategori armada');

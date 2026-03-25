@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Plus, Search, Eye, Edit, Car, FileDown, Printer } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
+import { withAdminCollectionPageSize } from '@/lib/api/admin-client';
 
 import { useToast } from '../../layout';
 import {
@@ -81,7 +82,7 @@ export default function VehiclesPage() {
         try {
             const [listRes, serviceRes] = await Promise.all([
                 fetch(`/api/data?${buildCurrentVehiclesQuery()}`),
-                fetch('/api/data?entity=services'),
+                fetch(withAdminCollectionPageSize('/api/data?entity=services')),
             ]);
             const [listPayload, servicePayload] = await Promise.all([listRes.json(), serviceRes.json()]);
 

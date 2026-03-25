@@ -6,7 +6,7 @@ import { useToast } from '../../../layout';
 import { Plus, Save, X } from 'lucide-react';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
-import { fetchAdminData } from '@/lib/api/admin-client';
+import { fetchAdminCollectionData, fetchAdminData } from '@/lib/api/admin-client';
 import type { Order, Customer, CustomerPickupLocation, CustomerProduct, CustomerRecipient, Service, DeliveryOrder, OrderItem } from '@/lib/types';
 import {
     formatCargoSummary,
@@ -59,10 +59,10 @@ export default function OrderEditPage() {
     useEffect(() => {
         Promise.all([
             fetchAdminData<Order | null>(`/api/data?entity=orders&id=${orderId}`, 'Gagal memuat form edit order'),
-            fetchAdminData<Customer[]>('/api/data?entity=customers', 'Gagal memuat form edit order'),
-            fetchAdminData<Service[]>('/api/data?entity=services', 'Gagal memuat form edit order'),
-            fetchAdminData<DeliveryOrder[]>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`, 'Gagal memuat form edit order'),
-            fetchAdminData<OrderItem[]>(`/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`, 'Gagal memuat form edit order'),
+            fetchAdminCollectionData<Customer[]>('/api/data?entity=customers', 'Gagal memuat form edit order'),
+            fetchAdminCollectionData<Service[]>('/api/data?entity=services', 'Gagal memuat form edit order'),
+            fetchAdminCollectionData<DeliveryOrder[]>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`, 'Gagal memuat form edit order'),
+            fetchAdminCollectionData<OrderItem[]>(`/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`, 'Gagal memuat form edit order'),
         ]).then(([order, customerRows, serviceRows, deliveryOrders, orderItems]) => {
             setForm(buildOrderEditForm(order));
             setItems(getOrderEditItems(orderItems || []));
@@ -91,15 +91,15 @@ export default function OrderEditPage() {
         const loadCustomerScopedMasters = async () => {
             try {
                 const [products, recipients, pickups] = await Promise.all([
-                    fetchAdminData<CustomerProduct[]>(
+                    fetchAdminCollectionData<CustomerProduct[]>(
                         `/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef: form.customerRef, active: true }))}`,
                         'Gagal memuat master customer'
                     ),
-                    fetchAdminData<CustomerRecipient[]>(
+                    fetchAdminCollectionData<CustomerRecipient[]>(
                         `/api/data?entity=customer-recipients&filter=${encodeURIComponent(JSON.stringify({ customerRef: form.customerRef, active: true }))}`,
                         'Gagal memuat master customer'
                     ),
-                    fetchAdminData<CustomerPickupLocation[]>(
+                    fetchAdminCollectionData<CustomerPickupLocation[]>(
                         `/api/data?entity=customer-pickups&filter=${encodeURIComponent(JSON.stringify({ customerRef: form.customerRef, active: true }))}`,
                         'Gagal memuat master customer'
                     ),

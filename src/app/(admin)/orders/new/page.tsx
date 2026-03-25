@@ -6,7 +6,7 @@ import { useToast } from '../../layout';
 import { Save, Plus, X } from 'lucide-react';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
-import { fetchAdminData } from '@/lib/api/admin-client';
+import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import type { Customer, CustomerPickupLocation, CustomerProduct, CustomerRecipient, Service } from '@/lib/types';
 import {
     applyCustomerPickupSnapshot,
@@ -71,8 +71,8 @@ export default function NewOrderPage() {
 
     useEffect(() => {
         Promise.all([
-            fetchAdminData<Customer[]>('/api/data?entity=customers', 'Gagal memuat form order'),
-            fetchAdminData<Service[]>('/api/data?entity=services', 'Gagal memuat form order'),
+            fetchAdminCollectionData<Customer[]>('/api/data?entity=customers', 'Gagal memuat form order'),
+            fetchAdminCollectionData<Service[]>('/api/data?entity=services', 'Gagal memuat form order'),
         ]).then(([customerRows, serviceRows]) => {
             setCustomers((customerRows || []).filter(customer => customer.active !== false));
             setServices((serviceRows || []).filter(service => service.active !== false));
@@ -95,15 +95,15 @@ export default function NewOrderPage() {
         const loadCustomerScopedMasters = async () => {
             try {
                 const [productRows, recipientRows, pickupRows] = await Promise.all([
-                    fetchAdminData<CustomerProduct[]>(
+                    fetchAdminCollectionData<CustomerProduct[]>(
                         `/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef, active: true }))}`,
                         'Gagal memuat master customer'
                     ),
-                    fetchAdminData<CustomerRecipient[]>(
+                    fetchAdminCollectionData<CustomerRecipient[]>(
                         `/api/data?entity=customer-recipients&filter=${encodeURIComponent(JSON.stringify({ customerRef, active: true }))}`,
                         'Gagal memuat master customer'
                     ),
-                    fetchAdminData<CustomerPickupLocation[]>(
+                    fetchAdminCollectionData<CustomerPickupLocation[]>(
                         `/api/data?entity=customer-pickups&filter=${encodeURIComponent(JSON.stringify({ customerRef, active: true }))}`,
                         'Gagal memuat master customer'
                     ),

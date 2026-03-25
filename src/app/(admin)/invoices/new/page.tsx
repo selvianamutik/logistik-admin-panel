@@ -7,7 +7,7 @@ import { Plus, Save, Trash2 } from 'lucide-react';
 import CurrencyInput from '@/components/CurrencyInput';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
-import { fetchAdminData } from '@/lib/api/admin-client';
+import { fetchAdminCollectionData, fetchAdminData } from '@/lib/api/admin-client';
 import {
     buildNotaRowFromDeliveryOrder,
     createEmptyNotaRow,
@@ -43,12 +43,12 @@ export default function NewNotaPage() {
         async function loadData() {
             try {
                 const [cust, comp, dos, ords, doItems, notaItems] = await Promise.all([
-                    fetchAdminData<Customer[]>('/api/data?entity=customers', 'Gagal memuat customer'),
+                    fetchAdminCollectionData<Customer[]>('/api/data?entity=customers', 'Gagal memuat customer'),
                     fetchAdminData<CompanyProfile | null>('/api/data?entity=company', 'Gagal memuat profil perusahaan'),
-                    fetchAdminData<DeliveryOrder[]>('/api/data?entity=delivery-orders', 'Gagal memuat surat jalan'),
-                    fetchAdminData<Order[]>('/api/data?entity=orders', 'Gagal memuat order'),
-                    fetchAdminData<DeliveryOrderItem[]>('/api/data?entity=delivery-order-items', 'Gagal memuat item DO'),
-                    fetchAdminData<Array<{ doRef?: string }>>('/api/data?entity=freight-nota-items', 'Gagal memuat pemakaian DO nota'),
+                    fetchAdminCollectionData<DeliveryOrder[]>('/api/data?entity=delivery-orders', 'Gagal memuat surat jalan'),
+                    fetchAdminCollectionData<Order[]>('/api/data?entity=orders', 'Gagal memuat order'),
+                    fetchAdminCollectionData<DeliveryOrderItem[]>('/api/data?entity=delivery-order-items', 'Gagal memuat item DO'),
+                    fetchAdminCollectionData<Array<{ doRef?: string }>>('/api/data?entity=freight-nota-items', 'Gagal memuat pemakaian DO nota'),
                 ]);
                 setCustomers((cust || []).filter(customer => customer.active !== false));
                 setCompany(comp || null);

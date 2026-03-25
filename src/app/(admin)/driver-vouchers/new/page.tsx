@@ -6,6 +6,7 @@ import { useToast } from '../../layout';
 import { Save } from 'lucide-react';
 import CurrencyInput from '@/components/CurrencyInput';
 import PageBackButton from '@/components/PageBackButton';
+import { withAdminCollectionPageSize } from '@/lib/api/admin-client';
 import type { BankAccount, Driver, DeliveryOrder, DriverVoucher, Order } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
 
@@ -31,7 +32,7 @@ export default function NewDriverVoucherPage() {
 
     useEffect(() => {
         const fetchEntity = async <T,>(url: string) => {
-            const res = await fetch(url);
+            const res = await fetch(withAdminCollectionPageSize(url));
             const payload = await res.json();
             if (!res.ok) {
                 throw new Error(payload.error || 'Gagal memuat form uang jalan trip');

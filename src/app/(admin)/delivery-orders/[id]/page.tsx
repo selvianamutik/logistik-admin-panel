@@ -9,18 +9,23 @@ import CurrencyInput from '@/components/CurrencyInput';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
-import { fetchAdminData } from '@/lib/api/admin-client';
+import { fetchAdminCollectionData, fetchAdminData } from '@/lib/api/admin-client';
 import {
     buildDeliveryOrderDetailState,
     buildDeliveryOrderPrintHtml,
     buildActualCargoDraft,
+    buildTripResourceBusyIds,
     buildDeliveryOrderPodUpdateData,
     buildDeliveryOrderStatusUpdateData,
     buildDeliveryOrderTripFeeUpdateData,
     buildResolvedDeliveryOrder,
     buildDefaultActualDropDrafts,
     createEmptyActualDropDraft,
+    getAssignableTripDrivers,
+    getAssignableTripVehicles,
     getNextDeliveryOrderStatuses,
+    getTripResourceActionLabel,
+    shouldRequireTripVehicleOverrideReason,
     shouldOpenAdvancedDropEditor,
     sortTrackingLogs,
     type ActualCargoDraft,
@@ -34,7 +39,7 @@ import {
     WEIGHT_INPUT_UNIT_OPTIONS,
 } from '@/lib/measurement';
 import { generateDOPdf } from '@/lib/pdf/doTemplate';
-import type { DeliveryOrder, DeliveryOrderItem, TrackingLog, CompanyProfile, Order } from '@/lib/types';
+import type { DeliveryOrder, DeliveryOrderItem, TrackingLog, CompanyProfile, Order, Driver, Vehicle } from '@/lib/types';
 
 export default function DODetailPage() {
     const params = useParams();
@@ -43,10 +48,14 @@ export default function DODetailPage() {
     const [doData, setDoData] = useState<DeliveryOrder | null>(null);
     const [doItems, setDoItems] = useState<DeliveryOrderItem[]>([]);
     const [trackingLogs, setTrackingLogs] = useState<TrackingLog[]>([]);
+    const [drivers, setDrivers] = useState<Driver[]>([]);
+    const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+    const [activeDeliveryOrders, setActiveDeliveryOrders] = useState<DeliveryOrder[]>([]);
     const [loading, setLoading] = useState(true);
     const [showStatusModal, setShowStatusModal] = useState(false);
     const [showPODModal, setShowPODModal] = useState(false);
     const [showRejectRequestModal, setShowRejectRequestModal] = useState(false);
+    const [showTripResourcesModal, setShowTripResourcesModal] = useState(false);
     const [newStatus, setNewStatus] = useState('');
     const [statusNote, setStatusNote] = useState('');
     const [reviewingDriverRequest, setReviewingDriverRequest] = useState(false);
@@ -64,6 +73,11 @@ export default function DODetailPage() {
     const [savingPOD, setSavingPOD] = useState(false);
     const [savingTarip, setSavingTarip] = useState(false);
     const [rejectingRequest, setRejectingRequest] = useState(false);
+    const [loadingTripResources, setLoadingTripResources] = useState(false);
+    const [savingTripResources, setSavingTripResources] = useState(false);
+    const [tripVehicleRef, setTripVehicleRef] = useState('');
+    const [tripDriverRef, setTripDriverRef] = useState('');
+    const [tripVehicleOverrideReason, setTripVehicleOverrideReason] = useState('');
 
     const loadDO = useCallback(async (mode: 'initial' | 'refresh' = 'refresh') => {
         if (mode === 'initial') {
@@ -95,6 +109,35 @@ export default function DODetailPage() {
             }
         }
     }, [addToast, doId]);
+
+    const loadTripResources = useCallback(async () => {
+        setLoadingTripResources(true);
+        try {
+            const [driverRows, vehicleRows, deliveryOrders] = await Promise.all([
+                fetchAdminCollectionData<Driver[]>('/api/data?entity=drivers', 'Gagal memuat opsi armada trip'),
+                fetchAdminCollectionData<Vehicle[]>('/api/data?entity=vehicles', 'Gagal memuat opsi armada trip'),
+                fetchAdminCollectionData<DeliveryOrder[]>('/api/data?entity=delivery-orders', 'Gagal memuat opsi armada trip'),
+            ]);
+
+            setDrivers(driverRows || []);
+            setVehicles(vehicleRows || []);
+            setActiveDeliveryOrders(
+                (deliveryOrders || []).filter(item => ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(item.status))
+            );
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat opsi armada trip');
+        } finally {
+            setLoadingTripResources(false);
+        }
+    }, [addToast]);
+
+    const openTripResourcesModal = async () => {
+        setTripVehicleRef(doData?.vehicleRef || '');
+        setTripDriverRef(doData?.driverRef || '');
+        setTripVehicleOverrideReason(doData?.vehicleCategoryOverrideReason || '');
+        setShowTripResourcesModal(true);
+        await loadTripResources();
+    };
 
     const openStatusModal = (requestedStatus?: string, fromDriverRequest: boolean = false) => {
         setNewStatus(requestedStatus || '');
@@ -344,10 +387,66 @@ export default function DODetailPage() {
         }
     };
 
+    const saveTripResources = async () => {
+        if (!tripVehicleRef && !tripDriverRef) {
+            addToast('error', 'Pilih kendaraan dan/atau supir untuk trip ini');
+            return;
+        }
+
+        setSavingTripResources(true);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'delivery-orders',
+                    action: 'assign-trip-resources',
+                    data: {
+                        id: doData?._id,
+                        vehicleRef: tripVehicleRef || undefined,
+                        driverRef: tripDriverRef || undefined,
+                        vehicleCategoryOverrideReason: requiresTripVehicleOverrideReason
+                            ? tripVehicleOverrideReason
+                            : undefined,
+                    },
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal melengkapi armada trip');
+                return;
+            }
+
+            setDoData(prev => (prev ? buildResolvedDeliveryOrder(result.data, null) : prev));
+            setShowTripResourcesModal(false);
+            addToast('success', 'Armada trip berhasil diperbarui');
+            await loadDO();
+        } catch {
+            addToast('error', 'Gagal melengkapi armada trip');
+        } finally {
+            setSavingTripResources(false);
+        }
+    };
+
     if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 200 }} /></div>;
     if (!doData) return <div className="empty-state"><div className="empty-state-title">Surat Jalan tidak ditemukan</div></div>;
 
     const nextStatuses = getNextDeliveryOrderStatuses(doData.status);
+    const tripResourceActionLabel = getTripResourceActionLabel(doData);
+    const tripResourceBusyIds = buildTripResourceBusyIds(activeDeliveryOrders, doData._id);
+    const assignableVehicles = getAssignableTripVehicles({
+        vehicles,
+        busyVehicleIds: tripResourceBusyIds.busyVehicleIds,
+        currentVehicleRef: doData.vehicleRef,
+        requestedServiceRef: doData.serviceRef,
+    });
+    const assignableDrivers = getAssignableTripDrivers({
+        drivers,
+        busyDriverIds: tripResourceBusyIds.busyDriverIds,
+        currentDriverRef: doData.driverRef,
+    });
+    const selectedTripVehicle = assignableVehicles.find(vehicle => vehicle._id === tripVehicleRef) || null;
+    const requiresTripVehicleOverrideReason = shouldRequireTripVehicleOverrideReason(doData, selectedTripVehicle);
     const isCompletingDelivery = newStatus === 'DELIVERED';
     const pendingDriverStatusMeta = doData.pendingDriverStatus ? DO_STATUS_MAP[doData.pendingDriverStatus] : null;
     const {
@@ -383,6 +482,11 @@ export default function DODetailPage() {
                     </div>
                 </div>
                 <div className="page-actions">
+                    {doData.status === 'CREATED' && (
+                        <button className="btn btn-secondary" onClick={() => void openTripResourcesModal()}>
+                            <Truck size={16} /> {tripResourceActionLabel}
+                        </button>
+                    )}
                     {nextStatuses.length > 0 && (
                         <button className="btn btn-primary" onClick={() => openStatusModal()}>
                             <Truck size={16} /> {nextStatuses.includes('DELIVERED') ? 'Lanjut / Selesaikan DO' : 'Ubah Status'}
@@ -409,6 +513,28 @@ export default function DODetailPage() {
                     </button>
                 </div>
             </div>
+
+            {doData.status === 'CREATED' && (!doData.vehicleRef || !doData.driverRef) && (
+                <div className="card" style={{ marginBottom: 'var(--space-4)', border: '1px solid var(--color-warning-light)', background: 'var(--color-warning-soft)' }}>
+                    <div className="card-body">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
+                            <div style={{ display: 'grid', gap: '0.35rem' }}>
+                                <div className="form-section-title" style={{ marginBottom: 0 }}>Armada Trip Belum Lengkap</div>
+                                <div className="detail-value">
+                                    {!doData.vehicleRef && !doData.driverRef
+                                        ? 'Kendaraan dan supir belum dipilih. Lengkapi dulu sebelum trip diteruskan ke workflow operasional berikutnya.'
+                                        : !doData.vehicleRef
+                                            ? 'Kendaraan trip belum dipilih. Lengkapi dulu sebelum trip diteruskan ke workflow operasional berikutnya.'
+                                            : 'Supir trip belum dipilih. Lengkapi dulu sebelum trip diteruskan ke workflow operasional berikutnya.'}
+                                </div>
+                            </div>
+                            <button className="btn btn-secondary btn-sm" onClick={() => void openTripResourcesModal()}>
+                                <Truck size={14} /> {tripResourceActionLabel}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {doData.pendingDriverStatus && (
                 <div className="card" style={{ marginBottom: 'var(--space-4)', border: '1px solid var(--color-warning-light)', background: 'var(--color-warning-soft)' }}>
@@ -736,6 +862,93 @@ export default function DODetailPage() {
                     )}
             </CollapsibleCard>
             </div>
+
+            {showTripResourcesModal && (
+                <div className="modal-overlay" onClick={() => { if (!savingTripResources) setShowTripResourcesModal(false); }}>
+                    <div className="modal" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">{tripResourceActionLabel}</h3>
+                            <button className="modal-close" onClick={() => setShowTripResourcesModal(false)} disabled={savingTripResources}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Kendaraan</label>
+                                    <select
+                                        className="form-select"
+                                        value={tripVehicleRef}
+                                        onChange={e => setTripVehicleRef(e.target.value)}
+                                        disabled={loadingTripResources || savingTripResources}
+                                    >
+                                        <option value="">{loadingTripResources ? 'Memuat kendaraan...' : 'Pilih kendaraan untuk trip ini'}</option>
+                                        {assignableVehicles.map(vehicle => (
+                                            <option key={vehicle._id} value={vehicle._id}>
+                                                {vehicle.unitCode ? `${vehicle.unitCode} - ` : ''}{vehicle.plateNumber || '-'}{vehicle.serviceName ? ` (${vehicle.serviceName})` : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    {!loadingTripResources && assignableVehicles.length === 0 && (
+                                        <div className="detail-value" style={{ color: 'var(--color-warning-dark)', marginTop: '0.5rem' }}>
+                                            Tidak ada kendaraan kosong. Semua armada operasional sedang terikat di DO aktif lain.
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Supir</label>
+                                    <select
+                                        className="form-select"
+                                        value={tripDriverRef}
+                                        onChange={e => setTripDriverRef(e.target.value)}
+                                        disabled={loadingTripResources || savingTripResources}
+                                    >
+                                        <option value="">{loadingTripResources ? 'Memuat supir...' : 'Pilih supir untuk trip ini'}</option>
+                                        {assignableDrivers.map(driver => (
+                                            <option key={driver._id} value={driver._id}>
+                                                {driver.name}{driver.phone ? ` | ${driver.phone}` : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    {!loadingTripResources && assignableDrivers.length === 0 && (
+                                        <div className="detail-value" style={{ color: 'var(--color-warning-dark)', marginTop: '0.5rem' }}>
+                                            Tidak ada supir kosong. Semua supir aktif sedang terikat di DO aktif lain.
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            {requiresTripVehicleOverrideReason && (
+                                <div className="form-group">
+                                    <label className="form-label">Alasan Override Armada <span className="required">*</span></label>
+                                    <textarea
+                                        className="form-textarea"
+                                        rows={2}
+                                        value={tripVehicleOverrideReason}
+                                        onChange={e => setTripVehicleOverrideReason(e.target.value)}
+                                        disabled={savingTripResources}
+                                        placeholder="Contoh: armada sesuai kategori sedang penuh, trip ini harus tetap jalan."
+                                    />
+                                </div>
+                            )}
+                            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', fontSize: '0.82rem', color: 'var(--color-gray-600)' }}>
+                                Perubahan armada hanya diizinkan saat status surat jalan masih <strong>Dibuat</strong> dan belum masuk uang jalan / settlement trip.
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setShowTripResourcesModal(false)} disabled={savingTripResources}>Batal</button>
+                            <button
+                                className="btn btn-primary"
+                                onClick={saveTripResources}
+                                disabled={
+                                    loadingTripResources ||
+                                    savingTripResources ||
+                                    (requiresTripVehicleOverrideReason && !tripVehicleOverrideReason.trim())
+                                }
+                            >
+                                <Save size={16} /> {savingTripResources ? 'Menyimpan...' : 'Simpan Armada Trip'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Status Modal */}
             {showStatusModal && (

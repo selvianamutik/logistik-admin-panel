@@ -43,6 +43,7 @@ import {
 } from '@/lib/api/operations-workflows';
 import {
     handleDeliveryOrderCreate,
+    handleDeliveryOrderTripResourceAssign,
     handleDeliveryOrderDriverStatusRequestReject,
     handleDeliveryOrderStatusUpdate,
     handleOrderItemHoldRelease,
@@ -145,6 +146,7 @@ function getMutationPermissionAction(action?: string): keyof ModulePermissions {
         action === 'update-with-items' ||
         action === 'revise-targets' ||
         action === 'set-status' ||
+        action === 'assign-trip-resources' ||
         action === 'reject-driver-status-request' ||
         action === 'set-hold-quantity' ||
         action === 'release-hold' ||
@@ -631,6 +633,10 @@ export async function POST(request: Request) {
 
         if (entity === 'delivery-orders' && action === 'set-status') {
             return await handleDeliveryOrderStatusUpdate(session, data, addAuditLog);
+        }
+
+        if (entity === 'delivery-orders' && action === 'assign-trip-resources') {
+            return await handleDeliveryOrderTripResourceAssign(session, data, addAuditLog);
         }
 
         if (entity === 'delivery-orders' && action === 'reject-driver-status-request') {

@@ -1,4 +1,4 @@
-import type { DeliveryOrder, DeliveryOrderItem, Order, TrackingLog } from '@/lib/types';
+import type { DeliveryOrder, DeliveryOrderItem, Driver, Order, TrackingLog, Vehicle } from '@/lib/types';
 import type { VolumeInputUnit, WeightInputUnit } from '@/lib/measurement';
 import { formatCargoSummary } from '@/lib/measurement';
 import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatDate, formatDateTime } from '@/lib/utils';
@@ -175,6 +175,100 @@ export function getNextDeliveryOrderStatuses(current: string): string[] {
         ARRIVED: ['DELIVERED', 'CANCELLED'],
     };
     return transitions[current] || [];
+}
+
+export function buildTripResourceBusyIds(activeDeliveryOrders: DeliveryOrder[], currentDeliveryOrderId: string) {
+    const busyVehicleIds = new Set<string>();
+    const busyDriverIds = new Set<string>();
+
+    for (const deliveryOrder of activeDeliveryOrders) {
+        if (deliveryOrder._id === currentDeliveryOrderId) {
+            continue;
+        }
+        if (deliveryOrder.vehicleRef) {
+            busyVehicleIds.add(deliveryOrder.vehicleRef);
+        }
+        if (deliveryOrder.driverRef) {
+            busyDriverIds.add(deliveryOrder.driverRef);
+        }
+    }
+
+    return {
+        busyVehicleIds,
+        busyDriverIds,
+    };
+}
+
+export function getAssignableTripVehicles(params: {
+    vehicles: Vehicle[];
+    busyVehicleIds: Set<string>;
+    currentVehicleRef?: string;
+    requestedServiceRef?: string;
+}) {
+    const { vehicles, busyVehicleIds, currentVehicleRef, requestedServiceRef } = params;
+
+    return vehicles
+        .filter(vehicle => {
+            const isCurrent = vehicle._id === currentVehicleRef;
+            if (!isCurrent && busyVehicleIds.has(vehicle._id)) {
+                return false;
+            }
+            if (!isCurrent && ['SOLD', 'OUT_OF_SERVICE'].includes(vehicle.status)) {
+                return false;
+            }
+            return true;
+        })
+        .sort((left, right) => {
+            const leftMatches = requestedServiceRef && left.serviceRef === requestedServiceRef ? 1 : 0;
+            const rightMatches = requestedServiceRef && right.serviceRef === requestedServiceRef ? 1 : 0;
+            if (leftMatches !== rightMatches) {
+                return rightMatches - leftMatches;
+            }
+            const leftLabel = `${left.unitCode || ''} ${left.plateNumber || ''}`.trim();
+            const rightLabel = `${right.unitCode || ''} ${right.plateNumber || ''}`.trim();
+            return leftLabel.localeCompare(rightLabel, 'id');
+        });
+}
+
+export function getAssignableTripDrivers(params: {
+    drivers: Driver[];
+    busyDriverIds: Set<string>;
+    currentDriverRef?: string;
+}) {
+    const { drivers, busyDriverIds, currentDriverRef } = params;
+
+    return drivers
+        .filter(driver => {
+            const isCurrent = driver._id === currentDriverRef;
+            if (!isCurrent && busyDriverIds.has(driver._id)) {
+                return false;
+            }
+            return driver.active !== false || isCurrent;
+        })
+        .sort((left, right) => (left.name || '').localeCompare(right.name || '', 'id'));
+}
+
+export function shouldRequireTripVehicleOverrideReason(deliveryOrder: DeliveryOrder | null, vehicle: Vehicle | null) {
+    if (!deliveryOrder?.serviceRef || !vehicle) {
+        return false;
+    }
+    return (vehicle.serviceRef || '') !== deliveryOrder.serviceRef;
+}
+
+export function getTripResourceActionLabel(deliveryOrder: DeliveryOrder | null) {
+    if (!deliveryOrder) {
+        return 'Lengkapi Armada Trip';
+    }
+    if (!deliveryOrder.vehicleRef && !deliveryOrder.driverRef) {
+        return 'Lengkapi Armada Trip';
+    }
+    if (!deliveryOrder.vehicleRef) {
+        return 'Pilih Kendaraan';
+    }
+    if (!deliveryOrder.driverRef) {
+        return 'Pilih Supir';
+    }
+    return 'Ganti Armada / Supir';
 }
 
 export function buildDeliveryOrderDetailState(params: {

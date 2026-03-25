@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Search, Plus, FileText, Printer, FileDown, Receipt } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import CurrencyInput from '@/components/CurrencyInput';
+import { withAdminCollectionPageSize } from '@/lib/api/admin-client';
 import { formatDate, formatCurrency, getReceivableNetAmount, PAYMENT_METHOD_MAP } from '@/lib/utils';
 import { buildFreightNotaPrintDocument, openBrandedPrint, fetchCompanyProfile, formatFreightNotaDisplayNumber } from '@/lib/print';
 import { exportFreightNotaDetail, exportInvoices } from '@/lib/export';
@@ -120,9 +121,9 @@ export default function NotaListPage() {
         const [notaRes, summaryRes, customerRes, receiptRes, bankRes, companyPayload] = await Promise.all([
             fetch(`/api/data?${buildInvoicesQuery()}`),
             fetch(`/api/data?${summaryParams.toString()}`),
-            fetch('/api/data?entity=customers'),
-            fetch('/api/data?entity=customer-receipts'),
-            fetch('/api/data?entity=bank-accounts'),
+            fetch(withAdminCollectionPageSize('/api/data?entity=customers')),
+            fetch(withAdminCollectionPageSize('/api/data?entity=customer-receipts')),
+            fetch(withAdminCollectionPageSize('/api/data?entity=bank-accounts')),
             fetchCompanyProfile(),
         ]);
 

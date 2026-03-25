@@ -1794,6 +1794,251 @@ export async function handleDeliveryOrderCreate(
     return NextResponse.json({ data: doDoc, id: doId });
 }
 
+export async function handleDeliveryOrderTripResourceAssign(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const id = typeof data.id === 'string' ? data.id : '';
+    const vehicleRef = typeof data.vehicleRef === 'string' ? data.vehicleRef : '';
+    const driverRef = typeof data.driverRef === 'string' ? data.driverRef : '';
+    const vehicleCategoryOverrideReason = normalizeOptionalText(data.vehicleCategoryOverrideReason);
+
+    if (!id) {
+        return NextResponse.json({ error: 'Surat jalan tidak valid' }, { status: 400 });
+    }
+    if (!vehicleRef && !driverRef) {
+        return NextResponse.json({ error: 'Pilih kendaraan dan/atau supir yang akan dilengkapi' }, { status: 400 });
+    }
+
+    const deliveryOrder = await sanityGetById<{
+        _id: string;
+        doNumber?: string;
+        customerDoNumber?: string;
+        status?: string;
+        trackingState?: string;
+        serviceRef?: unknown;
+        serviceName?: string;
+        vehicleRef?: unknown;
+        vehiclePlate?: string;
+        vehicleServiceRef?: unknown;
+        vehicleServiceName?: string;
+        vehicleCategoryOverrideReason?: string;
+        driverRef?: unknown;
+        driverName?: string;
+    }>(id);
+    if (!deliveryOrder) {
+        return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
+    }
+    if (deliveryOrder.status !== 'CREATED') {
+        return NextResponse.json({ error: 'Armada trip hanya bisa dilengkapi saat status surat jalan masih Dibuat' }, { status: 409 });
+    }
+    if (deliveryOrder.trackingState === 'ACTIVE' || deliveryOrder.trackingState === 'PAUSED') {
+        return NextResponse.json({ error: 'Armada trip tidak bisa diubah saat tracking driver masih aktif' }, { status: 409 });
+    }
+
+    const relatedVoucher = await getSanityClient().fetch<{ _id: string; bonNumber?: string } | null>(
+        `*[_type == "driverVoucher" && deliveryOrderRef == $ref][0]{ _id, bonNumber }`,
+        { ref: id }
+    );
+    if (relatedVoucher) {
+        return NextResponse.json(
+            { error: `Armada trip tidak boleh diubah karena DO ini sudah punya uang jalan ${relatedVoucher.bonNumber || relatedVoucher._id}` },
+            { status: 409 }
+        );
+    }
+
+    const relatedBoronganItem = await getSanityClient().fetch<{ _id: string } | null>(
+        `*[_type == "driverBoronganItem" && doRef == $ref][0]{ _id }`,
+        { ref: id }
+    );
+    if (relatedBoronganItem) {
+        return NextResponse.json(
+            { error: 'Armada trip tidak boleh diubah karena DO ini sudah masuk slip borongan legacy' },
+            { status: 409 }
+        );
+    }
+
+    const currentVehicleRef = extractRefId(deliveryOrder.vehicleRef);
+    const currentDriverRef = extractRefId(deliveryOrder.driverRef);
+    let nextVehicleRef = currentVehicleRef || '';
+    let nextVehiclePlate = deliveryOrder.vehiclePlate || '';
+    let nextVehicleServiceRef = extractRefId(deliveryOrder.vehicleServiceRef) || undefined;
+    let nextVehicleServiceName = deliveryOrder.vehicleServiceName || undefined;
+    let nextVehicleCategoryOverrideReason = deliveryOrder.vehicleCategoryOverrideReason || undefined;
+    let nextDriverRef = currentDriverRef || '';
+    let nextDriverName = deliveryOrder.driverName || '';
+
+    if (vehicleRef) {
+        const vehicle = await sanityGetById<{
+            _id: string;
+            plateNumber?: string;
+            status?: string;
+            serviceRef?: string;
+            serviceName?: string;
+        }>(vehicleRef);
+        if (!vehicle) {
+            return NextResponse.json({ error: 'Kendaraan DO tidak ditemukan' }, { status: 404 });
+        }
+        if (vehicle.status === 'SOLD') {
+            return NextResponse.json({ error: 'Kendaraan yang sudah dijual tidak bisa dipakai untuk surat jalan baru' }, { status: 409 });
+        }
+        if (vehicle.status === 'OUT_OF_SERVICE') {
+            return NextResponse.json({ error: 'Kendaraan yang sedang out of service tidak bisa dipakai untuk surat jalan baru' }, { status: 409 });
+        }
+        const conflictingDeliveryOrder = await getSanityClient().fetch<{
+            _id: string;
+            doNumber?: string;
+            customerDoNumber?: string;
+        } | null>(
+            `*[
+                _type == "deliveryOrder" &&
+                _id != $currentId &&
+                status in ["CREATED", "HEADING_TO_PICKUP", "ON_DELIVERY", "ARRIVED"] &&
+                ((vehicleRef == $ref || vehicleRef._ref == $ref) || lower(coalesce(vehiclePlate, "")) == $plate)
+            ][0]{
+                _id,
+                doNumber,
+                customerDoNumber
+            }`,
+            {
+                currentId: id,
+                ref: vehicleRef,
+                plate: (vehicle.plateNumber || nextVehiclePlate || '').toLowerCase(),
+            }
+        );
+        if (conflictingDeliveryOrder) {
+            const conflictingNumber =
+                conflictingDeliveryOrder.customerDoNumber ||
+                conflictingDeliveryOrder.doNumber ||
+                conflictingDeliveryOrder._id;
+            return NextResponse.json(
+                {
+                    error: `Kendaraan ${vehicle.plateNumber || vehicleRef} masih dipakai di surat jalan aktif ${conflictingNumber}. Selesaikan atau batalkan dulu DO tersebut.`,
+                },
+                { status: 409 }
+            );
+        }
+        const requestedServiceRef = extractRefId(deliveryOrder.serviceRef);
+        const assignedVehicleServiceRef = extractRefId(vehicle.serviceRef) || undefined;
+        const assignedVehicleServiceName = vehicle.serviceName || undefined;
+        if (requestedServiceRef && !assignedVehicleServiceRef && !vehicleCategoryOverrideReason) {
+            return NextResponse.json(
+                {
+                    error: `Kendaraan ${vehicle.plateNumber || vehicleRef} belum punya kategori armada yang cocok. Isi alasan override jika trip ini memang harus jalan dengan armada berbeda.`,
+                },
+                { status: 400 }
+            );
+        }
+        if (requestedServiceRef && assignedVehicleServiceRef !== requestedServiceRef && !vehicleCategoryOverrideReason) {
+            return NextResponse.json(
+                {
+                    error: `Kendaraan ${vehicle.plateNumber || vehicleRef} berkategori ${vehicle.serviceName || '-'} tidak sama dengan armada order ${deliveryOrder.serviceName || '-'}. Isi alasan override bila trip ini memang memakai armada lain.`,
+                },
+                { status: 400 }
+            );
+        }
+
+        nextVehicleRef = vehicleRef;
+        nextVehiclePlate = vehicle.plateNumber || nextVehiclePlate;
+        nextVehicleServiceRef = assignedVehicleServiceRef;
+        nextVehicleServiceName = assignedVehicleServiceName;
+        nextVehicleCategoryOverrideReason =
+            requestedServiceRef && assignedVehicleServiceRef !== requestedServiceRef
+                ? vehicleCategoryOverrideReason || undefined
+                : undefined;
+    }
+
+    if (driverRef) {
+        const driver = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(driverRef);
+        if (!driver) {
+            return NextResponse.json({ error: 'Supir DO tidak ditemukan' }, { status: 404 });
+        }
+        if (driver.active === false) {
+            return NextResponse.json({ error: 'Supir DO tidak aktif' }, { status: 409 });
+        }
+        const conflictingDeliveryOrder = await getSanityClient().fetch<{
+            _id: string;
+            doNumber?: string;
+            customerDoNumber?: string;
+        } | null>(
+            `*[
+                _type == "deliveryOrder" &&
+                _id != $currentId &&
+                status in ["CREATED", "HEADING_TO_PICKUP", "ON_DELIVERY", "ARRIVED"] &&
+                ((driverRef == $ref || driverRef._ref == $ref) || lower(coalesce(driverName, "")) == $driverName)
+            ][0]{
+                _id,
+                doNumber,
+                customerDoNumber
+            }`,
+            {
+                currentId: id,
+                ref: driverRef,
+                driverName: (driver.name || nextDriverName || '').toLowerCase(),
+            }
+        );
+        if (conflictingDeliveryOrder) {
+            const conflictingNumber =
+                conflictingDeliveryOrder.customerDoNumber ||
+                conflictingDeliveryOrder.doNumber ||
+                conflictingDeliveryOrder._id;
+            return NextResponse.json(
+                {
+                    error: `Supir ${driver.name || driverRef} masih terikat di surat jalan aktif ${conflictingNumber}. Selesaikan atau batalkan dulu DO tersebut.`,
+                },
+                { status: 409 }
+            );
+        }
+        nextDriverRef = driverRef;
+        nextDriverName = driver.name || nextDriverName;
+    }
+
+    const vehicleChanged =
+        nextVehicleRef !== (currentVehicleRef || '') ||
+        nextVehiclePlate !== (deliveryOrder.vehiclePlate || '') ||
+        (nextVehicleCategoryOverrideReason || '') !== (deliveryOrder.vehicleCategoryOverrideReason || '');
+    const driverChanged =
+        nextDriverRef !== (currentDriverRef || '') ||
+        nextDriverName !== (deliveryOrder.driverName || '');
+
+    if (!vehicleChanged && !driverChanged) {
+        const unchangedDeliveryOrder = await sanityGetById(id);
+        return NextResponse.json({ data: unchangedDeliveryOrder, id });
+    }
+
+    const updatedDeliveryOrder = await sanityUpdate(id, {
+        vehicleRef: nextVehicleRef || undefined,
+        vehiclePlate: nextVehiclePlate || undefined,
+        vehicleServiceRef: nextVehicleServiceRef || undefined,
+        vehicleServiceName: nextVehicleServiceName || undefined,
+        vehicleCategoryOverrideReason: nextVehicleCategoryOverrideReason || undefined,
+        driverRef: nextDriverRef || undefined,
+        driverName: nextDriverName || undefined,
+    });
+
+    const changes: string[] = [];
+    if (vehicleChanged) {
+        changes.push(`kendaraan ${deliveryOrder.vehiclePlate || '-'} -> ${nextVehiclePlate || '-'}`);
+    }
+    if (driverChanged) {
+        changes.push(`supir ${deliveryOrder.driverName || '-'} -> ${nextDriverName || '-'}`);
+    }
+    if (nextVehicleCategoryOverrideReason) {
+        changes.push(`override armada: ${nextVehicleCategoryOverrideReason}`);
+    }
+
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'delivery-orders',
+        id,
+        `Lengkapi armada trip ${deliveryOrder.customerDoNumber || deliveryOrder.doNumber || id}: ${changes.join('; ')}`
+    );
+
+    return NextResponse.json({ data: updatedDeliveryOrder, id });
+}
+
 export async function handleOrderDelete(
     session: ApiSession,
     data: Record<string, unknown>,
