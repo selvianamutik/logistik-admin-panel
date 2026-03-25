@@ -12,8 +12,10 @@ import {
     applyCustomerRecipientSnapshot,
     applyCustomerProductToOrderItem,
     createDefaultOrderItemForm,
+    findDefaultCustomerRecipient,
     getDraftOrderItems,
     resetCustomerScopedOrderItems,
+    sortCustomerRecipients,
     summarizeDraftOrderCargo,
     type OrderItemForm,
 } from '@/lib/order-create-page-support';
@@ -37,6 +39,10 @@ export default function NewOrderPage() {
     // Form state
     const [customerRef, setCustomerRef] = useState('');
     const [customerRecipientRef, setCustomerRecipientRef] = useState('');
+    const [shouldAutoApplyDefaultRecipient, setShouldAutoApplyDefaultRecipient] = useState(false);
+    const [saveRecipientToMaster, setSaveRecipientToMaster] = useState(false);
+    const [saveRecipientAsDefault, setSaveRecipientAsDefault] = useState(false);
+    const [recipientMasterLabel, setRecipientMasterLabel] = useState('');
     const [serviceRef, setServiceRef] = useState('');
     const [receiverName, setReceiverName] = useState('');
     const [receiverPhone, setReceiverPhone] = useState('');
@@ -50,6 +56,7 @@ export default function NewOrderPage() {
     const draftCargo = summarizeDraftOrderCargo(items);
     const selectedCustomer = customers.find(customer => customer._id === customerRef) || null;
     const selectedService = services.find(service => service._id === serviceRef) || null;
+    const sortedCustomerRecipients = sortCustomerRecipients(customerRecipients);
 
     useEffect(() => {
         Promise.all([
@@ -102,6 +109,27 @@ export default function NewOrderPage() {
         };
     }, [addToast, customerRef]);
 
+    useEffect(() => {
+        if (!shouldAutoApplyDefaultRecipient || !customerRef || customerRecipientRef) {
+            return;
+        }
+        const defaultRecipient = findDefaultCustomerRecipient(customerRecipients);
+        if (!defaultRecipient) {
+            setShouldAutoApplyDefaultRecipient(false);
+            return;
+        }
+        const snapshot = applyCustomerRecipientSnapshot(defaultRecipient);
+        setCustomerRecipientRef(defaultRecipient._id);
+        setReceiverName(snapshot.receiverName);
+        setReceiverPhone(snapshot.receiverPhone);
+        setReceiverAddress(snapshot.receiverAddress);
+        setReceiverCompany(snapshot.receiverCompany);
+        setSaveRecipientToMaster(false);
+        setSaveRecipientAsDefault(false);
+        setRecipientMasterLabel('');
+        setShouldAutoApplyDefaultRecipient(false);
+    }, [customerRecipientRef, customerRecipients, customerRef, shouldAutoApplyDefaultRecipient]);
+
     const addItem = () => setItems(prev => [...prev, createDefaultOrderItemForm()]);
     const removeItem = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx));
     const updateItem = <K extends keyof OrderItemForm>(idx: number, field: K, value: OrderItemForm[K]) => {
@@ -111,10 +139,12 @@ export default function NewOrderPage() {
         const selectedCustomer = customers.find(customer => customer._id === nextCustomerRef);
         const previousCustomer = customers.find(customer => customer._id === customerRef);
         const previousCustomerAddress = previousCustomer?.address?.trim() || '';
-        const shouldResetRecipientSnapshot = Boolean(customerRecipientRef);
-
         setCustomerRef(nextCustomerRef);
         setCustomerRecipientRef('');
+        setShouldAutoApplyDefaultRecipient(Boolean(nextCustomerRef));
+        setSaveRecipientToMaster(false);
+        setSaveRecipientAsDefault(false);
+        setRecipientMasterLabel('');
         setItems(prev => resetCustomerScopedOrderItems(prev));
         setPickupAddress(previous => {
             const currentPickup = previous.trim();
@@ -123,15 +153,14 @@ export default function NewOrderPage() {
             }
             return previous;
         });
-        if (shouldResetRecipientSnapshot) {
-            setReceiverName('');
-            setReceiverPhone('');
-            setReceiverAddress('');
-            setReceiverCompany('');
-        }
+        setReceiverName('');
+        setReceiverPhone('');
+        setReceiverAddress('');
+        setReceiverCompany('');
     };
 
     const handleCustomerRecipientChange = (nextRecipientRef: string) => {
+        setShouldAutoApplyDefaultRecipient(false);
         setCustomerRecipientRef(nextRecipientRef);
         const recipient = customerRecipients.find(item => item._id === nextRecipientRef);
         const snapshot = applyCustomerRecipientSnapshot(recipient);
@@ -139,6 +168,20 @@ export default function NewOrderPage() {
         setReceiverPhone(snapshot.receiverPhone);
         setReceiverAddress(snapshot.receiverAddress);
         setReceiverCompany(snapshot.receiverCompany);
+        setSaveRecipientToMaster(false);
+        setSaveRecipientAsDefault(false);
+        setRecipientMasterLabel('');
+    };
+
+    const updateReceiverField = (field: 'receiverName' | 'receiverPhone' | 'receiverAddress' | 'receiverCompany', value: string) => {
+        setShouldAutoApplyDefaultRecipient(false);
+        if (customerRecipientRef) {
+            setCustomerRecipientRef('');
+        }
+        if (field === 'receiverName') setReceiverName(value);
+        if (field === 'receiverPhone') setReceiverPhone(value);
+        if (field === 'receiverAddress') setReceiverAddress(value);
+        if (field === 'receiverCompany') setReceiverCompany(value);
     };
 
     const applyCustomerProductSelection = (idx: number, nextProductRef: string) => {
@@ -167,6 +210,38 @@ export default function NewOrderPage() {
         try {
             const selCustomer = customers.find(c => c._id === customerRef);
             const selService = services.find(s => s._id === serviceRef);
+            let recipientRefForSubmit = customerRecipientRef;
+            if (saveRecipientToMaster && !recipientRefForSubmit) {
+                if (!recipientMasterLabel.trim()) {
+                    addToast('error', 'Label master penerima wajib diisi jika ingin disimpan ke master');
+                    setLoading(false);
+                    return;
+                }
+                const recipientRes = await fetch('/api/data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        entity: 'customer-recipients',
+                        data: {
+                            customerRef,
+                            label: recipientMasterLabel,
+                            receiverName,
+                            receiverPhone,
+                            receiverAddress,
+                            receiverCompany,
+                            active: true,
+                            isDefault: saveRecipientAsDefault,
+                        },
+                    }),
+                });
+                const recipientData = await recipientRes.json();
+                if (!recipientRes.ok) {
+                    addToast('error', recipientData.error || 'Gagal menyimpan master penerima');
+                    setLoading(false);
+                    return;
+                }
+                recipientRefForSubmit = recipientData.data?._id || recipientData.id || '';
+            }
 
             const res = await fetch('/api/data', {
                 method: 'POST',
@@ -176,7 +251,7 @@ export default function NewOrderPage() {
                     action: 'create-with-items',
                     data: {
                         customerRef, customerName: selCustomer?.name || '',
-                        customerRecipientRef,
+                        customerRecipientRef: recipientRefForSubmit,
                         receiverName, receiverPhone, receiverAddress, receiverCompany,
                         pickupAddress, serviceRef, serviceName: selService?.name || '',
                         notes,
@@ -275,9 +350,9 @@ export default function NewOrderPage() {
                                     <label className="form-label">Penerima Customer</label>
                                     <select className="form-select" value={customerRecipientRef} onChange={e => handleCustomerRecipientChange(e.target.value)}>
                                         <option value="">{customerRecipients.length > 0 ? 'Pilih dari master penerima customer (opsional)' : 'Belum ada master penerima customer'}</option>
-                                        {customerRecipients.map(recipient => (
+                                        {sortedCustomerRecipients.map(recipient => (
                                             <option key={recipient._id} value={recipient._id}>
-                                                {recipient.label} - {recipient.receiverName}
+                                                {recipient.isDefault ? '[Default] ' : ''}{recipient.label} - {recipient.receiverName}
                                             </option>
                                         ))}
                                     </select>
@@ -285,20 +360,40 @@ export default function NewOrderPage() {
                             )}
                             <div className="form-group">
                                 <label className="form-label">Nama Penerima <span className="required">*</span></label>
-                                <input className="form-input" value={receiverName} onChange={e => setReceiverName(e.target.value)} required />
+                                <input className="form-input" value={receiverName} onChange={e => updateReceiverField('receiverName', e.target.value)} required />
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Telepon</label>
-                                <input className="form-input" value={receiverPhone} onChange={e => setReceiverPhone(e.target.value)} />
+                                <input className="form-input" value={receiverPhone} onChange={e => updateReceiverField('receiverPhone', e.target.value)} />
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Alamat Tujuan <span className="required">*</span></label>
-                                <textarea className="form-textarea" rows={2} value={receiverAddress} onChange={e => setReceiverAddress(e.target.value)} required />
+                                <textarea className="form-textarea" rows={2} value={receiverAddress} onChange={e => updateReceiverField('receiverAddress', e.target.value)} required />
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Perusahaan (Opsional)</label>
-                                <input className="form-input" value={receiverCompany} onChange={e => setReceiverCompany(e.target.value)} />
+                                <input className="form-input" value={receiverCompany} onChange={e => updateReceiverField('receiverCompany', e.target.value)} />
                             </div>
+                            {customerRef && !customerRecipientRef && (
+                                <div style={{ display: 'grid', gap: '0.75rem', padding: '0.85rem 1rem', border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', background: 'var(--color-gray-50)' }}>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        <input type="checkbox" checked={saveRecipientToMaster} onChange={e => setSaveRecipientToMaster(e.target.checked)} />
+                                        <span>Simpan penerima ini ke master customer</span>
+                                    </label>
+                                    {saveRecipientToMaster && (
+                                        <>
+                                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                                <label className="form-label">Label Master Penerima <span className="required">*</span></label>
+                                                <input className="form-input" value={recipientMasterLabel} onChange={e => setRecipientMasterLabel(e.target.value)} placeholder="Contoh: Gudang Gresik / Toko Cabang Waru" />
+                                            </div>
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                <input type="checkbox" checked={saveRecipientAsDefault} onChange={e => setSaveRecipientAsDefault(e.target.checked)} />
+                                                <span>Jadikan default untuk customer ini</span>
+                                            </label>
+                                        </>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

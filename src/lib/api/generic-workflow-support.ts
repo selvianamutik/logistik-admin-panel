@@ -332,6 +332,27 @@ export async function normalizeCustomerRecipientPayload(data: Record<string, unk
         throw new Error('Alamat penerima wajib diisi');
     }
 
+    const nextActive =
+        Object.prototype.hasOwnProperty.call(data, 'active') || !existing
+            ? (() => {
+                if (data.active !== undefined && typeof data.active !== 'boolean') {
+                    throw new Error('Status master penerima tidak valid');
+                }
+                return typeof data.active === 'boolean' ? data.active : true;
+            })()
+            : Boolean(existing?.active !== false);
+    const nextDefault =
+        nextActive === false
+            ? false
+            : Object.prototype.hasOwnProperty.call(data, 'isDefault') || !existing
+                ? (() => {
+                    if (data.isDefault !== undefined && typeof data.isDefault !== 'boolean') {
+                        throw new Error('Status default master penerima tidak valid');
+                    }
+                    return typeof data.isDefault === 'boolean' ? data.isDefault : false;
+                })()
+                : Boolean(existing?.isDefault);
+
     next.customerRef = customerRef;
     next.customerName = customer.name || '';
     next.label = label;
@@ -349,13 +370,8 @@ export async function normalizeCustomerRecipientPayload(data: Record<string, unk
         Object.prototype.hasOwnProperty.call(data, 'notes') || !existing
             ? normalizeOptionalText(data.notes)
             : normalizeOptionalText(existing?.notes);
-
-    if (Object.prototype.hasOwnProperty.call(data, 'active') || !existing) {
-        if (data.active !== undefined && typeof data.active !== 'boolean') {
-            throw new Error('Status master penerima tidak valid');
-        }
-        next.active = typeof data.active === 'boolean' ? data.active : true;
-    }
+    next.active = nextActive;
+    next.isDefault = nextDefault;
 
     return next;
 }

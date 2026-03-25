@@ -106,3 +106,16 @@ export function applyCustomerRecipientSnapshot(selectedRecipient: CustomerRecipi
         receiverCompany: selectedRecipient.receiverCompany || '',
     };
 }
+
+export function sortCustomerRecipients(recipients: CustomerRecipient[]) {
+    return [...recipients].sort((a, b) => {
+        if (Boolean(a.isDefault) !== Boolean(b.isDefault)) {
+            return a.isDefault ? -1 : 1;
+        }
+        return (a.label || '').localeCompare(b.label || '');
+    });
+}
+
+export function findDefaultCustomerRecipient(recipients: CustomerRecipient[]) {
+    return recipients.find(recipient => recipient.active !== false && recipient.isDefault) || null;
+}

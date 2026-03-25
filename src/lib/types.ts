@@ -133,6 +133,7 @@ export interface CustomerRecipient {
   receiverCompany?: string;
   notes?: string;
   active: boolean;
+  isDefault?: boolean;
 }
 
 // ── Service ──

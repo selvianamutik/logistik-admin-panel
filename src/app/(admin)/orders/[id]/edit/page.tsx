@@ -19,6 +19,8 @@ import {
     applyCustomerRecipientSnapshot,
     applyCustomerProductToOrderItem,
     createDefaultOrderItemForm,
+    findDefaultCustomerRecipient,
+    sortCustomerRecipients,
     type OrderItemForm,
 } from '@/lib/order-create-page-support';
 import {
@@ -43,6 +45,7 @@ export default function OrderEditPage() {
     const [services, setServices] = useState<Service[]>([]);
     const [hasDeliveryOrders, setHasDeliveryOrders] = useState(false);
     const [hasOperationalProgress, setHasOperationalProgress] = useState(false);
+    const [shouldAutoApplyDefaultRecipient, setShouldAutoApplyDefaultRecipient] = useState(false);
     const [revisionReason, setRevisionReason] = useState('');
     const [form, setForm] = useState<OrderEditFormState>(buildOrderEditForm(null));
     const [items, setItems] = useState<OrderItemForm[]>([createDefaultOrderItemForm()]);
@@ -107,6 +110,30 @@ export default function OrderEditPage() {
         };
     }, [addToast, form.customerRef]);
 
+    useEffect(() => {
+        if (!shouldAutoApplyDefaultRecipient || !form.customerRef || form.customerRecipientRef) {
+            return;
+        }
+        const defaultRecipient = findDefaultCustomerRecipient(customerRecipients);
+        if (!defaultRecipient) {
+            setShouldAutoApplyDefaultRecipient(false);
+            return;
+        }
+        const snapshot = applyCustomerRecipientSnapshot(defaultRecipient);
+        setForm(prev => ({
+            ...prev,
+            customerRecipientRef: defaultRecipient._id,
+            receiverName: snapshot.receiverName,
+            receiverPhone: snapshot.receiverPhone,
+            receiverAddress: snapshot.receiverAddress,
+            receiverCompany: snapshot.receiverCompany,
+            saveRecipientToMaster: false,
+            saveRecipientAsDefault: false,
+            recipientMasterLabel: '',
+        }));
+        setShouldAutoApplyDefaultRecipient(false);
+    }, [customerRecipients, form.customerRecipientRef, form.customerRef, shouldAutoApplyDefaultRecipient]);
+
     const updateItem = <K extends keyof OrderItemForm>(idx: number, field: K, value: OrderItemForm[K]) => {
         setItems(prev => prev.map((item, i) => i === idx ? { ...item, [field]: value } : item));
     };
@@ -121,7 +148,6 @@ export default function OrderEditPage() {
 
     const handleCustomerChange = (nextCustomerRef: string) => {
         const nextCustomer = customers.find(customer => customer._id === nextCustomerRef);
-        const shouldResetRecipientSnapshot = Boolean(form.customerRecipientRef);
         setForm(prev => ({
             ...prev,
             customerRef: nextCustomerRef,
@@ -133,11 +159,15 @@ export default function OrderEditPage() {
                 previousPickupAddress: prev.pickupAddress,
                 customers,
             }),
-            receiverName: shouldResetRecipientSnapshot ? '' : prev.receiverName,
-            receiverPhone: shouldResetRecipientSnapshot ? '' : prev.receiverPhone,
-            receiverAddress: shouldResetRecipientSnapshot ? '' : prev.receiverAddress,
-            receiverCompany: shouldResetRecipientSnapshot ? '' : prev.receiverCompany,
+            receiverName: '',
+            receiverPhone: '',
+            receiverAddress: '',
+            receiverCompany: '',
+            saveRecipientToMaster: false,
+            saveRecipientAsDefault: false,
+            recipientMasterLabel: '',
         }));
+        setShouldAutoApplyDefaultRecipient(Boolean(nextCustomerRef));
         setItems(prev => prev.map(item => ({
             ...item,
             customerProductRef: '',
@@ -145,6 +175,7 @@ export default function OrderEditPage() {
     };
 
     const handleCustomerRecipientChange = (nextRecipientRef: string) => {
+        setShouldAutoApplyDefaultRecipient(false);
         const recipient = customerRecipients.find(item => item._id === nextRecipientRef);
         const snapshot = applyCustomerRecipientSnapshot(recipient);
         setForm(prev => ({
@@ -154,6 +185,18 @@ export default function OrderEditPage() {
             receiverPhone: snapshot.receiverPhone,
             receiverAddress: snapshot.receiverAddress,
             receiverCompany: snapshot.receiverCompany,
+            saveRecipientToMaster: false,
+            saveRecipientAsDefault: false,
+            recipientMasterLabel: '',
+        }));
+    };
+
+    const updateReceiverField = (field: 'receiverName' | 'receiverPhone' | 'receiverAddress' | 'receiverCompany', value: string) => {
+        setShouldAutoApplyDefaultRecipient(false);
+        setForm(prev => ({
+            ...prev,
+            customerRecipientRef: prev.customerRecipientRef ? '' : prev.customerRecipientRef,
+            [field]: value,
         }));
     };
 
@@ -185,6 +228,36 @@ export default function OrderEditPage() {
         setSaving(true);
         try {
             const action = isRevisionMode ? 'revise-targets' : 'update-with-items';
+            let recipientRefForSubmit = form.customerRecipientRef;
+            if (!isRevisionMode && form.saveRecipientToMaster && !recipientRefForSubmit) {
+                if (!form.recipientMasterLabel.trim()) {
+                    addToast('error', 'Label master penerima wajib diisi jika ingin disimpan ke master');
+                    setSaving(false);
+                    return;
+                }
+                const recipientRes = await fetch('/api/data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        entity: 'customer-recipients',
+                        data: {
+                            customerRef: form.customerRef,
+                            label: form.recipientMasterLabel,
+                            receiverName: form.receiverName,
+                            receiverPhone: form.receiverPhone,
+                            receiverAddress: form.receiverAddress,
+                            receiverCompany: form.receiverCompany,
+                            active: true,
+                            isDefault: form.saveRecipientAsDefault,
+                        },
+                    }),
+                });
+                const recipientPayload = await recipientRes.json();
+                if (!recipientRes.ok) {
+                    throw new Error(recipientPayload.error || 'Gagal menyimpan master penerima');
+                }
+                recipientRefForSubmit = recipientPayload.data?._id || recipientPayload.id || '';
+            }
             const payloadData = isRevisionMode
                 ? {
                     id: orderId,
@@ -199,7 +272,7 @@ export default function OrderEditPage() {
                         volumeInputUnit: item.volumeInputUnit,
                     })),
                 }
-                : { id: orderId, ...form, items: validItems };
+                : { id: orderId, ...form, customerRecipientRef: recipientRefForSubmit, items: validItems };
 
             const res = await fetch('/api/data', {
                 method: 'POST',
@@ -229,6 +302,7 @@ export default function OrderEditPage() {
     const targetCargo = summarizeOrderEditTargetCargo(items);
     const selectedCustomer = customers.find(customer => customer._id === form.customerRef) || null;
     const selectedService = services.find(service => service._id === form.serviceRef) || null;
+    const sortedCustomerRecipients = sortCustomerRecipients(customerRecipients);
 
     return (
         <div>
@@ -333,9 +407,9 @@ export default function OrderEditPage() {
                                             ? (customerRecipients.length > 0 ? 'Pilih dari master penerima customer (opsional)' : 'Belum ada master penerima customer')
                                             : 'Pilih customer dulu'}
                                     </option>
-                                    {customerRecipients.map(recipient => (
+                                    {sortedCustomerRecipients.map(recipient => (
                                         <option key={recipient._id} value={recipient._id}>
-                                            {recipient.label} - {recipient.receiverName}
+                                            {recipient.isDefault ? '[Default] ' : ''}{recipient.label} - {recipient.receiverName}
                                         </option>
                                     ))}
                                 </select>
@@ -343,21 +417,54 @@ export default function OrderEditPage() {
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Nama Penerima <span className="required">*</span></label>
-                                    <input className="form-input" value={form.receiverName} onChange={e => setForm(prev => ({ ...prev, receiverName: e.target.value }))} disabled={isRevisionMode} />
+                                    <input className="form-input" value={form.receiverName} onChange={e => updateReceiverField('receiverName', e.target.value)} disabled={isRevisionMode} />
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Telepon</label>
-                                    <input className="form-input" value={form.receiverPhone} onChange={e => setForm(prev => ({ ...prev, receiverPhone: e.target.value }))} disabled={isRevisionMode} />
+                                    <input className="form-input" value={form.receiverPhone} onChange={e => updateReceiverField('receiverPhone', e.target.value)} disabled={isRevisionMode} />
                                 </div>
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Perusahaan Penerima</label>
-                                <input className="form-input" value={form.receiverCompany} onChange={e => setForm(prev => ({ ...prev, receiverCompany: e.target.value }))} disabled={isRevisionMode} />
+                                <input className="form-input" value={form.receiverCompany} onChange={e => updateReceiverField('receiverCompany', e.target.value)} disabled={isRevisionMode} />
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Alamat Penerima <span className="required">*</span></label>
-                                <textarea className="form-textarea" rows={3} value={form.receiverAddress} onChange={e => setForm(prev => ({ ...prev, receiverAddress: e.target.value }))} disabled={isRevisionMode} />
+                                <textarea className="form-textarea" rows={3} value={form.receiverAddress} onChange={e => updateReceiverField('receiverAddress', e.target.value)} disabled={isRevisionMode} />
                             </div>
+                            {!isRevisionMode && form.customerRef && !form.customerRecipientRef && (
+                                <div style={{ display: 'grid', gap: '0.75rem', padding: '0.85rem 1rem', border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', background: 'var(--color-gray-50)' }}>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={form.saveRecipientToMaster}
+                                            onChange={e => setForm(prev => ({ ...prev, saveRecipientToMaster: e.target.checked }))}
+                                        />
+                                        <span>Simpan penerima ini ke master customer</span>
+                                    </label>
+                                    {form.saveRecipientToMaster && (
+                                        <>
+                                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                                <label className="form-label">Label Master Penerima <span className="required">*</span></label>
+                                                <input
+                                                    className="form-input"
+                                                    value={form.recipientMasterLabel}
+                                                    onChange={e => setForm(prev => ({ ...prev, recipientMasterLabel: e.target.value }))}
+                                                    placeholder="Contoh: Gudang Gresik / Toko Cabang Waru"
+                                                />
+                                            </div>
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={form.saveRecipientAsDefault}
+                                                    onChange={e => setForm(prev => ({ ...prev, saveRecipientAsDefault: e.target.checked }))}
+                                                />
+                                                <span>Jadikan default untuk customer ini</span>
+                                            </label>
+                                        </>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

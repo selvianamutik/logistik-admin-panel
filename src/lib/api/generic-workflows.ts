@@ -62,6 +62,22 @@ type AuditLogFn = (
     summary: string
 ) => void | Promise<void>;
 
+async function clearOtherCustomerRecipientDefaults(customerRef: string, keepId: string) {
+    const otherRecipientIds = await getSanityClient().fetch<Array<{ _id: string }>>(
+        `*[_type == "customerRecipient" && customerRef == $customerRef && _id != $keepId && isDefault == true]{ _id }`,
+        { customerRef, keepId }
+    );
+    if (otherRecipientIds.length === 0) {
+        return;
+    }
+
+    const transaction = getSanityClient().transaction();
+    for (const recipient of otherRecipientIds) {
+        transaction.patch(recipient._id, patch => patch.set({ isDefault: false }));
+    }
+    await transaction.commit();
+}
+
 function isProtectedLedgerEntity(entity: string) {
     return (
         entity === 'payments' ||
@@ -448,6 +464,13 @@ export async function handleGenericUpdate(
         return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 
+    if (entity === 'customer-recipients' && normalizedUpdates.isDefault === true) {
+        const updatedRecipient = updated as { customerRef?: string; _id?: string };
+        if (typeof updatedRecipient.customerRef === 'string' && typeof updatedRecipient._id === 'string') {
+            await clearOtherCustomerRecipientDefaults(updatedRecipient.customerRef, updatedRecipient._id);
+        }
+    }
+
     if (entity === 'users' && id === session._id) {
         const nextSessionToken = await createSession(updated as unknown as User);
         await setSessionCookie(nextSessionToken);
@@ -753,6 +776,10 @@ export async function handleGenericCreate(
 
     const created = await sanityCreate(newDoc);
     const newId = (created as Record<string, unknown>)._id as string;
+
+    if (entity === 'customer-recipients' && newDoc.isDefault === true && typeof newDoc.customerRef === 'string') {
+        await clearOtherCustomerRecipientDefaults(newDoc.customerRef, newId);
+    }
 
     if (entity === 'bank-accounts') {
         const initialBalance =

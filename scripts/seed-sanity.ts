@@ -406,6 +406,7 @@ function buildSeedDocuments() {
             receiverAddress: 'Jl. Margomulyo No. 88, Surabaya',
             receiverCompany: 'PT Retail Sentosa Surabaya',
             active: true,
+            isDefault: true,
         },
         {
             _id: 'cust-rec-002',
@@ -418,6 +419,7 @@ function buildSeedDocuments() {
             receiverAddress: 'Jl. Raya Tropodo No. 16, Waru',
             receiverCompany: 'Hub Distribusi Tropodo',
             active: true,
+            isDefault: false,
         },
         {
             _id: 'cust-rec-003',
@@ -430,6 +432,7 @@ function buildSeedDocuments() {
             receiverAddress: 'Jl. KIG Raya Blok C2, Gresik',
             receiverCompany: 'PT Baja Timur Abadi Plant 2',
             active: true,
+            isDefault: true,
         },
         {
             _id: 'cust-rec-004',
@@ -442,6 +445,7 @@ function buildSeedDocuments() {
             receiverAddress: 'Jl. Raya Jombang No. 9, Jombang',
             receiverCompany: 'Workshop Jombang Steel',
             active: true,
+            isDefault: false,
         },
         {
             _id: 'cust-rec-005',
@@ -454,6 +458,7 @@ function buildSeedDocuments() {
             receiverAddress: 'Jl. Pergudangan Cakung No. 22, Jakarta Timur',
             receiverCompany: 'Gudang Proyek Baja Cakung',
             active: true,
+            isDefault: false,
         },
         {
             _id: 'cust-rec-006',
@@ -466,6 +471,7 @@ function buildSeedDocuments() {
             receiverAddress: 'Jl. By Pass Mojokerto No. 12, Mojokerto',
             receiverCompany: 'CV Sembada Plastik Cabang Mojokerto',
             active: true,
+            isDefault: true,
         },
         {
             _id: 'cust-rec-007',
@@ -478,6 +484,7 @@ function buildSeedDocuments() {
             receiverAddress: 'Jl. Ahmad Yani No. 31, Sidoarjo',
             receiverCompany: 'CV Sembada Plastik Gudang Sidoarjo',
             active: true,
+            isDefault: false,
         },
         {
             _id: 'svc-001',

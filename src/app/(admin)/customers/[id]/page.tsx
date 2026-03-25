@@ -34,6 +34,7 @@ type CustomerRecipientForm = {
     receiverCompany: string;
     notes: string;
     active: boolean;
+    isDefault: boolean;
 };
 
 const DEFAULT_PRODUCT_FORM: CustomerProductForm = {
@@ -57,6 +58,7 @@ const DEFAULT_RECIPIENT_FORM: CustomerRecipientForm = {
     receiverCompany: '',
     notes: '',
     active: true,
+    isDefault: false,
 };
 
 export default function CustomerDetailPage() {
@@ -146,7 +148,7 @@ export default function CustomerDetailPage() {
 
     const openNewRecipient = () => {
         setEditRecipient(null);
-        setRecipientForm(DEFAULT_RECIPIENT_FORM);
+        setRecipientForm({ ...DEFAULT_RECIPIENT_FORM, isDefault: customerRecipients.length === 0 });
         setShowRecipientModal(true);
     };
 
@@ -160,6 +162,7 @@ export default function CustomerDetailPage() {
             receiverCompany: recipient.receiverCompany || '',
             notes: recipient.notes || '',
             active: recipient.active !== false,
+            isDefault: recipient.isDefault === true,
         });
         setShowRecipientModal(true);
     };
@@ -256,11 +259,12 @@ export default function CustomerDetailPage() {
             }
 
             const savedRecipient = result.data as CustomerRecipient;
-            setCustomerRecipients(prev =>
-                editRecipient
+            setCustomerRecipients(prev => {
+                const next = editRecipient
                     ? prev.map(item => item._id === editRecipient._id ? savedRecipient : item)
-                    : [savedRecipient, ...prev]
-            );
+                    : [savedRecipient, ...prev];
+                return savedRecipient.isDefault ? next.map(item => item._id === savedRecipient._id ? item : { ...item, isDefault: false }) : next;
+            });
             setShowRecipientModal(false);
             addToast('success', editRecipient ? 'Master penerima diperbarui' : 'Master penerima ditambahkan');
         } catch {
@@ -317,6 +321,12 @@ export default function CustomerDetailPage() {
     const activeOrderCount = orders.filter(order => !['COMPLETE', 'CANCELLED'].includes(order.status)).length;
     const activeNotaCount = notas.filter(nota => nota.status !== 'PAID').length;
     const totalNotaNetAmount = notas.reduce((sum, nota) => sum + getReceivableNetAmount(nota), 0);
+    const sortedRecipients = [...customerRecipients].sort((a, b) => {
+        if (Boolean(a.isDefault) !== Boolean(b.isDefault)) {
+            return a.isDefault ? -1 : 1;
+        }
+        return (a.label || '').localeCompare(b.label || '');
+    });
 
     return (
         <div>
@@ -417,10 +427,13 @@ export default function CustomerDetailPage() {
                             {customerRecipients.length === 0 ? (
                                 <tr><td colSpan={4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada master penerima untuk customer ini</td></tr>
                             ) : (
-                                customerRecipients.map(recipient => (
+                                sortedRecipients.map(recipient => (
                                     <tr key={recipient._id}>
                                         <td>
-                                            <div style={{ fontWeight: 600 }}>{recipient.label}</div>
+                                            <div style={{ fontWeight: 600, display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                <span>{recipient.label}</span>
+                                                {recipient.isDefault && <span className="badge badge-info">Default</span>}
+                                            </div>
                                             {recipient.notes && (
                                                 <div className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>{recipient.notes}</div>
                                             )}
@@ -460,14 +473,17 @@ export default function CustomerDetailPage() {
                                 </button>
                             </div>
                         </div>
-                    ) : customerRecipients.map(recipient => (
+                    ) : sortedRecipients.map(recipient => (
                         <div key={recipient._id} className="mobile-record-card">
                             <div className="mobile-record-header">
                                 <div>
                                     <div className="mobile-record-title">{recipient.label}</div>
                                     <div className="mobile-record-subtitle">{recipient.receiverName}</div>
                                 </div>
-                                <span className={`badge ${recipient.active !== false ? 'badge-green' : 'badge-gray'}`}>{recipient.active !== false ? 'Aktif' : 'Nonaktif'}</span>
+                                <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                                    {recipient.isDefault && <span className="badge badge-info">Default</span>}
+                                    <span className={`badge ${recipient.active !== false ? 'badge-green' : 'badge-gray'}`}>{recipient.active !== false ? 'Aktif' : 'Nonaktif'}</span>
+                                </div>
                             </div>
                             <div className="mobile-record-meta">
                                 <div className="mobile-record-kv">
@@ -720,11 +736,20 @@ export default function CustomerDetailPage() {
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Status</label>
-                                    <select className="form-select" value={recipientForm.active ? 'ACTIVE' : 'INACTIVE'} onChange={e => setRecipientForm(prev => ({ ...prev, active: e.target.value === 'ACTIVE' }))}>
+                                    <select className="form-select" value={recipientForm.active ? 'ACTIVE' : 'INACTIVE'} onChange={e => setRecipientForm(prev => ({ ...prev, active: e.target.value === 'ACTIVE', isDefault: e.target.value === 'ACTIVE' ? prev.isDefault : false }))}>
                                         <option value="ACTIVE">Aktif</option>
                                         <option value="INACTIVE">Nonaktif</option>
                                     </select>
                                 </div>
+                                <div className="form-group">
+                                    <label className="form-label">Default</label>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.65rem' }}>
+                                        <input type="checkbox" checked={recipientForm.isDefault} onChange={e => setRecipientForm(prev => ({ ...prev, isDefault: e.target.checked, active: e.target.checked ? true : prev.active }))} />
+                                        <span>Jadikan penerima default customer</span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Catatan</label>
                                     <input className="form-input" value={recipientForm.notes} onChange={e => setRecipientForm(prev => ({ ...prev, notes: e.target.value }))} placeholder="Opsional" />

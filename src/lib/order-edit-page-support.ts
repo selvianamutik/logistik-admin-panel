@@ -23,6 +23,9 @@ export type OrderEditFormState = {
     serviceRef: string;
     serviceName: string;
     notes: string;
+    saveRecipientToMaster: boolean;
+    saveRecipientAsDefault: boolean;
+    recipientMasterLabel: string;
 };
 
 export const DEFAULT_ORDER_EDIT_FORM: OrderEditFormState = {
@@ -37,6 +40,9 @@ export const DEFAULT_ORDER_EDIT_FORM: OrderEditFormState = {
     serviceRef: '',
     serviceName: '',
     notes: '',
+    saveRecipientToMaster: false,
+    saveRecipientAsDefault: false,
+    recipientMasterLabel: '',
 };
 
 export function buildOrderEditForm(order: Order | null): OrderEditFormState {
@@ -56,6 +62,9 @@ export function buildOrderEditForm(order: Order | null): OrderEditFormState {
         serviceRef: order.serviceRef,
         serviceName: order.serviceName || '',
         notes: order.notes || '',
+        saveRecipientToMaster: false,
+        saveRecipientAsDefault: false,
+        recipientMasterLabel: '',
     };
 }
 
