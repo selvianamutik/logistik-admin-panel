@@ -952,7 +952,7 @@ export async function handleFreightNotaCreate(
                 throw new Error('Berat pada baris nota harus lebih besar dari 0');
             }
             if (!Number.isFinite(tarip) || tarip <= 0) {
-                throw new Error('Tarip pada baris nota harus lebih besar dari 0');
+                throw new Error('Tarif per kg pada baris nota harus lebih besar dari 0');
             }
             if (!Number.isFinite(collie) || collie < 0) {
                 throw new Error('Collie pada baris nota tidak valid');
@@ -1118,7 +1118,7 @@ export async function handleFreightNotaCreate(
         }
         if (!Number.isFinite(row.tarip) || row.tarip <= 0) {
             return NextResponse.json(
-                { error: `Tarip pada baris nota ${row.doNumber || row.noSJ || row.doRef || ''} tidak valid` },
+                { error: `Tarif per kg pada baris nota ${row.doNumber || row.noSJ || row.doRef || ''} tidak valid` },
                 { status: 400 }
             );
         }

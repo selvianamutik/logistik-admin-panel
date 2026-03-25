@@ -6,7 +6,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 import { matchesPathSegment } from '@/lib/pathname';
-import { hasPermission, type AppModule } from '@/lib/rbac';
+import { hasPageAccess, type AppModule } from '@/lib/rbac';
 import { DRIVER_SESSION_COOKIE, SESSION_COOKIE, verifySessionToken } from '@/lib/session';
 import type { SessionUser } from '@/lib/types';
 
@@ -235,7 +235,7 @@ export async function proxy(request: NextRequest) {
         }
 
         const targetModule = getModuleForPath(pathname);
-        if (targetModule && !hasPermission(user.role, targetModule, 'view')) {
+        if (targetModule && !hasPageAccess(user.role, targetModule)) {
             return NextResponse.redirect(new URL('/dashboard', request.url));
         }
 

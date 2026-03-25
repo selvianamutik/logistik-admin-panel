@@ -518,7 +518,7 @@ export async function exportFreightNotaDetail(
     rows.push([]);
 
     const headerRowIndex = rows.length + 1;
-    rows.push(['NO', 'NO.TRUCK', 'TANGGAL', 'NO. SJ', 'DARI', 'TUJUAN', 'BARANG', 'COLLIE', 'BERAT KG', 'TARIP', 'UANG RP.', 'KET']);
+    rows.push(['NO', 'NO.TRUCK', 'TANGGAL', 'NO. SJ', 'DARI', 'TUJUAN', 'BARANG', 'COLLIE', 'BERAT KG', 'TARIF/KG', 'UANG RP.', 'KET']);
 
     groupedRows.forEach((group) => {
         const groupStartRow = rows.length + 1;

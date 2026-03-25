@@ -193,6 +193,14 @@ export function getModulePermissions(role: UserRole, module: AppModule): ModuleP
     return permissionMatrix[module]?.[normalizedRole] || DENY_ALL;
 }
 
+export function hasPageAccess(role: UserRole, module: AppModule): boolean {
+    const normalizedRole = normalizeUserRole(role);
+    if (module === 'orders' && (normalizedRole === 'FINANCE' || normalizedRole === 'ARMADA')) {
+        return false;
+    }
+    return hasPermission(role, module, 'view');
+}
+
 export function filterExpensesByRole(expenses: Expense[], role: UserRole): Expense[] {
     if (normalizeUserRole(role) === 'OWNER') return expenses;
     return expenses.filter(expense => expense.privacyLevel !== 'ownerOnly');
@@ -281,7 +289,7 @@ export function getSidebarMenu(role: UserRole): SidebarMenuGroup[] {
     return groups
         .map(group => ({
             ...group,
-            items: group.items.filter(item => hasPermission(normalizedRole, item.module, 'view')),
+            items: group.items.filter(item => hasPageAccess(normalizedRole, item.module)),
         }))
         .filter(group => group.items.length > 0);
 }

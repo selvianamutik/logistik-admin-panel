@@ -526,9 +526,6 @@ export default function NewOrderPage() {
                         </button>
                     </div>
                     <div className="card-body">
-                        <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: '0.8rem', color: 'var(--color-gray-600)' }}>
-                            Isi item yang benar-benar dikirim pada resi ini. Kalau customer punya master barang, gunakan dropdown barang customer supaya deskripsi dan muatan default langsung terisi.
-                        </div>
                         {items.map((item, idx) => (
                             <div key={idx} style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 12, padding: 12, background: 'var(--color-gray-50)', borderRadius: 'var(--radius-md)' }}>
                                 {customerRef && customerProducts.length > 0 && (

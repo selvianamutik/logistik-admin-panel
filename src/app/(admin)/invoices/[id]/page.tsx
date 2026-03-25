@@ -295,7 +295,7 @@ export default function NotaDetailPage() {
                         <CollapsibleCard title="Rincian Perjalanan">
                             <div className="table-wrapper" style={{ overflowX: 'auto' }}>
                                 <table style={{ minWidth: 800 }}>
-                                    <thead><tr><th>NO.TRUCK</th><th>TGL</th><th>NO.SJ</th><th>DARI</th><th>TUJUAN</th><th>BARANG</th><th>COLLIE</th><th>BERAT KG</th><th>TARIP</th><th style={{ textAlign: 'right' }}>UANG RP</th><th>KET</th></tr></thead>
+                                    <thead><tr><th>NO.TRUCK</th><th>TGL</th><th>NO.SJ</th><th>DARI</th><th>TUJUAN</th><th>BARANG</th><th>COLLIE</th><th>BERAT KG</th><th>TARIF/KG</th><th style={{ textAlign: 'right' }}>UANG RP</th><th>KET</th></tr></thead>
                                     <tbody>
                                         {items.map(it => (
                                             <tr key={it._id}>

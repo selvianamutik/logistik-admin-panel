@@ -254,14 +254,6 @@ export default function NewDriverVoucherPage() {
                         <label className="form-label">Catatan</label>
                         <textarea className="form-textarea" rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Catatan tambahan..." />
                     </div>
-                    <div className="card" style={{ marginTop: 'var(--space-4)', background: 'var(--color-bg-secondary)' }}>
-                        <div className="card-body" style={{ padding: 'var(--space-4)' }}>
-                            <div style={{ fontWeight: 700, marginBottom: '0.35rem' }}>Langkah berikutnya</div>
-                            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-                                Setelah uang jalan awal diterbitkan, top up, biaya perjalanan aktual, dan settlement akhir dikerjakan di detail trip ini.
-                            </div>
-                        </div>
-                    </div>
 
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: 'var(--space-4)' }}>
                         <button type="button" className="btn btn-secondary" onClick={() => router.push('/driver-vouchers')}>Batal</button>

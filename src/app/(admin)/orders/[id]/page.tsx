@@ -422,9 +422,6 @@ export default function OrderDetailPage() {
                             })} pending
                         </span>
                     </div>
-                    <div style={{ marginTop: 8, fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-                        DO aktif masih memakai muatan rencana. Begitu DO selesai, realisasi akhir mengikuti muatan aktual yang difinalkan admin.
-                    </div>
                 </div>
             </div>
 
@@ -439,9 +436,6 @@ export default function OrderDetailPage() {
                                 volumeM3: totalOrderCargo.volumeM3,
                             })}
                         </div>
-                        <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
-                            Mengikuti target order yang tersimpan saat ini.
-                        </div>
                     </div>
                 </div>
                 <div className="card">
@@ -453,9 +447,6 @@ export default function OrderDetailPage() {
                                 weightKg: totalDeliveredActualCargo.weightKg,
                                 volumeM3: totalDeliveredActualCargo.volumeM3,
                             })}
-                        </div>
-                        <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
-                            Diambil dari muatan aktual DO yang sudah `Delivered`.
                         </div>
                     </div>
                 </div>
@@ -470,9 +461,6 @@ export default function OrderDetailPage() {
                                     volumeM3: totalActivePlannedCargo.volumeM3,
                                 })
                                 : '-'}
-                        </div>
-                        <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
-                            Ini masih estimasi proporsional dari target order sampai DO tersebut diselesaikan.
                         </div>
                     </div>
                 </div>
@@ -680,7 +668,6 @@ export default function OrderDetailPage() {
             <div className="card mt-6">
                 <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center' }}>
                     <span className="card-header-title">Nota Ongkos ({notas.length})</span>
-                    <span className="text-muted" style={{ fontSize: '0.78rem' }}>Nota dibuat dari DO yang sudah selesai dikirim</span>
                 </div>
                 <div className="table-wrapper">
                     <table>

@@ -260,14 +260,6 @@ export default function NewNotaPage() {
                                         </option>
                                     ))}
                                 </select>
-                                <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                                    Ini adalah pihak pengirim atau perusahaan yang ditagih pada nota ongkos, bukan penerima barang.
-                                </p>
-                                {hasSelectedRows && (
-                                    <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                                        Customer terkunci selama masih ada baris DO. Hapus dulu baris terkait jika ingin mengganti customer.
-                                    </p>
-                                )}
                             </div>
 
                             {!customerRef && (
@@ -303,9 +295,6 @@ export default function NewNotaPage() {
                                             setDueDate(event.target.value);
                                         }}
                                     />
-                                    <p style={{ margin: '0.35rem 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                                        Otomatis mengikuti termin customer atau default perusahaan, tapi masih bisa kamu ubah manual.
-                                    </p>
                                 </div>
                             </div>
 
@@ -362,12 +351,6 @@ export default function NewNotaPage() {
                                     </optgroup>
                                 )}
                             </select>
-                            <p style={{ margin: '0.65rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                                DO yang sudah dipakai di nota lain atau sudah kamu pilih di tabel otomatis disembunyikan.
-                            </p>
-                            <p style={{ margin: '0.4rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                                Satu nota bisa memuat beberapa SJ/DO selesai, selama semuanya milik customer yang sama.
-                            </p>
                         </div>
                     </div>
                 </div>
@@ -443,7 +426,7 @@ export default function NewNotaPage() {
                                 <th style={{ minWidth: 100 }}>BARANG</th>
                                 <th style={{ minWidth: 70 }}>COLLIE</th>
                                 <th style={{ minWidth: 80 }}>BERAT KG</th>
-                                <th style={{ minWidth: 90 }}>TARIP</th>
+                                <th style={{ minWidth: 90 }}>TARIF/KG</th>
                                 <th style={{ minWidth: 110 }}>UANG RP</th>
                                 <th style={{ minWidth: 80 }}>KET</th>
                                 <th style={{ width: 36 }} />
@@ -519,7 +502,7 @@ export default function NewNotaPage() {
                                         <CurrencyInput
                                             value={row.tarip}
                                             onValueChange={value => updateRow(row.id, 'tarip', value)}
-                                            placeholder="Ketik tarif"
+                                            placeholder="Ketik tarif per kg"
                                         />
                                     </td>
                                     <td style={{ fontWeight: 600, color: 'var(--color-primary)' }}>{formatCurrency(row.uangRp)}</td>

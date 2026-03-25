@@ -9,7 +9,7 @@ import {
 import { getDashboardNotaNetAmount, getRecentNotaAction, getRecentOrderAction, type DashboardData } from '@/lib/dashboard-page-support';
 import { formatCurrency, formatDate, ORDER_STATUS_MAP, INVOICE_STATUS_MAP } from '@/lib/utils';
 import Link from 'next/link';
-import { hasPermission } from '@/lib/rbac';
+import { hasPageAccess, hasPermission } from '@/lib/rbac';
 
 export default function DashboardPage() {
     const { user } = useApp();
@@ -85,7 +85,7 @@ export default function DashboardPage() {
         );
     }
     const canSeeFinancialTotals = user ? (user.role === 'OWNER' || user.role === 'FINANCE') : false;
-    const canViewOrders = user ? hasPermission(user.role, 'orders', 'view') : false;
+    const canViewOrders = user ? hasPageAccess(user.role, 'orders') : false;
     const canViewDeliveryOrders = user ? hasPermission(user.role, 'deliveryOrders', 'view') : false;
     const canViewInvoices = user ? hasPermission(user.role, 'freightNotas', 'view') : false;
     const canViewIncidents = user ? hasPermission(user.role, 'incidents', 'view') : false;
