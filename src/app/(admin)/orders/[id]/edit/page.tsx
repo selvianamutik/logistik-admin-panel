@@ -438,7 +438,7 @@ export default function OrderEditPage() {
             <form onSubmit={handleSave}>
                 <div className="detail-grid">
                     <div className="card">
-                        <div className="card-header"><span className="card-header-title">Informasi Order</span></div>
+                        <div className="card-header"><span className="card-header-title">Customer / Pengirim</span></div>
                         <div className="card-body">
                             <div className="form-group">
                                 <label className="form-label">Customer / Pengirim / Penagih</label>
@@ -458,9 +458,9 @@ export default function OrderEditPage() {
                                 </select>
                             </div>
                             <div className="form-group">
-                                <label className="form-label">Pickup Customer</label>
+                                <label className="form-label">Lokasi Ambil</label>
                                 <select className="form-select" value={form.customerPickupRef} onChange={e => handleCustomerPickupChange(e.target.value)} disabled={isRevisionMode || !form.customerRef}>
-                                    <option value="">{form.customerRef ? (customerPickups.length > 0 ? 'Pilih dari master pickup customer (opsional)' : 'Belum ada master pickup customer') : 'Pilih customer dulu'}</option>
+                                    <option value="">{form.customerRef ? (customerPickups.length > 0 ? 'Pilih dari lokasi ambil customer (opsional)' : 'Belum ada lokasi ambil customer') : 'Pilih customer dulu'}</option>
                                     {sortedCustomerPickups.map(pickup => (
                                         <option key={pickup._id} value={pickup._id}>
                                             {pickup.isDefault ? '[Default] ' : ''}{pickup.label}
@@ -469,7 +469,7 @@ export default function OrderEditPage() {
                                 </select>
                             </div>
                             <div className="form-group">
-                                <label className="form-label">Alamat Pickup</label>
+                                <label className="form-label">Alamat Ambil</label>
                                 <textarea className="form-textarea" rows={2} value={form.pickupAddress} onChange={e => updatePickupAddress(e.target.value)} disabled={isRevisionMode} />
                             </div>
                             {!isRevisionMode && form.customerRef && !form.customerPickupRef && (
@@ -480,12 +480,12 @@ export default function OrderEditPage() {
                                             checked={form.savePickupToMaster}
                                             onChange={e => setForm(prev => ({ ...prev, savePickupToMaster: e.target.checked }))}
                                         />
-                                        <span>Simpan pickup ini ke master customer</span>
+                                        <span>Simpan lokasi ambil ini ke customer</span>
                                     </label>
                                     {form.savePickupToMaster && (
                                         <>
                                             <div className="form-group" style={{ marginBottom: 0 }}>
-                                                <label className="form-label">Label Master Pickup <span className="required">*</span></label>
+                                                <label className="form-label">Label Lokasi Ambil <span className="required">*</span></label>
                                                 <input
                                                     className="form-input"
                                                     value={form.pickupMasterLabel}
@@ -499,7 +499,7 @@ export default function OrderEditPage() {
                                                     checked={form.savePickupAsDefault}
                                                     onChange={e => setForm(prev => ({ ...prev, savePickupAsDefault: e.target.checked }))}
                                                 />
-                                                <span>Jadikan default untuk customer ini</span>
+                                                <span>Jadikan lokasi ambil default customer</span>
                                             </label>
                                         </>
                                     )}
@@ -525,10 +525,10 @@ export default function OrderEditPage() {
                     </div>
 
                     <div className="card">
-                        <div className="card-header"><span className="card-header-title">Informasi Penerima</span></div>
+                        <div className="card-header"><span className="card-header-title">Tujuan / Penerima</span></div>
                         <div className="card-body">
                             <div className="form-group">
-                                <label className="form-label">Penerima Customer</label>
+                                <label className="form-label">Tujuan / Penerima</label>
                                 <select
                                     className="form-select"
                                     value={form.customerRecipientRef}
@@ -537,7 +537,7 @@ export default function OrderEditPage() {
                                 >
                                     <option value="">
                                         {form.customerRef
-                                            ? (customerRecipients.length > 0 ? 'Pilih dari master penerima customer (opsional)' : 'Belum ada master penerima customer')
+                                            ? (customerRecipients.length > 0 ? 'Pilih dari tujuan customer (opsional)' : 'Belum ada tujuan customer')
                                             : 'Pilih customer dulu'}
                                     </option>
                                     {sortedCustomerRecipients.map(recipient => (
@@ -573,12 +573,12 @@ export default function OrderEditPage() {
                                             checked={form.saveRecipientToMaster}
                                             onChange={e => setForm(prev => ({ ...prev, saveRecipientToMaster: e.target.checked }))}
                                         />
-                                        <span>Simpan penerima ini ke master customer</span>
+                                        <span>Simpan tujuan ini ke customer</span>
                                     </label>
                                     {form.saveRecipientToMaster && (
                                         <>
                                             <div className="form-group" style={{ marginBottom: 0 }}>
-                                                <label className="form-label">Label Master Penerima <span className="required">*</span></label>
+                                                <label className="form-label">Label Tujuan <span className="required">*</span></label>
                                                 <input
                                                     className="form-input"
                                                     value={form.recipientMasterLabel}
@@ -592,7 +592,7 @@ export default function OrderEditPage() {
                                                     checked={form.saveRecipientAsDefault}
                                                     onChange={e => setForm(prev => ({ ...prev, saveRecipientAsDefault: e.target.checked }))}
                                                 />
-                                                <span>Jadikan default untuk customer ini</span>
+                                                <span>Jadikan tujuan default customer</span>
                                             </label>
                                         </>
                                     )}

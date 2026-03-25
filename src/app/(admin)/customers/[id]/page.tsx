@@ -525,20 +525,23 @@ export default function CustomerDetailPage() {
             </div>
 
             <CollapsibleCard
-                title={`Master Penerima (${customerRecipients.length})`}
+                title={`Lokasi Customer (${customerPickups.length + customerRecipients.length})`}
                 defaultOpen
             >
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
+                <div style={{ display: 'grid', gap: 'var(--space-6)' }}>
+                <section>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+                    <div style={{ fontWeight: 600 }}>Tujuan / Penerima ({customerRecipients.length})</div>
                     <button className="btn btn-primary btn-sm" onClick={openNewRecipient}>
-                        <Plus size={14} /> Tambah Penerima
+                        <Plus size={14} /> Tambah Tujuan
                     </button>
                 </div>
                 <div className="table-wrapper table-desktop-only">
                     <table>
-                        <thead><tr><th>Label</th><th>Penerima</th><th>Status</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>Label Tujuan</th><th>Tujuan / Penerima</th><th>Status</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {customerRecipients.length === 0 ? (
-                                <tr><td colSpan={4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada master penerima untuk customer ini</td></tr>
+                                <tr><td colSpan={4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada tujuan tersimpan untuk customer ini</td></tr>
                             ) : (
                                 sortedRecipients.map(recipient => (
                                     <tr key={recipient._id}>
@@ -579,10 +582,10 @@ export default function CustomerDetailPage() {
                 <div className="mobile-record-list">
                     {customerRecipients.length === 0 ? (
                         <div className="mobile-record-card">
-                            <div className="mobile-record-title">Belum ada master penerima</div>
+                            <div className="mobile-record-title">Belum ada tujuan / penerima</div>
                             <div className="mobile-record-actions">
                                 <button className="btn btn-primary" onClick={openNewRecipient}>
-                                    <Plus size={16} /> Tambah Penerima
+                                    <Plus size={16} /> Tambah Tujuan
                                 </button>
                             </div>
                         </div>
@@ -619,23 +622,21 @@ export default function CustomerDetailPage() {
                         </div>
                     ))}
                 </div>
-            </CollapsibleCard>
+                </section>
 
-            <CollapsibleCard
-                title={`Master Pickup (${customerPickups.length})`}
-                defaultOpen
-            >
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
+                <section>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+                    <div style={{ fontWeight: 600 }}>Lokasi Ambil ({customerPickups.length})</div>
                     <button className="btn btn-primary btn-sm" onClick={openNewPickup}>
-                        <Plus size={14} /> Tambah Pickup
+                        <Plus size={14} /> Tambah Lokasi Ambil
                     </button>
                 </div>
                 <div className="table-wrapper table-desktop-only">
                     <table>
-                        <thead><tr><th>Label</th><th>Alamat Pickup</th><th>Status</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>Label Lokasi</th><th>Alamat Ambil</th><th>Status</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {customerPickups.length === 0 ? (
-                                <tr><td colSpan={4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada master pickup untuk customer ini</td></tr>
+                                <tr><td colSpan={4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada lokasi ambil tersimpan untuk customer ini</td></tr>
                             ) : (
                                 sortedPickups.map(pickup => (
                                     <tr key={pickup._id}>
@@ -669,10 +670,10 @@ export default function CustomerDetailPage() {
                 <div className="mobile-record-list">
                     {customerPickups.length === 0 ? (
                         <div className="mobile-record-card">
-                            <div className="mobile-record-title">Belum ada master pickup</div>
+                            <div className="mobile-record-title">Belum ada lokasi ambil</div>
                             <div className="mobile-record-actions">
                                 <button className="btn btn-primary" onClick={openNewPickup}>
-                                    <Plus size={16} /> Tambah Pickup
+                                    <Plus size={16} /> Tambah Lokasi
                                 </button>
                             </div>
                         </div>
@@ -708,6 +709,8 @@ export default function CustomerDetailPage() {
                             </div>
                         </div>
                     ))}
+                </div>
+                </section>
                 </div>
             </CollapsibleCard>
 
@@ -910,12 +913,12 @@ export default function CustomerDetailPage() {
                 <div className="modal-overlay" onClick={() => { if (!savingRecipient) setShowRecipientModal(false); }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
-                            <h3 className="modal-title">{editRecipient ? 'Edit Master Penerima' : 'Tambah Master Penerima'}</h3>
+                            <h3 className="modal-title">{editRecipient ? 'Edit Tujuan / Penerima' : 'Tambah Tujuan / Penerima'}</h3>
                             <button className="modal-close" onClick={() => setShowRecipientModal(false)} disabled={savingRecipient}><X size={20} /></button>
                         </div>
                         <div className="modal-body">
                             <div className="form-group">
-                                <label className="form-label">Label Lokasi / Tujuan <span className="required">*</span></label>
+                                <label className="form-label">Label Tujuan <span className="required">*</span></label>
                                 <input className="form-input" value={recipientForm.label} onChange={e => setRecipientForm(prev => ({ ...prev, label: e.target.value }))} placeholder="Contoh: Gudang Gresik / Plant 2" />
                             </div>
                             <div className="form-row">
@@ -948,7 +951,7 @@ export default function CustomerDetailPage() {
                                     <label className="form-label">Default</label>
                                     <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.65rem' }}>
                                         <input type="checkbox" checked={recipientForm.isDefault} onChange={e => setRecipientForm(prev => ({ ...prev, isDefault: e.target.checked, active: e.target.checked ? true : prev.active }))} />
-                                        <span>Jadikan penerima default customer</span>
+                                        <span>Jadikan tujuan default customer</span>
                                     </label>
                                 </div>
                             </div>
@@ -971,16 +974,16 @@ export default function CustomerDetailPage() {
                 <div className="modal-overlay" onClick={() => { if (!savingPickup) setShowPickupModal(false); }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
-                            <h3 className="modal-title">{editPickup ? 'Edit Master Pickup' : 'Tambah Master Pickup'}</h3>
+                            <h3 className="modal-title">{editPickup ? 'Edit Lokasi Ambil' : 'Tambah Lokasi Ambil'}</h3>
                             <button className="modal-close" onClick={() => setShowPickupModal(false)} disabled={savingPickup}><X size={20} /></button>
                         </div>
                         <div className="modal-body">
                             <div className="form-group">
-                                <label className="form-label">Label Pickup <span className="required">*</span></label>
+                                <label className="form-label">Label Lokasi Ambil <span className="required">*</span></label>
                                 <input className="form-input" value={pickupForm.label} onChange={e => setPickupForm(prev => ({ ...prev, label: e.target.value }))} placeholder="Contoh: Gudang Sidoarjo / Plant Waru" />
                             </div>
                             <div className="form-group">
-                                <label className="form-label">Alamat Pickup <span className="required">*</span></label>
+                                <label className="form-label">Alamat Ambil <span className="required">*</span></label>
                                 <textarea className="form-textarea" rows={3} value={pickupForm.pickupAddress} onChange={e => setPickupForm(prev => ({ ...prev, pickupAddress: e.target.value }))} />
                             </div>
                             <div className="form-row">
@@ -995,7 +998,7 @@ export default function CustomerDetailPage() {
                                     <label className="form-label">Default</label>
                                     <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.65rem' }}>
                                         <input type="checkbox" checked={pickupForm.isDefault} onChange={e => setPickupForm(prev => ({ ...prev, isDefault: e.target.checked, active: e.target.checked ? true : prev.active }))} />
-                                        <span>Jadikan pickup default customer</span>
+                                        <span>Jadikan lokasi ambil default customer</span>
                                     </label>
                                 </div>
                             </div>

@@ -397,9 +397,9 @@ export default function NewOrderPage() {
                 </div>
 
                 <div className="detail-grid">
-                    {/* Pengirim */}
+                    {/* Customer / Pengirim */}
                     <div className="card">
-                        <div className="card-header"><span className="card-header-title">Data Pengirim</span></div>
+                        <div className="card-header"><span className="card-header-title">Customer / Pengirim</span></div>
                         <div className="card-body">
                             <div className="form-group">
                                 <label className="form-label">Customer / Pengirim / Penagih <span className="required">*</span></label>
@@ -417,9 +417,9 @@ export default function NewOrderPage() {
                             </div>
                             {customerRef && (
                                 <div className="form-group">
-                                    <label className="form-label">Pickup Customer</label>
+                                    <label className="form-label">Lokasi Ambil</label>
                                     <select className="form-select" value={customerPickupRef} onChange={e => handleCustomerPickupChange(e.target.value)}>
-                                        <option value="">{customerPickups.length > 0 ? 'Pilih dari master pickup customer (opsional)' : 'Belum ada master pickup customer'}</option>
+                                        <option value="">{customerPickups.length > 0 ? 'Pilih dari lokasi ambil customer (opsional)' : 'Belum ada lokasi ambil customer'}</option>
                                         {sortedCustomerPickups.map(pickup => (
                                             <option key={pickup._id} value={pickup._id}>
                                                 {pickup.isDefault ? '[Default] ' : ''}{pickup.label}
@@ -429,24 +429,24 @@ export default function NewOrderPage() {
                                 </div>
                             )}
                             <div className="form-group">
-                                <label className="form-label">Alamat Pickup (Opsional)</label>
+                                <label className="form-label">Alamat Ambil (Opsional)</label>
                                 <input className="form-input" value={pickupAddress} onChange={e => updatePickupAddress(e.target.value)} placeholder="Alamat pengambilan barang" />
                             </div>
                             {customerRef && !customerPickupRef && (
                                 <div style={{ display: 'grid', gap: '0.75rem', padding: '0.85rem 1rem', border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', background: 'var(--color-gray-50)' }}>
                                     <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                         <input type="checkbox" checked={savePickupToMaster} onChange={e => setSavePickupToMaster(e.target.checked)} />
-                                        <span>Simpan pickup ini ke master customer</span>
+                                        <span>Simpan lokasi ambil ini ke customer</span>
                                     </label>
                                     {savePickupToMaster && (
                                         <>
                                             <div className="form-group" style={{ marginBottom: 0 }}>
-                                                <label className="form-label">Label Master Pickup <span className="required">*</span></label>
+                                                <label className="form-label">Label Lokasi Ambil <span className="required">*</span></label>
                                                 <input className="form-input" value={pickupMasterLabel} onChange={e => setPickupMasterLabel(e.target.value)} placeholder="Contoh: Gudang Gresik / Pabrik Waru" />
                                             </div>
                                             <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                                 <input type="checkbox" checked={savePickupAsDefault} onChange={e => setSavePickupAsDefault(e.target.checked)} />
-                                                <span>Jadikan default untuk customer ini</span>
+                                                <span>Jadikan lokasi ambil default customer</span>
                                             </label>
                                         </>
                                     )}
@@ -455,15 +455,15 @@ export default function NewOrderPage() {
                         </div>
                     </div>
 
-                    {/* Penerima */}
+                    {/* Tujuan / Penerima */}
                     <div className="card">
-                        <div className="card-header"><span className="card-header-title">Data Penerima</span></div>
+                        <div className="card-header"><span className="card-header-title">Tujuan / Penerima</span></div>
                         <div className="card-body">
                             {customerRef && (
                                 <div className="form-group">
-                                    <label className="form-label">Penerima Customer</label>
+                                    <label className="form-label">Tujuan / Penerima</label>
                                     <select className="form-select" value={customerRecipientRef} onChange={e => handleCustomerRecipientChange(e.target.value)}>
-                                        <option value="">{customerRecipients.length > 0 ? 'Pilih dari master penerima customer (opsional)' : 'Belum ada master penerima customer'}</option>
+                                        <option value="">{customerRecipients.length > 0 ? 'Pilih dari tujuan customer (opsional)' : 'Belum ada tujuan customer'}</option>
                                         {sortedCustomerRecipients.map(recipient => (
                                             <option key={recipient._id} value={recipient._id}>
                                                 {recipient.isDefault ? '[Default] ' : ''}{recipient.label} - {recipient.receiverName}
@@ -492,17 +492,17 @@ export default function NewOrderPage() {
                                 <div style={{ display: 'grid', gap: '0.75rem', padding: '0.85rem 1rem', border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', background: 'var(--color-gray-50)' }}>
                                     <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                         <input type="checkbox" checked={saveRecipientToMaster} onChange={e => setSaveRecipientToMaster(e.target.checked)} />
-                                        <span>Simpan penerima ini ke master customer</span>
+                                        <span>Simpan tujuan ini ke customer</span>
                                     </label>
                                     {saveRecipientToMaster && (
                                         <>
                                             <div className="form-group" style={{ marginBottom: 0 }}>
-                                                <label className="form-label">Label Master Penerima <span className="required">*</span></label>
+                                                <label className="form-label">Label Tujuan <span className="required">*</span></label>
                                                 <input className="form-input" value={recipientMasterLabel} onChange={e => setRecipientMasterLabel(e.target.value)} placeholder="Contoh: Gudang Gresik / Toko Cabang Waru" />
                                             </div>
                                             <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                                 <input type="checkbox" checked={saveRecipientAsDefault} onChange={e => setSaveRecipientAsDefault(e.target.checked)} />
-                                                <span>Jadikan default untuk customer ini</span>
+                                                <span>Jadikan tujuan default customer</span>
                                             </label>
                                         </>
                                     )}
