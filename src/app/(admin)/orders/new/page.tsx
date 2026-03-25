@@ -7,8 +7,9 @@ import { Save, Plus, X } from 'lucide-react';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminData } from '@/lib/api/admin-client';
-import type { Customer, CustomerProduct, Service } from '@/lib/types';
+import type { Customer, CustomerProduct, CustomerRecipient, Service } from '@/lib/types';
 import {
+    applyCustomerRecipientSnapshot,
     applyCustomerProductToOrderItem,
     createDefaultOrderItemForm,
     getDraftOrderItems,
@@ -29,11 +30,13 @@ export default function NewOrderPage() {
     const { addToast } = useToast();
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
+    const [customerRecipients, setCustomerRecipients] = useState<CustomerRecipient[]>([]);
     const [services, setServices] = useState<Service[]>([]);
     const [loading, setLoading] = useState(false);
 
     // Form state
     const [customerRef, setCustomerRef] = useState('');
+    const [customerRecipientRef, setCustomerRecipientRef] = useState('');
     const [serviceRef, setServiceRef] = useState('');
     const [receiverName, setReceiverName] = useState('');
     const [receiverPhone, setReceiverPhone] = useState('');
@@ -63,29 +66,37 @@ export default function NewOrderPage() {
     useEffect(() => {
         if (!customerRef) {
             setCustomerProducts([]);
+            setCustomerRecipients([]);
             return;
         }
 
         let cancelled = false;
-        const loadCustomerProducts = async () => {
+        const loadCustomerScopedMasters = async () => {
             try {
-                const res = await fetch(`/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef, active: true }))}`);
-                const payload = await res.json();
-                if (!res.ok) {
-                    throw new Error(payload.error || 'Gagal memuat master barang customer');
-                }
+                const [productRows, recipientRows] = await Promise.all([
+                    fetchAdminData<CustomerProduct[]>(
+                        `/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef, active: true }))}`,
+                        'Gagal memuat master customer'
+                    ),
+                    fetchAdminData<CustomerRecipient[]>(
+                        `/api/data?entity=customer-recipients&filter=${encodeURIComponent(JSON.stringify({ customerRef, active: true }))}`,
+                        'Gagal memuat master customer'
+                    ),
+                ]);
                 if (!cancelled) {
-                    setCustomerProducts(payload.data || []);
+                    setCustomerProducts(productRows || []);
+                    setCustomerRecipients(recipientRows || []);
                 }
             } catch (error) {
                 if (!cancelled) {
                     setCustomerProducts([]);
-                    addToast('error', error instanceof Error ? error.message : 'Gagal memuat master barang customer');
+                    setCustomerRecipients([]);
+                    addToast('error', error instanceof Error ? error.message : 'Gagal memuat master customer');
                 }
             }
         };
 
-        void loadCustomerProducts();
+        void loadCustomerScopedMasters();
         return () => {
             cancelled = true;
         };
@@ -100,8 +111,10 @@ export default function NewOrderPage() {
         const selectedCustomer = customers.find(customer => customer._id === nextCustomerRef);
         const previousCustomer = customers.find(customer => customer._id === customerRef);
         const previousCustomerAddress = previousCustomer?.address?.trim() || '';
+        const shouldResetRecipientSnapshot = Boolean(customerRecipientRef);
 
         setCustomerRef(nextCustomerRef);
+        setCustomerRecipientRef('');
         setItems(prev => resetCustomerScopedOrderItems(prev));
         setPickupAddress(previous => {
             const currentPickup = previous.trim();
@@ -110,6 +123,22 @@ export default function NewOrderPage() {
             }
             return previous;
         });
+        if (shouldResetRecipientSnapshot) {
+            setReceiverName('');
+            setReceiverPhone('');
+            setReceiverAddress('');
+            setReceiverCompany('');
+        }
+    };
+
+    const handleCustomerRecipientChange = (nextRecipientRef: string) => {
+        setCustomerRecipientRef(nextRecipientRef);
+        const recipient = customerRecipients.find(item => item._id === nextRecipientRef);
+        const snapshot = applyCustomerRecipientSnapshot(recipient);
+        setReceiverName(snapshot.receiverName);
+        setReceiverPhone(snapshot.receiverPhone);
+        setReceiverAddress(snapshot.receiverAddress);
+        setReceiverCompany(snapshot.receiverCompany);
     };
 
     const applyCustomerProductSelection = (idx: number, nextProductRef: string) => {
@@ -147,6 +176,7 @@ export default function NewOrderPage() {
                     action: 'create-with-items',
                     data: {
                         customerRef, customerName: selCustomer?.name || '',
+                        customerRecipientRef,
                         receiverName, receiverPhone, receiverAddress, receiverCompany,
                         pickupAddress, serviceRef, serviceName: selService?.name || '',
                         notes,
@@ -240,6 +270,19 @@ export default function NewOrderPage() {
                     <div className="card">
                         <div className="card-header"><span className="card-header-title">Data Penerima</span></div>
                         <div className="card-body">
+                            {customerRef && (
+                                <div className="form-group">
+                                    <label className="form-label">Penerima Customer</label>
+                                    <select className="form-select" value={customerRecipientRef} onChange={e => handleCustomerRecipientChange(e.target.value)}>
+                                        <option value="">{customerRecipients.length > 0 ? 'Pilih dari master penerima customer (opsional)' : 'Belum ada master penerima customer'}</option>
+                                        {customerRecipients.map(recipient => (
+                                            <option key={recipient._id} value={recipient._id}>
+                                                {recipient.label} - {recipient.receiverName}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
                             <div className="form-group">
                                 <label className="form-label">Nama Penerima <span className="required">*</span></label>
                                 <input className="form-input" value={receiverName} onChange={e => setReceiverName(e.target.value)} required />

@@ -38,11 +38,13 @@ import {
     normalizeDeliveryOrderActualCargoInputs,
     normalizeDeliveryOrderSelections,
     resolveOrderPartyData,
+    resolveOrderRecipientData,
     summarizeSelection,
     type NormalizedActualCargoInput,
     type NormalizedOrderItemInput,
     type OrderItemProgressSnapshot,
     type OrderItemStatusSummary,
+    type ResolvedCustomerRecipientData,
     type ResolvedOrderPartyData,
 } from './order-workflow-support';
 
@@ -331,24 +333,31 @@ export async function handleOrderCreate(
 ) {
     const customerRef = normalizeText(data.customerRef);
     const serviceRef = normalizeOptionalText(data.serviceRef);
-    const receiverName = normalizeText(data.receiverName);
-    const receiverAddress = normalizeText(data.receiverAddress);
-    if (!customerRef || !receiverName || !receiverAddress) {
+    const customerRecipientRef = normalizeOptionalText(data.customerRecipientRef);
+    if (!customerRef) {
         return NextResponse.json({ error: 'Customer, penerima, dan alamat tujuan wajib diisi' }, { status: 400 });
     }
 
     let customer: ResolvedOrderPartyData['customer'];
     let serviceName: string | undefined;
+    let customerRecipient: ResolvedCustomerRecipientData | null = null;
     let items: NormalizedOrderItemInput[];
     try {
         const party = await resolveOrderPartyData(customerRef, serviceRef);
         customer = party.customer;
         serviceName = party.serviceName;
+        customerRecipient = await resolveOrderRecipientData(customerRef, customerRecipientRef);
         items = await normalizeOrderItemsInput(customerRef, Array.isArray(data.items) ? data.items : []);
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Data order tidak valid';
         const status = message.includes('tidak ditemukan') ? 404 : message.includes('tidak aktif') ? 409 : 400;
         return NextResponse.json({ error: message }, { status });
+    }
+
+    const receiverName = normalizeText(data.receiverName) || normalizeOptionalText(customerRecipient?.receiverName) || '';
+    const receiverAddress = normalizeText(data.receiverAddress) || normalizeOptionalText(customerRecipient?.receiverAddress) || '';
+    if (!receiverName || !receiverAddress) {
+        return NextResponse.json({ error: 'Customer, penerima, dan alamat tujuan wajib diisi' }, { status: 400 });
     }
 
     const orderId = crypto.randomUUID();
@@ -359,10 +368,11 @@ export async function handleOrderCreate(
         _type: 'order',
         customerRef,
         customerName: customer.name,
+        customerRecipientRef: customerRecipientRef || undefined,
         receiverName,
-        receiverPhone: normalizeText(data.receiverPhone),
+        receiverPhone: normalizeOptionalText(data.receiverPhone) || normalizeOptionalText(customerRecipient?.receiverPhone) || '',
         receiverAddress,
-        receiverCompany: normalizeOptionalText(data.receiverCompany),
+        receiverCompany: normalizeOptionalText(data.receiverCompany) || normalizeOptionalText(customerRecipient?.receiverCompany),
         pickupAddress: normalizeOptionalText(data.pickupAddress) || customer.address || undefined,
         serviceRef: serviceRef || '',
         serviceName,
@@ -417,10 +427,9 @@ export async function handleOrderUpdateWithItems(
     const id = normalizeText(data.id);
     const customerRef = normalizeText(data.customerRef);
     const serviceRef = normalizeOptionalText(data.serviceRef);
-    const receiverName = normalizeText(data.receiverName);
-    const receiverAddress = normalizeText(data.receiverAddress);
+    const customerRecipientRef = normalizeOptionalText(data.customerRecipientRef);
 
-    if (!id || !customerRef || !receiverName || !receiverAddress) {
+    if (!id || !customerRef) {
         return NextResponse.json({ error: 'Order, customer, penerima, dan alamat tujuan wajib diisi' }, { status: 400 });
     }
 
@@ -483,11 +492,13 @@ export async function handleOrderUpdateWithItems(
 
     let customer: ResolvedOrderPartyData['customer'];
     let serviceName: string | undefined;
+    let customerRecipient: ResolvedCustomerRecipientData | null = null;
     let items: NormalizedOrderItemInput[];
     try {
         const party = await resolveOrderPartyData(customerRef, serviceRef);
         customer = party.customer;
         serviceName = party.serviceName;
+        customerRecipient = await resolveOrderRecipientData(customerRef, customerRecipientRef);
         items = await normalizeOrderItemsInput(customerRef, Array.isArray(data.items) ? data.items : []);
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Data order tidak valid';
@@ -495,15 +506,22 @@ export async function handleOrderUpdateWithItems(
         return NextResponse.json({ error: message }, { status });
     }
 
+    const receiverName = normalizeText(data.receiverName) || normalizeOptionalText(customerRecipient?.receiverName) || '';
+    const receiverAddress = normalizeText(data.receiverAddress) || normalizeOptionalText(customerRecipient?.receiverAddress) || '';
+    if (!receiverName || !receiverAddress) {
+        return NextResponse.json({ error: 'Order, customer, penerima, dan alamat tujuan wajib diisi' }, { status: 400 });
+    }
+
     const transaction = getSanityClient()
         .transaction()
         .patch(id, patch => patch.set({
             customerRef,
             customerName: customer.name,
+            customerRecipientRef: customerRecipientRef || undefined,
             receiverName,
-            receiverPhone: normalizeText(data.receiverPhone),
+            receiverPhone: normalizeOptionalText(data.receiverPhone) || normalizeOptionalText(customerRecipient?.receiverPhone) || '',
             receiverAddress,
-            receiverCompany: normalizeOptionalText(data.receiverCompany),
+            receiverCompany: normalizeOptionalText(data.receiverCompany) || normalizeOptionalText(customerRecipient?.receiverCompany),
             pickupAddress: normalizeOptionalText(data.pickupAddress) || customer.address || undefined,
             serviceRef: serviceRef || '',
             serviceName,

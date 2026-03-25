@@ -151,6 +151,17 @@ export type ResolvedOrderPartyData = {
     serviceName?: string;
 };
 
+export type ResolvedCustomerRecipientData = {
+    _id: string;
+    customerRef?: string;
+    label?: string;
+    receiverName?: string;
+    receiverPhone?: string;
+    receiverAddress?: string;
+    receiverCompany?: string;
+    active?: boolean;
+};
+
 const DELIVERY_ACTUAL_DROP_TYPES = new Set<DeliveryActualDropType>([
     'DROP',
     'HOLD',
@@ -240,6 +251,25 @@ export async function resolveOrderPartyData(customerRef: string, serviceRef?: st
         customer,
         serviceName,
     } satisfies ResolvedOrderPartyData;
+}
+
+export async function resolveOrderRecipientData(customerRef: string, customerRecipientRef?: string) {
+    if (!customerRecipientRef) {
+        return null;
+    }
+
+    const recipient = await sanityGetById<ResolvedCustomerRecipientData>(customerRecipientRef);
+    if (!recipient || recipient._id !== customerRecipientRef) {
+        throw new Error('Master penerima customer tidak ditemukan');
+    }
+    if (normalizeOptionalText((recipient as { customerRef?: string }).customerRef) !== customerRef) {
+        throw new Error('Master penerima tidak sesuai dengan customer yang dipilih');
+    }
+    if (recipient.active === false) {
+        throw new Error('Master penerima customer tidak aktif');
+    }
+
+    return recipient;
 }
 
 export async function normalizeOrderItemsInput(customerRef: string, rawItems: unknown[]) {

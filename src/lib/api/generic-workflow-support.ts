@@ -280,3 +280,82 @@ export async function normalizeCustomerProductPayload(data: Record<string, unkno
 
     return next;
 }
+
+export async function normalizeCustomerRecipientPayload(data: Record<string, unknown>, existing?: Record<string, unknown>) {
+    const next: Record<string, unknown> = {};
+    const existingId = typeof existing?._id === 'string' ? existing._id : undefined;
+    const customerRef =
+        Object.prototype.hasOwnProperty.call(data, 'customerRef') || !existing
+            ? normalizeText(data.customerRef)
+            : normalizeOptionalText(existing?.customerRef) || '';
+    if (!customerRef) {
+        throw new Error('Customer penerima wajib dipilih');
+    }
+
+    const customer = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(customerRef);
+    if (!customer) {
+        throw new Error('Customer penerima tidak ditemukan');
+    }
+    if (customer.active === false && (!existing || customerRef !== normalizeOptionalText(existing.customerRef))) {
+        throw new Error('Customer tidak aktif dan tidak bisa dipakai untuk master penerima baru');
+    }
+
+    const label =
+        Object.prototype.hasOwnProperty.call(data, 'label') || !existing
+            ? normalizeText(data.label)
+            : normalizeOptionalText(existing?.label) || '';
+    if (!label) {
+        throw new Error('Label master penerima wajib diisi');
+    }
+
+    const duplicateLabel = await getSanityClient().fetch<{ _id: string } | null>(
+        `*[_type == "customerRecipient" && customerRef == $customerRef && label == $label && _id != $excludeId][0]{ _id }`,
+        { customerRef, label, excludeId: existingId || '' }
+    );
+    if (duplicateLabel) {
+        throw new Error('Label master penerima sudah digunakan untuk customer ini');
+    }
+
+    const receiverName =
+        Object.prototype.hasOwnProperty.call(data, 'receiverName') || !existing
+            ? normalizeText(data.receiverName)
+            : normalizeOptionalText(existing?.receiverName) || '';
+    if (!receiverName) {
+        throw new Error('Nama penerima wajib diisi');
+    }
+
+    const receiverAddress =
+        Object.prototype.hasOwnProperty.call(data, 'receiverAddress') || !existing
+            ? normalizeText(data.receiverAddress)
+            : normalizeOptionalText(existing?.receiverAddress) || '';
+    if (!receiverAddress) {
+        throw new Error('Alamat penerima wajib diisi');
+    }
+
+    next.customerRef = customerRef;
+    next.customerName = customer.name || '';
+    next.label = label;
+    next.receiverName = receiverName;
+    next.receiverPhone =
+        Object.prototype.hasOwnProperty.call(data, 'receiverPhone') || !existing
+            ? normalizeOptionalText(data.receiverPhone)
+            : normalizeOptionalText(existing?.receiverPhone);
+    next.receiverAddress = receiverAddress;
+    next.receiverCompany =
+        Object.prototype.hasOwnProperty.call(data, 'receiverCompany') || !existing
+            ? normalizeOptionalText(data.receiverCompany)
+            : normalizeOptionalText(existing?.receiverCompany);
+    next.notes =
+        Object.prototype.hasOwnProperty.call(data, 'notes') || !existing
+            ? normalizeOptionalText(data.notes)
+            : normalizeOptionalText(existing?.notes);
+
+    if (Object.prototype.hasOwnProperty.call(data, 'active') || !existing) {
+        if (data.active !== undefined && typeof data.active !== 'boolean') {
+            throw new Error('Status master penerima tidak valid');
+        }
+        next.active = typeof data.active === 'boolean' ? data.active : true;
+    }
+
+    return next;
+}

@@ -10,7 +10,7 @@ import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { fetchAdminData } from '@/lib/api/admin-client';
 import { formatDate, formatCurrency, getReceivableNetAmount } from '@/lib/utils';
 import { formatCargoSummary, VOLUME_INPUT_UNIT_OPTIONS, WEIGHT_INPUT_UNIT_OPTIONS, type VolumeInputUnit, type WeightInputUnit } from '@/lib/measurement';
-import type { Customer, CustomerProduct, Order, FreightNota } from '@/lib/types';
+import type { Customer, CustomerProduct, CustomerRecipient, Order, FreightNota } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
 
 type CustomerProductForm = {
@@ -22,6 +22,16 @@ type CustomerProductForm = {
     defaultWeightInputUnit: WeightInputUnit;
     defaultVolumeInputValue: number;
     defaultVolumeInputUnit: VolumeInputUnit;
+    notes: string;
+    active: boolean;
+};
+
+type CustomerRecipientForm = {
+    label: string;
+    receiverName: string;
+    receiverPhone: string;
+    receiverAddress: string;
+    receiverCompany: string;
     notes: string;
     active: boolean;
 };
@@ -39,12 +49,23 @@ const DEFAULT_PRODUCT_FORM: CustomerProductForm = {
     active: true,
 };
 
+const DEFAULT_RECIPIENT_FORM: CustomerRecipientForm = {
+    label: '',
+    receiverName: '',
+    receiverPhone: '',
+    receiverAddress: '',
+    receiverCompany: '',
+    notes: '',
+    active: true,
+};
+
 export default function CustomerDetailPage() {
     const params = useParams();
     const { addToast } = useToast();
     const customerId = params.id as string;
     const [customer, setCustomer] = useState<Customer | null>(null);
     const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
+    const [customerRecipients, setCustomerRecipients] = useState<CustomerRecipient[]>([]);
     const [orders, setOrders] = useState<Order[]>([]);
     const [notas, setNotas] = useState<FreightNota[]>([]);
     const [loading, setLoading] = useState(true);
@@ -54,22 +75,29 @@ export default function CustomerDetailPage() {
     const [savingProduct, setSavingProduct] = useState(false);
     const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
     const [editProduct, setEditProduct] = useState<CustomerProduct | null>(null);
+    const [showRecipientModal, setShowRecipientModal] = useState(false);
+    const [savingRecipient, setSavingRecipient] = useState(false);
+    const [deletingRecipientId, setDeletingRecipientId] = useState<string | null>(null);
+    const [editRecipient, setEditRecipient] = useState<CustomerRecipient | null>(null);
     const [form, setForm] = useState({ name: '', address: '', contactPerson: '', phone: '', email: '', npwp: '', deliveryOrderPrefix: 'SJ' });
     const [productForm, setProductForm] = useState<CustomerProductForm>(DEFAULT_PRODUCT_FORM);
+    const [recipientForm, setRecipientForm] = useState<CustomerRecipientForm>(DEFAULT_RECIPIENT_FORM);
 
     useEffect(() => {
         const loadCustomerDetail = async () => {
             setLoading(true);
             try {
-                const [cust, productRows, customerOrders, customerNotas] = await Promise.all([
+                const [cust, productRows, recipientRows, customerOrders, customerNotas] = await Promise.all([
                     fetchAdminData<Customer | null>(`/api/data?entity=customers&id=${customerId}`, 'Gagal memuat data customer'),
                     fetchAdminData<CustomerProduct[]>(`/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data customer'),
+                    fetchAdminData<CustomerRecipient[]>(`/api/data?entity=customer-recipients&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data customer'),
                     fetchAdminData<Order[]>(`/api/data?entity=orders&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data customer'),
                     fetchAdminData<FreightNota[]>(`/api/data?entity=freight-notas&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data customer'),
                 ]);
 
                 setCustomer(cust);
                 setCustomerProducts(productRows || []);
+                setCustomerRecipients(recipientRows || []);
                 setOrders(customerOrders || []);
                 setNotas(customerNotas || []);
                 if (cust) {
@@ -114,6 +142,26 @@ export default function CustomerDetailPage() {
             active: product.active !== false,
         });
         setShowProductModal(true);
+    };
+
+    const openNewRecipient = () => {
+        setEditRecipient(null);
+        setRecipientForm(DEFAULT_RECIPIENT_FORM);
+        setShowRecipientModal(true);
+    };
+
+    const openEditRecipient = (recipient: CustomerRecipient) => {
+        setEditRecipient(recipient);
+        setRecipientForm({
+            label: recipient.label || '',
+            receiverName: recipient.receiverName || '',
+            receiverPhone: recipient.receiverPhone || '',
+            receiverAddress: recipient.receiverAddress || '',
+            receiverCompany: recipient.receiverCompany || '',
+            notes: recipient.notes || '',
+            active: recipient.active !== false,
+        });
+        setShowRecipientModal(true);
     };
 
     const handleSaveProduct = async () => {
@@ -177,6 +225,70 @@ export default function CustomerDetailPage() {
             addToast('error', 'Gagal menghapus barang customer');
         } finally {
             setDeletingProductId(null);
+        }
+    };
+
+    const handleSaveRecipient = async () => {
+        if (!recipientForm.label.trim() || !recipientForm.receiverName.trim() || !recipientForm.receiverAddress.trim()) {
+            addToast('error', 'Label, nama penerima, dan alamat wajib diisi');
+            return;
+        }
+
+        setSavingRecipient(true);
+        try {
+            const payload = {
+                customerRef: customerId,
+                ...recipientForm,
+            };
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(
+                    editRecipient
+                        ? { entity: 'customer-recipients', action: 'update', data: { id: editRecipient._id, updates: payload } }
+                        : { entity: 'customer-recipients', data: payload }
+                ),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menyimpan master penerima');
+                return;
+            }
+
+            const savedRecipient = result.data as CustomerRecipient;
+            setCustomerRecipients(prev =>
+                editRecipient
+                    ? prev.map(item => item._id === editRecipient._id ? savedRecipient : item)
+                    : [savedRecipient, ...prev]
+            );
+            setShowRecipientModal(false);
+            addToast('success', editRecipient ? 'Master penerima diperbarui' : 'Master penerima ditambahkan');
+        } catch {
+            addToast('error', 'Gagal menyimpan master penerima');
+        } finally {
+            setSavingRecipient(false);
+        }
+    };
+
+    const handleDeleteRecipient = async (recipientId: string) => {
+        setDeletingRecipientId(recipientId);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entity: 'customer-recipients', action: 'delete', data: { id: recipientId } }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menghapus master penerima');
+                return;
+            }
+            setCustomerRecipients(prev => prev.filter(item => item._id !== recipientId));
+            addToast('success', 'Master penerima dihapus');
+        } catch {
+            addToast('error', 'Gagal menghapus master penerima');
+        } finally {
+            setDeletingRecipientId(null);
         }
     };
 
@@ -288,6 +400,97 @@ export default function CustomerDetailPage() {
                     </div>
                 </div>
             </div>
+
+            <CollapsibleCard
+                title={`Master Penerima (${customerRecipients.length})`}
+                defaultOpen
+            >
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
+                    <button className="btn btn-primary btn-sm" onClick={openNewRecipient}>
+                        <Plus size={14} /> Tambah Penerima
+                    </button>
+                </div>
+                <div className="table-wrapper table-desktop-only">
+                    <table>
+                        <thead><tr><th>Label</th><th>Penerima</th><th>Status</th><th>Aksi</th></tr></thead>
+                        <tbody>
+                            {customerRecipients.length === 0 ? (
+                                <tr><td colSpan={4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada master penerima untuk customer ini</td></tr>
+                            ) : (
+                                customerRecipients.map(recipient => (
+                                    <tr key={recipient._id}>
+                                        <td>
+                                            <div style={{ fontWeight: 600 }}>{recipient.label}</div>
+                                            {recipient.notes && (
+                                                <div className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>{recipient.notes}</div>
+                                            )}
+                                        </td>
+                                        <td>
+                                            <div style={{ fontWeight: 600 }}>{recipient.receiverName}</div>
+                                            {recipient.receiverCompany && (
+                                                <div className="text-muted" style={{ fontSize: '0.82rem', marginTop: '0.2rem' }}>{recipient.receiverCompany}</div>
+                                            )}
+                                            <div className="text-muted" style={{ fontSize: '0.82rem', marginTop: '0.2rem' }}>{recipient.receiverAddress}</div>
+                                            {recipient.receiverPhone && (
+                                                <div className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>{recipient.receiverPhone}</div>
+                                            )}
+                                        </td>
+                                        <td><span className={`badge ${recipient.active !== false ? 'badge-green' : 'badge-gray'}`}>{recipient.active !== false ? 'Aktif' : 'Nonaktif'}</span></td>
+                                        <td>
+                                            <div className="table-actions">
+                                                <button className="table-action-btn" onClick={() => openEditRecipient(recipient)}><Edit size={14} /> Edit</button>
+                                                <button className="table-action-btn danger" onClick={() => handleDeleteRecipient(recipient._id)} disabled={deletingRecipientId === recipient._id}>
+                                                    <Trash2 size={14} /> {deletingRecipientId === recipient._id ? 'Menghapus...' : 'Hapus'}
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+                <div className="mobile-record-list">
+                    {customerRecipients.length === 0 ? (
+                        <div className="mobile-record-card">
+                            <div className="mobile-record-title">Belum ada master penerima</div>
+                            <div className="mobile-record-actions">
+                                <button className="btn btn-primary" onClick={openNewRecipient}>
+                                    <Plus size={16} /> Tambah Penerima
+                                </button>
+                            </div>
+                        </div>
+                    ) : customerRecipients.map(recipient => (
+                        <div key={recipient._id} className="mobile-record-card">
+                            <div className="mobile-record-header">
+                                <div>
+                                    <div className="mobile-record-title">{recipient.label}</div>
+                                    <div className="mobile-record-subtitle">{recipient.receiverName}</div>
+                                </div>
+                                <span className={`badge ${recipient.active !== false ? 'badge-green' : 'badge-gray'}`}>{recipient.active !== false ? 'Aktif' : 'Nonaktif'}</span>
+                            </div>
+                            <div className="mobile-record-meta">
+                                <div className="mobile-record-kv">
+                                    <span className="mobile-record-label">Alamat</span>
+                                    <span className="mobile-record-value">{recipient.receiverAddress}</span>
+                                </div>
+                                <div className="mobile-record-kv">
+                                    <span className="mobile-record-label">Kontak</span>
+                                    <span className="mobile-record-value">{recipient.receiverCompany || recipient.receiverPhone || '-'}</span>
+                                </div>
+                            </div>
+                            <div className="mobile-record-actions">
+                                <button className="btn btn-secondary" onClick={() => openEditRecipient(recipient)}>
+                                    <Edit size={14} /> Edit
+                                </button>
+                                <button className="btn btn-danger" onClick={() => handleDeleteRecipient(recipient._id)} disabled={deletingRecipientId === recipient._id}>
+                                    <Trash2 size={14} /> {deletingRecipientId === recipient._id ? 'Menghapus...' : 'Hapus'}
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </CollapsibleCard>
 
             <CollapsibleCard
                 title={`Master Barang Customer (${customerProducts.length})`}
@@ -483,6 +686,58 @@ export default function CustomerDetailPage() {
                 </div>
             </CollapsibleCard>
             </div>
+
+            {showRecipientModal && (
+                <div className="modal-overlay" onClick={() => { if (!savingRecipient) setShowRecipientModal(false); }}>
+                    <div className="modal" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">{editRecipient ? 'Edit Master Penerima' : 'Tambah Master Penerima'}</h3>
+                            <button className="modal-close" onClick={() => setShowRecipientModal(false)} disabled={savingRecipient}><X size={20} /></button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="form-group">
+                                <label className="form-label">Label Lokasi / Tujuan <span className="required">*</span></label>
+                                <input className="form-input" value={recipientForm.label} onChange={e => setRecipientForm(prev => ({ ...prev, label: e.target.value }))} placeholder="Contoh: Gudang Gresik / Plant 2" />
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Nama Penerima <span className="required">*</span></label>
+                                    <input className="form-input" value={recipientForm.receiverName} onChange={e => setRecipientForm(prev => ({ ...prev, receiverName: e.target.value }))} />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Telepon</label>
+                                    <input className="form-input" value={recipientForm.receiverPhone} onChange={e => setRecipientForm(prev => ({ ...prev, receiverPhone: e.target.value }))} />
+                                </div>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Perusahaan Penerima</label>
+                                <input className="form-input" value={recipientForm.receiverCompany} onChange={e => setRecipientForm(prev => ({ ...prev, receiverCompany: e.target.value }))} />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Alamat Penerima <span className="required">*</span></label>
+                                <textarea className="form-textarea" rows={3} value={recipientForm.receiverAddress} onChange={e => setRecipientForm(prev => ({ ...prev, receiverAddress: e.target.value }))} />
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Status</label>
+                                    <select className="form-select" value={recipientForm.active ? 'ACTIVE' : 'INACTIVE'} onChange={e => setRecipientForm(prev => ({ ...prev, active: e.target.value === 'ACTIVE' }))}>
+                                        <option value="ACTIVE">Aktif</option>
+                                        <option value="INACTIVE">Nonaktif</option>
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Catatan</label>
+                                    <input className="form-input" value={recipientForm.notes} onChange={e => setRecipientForm(prev => ({ ...prev, notes: e.target.value }))} placeholder="Opsional" />
+                                </div>
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setShowRecipientModal(false)} disabled={savingRecipient}>Batal</button>
+                            <button className="btn btn-primary" onClick={handleSaveRecipient} disabled={savingRecipient}><Save size={16} /> {savingRecipient ? 'Menyimpan...' : 'Simpan'}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {showProductModal && (
                 <div className="modal-overlay" onClick={() => { if (!savingProduct) setShowProductModal(false); }}>

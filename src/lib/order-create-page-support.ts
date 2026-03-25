@@ -1,4 +1,4 @@
-import type { CustomerProduct } from './types';
+import type { CustomerProduct, CustomerRecipient } from './types';
 import {
     convertKgToWeightInputValue,
     convertM3ToVolumeInputValue,
@@ -86,5 +86,23 @@ export function applyCustomerProductToOrderItem(item: OrderItemForm, selectedPro
         weightInputUnit: nextWeightUnit,
         volumeInputValue: nextVolumeValue,
         volumeInputUnit: nextVolumeUnit,
+    };
+}
+
+export function applyCustomerRecipientSnapshot(selectedRecipient: CustomerRecipient | undefined) {
+    if (!selectedRecipient) {
+        return {
+            receiverName: '',
+            receiverPhone: '',
+            receiverAddress: '',
+            receiverCompany: '',
+        };
+    }
+
+    return {
+        receiverName: selectedRecipient.receiverName || '',
+        receiverPhone: selectedRecipient.receiverPhone || '',
+        receiverAddress: selectedRecipient.receiverAddress || '',
+        receiverCompany: selectedRecipient.receiverCompany || '',
     };
 }

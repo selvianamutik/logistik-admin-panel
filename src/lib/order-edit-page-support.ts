@@ -14,6 +14,7 @@ import {
 export type OrderEditFormState = {
     customerRef: string;
     customerName: string;
+    customerRecipientRef: string;
     receiverName: string;
     receiverPhone: string;
     receiverAddress: string;
@@ -27,6 +28,7 @@ export type OrderEditFormState = {
 export const DEFAULT_ORDER_EDIT_FORM: OrderEditFormState = {
     customerRef: '',
     customerName: '',
+    customerRecipientRef: '',
     receiverName: '',
     receiverPhone: '',
     receiverAddress: '',
@@ -45,6 +47,7 @@ export function buildOrderEditForm(order: Order | null): OrderEditFormState {
     return {
         customerRef: order.customerRef,
         customerName: order.customerName || '',
+        customerRecipientRef: order.customerRecipientRef || '',
         receiverName: order.receiverName,
         receiverPhone: order.receiverPhone,
         receiverAddress: order.receiverAddress,

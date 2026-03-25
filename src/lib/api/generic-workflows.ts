@@ -27,6 +27,7 @@ import {
     normalizeBankAccountPayload,
     normalizeCustomerPayload,
     normalizeCustomerProductPayload,
+    normalizeCustomerRecipientPayload,
 } from './generic-workflow-support';
 import {
     handleDriverBoronganDelete,
@@ -107,6 +108,7 @@ function buildCreateSummary(newDoc: Record<string, unknown>, fallbackId: string)
         newDoc.notaNumber ||
         newDoc.boronganNumber ||
         newDoc.incidentNumber ||
+        newDoc.label ||
         newDoc.name ||
         fallbackId
     );
@@ -236,6 +238,7 @@ export async function handleGenericUpdate(
         const structuralOrderFields = new Set([
             'customerRef',
             'customerName',
+            'customerRecipientRef',
             'receiverName',
             'receiverPhone',
             'receiverAddress',
@@ -324,6 +327,22 @@ export async function handleGenericUpdate(
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Data barang customer tidak valid' },
+                { status: 400 }
+            );
+        }
+    }
+
+    if (entity === 'customer-recipients') {
+        const existingCustomerRecipient = await sanityGetById<Record<string, unknown>>(id);
+        if (!existingCustomerRecipient) {
+            return NextResponse.json({ error: 'Master penerima tidak ditemukan' }, { status: 404 });
+        }
+
+        try {
+            Object.assign(updates, await normalizeCustomerRecipientPayload(updates, existingCustomerRecipient));
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Data master penerima tidak valid' },
                 { status: 400 }
             );
         }
@@ -500,6 +519,21 @@ export async function handleGenericDelete(
         }
     }
 
+    if (entity === 'customer-recipients') {
+        const id = typeof data.id === 'string' ? data.id : '';
+        if (!id) {
+            return NextResponse.json({ error: 'Master penerima tidak valid' }, { status: 400 });
+        }
+
+        const relatedOrder = await getSanityClient().fetch<{ _id: string } | null>(
+            `*[_type == "order" && customerRecipientRef == $ref][0]{ _id }`,
+            { ref: id }
+        );
+        if (relatedOrder) {
+            return NextResponse.json({ error: 'Master penerima yang sudah dipakai order tidak boleh dihapus' }, { status: 409 });
+        }
+    }
+
     if (entity === 'tire-events') {
         return NextResponse.json(
             {
@@ -658,6 +692,17 @@ export async function handleGenericCreate(
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Data barang customer tidak valid' },
+                { status: 400 }
+            );
+        }
+    }
+
+    if (entity === 'customer-recipients') {
+        try {
+            Object.assign(newDoc, await normalizeCustomerRecipientPayload(data));
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Data master penerima tidak valid' },
                 { status: 400 }
             );
         }

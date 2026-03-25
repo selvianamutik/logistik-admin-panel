@@ -121,6 +121,20 @@ export interface CustomerProduct {
   active: boolean;
 }
 
+export interface CustomerRecipient {
+  _id: string;
+  _type: 'customerRecipient';
+  customerRef: string;
+  customerName?: string;
+  label: string;
+  receiverName: string;
+  receiverPhone?: string;
+  receiverAddress: string;
+  receiverCompany?: string;
+  notes?: string;
+  active: boolean;
+}
+
 // ── Service ──
 export interface Service {
   _id: string;
@@ -226,6 +240,7 @@ export interface Order {
   masterResi: string;
   customerRef: string;
   customerName?: string;
+  customerRecipientRef?: string;
   receiverName: string;
   receiverPhone: string;
   receiverAddress: string;

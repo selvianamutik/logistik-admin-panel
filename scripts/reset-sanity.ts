@@ -46,6 +46,7 @@ const RESET_TYPES = [
     'bankAccount',
     'driver',
     'vehicle',
+    'customerRecipient',
     'customerProduct',
     'customer',
     'service',
