@@ -49,7 +49,7 @@ export default function NewDriverVoucherPage() {
             fetchEntity<Array<{ doRef?: string }>>('/api/data?entity=driver-borongan-items'),
         ]).then(([driverRows, deliveryOrders, orderRows, accountRows, voucherRows, boronganItemRows]) => {
             setDrivers((driverRows || []).filter((driver) => driver.active !== false));
-            setDos((deliveryOrders || []).filter((deliveryOrder) => ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status)));
+            setDos((deliveryOrders || []).filter((deliveryOrder) => ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED'].includes(deliveryOrder.status)));
             setOrders(orderRows || []);
             setBankAccounts((accountRows || []).filter((account) => account.active !== false));
             setUsedVoucherDoRefs(
@@ -159,13 +159,13 @@ export default function NewDriverVoucherPage() {
             <div className="page-header">
                 <div className="page-header-left">
                     <PageBackButton href="/driver-vouchers" />
-                    <h1 className="page-title">Terbitkan Uang Jalan Trip</h1>
+                    <h1 className="page-title">Buat Uang Jalan Trip</h1>
                 </div>
             </div>
 
             <div className="card">
                 <div className="card-body">
-                    <div className="form-section-title">Uang Jalan Awal Trip</div>
+                    <div className="form-section-title">Data Uang Jalan Trip</div>
                     <div className="form-row">
                         <div className="form-group">
                             <label className="form-label">Surat Jalan / Trip <span className="required">*</span></label>
@@ -182,7 +182,7 @@ export default function NewDriverVoucherPage() {
                                     }));
                                 }}
                             >
-                                <option value="">Pilih DO trip operasional</option>
+                                <option value="">Pilih DO trip</option>
                                 {eligibleDos.map(deliveryOrder => {
                                     const order = deliveryOrder.orderRef
                                         ? orders.find(item => item._id === deliveryOrder.orderRef)
@@ -257,7 +257,7 @@ export default function NewDriverVoucherPage() {
 
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: 'var(--space-4)' }}>
                         <button type="button" className="btn btn-secondary" onClick={() => router.push('/driver-vouchers')}>Batal</button>
-                        <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saving}><Save size={16} /> {saving ? 'Menyimpan...' : 'Terbitkan Uang Jalan Awal'}</button>
+                        <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saving}><Save size={16} /> {saving ? 'Menyimpan...' : 'Buat Uang Jalan Trip'}</button>
                     </div>
                 </div>
             </div>
