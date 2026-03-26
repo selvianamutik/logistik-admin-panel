@@ -174,8 +174,6 @@ const permissionMatrix: Record<AppModule, Partial<Record<EffectiveUserRole, Modu
     },
     driverBorongans: {
         OWNER: OWNER_FULL,
-        OPERASIONAL: { ...DENY_ALL, view: true },
-        FINANCE: { ...DENY_ALL, view: true, export: true, print: true },
     },
 };
 
@@ -196,6 +194,9 @@ export function getModulePermissions(role: UserRole, module: AppModule): ModuleP
 export function hasPageAccess(role: UserRole, module: AppModule): boolean {
     const normalizedRole = normalizeUserRole(role);
     if (module === 'orders' && (normalizedRole === 'FINANCE' || normalizedRole === 'ARMADA')) {
+        return false;
+    }
+    if (module === 'driverBorongans' && normalizedRole !== 'OWNER') {
         return false;
     }
     return hasPermission(role, module, 'view');

@@ -7,6 +7,9 @@ import { ensureSameOriginRequest } from '@/lib/api/request-security';
 import { getSanityClient, sanityCreate, sanityGetById, sanityUpdate } from '@/lib/sanity';
 import type { Driver, User } from '@/lib/types';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 async function addAuditLog(actor: { _id: string; name: string }, action: string, entityRef: string, summary: string) {
     try {
         await sanityCreate({

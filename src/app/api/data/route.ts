@@ -83,8 +83,11 @@ import {
 } from '@/lib/sanity';
 import type { Expense, User, Vehicle } from '@/lib/types';
 
-const OWNER_ONLY_READ_ENTITIES = new Set(['audit-logs']);
-const OWNER_ONLY_MUTATION_ENTITIES = new Set(['company', 'audit-logs', 'services', 'expense-categories']);
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+const OWNER_ONLY_READ_ENTITIES = new Set(['audit-logs', 'driver-borongans', 'driver-borongan-items', 'driver-borogan-items']);
+const OWNER_ONLY_MUTATION_ENTITIES = new Set(['company', 'audit-logs', 'services', 'expense-categories', 'driver-borongans', 'driver-borongan-items', 'driver-borogan-items']);
 const LEGACY_READ_ONLY_ENTITIES = new Set(['invoices', 'invoice-items']);
 const ENTITY_MODULE_MAP: Partial<Record<keyof typeof SANITY_TYPE_MAP, AppModule>> = {
     customers: 'customers',
@@ -327,7 +330,7 @@ export async function GET(request: Request) {
     }
 
     if (entity === 'driver-borongans-summary') {
-        if (!hasPermission(session.role, 'driverBorongans', 'view')) {
+        if (session.role !== 'OWNER' || !hasPermission(session.role, 'driverBorongans', 'view')) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
         try {
