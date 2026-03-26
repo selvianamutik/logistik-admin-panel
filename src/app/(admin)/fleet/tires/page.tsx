@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useToast } from '../../layout';
+import { useApp, useToast } from '../../layout';
 import { Plus, Search, Disc3, CheckCircle, Warehouse, ExternalLink } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import {
@@ -24,8 +24,10 @@ import {
     type TireHolderType,
 } from '@/lib/tire-slots';
 import type { TireEvent, Vehicle } from '@/lib/types';
+import { hasPermission } from '@/lib/rbac';
 
 export default function TiresPage() {
+    const { user } = useApp();
     const { addToast } = useToast();
     const [events, setEvents] = useState<TireEvent[]>([]);
     const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -43,6 +45,8 @@ export default function TiresPage() {
     const [editTarget, setEditTarget] = useState<TireEvent | null>(null);
     const [saving, setSaving] = useState(false);
     const [form, setForm] = useState<TireFormState>(createDefaultTireForm());
+    const canCreateTires = hasPermission(user?.role ?? 'OWNER', 'tires', 'create');
+    const canManageTires = hasPermission(user?.role ?? 'OWNER', 'tires', 'update');
 
     useEffect(() => {
         setPage(1);
@@ -105,12 +109,14 @@ export default function TiresPage() {
     const resetForm = () => setForm(createDefaultTireForm());
 
     const openAdd = () => {
+        if (!canCreateTires) return;
         setEditTarget(null);
         resetForm();
         setShowModal(true);
     };
 
     const openEdit = (event: TireEvent) => {
+        if (!canManageTires) return;
         const resolvedEvent = resolvedEvents.find(item => item._id === event._id);
         const holderType = resolvedEvent?.holderType || 'INTERNAL_VEHICLE';
         const status = resolvedEvent?.status || 'IN_USE';
@@ -203,7 +209,7 @@ export default function TiresPage() {
                     <h1 className="page-title">Audit Semua Ban</h1>
                 </div>
                 <div className="page-actions">
-                    <button className="btn btn-primary" onClick={openAdd}><Plus size={16} /> Catat Ban</button>
+                    {canCreateTires && <button className="btn btn-primary" onClick={openAdd}><Plus size={16} /> Catat Ban</button>}
                 </div>
             </div>
 
@@ -275,7 +281,7 @@ export default function TiresPage() {
                                         <td className="text-muted">{formatDate(event.installDate)}</td>
                                         <td className="text-muted">{event.notes || '-'}</td>
                                         <td>
-                                            <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => openEdit(event)}>Edit</button>
+                                            {canManageTires && <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => openEdit(event)}>Edit</button>}
                                         </td>
                                     </tr>
                                 ))}
@@ -322,7 +328,7 @@ export default function TiresPage() {
                                     )}
                                 </div>
                                 <div className="mobile-record-actions">
-                                    <button className="btn btn-secondary" onClick={() => openEdit(event)}>Edit</button>
+                                    {canManageTires && <button className="btn btn-secondary" onClick={() => openEdit(event)}>Edit</button>}
                                 </div>
                             </div>
                         ))}
@@ -343,7 +349,7 @@ export default function TiresPage() {
                 )}
             </div>
 
-            {showModal && (
+            {(canCreateTires || canManageTires) && showModal && (
                 <div className="modal-overlay" onClick={() => { if (!saving) setShowModal(false); }}>
                     <div className="modal modal-lg" onClick={event => event.stopPropagation()}>
                         <div className="modal-header">

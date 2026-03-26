@@ -41,6 +41,8 @@ export default function VehiclesPage() {
     const [tireSummaryByVehicle, setTireSummaryByVehicle] = useState<Record<string, VehicleTireSummary>>({});
     const canCreateVehicle = hasPermission(user?.role ?? 'OWNER', 'vehicles', 'create');
     const canManageVehicle = hasPermission(user?.role ?? 'OWNER', 'vehicles', 'update');
+    const canExportVehicles = hasPermission(user?.role ?? 'OWNER', 'vehicles', 'export');
+    const canPrintVehicles = hasPermission(user?.role ?? 'OWNER', 'vehicles', 'print');
 
     useEffect(() => {
         setPage(1);
@@ -136,13 +138,13 @@ export default function VehiclesPage() {
                     <h1 className="page-title">Kendaraan</h1>
                 </div>
                 <div className="page-actions">
-                    <button
+                    {canExportVehicles && <button
                         className="btn btn-secondary btn-sm"
                         onClick={async () => exportVehicles(await fetchAllMatchingVehicles() as unknown as Record<string, unknown>[])}
                     >
                         <FileDown size={15} /> Excel
-                    </button>
-                    <button
+                    </button>}
+                    {canPrintVehicles && <button
                         className="btn btn-secondary btn-sm"
                         onClick={async () => {
                             const company = await fetchCompanyProfile();
@@ -155,7 +157,7 @@ export default function VehiclesPage() {
                         }}
                     >
                         <Printer size={15} /> Print
-                    </button>
+                    </button>}
                     {canCreateVehicle && <Link href="/fleet/vehicles/new" className="btn btn-primary"><Plus size={18} /> Tambah Kendaraan</Link>}
                 </div>
             </div>

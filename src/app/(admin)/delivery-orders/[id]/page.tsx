@@ -82,6 +82,8 @@ export default function DODetailPage() {
     const [tripVehicleOverrideReason, setTripVehicleOverrideReason] = useState('');
     const normalizedRole = user ? normalizeUserRole(user.role) : null;
     const canManageDeliveryStatus = user ? hasPermission(user.role, 'deliveryOrders', 'update') : false;
+    const canExportDeliveryOrder = user ? hasPermission(user.role, 'deliveryOrders', 'export') : false;
+    const canPrintDeliveryOrder = user ? hasPermission(user.role, 'deliveryOrders', 'print') : false;
     const canAssignTripResources = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL' || normalizedRole === 'ARMADA';
     const canReviewDriverRequest = canManageDeliveryStatus;
     const canManageTripFee = canManageDeliveryStatus;
@@ -515,12 +517,12 @@ export default function DODetailPage() {
                             <Upload size={16} /> Lengkapi POD
                         </button>
                     )}
-                    <button className="btn btn-secondary" onClick={handleExportPDF}>
+                    {canExportDeliveryOrder && <button className="btn btn-secondary" onClick={handleExportPDF}>
                         <FileDown size={16} /> Export PDF
-                    </button>
-                    <button className="btn btn-secondary" onClick={handlePrint}>
+                    </button>}
+                    {canPrintDeliveryOrder && <button className="btn btn-secondary" onClick={handlePrint}>
                         <Printer size={16} /> Print
-                    </button>
+                    </button>}
                 </div>
             </div>
 

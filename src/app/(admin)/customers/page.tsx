@@ -34,6 +34,8 @@ export default function CustomersPage() {
     const [deletingId, setDeletingId] = useState<string | null>(null);
     const canCreateCustomers = hasPermission(user?.role ?? 'OWNER', 'customers', 'create');
     const canManageCustomers = hasPermission(user?.role ?? 'OWNER', 'customers', 'update');
+    const canExportCustomers = hasPermission(user?.role ?? 'OWNER', 'customers', 'export');
+    const canPrintCustomers = hasPermission(user?.role ?? 'OWNER', 'customers', 'print');
 
     const buildCustomersQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
         const params = new URLSearchParams({
@@ -222,7 +224,7 @@ export default function CustomersPage() {
                     <h1 className="page-title">Customer</h1>
                 </div>
                 <div className="page-actions">
-                    <button
+                    {canExportCustomers && <button
                         className="btn btn-secondary btn-sm"
                         onClick={async () => {
                             exportToExcel(await fetchAllMatchingCustomers() as unknown as Record<string, unknown>[], [
@@ -236,8 +238,8 @@ export default function CustomersPage() {
                         }}
                     >
                         <FileDown size={15} /> Excel
-                    </button>
-                    <button
+                    </button>}
+                    {canPrintCustomers && <button
                         className="btn btn-secondary btn-sm"
                         onClick={async () => {
                             const company = await fetchCompanyProfile();
@@ -281,7 +283,7 @@ export default function CustomersPage() {
                         }}
                     >
                         <Printer size={15} /> Print
-                    </button>
+                    </button>}
                     {canCreateCustomers && <button className="btn btn-primary" onClick={openNew}>
                         <Plus size={18} /> Tambah Customer
                     </button>}

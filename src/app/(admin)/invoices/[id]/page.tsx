@@ -92,6 +92,8 @@ export default function NotaDetailPage() {
     } = buildInvoiceDetailSummary({ nota, payments, adjustments });
     const accountMap = buildBankAccountMap(bankAccounts);
     const canManageInvoice = hasPermission(user?.role ?? 'OWNER', 'freightNotas', 'update');
+    const canExportInvoice = hasPermission(user?.role ?? 'OWNER', 'freightNotas', 'export');
+    const canPrintInvoice = hasPermission(user?.role ?? 'OWNER', 'freightNotas', 'print');
 
     const handleAddPayment = async () => {
         if (payAmount <= 0) { addToast('error', 'Nominal harus lebih dari 0'); return; }
@@ -263,8 +265,8 @@ export default function NotaDetailPage() {
                 <div className="page-actions" style={{ gap: '0.4rem' }}>
                     {canManageInvoice && nota.status !== 'PAID' && <button className="btn btn-success btn-sm" onClick={() => setShowPayModal(true)}><DollarSign size={14} /> Catat Pembayaran</button>}
                     {canManageInvoice && grossAmount > totalAdjustmentAmount && <button className="btn btn-secondary btn-sm" onClick={() => setShowAdjustmentModal(true)}>Catat Potongan</button>}
-                    <button className="btn btn-secondary btn-sm" onClick={handleExportExcel}><FileDown size={14} /> Excel</button>
-                    <button className="btn btn-secondary btn-sm" onClick={handlePrint}><Printer size={14} /> Cetak Nota</button>
+                    {canExportInvoice && <button className="btn btn-secondary btn-sm" onClick={handleExportExcel}><FileDown size={14} /> Excel</button>}
+                    {canPrintInvoice && <button className="btn btn-secondary btn-sm" onClick={handlePrint}><Printer size={14} /> Cetak Nota</button>}
                     <button className="btn btn-secondary btn-sm" onClick={handleDelete}><Trash2 size={14} /></button>
                 </div>
             </div>

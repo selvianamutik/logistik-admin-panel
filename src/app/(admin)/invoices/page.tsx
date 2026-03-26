@@ -68,6 +68,8 @@ export default function NotaListPage() {
     const [receiptNotesLoading, setReceiptNotesLoading] = useState(false);
     const canCreateInvoice = hasPermission(user?.role ?? 'OWNER', 'freightNotas', 'create');
     const canCreateReceipt = hasPermission(user?.role ?? 'OWNER', 'freightNotas', 'update');
+    const canExportInvoices = hasPermission(user?.role ?? 'OWNER', 'freightNotas', 'export');
+    const canPrintInvoices = hasPermission(user?.role ?? 'OWNER', 'freightNotas', 'print');
 
     const buildInvoicesQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
         const params = new URLSearchParams({
@@ -505,7 +507,7 @@ export default function NotaListPage() {
                 </div>
                 <div className="page-actions">
                     {canCreateReceipt && <button className="btn btn-success" onClick={openReceiptModal}><Plus size={18} /> Catat Penerimaan</button>}
-                    <button
+                    {canExportInvoices && <button
                         className="btn btn-secondary btn-sm"
                         onClick={async () => {
                             try {
@@ -518,8 +520,8 @@ export default function NotaListPage() {
                         }}
                     >
                         <FileDown size={15} /> Excel
-                    </button>
-                    <button className="btn btn-secondary btn-sm" onClick={async () => {
+                    </button>}
+                    {canPrintInvoices && <button className="btn btn-secondary btn-sm" onClick={async () => {
                         const co = company ?? await fetchCompanyProfile();
                         const allMatchingNotas = await fetchAllMatchingInvoices();
                         setCompany(co);
@@ -529,7 +531,7 @@ export default function NotaListPage() {
                             <tbody>${allMatchingNotas.map(n => `<tr><td><div class="b">${formatFreightNotaDisplayNumber(n, co)}</div><div style="font-size:11px;color:#64748b">${n.notaNumber}</div></td><td>${n.customerName}</td><td>${formatDate(n.issueDate)}</td><td>${n.totalCollie || 0}</td><td>${n.totalWeightKg || 0} kg</td><td class="r b">${formatCurrency(getReceivableNetAmount(n))}</td><td>${STATUS_MAP[n.status]?.label || n.status}</td></tr>`).join('')}
                             <tr style="border-top:2px solid #1e293b"><td colspan="5" class="r b">TOTAL</td><td class="r b">${formatCurrency(grandTotal)}</td><td></td></tr></tbody></table>`
                         });
-                    }}><Printer size={15} /> Print</button>
+                    }}><Printer size={15} /> Print</button>}
                     {canCreateInvoice && <button className="btn btn-primary" onClick={() => router.push('/invoices/new')}><Plus size={18} /> Buat Nota Baru</button>}
                 </div>
             </div>
@@ -609,8 +611,8 @@ export default function NotaListPage() {
                                         <td>
                                             <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
                                                 <button className="table-action-btn" onClick={() => router.push(`/invoices/${n._id}`)}>Buka</button>
-                                                <button className="table-action-btn" onClick={() => void handleExportNota(n)}><FileDown size={13} /> Excel</button>
-                                                <button className="table-action-btn" onClick={() => void handlePrintNota(n)}><Printer size={13} /> Cetak</button>
+                                                {canExportInvoices && <button className="table-action-btn" onClick={() => void handleExportNota(n)}><FileDown size={13} /> Excel</button>}
+                                                {canPrintInvoices && <button className="table-action-btn" onClick={() => void handlePrintNota(n)}><Printer size={13} /> Cetak</button>}
                                             </div>
                                         </td>
                                     </tr>
@@ -660,8 +662,8 @@ export default function NotaListPage() {
                                 </div>
                                 <div className="mobile-record-actions">
                                     <button className="btn btn-secondary" onClick={() => router.push(`/invoices/${n._id}`)}>Buka</button>
-                                    <button className="btn btn-secondary" onClick={() => void handleExportNota(n)}><FileDown size={13} /> Excel</button>
-                                    <button className="btn btn-secondary" onClick={() => void handlePrintNota(n)}><Printer size={13} /> Cetak</button>
+                                    {canExportInvoices && <button className="btn btn-secondary" onClick={() => void handleExportNota(n)}><FileDown size={13} /> Excel</button>}
+                                    {canPrintInvoices && <button className="btn btn-secondary" onClick={() => void handlePrintNota(n)}><Printer size={13} /> Cetak</button>}
                                 </div>
                             </div>
                         ))}

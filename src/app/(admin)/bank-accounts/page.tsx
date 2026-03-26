@@ -59,6 +59,8 @@ export default function BankAccountsPage() {
   const [transferForm, setTransferForm] = useState(createDefaultBankTransferForm());
   const canCreateBankAccounts = hasPermission(user?.role ?? "OWNER", "bankAccounts", "create");
   const canManageBankAccounts = hasPermission(user?.role ?? "OWNER", "bankAccounts", "update");
+  const canExportBankAccounts = hasPermission(user?.role ?? "OWNER", "bankAccounts", "export");
+  const canPrintBankAccounts = hasPermission(user?.role ?? "OWNER", "bankAccounts", "print");
   const buildAccountsQuery = useCallback(
     (targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) =>
       buildBankAccountsQuery({ page: targetPage, pageSize: targetPageSize }),
@@ -338,18 +340,18 @@ export default function BankAccountsPage() {
           <h1 className="page-title">Rekening &amp; Kas</h1>
         </div>
         <div className="page-actions">
-          <button
+          {canExportBankAccounts && <button
             className="btn btn-secondary btn-sm"
             onClick={handleExportExcel}
           >
             <FileDown size={15} /> Excel
-          </button>
-          <button
+          </button>}
+          {canPrintBankAccounts && <button
             className="btn btn-secondary btn-sm"
             onClick={handleBrandedPrint}
           >
             <Printer size={15} /> Print
-          </button>
+          </button>}
           {canManageBankAccounts && (
             <button
               className="btn btn-secondary"

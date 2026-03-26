@@ -21,10 +21,12 @@ import { exportToExcel } from '@/lib/export';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { DeliveryOrder, Service } from '@/lib/types';
-import { useToast } from '../layout';
+import { useApp, useToast } from '../layout';
+import { hasPermission } from '@/lib/rbac';
 
 export default function DeliveryOrdersPage() {
     const router = useRouter();
+    const { user } = useApp();
     const { addToast } = useToast();
     const [items, setItems] = useState<DeliveryOrder[]>([]);
     const [services, setServices] = useState<Service[]>([]);
@@ -40,6 +42,9 @@ export default function DeliveryOrdersPage() {
         onRoad: 0,
         waitingStart: 0,
     });
+    const canViewServices = hasPermission(user?.role ?? 'OWNER', 'services', 'view');
+    const canExportDeliveryOrders = hasPermission(user?.role ?? 'OWNER', 'deliveryOrders', 'export');
+    const canPrintDeliveryOrders = hasPermission(user?.role ?? 'OWNER', 'deliveryOrders', 'print');
 
     useEffect(() => {
         setPage(1);
@@ -81,26 +86,30 @@ export default function DeliveryOrdersPage() {
     const loadDeliveryOrders = useCallback(async () => {
         setLoading(true);
         try {
-            const [listRes, serviceRes, approvalRes, completionRes, onRoadRes, createdRes] = await Promise.all([
+            const [listRes, approvalRes, completionRes, onRoadRes, createdRes] = await Promise.all([
                 fetch(`/api/data?${buildDeliveryOrdersQuery()}`),
-                fetch('/api/data?entity=services&sortField=code&sortDir=asc&page=1&pageSize=500'),
                 fetch('/api/data?entity=delivery-orders&countOnly=1&definedFields=pendingDriverStatus'),
                 fetch(`/api/data?entity=delivery-orders&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ status: 'ARRIVED' }))}`),
                 fetch(`/api/data?entity=delivery-orders&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ status: ['HEADING_TO_PICKUP', 'ON_DELIVERY'] }))}`),
                 fetch(`/api/data?entity=delivery-orders&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ status: 'CREATED' }))}`),
             ]);
 
-            const [listPayload, servicePayload, approvalPayload, completionPayload, onRoadPayload, createdPayload] = await Promise.all([
+            const [listPayload, approvalPayload, completionPayload, onRoadPayload, createdPayload] = await Promise.all([
                 listRes.json(),
-                serviceRes.json(),
                 approvalRes.json(),
                 completionRes.json(),
                 onRoadRes.json(),
                 createdRes.json(),
             ]);
 
+            let servicePayload: { data?: Service[]; error?: string } = { data: [] };
+            if (canViewServices) {
+                const serviceRes = await fetch('/api/data?entity=services&sortField=code&sortDir=asc&page=1&pageSize=500');
+                servicePayload = await serviceRes.json();
+                if (!serviceRes.ok) throw new Error(servicePayload.error || 'Gagal memuat kategori armada');
+            }
+
             if (!listRes.ok) throw new Error(listPayload.error || 'Gagal memuat surat jalan');
-            if (!serviceRes.ok) throw new Error(servicePayload.error || 'Gagal memuat kategori armada');
             if (!approvalRes.ok) throw new Error(approvalPayload.error || 'Gagal memuat statistik surat jalan');
             if (!completionRes.ok) throw new Error(completionPayload.error || 'Gagal memuat statistik surat jalan');
             if (!onRoadRes.ok) throw new Error(onRoadPayload.error || 'Gagal memuat statistik surat jalan');
@@ -120,7 +129,7 @@ export default function DeliveryOrdersPage() {
         } finally {
             setLoading(false);
         }
-    }, [addToast, buildDeliveryOrdersQuery]);
+    }, [addToast, buildDeliveryOrdersQuery, canViewServices]);
 
     useEffect(() => {
         void loadDeliveryOrders();
@@ -138,7 +147,7 @@ export default function DeliveryOrdersPage() {
                     <h1 className="page-title">Surat Jalan</h1>
                 </div>
                 <div className="page-actions">
-                    <button className="btn btn-secondary btn-sm" onClick={async () => {
+                    {canExportDeliveryOrders && <button className="btn btn-secondary btn-sm" onClick={async () => {
                         const printableDeliveryOrders = await fetchAllMatchingDeliveryOrders();
                         exportToExcel(buildDeliveryOrderExportRows(printableDeliveryOrders, services) as unknown as Record<string, unknown>[], [
                             { header: 'No. SJ Customer', key: 'customerDoNumber', width: 22 },
@@ -152,14 +161,14 @@ export default function DeliveryOrdersPage() {
                             { header: 'Status', key: 'status', width: 15 },
                             { header: 'Drop Aktual', key: 'actualDropPoints', width: 14 },
                         ], `surat-jalan-${new Date().toISOString().split('T')[0]}`, 'Surat Jalan');
-                    }}><FileDown size={15} /> Excel</button>
-                    <button className="btn btn-secondary btn-sm" onClick={async () => {
+                    }}><FileDown size={15} /> Excel</button>}
+                    {canPrintDeliveryOrders && <button className="btn btn-secondary btn-sm" onClick={async () => {
                         const co = await fetchCompanyProfile();
                         const printableDeliveryOrders = await fetchAllMatchingDeliveryOrders();
                         openBrandedPrint({
                             title: 'Daftar Surat Jalan', company: co, bodyHtml: buildDeliveryOrdersPrintHtml(printableDeliveryOrders, services),
                         });
-                    }}><Printer size={15} /> Print</button>
+                    }}><Printer size={15} /> Print</button>}
                 </div>
             </div>
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>

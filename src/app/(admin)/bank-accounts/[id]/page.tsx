@@ -5,10 +5,11 @@ import { useParams } from 'next/navigation';
 import { ArrowRightLeft, FileDown, Printer, TrendingDown, TrendingUp } from 'lucide-react';
 
 import PageBackButton from '@/components/PageBackButton';
-import { useToast } from '../../layout';
+import { useApp, useToast } from '../../layout';
 import { exportToExcel } from '@/lib/export';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
 import type { BankAccount, BankTransaction } from '@/lib/types';
+import { hasPermission } from '@/lib/rbac';
 
 const BANK_LOGOS: Record<string, { logo: string; color: string; gradient: string }> = {
     CASH: { color: '#14532d', gradient: 'linear-gradient(135deg, #14532d 0%, #16a34a 100%)', logo: '' },
@@ -51,11 +52,14 @@ function BankDetailLogo({ name, size = 48 }: { name: string; size?: number }) {
 
 export default function BankAccountDetailPage() {
     const params = useParams();
+    const { user } = useApp();
     const { addToast } = useToast();
     const accountId = params.id as string;
     const [account, setAccount] = useState<BankAccount | null>(null);
     const [transactions, setTransactions] = useState<BankTransaction[]>([]);
     const [loading, setLoading] = useState(true);
+    const canExportBankAccount = hasPermission(user?.role ?? 'OWNER', 'bankAccounts', 'export');
+    const canPrintBankAccount = hasPermission(user?.role ?? 'OWNER', 'bankAccounts', 'print');
 
     useEffect(() => {
         const fetchEntity = async <T,>(url: string) => {
@@ -185,8 +189,8 @@ export default function BankAccountDetailPage() {
                     </div>
                 </div>
                 <div className="page-actions" style={{ flexWrap: 'wrap' }}>
-                    <button className="btn btn-secondary btn-sm" onClick={handleExportExcel}><FileDown size={15} /> Excel</button>
-                    <button className="btn btn-secondary btn-sm" onClick={handlePrint}><Printer size={15} /> Print</button>
+                    {canExportBankAccount && <button className="btn btn-secondary btn-sm" onClick={handleExportExcel}><FileDown size={15} /> Excel</button>}
+                    {canPrintBankAccount && <button className="btn btn-secondary btn-sm" onClick={handlePrint}><Printer size={15} /> Print</button>}
                 </div>
             </div>
 
