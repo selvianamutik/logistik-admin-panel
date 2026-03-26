@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
@@ -563,7 +563,7 @@ export default function DODetailPage() {
                                     </span>
                                 </div>
                                 <div className="text-muted text-sm">
-                                    {doData.pendingDriverStatusRequestedByName || 'Driver'} · {formatDateTime(doData.pendingDriverStatusRequestedAt)}
+                                    {doData.pendingDriverStatusRequestedByName || 'Driver'} | {formatDateTime(doData.pendingDriverStatusRequestedAt)}
                                 </div>
                                 {doData.pendingDriverStatusNote && (
                                     <div className="text-muted text-sm">Catatan driver: {doData.pendingDriverStatusNote}</div>
@@ -1356,4 +1356,5 @@ export default function DODetailPage() {
         </div>
     );
 }
+
 
