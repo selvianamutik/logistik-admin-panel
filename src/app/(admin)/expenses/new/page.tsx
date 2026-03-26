@@ -2,14 +2,16 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useToast } from '../../layout';
+import { useApp, useToast } from '../../layout';
 import { Save } from 'lucide-react';
 import CurrencyInput from '@/components/CurrencyInput';
 import PageBackButton from '@/components/PageBackButton';
 import type { ExpenseCategory, BankAccount, Vehicle } from '@/lib/types';
+import { hasPermission } from '@/lib/rbac';
 
 export default function ExpenseNewPage() {
     const router = useRouter();
+    const { user } = useApp();
     const { addToast } = useToast();
     const [saving, setSaving] = useState(false);
     const [categories, setCategories] = useState<ExpenseCategory[]>([]);
@@ -23,6 +25,7 @@ export default function ExpenseNewPage() {
         relatedVehicleRef: '',
         bankAccountRef: '', bankAccountName: ''
     });
+    const canViewVehicles = hasPermission(user?.role ?? 'OWNER', 'vehicles', 'view');
 
     useEffect(() => {
         const fetchEntity = async <T,>(url: string) => {
@@ -37,7 +40,7 @@ export default function ExpenseNewPage() {
         Promise.all([
             fetchEntity<ExpenseCategory[]>('/api/data?entity=expense-categories'),
             fetchEntity<BankAccount[]>('/api/data?entity=bank-accounts'),
-            fetchEntity<Vehicle[]>('/api/data?entity=vehicles'),
+            canViewVehicles ? fetchEntity<Vehicle[]>('/api/data?entity=vehicles') : Promise.resolve([] as Vehicle[]),
         ]).then(([categoryRows, accountRows, vehicleRows]) => {
             setCategories(categoryRows || []);
             setBankAccounts((accountRows || []).filter((a) => a.active !== false));
@@ -45,7 +48,7 @@ export default function ExpenseNewPage() {
         }).catch(error => {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat form pengeluaran');
         });
-    }, [addToast]);
+    }, [addToast, canViewVehicles]);
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -118,7 +121,7 @@ export default function ExpenseNewPage() {
                             <label className="form-label">Catatan / Deskripsi</label>
                             <textarea className="form-textarea" rows={3} value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} placeholder="Keterangan pengeluaran..." />
                         </div>
-                        <div className="form-group">
+                        {canViewVehicles && <div className="form-group">
                             <label className="form-label">Kendaraan Terkait</label>
                             <select
                                 className="form-select"
@@ -135,7 +138,7 @@ export default function ExpenseNewPage() {
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
                                 Isi kalau pengeluaran ini terkait kendaraan tertentu, misalnya servis, ban, atau perbaikan.
                             </div>
-                        </div>
+                        </div>}
                         <div className="form-group">
                             <label className="form-label">Bayar dari Rekening / Kas</label>
                             <select className="form-select" value={form.bankAccountRef} onChange={e => {

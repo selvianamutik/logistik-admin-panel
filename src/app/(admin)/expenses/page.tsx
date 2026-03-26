@@ -10,6 +10,7 @@ import { exportExpenses } from '@/lib/export';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { BankAccount, Expense, ExpenseCategory, Vehicle } from '@/lib/types';
+import { hasPermission } from '@/lib/rbac';
 
 type ExpenseCategoryTotal = {
     name: string;
@@ -46,6 +47,8 @@ export default function ExpensesPage() {
     });
 
     const isOwner = user?.role === 'OWNER';
+    const canExportExpenses = hasPermission(user?.role ?? 'OWNER', 'expenses', 'export');
+    const canPrintExpenses = hasPermission(user?.role ?? 'OWNER', 'expenses', 'print');
     const vehicleMap = useMemo(() => new Map(vehicles.map(vehicle => [vehicle._id, vehicle])), [vehicles]);
     const accountMap = useMemo(() => new Map(bankAccounts.map(account => [account._id, account])), [bankAccounts]);
 
@@ -197,8 +200,8 @@ export default function ExpensesPage() {
         <div>
             <div className="page-header"><div className="page-header-left"><h1 className="page-title">Pengeluaran</h1></div>
                 <div className="page-actions">
-                    <button className="btn btn-secondary btn-sm" onClick={async () => exportExpenses(await fetchAllMatchingExpenses() as unknown as Record<string, unknown>[])}><FileDown size={15} /> Excel</button>
-                    <button className="btn btn-secondary btn-sm" onClick={async () => {
+                    {canExportExpenses && <button className="btn btn-secondary btn-sm" onClick={async () => exportExpenses(await fetchAllMatchingExpenses() as unknown as Record<string, unknown>[])}><FileDown size={15} /> Excel</button>}
+                    {canPrintExpenses && <button className="btn btn-secondary btn-sm" onClick={async () => {
                         const company = await fetchCompanyProfile();
                         const printableExpenses = await fetchAllMatchingExpenses();
                         const describeExpense = (expense: Expense) => {
@@ -225,7 +228,7 @@ export default function ExpensesPage() {
                             <tbody>${printableExpenses.map(expense => `<tr><td>${formatDate(expense.date)}</td><td class="b">${expense.categoryName || '-'}</td><td>${describeExpense(expense)}</td><td class="r b">${formatCurrency(expense.amount)}</td></tr>`).join('')}
                             <tr style="border-top:2px solid #1e293b"><td colspan="3" class="r b">TOTAL</td><td class="r b">${formatCurrency(grandTotal)}</td></tr></tbody></table>`
                         });
-                    }}><Printer size={15} /> Print</button>
+                    }}><Printer size={15} /> Print</button>}
                     <button className="btn btn-primary" onClick={() => setShowModal(true)}><Plus size={18} /> Tambah Pengeluaran</button>
                 </div></div>
 
