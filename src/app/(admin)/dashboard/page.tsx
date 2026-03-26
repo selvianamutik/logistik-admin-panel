@@ -215,7 +215,6 @@ export default function DashboardPage() {
                         {data.recentOrders.length === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada order</div>
-                                <div className="mobile-record-subtitle">Order baru akan muncul di sini untuk dipantau cepat.</div>
                             </div>
                         ) : (
                             data.recentOrders.map(order => (
@@ -290,7 +289,6 @@ export default function DashboardPage() {
                         {data.recentNotas.length === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada nota</div>
-                                <div className="mobile-record-subtitle">Nota ongkos terbaru akan muncul di sini.</div>
                             </div>
                         ) : (
                             data.recentNotas.map(nota => (

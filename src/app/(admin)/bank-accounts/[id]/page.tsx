@@ -267,7 +267,6 @@ export default function BankAccountDetailPage() {
                     {transactions.length === 0 ? (
                         <div className="mobile-record-card">
                             <div className="mobile-record-title">Belum ada transaksi</div>
-                            <div className="mobile-record-subtitle">Mutasi rekening atau kas ini akan muncul di sini setelah ada pergerakan dana.</div>
                         </div>
                     ) : transactions.map(tx => {
                         const cfg = typeConfig[tx.type] || typeConfig.CREDIT;

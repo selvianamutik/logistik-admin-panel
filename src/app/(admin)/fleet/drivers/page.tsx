@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useToast } from '../../layout';
+import { useApp, useToast } from '../../layout';
 import { Plus, Search, UserCircle, Save, X, Edit2, ToggleLeft, ToggleRight, Smartphone } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import {
@@ -16,8 +16,10 @@ import {
 import { formatDateTime } from '@/lib/utils';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { Driver } from '@/lib/types';
+import { hasPermission } from '@/lib/rbac';
 
 export default function DriversPage() {
+    const { user } = useApp();
     const { addToast } = useToast();
     const [items, setItems] = useState<Driver[]>([]);
     const [accounts, setAccounts] = useState<DriverMobileAccount[]>([]);
@@ -37,6 +39,8 @@ export default function DriversPage() {
     const [togglingDriverId, setTogglingDriverId] = useState<string | null>(null);
     const [form, setForm] = useState(createDefaultDriverForm());
     const [accountForm, setAccountForm] = useState(createDefaultDriverAccessForm());
+    const canCreateDrivers = hasPermission(user?.role ?? 'OWNER', 'drivers', 'create');
+    const canManageDrivers = hasPermission(user?.role ?? 'OWNER', 'drivers', 'update');
 
     useEffect(() => {
         setPage(1);
@@ -275,7 +279,7 @@ export default function DriversPage() {
         <div>
             <div className="page-header"><div className="page-header-left"><h1 className="page-title">Supir</h1></div>
                 <div className="page-actions">
-                    <button className="btn btn-primary" onClick={() => { setEditId(null); setShowModal(true); }}><Plus size={18} /> Tambah Supir</button>
+                    {canCreateDrivers && <button className="btn btn-primary" onClick={() => { setEditId(null); setShowModal(true); }}><Plus size={18} /> Tambah Supir</button>}
                 </div></div>
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Supir Aktif</div><div className="kpi-value">{activeDrivers}</div></div></div>
@@ -316,18 +320,18 @@ export default function DriversPage() {
                                                 <td><span className={`badge ${isDriverActive(driver) ? 'badge-green' : 'badge-gray'}`}>{isDriverActive(driver) ? 'Aktif' : 'Non-aktif'}</span></td>
                                                 <td>
                                                     <div style={{ display: 'flex', gap: '0.25rem' }}>
-                                                        <button className="btn btn-ghost btn-sm" onClick={() => openEdit(driver)} title="Edit"><Edit2 size={14} /></button>
-                                                        <button
+                                                        {canManageDrivers && <button className="btn btn-ghost btn-sm" onClick={() => openEdit(driver)} title="Edit"><Edit2 size={14} /></button>}
+                                                        {canManageDrivers && <button
                                                             className="btn btn-ghost btn-sm"
                                                             onClick={() => openAccessModal(driver)}
                                                             title={isDriverActive(driver) ? 'Atur akses mobile' : 'Aktifkan supir dulu untuk mengatur akses mobile'}
                                                             disabled={!isDriverActive(driver) || togglingDriverId === driver._id}
                                                         >
                                                             <Smartphone size={14} />
-                                                        </button>
-                                                        <button className="btn btn-ghost btn-sm" onClick={() => toggleActive(driver)} title={isDriverActive(driver) ? 'Nonaktifkan' : 'Aktifkan'} disabled={togglingDriverId === driver._id}>
+                                                        </button>}
+                                                        {canManageDrivers && <button className="btn btn-ghost btn-sm" onClick={() => toggleActive(driver)} title={isDriverActive(driver) ? 'Nonaktifkan' : 'Aktifkan'} disabled={togglingDriverId === driver._id}>
                                                             {isDriverActive(driver) ? <ToggleRight size={14} className="text-green" /> : <ToggleLeft size={14} />}
-                                                        </button>
+                                                        </button>}
                                                     </div>
                                                 </td>
                                             </tr>
@@ -368,20 +372,20 @@ export default function DriversPage() {
                                         </div>
                                     </div>
                                     <div className="mobile-record-actions">
-                                        <button className="btn btn-secondary" onClick={() => openEdit(driver)}>
+                                        {canManageDrivers && <button className="btn btn-secondary" onClick={() => openEdit(driver)}>
                                             <Edit2 size={14} /> Edit
-                                        </button>
-                                        <button
+                                        </button>}
+                                        {canManageDrivers && <button
                                             className="btn btn-secondary"
                                             onClick={() => openAccessModal(driver)}
                                             disabled={!isDriverActive(driver) || togglingDriverId === driver._id}
                                         >
                                             <Smartphone size={14} /> Akses Mobile
-                                        </button>
-                                        <button className="btn btn-secondary" onClick={() => toggleActive(driver)} disabled={togglingDriverId === driver._id}>
+                                        </button>}
+                                        {canManageDrivers && <button className="btn btn-secondary" onClick={() => toggleActive(driver)} disabled={togglingDriverId === driver._id}>
                                             {isDriverActive(driver) ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
                                             {togglingDriverId === driver._id ? 'Menyimpan...' : (isDriverActive(driver) ? 'Nonaktifkan' : 'Aktifkan')}
-                                        </button>
+                                        </button>}
                                     </div>
                                 </div>
                             );
@@ -401,7 +405,7 @@ export default function DriversPage() {
                 )}
             </div>
 
-            {showModal && (
+            {(canManageDrivers || canCreateDrivers) && showModal && (
                 <div className="modal-overlay" onClick={closeModal}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header"><h3 className="modal-title">{editId ? 'Edit Supir' : 'Tambah Supir'}</h3><button className="modal-close" onClick={closeModal} disabled={savingDriver}><X size={20} /></button></div>
@@ -427,7 +431,7 @@ export default function DriversPage() {
                 </div>
             )}
 
-            {showAccessModal && accessDriver && (
+            {canManageDrivers && showAccessModal && accessDriver && (
                 <div className="modal-overlay" onClick={closeAccessModal}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">

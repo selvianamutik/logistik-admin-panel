@@ -6,7 +6,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 import { matchesPathSegment } from '@/lib/pathname';
-import { hasPageAccess, type AppModule } from '@/lib/rbac';
+import { hasPageAccess, hasPermission, type AppModule, type ModulePermissions } from '@/lib/rbac';
 import { DRIVER_SESSION_COOKIE, SESSION_COOKIE, verifySessionToken } from '@/lib/session';
 import type { SessionUser } from '@/lib/types';
 
@@ -50,6 +50,16 @@ function isAdminLoginPath(pathname: string) {
 function getModuleForPath(pathname: string) {
     const matched = INTERNAL_PATH_MODULES.find(item => matchesPathSegment(pathname, item.path));
     return matched?.module || null;
+}
+
+function getRequiredModuleAction(pathname: string): keyof ModulePermissions {
+    if (pathname.endsWith('/new')) {
+        return 'create';
+    }
+    if (pathname.endsWith('/edit')) {
+        return 'update';
+    }
+    return 'view';
 }
 
 async function getLiveSessionUser(
@@ -235,7 +245,14 @@ export async function proxy(request: NextRequest) {
         }
 
         const targetModule = getModuleForPath(pathname);
-        if (targetModule && !hasPageAccess(user.role, targetModule)) {
+        const requiredAction = getRequiredModuleAction(pathname);
+        const hasAccess = targetModule
+            ? (requiredAction === 'view'
+                ? hasPageAccess(user.role, targetModule)
+                : hasPermission(user.role, targetModule, requiredAction))
+            : true;
+
+        if (targetModule && !hasAccess) {
             return NextResponse.redirect(new URL('/dashboard', request.url));
         }
 

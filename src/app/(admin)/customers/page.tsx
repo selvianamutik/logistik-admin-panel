@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useToast } from '../layout';
+import { useApp, useToast } from '../layout';
 import { Plus, Search, Edit, Trash2, Users, Save, X, FileDown, Printer } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 
@@ -11,8 +11,10 @@ import { exportToExcel } from '@/lib/export';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { Customer } from '@/lib/types';
+import { hasPermission } from '@/lib/rbac';
 
 export default function CustomersPage() {
+    const { user } = useApp();
     const { addToast } = useToast();
     const [items, setItems] = useState<Customer[]>([]);
     const [customerProductCounts, setCustomerProductCounts] = useState<Record<string, number>>({});
@@ -30,6 +32,8 @@ export default function CustomersPage() {
     const [form, setForm] = useState({ name: '', address: '', contactPerson: '', phone: '', email: '', defaultPaymentTerm: 14, npwp: '', deliveryOrderPrefix: 'SJ' });
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
+    const canCreateCustomers = hasPermission(user?.role ?? 'OWNER', 'customers', 'create');
+    const canManageCustomers = hasPermission(user?.role ?? 'OWNER', 'customers', 'update');
 
     const buildCustomersQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
         const params = new URLSearchParams({
@@ -278,9 +282,9 @@ export default function CustomersPage() {
                     >
                         <Printer size={15} /> Print
                     </button>
-                    <button className="btn btn-primary" onClick={openNew}>
+                    {canCreateCustomers && <button className="btn btn-primary" onClick={openNew}>
                         <Plus size={18} /> Tambah Customer
-                    </button>
+                    </button>}
                 </div>
             </div>
 
@@ -382,8 +386,8 @@ export default function CustomersPage() {
                                         <td>
                                             <div className="table-actions">
                                                 <Link href={`/customers/${customer._id}`} className="table-action-btn">Detail & Barang</Link>
-                                                <button className="table-action-btn" onClick={() => openEdit(customer)}><Edit size={14} /> Edit</button>
-                                                <button className="table-action-btn danger" onClick={() => setDeleteId(customer._id)}><Trash2 size={14} /> Hapus</button>
+                                                {canManageCustomers && <button className="table-action-btn" onClick={() => openEdit(customer)}><Edit size={14} /> Edit</button>}
+                                                {canManageCustomers && <button className="table-action-btn danger" onClick={() => setDeleteId(customer._id)}><Trash2 size={14} /> Hapus</button>}
                                             </div>
                                         </td>
                                     </tr>
@@ -400,9 +404,9 @@ export default function CustomersPage() {
                                 <div className="mobile-record-title">Belum ada customer</div>
                                 <div className="mobile-record-subtitle">Tambahkan customer baru untuk mulai membuat order, surat jalan, dan master barang khusus customer.</div>
                                 <div className="mobile-record-actions">
-                                    <button className="btn btn-primary" onClick={openNew}>
-                                        <Plus size={16} /> Tambah Customer
-                                    </button>
+                                {canCreateCustomers && <button className="btn btn-primary" onClick={openNew}>
+                                    <Plus size={16} /> Tambah Customer
+                                </button>}
                                 </div>
                             </div>
                         ) : items.map(customer => (
@@ -436,12 +440,12 @@ export default function CustomersPage() {
                                 </div>
                                 <div className="mobile-record-actions">
                                     <Link href={`/customers/${customer._id}`} className="btn btn-secondary">Detail & Barang</Link>
-                                    <button className="btn btn-secondary" onClick={() => openEdit(customer)}>
+                                    {canManageCustomers && <button className="btn btn-secondary" onClick={() => openEdit(customer)}>
                                         <Edit size={14} /> Edit
-                                    </button>
-                                    <button className="btn btn-danger" onClick={() => setDeleteId(customer._id)}>
+                                    </button>}
+                                    {canManageCustomers && <button className="btn btn-danger" onClick={() => setDeleteId(customer._id)}>
                                         <Trash2 size={14} /> Hapus
-                                    </button>
+                                    </button>}
                                 </div>
                             </div>
                         ))}
@@ -460,7 +464,7 @@ export default function CustomersPage() {
                 )}
             </div>
 
-            {showModal && (
+            {canManageCustomers && showModal && (
                 <div className="modal-overlay" onClick={() => { if (!saving) setShowModal(false); }}>
                     <div className="modal modal-lg" onClick={event => event.stopPropagation()}>
                         <div className="modal-header">
@@ -518,7 +522,7 @@ export default function CustomersPage() {
                 </div>
             )}
 
-            {deleteId && (
+            {canManageCustomers && deleteId && (
                 <div className="modal-overlay" onClick={() => { if (!deletingId) setDeleteId(null); }}>
                     <div className="modal" onClick={event => event.stopPropagation()}>
                         <div className="modal-header"><h3 className="modal-title">Konfirmasi Hapus</h3></div>

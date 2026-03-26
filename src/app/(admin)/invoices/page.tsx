@@ -11,8 +11,9 @@ import { buildFreightNotaPrintDocument, openBrandedPrint, fetchCompanyProfile, f
 import { exportFreightNotaDetail, exportInvoices } from '@/lib/export';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { BankAccount, CompanyProfile, Customer, CustomerReceipt, FreightNota, FreightNotaItem, Payment } from '@/lib/types';
+import { hasPermission } from '@/lib/rbac';
 
-import { useToast } from '../layout';
+import { useApp, useToast } from '../layout';
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
     UNPAID: { label: 'Belum Lunas', color: 'danger' },
@@ -32,6 +33,7 @@ const getNextInvoiceAction = (nota: FreightNota, remainingAmount: number) => {
 
 export default function NotaListPage() {
     const router = useRouter();
+    const { user } = useApp();
     const { addToast } = useToast();
     const [items, setItems] = useState<FreightNota[]>([]);
     const [payments, setPayments] = useState<Payment[]>([]);
@@ -64,6 +66,8 @@ export default function NotaListPage() {
     const [receiptOpenNotas, setReceiptOpenNotas] = useState<FreightNota[]>([]);
     const [receiptOpenPayments, setReceiptOpenPayments] = useState<Payment[]>([]);
     const [receiptNotesLoading, setReceiptNotesLoading] = useState(false);
+    const canCreateInvoice = hasPermission(user?.role ?? 'OWNER', 'freightNotas', 'create');
+    const canCreateReceipt = hasPermission(user?.role ?? 'OWNER', 'freightNotas', 'update');
 
     const buildInvoicesQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
         const params = new URLSearchParams({
@@ -500,7 +504,7 @@ export default function NotaListPage() {
                     <h1 className="page-title">Nota Ongkos Angkut</h1>
                 </div>
                 <div className="page-actions">
-                    <button className="btn btn-success" onClick={openReceiptModal}><Plus size={18} /> Catat Penerimaan</button>
+                    {canCreateReceipt && <button className="btn btn-success" onClick={openReceiptModal}><Plus size={18} /> Catat Penerimaan</button>}
                     <button
                         className="btn btn-secondary btn-sm"
                         onClick={async () => {
@@ -526,7 +530,7 @@ export default function NotaListPage() {
                             <tr style="border-top:2px solid #1e293b"><td colspan="5" class="r b">TOTAL</td><td class="r b">${formatCurrency(grandTotal)}</td><td></td></tr></tbody></table>`
                         });
                     }}><Printer size={15} /> Print</button>
-                    <button className="btn btn-primary" onClick={() => router.push('/invoices/new')}><Plus size={18} /> Buat Nota Baru</button>
+                    {canCreateInvoice && <button className="btn btn-primary" onClick={() => router.push('/invoices/new')}><Plus size={18} /> Buat Nota Baru</button>}
                 </div>
             </div>
 
@@ -578,7 +582,7 @@ export default function NotaListPage() {
                         <tbody>
                             {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 totalInvoices === 0 ? (
-                                    <tr><td colSpan={9}><div className="empty-state"><FileText size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada nota</div><div className="empty-state-text">Klik tombol &quot;Buat Nota&quot; untuk membuat nota baru</div></div></td></tr>
+                                    <tr><td colSpan={9}><div className="empty-state"><FileText size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada nota</div><div className="empty-state-text">Belum ada nota yang bisa ditampilkan</div></div></td></tr>
                                 ) : items.map(n => (
                                     <tr key={n._id}>
                                         <td>
@@ -619,7 +623,7 @@ export default function NotaListPage() {
                         {totalInvoices === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada nota</div>
-                                <div className="mobile-record-subtitle">Klik tombol Buat Nota untuk membuat nota baru.</div>
+                                <div className="mobile-record-subtitle">Belum ada nota yang bisa ditampilkan.</div>
                             </div>
                         ) : items.map(n => (
                             <div key={n._id} className="mobile-record-card">
@@ -677,7 +681,7 @@ export default function NotaListPage() {
                     />
                 )}
             </div>
-            {showReceiptModal && (
+            {canCreateReceipt && showReceiptModal && (
                 <div className="modal-overlay" onClick={() => { if (!receiving) setShowReceiptModal(false); }}>
                     <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 980 }}>
                         <div className="modal-header">

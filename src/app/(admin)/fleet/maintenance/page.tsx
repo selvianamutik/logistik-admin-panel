@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useToast } from '../../layout';
+import { useApp, useToast } from '../../layout';
 import { Plus, Search, Wrench, Save, X } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
@@ -17,9 +17,11 @@ import {
 import { formatDate, MAINTENANCE_STATUS_MAP } from '@/lib/utils';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { Maintenance, Vehicle } from '@/lib/types';
+import { hasPermission } from '@/lib/rbac';
 
 export default function MaintenancePage() {
     const searchParams = useSearchParams();
+    const { user } = useApp();
     const { addToast } = useToast();
     const [items, setItems] = useState<Maintenance[]>([]);
     const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -37,6 +39,8 @@ export default function MaintenancePage() {
     const [updatingId, setUpdatingId] = useState<string | null>(null);
     const [prefillApplied, setPrefillApplied] = useState(false);
     const [form, setForm] = useState<MaintenanceFormState>(createDefaultMaintenanceForm());
+    const canCreateMaintenance = hasPermission(user?.role ?? 'OWNER', 'maintenance', 'create');
+    const canUpdateMaintenance = hasPermission(user?.role ?? 'OWNER', 'maintenance', 'update');
 
     useEffect(() => {
         setPage(1);
@@ -193,7 +197,7 @@ export default function MaintenancePage() {
     return (
         <div>
             <div className="page-header"><div className="page-header-left"><h1 className="page-title">Maintenance</h1></div>
-                <div className="page-actions"><button className="btn btn-primary" onClick={() => openScheduleModal(vehicleFilter ? vehicles.find(vehicle => vehicle._id === vehicleFilter) || null : null)}><Plus size={18} /> Jadwalkan Servis</button></div></div>
+                <div className="page-actions">{canCreateMaintenance && <button className="btn btn-primary" onClick={() => openScheduleModal(vehicleFilter ? vehicles.find(vehicle => vehicle._id === vehicleFilter) || null : null)}><Plus size={18} /> Jadwalkan Servis</button>}</div></div>
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card"><div className="kpi-icon warning"><Wrench size={20} /></div><div className="kpi-content"><div className="kpi-label">Terjadwal</div><div className="kpi-value">{scheduledCount}</div></div></div>
                 <div className="kpi-card"><div className="kpi-icon success"><Wrench size={20} /></div><div className="kpi-content"><div className="kpi-label">Selesai</div><div className="kpi-value">{completedCount}</div></div></div>
@@ -215,7 +219,7 @@ export default function MaintenancePage() {
                                             <td><span className={`badge badge-${MAINTENANCE_STATUS_MAP[item.status]?.color}`}><span className="badge-dot" /> {MAINTENANCE_STATUS_MAP[item.status]?.label}</span></td>
                                             <td>{getMaintenanceNextAction(item)}</td>
                                             <td><div className="table-actions">
-                                                {item.status === 'SCHEDULED' && <><button className="table-action-btn" onClick={() => updateStatus(item._id, 'DONE')} disabled={updatingId === item._id}>{updatingId === item._id ? 'Menyimpan...' : 'Selesai'}</button><button className="table-action-btn" onClick={() => updateStatus(item._id, 'SKIPPED')} disabled={updatingId === item._id}>{updatingId === item._id ? 'Menyimpan...' : 'Lewati'}</button></>}
+                                                {canUpdateMaintenance && item.status === 'SCHEDULED' && <><button className="table-action-btn" onClick={() => updateStatus(item._id, 'DONE')} disabled={updatingId === item._id}>{updatingId === item._id ? 'Menyimpan...' : 'Selesai'}</button><button className="table-action-btn" onClick={() => updateStatus(item._id, 'SKIPPED')} disabled={updatingId === item._id}>{updatingId === item._id ? 'Menyimpan...' : 'Lewati'}</button></>}
                                             </div></td>
                                         </tr>
                                     ))}
@@ -227,7 +231,6 @@ export default function MaintenancePage() {
                         {filteredTotalMaintenance === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada jadwal maintenance</div>
-                                <div className="mobile-record-subtitle">Buat jadwal servis untuk mengingatkan perawatan armada.</div>
                             </div>
                         ) : items.map(item => (
                             <div key={item._id} className="mobile-record-card">
@@ -256,7 +259,7 @@ export default function MaintenancePage() {
                                         </div>
                                     )}
                                 </div>
-                                {item.status === 'SCHEDULED' && (
+                                {canUpdateMaintenance && item.status === 'SCHEDULED' && (
                                     <div className="mobile-record-actions">
                                         <button className="btn btn-secondary" onClick={() => window.location.assign(`/fleet/vehicles/${item.vehicleRef}`)}>
                                             Lihat Unit
@@ -292,7 +295,7 @@ export default function MaintenancePage() {
                     />
                 )}
             </div>
-            {showModal && (
+            {canCreateMaintenance && showModal && (
                 <div className="modal-overlay" onClick={closeScheduleModal}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header"><h3 className="modal-title">Jadwalkan Maintenance</h3><button className="modal-close" onClick={closeScheduleModal} disabled={saving}><X size={20} /></button></div>

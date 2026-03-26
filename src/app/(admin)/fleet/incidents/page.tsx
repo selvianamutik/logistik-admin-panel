@@ -270,7 +270,6 @@ export default function IncidentsPage() {
                         {filteredTotalIncidents === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Tidak ada insiden</div>
-                                <div className="mobile-record-subtitle">Laporan insiden kendaraan akan muncul di sini.</div>
                             </div>
                         ) : items.map(item => (
                             <div key={item._id} className="mobile-record-card">

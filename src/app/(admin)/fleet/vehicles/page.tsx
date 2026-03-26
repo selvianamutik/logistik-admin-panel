@@ -7,7 +7,7 @@ import { Plus, Search, Eye, Edit, Car, FileDown, Printer } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import { withAdminCollectionPageSize } from '@/lib/api/admin-client';
 
-import { useToast } from '../../layout';
+import { useApp, useToast } from '../../layout';
 import {
     buildVehiclePrintHtml,
     buildVehiclesQuery,
@@ -21,9 +21,11 @@ import { exportVehicles } from '@/lib/export';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { Service, Vehicle } from '@/lib/types';
+import { hasPermission } from '@/lib/rbac';
 
 export default function VehiclesPage() {
     const router = useRouter();
+    const { user } = useApp();
     const { addToast } = useToast();
     const [items, setItems] = useState<Vehicle[]>([]);
     const [services, setServices] = useState<Service[]>([]);
@@ -37,6 +39,8 @@ export default function VehiclesPage() {
     const [incompleteTireCount, setIncompleteTireCount] = useState(0);
     const [nonOperationalCount, setNonOperationalCount] = useState(0);
     const [tireSummaryByVehicle, setTireSummaryByVehicle] = useState<Record<string, VehicleTireSummary>>({});
+    const canCreateVehicle = hasPermission(user?.role ?? 'OWNER', 'vehicles', 'create');
+    const canManageVehicle = hasPermission(user?.role ?? 'OWNER', 'vehicles', 'update');
 
     useEffect(() => {
         setPage(1);
@@ -152,7 +156,7 @@ export default function VehiclesPage() {
                     >
                         <Printer size={15} /> Print
                     </button>
-                    <Link href="/fleet/vehicles/new" className="btn btn-primary"><Plus size={18} /> Tambah Kendaraan</Link>
+                    {canCreateVehicle && <Link href="/fleet/vehicles/new" className="btn btn-primary"><Plus size={18} /> Tambah Kendaraan</Link>}
                 </div>
             </div>
 
@@ -205,7 +209,7 @@ export default function VehiclesPage() {
                                                 <td>{vehicle.lastOdometer ? `${vehicle.lastOdometer.toLocaleString('id-ID')} km` : '-'}</td>
                                                 <td><div className="table-actions">
                                                     <button className="table-action-btn" onClick={() => router.push(`/fleet/vehicles/${vehicle._id}`)}><Eye size={14} /> Lihat</button>
-                                                    <button className="table-action-btn" onClick={() => router.push(`/fleet/vehicles/${vehicle._id}/edit`)}><Edit size={14} /> Edit</button>
+                                                    {canManageVehicle && <button className="table-action-btn" onClick={() => router.push(`/fleet/vehicles/${vehicle._id}/edit`)}><Edit size={14} /> Edit</button>}
                                                 </div></td>
                                             </tr>
                                         );
@@ -269,9 +273,9 @@ export default function VehiclesPage() {
                                         <button className="btn btn-secondary" onClick={() => router.push(`/fleet/vehicles/${vehicle._id}`)}>
                                             <Eye size={14} /> Lihat
                                         </button>
-                                        <button className="btn btn-secondary" onClick={() => router.push(`/fleet/vehicles/${vehicle._id}/edit`)}>
+                                        {canManageVehicle && <button className="btn btn-secondary" onClick={() => router.push(`/fleet/vehicles/${vehicle._id}/edit`)}>
                                             <Edit size={14} /> Edit
-                                        </button>
+                                        </button>}
                                     </div>
                                 </div>
                             );

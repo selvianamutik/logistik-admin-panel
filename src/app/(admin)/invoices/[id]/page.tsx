@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useToast } from '../../layout';
+import { useApp, useToast } from '../../layout';
 import { Printer, DollarSign, Landmark, Trash2, FileDown } from 'lucide-react';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import CurrencyInput from '@/components/CurrencyInput';
@@ -19,9 +19,11 @@ import { buildFreightNotaPrintDocument, fetchCompanyProfile, formatFreightNotaDi
 import { exportFreightNotaDetail } from '@/lib/export';
 import { formatDate, formatCurrency, INVOICE_ADJUSTMENT_KIND_MAP, PAYMENT_METHOD_MAP } from '@/lib/utils';
 import type { FreightNota, FreightNotaItem, Payment, BankAccount, CompanyProfile, InvoiceAdjustment, Customer } from '@/lib/types';
+import { hasPermission } from '@/lib/rbac';
 export default function NotaDetailPage() {
     const params = useParams();
     const router = useRouter();
+    const { user } = useApp();
     const { addToast } = useToast();
     const notaId = params.id as string;
     const [nota, setNota] = useState<FreightNota | null>(null);
@@ -89,6 +91,7 @@ export default function NotaDetailPage() {
         paidPercent,
     } = buildInvoiceDetailSummary({ nota, payments, adjustments });
     const accountMap = buildBankAccountMap(bankAccounts);
+    const canManageInvoice = hasPermission(user?.role ?? 'OWNER', 'freightNotas', 'update');
 
     const handleAddPayment = async () => {
         if (payAmount <= 0) { addToast('error', 'Nominal harus lebih dari 0'); return; }
@@ -258,8 +261,8 @@ export default function NotaDetailPage() {
                 </div>
                 </div>
                 <div className="page-actions" style={{ gap: '0.4rem' }}>
-                    {nota.status !== 'PAID' && <button className="btn btn-success btn-sm" onClick={() => setShowPayModal(true)}><DollarSign size={14} /> Catat Pembayaran</button>}
-                    {grossAmount > totalAdjustmentAmount && <button className="btn btn-secondary btn-sm" onClick={() => setShowAdjustmentModal(true)}>Catat Potongan</button>}
+                    {canManageInvoice && nota.status !== 'PAID' && <button className="btn btn-success btn-sm" onClick={() => setShowPayModal(true)}><DollarSign size={14} /> Catat Pembayaran</button>}
+                    {canManageInvoice && grossAmount > totalAdjustmentAmount && <button className="btn btn-secondary btn-sm" onClick={() => setShowAdjustmentModal(true)}>Catat Potongan</button>}
                     <button className="btn btn-secondary btn-sm" onClick={handleExportExcel}><FileDown size={14} /> Excel</button>
                     <button className="btn btn-secondary btn-sm" onClick={handlePrint}><Printer size={14} /> Cetak Nota</button>
                     <button className="btn btn-secondary btn-sm" onClick={handleDelete}><Trash2 size={14} /></button>
@@ -351,7 +354,7 @@ export default function NotaDetailPage() {
                                     <div className={`progress-bar-fill ${paidPercent >= 100 ? 'success' : ''}`} style={{ width: `${paidPercent}%` }} />
                                 </div>
                                 <div style={{ fontSize: '0.72rem', color: 'var(--color-gray-400)', marginBottom: '1rem' }}>{paidPercent.toFixed(0)}% terbayar</div>
-                                {nota.status !== 'PAID' && <button className="btn btn-success" style={{ width: '100%' }} onClick={() => setShowPayModal(true)}><DollarSign size={16} /> Catat Pembayaran</button>}
+                                {canManageInvoice && nota.status !== 'PAID' && <button className="btn btn-success" style={{ width: '100%' }} onClick={() => setShowPayModal(true)}><DollarSign size={16} /> Catat Pembayaran</button>}
                             </div>
                         </div>
 
@@ -415,7 +418,7 @@ export default function NotaDetailPage() {
                                         </div>
                                         {adjustment.status !== 'VOID' && (
                                             <div style={{ marginTop: '0.5rem' }}>
-                                                <button className="table-action-btn" onClick={() => void handleVoidAdjustment(adjustment._id)}>Void</button>
+                                                {canManageInvoice && <button className="table-action-btn" onClick={() => void handleVoidAdjustment(adjustment._id)}>Void</button>}
                                             </div>
                                         )}
                                     </div>
@@ -426,7 +429,7 @@ export default function NotaDetailPage() {
                 </div>
             </div>
             {/* Pay Modal */}
-            {showPayModal && (
+            {canManageInvoice && showPayModal && (
                 <div className="modal-overlay" onClick={() => { if (!paying) setShowPayModal(false); }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header"><h3 className="modal-title">Catat Pembayaran Nota</h3><button className="modal-close" onClick={() => setShowPayModal(false)} disabled={paying}>&times;</button></div>
@@ -466,7 +469,7 @@ export default function NotaDetailPage() {
                     </div>
                 </div>
             )}
-            {showAdjustmentModal && (
+            {canManageInvoice && showAdjustmentModal && (
                 <div className="modal-overlay" onClick={() => { if (!adjusting) setShowAdjustmentModal(false); }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header"><h3 className="modal-title">Catat Potongan Tagihan</h3><button className="modal-close" onClick={() => setShowAdjustmentModal(false)} disabled={adjusting}>&times;</button></div>

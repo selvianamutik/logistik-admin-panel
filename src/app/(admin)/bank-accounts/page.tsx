@@ -31,9 +31,11 @@ import { exportToExcel } from "@/lib/export";
 import { openBrandedPrint } from "@/lib/print";
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import type { BankAccount, CompanyProfile } from "@/lib/types";
-import { useToast } from "../layout";
+import { hasPermission } from "@/lib/rbac";
+import { useApp, useToast } from "../layout";
 
 export default function BankAccountsPage() {
+  const { user } = useApp();
   const { addToast } = useToast();
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [company, setCompany] = useState<CompanyProfile | null>(null);
@@ -55,6 +57,8 @@ export default function BankAccountsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [form, setForm] = useState(createDefaultBankAccountForm());
   const [transferForm, setTransferForm] = useState(createDefaultBankTransferForm());
+  const canCreateBankAccounts = hasPermission(user?.role ?? "OWNER", "bankAccounts", "create");
+  const canManageBankAccounts = hasPermission(user?.role ?? "OWNER", "bankAccounts", "update");
   const buildAccountsQuery = useCallback(
     (targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) =>
       buildBankAccountsQuery({ page: targetPage, pageSize: targetPageSize }),
@@ -346,15 +350,19 @@ export default function BankAccountsPage() {
           >
             <Printer size={15} /> Print
           </button>
-          <button
-            className="btn btn-secondary"
-            onClick={() => setShowTransfer(true)}
-          >
-            <ArrowRightLeft size={16} /> Transfer
-          </button>
-          <button className="btn btn-primary" onClick={openNew}>
-            <Plus size={18} /> Tambah Rekening
-          </button>
+          {canManageBankAccounts && (
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowTransfer(true)}
+            >
+              <ArrowRightLeft size={16} /> Transfer
+            </button>
+          )}
+          {canCreateBankAccounts && (
+            <button className="btn btn-primary" onClick={openNew}>
+              <Plus size={18} /> Tambah Rekening
+            </button>
+          )}
         </div>
       </div>
 
@@ -419,20 +427,6 @@ export default function BankAccountsPage() {
               {totalBalance - totalInitial >= 0 ? "+" : ""}
               {formatBankAccountCurrency(totalBalance - totalInitial)}
             </div>
-          </div>
-        </div>
-      </div>
-
-      <div
-        className="card"
-        style={{ marginBottom: "1.5rem", background: "var(--color-gray-25)" }}
-      >
-        <div className="card-body" style={{ padding: "0.9rem 1rem" }}>
-          <div style={{ fontWeight: 700, marginBottom: "0.25rem" }}>
-            Ringkasan Kas &amp; Bank
-          </div>
-          <div style={{ fontSize: "0.82rem", color: "var(--color-gray-600)" }}>
-            Halaman ini menunjukkan posisi uang yang benar-benar tercatat di rekening bank dan kas tunai. Transfer antar rekening tidak mengubah total uang, hanya memindahkan posisinya.
           </div>
         </div>
       </div>
@@ -564,7 +558,7 @@ export default function BankAccountsPage() {
                       >
                         <Eye size={13} /> Detail
                       </Link>
-                      {!systemCash && (
+                      {canManageBankAccounts && !systemCash && (
                         <button
                           className="btn btn-sm btn-secondary"
                           onClick={() => openEdit(account)}
@@ -572,7 +566,7 @@ export default function BankAccountsPage() {
                           <Edit size={13} />
                         </button>
                       )}
-                      {!systemCash && (
+                      {canManageBankAccounts && !systemCash && (
                         <button
                           className="btn btn-sm"
                           style={{
@@ -590,7 +584,7 @@ export default function BankAccountsPage() {
                 </div>
               );
             })}
-        {!loading && (
+        {!loading && canCreateBankAccounts && (
           <div
             className="card"
             style={{
@@ -627,7 +621,7 @@ export default function BankAccountsPage() {
         />
       )}
 
-      {showModal && (
+      {(canManageBankAccounts || canCreateBankAccounts) && showModal && (
         <div className="modal-overlay" onClick={() => { if (!savingAccount) setShowModal(false); }}>
           <div
             className="modal"
@@ -783,7 +777,7 @@ export default function BankAccountsPage() {
         </div>
       )}
 
-      {showTransfer && (
+      {canManageBankAccounts && showTransfer && (
         <div className="modal-overlay" onClick={() => { if (!transferring) setShowTransfer(false); }}>
           <div
             className="modal"
@@ -908,7 +902,7 @@ export default function BankAccountsPage() {
         </div>
       )}
 
-      {deleteConfirm && (
+      {canManageBankAccounts && deleteConfirm && (
         <div className="modal-overlay" onClick={() => setDeleteConfirm(null)}>
           <div
             className="modal"

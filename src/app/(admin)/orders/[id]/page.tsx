@@ -38,10 +38,13 @@ import {
 } from '@/lib/order-detail-support';
 import type { Order, OrderItem, DeliveryOrder, DeliveryOrderItem, Driver, FreightNota, FreightNotaItem, Vehicle } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
+import { hasPermission } from '@/lib/rbac';
+import { useApp } from '../../layout';
 
 export default function OrderDetailPage() {
     const params = useParams();
     const router = useRouter();
+    const { user } = useApp();
     const { addToast } = useToast();
     const orderId = params.id as string;
     const [order, setOrder] = useState<Order | null>(null);
@@ -74,6 +77,7 @@ export default function OrderDetailPage() {
     const [holdReason, setHoldReason] = useState('');
     const [holdLocation, setHoldLocation] = useState('');
     const [savingHold, setSavingHold] = useState(false);
+    const canCreateInvoice = hasPermission(user?.role ?? 'OWNER', 'freightNotas', 'create');
 
     const loadOrderDetail = useCallback(async () => {
         setLoading(true);
@@ -356,9 +360,11 @@ export default function OrderDetailPage() {
                     <button className="btn btn-primary" onClick={() => { setSelectedShipments({}); setShowDOModal(true); }} disabled={availableItems.length === 0}>
                         <Truck size={16} /> Buat Surat Jalan
                     </button>
-                    <button className="btn btn-secondary" onClick={() => router.push('/invoices/new')}>
-                        <FileText size={16} /> Buat Nota
-                    </button>
+                    {canCreateInvoice && (
+                        <button className="btn btn-secondary" onClick={() => router.push('/invoices/new')}>
+                            <FileText size={16} /> Buat Nota
+                        </button>
+                    )}
                     <button
                         className="btn btn-ghost"
                         onClick={() => router.push(`/orders/${order._id}/edit`)}

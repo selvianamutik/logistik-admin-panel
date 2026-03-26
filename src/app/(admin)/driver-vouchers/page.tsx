@@ -9,7 +9,8 @@ import { formatDate, formatCurrency, getDriverVoucherIssuedAmount, getDriverVouc
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { DriverVoucher } from '@/lib/types';
-import { useToast } from '../layout';
+import { hasPermission } from '@/lib/rbac';
+import { useApp, useToast } from '../layout';
 
 const STATUS_MAP: Record<string, { label: string; cls: string }> = {
     DRAFT: { label: 'Draft', cls: 'badge-gray' },
@@ -35,6 +36,7 @@ const getNextVoucherAction = (voucher: DriverVoucher) => {
 
 export default function DriverVouchersPage() {
     const router = useRouter();
+    const { user } = useApp();
     const { addToast } = useToast();
     const [items, setItems] = useState<DriverVoucher[]>([]);
     const [loading, setLoading] = useState(true);
@@ -43,6 +45,7 @@ export default function DriverVouchersPage() {
     const [page, setPage] = useState(1);
     const [totalItems, setTotalItems] = useState(0);
     const [queueCounts, setQueueCounts] = useState({ issued: 0, draft: 0, settled: 0 });
+    const canCreateVoucher = hasPermission(user?.role ?? 'OWNER', 'driverVouchers', 'create');
 
     const buildVoucherQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
         const params = new URLSearchParams({
@@ -187,9 +190,11 @@ export default function DriverVouchersPage() {
                     >
                         <Printer size={15} /> Print
                     </button>
-                    <button className="btn btn-primary" onClick={() => router.push('/driver-vouchers/new')}>
-                        <Plus size={18} /> Terbitkan Uang Jalan
-                    </button>
+                    {canCreateVoucher && (
+                        <button className="btn btn-primary" onClick={() => router.push('/driver-vouchers/new')}>
+                            <Plus size={18} /> Terbitkan Uang Jalan
+                        </button>
+                    )}
                 </div>
             </div>
 

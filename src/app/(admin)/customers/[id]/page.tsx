@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { useToast } from '../../layout';
+import { useApp, useToast } from '../../layout';
 import { Edit, Package, DollarSign, Plus, Save, Trash2, X } from 'lucide-react';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
@@ -12,6 +12,7 @@ import { formatDate, formatCurrency, getReceivableNetAmount } from '@/lib/utils'
 import { formatCargoSummary, VOLUME_INPUT_UNIT_OPTIONS, WEIGHT_INPUT_UNIT_OPTIONS, type VolumeInputUnit, type WeightInputUnit } from '@/lib/measurement';
 import type { Customer, CustomerPickupLocation, CustomerProduct, CustomerRecipient, Order, FreightNota } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
+import { hasPermission } from '@/lib/rbac';
 
 type CustomerProductForm = {
     code: string;
@@ -79,6 +80,7 @@ const DEFAULT_PICKUP_FORM: CustomerPickupForm = {
 
 export default function CustomerDetailPage() {
     const params = useParams();
+    const { user } = useApp();
     const { addToast } = useToast();
     const customerId = params.id as string;
     const [customer, setCustomer] = useState<Customer | null>(null);
@@ -440,6 +442,7 @@ export default function CustomerDetailPage() {
         }
         return (a.label || '').localeCompare(b.label || '');
     });
+    const canManageCustomer = hasPermission(user?.role ?? 'OWNER', 'customers', 'update');
 
     return (
         <div>
@@ -451,8 +454,8 @@ export default function CustomerDetailPage() {
                     </div>
                 </div>
                 <div className="page-actions">
-                    {!editing && <button className="btn btn-secondary" onClick={openNewProduct}><Plus size={16} /> Tambah Barang</button>}
-                    {!editing && <button className="btn btn-primary" onClick={() => setEditing(true)}><Edit size={16} /> Edit</button>}
+                    {canManageCustomer && !editing && <button className="btn btn-secondary" onClick={openNewProduct}><Plus size={16} /> Tambah Barang</button>}
+                    {canManageCustomer && !editing && <button className="btn btn-primary" onClick={() => setEditing(true)}><Edit size={16} /> Edit</button>}
                 </div>
             </div>
 
@@ -532,9 +535,9 @@ export default function CustomerDetailPage() {
                 <section>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
                     <div style={{ fontWeight: 600 }}>Tujuan / Penerima ({customerRecipients.length})</div>
-                    <button className="btn btn-primary btn-sm" onClick={openNewRecipient}>
+                    {canManageCustomer && <button className="btn btn-primary btn-sm" onClick={openNewRecipient}>
                         <Plus size={14} /> Tambah Tujuan
-                    </button>
+                    </button>}
                 </div>
                 <div className="table-wrapper table-desktop-only">
                     <table>
@@ -567,10 +570,10 @@ export default function CustomerDetailPage() {
                                         <td><span className={`badge ${recipient.active !== false ? 'badge-green' : 'badge-gray'}`}>{recipient.active !== false ? 'Aktif' : 'Nonaktif'}</span></td>
                                         <td>
                                             <div className="table-actions">
-                                                <button className="table-action-btn" onClick={() => openEditRecipient(recipient)}><Edit size={14} /> Edit</button>
-                                                <button className="table-action-btn danger" onClick={() => handleDeleteRecipient(recipient._id)} disabled={deletingRecipientId === recipient._id}>
+                                                {canManageCustomer && <button className="table-action-btn" onClick={() => openEditRecipient(recipient)}><Edit size={14} /> Edit</button>}
+                                                {canManageCustomer && <button className="table-action-btn danger" onClick={() => handleDeleteRecipient(recipient._id)} disabled={deletingRecipientId === recipient._id}>
                                                     <Trash2 size={14} /> {deletingRecipientId === recipient._id ? 'Menghapus...' : 'Hapus'}
-                                                </button>
+                                                </button>}
                                             </div>
                                         </td>
                                     </tr>
@@ -584,9 +587,9 @@ export default function CustomerDetailPage() {
                         <div className="mobile-record-card">
                             <div className="mobile-record-title">Belum ada tujuan / penerima</div>
                             <div className="mobile-record-actions">
-                                <button className="btn btn-primary" onClick={openNewRecipient}>
+                                {canManageCustomer && <button className="btn btn-primary" onClick={openNewRecipient}>
                                     <Plus size={16} /> Tambah Tujuan
-                                </button>
+                                </button>}
                             </div>
                         </div>
                     ) : sortedRecipients.map(recipient => (
@@ -612,12 +615,12 @@ export default function CustomerDetailPage() {
                                 </div>
                             </div>
                             <div className="mobile-record-actions">
-                                <button className="btn btn-secondary" onClick={() => openEditRecipient(recipient)}>
+                                {canManageCustomer && <button className="btn btn-secondary" onClick={() => openEditRecipient(recipient)}>
                                     <Edit size={14} /> Edit
-                                </button>
-                                <button className="btn btn-danger" onClick={() => handleDeleteRecipient(recipient._id)} disabled={deletingRecipientId === recipient._id}>
+                                </button>}
+                                {canManageCustomer && <button className="btn btn-danger" onClick={() => handleDeleteRecipient(recipient._id)} disabled={deletingRecipientId === recipient._id}>
                                     <Trash2 size={14} /> {deletingRecipientId === recipient._id ? 'Menghapus...' : 'Hapus'}
-                                </button>
+                                </button>}
                             </div>
                         </div>
                     ))}
@@ -627,9 +630,9 @@ export default function CustomerDetailPage() {
                 <section>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
                     <div style={{ fontWeight: 600 }}>Lokasi Ambil ({customerPickups.length})</div>
-                    <button className="btn btn-primary btn-sm" onClick={openNewPickup}>
+                    {canManageCustomer && <button className="btn btn-primary btn-sm" onClick={openNewPickup}>
                         <Plus size={14} /> Tambah Lokasi Ambil
-                    </button>
+                    </button>}
                 </div>
                 <div className="table-wrapper table-desktop-only">
                     <table>
@@ -655,10 +658,10 @@ export default function CustomerDetailPage() {
                                         <td><span className={`badge ${pickup.active !== false ? 'badge-green' : 'badge-gray'}`}>{pickup.active !== false ? 'Aktif' : 'Nonaktif'}</span></td>
                                         <td>
                                             <div className="table-actions">
-                                                <button className="table-action-btn" onClick={() => openEditPickup(pickup)}><Edit size={14} /> Edit</button>
-                                                <button className="table-action-btn danger" onClick={() => handleDeletePickup(pickup._id)} disabled={deletingPickupId === pickup._id}>
+                                                {canManageCustomer && <button className="table-action-btn" onClick={() => openEditPickup(pickup)}><Edit size={14} /> Edit</button>}
+                                                {canManageCustomer && <button className="table-action-btn danger" onClick={() => handleDeletePickup(pickup._id)} disabled={deletingPickupId === pickup._id}>
                                                     <Trash2 size={14} /> {deletingPickupId === pickup._id ? 'Menghapus...' : 'Hapus'}
-                                                </button>
+                                                </button>}
                                             </div>
                                         </td>
                                     </tr>
@@ -672,9 +675,9 @@ export default function CustomerDetailPage() {
                         <div className="mobile-record-card">
                             <div className="mobile-record-title">Belum ada lokasi ambil</div>
                             <div className="mobile-record-actions">
-                                <button className="btn btn-primary" onClick={openNewPickup}>
+                                {canManageCustomer && <button className="btn btn-primary" onClick={openNewPickup}>
                                     <Plus size={16} /> Tambah Lokasi
-                                </button>
+                                </button>}
                             </div>
                         </div>
                     ) : sortedPickups.map(pickup => (
@@ -700,12 +703,12 @@ export default function CustomerDetailPage() {
                                 </div>
                             </div>
                             <div className="mobile-record-actions">
-                                <button className="btn btn-secondary" onClick={() => openEditPickup(pickup)}>
+                                {canManageCustomer && <button className="btn btn-secondary" onClick={() => openEditPickup(pickup)}>
                                     <Edit size={14} /> Edit
-                                </button>
-                                <button className="btn btn-danger" onClick={() => handleDeletePickup(pickup._id)} disabled={deletingPickupId === pickup._id}>
+                                </button>}
+                                {canManageCustomer && <button className="btn btn-danger" onClick={() => handleDeletePickup(pickup._id)} disabled={deletingPickupId === pickup._id}>
                                     <Trash2 size={14} /> {deletingPickupId === pickup._id ? 'Menghapus...' : 'Hapus'}
-                                </button>
+                                </button>}
                             </div>
                         </div>
                     ))}
@@ -719,9 +722,9 @@ export default function CustomerDetailPage() {
                 defaultOpen
             >
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
-                    <button className="btn btn-primary btn-sm" onClick={openNewProduct}>
+                    {canManageCustomer && <button className="btn btn-primary btn-sm" onClick={openNewProduct}>
                         <Plus size={14} /> Tambah Barang
-                    </button>
+                    </button>}
                 </div>
                 <div className="table-wrapper table-desktop-only">
                     <table>
@@ -754,10 +757,10 @@ export default function CustomerDetailPage() {
                                         <td><span className={`badge ${product.active !== false ? 'badge-green' : 'badge-gray'}`}>{product.active !== false ? 'Aktif' : 'Nonaktif'}</span></td>
                                         <td>
                                             <div className="table-actions">
-                                                <button className="table-action-btn" onClick={() => openEditProduct(product)}><Edit size={14} /> Edit</button>
-                                                <button className="table-action-btn danger" onClick={() => handleDeleteProduct(product._id)} disabled={deletingProductId === product._id}>
+                                                {canManageCustomer && <button className="table-action-btn" onClick={() => openEditProduct(product)}><Edit size={14} /> Edit</button>}
+                                                {canManageCustomer && <button className="table-action-btn danger" onClick={() => handleDeleteProduct(product._id)} disabled={deletingProductId === product._id}>
                                                     <Trash2 size={14} /> {deletingProductId === product._id ? 'Menghapus...' : 'Hapus'}
-                                                </button>
+                                                </button>}
                                             </div>
                                         </td>
                                     </tr>
@@ -771,9 +774,9 @@ export default function CustomerDetailPage() {
                         <div className="mobile-record-card">
                             <div className="mobile-record-title">Belum ada master barang</div>
                             <div className="mobile-record-actions">
-                                <button className="btn btn-primary" onClick={openNewProduct}>
+                                {canManageCustomer && <button className="btn btn-primary" onClick={openNewProduct}>
                                     <Plus size={16} /> Tambah Barang
-                                </button>
+                                </button>}
                             </div>
                         </div>
                     ) : customerProducts.map(product => (
@@ -804,12 +807,12 @@ export default function CustomerDetailPage() {
                                 </div>
                             </div>
                             <div className="mobile-record-actions">
-                                <button className="btn btn-secondary" onClick={() => openEditProduct(product)}>
+                                {canManageCustomer && <button className="btn btn-secondary" onClick={() => openEditProduct(product)}>
                                     <Edit size={14} /> Edit
-                                </button>
-                                <button className="btn btn-danger" onClick={() => handleDeleteProduct(product._id)} disabled={deletingProductId === product._id}>
+                                </button>}
+                                {canManageCustomer && <button className="btn btn-danger" onClick={() => handleDeleteProduct(product._id)} disabled={deletingProductId === product._id}>
                                     <Trash2 size={14} /> {deletingProductId === product._id ? 'Menghapus...' : 'Hapus'}
-                                </button>
+                                </button>}
                             </div>
                         </div>
                     ))}
@@ -883,7 +886,6 @@ export default function CustomerDetailPage() {
                     {notas.length === 0 ? (
                         <div className="mobile-record-card">
                             <div className="mobile-record-title">Belum ada nota</div>
-                            <div className="mobile-record-subtitle">Tagihan customer ini akan muncul di sini setelah DO selesai dan nota dibuat.</div>
                         </div>
                     ) : notas.map(nota => (
                         <div key={nota._id} className="mobile-record-card">
@@ -909,7 +911,7 @@ export default function CustomerDetailPage() {
             </CollapsibleCard>
             </div>
 
-            {showRecipientModal && (
+            {canManageCustomer && showRecipientModal && (
                 <div className="modal-overlay" onClick={() => { if (!savingRecipient) setShowRecipientModal(false); }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
@@ -970,7 +972,7 @@ export default function CustomerDetailPage() {
                 </div>
             )}
 
-            {showPickupModal && (
+            {canManageCustomer && showPickupModal && (
                 <div className="modal-overlay" onClick={() => { if (!savingPickup) setShowPickupModal(false); }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
@@ -1015,7 +1017,7 @@ export default function CustomerDetailPage() {
                 </div>
             )}
 
-            {showProductModal && (
+            {canManageCustomer && showProductModal && (
                 <div className="modal-overlay" onClick={() => { if (!savingProduct) setShowProductModal(false); }}>
                     <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">

@@ -19,6 +19,7 @@ import {
 } from '@/lib/tire-slots';
 import type { Vehicle, Maintenance, Incident, DeliveryOrder, TireEvent, Expense } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
+import { hasPermission } from '@/lib/rbac';
 import {
     buildVehicleTireDetailState,
     createDefaultVehicleTireForm,
@@ -49,6 +50,10 @@ export default function VehicleDetailPage() {
     const [editingTire, setEditingTire] = useState<TireEvent | null>(null);
     const [savingTire, setSavingTire] = useState(false);
     const isOwner = user?.role === 'OWNER';
+    const canManageVehicle = hasPermission(user?.role ?? 'OWNER', 'vehicles', 'update');
+    const canCreateMaintenance = hasPermission(user?.role ?? 'OWNER', 'maintenance', 'create');
+    const canCreateIncident = hasPermission(user?.role ?? 'OWNER', 'incidents', 'create');
+    const canManageTires = hasPermission(user?.role ?? 'OWNER', 'tires', 'update');
     const vehicleTabs = getVehicleTabs(isOwner);
 
     const loadVehicleDetail = useCallback(async () => {
@@ -285,19 +290,19 @@ export default function VehicleDetailPage() {
                         <div className="text-muted text-sm">{event.tireType} • dicatat {formatDate(event.installDate)}</div>
                     </div>
                     <div className="text-muted text-sm">{event.notes || 'Belum ada catatan tambahan.'}</div>
-                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    {canManageTires && <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                         <button className="btn btn-secondary" type="button" onClick={() => openEditTire(event)}>
                             <Edit size={14} /> Edit Ban
                         </button>
-                    </div>
+                    </div>}
                 </>
             ) : (
                 <>
-                    <div>
+                    {canManageTires && <div>
                         <button className="btn btn-primary" type="button" onClick={() => openNewTire(slotCode)}>
                             <Plus size={14} /> Isi Slot
                         </button>
-                    </div>
+                    </div>}
                 </>
             )}
         </div>
@@ -315,15 +320,15 @@ export default function VehicleDetailPage() {
                     <p className="page-subtitle">{vehicle.brandModel} - {vehicle.unitCode}</p>
                 </div>
                 <div className="page-actions">
-                    <button className="btn btn-secondary" onClick={openVehicleMaintenance}>
+                    {canCreateMaintenance && <button className="btn btn-secondary" onClick={openVehicleMaintenance}>
                         <Wrench size={16} /> Jadwalkan Servis
-                    </button>
-                    <button className="btn btn-secondary" onClick={openVehicleIncident}>
+                    </button>}
+                    {canCreateIncident && <button className="btn btn-secondary" onClick={openVehicleIncident}>
                         <AlertTriangle size={16} /> Laporkan Insiden
-                    </button>
-                    <button className="btn btn-secondary" onClick={() => router.push(`/fleet/vehicles/${vehicle._id}/edit`)}>
+                    </button>}
+                    {canManageVehicle && <button className="btn btn-secondary" onClick={() => router.push(`/fleet/vehicles/${vehicle._id}/edit`)}>
                         <Edit size={16} /> Edit Kendaraan
-                    </button>
+                    </button>}
                 </div>
             </div>
 
@@ -426,11 +431,10 @@ export default function VehicleDetailPage() {
                     <div className="card-header" style={{ justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
                         <div>
                             <span className="card-header-title">Servis & Maintenance</span>
-                            <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>Jadwalkan servis langsung dari kendaraan ini supaya staff tidak perlu pindah halaman dulu.</div>
                         </div>
-                        <button className="btn btn-primary" onClick={openVehicleMaintenance}>
+                        {canCreateMaintenance && <button className="btn btn-primary" onClick={openVehicleMaintenance}>
                             <Plus size={16} /> Jadwalkan Servis
-                        </button>
+                        </button>}
                     </div>
                     <div className="card-body">
                         <div className="table-wrapper table-desktop-only"><table>
@@ -443,7 +447,6 @@ export default function VehicleDetailPage() {
                             {maints.length === 0 ? (
                                 <div className="mobile-record-card">
                                     <div className="mobile-record-title">Belum ada jadwal maintenance</div>
-                                    <div className="mobile-record-subtitle">Buat jadwal servis pertama dari tombol di atas.</div>
                                 </div>
                             ) : maints.map(m => (
                                 <div key={m._id} className="mobile-record-card">
@@ -548,9 +551,9 @@ export default function VehicleDetailPage() {
                             <span className="card-header-title">Insiden Kendaraan</span>
                             <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>Kalau ada kendala di perjalanan atau di pool, laporkan langsung dari halaman unit ini.</div>
                         </div>
-                        <button className="btn btn-danger" onClick={openVehicleIncident}>
+                        {canCreateIncident && <button className="btn btn-danger" onClick={openVehicleIncident}>
                             <AlertTriangle size={16} /> Laporkan Insiden
-                        </button>
+                        </button>}
                     </div>
                     <div className="card-body">
                         <div className="table-wrapper table-desktop-only"><table>
@@ -563,7 +566,6 @@ export default function VehicleDetailPage() {
                             {incidents.length === 0 ? (
                                 <div className="mobile-record-card">
                                     <div className="mobile-record-title">Tidak ada insiden</div>
-                                    <div className="mobile-record-subtitle">Laporan insiden kendaraan akan muncul di sini.</div>
                                 </div>
                             ) : incidents.map(i => (
                                 <div key={i._id} className="mobile-record-card">
@@ -603,7 +605,7 @@ export default function VehicleDetailPage() {
                 </table></div></div>
             )}
 
-            {showTireModal && (
+            {canManageTires && showTireModal && (
                 <div className="modal-overlay" onClick={closeTireModal}>
                     <div className="modal modal-lg" onClick={event => event.stopPropagation()}>
                         <div className="modal-header">

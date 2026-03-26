@@ -130,7 +130,6 @@ export default function AuditLogsPage() {
                         {filteredTotalLogs === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada log</div>
-                                <div className="mobile-record-subtitle">Aktivitas penting sistem akan muncul di sini untuk kebutuhan audit.</div>
                             </div>
                         ) : logs.map(l => (
                             <div key={l._id} className="mobile-record-card">
