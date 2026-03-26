@@ -249,19 +249,10 @@ export default function NotaListPage() {
             setReceiptNotesLoading(true);
             try {
                 const fetchNotaBatch = async (filterObj: Record<string, unknown>) => {
-                    const params = new URLSearchParams({
-                        entity: 'freight-notas',
-                        page: '1',
-                        pageSize: '200',
-                        sortPreset: 'work-queue',
-                        filter: JSON.stringify(filterObj),
-                    });
-                    const res = await fetch(`/api/data?${params.toString()}`);
-                    const payload = await res.json();
-                    if (!res.ok) {
-                        throw new Error(payload.error || 'Gagal memuat nota terbuka customer');
-                    }
-                    return (payload.data || []) as FreightNota[];
+                    return fetchAdminCollectionData<FreightNota[]>(
+                        `/api/data?entity=freight-notas&sortPreset=work-queue&filter=${encodeURIComponent(JSON.stringify(filterObj))}`,
+                        'Gagal memuat nota terbuka customer'
+                    );
                 };
 
                 const [byCustomerRef, byCustomerName] = await Promise.all([
