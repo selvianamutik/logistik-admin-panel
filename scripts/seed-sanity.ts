@@ -115,6 +115,51 @@ function postBankTransaction(input: {
     });
 }
 
+const READY_VEHICLE_TIRE_SLOTS = [
+    { slotCode: '1L', slotLabel: 'Depan Kiri', status: 'IN_USE' },
+    { slotCode: '1R', slotLabel: 'Depan Kanan', status: 'IN_USE' },
+    { slotCode: '2LI', slotLabel: 'As 2 Kiri Dalam', status: 'IN_USE' },
+    { slotCode: '2LO', slotLabel: 'As 2 Kiri Luar', status: 'IN_USE' },
+    { slotCode: '2RI', slotLabel: 'As 2 Kanan Dalam', status: 'IN_USE' },
+    { slotCode: '2RO', slotLabel: 'As 2 Kanan Luar', status: 'IN_USE' },
+    { slotCode: 'SP1', slotLabel: 'Serep 1', status: 'SPARE' },
+] as const;
+
+function buildReadyVehicleTires(input: {
+    startNumber: number;
+    vehicleRef: string;
+    vehiclePlate: string;
+    tireBrand: string;
+    tireSize: string;
+    tireType?: 'Tubeless' | 'Tube Type';
+    installDate: string;
+}) {
+    return READY_VEHICLE_TIRE_SLOTS.map((slot, index) => {
+        const seq = input.startNumber + index;
+        const suffix = String(seq).padStart(3, '0');
+        return {
+            _id: `tire-${suffix}`,
+            _type: 'tireEvent',
+            tireCode: `BAN-${suffix}`,
+            holderType: 'INTERNAL_VEHICLE',
+            status: slot.status,
+            vehicleRef: input.vehicleRef,
+            vehiclePlate: input.vehiclePlate,
+            posisi: `${input.vehiclePlate} - ${slot.slotLabel}`,
+            slotCode: slot.slotCode,
+            slotLabel: slot.slotLabel,
+            tireType: input.tireType || 'Tubeless',
+            tireBrand: input.tireBrand,
+            tireSize: input.tireSize,
+            installDate: input.installDate,
+            notes:
+                slot.status === 'SPARE'
+                    ? `Ban serep siap pakai untuk unit ${input.vehiclePlate}.`
+                    : `Ban ${slot.slotLabel.toLowerCase()} dalam kondisi siap operasi untuk unit ${input.vehiclePlate}.`,
+        } satisfies SeedDoc;
+    });
+}
+
 function buildSeedDocuments() {
     push(
         {
@@ -782,6 +827,106 @@ function buildSeedDocuments() {
             notes: 'Armada standby untuk trip baru dan kebutuhan urgent harian',
             lastOdometer: 14320,
             lastOdometerAt: '2026-03-15',
+        },
+        {
+            _id: 'veh-007',
+            _type: 'vehicle',
+            unitCode: 'CDD-005',
+            plateNumber: 'W 9134 LM',
+            vehicleType: 'TRUCK',
+            brandModel: 'Mitsubishi Colt Diesel FE SHD',
+            year: 2023,
+            capacityKg: 3800,
+            capacityVolume: 17,
+            serviceRef: 'svc-001',
+            serviceName: 'CDD / Engkel',
+            chassisNumber: 'MTSFESHD007',
+            engineNumber: 'ENGFESHD007',
+            status: 'ACTIVE',
+            base: 'Sidoarjo',
+            notes: 'Armada standby tambahan untuk kategori CDD / Engkel.',
+            lastOdometer: 26440,
+            lastOdometerAt: '2026-03-16',
+        },
+        {
+            _id: 'veh-008',
+            _type: 'vehicle',
+            unitCode: 'CDB-002',
+            plateNumber: 'S 7421 OP',
+            vehicleType: 'TRUCK',
+            brandModel: 'Isuzu Elf Box NMR 71',
+            year: 2022,
+            capacityKg: 4200,
+            capacityVolume: 19,
+            serviceRef: 'svc-002',
+            serviceName: 'CDD Box / Canter',
+            chassisNumber: 'ISUZUBOX008',
+            engineNumber: 'ENGBOX008',
+            status: 'ACTIVE',
+            base: 'Sidoarjo',
+            notes: 'Armada box standby untuk trip baru kategori CDD Box / Canter.',
+            lastOdometer: 33610,
+            lastOdometerAt: '2026-03-16',
+        },
+        {
+            _id: 'veh-009',
+            _type: 'vehicle',
+            unitCode: 'CDB-003',
+            plateNumber: 'L 8081 QR',
+            vehicleType: 'TRUCK',
+            brandModel: 'Mitsubishi Canter Box FE 74',
+            year: 2024,
+            capacityKg: 4300,
+            capacityVolume: 20,
+            serviceRef: 'svc-002',
+            serviceName: 'CDD Box / Canter',
+            chassisNumber: 'MTSBOX009',
+            engineNumber: 'ENGBOX009',
+            status: 'ACTIVE',
+            base: 'Gresik',
+            notes: 'Armada box cadangan untuk distribusi retail dan project ringan.',
+            lastOdometer: 11840,
+            lastOdometerAt: '2026-03-16',
+        },
+        {
+            _id: 'veh-010',
+            _type: 'vehicle',
+            unitCode: 'FUS-002',
+            plateNumber: 'W 9012 ST',
+            vehicleType: 'TRUCK',
+            brandModel: 'Hino Dutro 130 HD',
+            year: 2022,
+            capacityKg: 5200,
+            capacityVolume: 23,
+            serviceRef: 'svc-003',
+            serviceName: 'Fuso / Heavy',
+            chassisNumber: 'HINOFUS010',
+            engineNumber: 'ENGFUS010',
+            status: 'ACTIVE',
+            base: 'Gresik',
+            notes: 'Armada heavy standby untuk muatan berat dan backfill DO baru.',
+            lastOdometer: 47220,
+            lastOdometerAt: '2026-03-16',
+        },
+        {
+            _id: 'veh-011',
+            _type: 'vehicle',
+            unitCode: 'FUS-003',
+            plateNumber: 'AG 6655 UV',
+            vehicleType: 'TRUCK',
+            brandModel: 'Mitsubishi Fuso Fighter FM 65',
+            year: 2023,
+            capacityKg: 6000,
+            capacityVolume: 24,
+            serviceRef: 'svc-003',
+            serviceName: 'Fuso / Heavy',
+            chassisNumber: 'MTSFUS011',
+            engineNumber: 'ENGFUS011',
+            status: 'ACTIVE',
+            base: 'Kediri',
+            notes: 'Armada heavy cadangan untuk kategori Fuso / Heavy.',
+            lastOdometer: 21980,
+            lastOdometerAt: '2026-03-16',
         }
     );
 
@@ -2470,7 +2615,52 @@ function buildSeedDocuments() {
             installDate: '2025-04-10',
             replaceDate: '2026-02-20',
             notes: 'Ban afkir, sidewall sobek dan tidak layak pakai.',
-        }
+        },
+        ...buildReadyVehicleTires({
+            startNumber: 7,
+            vehicleRef: 'veh-007',
+            vehiclePlate: 'W 9134 LM',
+            tireBrand: 'Bridgestone R168',
+            tireSize: '7.50R16',
+            tireType: 'Tubeless',
+            installDate: '2026-03-10',
+        }),
+        ...buildReadyVehicleTires({
+            startNumber: 14,
+            vehicleRef: 'veh-008',
+            vehiclePlate: 'S 7421 OP',
+            tireBrand: 'GT Radial Giti',
+            tireSize: '7.50R16',
+            tireType: 'Tubeless',
+            installDate: '2026-03-10',
+        }),
+        ...buildReadyVehicleTires({
+            startNumber: 21,
+            vehicleRef: 'veh-009',
+            vehiclePlate: 'L 8081 QR',
+            tireBrand: 'Bridgestone R168',
+            tireSize: '7.50R16',
+            tireType: 'Tubeless',
+            installDate: '2026-03-11',
+        }),
+        ...buildReadyVehicleTires({
+            startNumber: 28,
+            vehicleRef: 'veh-010',
+            vehiclePlate: 'W 9012 ST',
+            tireBrand: 'Goodyear G278',
+            tireSize: '1000R20',
+            tireType: 'Tube Type',
+            installDate: '2026-03-11',
+        }),
+        ...buildReadyVehicleTires({
+            startNumber: 35,
+            vehicleRef: 'veh-011',
+            vehiclePlate: 'AG 6655 UV',
+            tireBrand: 'Bridgestone M840',
+            tireSize: '1000R20',
+            tireType: 'Tube Type',
+            installDate: '2026-03-12',
+        })
     );
 
     push(
