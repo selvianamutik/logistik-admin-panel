@@ -149,6 +149,11 @@ async function main() {
         if (receipt.method === 'TRANSFER' && !receipt.bankAccountRef) {
             receivableFindings.push(`Receipt ${receipt.receiptNumber || receipt._id} transfer tanpa rekening bank`);
         }
+        if (unappliedAmount > 0) {
+            customerCreditNotes.push(
+                `Receipt ${receipt.receiptNumber || receipt._id} masih menyisakan kredit customer ${fmtCurrency(unappliedAmount)}`
+            );
+        }
     }
 
     for (const doc of receivableDocs) {

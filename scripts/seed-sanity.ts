@@ -697,7 +697,7 @@ function buildSeedDocuments() {
             serviceName: 'Fuso / Heavy',
             chassisNumber: 'HNODUTRO002',
             engineNumber: 'ENGDUTRO002',
-            status: 'IN_SERVICE',
+            status: 'ACTIVE',
             base: 'Gresik',
             notes: 'Armada heavy-duty untuk FTL dan pabrik',
             lastOdometer: 120300,
