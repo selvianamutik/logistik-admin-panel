@@ -60,6 +60,18 @@ npm run reseed:sanity
 10. Tunjukkan armada, maintenance, ban, dan insiden.
 11. Tunjukkan rekening, kas, dan laporan.
 
+## 3A. Skenario Seed Setelah Reset
+
+Setelah `npm run reseed:sanity`, dataset baseline sudah menyiapkan contoh ini:
+
+- `DO-202603-0003`: trip aktif `ON_DELIVERY`
+- `DO-202603-0004`: driver sudah `Ajukan Selesai`, admin tinggal review
+- `DO-202603-0005`: DO sudah dibuat tapi armada dan supir belum dipilih
+- `DO-202603-0011`: contoh partial qty dengan sisa barang di-hold
+- `NOTA-202603-0001`: belum lunas
+- `NOTA-202603-0004`: dibayar sebagian
+- `RCV-202603-0002`: contoh `Kredit Customer` karena bayar lebih
+
 ## 4. Demo Customer dan Master Data
 
 Di detail customer, jelaskan bahwa master data customer sekarang mencakup:
