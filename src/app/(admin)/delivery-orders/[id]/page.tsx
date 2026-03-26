@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { useToast } from '../../layout';
+import { useApp, useToast } from '../../layout';
 import { Printer, FileDown, Truck, Upload, Save, MapPin, Radio } from 'lucide-react';
 import CurrencyInput from '@/components/CurrencyInput';
 import CollapsibleCard from '@/components/CollapsibleCard';
@@ -39,11 +39,13 @@ import {
     WEIGHT_INPUT_UNIT_OPTIONS,
 } from '@/lib/measurement';
 import { generateDOPdf } from '@/lib/pdf/doTemplate';
+import { hasPermission, normalizeUserRole } from '@/lib/rbac';
 import type { DeliveryOrder, DeliveryOrderItem, TrackingLog, CompanyProfile, Order, Driver, Vehicle } from '@/lib/types';
 
 export default function DODetailPage() {
     const params = useParams();
     const { addToast } = useToast();
+    const { user } = useApp();
     const doId = params.id as string;
     const [doData, setDoData] = useState<DeliveryOrder | null>(null);
     const [doItems, setDoItems] = useState<DeliveryOrderItem[]>([]);
@@ -78,6 +80,10 @@ export default function DODetailPage() {
     const [tripVehicleRef, setTripVehicleRef] = useState('');
     const [tripDriverRef, setTripDriverRef] = useState('');
     const [tripVehicleOverrideReason, setTripVehicleOverrideReason] = useState('');
+    const normalizedRole = user ? normalizeUserRole(user.role) : null;
+    const canManageDeliveryStatus = user ? hasPermission(user.role, 'deliveryOrders', 'update') : false;
+    const canAssignTripResources = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL' || normalizedRole === 'ARMADA';
+    const canReviewDriverRequest = canManageDeliveryStatus;
 
     const loadDO = useCallback(async (mode: 'initial' | 'refresh' = 'refresh') => {
         if (mode === 'initial') {
@@ -132,6 +138,7 @@ export default function DODetailPage() {
     }, [addToast]);
 
     const openTripResourcesModal = async () => {
+        if (!canAssignTripResources) return;
         setTripVehicleRef(doData?.vehicleRef || '');
         setTripDriverRef(doData?.driverRef || '');
         setTripVehicleOverrideReason(doData?.vehicleCategoryOverrideReason || '');
@@ -140,6 +147,7 @@ export default function DODetailPage() {
     };
 
     const openStatusModal = (requestedStatus?: string, fromDriverRequest: boolean = false) => {
+        if (!canManageDeliveryStatus) return;
         setNewStatus(requestedStatus || '');
         setStatusNote(fromDriverRequest ? (doData?.pendingDriverStatusNote || '') : '');
         setReviewingDriverRequest(fromDriverRequest);
@@ -155,6 +163,7 @@ export default function DODetailPage() {
     };
 
     const rejectDriverStatusRequest = async () => {
+        if (!canReviewDriverRequest) return;
         setRejectingRequest(true);
         try {
             const res = await fetch('/api/data', {
@@ -482,17 +491,17 @@ export default function DODetailPage() {
                     </div>
                 </div>
                 <div className="page-actions">
-                    {doData.status === 'CREATED' && (
+                    {doData.status === 'CREATED' && canAssignTripResources && (
                         <button className="btn btn-secondary" onClick={() => void openTripResourcesModal()}>
                             <Truck size={16} /> {tripResourceActionLabel}
                         </button>
                     )}
-                    {nextStatuses.length > 0 && (
+                    {nextStatuses.length > 0 && canManageDeliveryStatus && (
                         <button className="btn btn-primary" onClick={() => openStatusModal()}>
                             <Truck size={16} /> {nextStatuses.includes('DELIVERED') ? 'Lanjut / Selesaikan DO' : 'Ubah Status'}
                         </button>
                     )}
-                    {doData.status === 'DELIVERED' && !doData.podReceiverName && (
+                    {doData.status === 'DELIVERED' && !doData.podReceiverName && canManageDeliveryStatus && (
                         <button
                             className="btn btn-success"
                             onClick={() => {
@@ -528,9 +537,11 @@ export default function DODetailPage() {
                                             : 'Supir trip belum dipilih. Lengkapi dulu sebelum trip diteruskan ke workflow operasional berikutnya.'}
                                 </div>
                             </div>
-                            <button className="btn btn-secondary btn-sm" onClick={() => void openTripResourcesModal()}>
-                                <Truck size={14} /> {tripResourceActionLabel}
-                            </button>
+                            {canAssignTripResources && (
+                                <button className="btn btn-secondary btn-sm" onClick={() => void openTripResourcesModal()}>
+                                    <Truck size={14} /> {tripResourceActionLabel}
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -555,20 +566,24 @@ export default function DODetailPage() {
                                     <div className="text-muted text-sm">Catatan driver: {doData.pendingDriverStatusNote}</div>
                                 )}
                             </div>
-                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                <button className="btn btn-success" onClick={() => openStatusModal(doData.pendingDriverStatus, true)}>
-                                    <Save size={16} /> Review & Approve
-                                </button>
-                                <button
-                                    className="btn btn-secondary"
-                                    onClick={() => {
-                                        setRejectRequestNote('');
-                                        setShowRejectRequestModal(true);
-                                    }}
-                                >
-                                    Tolak
-                                </button>
-                            </div>
+                            {canReviewDriverRequest ? (
+                                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                    <button className="btn btn-success" onClick={() => openStatusModal(doData.pendingDriverStatus, true)}>
+                                        <Save size={16} /> Review & Approve
+                                    </button>
+                                    <button
+                                        className="btn btn-secondary"
+                                        onClick={() => {
+                                            setRejectRequestNote('');
+                                            setShowRejectRequestModal(true);
+                                        }}
+                                    >
+                                        Tolak
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="text-muted text-sm">Menunggu review owner / operasional.</div>
+                            )}
                         </div>
                     </div>
                 </div>

@@ -16,14 +16,16 @@ import {
     DRIVER_VOUCHER_EXPENSE_CATEGORIES,
     sortDriverVoucherDisbursements,
 } from '@/lib/driver-voucher-detail-support';
-import { useToast } from '../../layout';
+import { useApp, useToast } from '../../layout';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
+import { normalizeUserRole } from '@/lib/rbac';
 import type { BankAccount, DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem } from '@/lib/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
 
 export default function DriverVoucherDetailPage() {
     const params = useParams();
     const { addToast } = useToast();
+    const { user } = useApp();
     const [voucher, setVoucher] = useState<DriverVoucher | null>(null);
     const [items, setItems] = useState<DriverVoucherItem[]>([]);
     const [disbursements, setDisbursements] = useState<DriverVoucherDisbursement[]>([]);
@@ -43,6 +45,11 @@ export default function DriverVoucherDetailPage() {
     const [settlementDate, setSettlementDate] = useState(new Date().toISOString().slice(0, 10));
     const [settlementBankRef, setSettlementBankRef] = useState('');
     const [issueBankRepairRef, setIssueBankRepairRef] = useState('');
+    const normalizedRole = user ? normalizeUserRole(user.role) : null;
+    const canManageVoucherItems = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL';
+    const canTopUpVoucher = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL';
+    const canSettleVoucher = normalizedRole === 'OWNER' || normalizedRole === 'FINANCE';
+    const canRepairIssueLedger = normalizedRole === 'OWNER' || normalizedRole === 'FINANCE';
 
     const loadVoucherDetail = useCallback(async () => {
         setLoading(true);
@@ -84,6 +91,7 @@ export default function DriverVoucherDetailPage() {
     } = buildDriverVoucherDetailSummary(voucher, items);
 
     const handleAddItem = async () => {
+        if (!canManageVoucherItems) return;
         if (!itemForm.amount || itemForm.amount <= 0) {
             addToast('error', 'Nominal harus diisi');
             return;
@@ -125,6 +133,7 @@ export default function DriverVoucherDetailPage() {
     };
 
     const handleDeleteItem = async (itemId: string) => {
+        if (!canManageVoucherItems) return;
         setDeletingItemId(itemId);
         try {
             const res = await fetch('/api/data', {
@@ -155,13 +164,13 @@ export default function DriverVoucherDetailPage() {
     };
 
     const openTopUpModal = () => {
-        if (!voucher) return;
+        if (!canTopUpVoucher || !voucher) return;
         setTopUpForm(createDefaultDriverVoucherTopUpForm(voucher.issueBankRef || ''));
         setShowTopUpModal(true);
     };
 
     const handleTopUp = async () => {
-        if (!voucher) return;
+        if (!canTopUpVoucher || !voucher) return;
         if (!topUpForm.bankAccountRef) {
             addToast('error', 'Pilih rekening sumber tambahan bon');
             return;
@@ -213,6 +222,7 @@ export default function DriverVoucherDetailPage() {
     };
 
     const handleDeleteDisbursement = async (disbursementId: string) => {
+        if (!canTopUpVoucher) return;
         setDeletingDisbursementId(disbursementId);
         try {
             const res = await fetch('/api/data', {
@@ -243,7 +253,7 @@ export default function DriverVoucherDetailPage() {
     };
 
     const handleRepairIssueLedger = async () => {
-        if (!voucher) return;
+        if (!canRepairIssueLedger || !voucher) return;
         if (!issueBankRepairRef) {
             addToast('error', 'Pilih rekening sumber untuk rekonsiliasi');
             return;
@@ -276,14 +286,14 @@ export default function DriverVoucherDetailPage() {
     };
 
     const openSettleModal = () => {
-        if (!voucher) return;
+        if (!canSettleVoucher || !voucher) return;
         setSettlementDate(new Date().toISOString().slice(0, 10));
         setSettlementBankRef(voucher.issueBankRef || '');
         setShowSettleModal(true);
     };
 
     const handleSettle = async () => {
-        if (!voucher) return;
+        if (!canSettleVoucher || !voucher) return;
         if (items.length === 0 && driverFeeAmount <= 0) {
             addToast('error', 'Isi biaya perjalanan atau upah supir sebelum penyelesaian trip');
             return;
@@ -347,8 +357,8 @@ export default function DriverVoucherDetailPage() {
                     </div>
                 </div>
                 <div className="page-actions">
-                    {!isSettled && <button className="btn btn-secondary btn-sm" onClick={openTopUpModal}><Plus size={15} /> Tambah Uang Jalan</button>}
-                    {!isSettled && (items.length > 0 || driverFeeAmount > 0) && <button className="btn btn-primary" onClick={openSettleModal}><CheckCircle size={16} /> Selesaikan Trip</button>}
+                    {!isSettled && canTopUpVoucher && <button className="btn btn-secondary btn-sm" onClick={openTopUpModal}><Plus size={15} /> Tambah Uang Jalan</button>}
+                    {!isSettled && canSettleVoucher && (items.length > 0 || driverFeeAmount > 0) && <button className="btn btn-primary" onClick={openSettleModal}><CheckCircle size={16} /> Selesaikan Trip</button>}
                     <button className="btn btn-secondary btn-sm" onClick={handlePrint}><Printer size={15} /> Print</button>
                 </div>
             </div>
@@ -368,9 +378,13 @@ export default function DriverVoucherDetailPage() {
                                     {bankAccounts.map(account => <option key={account._id} value={account._id}>{account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''}</option>)}
                                 </select>
                             </div>
-                            <button className="btn btn-primary" onClick={handleRepairIssueLedger} disabled={repairingIssueLedger}>
-                                <CheckCircle size={16} /> {repairingIssueLedger ? 'Memproses...' : 'Catat Pencairan Lama'}
-                            </button>
+                            {canRepairIssueLedger ? (
+                                <button className="btn btn-primary" onClick={handleRepairIssueLedger} disabled={repairingIssueLedger}>
+                                    <CheckCircle size={16} /> {repairingIssueLedger ? 'Memproses...' : 'Catat Pencairan Lama'}
+                                </button>
+                            ) : (
+                                <div className="text-muted text-sm">Menunggu finance / owner merekonsiliasi pencairan ini.</div>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -420,7 +434,7 @@ export default function DriverVoucherDetailPage() {
             </CollapsibleCard>
 
             <CollapsibleCard title={`Riwayat Uang Jalan (${disbursements.length})`}>
-                {!isSettled && (
+                {!isSettled && canTopUpVoucher && (
                     <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
                         <button className="btn btn-secondary btn-sm" onClick={openTopUpModal}><Plus size={14} /> Top Up Uang Jalan</button>
                     </div>
@@ -428,10 +442,10 @@ export default function DriverVoucherDetailPage() {
                 <div className="card-body" style={{ padding: 0 }}>
                     <div className="table-wrapper table-desktop-only">
                         <table>
-                            <thead><tr><th>No</th><th>Tanggal</th><th>Jenis</th><th>Sumber Dana</th><th>Catatan</th><th>Jumlah</th>{!isSettled && <th>Aksi</th>}</tr></thead>
+                            <thead><tr><th>No</th><th>Tanggal</th><th>Jenis</th><th>Sumber Dana</th><th>Catatan</th><th>Jumlah</th>{!isSettled && canTopUpVoucher && <th>Aksi</th>}</tr></thead>
                             <tbody>
                                 {disbursements.length === 0 ? (
-                                    <tr><td colSpan={isSettled ? 6 : 7} style={{ textAlign: 'center', padding: 'var(--space-8)', color: 'var(--text-muted)' }}>Belum ada riwayat pencairan uang jalan</td></tr>
+                                    <tr><td colSpan={isSettled || !canTopUpVoucher ? 6 : 7} style={{ textAlign: 'center', padding: 'var(--space-8)', color: 'var(--text-muted)' }}>Belum ada riwayat pencairan uang jalan</td></tr>
                                 ) : disbursements.map((item, index) => (
                                     <tr key={item._id}>
                                         <td>{index + 1}</td>
@@ -440,7 +454,7 @@ export default function DriverVoucherDetailPage() {
                                         <td>{item.bankAccountName || '-'}</td>
                                         <td>{item.note || '-'}</td>
                                         <td className="font-medium">{formatCurrency(item.amount)}</td>
-                                        {!isSettled && (
+                                        {!isSettled && canTopUpVoucher && (
                                             <td>
                                                 {item.kind === 'TOP_UP' ? (
                                                     <button className="btn btn-ghost btn-sm" onClick={() => handleDeleteDisbursement(item._id)} disabled={deletingDisbursementId === item._id}>
@@ -476,7 +490,7 @@ export default function DriverVoucherDetailPage() {
                                         <span className="mobile-record-value">{item.note || '-'}</span>
                                     </div>
                                 </div>
-                                {!isSettled && item.kind === 'TOP_UP' && (
+                                {!isSettled && canTopUpVoucher && item.kind === 'TOP_UP' && (
                                     <div className="mobile-record-actions">
                                         <button className="btn btn-secondary" onClick={() => handleDeleteDisbursement(item._id)} disabled={deletingDisbursementId === item._id}>
                                             <Trash2 size={14} /> Hapus Top Up
@@ -492,15 +506,15 @@ export default function DriverVoucherDetailPage() {
             <div className="card">
                 <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <h3 className="card-title">Catat Biaya Perjalanan ({items.length})</h3>
-                    {!isSettled && <button className="btn btn-primary btn-sm" onClick={() => setShowAddItem(true)}><Plus size={14} /> Tambah Biaya</button>}
+                    {!isSettled && canManageVoucherItems && <button className="btn btn-primary btn-sm" onClick={() => setShowAddItem(true)}><Plus size={14} /> Tambah Biaya</button>}
                 </div>
                 <div className="card-body" style={{ padding: 0 }}>
                     <div className="table-wrapper">
                         <table>
-                            <thead><tr><th>No</th><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th>Jumlah</th>{!isSettled && <th>Aksi</th>}</tr></thead>
+                            <thead><tr><th>No</th><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th>Jumlah</th>{!isSettled && canManageVoucherItems && <th>Aksi</th>}</tr></thead>
                             <tbody>
                                 {items.length === 0 ? (
-                                    <tr><td colSpan={isSettled ? 5 : 6} style={{ textAlign: 'center', padding: 'var(--space-8)', color: 'var(--text-muted)' }}>Belum ada biaya perjalanan aktual</td></tr>
+                                    <tr><td colSpan={isSettled || !canManageVoucherItems ? 5 : 6} style={{ textAlign: 'center', padding: 'var(--space-8)', color: 'var(--text-muted)' }}>Belum ada biaya perjalanan aktual</td></tr>
                                 ) : (
                                     items.map((item, index) => (
                                         <tr key={item._id}>
@@ -509,18 +523,18 @@ export default function DriverVoucherDetailPage() {
                                             <td><span className="badge badge-gray">{item.category}</span></td>
                                             <td>{item.description || '-'}</td>
                                             <td className="font-medium">{formatCurrency(item.amount)}</td>
-                                            {!isSettled && <td><button className="btn btn-ghost btn-sm" onClick={() => handleDeleteItem(item._id)} disabled={deletingItemId === item._id}><Trash2 size={14} style={{ color: '#ef4444' }} /></button></td>}
+                                            {!isSettled && canManageVoucherItems && <td><button className="btn btn-ghost btn-sm" onClick={() => handleDeleteItem(item._id)} disabled={deletingItemId === item._id}><Trash2 size={14} style={{ color: '#ef4444' }} /></button></td>}
                                         </tr>
                                     ))
                                 )}
-                                {items.length > 0 && <tr style={{ borderTop: '2px solid var(--border-color)', fontWeight: 700 }}><td colSpan={4} style={{ textAlign: 'right' }}>TOTAL BIAYA PERJALANAN</td><td>{formatCurrency(operationalSpent)}</td>{!isSettled && <td />}</tr>}
+                                {items.length > 0 && <tr style={{ borderTop: '2px solid var(--border-color)', fontWeight: 700 }}><td colSpan={4} style={{ textAlign: 'right' }}>TOTAL BIAYA PERJALANAN</td><td>{formatCurrency(operationalSpent)}</td>{!isSettled && canManageVoucherItems && <td />}</tr>}
                             </tbody>
                         </table>
                     </div>
                 </div>
             </div>
 
-            {showAddItem && (
+            {showAddItem && canManageVoucherItems && (
                 <div className="modal-overlay" onClick={() => { if (!savingItem) setShowAddItem(false); }}>
                     <div className="modal" onClick={event => event.stopPropagation()}>
                         <div className="modal-header"><h3 className="modal-title">Tambah Biaya Perjalanan</h3><button className="modal-close" onClick={() => setShowAddItem(false)} disabled={savingItem}><X size={20} /></button></div>
@@ -549,7 +563,7 @@ export default function DriverVoucherDetailPage() {
                 </div>
             )}
 
-            {showTopUpModal && (
+            {showTopUpModal && canTopUpVoucher && (
                 <div className="modal-overlay" onClick={() => { if (!toppingUp) setShowTopUpModal(false); }}>
                     <div className="modal" onClick={event => event.stopPropagation()}>
                         <div className="modal-header"><h3 className="modal-title">Tambah Uang Jalan</h3><button className="modal-close" onClick={() => setShowTopUpModal(false)} disabled={toppingUp}><X size={20} /></button></div>
@@ -595,7 +609,7 @@ export default function DriverVoucherDetailPage() {
                 </div>
             )}
 
-            {showSettleModal && (
+            {showSettleModal && canSettleVoucher && (
                 <div className="modal-overlay" onClick={() => { if (!settling) setShowSettleModal(false); }}>
                     <div className="modal" onClick={event => event.stopPropagation()}>
                         <div className="modal-header"><h3 className="modal-title">Selesaikan Trip</h3><button className="modal-close" onClick={() => setShowSettleModal(false)} disabled={settling}><X size={20} /></button></div>

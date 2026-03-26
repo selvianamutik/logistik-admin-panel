@@ -6,8 +6,9 @@ import { Search, Plus, Receipt } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
+import { normalizeUserRole } from '@/lib/rbac';
 import type { DriverBorongan } from '@/lib/types';
-import { useToast } from '../layout';
+import { useApp, useToast } from '../layout';
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
     UNPAID: { label: 'Belum Dibayar', color: 'danger' },
@@ -17,6 +18,7 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
 export default function BoronganListPage() {
     const router = useRouter();
     const { addToast } = useToast();
+    const { user } = useApp();
     const [items, setItems] = useState<DriverBorongan[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
@@ -26,6 +28,13 @@ export default function BoronganListPage() {
     const [totalUpah, setTotalUpah] = useState(0);
     const [unpaidCount, setUnpaidCount] = useState(0);
     const [paidCount, setPaidCount] = useState(0);
+    const normalizedRole = user ? normalizeUserRole(user.role) : null;
+
+    useEffect(() => {
+        if (normalizedRole && normalizedRole !== 'OWNER') {
+            router.replace('/driver-vouchers');
+        }
+    }, [normalizedRole, router]);
 
     const buildBoronganQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
         const params = new URLSearchParams({
@@ -48,6 +57,10 @@ export default function BoronganListPage() {
 
     useEffect(() => {
         const loadBorongan = async () => {
+            if (normalizedRole && normalizedRole !== 'OWNER') {
+                setLoading(false);
+                return;
+            }
             setLoading(true);
             try {
                 const [listRes, summaryRes] = await Promise.all([
@@ -77,11 +90,15 @@ export default function BoronganListPage() {
         };
 
         void loadBorongan();
-    }, [addToast, buildBoronganQuery, search, statusFilter]);
+    }, [addToast, buildBoronganQuery, normalizedRole, search, statusFilter]);
 
     useEffect(() => {
         setPage(1);
     }, [search, statusFilter]);
+
+    if (normalizedRole && normalizedRole !== 'OWNER') {
+        return null;
+    }
 
     return (
         <div>

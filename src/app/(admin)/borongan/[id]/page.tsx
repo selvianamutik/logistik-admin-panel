@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { CheckCircle, Printer, Trash2 } from 'lucide-react';
-import { useToast } from '../../layout';
+import { useApp, useToast } from '../../layout';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
+import { normalizeUserRole } from '@/lib/rbac';
 import type { BankAccount, DriverBorongan, DriverBoronganItem } from '@/lib/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import PageBackButton from '@/components/PageBackButton';
@@ -23,6 +24,7 @@ export default function BoronganDetailPage() {
     const params = useParams();
     const router = useRouter();
     const { addToast } = useToast();
+    const { user } = useApp();
     const boronganId = params.id as string;
     const [borong, setBorong] = useState<DriverBorongan | null>(null);
     const [items, setItems] = useState<DriverBoronganItem[]>([]);
@@ -35,6 +37,13 @@ export default function BoronganDetailPage() {
     const [payBankRef, setPayBankRef] = useState('');
     const [payNote, setPayNote] = useState('');
     const [paying, setPaying] = useState(false);
+    const normalizedRole = user ? normalizeUserRole(user.role) : null;
+
+    useEffect(() => {
+        if (normalizedRole && normalizedRole !== 'OWNER') {
+            router.replace('/driver-vouchers');
+        }
+    }, [normalizedRole, router]);
 
     const loadBoronganDetail = useCallback(async () => {
         const fetchEntity = async <T,>(url: string) => {
@@ -154,6 +163,10 @@ export default function BoronganDetailPage() {
             addToast('error', 'Gagal menyiapkan dokumen cetak');
         }
     };
+
+    if (normalizedRole && normalizedRole !== 'OWNER') {
+        return null;
+    }
 
     if (loading) {
         return (

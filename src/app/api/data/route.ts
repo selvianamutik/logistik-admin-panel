@@ -56,6 +56,7 @@ import { handleInvoiceCreate } from '@/lib/api/support-workflows';
 import {
     filterExpensesByRole,
     hasPermission,
+    normalizeUserRole,
     sanitizeVehicleForRole,
     type AppModule,
     type ModulePermissions,
@@ -159,6 +160,28 @@ function getMutationPermissionAction(action?: string): keyof ModulePermissions {
         return 'update';
     }
     return 'create';
+}
+
+function hasSpecialMutationPermission(session: Session, entity: string, action?: string): boolean | null {
+    const role = normalizeUserRole(session.role);
+
+    if (entity === 'delivery-orders' && action === 'assign-trip-resources') {
+        return role === 'OWNER' || role === 'OPERASIONAL' || role === 'ARMADA';
+    }
+
+    if (entity === 'driver-vouchers' && action === 'settle') {
+        return role === 'OWNER' || role === 'FINANCE';
+    }
+
+    if (entity === 'driver-vouchers' && action === 'top-up') {
+        return role === 'OWNER' || role === 'OPERASIONAL';
+    }
+
+    if (entity === 'driver-vouchers' && action === 'repair-issue-ledger') {
+        return role === 'OWNER' || role === 'FINANCE';
+    }
+
+    return null;
 }
 
 function forbidModuleAccess(session: Session, entity: string, action: keyof ModulePermissions) {
@@ -565,9 +588,15 @@ export async function POST(request: Request) {
                 return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
             }
         } else {
-            const forbiddenModuleMutation = forbidModuleAccess(session, entity, getMutationPermissionAction(action));
-            if (forbiddenModuleMutation) {
-                return forbiddenModuleMutation;
+            const specialMutationPermission = hasSpecialMutationPermission(session, entity, action);
+            if (specialMutationPermission === false) {
+                return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+            }
+            if (specialMutationPermission === null) {
+                const forbiddenModuleMutation = forbidModuleAccess(session, entity, getMutationPermissionAction(action));
+                if (forbiddenModuleMutation) {
+                    return forbiddenModuleMutation;
+                }
             }
         }
 
