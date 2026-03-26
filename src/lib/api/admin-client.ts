@@ -25,7 +25,7 @@ export async function fetchAdminCollectionData<T>(
     fallbackMessage: string,
     pageSize: number = DEFAULT_REFERENCE_PAGE_SIZE
 ): Promise<T> {
-    return fetchAdminData<T>(withAdminCollectionPageSize(url, pageSize), fallbackMessage);
+    return (await fetchAllAdminCollectionData<unknown>(url, fallbackMessage, pageSize)) as T;
 }
 
 export async function fetchAllAdminCollectionData<T>(

@@ -20,6 +20,7 @@ import {
 import { exportToExcel } from '@/lib/export';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
+import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import type { DeliveryOrder, Service } from '@/lib/types';
 import { useApp, useToast } from '../layout';
 import { hasPermission } from '@/lib/rbac';
@@ -102,11 +103,12 @@ export default function DeliveryOrdersPage() {
                 createdRes.json(),
             ]);
 
-            let servicePayload: { data?: Service[]; error?: string } = { data: [] };
+            let serviceRows: Service[] = [];
             if (canViewServices) {
-                const serviceRes = await fetch('/api/data?entity=services&sortField=code&sortDir=asc&page=1&pageSize=500');
-                servicePayload = await serviceRes.json();
-                if (!serviceRes.ok) throw new Error(servicePayload.error || 'Gagal memuat kategori armada');
+                serviceRows = await fetchAdminCollectionData<Service[]>(
+                    '/api/data?entity=services&sortField=code&sortDir=asc',
+                    'Gagal memuat kategori armada'
+                );
             }
 
             if (!listRes.ok) throw new Error(listPayload.error || 'Gagal memuat surat jalan');
@@ -117,7 +119,7 @@ export default function DeliveryOrdersPage() {
 
             setItems(listPayload.data || []);
             setTotalItems(listPayload.meta?.total || 0);
-            setServices(servicePayload.data || []);
+            setServices(serviceRows || []);
             setQueueCounts({
                 needApproval: approvalPayload.meta?.total || 0,
                 needCompletion: completionPayload.meta?.total || 0,

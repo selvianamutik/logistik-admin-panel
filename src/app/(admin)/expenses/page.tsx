@@ -5,7 +5,7 @@ import { useToast, useApp } from '../layout';
 import { Plus, Search, Wallet, Save, X, FileDown, Printer } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import CurrencyInput from '@/components/CurrencyInput';
-import { withAdminCollectionPageSize } from '@/lib/api/admin-client';
+import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { exportExpenses } from '@/lib/export';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
@@ -104,26 +104,25 @@ export default function ExpensesPage() {
 
         setLoading(true);
         try {
-            const fetchEntity = async <T,>(url: string, fallbackData: T): Promise<T> => {
-                const res = await fetch(url);
-                const payload = await res.json();
-                if (!res.ok) {
-                    if (res.status === 403) {
+            const fetchOptionalCollection = async <T,>(url: string, fallbackData: T): Promise<T> => {
+                try {
+                    return await fetchAdminCollectionData<T>(url, 'Gagal memuat data pengeluaran');
+                } catch (error) {
+                    if (error instanceof Error && /403|forbidden|akses/i.test(error.message)) {
                         return fallbackData;
                     }
-                    throw new Error(payload.error || 'Gagal memuat data pengeluaran');
+                    throw error;
                 }
-                return (payload.data || fallbackData) as T;
             };
 
             const [listRes, summaryRes, categoryRows, accountRows, vehicleRows] = await Promise.all([
                 fetch(`/api/data?${buildExpensesQuery()}`),
                 fetch(`/api/data?entity=expenses-summary${search.trim() ? `&q=${encodeURIComponent(search.trim())}` : ''}`),
-                fetchEntity<ExpenseCategory[]>(withAdminCollectionPageSize('/api/data?entity=expense-categories'), []),
-                fetchEntity<BankAccount[]>(withAdminCollectionPageSize('/api/data?entity=bank-accounts'), []),
+                fetchOptionalCollection<ExpenseCategory[]>('/api/data?entity=expense-categories', []),
+                fetchOptionalCollection<BankAccount[]>('/api/data?entity=bank-accounts', []),
                 user.role === 'FINANCE'
                     ? Promise.resolve([] as Vehicle[])
-                    : fetchEntity<Vehicle[]>(withAdminCollectionPageSize('/api/data?entity=vehicles'), []),
+                    : fetchOptionalCollection<Vehicle[]>('/api/data?entity=vehicles', []),
             ]);
 
             const [listPayload, summaryPayload] = await Promise.all([listRes.json(), summaryRes.json()]);

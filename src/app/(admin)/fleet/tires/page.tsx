@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useApp, useToast } from '../../layout';
 import { Plus, Search, Disc3, CheckCircle, Warehouse, ExternalLink } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
-import { withAdminCollectionPageSize } from '@/lib/api/admin-client';
+import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import {
     buildTiresQuery,
     createDefaultTireForm,
@@ -79,7 +79,7 @@ export default function TiresPage() {
 
             const [tirePayload, vehiclePayload, mountedPayload, sparePayload, warehousePayload, loanedPayload] = await Promise.all([
                 fetchEntity<TireEvent[]>(`/api/data?${buildCurrentTiresQuery()}`),
-                fetchEntity<Vehicle[]>(withAdminCollectionPageSize('/api/data?entity=vehicles')),
+                fetchAdminCollectionData<Vehicle[]>('/api/data?entity=vehicles', 'Gagal memuat data ban'),
                 fetchEntity<TireEvent[]>('/api/data?entity=tire-events&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'IN_USE' }))),
                 fetchEntity<TireEvent[]>('/api/data?entity=tire-events&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'SPARE' }))),
                 fetchEntity<TireEvent[]>('/api/data?entity=tire-events&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'IN_WAREHOUSE' }))),
@@ -87,7 +87,7 @@ export default function TiresPage() {
             ]);
             setEvents(tirePayload.data || []);
             setFilteredTotalTires(tirePayload.meta?.total || 0);
-            setVehicles(vehiclePayload.data || []);
+            setVehicles(vehiclePayload || []);
             setMountedCount(mountedPayload.meta?.total || 0);
             setSpareCount(sparePayload.meta?.total || 0);
             setWarehouseCount(warehousePayload.meta?.total || 0);

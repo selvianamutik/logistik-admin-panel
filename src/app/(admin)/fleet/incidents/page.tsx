@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useToast } from '../../layout';
 import { Plus, Search, Eye, AlertTriangle, X } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
-import { withAdminCollectionPageSize } from '@/lib/api/admin-client';
+import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import {
     buildIncidentsQuery,
@@ -70,8 +70,8 @@ export default function IncidentsPage() {
 
             const [listPayload, vehiclePayload, doPayload, openPayload, progressPayload, resolvedPayload] = await Promise.all([
                 fetchEntity<Incident[]>(`/api/data?${buildCurrentIncidentsQuery()}`),
-                fetchEntity<Vehicle[]>(withAdminCollectionPageSize('/api/data?entity=vehicles')),
-                fetchEntity<DeliveryOrder[]>(withAdminCollectionPageSize('/api/data?entity=delivery-orders')),
+                fetchAdminCollectionData<Vehicle[]>('/api/data?entity=vehicles', 'Gagal memuat insiden'),
+                fetchAdminCollectionData<DeliveryOrder[]>('/api/data?entity=delivery-orders', 'Gagal memuat insiden'),
                 fetchEntity<Incident[]>('/api/data?entity=incidents&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'OPEN' }))),
                 fetchEntity<Incident[]>('/api/data?entity=incidents&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'IN_PROGRESS' }))),
                 fetchEntity<Incident[]>('/api/data?entity=incidents&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'RESOLVED' }))),
@@ -79,8 +79,8 @@ export default function IncidentsPage() {
 
             setItems(listPayload.data || []);
             setFilteredTotalIncidents(listPayload.meta?.total || 0);
-            setVehicles(((vehiclePayload.data || []) as Vehicle[]).filter(vehicle => vehicle.status !== 'SOLD'));
-            setDos(doPayload.data || []);
+            setVehicles((vehiclePayload || []).filter(vehicle => vehicle.status !== 'SOLD'));
+            setDos(doPayload || []);
             setOpenIncidentCount(openPayload.meta?.total || 0);
             setProgressIncidentCount(progressPayload.meta?.total || 0);
             setResolvedIncidentCount(resolvedPayload.meta?.total || 0);

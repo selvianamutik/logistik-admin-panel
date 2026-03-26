@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { useApp, useToast } from '../../layout';
 import { Plus, Search, Wrench, Save, X } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
-import { withAdminCollectionPageSize } from '@/lib/api/admin-client';
+import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import {
     buildMaintenanceQuery,
@@ -73,7 +73,7 @@ export default function MaintenancePage() {
 
             const [listPayload, vehiclePayload, scheduledPayload, completedPayload, skippedPayload] = await Promise.all([
                 fetchEntity<Maintenance[]>(`/api/data?${buildCurrentMaintenanceQuery()}`),
-                fetchEntity<Vehicle[]>(withAdminCollectionPageSize('/api/data?entity=vehicles')),
+                fetchAdminCollectionData<Vehicle[]>('/api/data?entity=vehicles', 'Gagal memuat maintenance'),
                 fetchEntity<Maintenance[]>('/api/data?entity=maintenances&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'SCHEDULED' }))),
                 fetchEntity<Maintenance[]>('/api/data?entity=maintenances&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'DONE' }))),
                 fetchEntity<Maintenance[]>('/api/data?entity=maintenances&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'SKIPPED' }))),
@@ -81,7 +81,7 @@ export default function MaintenancePage() {
 
             setItems(listPayload.data || []);
             setFilteredTotalMaintenance(listPayload.meta?.total || 0);
-            setVehicles(((vehiclePayload.data || []) as Vehicle[]).filter(vehicle => vehicle.status !== 'SOLD'));
+            setVehicles((vehiclePayload || []).filter(vehicle => vehicle.status !== 'SOLD'));
             setScheduledCount(scheduledPayload.meta?.total || 0);
             setCompletedCount(completedPayload.meta?.total || 0);
             setSkippedCount(skippedPayload.meta?.total || 0);

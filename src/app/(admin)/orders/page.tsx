@@ -10,6 +10,7 @@ import { formatDate, ORDER_STATUS_MAP } from '@/lib/utils';
 import { exportOrders } from '@/lib/export';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
+import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import type { Order, Service } from '@/lib/types';
 
 const getNextActionLabel = (order: Order) => {
@@ -93,31 +94,29 @@ export default function OrdersPage() {
     const loadOrders = useCallback(async () => {
         setLoading(true);
         try {
-            const [ordersRes, serviceRes, openRes, partialRes, holdRes] = await Promise.all([
+            const [ordersRes, serviceRows, openRes, partialRes, holdRes] = await Promise.all([
                 fetch(`/api/data?${buildOrdersQuery()}`),
-                fetch('/api/data?entity=services&sortField=code&sortDir=asc&page=1&pageSize=500'),
+                fetchAdminCollectionData<Service[]>('/api/data?entity=services&sortField=code&sortDir=asc', 'Gagal memuat kategori armada'),
                 fetch(`/api/data?entity=orders&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ status: 'OPEN' }))}`),
                 fetch(`/api/data?entity=orders&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ status: 'PARTIAL' }))}`),
                 fetch(`/api/data?entity=orders&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ status: 'ON_HOLD' }))}`),
             ]);
 
-            const [ordersPayload, servicePayload, openPayload, partialPayload, holdPayload] = await Promise.all([
+            const [ordersPayload, openPayload, partialPayload, holdPayload] = await Promise.all([
                 ordersRes.json(),
-                serviceRes.json(),
                 openRes.json(),
                 partialRes.json(),
                 holdRes.json(),
             ]);
 
             if (!ordersRes.ok) throw new Error(ordersPayload.error || 'Gagal memuat order');
-            if (!serviceRes.ok) throw new Error(servicePayload.error || 'Gagal memuat kategori armada');
             if (!openRes.ok) throw new Error(openPayload.error || 'Gagal memuat statistik order');
             if (!partialRes.ok) throw new Error(partialPayload.error || 'Gagal memuat statistik order');
             if (!holdRes.ok) throw new Error(holdPayload.error || 'Gagal memuat statistik order');
 
             setOrders(ordersPayload.data || []);
             setTotalOrders(ordersPayload.meta?.total || 0);
-            setServices(servicePayload.data || []);
+            setServices(serviceRows || []);
             setQueueCounts({
                 needDispatch: openPayload.meta?.total || 0,
                 inProgress: partialPayload.meta?.total || 0,

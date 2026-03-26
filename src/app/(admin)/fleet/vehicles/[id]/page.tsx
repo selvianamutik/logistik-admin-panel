@@ -19,7 +19,7 @@ import {
 } from '@/lib/tire-slots';
 import type { Vehicle, Maintenance, Incident, DeliveryOrder, TireEvent, Expense } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
-import { withAdminCollectionPageSize } from '@/lib/api/admin-client';
+import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { hasPermission } from '@/lib/rbac';
 import {
     buildVehicleTireDetailState,
@@ -55,30 +55,28 @@ export default function VehicleDetailPage() {
     const canCreateMaintenance = hasPermission(user?.role ?? 'OWNER', 'maintenance', 'create');
     const canCreateIncident = hasPermission(user?.role ?? 'OWNER', 'incidents', 'create');
     const canManageTires = hasPermission(user?.role ?? 'OWNER', 'tires', 'update');
+    const canViewVehicleExpenses = hasPermission(user?.role ?? 'OWNER', 'expenses', 'view');
     const vehicleTabs = getVehicleTabs(isOwner);
 
     const loadVehicleDetail = useCallback(async () => {
-        const fetchEntity = async <T,>(url: string, fallbackMessage: string) => {
-            const res = await fetch(url);
-            const payload = await res.json();
-            if (!res.ok) {
-                throw new Error(payload.error || fallbackMessage);
-            }
-            return payload.data as T;
-        };
-
         setLoading(true);
         try {
             const vehicleFilter = encodeURIComponent(JSON.stringify({ vehicleRef: vehicleId }));
             const expenseFilter = encodeURIComponent(JSON.stringify({ relatedVehicleRef: vehicleId }));
             const [vehicleData, maintenanceRows, incidentRows, doRows, tireRows, allTireRows, expenseRows] = await Promise.all([
-                fetchEntity<Vehicle | null>(`/api/data?entity=vehicles&id=${vehicleId}`, 'Gagal memuat kendaraan'),
-                fetchEntity<Maintenance[]>(withAdminCollectionPageSize(`/api/data?entity=maintenances&filter=${vehicleFilter}`), 'Gagal memuat maintenance'),
-                fetchEntity<Incident[]>(withAdminCollectionPageSize(`/api/data?entity=incidents&filter=${vehicleFilter}`), 'Gagal memuat insiden'),
-                fetchEntity<DeliveryOrder[]>(withAdminCollectionPageSize(`/api/data?entity=delivery-orders&filter=${vehicleFilter}`), 'Gagal memuat riwayat DO'),
-                fetchEntity<TireEvent[]>(withAdminCollectionPageSize(`/api/data?entity=tire-events&filter=${vehicleFilter}`), 'Gagal memuat catatan ban'),
-                fetchEntity<TireEvent[]>(withAdminCollectionPageSize('/api/data?entity=tire-events'), 'Gagal memuat master ban'),
-                fetchEntity<Expense[]>(withAdminCollectionPageSize(`/api/data?entity=expenses&filter=${expenseFilter}`), 'Gagal memuat biaya kendaraan'),
+                fetch(`/api/data?entity=vehicles&id=${vehicleId}`).then(async res => {
+                    const payload = await res.json();
+                    if (!res.ok) throw new Error(payload.error || 'Gagal memuat kendaraan');
+                    return payload.data as Vehicle | null;
+                }),
+                fetchAllAdminCollectionData<Maintenance>(`/api/data?entity=maintenances&filter=${vehicleFilter}`, 'Gagal memuat maintenance'),
+                fetchAllAdminCollectionData<Incident>(`/api/data?entity=incidents&filter=${vehicleFilter}`, 'Gagal memuat insiden'),
+                fetchAllAdminCollectionData<DeliveryOrder>(`/api/data?entity=delivery-orders&filter=${vehicleFilter}`, 'Gagal memuat riwayat DO'),
+                fetchAllAdminCollectionData<TireEvent>(`/api/data?entity=tire-events&filter=${vehicleFilter}`, 'Gagal memuat catatan ban'),
+                fetchAllAdminCollectionData<TireEvent>('/api/data?entity=tire-events', 'Gagal memuat master ban'),
+                canViewVehicleExpenses
+                    ? fetchAllAdminCollectionData<Expense>(`/api/data?entity=expenses&filter=${expenseFilter}`, 'Gagal memuat biaya kendaraan')
+                    : Promise.resolve([] as Expense[]),
             ]);
 
             setVehicle(vehicleData);
@@ -93,7 +91,7 @@ export default function VehicleDetailPage() {
         } finally {
             setLoading(false);
         }
-    }, [addToast, vehicleId]);
+    }, [addToast, canViewVehicleExpenses, vehicleId]);
 
     useEffect(() => {
         void loadVehicleDetail();

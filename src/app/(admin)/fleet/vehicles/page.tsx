@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Plus, Search, Eye, Edit, Car, FileDown, Printer } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
-import { withAdminCollectionPageSize } from '@/lib/api/admin-client';
+import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 
 import { useApp, useToast } from '../../layout';
 import {
@@ -88,15 +88,12 @@ export default function VehiclesPage() {
         try {
             const [listRes, serviceRes] = await Promise.all([
                 fetch(`/api/data?${buildCurrentVehiclesQuery()}`),
-                fetch(withAdminCollectionPageSize('/api/data?entity=services')),
+                fetchAdminCollectionData<Service[]>('/api/data?entity=services', 'Gagal memuat kategori armada'),
             ]);
-            const [listPayload, servicePayload] = await Promise.all([listRes.json(), serviceRes.json()]);
+            const listPayload = await listRes.json();
 
             if (!listRes.ok) {
                 throw new Error(listPayload.error || 'Gagal memuat data kendaraan');
-            }
-            if (!serviceRes.ok) {
-                throw new Error(servicePayload.error || 'Gagal memuat kategori armada');
             }
 
             const vehicles = (listPayload.data || []) as Vehicle[];
@@ -108,7 +105,7 @@ export default function VehiclesPage() {
             }
 
             setItems(vehicles);
-            setServices(servicePayload.data || []);
+            setServices(serviceRes || []);
             setFilteredTotalVehicles(listPayload.meta?.total || 0);
             setActiveVehicleCount(summaryPayload.data?.activeVehicleCount || 0);
             setIncompleteTireCount(summaryPayload.data?.incompleteTireCount || 0);

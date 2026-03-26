@@ -6,7 +6,7 @@ import { useToast } from '../../layout';
 import { Save } from 'lucide-react';
 import CurrencyInput from '@/components/CurrencyInput';
 import PageBackButton from '@/components/PageBackButton';
-import { withAdminCollectionPageSize } from '@/lib/api/admin-client';
+import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import type { BankAccount, Driver, DeliveryOrder, DriverVoucher, Order } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
 
@@ -31,22 +31,13 @@ export default function NewDriverVoucherPage() {
     });
 
     useEffect(() => {
-        const fetchEntity = async <T,>(url: string) => {
-            const res = await fetch(withAdminCollectionPageSize(url));
-            const payload = await res.json();
-            if (!res.ok) {
-                throw new Error(payload.error || 'Gagal memuat form uang jalan trip');
-            }
-            return payload.data as T;
-        };
-
         Promise.all([
-            fetchEntity<Driver[]>('/api/data?entity=drivers'),
-            fetchEntity<DeliveryOrder[]>('/api/data?entity=delivery-orders'),
-            fetchEntity<Order[]>('/api/data?entity=orders'),
-            fetchEntity<BankAccount[]>('/api/data?entity=bank-accounts'),
-            fetchEntity<DriverVoucher[]>('/api/data?entity=driver-vouchers'),
-            fetchEntity<Array<{ doRef?: string }>>('/api/data?entity=driver-borongan-items'),
+            fetchAdminCollectionData<Driver[]>('/api/data?entity=drivers', 'Gagal memuat form uang jalan trip'),
+            fetchAdminCollectionData<DeliveryOrder[]>('/api/data?entity=delivery-orders', 'Gagal memuat form uang jalan trip'),
+            fetchAdminCollectionData<Order[]>('/api/data?entity=orders', 'Gagal memuat form uang jalan trip'),
+            fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat form uang jalan trip'),
+            fetchAdminCollectionData<DriverVoucher[]>('/api/data?entity=driver-vouchers', 'Gagal memuat form uang jalan trip'),
+            fetchAdminCollectionData<Array<{ doRef?: string }>>('/api/data?entity=driver-borongan-items', 'Gagal memuat form uang jalan trip'),
         ]).then(([driverRows, deliveryOrders, orderRows, accountRows, voucherRows, boronganItemRows]) => {
             setDrivers((driverRows || []).filter((driver) => driver.active !== false));
             setDos((deliveryOrders || []).filter((deliveryOrder) => ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED'].includes(deliveryOrder.status)));

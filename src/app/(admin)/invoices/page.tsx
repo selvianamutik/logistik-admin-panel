@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Search, Plus, FileText, Printer, FileDown, Receipt } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import CurrencyInput from '@/components/CurrencyInput';
-import { withAdminCollectionPageSize } from '@/lib/api/admin-client';
+import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import { formatDate, formatCurrency, getReceivableNetAmount, PAYMENT_METHOD_MAP } from '@/lib/utils';
 import { buildFreightNotaPrintDocument, openBrandedPrint, fetchCompanyProfile, formatFreightNotaDisplayNumber } from '@/lib/print';
 import { exportFreightNotaDetail, exportInvoices } from '@/lib/export';
@@ -127,39 +127,29 @@ export default function NotaListPage() {
         const [notaRes, summaryRes, customerRes, receiptRes, bankRes, companyPayload] = await Promise.all([
             fetch(`/api/data?${buildInvoicesQuery()}`),
             fetch(`/api/data?${summaryParams.toString()}`),
-            fetch(withAdminCollectionPageSize('/api/data?entity=customers')),
-            fetch(withAdminCollectionPageSize('/api/data?entity=customer-receipts')),
-            fetch(withAdminCollectionPageSize('/api/data?entity=bank-accounts')),
+            fetchAdminCollectionData<Customer[]>('/api/data?entity=customers', 'Gagal memuat customer'),
+            fetchAdminCollectionData<CustomerReceipt[]>('/api/data?entity=customer-receipts', 'Gagal memuat penerimaan customer'),
+            fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat rekening'),
             fetchCompanyProfile(),
         ]);
 
-        const [notaPayload, summaryPayload, customerPayload, receiptPayload, bankPayload] = await Promise.all([
+        const [notaPayload, summaryPayload] = await Promise.all([
             notaRes.json(),
             summaryRes.json(),
-            customerRes.json(),
-            receiptRes.json(),
-            bankRes.json(),
         ]);
 
         if (!notaRes.ok) throw new Error(notaPayload.error || 'Gagal memuat nota ongkos');
         if (!summaryRes.ok) throw new Error(summaryPayload.error || 'Gagal memuat ringkasan nota');
-        if (!customerRes.ok) throw new Error(customerPayload.error || 'Gagal memuat customer');
-        if (!receiptRes.ok) throw new Error(receiptPayload.error || 'Gagal memuat penerimaan customer');
-        if (!bankRes.ok) throw new Error(bankPayload.error || 'Gagal memuat rekening');
 
         const notaRows = (notaPayload.data || []) as FreightNota[];
         const notaIds = notaRows.map(nota => nota._id).filter(Boolean);
         let paymentRows: Payment[] = [];
 
         if (notaIds.length > 0) {
-            const paymentsRes = await fetch(
-                `/api/data?entity=payments&page=1&pageSize=500&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: notaIds }))}`
+            paymentRows = await fetchAdminCollectionData<Payment[]>(
+                `/api/data?entity=payments&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: notaIds }))}`,
+                'Gagal memuat pembayaran nota'
             );
-            const paymentsPayload = await paymentsRes.json();
-            if (!paymentsRes.ok) {
-                throw new Error(paymentsPayload.error || 'Gagal memuat pembayaran nota');
-            }
-            paymentRows = (paymentsPayload.data || []) as Payment[];
         }
 
         setItems(notaRows);
@@ -173,9 +163,9 @@ export default function NotaListPage() {
             paidCount: summaryPayload.data?.paidCount || 0,
             customerCreditTotal: summaryPayload.data?.customerCreditTotal || 0,
         });
-        setCustomers(((customerPayload.data || []) as Customer[]).filter(customer => customer.active !== false));
-        setCustomerReceipts((receiptPayload.data || []) as CustomerReceipt[]);
-        setBankAccounts(((bankPayload.data || []) as BankAccount[]).filter(account => account.active !== false));
+        setCustomers((customerRes || []).filter(customer => customer.active !== false));
+        setCustomerReceipts(receiptRes || []);
+        setBankAccounts((bankRes || []).filter(account => account.active !== false));
         setCompany(companyPayload);
     }, [buildInvoicesQuery, search, statusFilter]);
 
@@ -290,14 +280,10 @@ export default function NotaListPage() {
                 let paymentRows: Payment[] = [];
 
                 if (notaIds.length > 0) {
-                    const paymentsRes = await fetch(
-                        `/api/data?entity=payments&page=1&pageSize=500&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: notaIds }))}`
+                    paymentRows = await fetchAdminCollectionData<Payment[]>(
+                        `/api/data?entity=payments&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: notaIds }))}`,
+                        'Gagal memuat alokasi penerimaan'
                     );
-                    const paymentsPayload = await paymentsRes.json();
-                    if (!paymentsRes.ok) {
-                        throw new Error(paymentsPayload.error || 'Gagal memuat alokasi penerimaan');
-                    }
-                    paymentRows = (paymentsPayload.data || []) as Payment[];
                 }
 
                 if (cancelled) return;

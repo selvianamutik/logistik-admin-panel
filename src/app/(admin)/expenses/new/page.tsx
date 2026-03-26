@@ -6,7 +6,7 @@ import { useApp, useToast } from '../../layout';
 import { Save } from 'lucide-react';
 import CurrencyInput from '@/components/CurrencyInput';
 import PageBackButton from '@/components/PageBackButton';
-import { withAdminCollectionPageSize } from '@/lib/api/admin-client';
+import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import type { ExpenseCategory, BankAccount, Vehicle } from '@/lib/types';
 import { hasPermission } from '@/lib/rbac';
 
@@ -29,19 +29,12 @@ export default function ExpenseNewPage() {
     const canViewVehicles = hasPermission(user?.role ?? 'OWNER', 'vehicles', 'view');
 
     useEffect(() => {
-        const fetchEntity = async <T,>(url: string) => {
-            const res = await fetch(url);
-            const payload = await res.json();
-            if (!res.ok) {
-                throw new Error(payload.error || 'Gagal memuat form pengeluaran');
-            }
-            return payload.data as T;
-        };
-
         Promise.all([
-            fetchEntity<ExpenseCategory[]>(withAdminCollectionPageSize('/api/data?entity=expense-categories')),
-            fetchEntity<BankAccount[]>(withAdminCollectionPageSize('/api/data?entity=bank-accounts')),
-            canViewVehicles ? fetchEntity<Vehicle[]>(withAdminCollectionPageSize('/api/data?entity=vehicles')) : Promise.resolve([] as Vehicle[]),
+            fetchAdminCollectionData<ExpenseCategory[]>('/api/data?entity=expense-categories', 'Gagal memuat form pengeluaran'),
+            fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat form pengeluaran'),
+            canViewVehicles
+                ? fetchAdminCollectionData<Vehicle[]>('/api/data?entity=vehicles', 'Gagal memuat form pengeluaran')
+                : Promise.resolve([] as Vehicle[]),
         ]).then(([categoryRows, accountRows, vehicleRows]) => {
             setCategories(categoryRows || []);
             setBankAccounts((accountRows || []).filter((a) => a.active !== false));
