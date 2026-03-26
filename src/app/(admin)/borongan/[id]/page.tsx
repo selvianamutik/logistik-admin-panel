@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { CheckCircle, Printer, Trash2 } from 'lucide-react';
 import { useApp, useToast } from '../../layout';
+import { withAdminCollectionPageSize } from '@/lib/api/admin-client';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
 import { normalizeUserRole } from '@/lib/rbac';
 import type { BankAccount, DriverBorongan, DriverBoronganItem } from '@/lib/types';
@@ -59,8 +60,8 @@ export default function BoronganDetailPage() {
         try {
             const [boronganData, boronganItems, accounts] = await Promise.all([
                 fetchEntity<DriverBorongan | null>(`/api/data?entity=driver-borongans&id=${boronganId}`),
-                fetchEntity<DriverBoronganItem[]>(`/api/data?entity=driver-borongan-items&filter=${encodeURIComponent(JSON.stringify({ boronganRef: boronganId }))}`),
-                fetchEntity<BankAccount[]>('/api/data?entity=bank-accounts'),
+                fetchEntity<DriverBoronganItem[]>(withAdminCollectionPageSize(`/api/data?entity=driver-borongan-items&filter=${encodeURIComponent(JSON.stringify({ boronganRef: boronganId }))}`)),
+                fetchEntity<BankAccount[]>(withAdminCollectionPageSize('/api/data?entity=bank-accounts')),
             ]);
 
             setBorong(boronganData);

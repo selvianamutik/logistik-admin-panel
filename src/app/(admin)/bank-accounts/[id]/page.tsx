@@ -6,6 +6,7 @@ import { ArrowRightLeft, FileDown, Printer, TrendingDown, TrendingUp } from 'luc
 
 import PageBackButton from '@/components/PageBackButton';
 import { useApp, useToast } from '../../layout';
+import { withAdminCollectionPageSize } from '@/lib/api/admin-client';
 import { exportToExcel } from '@/lib/export';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
 import type { BankAccount, BankTransaction } from '@/lib/types';
@@ -76,7 +77,7 @@ export default function BankAccountDetailPage() {
             try {
                 const [accountData, transactionData] = await Promise.all([
                     fetchEntity<BankAccount | null>(`/api/data?entity=bank-accounts&id=${accountId}`),
-                    fetchEntity<BankTransaction[]>(`/api/data?entity=bank-transactions&filter=${encodeURIComponent(JSON.stringify({ bankAccountRef: accountId }))}`),
+                    fetchEntity<BankTransaction[]>(withAdminCollectionPageSize(`/api/data?entity=bank-transactions&filter=${encodeURIComponent(JSON.stringify({ bankAccountRef: accountId }))}`)),
                 ]);
                 setAccount(accountData);
                 setTransactions(

@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import { useToast } from '../../../layout';
 import { Printer, Save } from 'lucide-react';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
-import { fetchAdminData } from '@/lib/api/admin-client';
+import { fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import {
     buildIncidentPrintHtml,
     getAvailableIncidentStatuses,
@@ -33,7 +33,7 @@ export default function IncidentDetailPage() {
             const filter = encodeURIComponent(JSON.stringify({ incidentRef: incidentId }));
             const [incidentData, actionLogs] = await Promise.all([
                 fetchAdminData<Incident | null>(`/api/data?entity=incidents&id=${incidentId}`, 'Gagal memuat insiden'),
-                fetchAdminData<IncidentActionLog[]>(`/api/data?entity=incident-action-logs&filter=${filter}`, 'Gagal memuat log insiden'),
+                fetchAllAdminCollectionData<IncidentActionLog>(`/api/data?entity=incident-action-logs&filter=${filter}`, 'Gagal memuat log insiden'),
             ]);
 
             setIncident(incidentData);

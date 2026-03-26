@@ -9,7 +9,7 @@ import CurrencyInput from '@/components/CurrencyInput';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
-import { fetchAdminCollectionData, fetchAdminData } from '@/lib/api/admin-client';
+import { fetchAdminCollectionData, fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import {
     buildDeliveryOrderDetailState,
     buildDeliveryOrderPrintHtml,
@@ -96,8 +96,8 @@ export default function DODetailPage() {
         try {
             const deliveryOrder = await fetchAdminData<DeliveryOrder | null>(`/api/data?entity=delivery-orders&id=${doId}`, 'Gagal memuat detail surat jalan');
             const [itemRows, logRows, sourceOrder] = await Promise.all([
-                fetchAdminData<DeliveryOrderItem[]>(`/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: doId }))}`, 'Gagal memuat detail surat jalan'),
-                fetchAdminData<TrackingLog[]>(`/api/data?entity=tracking-logs&filter=${encodeURIComponent(JSON.stringify({ refRef: doId, refType: 'DO' }))}`, 'Gagal memuat detail surat jalan'),
+                fetchAllAdminCollectionData<DeliveryOrderItem>(`/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: doId }))}`, 'Gagal memuat detail surat jalan'),
+                fetchAllAdminCollectionData<TrackingLog>(`/api/data?entity=tracking-logs&filter=${encodeURIComponent(JSON.stringify({ refRef: doId, refType: 'DO' }))}`, 'Gagal memuat detail surat jalan'),
                 deliveryOrder?.orderRef
                     ? fetchAdminData<Order | null>(`/api/data?entity=orders&id=${deliveryOrder.orderRef}`, 'Gagal memuat detail surat jalan')
                     : Promise.resolve(null),

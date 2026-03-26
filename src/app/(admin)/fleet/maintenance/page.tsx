@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { useApp, useToast } from '../../layout';
 import { Plus, Search, Wrench, Save, X } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
+import { withAdminCollectionPageSize } from '@/lib/api/admin-client';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import {
     buildMaintenanceQuery,
@@ -72,7 +73,7 @@ export default function MaintenancePage() {
 
             const [listPayload, vehiclePayload, scheduledPayload, completedPayload, skippedPayload] = await Promise.all([
                 fetchEntity<Maintenance[]>(`/api/data?${buildCurrentMaintenanceQuery()}`),
-                fetchEntity<Vehicle[]>('/api/data?entity=vehicles'),
+                fetchEntity<Vehicle[]>(withAdminCollectionPageSize('/api/data?entity=vehicles')),
                 fetchEntity<Maintenance[]>('/api/data?entity=maintenances&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'SCHEDULED' }))),
                 fetchEntity<Maintenance[]>('/api/data?entity=maintenances&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'DONE' }))),
                 fetchEntity<Maintenance[]>('/api/data?entity=maintenances&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'SKIPPED' }))),

@@ -5,6 +5,7 @@ import { useToast, useApp } from '../layout';
 import { Plus, Search, Wallet, Save, X, FileDown, Printer } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import CurrencyInput from '@/components/CurrencyInput';
+import { withAdminCollectionPageSize } from '@/lib/api/admin-client';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { exportExpenses } from '@/lib/export';
 import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
@@ -118,11 +119,11 @@ export default function ExpensesPage() {
             const [listRes, summaryRes, categoryRows, accountRows, vehicleRows] = await Promise.all([
                 fetch(`/api/data?${buildExpensesQuery()}`),
                 fetch(`/api/data?entity=expenses-summary${search.trim() ? `&q=${encodeURIComponent(search.trim())}` : ''}`),
-                fetchEntity<ExpenseCategory[]>('/api/data?entity=expense-categories', []),
-                fetchEntity<BankAccount[]>('/api/data?entity=bank-accounts', []),
+                fetchEntity<ExpenseCategory[]>(withAdminCollectionPageSize('/api/data?entity=expense-categories'), []),
+                fetchEntity<BankAccount[]>(withAdminCollectionPageSize('/api/data?entity=bank-accounts'), []),
                 user.role === 'FINANCE'
                     ? Promise.resolve([] as Vehicle[])
-                    : fetchEntity<Vehicle[]>('/api/data?entity=vehicles', []),
+                    : fetchEntity<Vehicle[]>(withAdminCollectionPageSize('/api/data?entity=vehicles'), []),
             ]);
 
             const [listPayload, summaryPayload] = await Promise.all([listRes.json(), summaryRes.json()]);

@@ -19,6 +19,7 @@ import {
 } from '@/lib/tire-slots';
 import type { Vehicle, Maintenance, Incident, DeliveryOrder, TireEvent, Expense } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
+import { withAdminCollectionPageSize } from '@/lib/api/admin-client';
 import { hasPermission } from '@/lib/rbac';
 import {
     buildVehicleTireDetailState,
@@ -72,12 +73,12 @@ export default function VehicleDetailPage() {
             const expenseFilter = encodeURIComponent(JSON.stringify({ relatedVehicleRef: vehicleId }));
             const [vehicleData, maintenanceRows, incidentRows, doRows, tireRows, allTireRows, expenseRows] = await Promise.all([
                 fetchEntity<Vehicle | null>(`/api/data?entity=vehicles&id=${vehicleId}`, 'Gagal memuat kendaraan'),
-                fetchEntity<Maintenance[]>(`/api/data?entity=maintenances&filter=${vehicleFilter}`, 'Gagal memuat maintenance'),
-                fetchEntity<Incident[]>(`/api/data?entity=incidents&filter=${vehicleFilter}`, 'Gagal memuat insiden'),
-                fetchEntity<DeliveryOrder[]>(`/api/data?entity=delivery-orders&filter=${vehicleFilter}`, 'Gagal memuat riwayat DO'),
-                fetchEntity<TireEvent[]>(`/api/data?entity=tire-events&filter=${vehicleFilter}`, 'Gagal memuat catatan ban'),
-                fetchEntity<TireEvent[]>('/api/data?entity=tire-events', 'Gagal memuat master ban'),
-                fetchEntity<Expense[]>(`/api/data?entity=expenses&filter=${expenseFilter}`, 'Gagal memuat biaya kendaraan'),
+                fetchEntity<Maintenance[]>(withAdminCollectionPageSize(`/api/data?entity=maintenances&filter=${vehicleFilter}`), 'Gagal memuat maintenance'),
+                fetchEntity<Incident[]>(withAdminCollectionPageSize(`/api/data?entity=incidents&filter=${vehicleFilter}`), 'Gagal memuat insiden'),
+                fetchEntity<DeliveryOrder[]>(withAdminCollectionPageSize(`/api/data?entity=delivery-orders&filter=${vehicleFilter}`), 'Gagal memuat riwayat DO'),
+                fetchEntity<TireEvent[]>(withAdminCollectionPageSize(`/api/data?entity=tire-events&filter=${vehicleFilter}`), 'Gagal memuat catatan ban'),
+                fetchEntity<TireEvent[]>(withAdminCollectionPageSize('/api/data?entity=tire-events'), 'Gagal memuat master ban'),
+                fetchEntity<Expense[]>(withAdminCollectionPageSize(`/api/data?entity=expenses&filter=${expenseFilter}`), 'Gagal memuat biaya kendaraan'),
             ]);
 
             setVehicle(vehicleData);

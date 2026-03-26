@@ -7,7 +7,7 @@ import { CheckCircle, Plus, Printer, Save, Trash2, X } from 'lucide-react';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import CurrencyInput from '@/components/CurrencyInput';
 import PageBackButton from '@/components/PageBackButton';
-import { fetchAdminCollectionData, fetchAdminData } from '@/lib/api/admin-client';
+import { fetchAdminCollectionData, fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import {
     buildDriverVoucherDetailSummary,
     buildDriverVoucherPrintHtml,
@@ -56,8 +56,8 @@ export default function DriverVoucherDetailPage() {
         try {
             const [voucherData, voucherItems, voucherDisbursements, accounts] = await Promise.all([
                 fetchAdminData<DriverVoucher | null>(`/api/data?entity=driver-vouchers&id=${params.id}`, 'Gagal memuat detail uang jalan trip'),
-                fetchAdminData<DriverVoucherItem[]>(`/api/data?entity=driver-voucher-items&filter=${encodeURIComponent(JSON.stringify({ voucherRef: params.id }))}`, 'Gagal memuat detail uang jalan trip'),
-                fetchAdminData<DriverVoucherDisbursement[]>(`/api/data?entity=driver-voucher-disbursements&filter=${encodeURIComponent(JSON.stringify({ voucherRef: params.id }))}`, 'Gagal memuat detail uang jalan trip'),
+                fetchAllAdminCollectionData<DriverVoucherItem>(`/api/data?entity=driver-voucher-items&filter=${encodeURIComponent(JSON.stringify({ voucherRef: params.id }))}`, 'Gagal memuat detail uang jalan trip'),
+                fetchAllAdminCollectionData<DriverVoucherDisbursement>(`/api/data?entity=driver-voucher-disbursements&filter=${encodeURIComponent(JSON.stringify({ voucherRef: params.id }))}`, 'Gagal memuat detail uang jalan trip'),
                 fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat detail uang jalan trip'),
             ]);
             setVoucher(voucherData || null);

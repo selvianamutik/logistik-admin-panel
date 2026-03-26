@@ -7,7 +7,7 @@ import { Printer, DollarSign, Landmark, Trash2, FileDown } from 'lucide-react';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import CurrencyInput from '@/components/CurrencyInput';
 import PageBackButton from '@/components/PageBackButton';
-import { fetchAdminCollectionData, fetchAdminData } from '@/lib/api/admin-client';
+import { fetchAdminCollectionData, fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import {
     buildBankAccountMap,
     buildInvoiceDetailSummary,
@@ -53,9 +53,9 @@ export default function NotaDetailPage() {
         try {
             const [notaData, notaItems, paymentRows, adjustmentRows, accounts, companyData] = await Promise.all([
                 fetchAdminData<FreightNota | null>(`/api/data?entity=freight-notas&id=${notaId}`, 'Gagal memuat detail nota'),
-                fetchAdminData<FreightNotaItem[]>(`/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ notaRef: notaId }))}`, 'Gagal memuat detail nota'),
-                fetchAdminData<Payment[]>(`/api/data?entity=payments&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: notaId }))}`, 'Gagal memuat detail nota'),
-                fetchAdminData<InvoiceAdjustment[]>(`/api/data?entity=invoice-adjustments&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: notaId }))}`, 'Gagal memuat detail nota'),
+                fetchAllAdminCollectionData<FreightNotaItem>(`/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ notaRef: notaId }))}`, 'Gagal memuat detail nota'),
+                fetchAllAdminCollectionData<Payment>(`/api/data?entity=payments&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: notaId }))}`, 'Gagal memuat detail nota'),
+                fetchAllAdminCollectionData<InvoiceAdjustment>(`/api/data?entity=invoice-adjustments&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: notaId }))}`, 'Gagal memuat detail nota'),
                 fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat detail nota'),
                 fetchCompanyProfile(),
             ]);

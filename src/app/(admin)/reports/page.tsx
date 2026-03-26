@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useToast } from "../layout";
 import { openBrandedPrint } from "@/lib/print";
-import { fetchAdminData } from "@/lib/api/admin-client";
+import { fetchAdminData, fetchAllAdminCollectionData } from "@/lib/api/admin-client";
 import {
   buildCashflowExportRows,
   buildPeriodLabel,
@@ -76,12 +76,12 @@ export default function ReportsPage() {
       try {
         const [pay, exp, nota, vouchers, banks, txs, companyProfile] =
           await Promise.all([
-            fetchAdminData<Payment[]>("/api/data?entity=payments", "Gagal memuat payments"),
-            fetchAdminData<Expense[]>("/api/data?entity=expenses", "Gagal memuat expenses"),
-            fetchAdminData<FreightNota[]>("/api/data?entity=freight-notas", "Gagal memuat freight-notas"),
-            fetchAdminData<DriverVoucher[]>("/api/data?entity=driver-vouchers", "Gagal memuat driver-vouchers"),
-            fetchAdminData<BankAccount[]>("/api/data?entity=bank-accounts", "Gagal memuat bank-accounts"),
-            fetchAdminData<BankTransaction[]>("/api/data?entity=bank-transactions", "Gagal memuat bank-transactions"),
+            fetchAllAdminCollectionData<Payment>("/api/data?entity=payments", "Gagal memuat payments"),
+            fetchAllAdminCollectionData<Expense>("/api/data?entity=expenses", "Gagal memuat expenses"),
+            fetchAllAdminCollectionData<FreightNota>("/api/data?entity=freight-notas", "Gagal memuat freight-notas"),
+            fetchAllAdminCollectionData<DriverVoucher>("/api/data?entity=driver-vouchers", "Gagal memuat driver-vouchers"),
+            fetchAllAdminCollectionData<BankAccount>("/api/data?entity=bank-accounts", "Gagal memuat bank-accounts"),
+            fetchAllAdminCollectionData<BankTransaction>("/api/data?entity=bank-transactions", "Gagal memuat bank-transactions"),
             fetchAdminData<CompanyProfile | null>("/api/data?entity=company", "Gagal memuat company"),
           ]);
         setPayments(pay || []);

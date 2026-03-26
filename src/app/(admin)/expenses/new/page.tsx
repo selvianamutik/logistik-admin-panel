@@ -6,6 +6,7 @@ import { useApp, useToast } from '../../layout';
 import { Save } from 'lucide-react';
 import CurrencyInput from '@/components/CurrencyInput';
 import PageBackButton from '@/components/PageBackButton';
+import { withAdminCollectionPageSize } from '@/lib/api/admin-client';
 import type { ExpenseCategory, BankAccount, Vehicle } from '@/lib/types';
 import { hasPermission } from '@/lib/rbac';
 
@@ -38,9 +39,9 @@ export default function ExpenseNewPage() {
         };
 
         Promise.all([
-            fetchEntity<ExpenseCategory[]>('/api/data?entity=expense-categories'),
-            fetchEntity<BankAccount[]>('/api/data?entity=bank-accounts'),
-            canViewVehicles ? fetchEntity<Vehicle[]>('/api/data?entity=vehicles') : Promise.resolve([] as Vehicle[]),
+            fetchEntity<ExpenseCategory[]>(withAdminCollectionPageSize('/api/data?entity=expense-categories')),
+            fetchEntity<BankAccount[]>(withAdminCollectionPageSize('/api/data?entity=bank-accounts')),
+            canViewVehicles ? fetchEntity<Vehicle[]>(withAdminCollectionPageSize('/api/data?entity=vehicles')) : Promise.resolve([] as Vehicle[]),
         ]).then(([categoryRows, accountRows, vehicleRows]) => {
             setCategories(categoryRows || []);
             setBankAccounts((accountRows || []).filter((a) => a.active !== false));
