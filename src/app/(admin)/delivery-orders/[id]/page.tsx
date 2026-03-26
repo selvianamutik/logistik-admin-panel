@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useApp, useToast } from '../../layout';
-import { Printer, FileDown, Truck, Upload, Save, MapPin, Radio } from 'lucide-react';
+import { Printer, FileDown, Truck, Upload, Save, MapPin, Radio, Edit } from 'lucide-react';
 import CurrencyInput from '@/components/CurrencyInput';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
@@ -84,6 +84,7 @@ export default function DODetailPage() {
     const canManageDeliveryStatus = user ? hasPermission(user.role, 'deliveryOrders', 'update') : false;
     const canAssignTripResources = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL' || normalizedRole === 'ARMADA';
     const canReviewDriverRequest = canManageDeliveryStatus;
+    const canManageTripFee = canManageDeliveryStatus;
 
     const loadDO = useCallback(async (mode: 'initial' | 'refresh' = 'refresh') => {
         if (mode === 'initial') {
@@ -778,6 +779,13 @@ export default function DODetailPage() {
                                 <div className="detail-label">Keterangan</div>
                                 <div className="detail-value">{doData.keteranganBorongan || '-'}</div>
                             </div>
+                            {canManageTripFee && (
+                                <div className="detail-item" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end' }}>
+                                    <button className="btn btn-secondary btn-sm" onClick={() => setEditingTarip(true)}>
+                                        <Edit size={14} /> {doData.taripBorongan ? 'Edit Upah' : 'Isi Upah'}
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     ) : (
                         <div>
