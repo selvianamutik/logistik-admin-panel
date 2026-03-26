@@ -697,9 +697,13 @@ export async function handleOrderTargetRevision(
         const volume = roundQuantity(convertVolumeToM3(volumeInputValue, volumeInputUnit), 3);
 
         const progress = getOrderItemProgress(existingItem);
-        const committedQtyKoli = roundQuantity(progress.deliveredQtyKoli + progress.assignedQtyKoli + progress.heldQtyKoli);
-        const committedWeight = roundQuantity(progress.deliveredWeight + progress.assignedWeight + progress.heldWeight);
-        const committedVolume = roundQuantity(progress.deliveredVolume + progress.assignedVolume + progress.heldVolume, 3);
+        const lockedQtyKoli = roundQuantity(progress.deliveredQtyKoli + progress.assignedQtyKoli);
+        const lockedWeight = roundQuantity(progress.deliveredWeight + progress.assignedWeight);
+        const lockedVolume = roundQuantity(progress.deliveredVolume + progress.assignedVolume, 3);
+        const hadHoldProgress =
+            progress.heldQtyKoli > 0 ||
+            progress.heldWeight > 0 ||
+            progress.heldVolume > 0;
 
         if (qtyKoli <= 0 && weight <= 0 && volume <= 0) {
             return NextResponse.json(
@@ -708,26 +712,26 @@ export async function handleOrderTargetRevision(
             );
         }
 
-        if (committedQtyKoli > 0 && qtyKoli < committedQtyKoli) {
+        if (lockedQtyKoli > 0 && qtyKoli < lockedQtyKoli) {
             return NextResponse.json(
                 {
-                    error: `Target koli ${existingItem.description || 'item order'} tidak boleh lebih kecil dari progress yang sudah terkomit (${committedQtyKoli} koli).`,
+                    error: `Target koli ${existingItem.description || 'item order'} tidak boleh lebih kecil dari progress yang sudah terkirim / dalam DO aktif (${lockedQtyKoli} koli).`,
                 },
                 { status: 409 }
             );
         }
-        if (weight < committedWeight) {
+        if (weight < lockedWeight) {
             return NextResponse.json(
                 {
-                    error: `Target berat ${existingItem.description || 'item order'} tidak boleh lebih kecil dari progress yang sudah terkomit (${committedWeight} kg).`,
+                    error: `Target berat ${existingItem.description || 'item order'} tidak boleh lebih kecil dari progress yang sudah terkirim / dalam DO aktif (${lockedWeight} kg).`,
                 },
                 { status: 409 }
             );
         }
-        if (committedVolume > 0 && volume < committedVolume) {
+        if (lockedVolume > 0 && volume < lockedVolume) {
             return NextResponse.json(
                 {
-                    error: `Target volume ${existingItem.description || 'item order'} tidak boleh lebih kecil dari progress yang sudah terkomit (${committedVolume} m3).`,
+                    error: `Target volume ${existingItem.description || 'item order'} tidak boleh lebih kecil dari progress yang sudah terkirim / dalam DO aktif (${lockedVolume} m3).`,
                 },
                 { status: 409 }
             );
@@ -738,9 +742,16 @@ export async function handleOrderTargetRevision(
             qtyKoli,
             weight,
             volume,
+            heldQtyKoli: 0,
+            heldWeight: 0,
+            heldVolume: 0,
         });
+        const hasAssignedProgress =
+            nextProgress.assignedQtyKoli > 0 ||
+            nextProgress.assignedWeight > 0 ||
+            nextProgress.assignedVolume > 0;
         const nextStatus =
-            progress.assignedQtyKoli > 0
+            hasAssignedProgress
                 ? deriveOrderItemStatusFromProgress(nextProgress, 'in-transit')
                 : deriveOrderItemStatusFromProgress(nextProgress);
 
@@ -753,8 +764,12 @@ export async function handleOrderTargetRevision(
                 weightInputUnit: weightInputValue > 0 ? weightInputUnit : undefined,
                 volumeInputValue: volumeInputValue > 0 ? volumeInputValue : undefined,
                 volumeInputUnit: volumeInputValue > 0 ? volumeInputUnit : undefined,
+                heldQtyKoli: 0,
+                heldWeight: 0,
+                heldVolume: 0,
                 status: nextStatus,
             },
+            unset: ['holdReason', 'holdLocation'],
         });
 
         const itemChanges: string[] = [];
@@ -766,6 +781,9 @@ export async function handleOrderTargetRevision(
         }
         if (roundQuantity(normalizeNumber(existingItem.volume ?? 0), 3) !== volume) {
             itemChanges.push(`volume ${roundQuantity(normalizeNumber(existingItem.volume ?? 0), 3)} m3 -> ${volume} m3`);
+        }
+        if (hadHoldProgress) {
+            itemChanges.push('hold dilepas ke pending');
         }
         if (itemChanges.length > 0) {
             revisionSummaries.push(`${existingItem.description || existingItem._id}: ${itemChanges.join(', ')}`);
