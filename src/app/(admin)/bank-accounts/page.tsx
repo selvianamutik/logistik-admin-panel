@@ -62,6 +62,15 @@ export default function BankAccountsPage() {
   const canDeleteBankAccounts = user ? hasPermission(user.role, "bankAccounts", "delete") : false;
   const canExportBankAccounts = user ? hasPermission(user.role, "bankAccounts", "export") : false;
   const canPrintBankAccounts = user ? hasPermission(user.role, "bankAccounts", "print") : false;
+  const invoiceBankAccountRefs = Array.isArray(company?.invoiceSettings?.invoiceBankAccountRefs)
+    ? company.invoiceSettings.invoiceBankAccountRefs.filter(
+        (value): value is string => typeof value === "string" && value.trim().length > 0,
+      )
+    : [];
+  const defaultInvoiceBankAccountRef =
+    typeof company?.invoiceSettings?.defaultInvoiceBankAccountRef === "string"
+      ? company.invoiceSettings.defaultInvoiceBankAccountRef
+      : "";
   const buildAccountsQuery = useCallback(
     (targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) =>
       buildBankAccountsQuery({ page: targetPage, pageSize: targetPageSize }),
@@ -458,6 +467,9 @@ export default function BankAccountsPage() {
               const diff =
                 (account.currentBalance || 0) - (account.initialBalance || 0);
               const systemCash = isCashAccount(account);
+              const showsOnInvoice = invoiceBankAccountRefs.includes(account._id);
+              const isDefaultInvoiceAccount =
+                defaultInvoiceBankAccountRef === account._id;
               return (
                 <div
                   key={account._id}
@@ -491,6 +503,18 @@ export default function BankAccountsPage() {
                               Kas Tunai
                             </span>
                           )}
+                          {!systemCash && isDefaultInvoiceAccount && (
+                            <span className="badge badge-primary">
+                              Default Nota
+                            </span>
+                          )}
+                          {!systemCash &&
+                            showsOnInvoice &&
+                            !isDefaultInvoiceAccount && (
+                              <span className="badge badge-info">
+                                Tampil di Nota
+                              </span>
+                            )}
                         </div>
                         <div
                           style={{
@@ -501,6 +525,17 @@ export default function BankAccountsPage() {
                         >
                           {account.accountNumber}
                         </div>
+                        {!systemCash && showsOnInvoice && (
+                          <div
+                            style={{
+                              fontSize: "0.72rem",
+                              color: "var(--text-muted)",
+                              marginTop: "0.2rem",
+                            }}
+                          >
+                            Dipakai di instruksi pembayaran nota
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div

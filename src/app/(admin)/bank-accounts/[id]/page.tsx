@@ -9,7 +9,7 @@ import { useApp, useToast } from '../../layout';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import { exportToExcel } from '@/lib/export';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
-import type { BankAccount, BankTransaction } from '@/lib/types';
+import type { BankAccount, BankTransaction, CompanyProfile } from '@/lib/types';
 import { hasPermission } from '@/lib/rbac';
 
 const BANK_LOGOS: Record<string, { logo: string; color: string; gradient: string }> = {
@@ -58,6 +58,7 @@ export default function BankAccountDetailPage() {
     const accountId = params.id as string;
     const [account, setAccount] = useState<BankAccount | null>(null);
     const [transactions, setTransactions] = useState<BankTransaction[]>([]);
+    const [company, setCompany] = useState<CompanyProfile | null>(null);
     const [loading, setLoading] = useState(true);
     const canExportBankAccount = user ? hasPermission(user.role, 'bankAccounts', 'export') : false;
     const canPrintBankAccount = user ? hasPermission(user.role, 'bankAccounts', 'print') : false;
@@ -75,21 +76,23 @@ export default function BankAccountDetailPage() {
         const loadAccountDetail = async () => {
             setLoading(true);
             try {
-                const [accountData, transactionData] = await Promise.all([
+                const [accountData, transactionData, companyData] = await Promise.all([
                     fetchEntity<BankAccount | null>(`/api/data?entity=bank-accounts&id=${accountId}`),
                     fetchAdminCollectionData<BankTransaction[]>(
                         `/api/data?entity=bank-transactions&filter=${encodeURIComponent(JSON.stringify({ bankAccountRef: accountId }))}`,
                         'Gagal memuat detail rekening'
                     ),
+                    fetchCompanyProfile(),
                 ]);
                 setAccount(accountData);
                 setTransactions(
                     (transactionData || []).sort(
                         (a, b) =>
                             new Date(b.date || b._createdAt || '').getTime() -
-                            new Date(a.date || a._createdAt || '').getTime()
+                        new Date(a.date || a._createdAt || '').getTime()
                     )
                 );
+                setCompany(companyData || null);
             } catch (error) {
                 addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail rekening');
             } finally {
@@ -142,6 +145,11 @@ export default function BankAccountDetailPage() {
 
     const cashAccount = isCashAccount(account);
     const bankInfo = cashAccount ? BANK_LOGOS.CASH : getBankInfo(account.bankName);
+    const invoiceBankAccountRefs = Array.isArray(company?.invoiceSettings?.invoiceBankAccountRefs)
+        ? company.invoiceSettings.invoiceBankAccountRefs.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+        : [];
+    const isInvoiceAccount = invoiceBankAccountRefs.includes(account._id);
+    const isDefaultInvoiceAccount = company?.invoiceSettings?.defaultInvoiceBankAccountRef === account._id;
     const totalIn = transactions.filter(tx => tx.type === 'CREDIT' || tx.type === 'TRANSFER_IN').reduce((sum, tx) => sum + tx.amount, 0);
     const totalOut = transactions.filter(tx => tx.type === 'DEBIT' || tx.type === 'TRANSFER_OUT').reduce((sum, tx) => sum + tx.amount, 0);
 
@@ -188,6 +196,8 @@ export default function BankAccountDetailPage() {
                         <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                             {account.bankName}
                             {cashAccount && <span className="badge badge-success">Kas Tunai</span>}
+                            {!cashAccount && isDefaultInvoiceAccount && <span className="badge badge-primary">Default Nota</span>}
+                            {!cashAccount && isInvoiceAccount && !isDefaultInvoiceAccount && <span className="badge badge-info">Tampil di Nota</span>}
                         </h1>
                         <p className="page-subtitle" style={{ fontFamily: 'var(--font-mono, monospace)', letterSpacing: '0.03em' }}>{account.accountNumber} - a.n. {account.accountHolder}</p>
                     </div>

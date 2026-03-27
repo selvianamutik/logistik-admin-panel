@@ -5,6 +5,11 @@
 
 import jsPDF from 'jspdf';
 import type { Invoice, InvoiceItem, CompanyProfile, Payment } from '@/lib/types';
+import {
+    buildInvoiceInstructionAccountText,
+    resolveInvoiceInstructionAccounts,
+    type InvoiceInstructionAccount,
+} from '@/lib/print';
 import { formatDate, formatCurrency, terbilang } from '@/lib/utils';
 
 // ── Simple table drawing helper ──
@@ -68,7 +73,8 @@ export function generateInvoicePdf(
     invoice: Invoice,
     items: InvoiceItem[],
     payments: Payment[],
-    company: CompanyProfile
+    company: CompanyProfile,
+    bankAccounts: InvoiceInstructionAccount[] = [],
 ) {
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -174,18 +180,18 @@ export function generateInvoicePdf(
     y += 10;
 
     // ─── Bank Info ───
-    if (company.bankName) {
+    const instructionAccounts = resolveInvoiceInstructionAccounts(company, bankAccounts);
+    if (instructionAccounts.length > 0) {
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(9);
         doc.text('Pembayaran ditransfer ke:', margin, y);
         y += 5;
         doc.setFont('helvetica', 'normal');
-        doc.text(`Bank: ${company.bankName}`, margin, y);
+        instructionAccounts.forEach((account) => {
+            doc.text(`- ${buildInvoiceInstructionAccountText(account)}`, margin, y, { maxWidth: contentWidth });
+            y += 4;
+        });
         y += 4;
-        doc.text(`No. Rekening: ${company.bankAccount || '-'}`, margin, y);
-        y += 4;
-        doc.text(`Atas Nama: ${company.bankHolder || '-'}`, margin, y);
-        y += 8;
     }
 
     // ─── Footer Note ───

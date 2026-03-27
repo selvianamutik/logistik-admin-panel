@@ -245,7 +245,7 @@ export default function CompanyPage() {
                         </div>
                         <div className="form-section-title">Rekening yang Tampil di Nota</div>
                         <div className="form-group">
-                            <label className="form-label">Pilih Rekening Invoice</label>
+                            <label className="form-label">Pilih Rekening yang Tampil di Nota</label>
                             <div style={{ display: 'grid', gap: '0.55rem' }}>
                                 {bankAccounts.length === 0 ? (
                                     <div className="empty-state" style={{ padding: '1rem' }}>
@@ -340,8 +340,16 @@ export default function CompanyPage() {
                         <div className="card-header"><span className="card-header-title">Penomoran Dokumen</span></div>
                         <div className="card-body">
                             <div className="form-row">
-                                <div className="form-group"><label className="form-label">Prefix Resi</label><input className="form-input" value={data.numberingSettings.resiPrefix} onChange={e => uNum('resiPrefix', e.target.value)} /></div>
-                                <div className="form-group"><label className="form-label">Prefix DO</label><input className="form-input" value={data.numberingSettings.doPrefix} onChange={e => uNum('doPrefix', e.target.value)} /></div>
+                                <div className="form-group"><label className="form-label">Prefix Resi Internal</label><input className="form-input" value={data.numberingSettings.resiPrefix} onChange={e => uNum('resiPrefix', e.target.value)} /></div>
+                                <div className="form-group"><label className="form-label">Prefix DO Internal</label><input className="form-input" value={data.numberingSettings.doPrefix} onChange={e => uNum('doPrefix', e.target.value)} /></div>
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group" style={{ alignSelf: 'end' }}>
+                                    <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                                        Prefix <strong>SJ Customer</strong> tidak diatur di sini. Itu tetap diatur per customer pada data customer masing-masing.
+                                    </p>
+                                </div>
+                                <div className="form-group" />
                             </div>
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Prefix Nota</label><input className="form-input" value={data.numberingSettings.notaPrefix || 'NOTA-'} onChange={e => uNum('notaPrefix', e.target.value)} /></div>
