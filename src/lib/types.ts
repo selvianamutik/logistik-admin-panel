@@ -78,6 +78,8 @@ export interface CompanyProfile {
     dueDateDays: number;
     footerNote: string;
     invoiceMode: 'ORDER' | 'DO';
+    invoiceBankAccountRefs?: string[];
+    defaultInvoiceBankAccountRef?: string;
   };
   documentSettings: {
     showContact: boolean;

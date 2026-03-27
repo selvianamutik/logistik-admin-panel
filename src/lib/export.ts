@@ -5,7 +5,15 @@
 
 import ExcelJS from 'exceljs';
 import { resolveCompanyLogoUrl } from './branding';
-import { fetchCompanyProfile, fmtDate, fmtNumber, formatFreightNotaDisplayNumber } from './print';
+import {
+    buildInvoiceInstructionAccountText,
+    fetchCompanyProfile,
+    fmtDate,
+    fmtNumber,
+    formatFreightNotaDisplayNumber,
+    resolveInvoiceInstructionAccounts,
+    type InvoiceInstructionAccount,
+} from './print';
 import type { CompanyProfile, FreightNota, FreightNotaItem } from './types';
 import { getReceivableNetAmount } from './utils';
 
@@ -526,6 +534,7 @@ export async function exportFreightNotaDetail(
     nota: FreightNota,
     items: FreightNotaItem[],
     company?: CompanyProfile | null,
+    invoiceBankAccounts: InvoiceInstructionAccount[] = [],
 ) {
     const resolvedCompany = company ?? await fetchCompanyProfile();
     const displayNumber = formatFreightNotaDisplayNumber(nota, resolvedCompany);
@@ -581,9 +590,8 @@ export async function exportFreightNotaDetail(
     const companyLine = [resolvedCompany?.phone ? `TELP. ${resolvedCompany.phone}` : '', resolvedCompany?.email ? `EMAIL : ${resolvedCompany.email}` : '']
         .filter(Boolean)
         .join('  ');
-    const noteLine = resolvedCompany?.bankName && resolvedCompany?.bankAccount
-        ? `${resolvedCompany.bankName} A/C ${resolvedCompany.bankAccount}${resolvedCompany.bankHolder ? ` A/N ${resolvedCompany.bankHolder}` : ''}`
-        : '';
+    const invoiceInstructionLines = resolveInvoiceInstructionAccounts(resolvedCompany, invoiceBankAccounts)
+        .map(buildInvoiceInstructionAccountText);
     const extraNote = [resolvedCompany?.invoiceSettings?.footerNote, nota.notes].filter(Boolean).join(' ');
 
     rows.push(['', '', resolvedCompany?.name || 'Gading Mas Surya', '', '', `PERINCIAN ONGKOS ANGKUT NO.${displayNumber}`, '', '', '', '', 'TGL.', fmtDate(nota.issueDate)]);
@@ -643,10 +651,10 @@ export async function exportFreightNotaDetail(
     rows.push(['NOTE : ONGKOS ANGKUTAN HARAP DITRANSFER KE :']);
     merges.push({ startRow: rows.length, startCol: 1, endRow: rows.length, endCol: totalColumns });
 
-    if (noteLine) {
-        rows.push([noteLine]);
+    invoiceInstructionLines.forEach(line => {
+        rows.push([line]);
         merges.push({ startRow: rows.length, startCol: 1, endRow: rows.length, endCol: totalColumns });
-    }
+    });
 
     if (extraNote) {
         rows.push([extraNote]);

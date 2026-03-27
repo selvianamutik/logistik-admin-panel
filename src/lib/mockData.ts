@@ -86,7 +86,9 @@ const seedData: DataStore = {
             defaultTermDays: 14,
             dueDateDays: 14,
             footerNote: 'Pembayaran dapat ditransfer ke rekening perusahaan. Harap sertakan nomor invoice sebagai referensi.',
-            invoiceMode: 'ORDER'
+            invoiceMode: 'ORDER',
+            invoiceBankAccountRefs: [],
+            defaultInvoiceBankAccountRef: undefined,
         },
         documentSettings: {
             showContact: true,

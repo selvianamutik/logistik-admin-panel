@@ -447,7 +447,13 @@ export default function NotaListPage() {
                 fetchCustomerSummary(nota.customerRef),
             ]);
             setCompany(resolvedCompany);
-            const doc = buildFreightNotaPrintDocument({ nota, items: notaItems, company: resolvedCompany, customer });
+            const doc = buildFreightNotaPrintDocument({
+                nota,
+                items: notaItems,
+                company: resolvedCompany,
+                customer,
+                invoiceBankAccounts: bankAccounts,
+            });
             openBrandedPrint({
                 title: doc.title,
                 subtitle: doc.subtitle,
@@ -469,7 +475,7 @@ export default function NotaListPage() {
                 fetchNotaItems(nota._id),
             ]);
             setCompany(resolvedCompany);
-            await exportFreightNotaDetail(nota, notaItems, resolvedCompany);
+            await exportFreightNotaDetail(nota, notaItems, resolvedCompany, bankAccounts);
             addToast('success', 'Excel nota berhasil di-download');
         } catch {
             addToast('error', 'Gagal menyiapkan Excel nota');

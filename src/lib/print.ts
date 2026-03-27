@@ -4,7 +4,7 @@
 
 import DOMPurify from 'dompurify';
 import { resolveCompanyLogoUrl } from './branding';
-import type { CompanyProfile, Customer, FreightNota, FreightNotaItem } from './types';
+import type { BankAccount, CompanyProfile, Customer, FreightNota, FreightNotaItem } from './types';
 import { getReceivableNetAmount, terbilang } from './utils';
 
 export async function fetchCompanyProfile(): Promise<CompanyProfile | null> {
@@ -15,6 +15,61 @@ export async function fetchCompanyProfile(): Promise<CompanyProfile | null> {
     } catch {
         return null;
     }
+}
+
+export type InvoiceInstructionAccount = Pick<BankAccount, '_id' | 'bankName' | 'accountNumber' | 'accountHolder' | 'accountType' | 'active'>;
+
+export function resolveInvoiceInstructionAccounts(
+    company: CompanyProfile | null | undefined,
+    bankAccounts: InvoiceInstructionAccount[] = [],
+) {
+    const selectedRefs = Array.isArray(company?.invoiceSettings?.invoiceBankAccountRefs)
+        ? company.invoiceSettings.invoiceBankAccountRefs.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+        : [];
+    const eligibleAccounts = bankAccounts.filter(account => account.active !== false && account.accountType !== 'CASH');
+    const accountMap = new Map(eligibleAccounts.map(account => [account._id, account]));
+    const selectedAccounts = selectedRefs
+        .map(ref => accountMap.get(ref))
+        .filter((account): account is InvoiceInstructionAccount => Boolean(account));
+    const uniqueSelectedAccounts = selectedAccounts.filter((account, index) =>
+        selectedAccounts.findIndex(candidate => candidate._id === account._id) === index
+    );
+
+    if (uniqueSelectedAccounts.length > 0) {
+        const defaultRef = typeof company?.invoiceSettings?.defaultInvoiceBankAccountRef === 'string'
+            ? company.invoiceSettings.defaultInvoiceBankAccountRef
+            : undefined;
+
+        return uniqueSelectedAccounts.sort((left, right) => {
+            if (defaultRef) {
+                if (left._id === defaultRef) return -1;
+                if (right._id === defaultRef) return 1;
+            }
+            return selectedRefs.indexOf(left._id) - selectedRefs.indexOf(right._id);
+        });
+    }
+
+    const legacyBankName = company?.bankName?.trim();
+    if (!legacyBankName) {
+        return [];
+    }
+
+    return [{
+        _id: 'legacy-company-bank',
+        bankName: legacyBankName,
+        accountNumber: company?.bankAccount?.trim() || '-',
+        accountHolder: company?.bankHolder?.trim() || '-',
+        accountType: 'BANK',
+        active: true,
+    }] satisfies InvoiceInstructionAccount[];
+}
+
+export function buildInvoiceInstructionAccountText(account: InvoiceInstructionAccount) {
+    return [
+        account.bankName || '-',
+        account.accountNumber ? `A/C ${account.accountNumber}` : '',
+        account.accountHolder ? `A/N ${account.accountHolder}` : '',
+    ].filter(Boolean).join(' | ');
 }
 
 export function openBrandedPrint(opts: {
@@ -171,8 +226,9 @@ export function buildFreightNotaPrintDocument(opts: {
     items: FreightNotaItem[];
     company: CompanyProfile | null;
     customer?: Pick<Customer, 'name' | 'address' | 'contactPerson' | 'phone'> | null;
+    invoiceBankAccounts?: InvoiceInstructionAccount[];
 }) {
-    const { nota, items, company, customer } = opts;
+    const { nota, items, company, customer, invoiceBankAccounts = [] } = opts;
     const displayNumber = formatFreightNotaDisplayNumber(nota, company);
     const grossAmount = nota.totalAmount || 0;
     const adjustmentAmount = nota.totalAdjustmentAmount || 0;
@@ -196,11 +252,7 @@ export function buildFreightNotaPrintDocument(opts: {
     const shipmentNoteLabel = [nota.notes, ...uniqueNotes].filter(Boolean).join(' / ');
     const customerAddressLabel = customer?.address?.trim() || '';
     const customerContactLabel = [customer?.contactPerson, customer?.phone].filter(Boolean).join(' | ');
-    const bankInstructionLines = [
-        company?.bankName ? `${company.bankName}` : '',
-        company?.bankAccount ? `A/C No. ${company.bankAccount}` : '',
-        company?.bankHolder ? `A/N ${company.bankHolder}` : '',
-    ].filter(Boolean);
+    const invoiceInstructionAccounts = resolveInvoiceInstructionAccounts(company, invoiceBankAccounts);
     const footerNote = company?.invoiceSettings?.footerNote?.trim() || '';
     const amountInWords = terbilang(Math.max(Math.round(netAmount), 0))
         .replace(/\s+/g, ' ')
@@ -209,6 +261,8 @@ export function buildFreightNotaPrintDocument(opts: {
     const signatureName =
         company?.bankHolder && company.bankHolder.trim().toLowerCase() !== (company?.name || '').trim().toLowerCase()
             ? company.bankHolder.trim()
+            : invoiceInstructionAccounts[0]?.accountHolder && invoiceInstructionAccounts[0].accountHolder.trim().toLowerCase() !== (company?.name || '').trim().toLowerCase()
+                ? invoiceInstructionAccounts[0].accountHolder.trim()
             : 'Bagian Administrasi';
 
     const itemRowsHtml = items.map((item, index) => {
@@ -244,6 +298,14 @@ export function buildFreightNotaPrintDocument(opts: {
     const signatureStampHtml = company?.signatureStampUrl
         ? `<img src="${escapePrintAttribute(company.signatureStampUrl)}" alt="Tanda tangan" class="invoice-signature-image" />`
         : '';
+
+    const invoiceInstructionHtml = invoiceInstructionAccounts.map(account => `
+        <div class="invoice-payment-bank-item">
+            <div class="invoice-payment-bank-name">${escapePrintHtml(account.bankName || '-')}</div>
+            <div>${escapePrintHtml(account.accountNumber ? `No. Rekening: ${account.accountNumber}` : 'No. Rekening: -')}</div>
+            <div>${escapePrintHtml(account.accountHolder ? `Atas Nama: ${account.accountHolder}` : 'Atas Nama: -')}</div>
+        </div>
+    `).join('');
 
     const bodyHtml = `
         <div class="invoice-sheet">
@@ -367,9 +429,9 @@ export function buildFreightNotaPrintDocument(opts: {
                 <div class="invoice-panel">
                     <div class="invoice-section-title compact">Petunjuk Pembayaran</div>
                     <div class="invoice-payment-line">Mohon lakukan pembayaran sebelum <strong>${escapePrintHtml(dueDateLabel)}</strong> dengan menyebutkan nomor invoice <strong>${escapePrintHtml(displayNumber)}</strong>.</div>
-                    ${bankInstructionLines.length > 0 ? `
+                    ${invoiceInstructionAccounts.length > 0 ? `
                         <div class="invoice-payment-subtitle">Pembayaran ditujukan ke:</div>
-                        <div class="invoice-payment-bank">${escapePrintHtml(bankInstructionLines.join(' | '))}</div>
+                        <div class="invoice-payment-bank-list">${invoiceInstructionHtml}</div>
                     ` : ''}
                     ${footerNote ? `<div class="invoice-payment-note">${escapePrintHtml(footerNote)}</div>` : ''}
                 </div>
@@ -429,7 +491,9 @@ export function buildFreightNotaPrintDocument(opts: {
         .invoice-bottom-value { font-size: 0.92rem; }
         .invoice-payment-line { margin-bottom: 0.45rem; }
         .invoice-payment-subtitle { font-weight: 700; margin-bottom: 0.2rem; }
-        .invoice-payment-bank { font-weight: 400; }
+        .invoice-payment-bank-list { display: flex; flex-direction: column; gap: 0.3rem; }
+        .invoice-payment-bank-item { border: 0.8px solid #4b5563; padding: 0.35rem 0.45rem; }
+        .invoice-payment-bank-name { font-weight: 700; margin-bottom: 0.12rem; }
         .invoice-payment-note { margin-top: 0.35rem; color: #111827; }
         .invoice-signature-box { border: 0.8px solid #4b5563; padding: 0.55rem 0.65rem; display: flex; flex-direction: column; justify-content: space-between; }
         .invoice-signature-title { margin-bottom: 0.15rem; }

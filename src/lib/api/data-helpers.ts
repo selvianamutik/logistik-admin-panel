@@ -115,6 +115,13 @@ export function sanitizeCompanyProfileForRole(
             dueDateDays: company.invoiceSettings?.dueDateDays ?? company.invoiceSettings?.defaultTermDays ?? 14,
             footerNote: company.invoiceSettings?.footerNote || '',
             invoiceMode: company.invoiceSettings?.invoiceMode || 'DO',
+            invoiceBankAccountRefs: Array.isArray(company.invoiceSettings?.invoiceBankAccountRefs)
+                ? company.invoiceSettings.invoiceBankAccountRefs.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+                : [],
+            defaultInvoiceBankAccountRef:
+                typeof company.invoiceSettings?.defaultInvoiceBankAccountRef === 'string'
+                    ? company.invoiceSettings.defaultInvoiceBankAccountRef
+                    : undefined,
         },
         documentSettings: {
             showContact: company.documentSettings?.showContact ?? true,

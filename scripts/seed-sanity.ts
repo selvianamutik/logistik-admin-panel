@@ -301,6 +301,8 @@ function buildSeedDocuments() {
                 dueDateDays: 14,
                 footerNote: 'Pembayaran hanya dilakukan ke rekening resmi perusahaan.',
                 invoiceMode: 'ORDER',
+                invoiceBankAccountRefs: ['bank-jatim-001', 'bank-bca-001'],
+                defaultInvoiceBankAccountRef: 'bank-jatim-001',
             },
             documentSettings: {
                 showContact: true,

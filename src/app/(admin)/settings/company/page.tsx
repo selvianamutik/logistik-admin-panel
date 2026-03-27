@@ -3,18 +3,23 @@
 import { useState, useEffect } from 'react';
 import { useToast } from '../../layout';
 import { Save } from 'lucide-react';
-import type { CompanyProfile } from '@/lib/types';
+import { fetchAdminCollectionData } from '@/lib/api/admin-client';
+import type { BankAccount, CompanyProfile } from '@/lib/types';
 
 export default function CompanyPage() {
     const { addToast } = useToast();
     const [data, setData] = useState<CompanyProfile | null>(null);
+    const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
         const loadCompany = async () => {
             try {
-                const res = await fetch('/api/data?entity=company');
+                const [res, accountRows] = await Promise.all([
+                    fetch('/api/data?entity=company'),
+                    fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat rekening invoice'),
+                ]);
                 const payload = await res.json();
                 if (!res.ok) {
                     throw new Error(payload.error || 'Gagal memuat pengaturan perusahaan');
@@ -23,9 +28,17 @@ export default function CompanyPage() {
                 const profile = payload.data || {};
                 profile.numberingSettings = profile.numberingSettings || { resiPrefix: 'R-', resiCounter: 0, doPrefix: 'DO-', doCounter: 0, invoicePrefix: 'INV-', invoiceCounter: 0, notaPrefix: 'NOTA-', notaCounter: 0, notaSeriesCode: '3', receiptPrefix: 'RCV-', receiptCounter: 0, boronganPrefix: 'BRG-', boronganCounter: 0, bonPrefix: 'BON-', bonCounter: 0, incidentPrefix: 'INC-', incidentCounter: 0 };
                 profile.numberingSettings.notaSeriesCode = profile.numberingSettings.notaSeriesCode || '3';
-                profile.invoiceSettings = profile.invoiceSettings || { defaultTermDays: 30, dueDateDays: 14, footerNote: '', invoiceMode: 'ORDER' };
+                profile.invoiceSettings = profile.invoiceSettings || { defaultTermDays: 30, dueDateDays: 14, footerNote: '', invoiceMode: 'ORDER', invoiceBankAccountRefs: [], defaultInvoiceBankAccountRef: undefined };
+                profile.invoiceSettings.invoiceBankAccountRefs = Array.isArray(profile.invoiceSettings.invoiceBankAccountRefs)
+                    ? profile.invoiceSettings.invoiceBankAccountRefs.filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0)
+                    : [];
+                profile.invoiceSettings.defaultInvoiceBankAccountRef =
+                    typeof profile.invoiceSettings.defaultInvoiceBankAccountRef === 'string'
+                        ? profile.invoiceSettings.defaultInvoiceBankAccountRef
+                        : undefined;
                 profile.documentSettings = profile.documentSettings || { showContact: true, dateFormat: 'DD/MM/YYYY' };
                 setData(profile);
+                setBankAccounts((accountRows || []).filter(account => account.active !== false && account.accountType !== 'CASH'));
             } catch (error) {
                 addToast('error', error instanceof Error ? error.message : 'Gagal memuat pengaturan perusahaan');
             } finally {
@@ -40,11 +53,26 @@ export default function CompanyPage() {
         if (!data) return;
         setSaving(true);
         try {
-            const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'company', data }) });
+            const invoiceBankAccountRefs = Array.from(new Set(
+                (data.invoiceSettings?.invoiceBankAccountRefs || []).filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+            ));
+            const defaultInvoiceBankAccountRef = invoiceBankAccountRefs.includes(data.invoiceSettings?.defaultInvoiceBankAccountRef || '')
+                ? data.invoiceSettings?.defaultInvoiceBankAccountRef
+                : invoiceBankAccountRefs[0];
+            const payloadData: CompanyProfile = {
+                ...data,
+                invoiceSettings: {
+                    ...data.invoiceSettings,
+                    invoiceBankAccountRefs,
+                    defaultInvoiceBankAccountRef,
+                },
+            };
+            const res = await fetch('/api/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity: 'company', data: payloadData }) });
             const payload = await res.json();
             if (!res.ok) {
                 throw new Error(payload.error || 'Gagal menyimpan pengaturan perusahaan');
             }
+            setData(payload.data || payloadData);
             addToast('success', 'Pengaturan perusahaan disimpan');
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal menyimpan');
@@ -55,6 +83,31 @@ export default function CompanyPage() {
 
     const u = (field: string, value: unknown) => setData(prev => prev ? { ...prev, [field]: value } : prev);
     const uNum = (field: string, value: unknown) => setData(prev => prev ? { ...prev, numberingSettings: { ...(prev.numberingSettings || {}), [field]: value } } as CompanyProfile : prev);
+    const uInvoice = (field: string, value: unknown) => setData(prev => prev ? { ...prev, invoiceSettings: { ...(prev.invoiceSettings || {}), [field]: value } } as CompanyProfile : prev);
+
+    const toggleInvoiceBankAccount = (accountId: string) => setData(prev => {
+        if (!prev) return prev;
+
+        const selectedRefs = Array.isArray(prev.invoiceSettings?.invoiceBankAccountRefs)
+            ? prev.invoiceSettings.invoiceBankAccountRefs.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+            : [];
+        const isSelected = selectedRefs.includes(accountId);
+        const nextRefs = isSelected
+            ? selectedRefs.filter(ref => ref !== accountId)
+            : [...selectedRefs, accountId];
+        const defaultRef = nextRefs.includes(prev.invoiceSettings?.defaultInvoiceBankAccountRef || '')
+            ? prev.invoiceSettings?.defaultInvoiceBankAccountRef
+            : nextRefs[0];
+
+        return {
+            ...prev,
+            invoiceSettings: {
+                ...prev.invoiceSettings,
+                invoiceBankAccountRefs: nextRefs,
+                defaultInvoiceBankAccountRef: defaultRef,
+            },
+        };
+    });
 
     // Live theme preview — apply CSS vars instantly
     const previewTheme = (hex: string) => {
@@ -94,6 +147,8 @@ export default function CompanyPage() {
     };
 
     if (loading || !data) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 300 }} /></div>;
+    const invoiceBankAccountRefs = Array.isArray(data.invoiceSettings?.invoiceBankAccountRefs) ? data.invoiceSettings.invoiceBankAccountRefs : [];
+    const selectedInvoiceBankAccounts = bankAccounts.filter(account => invoiceBankAccountRefs.includes(account._id));
 
     return (
         <div>
@@ -188,14 +243,85 @@ export default function CompanyPage() {
                                 <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--color-primary)' }} />
                             </div>
                         </div>
-                        <div className="form-section-title">Rekening Penerimaan Utama</div>
+                        <div className="form-section-title">Rekening yang Tampil di Nota</div>
+                        <div className="form-group">
+                            <label className="form-label">Pilih Rekening Invoice</label>
+                            <div style={{ display: 'grid', gap: '0.55rem' }}>
+                                {bankAccounts.length === 0 ? (
+                                    <div className="empty-state" style={{ padding: '1rem' }}>
+                                        <div className="empty-state-title">Belum ada rekening bank aktif</div>
+                                    </div>
+                                ) : bankAccounts.map(account => {
+                                    const isSelected = invoiceBankAccountRefs.includes(account._id);
+                                    const isDefault = data.invoiceSettings?.defaultInvoiceBankAccountRef === account._id;
+
+                                    return (
+                                        <div
+                                            key={account._id}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                                gap: '0.75rem',
+                                                border: '1px solid var(--border-color)',
+                                                borderRadius: 'var(--radius-md)',
+                                                padding: '0.7rem 0.85rem',
+                                                background: isSelected ? 'var(--bg-secondary)' : '#fff',
+                                            }}
+                                        >
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', minWidth: 0, flex: 1 }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isSelected}
+                                                    onChange={() => toggleInvoiceBankAccount(account._id)}
+                                                />
+                                                <div style={{ minWidth: 0 }}>
+                                                    <div style={{ fontWeight: 700 }}>{account.bankName} - {account.accountNumber}</div>
+                                                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{account.accountHolder}</div>
+                                                </div>
+                                            </label>
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', color: isSelected ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                                                <input
+                                                    type="radio"
+                                                    name="default-invoice-bank"
+                                                    checked={isDefault}
+                                                    disabled={!isSelected}
+                                                    onChange={() => uInvoice('defaultInvoiceBankAccountRef', account._id)}
+                                                />
+                                                Default
+                                            </label>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                            <p style={{ margin: '0.5rem 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                                Rekening ini tampil di print dan export nota. Rekening aktual uang masuk tetap dipilih saat finance mencatat pembayaran atau penerimaan customer.
+                            </p>
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label">Ringkasan Rekening Nota</label>
+                            {selectedInvoiceBankAccounts.length > 0 ? (
+                                <div style={{ display: 'grid', gap: '0.4rem' }}>
+                                    {selectedInvoiceBankAccounts.map(account => (
+                                        <div key={account._id} style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                                            <strong>{data.invoiceSettings?.defaultInvoiceBankAccountRef === account._id ? 'Default' : 'Tambahan'}:</strong> {account.bankName} - {account.accountNumber} a/n {account.accountHolder}
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                                    Belum ada rekening master yang dipilih. Dokumen nota akan memakai fallback rekening manual di bawah ini.
+                                </p>
+                            )}
+                        </div>
+                        <div className="form-section-title">Fallback Rekening Manual</div>
                         <div className="form-row">
                             <div className="form-group"><label className="form-label">Bank</label><input className="form-input" value={data.bankName || ''} onChange={e => u('bankName', e.target.value)} /></div>
                             <div className="form-group"><label className="form-label">No. Rekening</label><input className="form-input" value={data.bankAccount || ''} onChange={e => u('bankAccount', e.target.value)} /></div>
                         </div>
                         <div className="form-group"><label className="form-label">Atas Nama</label><input className="form-input" value={data.bankHolder || ''} onChange={e => u('bankHolder', e.target.value)} /></div>
                         <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                            Dipakai sebagai rekening penerimaan default pada dokumen cetak dan export. Ini berbeda dari modul <strong>Rekening &amp; Kas</strong> yang melacak saldo operasional.
+                            Dipakai hanya jika belum ada rekening master yang dipilih untuk nota, atau untuk menjaga dokumen lama tetap punya rekening cadangan.
                         </p>
                     </div>
                 </div>
