@@ -826,7 +826,11 @@ export async function handleExpenseCreate(
         relatedVehiclePlate = vehicle.plateNumber;
     }
 
-    const privacyLevel = data.privacyLevel === 'ownerOnly' ? 'ownerOnly' : 'internal';
+    const requestedPrivacyLevel = data.privacyLevel === 'ownerOnly' ? 'ownerOnly' : 'internal';
+    if (requestedPrivacyLevel === 'ownerOnly' && session.role !== 'OWNER') {
+        return NextResponse.json({ error: 'Hanya OWNER yang boleh membuat pengeluaran owner-only' }, { status: 403 });
+    }
+    const privacyLevel = requestedPrivacyLevel;
 
     const expenseDocBase: { _type: 'expense'; [key: string]: unknown } = {
         _type: 'expense',

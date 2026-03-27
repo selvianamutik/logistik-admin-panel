@@ -26,6 +26,7 @@ export default function ExpenseNewPage() {
         relatedVehicleRef: '',
         bankAccountRef: '', bankAccountName: ''
     });
+    const isOwner = user?.role === 'OWNER';
     const canViewVehicles = user ? hasPermission(user.role, 'vehicles', 'view') : false;
 
     useEffect(() => {
@@ -103,13 +104,15 @@ export default function ExpenseNewPage() {
                                 <label className="form-label">Jumlah (Rp) <span className="required">*</span></label>
                                 <CurrencyInput value={form.amount} onValueChange={value => setForm({ ...form, amount: value })} placeholder="Ketik nominal pengeluaran" />
                             </div>
-                            <div className="form-group">
-                                <label className="form-label">Privacy Level</label>
-                                <select className="form-select" value={form.privacyLevel} onChange={e => setForm({ ...form, privacyLevel: e.target.value as 'internal' | 'ownerOnly' })}>
-                                    <option value="internal">Internal (semua admin)</option>
-                                    <option value="ownerOnly">Owner Only</option>
-                                </select>
-                            </div>
+                            {isOwner && (
+                                <div className="form-group">
+                                    <label className="form-label">Privacy Level</label>
+                                    <select className="form-select" value={form.privacyLevel} onChange={e => setForm({ ...form, privacyLevel: e.target.value as 'internal' | 'ownerOnly' })}>
+                                        <option value="internal">Internal (semua admin)</option>
+                                        <option value="ownerOnly">Owner Only</option>
+                                    </select>
+                                </div>
+                            )}
                         </div>
                         <div className="form-group">
                             <label className="form-label">Catatan / Deskripsi</label>
