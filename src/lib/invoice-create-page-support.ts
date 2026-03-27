@@ -1,4 +1,3 @@
-import { formatDeliveryOrderDisplayNumber } from './utils';
 import type { CompanyProfile, Customer, DeliveryOrder, DeliveryOrderItem, Order } from './types';
 
 export interface NotaItemRow {
@@ -109,7 +108,7 @@ export function buildNotaRowFromDeliveryOrder(params: {
         doNumber: deliveryOrder.doNumber || '',
         vehiclePlate: deliveryOrder.vehiclePlate || '',
         date: deliveryOrder.date || new Date().toISOString().split('T')[0],
-        noSJ: formatDeliveryOrderDisplayNumber(deliveryOrder),
+        noSJ: deliveryOrder.customerDoNumber || '',
         dari: deliveryOrder.pickupAddress || relatedOrder?.pickupAddress || '',
         tujuan: deliveryOrder.receiverAddress || relatedOrder?.receiverAddress || '',
         barang: descriptions.join(', '),

@@ -16,7 +16,7 @@ import {
     type NotaItemRow,
 } from '@/lib/invoice-create-page-support';
 import type { CompanyProfile, Customer, DeliveryOrder, DeliveryOrderItem, Order } from '@/lib/types';
-import { formatCurrency, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
+import { formatCurrency, formatInternalDeliveryOrderNumber, formatShipperDeliveryOrderNumber } from '@/lib/utils';
 
 import { useToast } from '../../layout';
 
@@ -336,7 +336,7 @@ export default function NewNotaPage() {
                                     >
                                         {availableCustomerDOs.map(deliveryOrder => (
                                             <option key={deliveryOrder._id} value={deliveryOrder._id}>
-                                                {formatDeliveryOrderDisplayNumber(deliveryOrder)} - {deliveryOrder.vehiclePlate || '-'} - {deliveryOrder.receiverAddress || '-'}
+                                                {formatInternalDeliveryOrderNumber(deliveryOrder)}{deliveryOrder.customerDoNumber ? ` | SJ ${formatShipperDeliveryOrderNumber(deliveryOrder)}` : ''} - {deliveryOrder.vehiclePlate || '-'} - {deliveryOrder.receiverAddress || '-'}
                                             </option>
                                         ))}
                                     </optgroup>
@@ -345,7 +345,7 @@ export default function NewNotaPage() {
                                     <optgroup label={`DO Customer Lain (${availableOtherDOs.length})`}>
                                         {availableOtherDOs.map(deliveryOrder => (
                                             <option key={deliveryOrder._id} value={deliveryOrder._id}>
-                                                {formatDeliveryOrderDisplayNumber(deliveryOrder)} - {deliveryOrder.vehiclePlate || '-'} - {deliveryOrder.receiverAddress || '-'}
+                                                {formatInternalDeliveryOrderNumber(deliveryOrder)}{deliveryOrder.customerDoNumber ? ` | SJ ${formatShipperDeliveryOrderNumber(deliveryOrder)}` : ''} - {deliveryOrder.vehiclePlate || '-'} - {deliveryOrder.receiverAddress || '-'}
                                             </option>
                                         ))}
                                     </optgroup>

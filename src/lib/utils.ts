@@ -51,13 +51,6 @@ export function formatNumber(num: number | undefined): string {
     return new Intl.NumberFormat('id-ID').format(num);
 }
 
-export function formatDeliveryOrderDisplayNumber(value: {
-    customerDoNumber?: string | null;
-    doNumber?: string | null;
-}) {
-    return value.customerDoNumber || value.doNumber || '-';
-}
-
 export function formatInternalDeliveryOrderNumber(value: {
     customerDoNumber?: string | null;
     doNumber?: string | null;
