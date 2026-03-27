@@ -43,6 +43,7 @@ import {
 } from '@/lib/api/operations-workflows';
 import {
     handleDeliveryOrderCreate,
+    handleDeliveryOrderShipperReferenceUpdate,
     handleDeliveryOrderTripResourceAssign,
     handleDeliveryOrderDriverStatusRequestReject,
     handleDeliveryOrderStatusUpdate,
@@ -151,6 +152,7 @@ function getMutationPermissionAction(action?: string): keyof ModulePermissions {
         action === 'revise-targets' ||
         action === 'set-status' ||
         action === 'assign-trip-resources' ||
+        action === 'update-shipper-reference' ||
         action === 'reject-driver-status-request' ||
         action === 'set-hold-quantity' ||
         action === 'release-hold' ||
@@ -170,6 +172,10 @@ function hasSpecialMutationPermission(session: Session, entity: string, action?:
 
     if (entity === 'delivery-orders' && action === 'assign-trip-resources') {
         return role === 'OWNER' || role === 'OPERASIONAL' || role === 'ARMADA';
+    }
+
+    if (entity === 'delivery-orders' && action === 'update-shipper-reference') {
+        return role === 'OWNER' || role === 'OPERASIONAL' || role === 'FINANCE';
     }
 
     if (entity === 'driver-vouchers' && action === 'settle') {
@@ -669,6 +675,10 @@ export async function POST(request: Request) {
 
         if (entity === 'delivery-orders' && action === 'assign-trip-resources') {
             return await handleDeliveryOrderTripResourceAssign(session, data, addAuditLog);
+        }
+
+        if (entity === 'delivery-orders' && action === 'update-shipper-reference') {
+            return await handleDeliveryOrderShipperReferenceUpdate(session, data, addAuditLog);
         }
 
         if (entity === 'delivery-orders' && action === 'reject-driver-status-request') {

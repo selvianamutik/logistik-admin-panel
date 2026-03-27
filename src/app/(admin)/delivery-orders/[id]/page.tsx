@@ -58,6 +58,7 @@ export default function DODetailPage() {
     const [showPODModal, setShowPODModal] = useState(false);
     const [showRejectRequestModal, setShowRejectRequestModal] = useState(false);
     const [showTripResourcesModal, setShowTripResourcesModal] = useState(false);
+    const [showShipperReferenceModal, setShowShipperReferenceModal] = useState(false);
     const [newStatus, setNewStatus] = useState('');
     const [statusNote, setStatusNote] = useState('');
     const [reviewingDriverRequest, setReviewingDriverRequest] = useState(false);
@@ -77,14 +78,17 @@ export default function DODetailPage() {
     const [rejectingRequest, setRejectingRequest] = useState(false);
     const [loadingTripResources, setLoadingTripResources] = useState(false);
     const [savingTripResources, setSavingTripResources] = useState(false);
+    const [savingShipperReference, setSavingShipperReference] = useState(false);
     const [tripVehicleRef, setTripVehicleRef] = useState('');
     const [tripDriverRef, setTripDriverRef] = useState('');
     const [tripVehicleOverrideReason, setTripVehicleOverrideReason] = useState('');
+    const [shipperReferenceValue, setShipperReferenceValue] = useState('');
     const normalizedRole = user ? normalizeUserRole(user.role) : null;
     const canManageDeliveryStatus = user ? hasPermission(user.role, 'deliveryOrders', 'update') : false;
     const canExportDeliveryOrder = user ? hasPermission(user.role, 'deliveryOrders', 'export') : false;
     const canPrintDeliveryOrder = user ? hasPermission(user.role, 'deliveryOrders', 'print') : false;
     const canAssignTripResources = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL' || normalizedRole === 'ARMADA';
+    const canEditShipperReference = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL' || normalizedRole === 'FINANCE';
     const canReviewDriverRequest = canManageDeliveryStatus;
     const canManageTripFee = canManageDeliveryStatus;
 
@@ -147,6 +151,12 @@ export default function DODetailPage() {
         setTripVehicleOverrideReason(doData?.vehicleCategoryOverrideReason || '');
         setShowTripResourcesModal(true);
         await loadTripResources();
+    };
+
+    const openShipperReferenceModal = () => {
+        if (!canEditShipperReference) return;
+        setShipperReferenceValue(doData?.customerDoNumber || '');
+        setShowShipperReferenceModal(true);
     };
 
     const openStatusModal = (requestedStatus?: string, fromDriverRequest: boolean = false) => {
@@ -440,6 +450,44 @@ export default function DODetailPage() {
         }
     };
 
+    const saveShipperReference = async () => {
+        const normalizedReference = shipperReferenceValue.trim().toUpperCase();
+        if (!normalizedReference) {
+            addToast('error', 'No. SJ pengirim wajib diisi');
+            return;
+        }
+
+        setSavingShipperReference(true);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'delivery-orders',
+                    action: 'update-shipper-reference',
+                    data: {
+                        id: doData?._id,
+                        customerDoNumber: normalizedReference,
+                    },
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menyimpan SJ pengirim');
+                return;
+            }
+
+            setDoData(prev => (prev ? buildResolvedDeliveryOrder(result.data, null) : prev));
+            setShowShipperReferenceModal(false);
+            addToast('success', 'SJ pengirim berhasil diperbarui');
+            await loadDO();
+        } catch {
+            addToast('error', 'Gagal menyimpan SJ pengirim');
+        } finally {
+            setSavingShipperReference(false);
+        }
+    };
+
     if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 200 }} /></div>;
     if (!doData) return <div className="empty-state"><div className="empty-state-title">Surat Jalan tidak ditemukan</div></div>;
 
@@ -461,6 +509,7 @@ export default function DODetailPage() {
     const requiresTripVehicleOverrideReason = shouldRequireTripVehicleOverrideReason(doData, selectedTripVehicle);
     const isCompletingDelivery = newStatus === 'DELIVERED';
     const pendingDriverStatusMeta = doData.pendingDriverStatus ? DO_STATUS_MAP[doData.pendingDriverStatus] : null;
+    const hasShipperReference = Boolean(doData.customerDoNumber?.trim());
     const {
         actualCargoTotals,
         autoActualDropDraft,
@@ -594,7 +643,14 @@ export default function DODetailPage() {
 
             <div className="detail-grid">
                 <div className="card">
-                    <div className="card-header"><span className="card-header-title">Informasi Surat Jalan</span></div>
+                    <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                        <span className="card-header-title">Informasi Surat Jalan</span>
+                        {canEditShipperReference && (
+                            <button className="btn btn-secondary btn-sm" onClick={openShipperReferenceModal}>
+                                <Edit size={14} /> {hasShipperReference ? 'Edit SJ Pengirim' : 'Isi SJ Pengirim'}
+                            </button>
+                        )}
+                    </div>
                     <div className="card-body">
                         <div className="detail-row">
                             <div className="detail-item"><div className="detail-label">No. SJ Pengirim</div><div className="detail-value font-mono">{formatShipperDeliveryOrderNumber(doData)}</div></div>
@@ -1317,6 +1373,35 @@ export default function DODetailPage() {
                             <button className="btn btn-secondary" onClick={() => setShowRejectRequestModal(false)} disabled={rejectingRequest}>Batal</button>
                             <button className="btn btn-danger" onClick={rejectDriverStatusRequest} disabled={rejectingRequest || !rejectRequestNote.trim()}>
                                 <Save size={16} /> {rejectingRequest ? 'Menyimpan...' : 'Tolak Permintaan'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showShipperReferenceModal && (
+                <div className="modal-overlay" onClick={() => { if (!savingShipperReference) setShowShipperReferenceModal(false); }}>
+                    <div className="modal" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">{hasShipperReference ? 'Edit SJ Pengirim' : 'Isi SJ Pengirim'}</h3>
+                            <button className="modal-close" onClick={() => setShowShipperReferenceModal(false)} disabled={savingShipperReference}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="form-group">
+                                <label className="form-label">No. SJ Pengirim</label>
+                                <input
+                                    className="form-input"
+                                    value={shipperReferenceValue}
+                                    onChange={e => setShipperReferenceValue(e.target.value.toUpperCase())}
+                                    placeholder="Contoh: BCD/27032026/001"
+                                    disabled={savingShipperReference}
+                                />
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setShowShipperReferenceModal(false)} disabled={savingShipperReference}>Batal</button>
+                            <button className="btn btn-primary" onClick={saveShipperReference} disabled={savingShipperReference || !shipperReferenceValue.trim()}>
+                                <Save size={16} /> {savingShipperReference ? 'Menyimpan...' : 'Simpan'}
                             </button>
                         </div>
                     </div>

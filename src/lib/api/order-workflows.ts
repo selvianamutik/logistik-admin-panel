@@ -2061,6 +2061,98 @@ export async function handleDeliveryOrderTripResourceAssign(
     return NextResponse.json({ data: updatedDeliveryOrder, id });
 }
 
+export async function handleDeliveryOrderShipperReferenceUpdate(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const id = typeof data.id === 'string' ? data.id : '';
+    const customerDoNumber = normalizeOptionalText(data.customerDoNumber)?.toUpperCase();
+
+    if (!id) {
+        return NextResponse.json({ error: 'Surat jalan tidak valid' }, { status: 400 });
+    }
+    if (!customerDoNumber) {
+        return NextResponse.json({ error: 'No. SJ pengirim wajib diisi' }, { status: 400 });
+    }
+
+    const deliveryOrder = await sanityGetById<{
+        _id: string;
+        doNumber?: string;
+        customerDoNumber?: string;
+        customerRef?: unknown;
+        customerName?: string;
+    }>(id);
+    if (!deliveryOrder) {
+        return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
+    }
+
+    const existingCustomerDoNumber = normalizeOptionalText(deliveryOrder.customerDoNumber)?.toUpperCase();
+    if (existingCustomerDoNumber === customerDoNumber) {
+        const unchangedDeliveryOrder = await sanityGetById(id);
+        return NextResponse.json({ data: unchangedDeliveryOrder, id });
+    }
+
+    const hasNotaReference = await getSanityClient().fetch<{ _id: string; notaRef?: string } | null>(
+        `*[_type == "freightNotaItem" && (doRef == $ref || doRef._ref == $ref)][0]{ _id, notaRef }`,
+        { ref: id }
+    );
+    if (hasNotaReference) {
+        return NextResponse.json(
+            { error: 'No. SJ pengirim tidak boleh diubah karena DO ini sudah masuk nota' },
+            { status: 409 }
+        );
+    }
+
+    const hasBoronganReference = await getSanityClient().fetch<{ _id: string; boronganRef?: string } | null>(
+        `*[_type == "driverBoronganItem" && (doRef == $ref || doRef._ref == $ref)][0]{ _id, boronganRef }`,
+        { ref: id }
+    );
+    if (hasBoronganReference) {
+        return NextResponse.json(
+            { error: 'No. SJ pengirim tidak boleh diubah karena DO ini sudah masuk slip borongan legacy' },
+            { status: 409 }
+        );
+    }
+
+    const customerRef = extractRefId(deliveryOrder.customerRef);
+    if (customerRef) {
+        const duplicateCustomerDoNumber = await getSanityClient().fetch<{ _id: string } | null>(
+            `*[
+                _type == "deliveryOrder" &&
+                _id != $id &&
+                (customerRef == $customerRef || customerRef._ref == $customerRef) &&
+                lower(coalesce(customerDoNumber, "")) == $customerDoNumber
+            ][0]{ _id }`,
+            {
+                id,
+                customerRef,
+                customerDoNumber: customerDoNumber.toLowerCase(),
+            }
+        );
+        if (duplicateCustomerDoNumber) {
+            return NextResponse.json(
+                { error: `No. SJ pengirim ${customerDoNumber} sudah dipakai untuk customer ini.` },
+                { status: 409 }
+            );
+        }
+    }
+
+    const updatedDeliveryOrder = await sanityUpdate(id, {
+        customerDoNumber,
+    });
+
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'delivery-orders',
+        id,
+        `Update SJ pengirim ${deliveryOrder.doNumber || id}: ${existingCustomerDoNumber || '-'} -> ${customerDoNumber}`
+    );
+
+    return NextResponse.json({ data: updatedDeliveryOrder, id });
+}
+
 export async function handleOrderDelete(
     session: ApiSession,
     data: Record<string, unknown>,
