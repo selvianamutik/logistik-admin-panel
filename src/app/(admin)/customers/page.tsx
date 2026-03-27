@@ -233,7 +233,7 @@ export default function CustomersPage() {
                                 { header: 'Telepon', key: 'phone', width: 18 },
                                 { header: 'Email', key: 'email', width: 25 },
                                 { header: 'Alamat', key: 'address', width: 35 },
-                                { header: 'Prefix SJ', key: 'deliveryOrderPrefix', width: 12 },
+                                { header: 'Format SJ', key: 'deliveryOrderPrefix', width: 12 },
                             ], `customer-${new Date().toISOString().split('T')[0]}`, 'Customer');
                         }}
                     >
@@ -263,7 +263,7 @@ export default function CustomersPage() {
                                             <th>Telepon</th>
                                             <th>Email</th>
                                             <th>Alamat</th>
-                                            <th>Prefix SJ</th>
+                                            <th>Format SJ</th>
                                             <th>Master Barang</th>
                                         </tr>
                                     </thead>
@@ -315,7 +315,7 @@ export default function CustomersPage() {
                 <div className="kpi-card">
                     <div className="kpi-icon neutral"><Users size={20} /></div>
                     <div className="kpi-content">
-                        <div className="kpi-label">Prefix Khusus</div>
+                        <div className="kpi-label">Format Khusus</div>
                         <div className="kpi-value">{customersWithCustomPrefix}</div>
                     </div>
                 </div>
@@ -326,7 +326,7 @@ export default function CustomersPage() {
                     <div className="table-toolbar-left">
                         <div className="table-search">
                             <Search size={16} className="table-search-icon" />
-                            <input type="text" placeholder="Cari customer, PIC, prefix SJ..." value={search} onChange={event => setSearch(event.target.value)} />
+                            <input type="text" placeholder="Cari customer, PIC, format SJ..." value={search} onChange={event => setSearch(event.target.value)} />
                         </div>
                     </div>
                 </div>
@@ -339,7 +339,7 @@ export default function CustomersPage() {
                                 <th>PIC</th>
                                 <th>Telepon</th>
                                 <th>Email</th>
-                                <th>Prefix SJ</th>
+                                <th>Format SJ</th>
                                 <th>Master Barang</th>
                                 <th>Status Setup</th>
                                 <th>Termin</th>
@@ -509,10 +509,10 @@ export default function CustomersPage() {
                                 </div>
                             </div>
                             <div className="form-group">
-                                <label className="form-label">Prefix Surat Jalan Customer</label>
+                                <label className="form-label">Format No. SJ Pengirim</label>
                                 <input className="form-input" value={form.deliveryOrderPrefix} onChange={event => setForm({ ...form, deliveryOrderPrefix: event.target.value.toUpperCase() })} placeholder="Contoh: SJ / BK / ARW" />
                                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                    Nomor surat jalan customer akan terbentuk seperti `{form.deliveryOrderPrefix || 'SJ'}-202603-001`.
+                                    Dipakai sebagai referensi format nomor dari pengirim, misalnya `{form.deliveryOrderPrefix || 'SJ'}-27032026-001`. Nomor final tetap diinput manual saat membuat surat jalan.
                                 </div>
                             </div>
                         </div>

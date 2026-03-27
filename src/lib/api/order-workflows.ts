@@ -31,7 +31,6 @@ import {
     DRIVER_STATUS_REQUEST_FIELDS,
     buildDriverRequestedTrackingStatus,
     deriveOrderStatusFromItems,
-    getPeriodFromDate,
     normalizeOrderItemsInput,
     normalizeCustomerDoPrefix,
     normalizeDeliveryActualDropPoints,
@@ -1503,18 +1502,34 @@ export async function handleDeliveryOrderCreate(
         typeof data.date === 'string' && data.date
             ? data.date
             : new Date().toISOString().slice(0, 10);
+    const manualCustomerDoNumber = normalizeOptionalText(data.customerDoNumber)?.toUpperCase();
     const taripBorongan = normalizeNumber(data.taripBorongan ?? 0);
     if (!Number.isFinite(taripBorongan) || taripBorongan < 0) {
         return NextResponse.json({ error: 'Upah trip pada surat jalan tidak valid' }, { status: 400 });
     }
-    const customerDoPeriod = getPeriodFromDate(doDate);
     const customerDoPrefix = normalizeCustomerDoPrefix(customer?.deliveryOrderPrefix);
-    const customerDoSequence = customer
-        ? customer.deliveryOrderPeriod === customerDoPeriod
-            ? (Number(customer.deliveryOrderCounter || 0) + 1)
-            : 1
-        : 1;
-    const customerDoNumber = `${customerDoPrefix}-${customerDoPeriod}-${String(customerDoSequence).padStart(3, '0')}`;
+    const customerDoNumber = manualCustomerDoNumber || undefined;
+
+    if (customerDoNumber && orderCustomerRef) {
+        const duplicateCustomerDoNumber = await getSanityClient().fetch<{ _id: string } | null>(
+            `*[
+                _type == "deliveryOrder" &&
+                customerRef == $customerRef &&
+                lower(coalesce(customerDoNumber, "")) == $customerDoNumber
+            ][0]{ _id }`,
+            {
+                customerRef: orderCustomerRef,
+                customerDoNumber: customerDoNumber.toLowerCase(),
+            }
+        );
+
+        if (duplicateCustomerDoNumber) {
+            return NextResponse.json(
+                { error: `No. SJ pengirim ${customerDoNumber} sudah dipakai untuk customer ini.` },
+                { status: 409 }
+            );
+        }
+    }
 
     const requestedItemIds = Array.from(new Set([
         ...(Array.isArray(data.itemRefs) ? data.itemRefs.filter((item): item is string => typeof item === 'string' && item.length > 0) : []),
@@ -1666,7 +1681,7 @@ export async function handleDeliveryOrderCreate(
     }
 
     const doId = crypto.randomUUID();
-    const doNumber = await sanityGetNextNumber('do');
+    const doNumber = await sanityGetNextNumber('do', doDate);
     const doDoc = {
         _id: doId,
         _type: 'deliveryOrder',
@@ -1675,8 +1690,6 @@ export async function handleDeliveryOrderCreate(
         customerRef: orderCustomerRef || undefined,
         customerName: order.customerName,
         customerDoPrefix,
-        customerDoSequence,
-        customerDoPeriod,
         customerDoNumber,
         receiverName: order.receiverName,
         receiverPhone: order.receiverPhone,
@@ -1700,15 +1713,6 @@ export async function handleDeliveryOrderCreate(
     };
 
     const transaction = getSanityClient().transaction().create(doDoc);
-    if (customer?._id && customer._rev) {
-        transaction.patch(customer._id, {
-            ifRevisionID: customer._rev,
-            set: {
-                deliveryOrderCounter: customerDoSequence,
-                deliveryOrderPeriod: customerDoPeriod,
-            },
-        });
-    }
     for (const item of selectedItems) {
         const selection = selectionByItemId.get(item._id);
         if (!selection) {

@@ -57,6 +57,7 @@ export default function OrderDetailPage() {
     const [creatingDO, setCreatingDO] = useState(false);
     // DO form
     const [doDate, setDoDate] = useState(new Date().toISOString().split('T')[0]);
+    const [doCustomerDoNumber, setDoCustomerDoNumber] = useState('');
     const [doVehicle, setDoVehicle] = useState('');
     const [doDriver, setDoDriver] = useState('');
     const [doTripFee, setDoTripFee] = useState(0);
@@ -130,6 +131,9 @@ export default function OrderDetailPage() {
     const availableDrivers = getAvailableDrivers(drivers, busyDriverIds);
     const selectedVehicleData = vehicles.find(vehicle => vehicle._id === doVehicle);
     const requiresVehicleOverrideReason = shouldRequireVehicleOverrideReason(order, selectedVehicleData);
+    const internalDoPreviewPeriod = /^\d{4}-\d{2}-\d{2}$/.test(doDate)
+        ? `${doDate.slice(8, 10)}${doDate.slice(5, 7)}${doDate.slice(0, 4)}`
+        : 'ddmmyyyy';
 
     useEffect(() => {
         if (!requiresVehicleOverrideReason && doVehicleOverrideReason) {
@@ -219,6 +223,7 @@ export default function OrderDetailPage() {
                     data: buildCreateDeliveryOrderRequestData({
                         order,
                         items: selectedItems,
+                        customerDoNumber: doCustomerDoNumber,
                         vehicleRef: doVehicle,
                         selectedVehicle: selVeh,
                         driverRef: doDriver,
@@ -240,6 +245,7 @@ export default function OrderDetailPage() {
             addToast('success', `Surat Jalan dibuat: ${formatDeliveryOrderDisplayNumber(doData.data || {})}${doData.data?.customerDoNumber ? ` (${doData.data?.doNumber || ''})` : ''}`);
             setShowDOModal(false);
             setSelectedShipments({});
+            setDoCustomerDoNumber('');
             setDoVehicle('');
             setDoDriver('');
             setDoTripFee(0);
@@ -712,7 +718,25 @@ export default function OrderDetailPage() {
                                 <div className="form-group">
                                     <label className="form-label">Tanggal</label>
                                     <input type="date" className="form-input" value={doDate} onChange={e => setDoDate(e.target.value)} disabled={creatingDO} />
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                        No. DO internal akan otomatis memakai format tanggal <strong>{internalDoPreviewPeriod}</strong>.
+                                    </div>
                                 </div>
+                                <div className="form-group">
+                                    <label className="form-label">No. SJ Pengirim</label>
+                                    <input
+                                        className="form-input"
+                                        value={doCustomerDoNumber}
+                                        onChange={e => setDoCustomerDoNumber(e.target.value.toUpperCase())}
+                                        placeholder="Isi sesuai surat jalan dari pengirim"
+                                        disabled={creatingDO}
+                                    />
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                        Diisi manual mengikuti nomor SJ dari pengirim. Jika belum ada, boleh dikosongkan dulu.
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Kendaraan</label>
                                     <select className="form-select" value={doVehicle} onChange={e => setDoVehicle(e.target.value)} disabled={creatingDO}>

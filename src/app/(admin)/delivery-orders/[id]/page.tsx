@@ -597,7 +597,7 @@ export default function DODetailPage() {
                     <div className="card-header"><span className="card-header-title">Informasi Surat Jalan</span></div>
                     <div className="card-body">
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">No. SJ Customer</div><div className="detail-value font-mono">{formatDeliveryOrderDisplayNumber(doData)}</div></div>
+                            <div className="detail-item"><div className="detail-label">No. SJ Pengirim</div><div className="detail-value font-mono">{formatDeliveryOrderDisplayNumber(doData)}</div></div>
                             <div className="detail-item"><div className="detail-label">Tanggal</div><div className="detail-value">{formatDate(doData.date)}</div></div>
                         </div>
                         <div className="detail-row">

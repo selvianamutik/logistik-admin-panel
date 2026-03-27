@@ -74,10 +74,10 @@ export default function CustomerNewPage() {
                             <FormattedNumberInput allowDecimal={false} value={form.defaultPaymentTerm} onValueChange={value => setForm({ ...form, defaultPaymentTerm: value })} />
                         </div>
                         <div className="form-group" style={{ maxWidth: 260 }}>
-                            <label className="form-label">Prefix Surat Jalan Customer</label>
+                            <label className="form-label">Format No. SJ Pengirim</label>
                             <input className="form-input" value={form.deliveryOrderPrefix} onChange={e => setForm({ ...form, deliveryOrderPrefix: e.target.value.toUpperCase() })} placeholder="Contoh: SJ / BK / ARW" />
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                Nomor surat jalan customer akan terbentuk seperti `{form.deliveryOrderPrefix || 'SJ'}-202603-001`.
+                                Dipakai sebagai referensi format nomor dari pengirim, misalnya `{form.deliveryOrderPrefix || 'SJ'}-27032026-001`. Nomor final tetap diinput manual saat membuat surat jalan.
                             </div>
                         </div>
                     </div>

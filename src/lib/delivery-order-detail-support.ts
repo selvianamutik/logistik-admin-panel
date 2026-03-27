@@ -338,7 +338,7 @@ export function buildDeliveryOrderPrintHtml(
         <div style="margin-bottom:16px">
             <table style="width:100%;border:none"><tbody>
                 <tr>
-                    <td style="border:none;padding:2px 8px;width:140px;font-weight:600">No. SJ Customer</td>
+                    <td style="border:none;padding:2px 8px;width:140px;font-weight:600">No. SJ Pengirim</td>
                     <td style="border:none;padding:2px 8px">${doData.customerDoNumber || doData.doNumber || '-'}</td>
                     <td style="border:none;padding:2px 8px;width:140px;font-weight:600">Tanggal</td>
                     <td style="border:none;padding:2px 8px">${formatDate(doData.date || '')}</td>

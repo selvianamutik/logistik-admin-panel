@@ -149,6 +149,25 @@ function numberFromUnknown(value: unknown) {
     return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
+function buildNumberingPeriod(key: keyof typeof NUMBERING_CONFIG, dateValue?: string) {
+    const sourceDate = typeof dateValue === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateValue)
+        ? new Date(`${dateValue}T00:00:00`)
+        : new Date();
+
+    if (Number.isNaN(sourceDate.getTime())) {
+        const fallback = new Date();
+        return key === 'do'
+            ? `${String(fallback.getDate()).padStart(2, '0')}${String(fallback.getMonth() + 1).padStart(2, '0')}${fallback.getFullYear()}`
+            : `${fallback.getFullYear()}${String(fallback.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+    if (key === 'do') {
+        return `${String(sourceDate.getDate()).padStart(2, '0')}${String(sourceDate.getMonth() + 1).padStart(2, '0')}${sourceDate.getFullYear()}`;
+    }
+
+    return `${sourceDate.getFullYear()}${String(sourceDate.getMonth() + 1).padStart(2, '0')}`;
+}
+
 // Build client lazily so misconfigured env does not crash route-module import time.
 export function getSanityClient() {
     if (cachedClient) return cachedClient;
@@ -340,12 +359,12 @@ export async function sanityGetCompanyProfile() {
 }
 
 // ── Generate next number (sequential numbering) ──
-export async function sanityGetNextNumber(prefix: string): Promise<string> {
+export async function sanityGetNextNumber(prefix: string, dateValue?: string): Promise<string> {
     const config = NUMBERING_CONFIG[prefix as keyof typeof NUMBERING_CONFIG];
     if (!config) return `${prefix}-${Date.now()}`;
 
-    const now = new Date();
-    const period = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const numberingKey = prefix as keyof typeof NUMBERING_CONFIG;
+    const period = buildNumberingPeriod(numberingKey, dateValue);
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
         const company = await sanityGetCompanyProfile() as {

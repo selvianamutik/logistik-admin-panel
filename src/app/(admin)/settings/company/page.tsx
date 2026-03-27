@@ -346,7 +346,7 @@ export default function CompanyPage() {
                             <div className="form-row">
                                 <div className="form-group" style={{ alignSelf: 'end' }}>
                                     <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                                        Prefix <strong>SJ Customer</strong> tidak diatur di sini. Itu tetap diatur per customer pada data customer masing-masing.
+                                        Format <strong>No. SJ Pengirim</strong> tidak diatur di sini. Itu tetap diatur per customer sebagai referensi format, lalu nomor final diinput manual saat membuat surat jalan.
                                     </p>
                                 </div>
                                 <div className="form-group" />

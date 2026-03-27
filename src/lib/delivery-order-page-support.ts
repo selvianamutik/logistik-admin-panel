@@ -132,7 +132,7 @@ export function buildDeliveryOrdersPrintHtml(deliveryOrders: DeliveryOrder[], se
         <table>
             <thead>
                 <tr>
-                    <th>No. SJ Customer</th>
+                    <th>No. SJ Pengirim</th>
                     <th>No. Internal</th>
                     <th>Resi</th>
                     <th>Customer</th>

@@ -448,6 +448,7 @@ export function buildHoldFormState(item: OrderItem, progressInfo: OrderItemProgr
 export function buildCreateDeliveryOrderRequestData(params: {
     order: Order | null;
     items: CreateDeliveryOrderItemInput[];
+    customerDoNumber?: string;
     vehicleRef?: string;
     selectedVehicle?: VehicleSummary;
     driverRef?: string;
@@ -462,6 +463,7 @@ export function buildCreateDeliveryOrderRequestData(params: {
         orderRef: params.order?._id,
         items: params.items,
         masterResi: params.order?.masterResi,
+        customerDoNumber: params.customerDoNumber?.trim() || undefined,
         vehicleRef: params.vehicleRef || undefined,
         vehiclePlate: params.selectedVehicle?.plateNumber || '',
         vehicleCategoryOverrideReason: params.requiresVehicleOverrideReason ? params.vehicleOverrideReason.trim() : undefined,

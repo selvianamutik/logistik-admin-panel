@@ -483,7 +483,7 @@ export default function CustomerDetailPage() {
                                     <div className="form-group"><label className="form-label">NPWP</label><input className="form-input" value={form.npwp} onChange={e => setForm({ ...form, npwp: e.target.value })} /></div>
                                 </div>
                                 <div className="form-group">
-                                    <label className="form-label">Prefix Surat Jalan Customer</label>
+                                    <label className="form-label">Format No. SJ Pengirim</label>
                                     <input className="form-input" value={form.deliveryOrderPrefix} onChange={e => setForm({ ...form, deliveryOrderPrefix: e.target.value.toUpperCase() })} />
                                 </div>
                                 <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
@@ -502,8 +502,8 @@ export default function CustomerDetailPage() {
                                     <div className="detail-item"><div className="detail-label">Email</div><div className="detail-value">{customer.email}</div></div>
                                 </div>
                                 <div className="detail-row">
-                                    <div className="detail-item"><div className="detail-label">Prefix Surat Jalan</div><div className="detail-value font-mono">{customer.deliveryOrderPrefix || 'SJ'}</div></div>
-                                    <div className="detail-item"><div className="detail-label">Counter SJ Saat Ini</div><div className="detail-value">{customer.deliveryOrderCounter || 0}</div></div>
+                                    <div className="detail-item"><div className="detail-label">Format No. SJ Pengirim</div><div className="detail-value font-mono">{customer.deliveryOrderPrefix || 'SJ'}</div></div>
+                                    <div className="detail-item"><div className="detail-label">Cara Pakai</div><div className="detail-value">Admin mengisi nomor SJ pengirim manual saat membuat surat jalan.</div></div>
                                 </div>
                                 <div className="detail-item mt-2"><div className="detail-label">Alamat</div><div className="detail-value">{customer.address}</div></div>
                                 {customer.npwp && <div className="detail-item mt-2"><div className="detail-label">NPWP</div><div className="detail-value font-mono">{customer.npwp}</div></div>}
