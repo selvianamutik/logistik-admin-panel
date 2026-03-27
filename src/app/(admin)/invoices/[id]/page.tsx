@@ -409,7 +409,7 @@ export default function NotaDetailPage() {
                                         <tr key={it._id}>
                                             <td className="font-mono">{it.vehiclePlate || '-'}</td>
                                             <td className="text-muted">{formatDate(it.date)}</td>
-                                            <td>{it.noSJ}</td>
+                                            <td>{it.noSJ || '-'}</td>
                                             <td>{it.dari}</td>
                                             <td>{it.tujuan}</td>
                                             <td>{it.barang || '-'}</td>

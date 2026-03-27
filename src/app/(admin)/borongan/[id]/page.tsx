@@ -364,7 +364,7 @@ export default function BoronganDetailPage() {
                                         <tr key={it._id}>
                                             <td className="font-mono">{it.vehiclePlate || '-'}</td>
                                             <td className="text-muted">{formatDate(it.date)}</td>
-                                            <td>{it.noSJ}</td>
+                                            <td>{it.noSJ || '-'}</td>
                                             <td>{it.tujuan}</td>
                                             <td>{it.barang || '-'}</td>
                                             <td>{it.collie || '-'}</td>
@@ -421,7 +421,7 @@ export default function BoronganDetailPage() {
                             <tr key={idx}>
                                 <td className="bold">{it.vehiclePlate || '-'}</td>
                                 <td>{formatDate(it.date)}</td>
-                                <td>{it.noSJ}</td>
+                                <td>{it.noSJ || '-'}</td>
                                 <td>{it.tujuan}</td>
                                 <td>{it.barang || '-'}</td>
                                 <td>{it.collie || '-'}</td>

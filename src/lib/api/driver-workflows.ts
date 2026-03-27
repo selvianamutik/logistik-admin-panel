@@ -54,6 +54,7 @@ type DriverBoronganDeliveryOrderSource = {
     status?: string;
     orderRef?: unknown;
     doNumber?: string;
+    customerDoNumber?: string;
     vehiclePlate?: string;
     driverRef?: unknown;
     receiverAddress?: string;
@@ -89,7 +90,7 @@ export async function handleDriverBoronganCreate(
             const date = normalizeText(row.date);
             const doRef = normalizeOptionalText(row.doRef);
             const doNumber = normalizeOptionalText(row.doNumber);
-            const noSJ = normalizeText(row.noSJ) || doNumber || '';
+            const noSJ = normalizeText(row.noSJ);
             const tujuan = normalizeText(row.tujuan);
             const beratKg = normalizeNumber(row.beratKg);
             const tarip = normalizeNumber(row.tarip);
@@ -141,6 +142,7 @@ export async function handleDriverBoronganCreate(
                 status,
                 orderRef,
                 doNumber,
+                customerDoNumber,
                 vehiclePlate,
                 driverRef,
                 receiverAddress,
@@ -216,7 +218,10 @@ export async function handleDriverBoronganCreate(
         const itemSummary = summarizeBoronganDeliveryOrderItems(doItemMap.get(row.doRef) || []);
 
         row.doNumber = normalizeOptionalText(deliveryOrder.doNumber) || row.doNumber;
-        row.noSJ = normalizeOptionalText(deliveryOrder.doNumber) || row.doNumber || row.noSJ || '';
+        row.noSJ =
+            normalizeOptionalText(deliveryOrder.customerDoNumber) ||
+            row.noSJ ||
+            '';
         row.vehiclePlate = normalizeOptionalText(deliveryOrder.vehiclePlate) || row.vehiclePlate;
         row.date = normalizeOptionalText(deliveryOrder.date) || row.date || '';
         row.tujuan =

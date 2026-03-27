@@ -559,7 +559,7 @@ export async function exportFreightNotaDetail(
         const key = `${vehiclePlate}__${date}`;
         const existing = groups.find((group) => `${group.vehiclePlate}__${group.date}` === key);
         const entry = {
-            noSJ: item.noSJ || item.doNumber || '',
+            noSJ: item.noSJ || '',
             dari: item.dari || '',
             tujuan: item.tujuan || '',
             barang: item.barang || '',

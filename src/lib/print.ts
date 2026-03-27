@@ -237,7 +237,7 @@ export function buildFreightNotaPrintDocument(opts: {
     const dueDateLabel = nota.dueDate ? fmtLongPrintDate(nota.dueDate) : '-';
     const uniqueShipmentDates = [...new Set(items.map(item => item.date).filter(Boolean))].sort();
     const uniqueShipmentRefs = [...new Set(items.map(item => item.doNumber).filter(Boolean))];
-    const uniqueSjNumbers = [...new Set(items.map(item => item.noSJ || item.doNumber).filter(Boolean))];
+    const uniqueSjNumbers = [...new Set(items.map(item => item.noSJ).filter(Boolean))];
     const uniqueDestinations = [...new Set(items.map(item => item.tujuan).filter(Boolean))];
     const uniqueNotes = [...new Set(items.map(item => item.ket).filter(Boolean))];
     const shipmentDateLabel =
