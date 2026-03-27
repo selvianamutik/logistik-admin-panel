@@ -5,7 +5,7 @@
 
 import jsPDF from 'jspdf';
 import type { DeliveryOrder, DeliveryOrderItem, CompanyProfile } from '@/lib/types';
-import { DO_ACTUAL_DROP_TYPE_MAP, formatDate, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
+import { DO_ACTUAL_DROP_TYPE_MAP, formatDate, formatInternalDeliveryOrderNumber, formatShipperDeliveryOrderNumber } from '@/lib/utils';
 import { formatCargoSummary } from '@/lib/measurement';
 
 // ── Simple table drawing helper ──
@@ -93,7 +93,7 @@ export function generateDOPdf(
     y += 6;
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text(`No: ${formatDeliveryOrderDisplayNumber(doData)}`, pageWidth / 2, y, { align: 'center' });
+    doc.text(`No. Internal: ${formatInternalDeliveryOrderNumber(doData)}`, pageWidth / 2, y, { align: 'center' });
     y += 10;
 
     // ─── Info Grid ───
@@ -110,23 +110,26 @@ export function generateDOPdf(
     addRow('Tanggal', formatDate(doData.date), margin, y);
     addRow('No. Internal', doData.doNumber || '-', col2X, y);
     y += 5;
-    addRow('Resi', doData.masterResi || '-', margin, y);
+    addRow('No. SJ Pengirim', formatShipperDeliveryOrderNumber(doData), margin, y);
     addRow('Customer', doData.customerName || '-', col2X, y);
     y += 5;
-    addRow('Penerima', doData.receiverName || '-', margin, y);
+    addRow('Resi', doData.masterResi || '-', margin, y);
     addRow('Kendaraan', doData.vehiclePlate || '-', col2X, y);
+    y += 5;
+    addRow('Penerima', doData.receiverName || '-', margin, y);
+    addRow('Telepon Penerima', doData.receiverPhone || '-', col2X, y);
     y += 5;
     addRow('Driver', doData.driverName || '-', margin, y);
     addRow('Armada Diminta', doData.serviceName || '-', col2X, y);
     y += 5;
     addRow('Armada Aktual', doData.vehicleServiceName || doData.serviceName || '-', margin, y);
-    addRow('Kendaraan', doData.vehiclePlate || '-', col2X, y);
+    addRow('Alamat Pickup', doData.pickupAddress || '-', col2X, y);
     y += 5;
     if (doData.vehicleCategoryOverrideReason) {
         addRow('Override Armada', doData.vehicleCategoryOverrideReason, margin, y);
         y += 5;
     }
-    addRow('Alamat', doData.receiverAddress || '-', margin, y);
+    addRow('Alamat Penerima', doData.receiverAddress || '-', margin, y);
     y += 8;
 
     // ─── Items Table ───
@@ -240,7 +243,7 @@ export function generateDOPdf(
     doc.setFontSize(7);
     doc.setTextColor(150);
     doc.text(`Dicetak: ${new Date().toLocaleString('id-ID')}`, margin, footerY);
-    doc.text(`${company.name} — ${formatDeliveryOrderDisplayNumber(doData)}`, pageWidth - margin, footerY, { align: 'right' });
+    doc.text(`${company.name} — ${formatInternalDeliveryOrderNumber(doData)}`, pageWidth - margin, footerY, { align: 'right' });
 
-    doc.save(`Surat-Jalan-${formatDeliveryOrderDisplayNumber(doData)}.pdf`);
+    doc.save(`Surat-Jalan-${formatInternalDeliveryOrderNumber(doData)}.pdf`);
 }

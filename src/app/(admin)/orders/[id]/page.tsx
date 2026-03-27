@@ -8,7 +8,7 @@ import { Truck, FileText, Edit, Eye } from 'lucide-react';
 import CurrencyInput from '@/components/CurrencyInput';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { fetchAdminCollectionData, fetchAdminData } from '@/lib/api/admin-client';
-import { formatDate, formatCurrency, formatNumber, getReceivableNetAmount, ORDER_STATUS_MAP, ITEM_STATUS_MAP, DO_STATUS_MAP, INVOICE_STATUS_MAP, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
+import { formatDate, formatCurrency, formatNumber, getReceivableNetAmount, ORDER_STATUS_MAP, ITEM_STATUS_MAP, DO_STATUS_MAP, INVOICE_STATUS_MAP, formatInternalDeliveryOrderNumber, formatShipperDeliveryOrderNumber } from '@/lib/utils';
 import {
     formatCargoSummary,
     formatVolumeDisplay,
@@ -242,7 +242,10 @@ export default function OrderDetailPage() {
                 return;
             }
 
-            addToast('success', `Surat Jalan dibuat: ${formatDeliveryOrderDisplayNumber(doData.data || {})}${doData.data?.customerDoNumber ? ` (${doData.data?.doNumber || ''})` : ''}`);
+            addToast(
+                'success',
+                `Surat Jalan dibuat: ${formatInternalDeliveryOrderNumber(doData.data || {})}${doData.data?.customerDoNumber ? ` | SJ Pengirim ${formatShipperDeliveryOrderNumber(doData.data || {})}` : ''}`
+            );
             setShowDOModal(false);
             setSelectedShipments({});
             setDoCustomerDoNumber('');
@@ -644,7 +647,7 @@ export default function OrderDetailPage() {
                                 <tr><td colSpan={6} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada surat jalan</td></tr>
                             ) : dos.map(d => (
                                 <tr key={d._id}>
-                                    <td><Link href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{formatDeliveryOrderDisplayNumber(d)}</Link><div className="text-muted text-sm font-mono">{d.doNumber}</div></td>
+                                    <td><Link href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{formatInternalDeliveryOrderNumber(d)}</Link>{d.customerDoNumber && <div className="text-muted text-sm font-mono">{formatShipperDeliveryOrderNumber(d)}</div>}</td>
                                     <td>{formatDate(d.date)}</td>
                                     <td>{d.vehiclePlate || '-'}</td>
                                     <td>

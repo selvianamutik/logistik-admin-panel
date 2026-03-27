@@ -2055,7 +2055,7 @@ export async function handleDeliveryOrderTripResourceAssign(
         'UPDATE',
         'delivery-orders',
         id,
-        `Lengkapi armada trip ${deliveryOrder.customerDoNumber || deliveryOrder.doNumber || id}: ${changes.join('; ')}`
+        `Lengkapi armada trip ${deliveryOrder.doNumber || deliveryOrder.customerDoNumber || id}: ${changes.join('; ')}`
     );
 
     return NextResponse.json({ data: updatedDeliveryOrder, id });

@@ -58,6 +58,19 @@ export function formatDeliveryOrderDisplayNumber(value: {
     return value.customerDoNumber || value.doNumber || '-';
 }
 
+export function formatInternalDeliveryOrderNumber(value: {
+    customerDoNumber?: string | null;
+    doNumber?: string | null;
+}) {
+    return value.doNumber || value.customerDoNumber || '-';
+}
+
+export function formatShipperDeliveryOrderNumber(value: {
+    customerDoNumber?: string | null;
+}) {
+    return value.customerDoNumber || '-';
+}
+
 export function getReceivableNetAmount(value: {
     totalAmount?: number | null;
     totalAdjustmentAmount?: number | null;

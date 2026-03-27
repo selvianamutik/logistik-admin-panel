@@ -32,7 +32,7 @@ import {
     type ActualDropDraft,
 } from '@/lib/delivery-order-detail-support';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
-import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatDate, formatDateTime, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
+import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatDate, formatDateTime, formatInternalDeliveryOrderNumber, formatShipperDeliveryOrderNumber } from '@/lib/utils';
 import {
     formatCargoSummary,
     VOLUME_INPUT_UNIT_OPTIONS,
@@ -345,7 +345,7 @@ export default function DODetailPage() {
             const company = await fetchCompanyProfile();
             openBrandedPrint({
                 title: 'Surat Jalan',
-                subtitle: formatDeliveryOrderDisplayNumber(doData || {}),
+                subtitle: formatInternalDeliveryOrderNumber(doData || {}),
                 company,
                 bodyHtml: doData ? buildDeliveryOrderPrintHtml(doData, doItems, trackingLogs) : '',
             });
@@ -486,7 +486,7 @@ export default function DODetailPage() {
                     <PageBackButton href="/delivery-orders" />
                     <div>
                         <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                            {formatDeliveryOrderDisplayNumber(doData)}
+                            {formatInternalDeliveryOrderNumber(doData)}
                             <span className={`badge badge-${DO_STATUS_MAP[doData.status]?.color}`}>
                                 <span className="badge-dot" /> {DO_STATUS_MAP[doData.status]?.label}
                             </span>
@@ -597,7 +597,7 @@ export default function DODetailPage() {
                     <div className="card-header"><span className="card-header-title">Informasi Surat Jalan</span></div>
                     <div className="card-body">
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">No. SJ Pengirim</div><div className="detail-value font-mono">{formatDeliveryOrderDisplayNumber(doData)}</div></div>
+                            <div className="detail-item"><div className="detail-label">No. SJ Pengirim</div><div className="detail-value font-mono">{formatShipperDeliveryOrderNumber(doData)}</div></div>
                             <div className="detail-item"><div className="detail-label">Tanggal</div><div className="detail-value">{formatDate(doData.date)}</div></div>
                         </div>
                         <div className="detail-row">

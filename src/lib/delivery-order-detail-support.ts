@@ -1,7 +1,7 @@
 import type { DeliveryOrder, DeliveryOrderItem, Driver, Order, TrackingLog, Vehicle } from '@/lib/types';
 import type { VolumeInputUnit, WeightInputUnit } from '@/lib/measurement';
 import { formatCargoSummary } from '@/lib/measurement';
-import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatDate, formatDateTime } from '@/lib/utils';
+import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatDate, formatDateTime, formatShipperDeliveryOrderNumber } from '@/lib/utils';
 
 export interface ActualCargoDraft {
     deliveryOrderItemRef: string;
@@ -339,7 +339,7 @@ export function buildDeliveryOrderPrintHtml(
             <table style="width:100%;border:none"><tbody>
                 <tr>
                     <td style="border:none;padding:2px 8px;width:140px;font-weight:600">No. SJ Pengirim</td>
-                    <td style="border:none;padding:2px 8px">${doData.customerDoNumber || doData.doNumber || '-'}</td>
+                    <td style="border:none;padding:2px 8px">${formatShipperDeliveryOrderNumber(doData)}</td>
                     <td style="border:none;padding:2px 8px;width:140px;font-weight:600">Tanggal</td>
                     <td style="border:none;padding:2px 8px">${formatDate(doData.date || '')}</td>
                 </tr>

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Search, Eye, Truck, FileDown, Printer } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
-import { formatDate, formatDateTime, DO_STATUS_MAP, formatDeliveryOrderDisplayNumber } from '@/lib/utils';
+import { formatDate, formatDateTime, DO_STATUS_MAP, formatInternalDeliveryOrderNumber, formatShipperDeliveryOrderNumber } from '@/lib/utils';
 import {
     buildDeliveryOrderExportRows,
     buildDeliveryOrdersPrintHtml,
@@ -229,8 +229,8 @@ export default function DeliveryOrdersPage() {
                                     <tr><td colSpan={13}><div className="empty-state"><Truck size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada surat jalan</div><div className="empty-state-text">Buat surat jalan dari halaman detail order</div></div></td></tr>
                                 ) : items.map(d => (
                                     <tr key={d._id}>
-                                        <td><Link href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{formatDeliveryOrderDisplayNumber(d)}</Link></td>
-                                        <td className="font-mono text-muted">{d.doNumber}</td>
+                                        <td>{d.customerDoNumber ? <Link href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{formatShipperDeliveryOrderNumber(d)}</Link> : <span className="text-muted">-</span>}</td>
+                                        <td className="font-mono text-muted"><Link href={`/delivery-orders/${d._id}`} style={{ color: 'inherit' }}>{d.doNumber}</Link></td>
                                         <td><Link href={`/orders/${d.orderRef}`} className="text-muted">{d.masterResi}</Link></td>
                                         <td>{d.customerName}</td>
                                         <td>
@@ -292,7 +292,7 @@ export default function DeliveryOrdersPage() {
                             <div key={d._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
-                                        <div className="mobile-record-title">{formatDeliveryOrderDisplayNumber(d)}</div>
+                                        <div className="mobile-record-title">{formatInternalDeliveryOrderNumber(d)}</div>
                                         <div className="mobile-record-subtitle">{d.customerName || '-'} | {formatDate(d.date)}</div>
                                     </div>
                                     <span className={`badge badge-${DO_STATUS_MAP[d.status]?.color}`}>
@@ -300,6 +300,10 @@ export default function DeliveryOrdersPage() {
                                     </span>
                                 </div>
                                 <div className="mobile-record-meta">
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">No. SJ Pengirim</span>
+                                        <span className="mobile-record-value">{formatShipperDeliveryOrderNumber(d)}</span>
+                                    </div>
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">No. Internal</span>
                                         <span className="mobile-record-value">{d.doNumber || '-'}</span>
