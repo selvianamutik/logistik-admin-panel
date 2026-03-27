@@ -1422,8 +1422,8 @@ export async function handleDeliveryOrderCreate(
         );
         if (conflictingDeliveryOrder) {
             const conflictingNumber =
-                conflictingDeliveryOrder.customerDoNumber ||
                 conflictingDeliveryOrder.doNumber ||
+                conflictingDeliveryOrder.customerDoNumber ||
                 conflictingDeliveryOrder._id;
             return NextResponse.json(
                 {
@@ -1485,8 +1485,8 @@ export async function handleDeliveryOrderCreate(
         );
         if (conflictingDeliveryOrder) {
             const conflictingNumber =
-                conflictingDeliveryOrder.customerDoNumber ||
                 conflictingDeliveryOrder.doNumber ||
+                conflictingDeliveryOrder.customerDoNumber ||
                 conflictingDeliveryOrder._id;
             return NextResponse.json(
                 {
@@ -1931,8 +1931,8 @@ export async function handleDeliveryOrderTripResourceAssign(
         );
         if (conflictingDeliveryOrder) {
             const conflictingNumber =
-                conflictingDeliveryOrder.customerDoNumber ||
                 conflictingDeliveryOrder.doNumber ||
+                conflictingDeliveryOrder.customerDoNumber ||
                 conflictingDeliveryOrder._id;
             return NextResponse.json(
                 {
@@ -2002,8 +2002,8 @@ export async function handleDeliveryOrderTripResourceAssign(
         );
         if (conflictingDeliveryOrder) {
             const conflictingNumber =
-                conflictingDeliveryOrder.customerDoNumber ||
                 conflictingDeliveryOrder.doNumber ||
+                conflictingDeliveryOrder.customerDoNumber ||
                 conflictingDeliveryOrder._id;
             return NextResponse.json(
                 {
@@ -2055,7 +2055,7 @@ export async function handleDeliveryOrderTripResourceAssign(
         'UPDATE',
         'delivery-orders',
         id,
-        `Lengkapi armada trip ${deliveryOrder.doNumber || deliveryOrder.customerDoNumber || id}: ${changes.join('; ')}`
+        `Lengkapi armada trip ${deliveryOrder.doNumber || id}: ${changes.join('; ')}`
     );
 
     return NextResponse.json({ data: updatedDeliveryOrder, id });

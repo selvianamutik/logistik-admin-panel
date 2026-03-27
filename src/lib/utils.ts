@@ -55,7 +55,7 @@ export function formatInternalDeliveryOrderNumber(value: {
     customerDoNumber?: string | null;
     doNumber?: string | null;
 }) {
-    return value.doNumber || value.customerDoNumber || '-';
+    return value.doNumber || '-';
 }
 
 export function formatShipperDeliveryOrderNumber(value: {
