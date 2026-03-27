@@ -3,6 +3,7 @@
    ============================================================ */
 
 import DOMPurify from 'dompurify';
+import { resolveCompanyLogoUrl } from './branding';
 import type { CompanyProfile, Customer, FreightNota, FreightNotaItem } from './types';
 import { getReceivableNetAmount, terbilang } from './utils';
 
@@ -39,7 +40,7 @@ export function openBrandedPrint(opts: {
     } = opts;
 
     const companyName = company?.name || 'Gading Mas Surya';
-    const companyLogo = company?.logoUrl || '';
+    const companyLogo = resolveCompanyLogoUrl(company);
     const printDate = new Date().toLocaleDateString('id-ID', {
         day: '2-digit',
         month: 'long',
@@ -238,9 +239,8 @@ export function buildFreightNotaPrintDocument(opts: {
         </tr>
     `).join('');
 
-    const logoHtml = company?.logoUrl
-        ? `<img src="${escapePrintAttribute(company.logoUrl)}" alt="${escapePrintAttribute(company?.name || 'Logo perusahaan')}" class="invoice-logo" />`
-        : `<div class="invoice-logo invoice-logo-placeholder">${escapePrintHtml(company?.name?.slice(0, 1) || 'L')}</div>`;
+    const companyLogo = resolveCompanyLogoUrl(company);
+    const logoHtml = `<img src="${escapePrintAttribute(companyLogo)}" alt="${escapePrintAttribute(company?.name || 'Logo perusahaan')}" class="invoice-logo" />`;
     const signatureStampHtml = company?.signatureStampUrl
         ? `<img src="${escapePrintAttribute(company.signatureStampUrl)}" alt="Tanda tangan" class="invoice-signature-image" />`
         : '';

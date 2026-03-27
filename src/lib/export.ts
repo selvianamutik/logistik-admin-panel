@@ -4,6 +4,7 @@
    ============================================================ */
 
 import ExcelJS from 'exceljs';
+import { resolveCompanyLogoUrl } from './branding';
 import { fetchCompanyProfile, fmtDate, fmtNumber, formatFreightNotaDisplayNumber } from './print';
 import type { CompanyProfile, FreightNota, FreightNotaItem } from './types';
 import { getReceivableNetAmount } from './utils';
@@ -45,6 +46,8 @@ interface MergeRange {
     endRow: number;
     endCol: number;
 }
+
+type ExcelImageExtension = 'png' | 'jpeg' | 'gif';
 
 function sanitizeSheetName(name: string) {
     const normalized = name.replace(/[\\/?*[\]:]/g, ' ').trim();
@@ -157,6 +160,74 @@ function addRows(worksheet: ExcelJS.Worksheet, rows: ExportValue[][]) {
     });
 }
 
+function blobToDataUrl(blob: Blob) {
+    return new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const result = reader.result;
+            if (typeof result === 'string') {
+                resolve(result);
+                return;
+            }
+            reject(new Error('Gagal membaca logo perusahaan'));
+        };
+        reader.onerror = () => reject(reader.error ?? new Error('Gagal membaca logo perusahaan'));
+        reader.readAsDataURL(blob);
+    });
+}
+
+function getExcelImageExtension(base64: string): ExcelImageExtension | null {
+    const match = base64.match(/^data:image\/(png|jpeg|jpg|gif);base64,/i);
+    if (!match) return null;
+    const extension = match[1].toLowerCase();
+    if (extension === 'jpg') return 'jpeg';
+    if (extension === 'png' || extension === 'jpeg' || extension === 'gif') return extension;
+    return null;
+}
+
+async function resolveCompanyLogoBase64(company?: CompanyProfile | null) {
+    const logoUrl = resolveCompanyLogoUrl(company);
+    if (!logoUrl) return null;
+    if (logoUrl.startsWith('data:image/')) return logoUrl;
+
+    try {
+        const response = await fetch(logoUrl, { cache: 'no-store' });
+        if (!response.ok) return null;
+        const blob = await response.blob();
+        return await blobToDataUrl(blob);
+    } catch {
+        return null;
+    }
+}
+
+async function addCompanyLogoToWorksheet(
+    workbook: ExcelJS.Workbook,
+    worksheet: ExcelJS.Worksheet,
+    company?: CompanyProfile | null,
+    placement: {
+        col: number;
+        row: number;
+        width: number;
+        height: number;
+    } = {
+        col: 0.15,
+        row: 0.15,
+        width: 128,
+        height: 56,
+    },
+) {
+    const base64 = await resolveCompanyLogoBase64(company);
+    const extension = base64 ? getExcelImageExtension(base64) : null;
+    if (!base64 || !extension) return false;
+
+    const imageId = workbook.addImage({ base64, extension });
+    worksheet.addImage(imageId, {
+        tl: { col: placement.col, row: placement.row },
+        ext: { width: placement.width, height: placement.height },
+    });
+    return true;
+}
+
 export async function exportToExcel(
     data: Record<string, unknown>[],
     columns: ExportColumn[],
@@ -258,6 +329,18 @@ export async function exportToExcel(
     addRows(worksheet, rows);
     setColumnWidths(worksheet, columns);
     applyMerges(worksheet, merges);
+    const logoPlaced = await addCompanyLogoToWorksheet(workbook, worksheet, company, {
+        col: Math.max(totalColumns - 2.2, 0.15),
+        row: 0.15,
+        width: 124,
+        height: 54,
+    });
+    if (logoPlaced) {
+        worksheet.getRow(1).height = Math.max(worksheet.getRow(1).height || 0, 26);
+        worksheet.getRow(2).height = Math.max(worksheet.getRow(2).height || 0, 24);
+        worksheet.getRow(3).height = Math.max(worksheet.getRow(3).height || 0, 22);
+        worksheet.getRow(4).height = Math.max(worksheet.getRow(4).height || 0, 20);
+    }
 
     if (columns.length > 0) {
         const dataRowCount = Math.max(data.length, 1);
@@ -503,16 +586,16 @@ export async function exportFreightNotaDetail(
         : '';
     const extraNote = [resolvedCompany?.invoiceSettings?.footerNote, nota.notes].filter(Boolean).join(' ');
 
-    rows.push([resolvedCompany?.name || 'Gading Mas Surya', '', '', '', '', `PERINCIAN ONGKOS ANGKUT NO.${displayNumber}`, '', '', '', '', 'TGL.', fmtDate(nota.issueDate)]);
-    merges.push({ startRow: 1, startCol: 1, endRow: 1, endCol: 5 });
+    rows.push(['', '', resolvedCompany?.name || 'Gading Mas Surya', '', '', `PERINCIAN ONGKOS ANGKUT NO.${displayNumber}`, '', '', '', '', 'TGL.', fmtDate(nota.issueDate)]);
+    merges.push({ startRow: 1, startCol: 3, endRow: 1, endCol: 5 });
     merges.push({ startRow: 1, startCol: 6, endRow: 1, endCol: 10 });
 
-    rows.push([resolvedCompany?.address || '', '', '', '', '', 'KEPADA YANG TERHORMAT :']);
-    merges.push({ startRow: 2, startCol: 1, endRow: 2, endCol: 5 });
+    rows.push(['', '', resolvedCompany?.address || '', '', '', 'KEPADA YANG TERHORMAT :']);
+    merges.push({ startRow: 2, startCol: 3, endRow: 2, endCol: 5 });
     merges.push({ startRow: 2, startCol: 6, endRow: 2, endCol: 12 });
 
-    rows.push([companyLine, '', '', '', '', nota.customerName]);
-    merges.push({ startRow: 3, startCol: 1, endRow: 3, endCol: 5 });
+    rows.push(['', '', companyLine, '', '', nota.customerName]);
+    merges.push({ startRow: 3, startCol: 3, endRow: 3, endCol: 5 });
     merges.push({ startRow: 3, startCol: 6, endRow: 3, endCol: 12 });
 
     rows.push([]);
@@ -584,6 +667,17 @@ export async function exportFreightNotaDetail(
     const worksheet = workbook.addWorksheet(sanitizeSheetName('Nota Detail'));
     addRows(worksheet, rows);
     applyMerges(worksheet, merges);
+    const logoPlaced = await addCompanyLogoToWorksheet(workbook, worksheet, resolvedCompany, {
+        col: 0.1,
+        row: 0.1,
+        width: 88,
+        height: 44,
+    });
+    if (logoPlaced) {
+        worksheet.getRow(1).height = Math.max(worksheet.getRow(1).height || 0, 28);
+        worksheet.getRow(2).height = Math.max(worksheet.getRow(2).height || 0, 22);
+        worksheet.getRow(3).height = Math.max(worksheet.getRow(3).height || 0, 20);
+    }
 
     const columnWidths = [6, 14, 12, 20, 16, 16, 14, 8, 10, 10, 14, 12];
     columnWidths.forEach((width, index) => {

@@ -10,6 +10,7 @@ import {
     UserCircle, Receipt
 } from 'lucide-react';
 import { matchesPathSegment } from '@/lib/pathname';
+import { resolveCompanyLogoUrl } from '@/lib/branding';
 import { getSidebarMenu } from '@/lib/rbac';
 import type { SessionUser, ToastMessage, CompanyProfile } from '@/lib/types';
 
@@ -328,12 +329,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                     {/* Sidebar */}
                     <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
                         <div className="sidebar-logo">
-                            {company?.logoUrl ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img src={company.logoUrl} alt="" className="sidebar-logo-img" />
-                            ) : (
-                    <div className="sidebar-logo-icon">{(company?.name || 'Gading Mas Surya').charAt(0)}</div>
-                            )}
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={resolveCompanyLogoUrl(company)} alt="" className="sidebar-logo-img" />
                             <div className="sidebar-logo-text-wrap">
                                 <span className="sidebar-logo-text">{company?.name || 'Gading Mas Surya'}</span>
                                 <span className="sidebar-logo-subtitle">Panel Internal</span>
