@@ -442,7 +442,7 @@ export default function CustomerDetailPage() {
         }
         return (a.label || '').localeCompare(b.label || '');
     });
-    const canManageCustomer = hasPermission(user?.role ?? 'OWNER', 'customers', 'update');
+    const canManageCustomer = user ? hasPermission(user.role, 'customers', 'update') : false;
 
     return (
         <div>

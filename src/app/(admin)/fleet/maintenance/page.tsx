@@ -40,8 +40,8 @@ export default function MaintenancePage() {
     const [updatingId, setUpdatingId] = useState<string | null>(null);
     const [prefillApplied, setPrefillApplied] = useState(false);
     const [form, setForm] = useState<MaintenanceFormState>(createDefaultMaintenanceForm());
-    const canCreateMaintenance = hasPermission(user?.role ?? 'OWNER', 'maintenance', 'create');
-    const canUpdateMaintenance = hasPermission(user?.role ?? 'OWNER', 'maintenance', 'update');
+    const canCreateMaintenance = user ? hasPermission(user.role, 'maintenance', 'create') : false;
+    const canUpdateMaintenance = user ? hasPermission(user.role, 'maintenance', 'update') : false;
 
     useEffect(() => {
         setPage(1);

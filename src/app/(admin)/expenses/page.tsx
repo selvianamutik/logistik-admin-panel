@@ -48,8 +48,8 @@ export default function ExpensesPage() {
     });
 
     const isOwner = user?.role === 'OWNER';
-    const canExportExpenses = hasPermission(user?.role ?? 'OWNER', 'expenses', 'export');
-    const canPrintExpenses = hasPermission(user?.role ?? 'OWNER', 'expenses', 'print');
+    const canExportExpenses = user ? hasPermission(user.role, 'expenses', 'export') : false;
+    const canPrintExpenses = user ? hasPermission(user.role, 'expenses', 'print') : false;
     const vehicleMap = useMemo(() => new Map(vehicles.map(vehicle => [vehicle._id, vehicle])), [vehicles]);
     const accountMap = useMemo(() => new Map(bankAccounts.map(account => [account._id, account])), [bankAccounts]);
 

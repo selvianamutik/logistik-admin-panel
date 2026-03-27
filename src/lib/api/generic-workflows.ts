@@ -635,6 +635,39 @@ export async function handleGenericDelete(
         return NextResponse.json({ error: 'Invalid delete payload' }, { status: 400 });
     }
 
+    if (entity === 'bank-accounts') {
+        const existingAccount = await sanityGetById<BankAccountSummary & { active?: boolean }>(id);
+        if (!existingAccount) {
+            return NextResponse.json({ error: 'Rekening tidak ditemukan' }, { status: 404 });
+        }
+
+        if (existingAccount.active === false) {
+            return NextResponse.json({ success: true });
+        }
+
+        const currentBalance = typeof existingAccount.currentBalance === 'number' ? existingAccount.currentBalance : 0;
+        if (currentBalance !== 0) {
+            return NextResponse.json(
+                { error: 'Rekening dengan saldo berjalan tidak boleh dinonaktifkan. Kosongkan atau transfer dulu saldonya.' },
+                { status: 409 }
+            );
+        }
+
+        if (existingAccount.systemKey === CASH_ACCOUNT_SYSTEM_KEY) {
+            return NextResponse.json({ error: 'Akun Kas Tunai sistem tidak boleh dinonaktifkan' }, { status: 409 });
+        }
+
+        await sanityUpdate(id, { active: false });
+        await addAuditLog(
+            session,
+            'DELETE',
+            entity,
+            id,
+            `Nonaktifkan rekening ${existingAccount.bankName || id}`
+        );
+        return NextResponse.json({ success: true });
+    }
+
     await sanityDelete(id);
     await addAuditLog(session, 'DELETE', entity, id, `Deleted ${entity} ${id}`);
     return NextResponse.json({ success: true });

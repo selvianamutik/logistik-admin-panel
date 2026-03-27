@@ -46,8 +46,8 @@ export default function TiresPage() {
     const [editTarget, setEditTarget] = useState<TireEvent | null>(null);
     const [saving, setSaving] = useState(false);
     const [form, setForm] = useState<TireFormState>(createDefaultTireForm());
-    const canCreateTires = hasPermission(user?.role ?? 'OWNER', 'tires', 'create');
-    const canManageTires = hasPermission(user?.role ?? 'OWNER', 'tires', 'update');
+    const canCreateTires = user ? hasPermission(user.role, 'tires', 'create') : false;
+    const canManageTires = user ? hasPermission(user.role, 'tires', 'update') : false;
 
     useEffect(() => {
         setPage(1);

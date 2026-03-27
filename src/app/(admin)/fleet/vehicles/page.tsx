@@ -39,10 +39,10 @@ export default function VehiclesPage() {
     const [incompleteTireCount, setIncompleteTireCount] = useState(0);
     const [nonOperationalCount, setNonOperationalCount] = useState(0);
     const [tireSummaryByVehicle, setTireSummaryByVehicle] = useState<Record<string, VehicleTireSummary>>({});
-    const canCreateVehicle = hasPermission(user?.role ?? 'OWNER', 'vehicles', 'create');
-    const canManageVehicle = hasPermission(user?.role ?? 'OWNER', 'vehicles', 'update');
-    const canExportVehicles = hasPermission(user?.role ?? 'OWNER', 'vehicles', 'export');
-    const canPrintVehicles = hasPermission(user?.role ?? 'OWNER', 'vehicles', 'print');
+    const canCreateVehicle = user ? hasPermission(user.role, 'vehicles', 'create') : false;
+    const canManageVehicle = user ? hasPermission(user.role, 'vehicles', 'update') : false;
+    const canExportVehicles = user ? hasPermission(user.role, 'vehicles', 'export') : false;
+    const canPrintVehicles = user ? hasPermission(user.role, 'vehicles', 'print') : false;
 
     useEffect(() => {
         setPage(1);

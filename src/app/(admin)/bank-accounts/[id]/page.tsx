@@ -59,8 +59,8 @@ export default function BankAccountDetailPage() {
     const [account, setAccount] = useState<BankAccount | null>(null);
     const [transactions, setTransactions] = useState<BankTransaction[]>([]);
     const [loading, setLoading] = useState(true);
-    const canExportBankAccount = hasPermission(user?.role ?? 'OWNER', 'bankAccounts', 'export');
-    const canPrintBankAccount = hasPermission(user?.role ?? 'OWNER', 'bankAccounts', 'print');
+    const canExportBankAccount = user ? hasPermission(user.role, 'bankAccounts', 'export') : false;
+    const canPrintBankAccount = user ? hasPermission(user.role, 'bankAccounts', 'print') : false;
 
     useEffect(() => {
         const fetchEntity = async <T,>(url: string) => {

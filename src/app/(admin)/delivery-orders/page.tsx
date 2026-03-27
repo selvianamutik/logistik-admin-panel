@@ -43,9 +43,9 @@ export default function DeliveryOrdersPage() {
         onRoad: 0,
         waitingStart: 0,
     });
-    const canViewServices = hasPermission(user?.role ?? 'OWNER', 'services', 'view');
-    const canExportDeliveryOrders = hasPermission(user?.role ?? 'OWNER', 'deliveryOrders', 'export');
-    const canPrintDeliveryOrders = hasPermission(user?.role ?? 'OWNER', 'deliveryOrders', 'print');
+    const canViewServices = user ? hasPermission(user.role, 'services', 'view') : false;
+    const canExportDeliveryOrders = user ? hasPermission(user.role, 'deliveryOrders', 'export') : false;
+    const canPrintDeliveryOrders = user ? hasPermission(user.role, 'deliveryOrders', 'print') : false;
 
     useEffect(() => {
         setPage(1);

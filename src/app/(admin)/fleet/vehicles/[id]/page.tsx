@@ -51,11 +51,11 @@ export default function VehicleDetailPage() {
     const [editingTire, setEditingTire] = useState<TireEvent | null>(null);
     const [savingTire, setSavingTire] = useState(false);
     const isOwner = user?.role === 'OWNER';
-    const canManageVehicle = hasPermission(user?.role ?? 'OWNER', 'vehicles', 'update');
-    const canCreateMaintenance = hasPermission(user?.role ?? 'OWNER', 'maintenance', 'create');
-    const canCreateIncident = hasPermission(user?.role ?? 'OWNER', 'incidents', 'create');
-    const canManageTires = hasPermission(user?.role ?? 'OWNER', 'tires', 'update');
-    const canViewVehicleExpenses = hasPermission(user?.role ?? 'OWNER', 'expenses', 'view');
+    const canManageVehicle = user ? hasPermission(user.role, 'vehicles', 'update') : false;
+    const canCreateMaintenance = user ? hasPermission(user.role, 'maintenance', 'create') : false;
+    const canCreateIncident = user ? hasPermission(user.role, 'incidents', 'create') : false;
+    const canManageTires = user ? hasPermission(user.role, 'tires', 'update') : false;
+    const canViewVehicleExpenses = user ? hasPermission(user.role, 'expenses', 'view') : false;
     const vehicleTabs = getVehicleTabs(isOwner);
 
     const loadVehicleDetail = useCallback(async () => {

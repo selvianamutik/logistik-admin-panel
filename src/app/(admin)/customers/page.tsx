@@ -32,10 +32,10 @@ export default function CustomersPage() {
     const [form, setForm] = useState({ name: '', address: '', contactPerson: '', phone: '', email: '', defaultPaymentTerm: 14, npwp: '', deliveryOrderPrefix: 'SJ' });
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
-    const canCreateCustomers = hasPermission(user?.role ?? 'OWNER', 'customers', 'create');
-    const canManageCustomers = hasPermission(user?.role ?? 'OWNER', 'customers', 'update');
-    const canExportCustomers = hasPermission(user?.role ?? 'OWNER', 'customers', 'export');
-    const canPrintCustomers = hasPermission(user?.role ?? 'OWNER', 'customers', 'print');
+    const canCreateCustomers = user ? hasPermission(user.role, 'customers', 'create') : false;
+    const canManageCustomers = user ? hasPermission(user.role, 'customers', 'update') : false;
+    const canExportCustomers = user ? hasPermission(user.role, 'customers', 'export') : false;
+    const canPrintCustomers = user ? hasPermission(user.role, 'customers', 'print') : false;
 
     const buildCustomersQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
         const params = new URLSearchParams({

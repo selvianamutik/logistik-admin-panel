@@ -26,7 +26,7 @@ export default function ExpenseNewPage() {
         relatedVehicleRef: '',
         bankAccountRef: '', bankAccountName: ''
     });
-    const canViewVehicles = hasPermission(user?.role ?? 'OWNER', 'vehicles', 'view');
+    const canViewVehicles = user ? hasPermission(user.role, 'vehicles', 'view') : false;
 
     useEffect(() => {
         Promise.all([

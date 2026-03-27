@@ -66,10 +66,10 @@ export default function NotaListPage() {
     const [receiptOpenNotas, setReceiptOpenNotas] = useState<FreightNota[]>([]);
     const [receiptOpenPayments, setReceiptOpenPayments] = useState<Payment[]>([]);
     const [receiptNotesLoading, setReceiptNotesLoading] = useState(false);
-    const canCreateInvoice = hasPermission(user?.role ?? 'OWNER', 'freightNotas', 'create');
-    const canCreateReceipt = hasPermission(user?.role ?? 'OWNER', 'freightNotas', 'update');
-    const canExportInvoices = hasPermission(user?.role ?? 'OWNER', 'freightNotas', 'export');
-    const canPrintInvoices = hasPermission(user?.role ?? 'OWNER', 'freightNotas', 'print');
+    const canCreateInvoice = user ? hasPermission(user.role, 'freightNotas', 'create') : false;
+    const canCreateReceipt = user ? hasPermission(user.role, 'freightNotas', 'update') : false;
+    const canExportInvoices = user ? hasPermission(user.role, 'freightNotas', 'export') : false;
+    const canPrintInvoices = user ? hasPermission(user.role, 'freightNotas', 'print') : false;
 
     const buildInvoicesQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
         const params = new URLSearchParams({

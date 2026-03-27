@@ -91,9 +91,10 @@ export default function NotaDetailPage() {
         paidPercent,
     } = buildInvoiceDetailSummary({ nota, payments, adjustments });
     const accountMap = buildBankAccountMap(bankAccounts);
-    const canManageInvoice = hasPermission(user?.role ?? 'OWNER', 'freightNotas', 'update');
-    const canExportInvoice = hasPermission(user?.role ?? 'OWNER', 'freightNotas', 'export');
-    const canPrintInvoice = hasPermission(user?.role ?? 'OWNER', 'freightNotas', 'print');
+    const canManageInvoice = user ? hasPermission(user.role, 'freightNotas', 'update') : false;
+    const canDeleteInvoice = user ? hasPermission(user.role, 'freightNotas', 'delete') : false;
+    const canExportInvoice = user ? hasPermission(user.role, 'freightNotas', 'export') : false;
+    const canPrintInvoice = user ? hasPermission(user.role, 'freightNotas', 'print') : false;
 
     const handleAddPayment = async () => {
         if (payAmount <= 0) { addToast('error', 'Nominal harus lebih dari 0'); return; }
@@ -267,7 +268,7 @@ export default function NotaDetailPage() {
                     {canManageInvoice && grossAmount > totalAdjustmentAmount && <button className="btn btn-secondary btn-sm" onClick={() => setShowAdjustmentModal(true)}>Catat Potongan</button>}
                     {canExportInvoice && <button className="btn btn-secondary btn-sm" onClick={handleExportExcel}><FileDown size={14} /> Excel</button>}
                     {canPrintInvoice && <button className="btn btn-secondary btn-sm" onClick={handlePrint}><Printer size={14} /> Cetak Nota</button>}
-                    <button className="btn btn-secondary btn-sm" onClick={handleDelete}><Trash2 size={14} /></button>
+                    {canDeleteInvoice && <button className="btn btn-secondary btn-sm" onClick={handleDelete}><Trash2 size={14} /></button>}
                 </div>
             </div>
 

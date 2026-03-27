@@ -45,7 +45,7 @@ export default function DriverVouchersPage() {
     const [page, setPage] = useState(1);
     const [totalItems, setTotalItems] = useState(0);
     const [queueCounts, setQueueCounts] = useState({ issued: 0, draft: 0, settled: 0 });
-    const canCreateVoucher = hasPermission(user?.role ?? 'OWNER', 'driverVouchers', 'create');
+    const canCreateVoucher = user ? hasPermission(user.role, 'driverVouchers', 'create') : false;
 
     const buildVoucherQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
         const params = new URLSearchParams({

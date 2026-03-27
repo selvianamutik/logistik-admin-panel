@@ -77,7 +77,7 @@ export default function OrderDetailPage() {
     const [holdReason, setHoldReason] = useState('');
     const [holdLocation, setHoldLocation] = useState('');
     const [savingHold, setSavingHold] = useState(false);
-    const canCreateInvoice = hasPermission(user?.role ?? 'OWNER', 'freightNotas', 'create');
+    const canCreateInvoice = user ? hasPermission(user.role, 'freightNotas', 'create') : false;
 
     const loadOrderDetail = useCallback(async () => {
         setLoading(true);

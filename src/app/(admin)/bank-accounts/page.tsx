@@ -57,10 +57,11 @@ export default function BankAccountsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [form, setForm] = useState(createDefaultBankAccountForm());
   const [transferForm, setTransferForm] = useState(createDefaultBankTransferForm());
-  const canCreateBankAccounts = hasPermission(user?.role ?? "OWNER", "bankAccounts", "create");
-  const canManageBankAccounts = hasPermission(user?.role ?? "OWNER", "bankAccounts", "update");
-  const canExportBankAccounts = hasPermission(user?.role ?? "OWNER", "bankAccounts", "export");
-  const canPrintBankAccounts = hasPermission(user?.role ?? "OWNER", "bankAccounts", "print");
+  const canCreateBankAccounts = user ? hasPermission(user.role, "bankAccounts", "create") : false;
+  const canManageBankAccounts = user ? hasPermission(user.role, "bankAccounts", "update") : false;
+  const canDeleteBankAccounts = user ? hasPermission(user.role, "bankAccounts", "delete") : false;
+  const canExportBankAccounts = user ? hasPermission(user.role, "bankAccounts", "export") : false;
+  const canPrintBankAccounts = user ? hasPermission(user.role, "bankAccounts", "print") : false;
   const buildAccountsQuery = useCallback(
     (targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) =>
       buildBankAccountsQuery({ page: targetPage, pageSize: targetPageSize }),
@@ -239,8 +240,8 @@ export default function BankAccountsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           entity: "bank-accounts",
-          action: "update",
-          data: { id, updates: { active: false } },
+          action: "delete",
+          data: { id },
         }),
       });
       const result = await res.json();
@@ -568,7 +569,7 @@ export default function BankAccountsPage() {
                           <Edit size={13} />
                         </button>
                       )}
-                      {canManageBankAccounts && !systemCash && (
+                      {canDeleteBankAccounts && !systemCash && (
                         <button
                           className="btn btn-sm"
                           style={{
@@ -904,7 +905,7 @@ export default function BankAccountsPage() {
         </div>
       )}
 
-      {canManageBankAccounts && deleteConfirm && (
+      {canDeleteBankAccounts && deleteConfirm && (
         <div className="modal-overlay" onClick={() => setDeleteConfirm(null)}>
           <div
             className="modal"
@@ -912,7 +913,7 @@ export default function BankAccountsPage() {
             style={{ maxWidth: 400 }}
           >
             <div className="modal-header">
-              <h3 className="modal-title">Hapus Rekening?</h3>
+              <h3 className="modal-title">Nonaktifkan Rekening?</h3>
             </div>
             <div className="modal-body">
               <p>
@@ -932,7 +933,7 @@ export default function BankAccountsPage() {
                   onClick={() => handleDelete(deleteConfirm)}
                   disabled={deletingAccountId === deleteConfirm}
                 >
-                  {deletingAccountId === deleteConfirm ? "Menghapus..." : "Hapus"}
+                  {deletingAccountId === deleteConfirm ? "Menyimpan..." : "Nonaktifkan"}
                 </button>
               </div>
             </div>

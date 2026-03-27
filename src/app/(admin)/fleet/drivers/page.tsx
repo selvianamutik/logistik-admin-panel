@@ -39,8 +39,8 @@ export default function DriversPage() {
     const [togglingDriverId, setTogglingDriverId] = useState<string | null>(null);
     const [form, setForm] = useState(createDefaultDriverForm());
     const [accountForm, setAccountForm] = useState(createDefaultDriverAccessForm());
-    const canCreateDrivers = hasPermission(user?.role ?? 'OWNER', 'drivers', 'create');
-    const canManageDrivers = hasPermission(user?.role ?? 'OWNER', 'drivers', 'update');
+    const canCreateDrivers = user ? hasPermission(user.role, 'drivers', 'create') : false;
+    const canManageDrivers = user ? hasPermission(user.role, 'drivers', 'update') : false;
 
     useEffect(() => {
         setPage(1);
