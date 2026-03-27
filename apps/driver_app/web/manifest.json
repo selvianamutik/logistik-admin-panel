@@ -1,11 +1,11 @@
 {
-    "name": "driver_app",
-    "short_name": "driver_app",
+    "name": "GMS Driver",
+    "short_name": "GMS Driver",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Portal driver untuk operasional Gading Mas Surya.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

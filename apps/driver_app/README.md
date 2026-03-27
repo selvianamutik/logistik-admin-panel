@@ -1,17 +1,15 @@
-# driver_app
+# GMS Driver
 
-A new Flutter project.
+App driver untuk operasional Gading Mas Surya.
 
-## Getting Started
+## Android Release Signing
 
-This project is a starting point for a Flutter application.
+1. Salin `android/key.properties.example` menjadi `android/key.properties`.
+2. Isi nilai berikut sesuai keystore production:
+   - `storeFile`
+   - `storePassword`
+   - `keyAlias`
+   - `keyPassword`
+3. Simpan file keystore di path yang sesuai dengan `storeFile`.
 
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Jika `android/key.properties` belum ada, build `release` masih akan fallback ke debug signing untuk kebutuhan local smoke build. Jangan pakai fallback itu untuk distribusi production.
