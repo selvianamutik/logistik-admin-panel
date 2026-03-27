@@ -227,117 +227,67 @@ export default function BoronganDetailPage() {
                 </div>
             </div>
 
-            <div className="detail-grid">
-                <div>
-                    <div className="card">
-                        <div className="card-header">
-                            <span className="card-header-title">Detail Slip Borongan</span>
-                        </div>
-                        <div className="card-body">
-                            <div className="detail-row">
-                                <div className="detail-item">
-                                    <div className="detail-label">No. Slip</div>
-                                    <div className="detail-value font-mono">{borong.boronganNumber}</div>
-                                </div>
-                                <div className="detail-item">
-                                    <div className="detail-label">Supir</div>
-                                    <div className="detail-value font-semibold">{borong.driverName}</div>
-                                </div>
-                            </div>
-                            <div className="detail-row">
-                                <div className="detail-item">
-                                    <div className="detail-label">Periode</div>
-                                    <div className="detail-value">
-                                        {formatDate(borong.periodStart)} - {formatDate(borong.periodEnd)}
-                                    </div>
-                                </div>
-                                <div className="detail-item">
-                                    <div className="detail-label">Status</div>
-                                    <div className="detail-value">
-                                        <span className={`badge badge-${statusConf.color}`}>{statusConf.label}</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="detail-row">
-                                <div className="detail-item">
-                                    <div className="detail-label">Total Collie</div>
-                                    <div className="detail-value">{borong.totalCollie || 0}</div>
-                                </div>
-                                <div className="detail-item">
-                                    <div className="detail-label">Total Berat (info)</div>
-                                    <div className="detail-value">{(borong.totalWeightKg || 0).toLocaleString('id')} kg</div>
-                                </div>
-                            </div>
-                            {borong.paidDate && (
-                                <div className="detail-row">
-                                    <div className="detail-item">
-                                        <div className="detail-label">Tanggal Bayar</div>
-                                        <div className="detail-value">{formatDate(borong.paidDate)}</div>
-                                    </div>
-                                    <div className="detail-item">
-                                        <div className="detail-label">Metode</div>
-                                        <div className="detail-value">{PAYMENT_METHOD_LABELS[borong.paidMethod || ''] || borong.paidMethod || '-'}</div>
-                                    </div>
-                                </div>
-                            )}
-                            {borong.paidDate && (
-                                <div className="detail-row">
-                                    <div className="detail-item">
-                                        <div className="detail-label">Rekening / Kas</div>
-                                        <div className="detail-value">{paidAccountLabel || '-'}</div>
-                                    </div>
-                                    <div className="detail-item" />
-                                </div>
-                            )}
-                        </div>
+            <div className="detail-grid" style={{ alignItems: 'start' }}>
+                <div className="card">
+                    <div className="card-header">
+                        <span className="card-header-title">Detail Slip Borongan</span>
                     </div>
-
-                    <div className="card" style={{ marginTop: '1rem' }}>
-                        <div className="card-header">
-                            <span className="card-header-title">Perincian Perjalanan</span>
+                    <div className="card-body">
+                        <div className="detail-row">
+                            <div className="detail-item">
+                                <div className="detail-label">No. Slip</div>
+                                <div className="detail-value font-mono">{borong.boronganNumber}</div>
+                            </div>
+                            <div className="detail-item">
+                                <div className="detail-label">Supir</div>
+                                <div className="detail-value font-semibold">{borong.driverName}</div>
+                            </div>
                         </div>
-                        <div className="table-wrapper" style={{ overflowX: 'auto' }}>
-                            <table style={{ minWidth: 700 }}>
-                                <thead>
-                                    <tr>
-                                        <th>NO.TRUCK</th>
-                                        <th>TGL</th>
-                                        <th>NO.SJ</th>
-                                        <th>TUJUAN</th>
-                                        <th>BARANG</th>
-                                        <th>COLLIE</th>
-                                        <th>BERAT KG</th>
-                                        <th>TARIF BORONGAN</th>
-                                        <th style={{ textAlign: 'right' }}>UPAH RP</th>
-                                        <th>KET</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {items.map((it) => (
-                                        <tr key={it._id}>
-                                            <td className="font-mono">{it.vehiclePlate || '-'}</td>
-                                            <td className="text-muted">{formatDate(it.date)}</td>
-                                            <td>{it.noSJ}</td>
-                                            <td>{it.tujuan}</td>
-                                            <td>{it.barang || '-'}</td>
-                                            <td>{it.collie || '-'}</td>
-                                            <td>{(it.beratKg || 0).toLocaleString('id')}</td>
-                                            <td>{(it.tarip || 0).toLocaleString('id')}</td>
-                                            <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatCurrency(it.uangRp)}</td>
-                                            <td className="text-muted">{it.ket || '-'}</td>
-                                        </tr>
-                                    ))}
-                                    <tr style={{ background: 'var(--color-bg-secondary)', fontWeight: 700, borderTop: '2px solid var(--color-border)' }}>
-                                        <td colSpan={5} style={{ textAlign: 'right' }}>Jumlah</td>
-                                        <td>{borong.totalCollie || 0}</td>
-                                        <td>{(borong.totalWeightKg || 0).toLocaleString('id')}</td>
-                                        <td />
-                                        <td style={{ textAlign: 'right', color: 'var(--color-danger)' }}>{formatCurrency(borong.totalAmount)}</td>
-                                        <td />
-                                    </tr>
-                                </tbody>
-                            </table>
+                        <div className="detail-row">
+                            <div className="detail-item">
+                                <div className="detail-label">Periode</div>
+                                <div className="detail-value">
+                                    {formatDate(borong.periodStart)} - {formatDate(borong.periodEnd)}
+                                </div>
+                            </div>
+                            <div className="detail-item">
+                                <div className="detail-label">Status</div>
+                                <div className="detail-value">
+                                    <span className={`badge badge-${statusConf.color}`}>{statusConf.label}</span>
+                                </div>
+                            </div>
                         </div>
+                        <div className="detail-row">
+                            <div className="detail-item">
+                                <div className="detail-label">Total Collie</div>
+                                <div className="detail-value">{borong.totalCollie || 0}</div>
+                            </div>
+                            <div className="detail-item">
+                                <div className="detail-label">Total Berat (info)</div>
+                                <div className="detail-value">{(borong.totalWeightKg || 0).toLocaleString('id')} kg</div>
+                            </div>
+                        </div>
+                        {borong.paidDate && (
+                            <div className="detail-row">
+                                <div className="detail-item">
+                                    <div className="detail-label">Tanggal Bayar</div>
+                                    <div className="detail-value">{formatDate(borong.paidDate)}</div>
+                                </div>
+                                <div className="detail-item">
+                                    <div className="detail-label">Metode</div>
+                                    <div className="detail-value">{PAYMENT_METHOD_LABELS[borong.paidMethod || ''] || borong.paidMethod || '-'}</div>
+                                </div>
+                            </div>
+                        )}
+                        {borong.paidDate && (
+                            <div className="detail-row">
+                                <div className="detail-item">
+                                    <div className="detail-label">Rekening / Kas</div>
+                                    <div className="detail-value">{paidAccountLabel || '-'}</div>
+                                </div>
+                                <div className="detail-item" />
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -384,6 +334,56 @@ export default function BoronganDetailPage() {
                                     {paidAccountLabel ? <div style={{ fontSize: '0.78rem', color: 'var(--color-gray-500)', marginTop: '0.25rem' }}>via {paidAccountLabel}</div> : null}
                                 </div>
                             )}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="detail-full">
+                    <div className="card">
+                        <div className="card-header">
+                            <span className="card-header-title">Perincian Perjalanan</span>
+                        </div>
+                        <div className="table-wrapper" style={{ overflowX: 'auto' }}>
+                            <table style={{ minWidth: 700 }}>
+                                <thead>
+                                    <tr>
+                                        <th>NO.TRUCK</th>
+                                        <th>TGL</th>
+                                        <th>NO.SJ</th>
+                                        <th>TUJUAN</th>
+                                        <th>BARANG</th>
+                                        <th>COLLIE</th>
+                                        <th>BERAT KG</th>
+                                        <th>TARIF BORONGAN</th>
+                                        <th style={{ textAlign: 'right' }}>UPAH RP</th>
+                                        <th>KET</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {items.map((it) => (
+                                        <tr key={it._id}>
+                                            <td className="font-mono">{it.vehiclePlate || '-'}</td>
+                                            <td className="text-muted">{formatDate(it.date)}</td>
+                                            <td>{it.noSJ}</td>
+                                            <td>{it.tujuan}</td>
+                                            <td>{it.barang || '-'}</td>
+                                            <td>{it.collie || '-'}</td>
+                                            <td>{(it.beratKg || 0).toLocaleString('id')}</td>
+                                            <td>{(it.tarip || 0).toLocaleString('id')}</td>
+                                            <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatCurrency(it.uangRp)}</td>
+                                            <td className="text-muted">{it.ket || '-'}</td>
+                                        </tr>
+                                    ))}
+                                    <tr style={{ background: 'var(--color-bg-secondary)', fontWeight: 700, borderTop: '2px solid var(--color-border)' }}>
+                                        <td colSpan={5} style={{ textAlign: 'right' }}>Jumlah</td>
+                                        <td>{borong.totalCollie || 0}</td>
+                                        <td>{(borong.totalWeightKg || 0).toLocaleString('id')}</td>
+                                        <td />
+                                        <td style={{ textAlign: 'right', color: 'var(--color-danger)' }}>{formatCurrency(borong.totalAmount)}</td>
+                                        <td />
+                                    </tr>
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
