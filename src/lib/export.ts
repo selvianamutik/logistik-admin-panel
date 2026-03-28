@@ -443,7 +443,7 @@ export async function exportInvoices(invoices: Record<string, unknown>[]) {
         })),
         [
             { header: 'No. Cetak Nota', key: 'notaDisplayNumber', width: 22 },
-            { header: 'No. Sistem', key: 'notaNumber', width: 22 },
+            { header: 'No. Nota Internal', key: 'notaNumber', width: 22 },
             { header: 'Customer', key: 'customerName', width: 28 },
             { header: 'Tanggal', key: 'issueDate', width: 18, formatter: (value) => fmtDate(String(value || '')) },
             { header: 'Jatuh Tempo', key: 'dueDate', width: 18, formatter: (value) => value ? fmtDate(String(value)) : '-' },

@@ -265,7 +265,7 @@ export default function NotaDetailPage() {
                         <span className={`badge badge-${statusConf.color}`}><span className="badge-dot" /> {statusConf.label}</span>
                     </div>
                     <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-                        Nomor sistem: {nota.notaNumber}
+                        No. Nota Internal: {nota.notaNumber}
                     </div>
                 </div>
                 </div>
@@ -291,7 +291,7 @@ export default function NotaDetailPage() {
                             <div className="detail-item"><div className="detail-label">Jatuh Tempo</div><div className="detail-value">{nota.dueDate ? formatDate(nota.dueDate) : '-'}</div></div>
                         </div>
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">No. Sistem</div><div className="detail-value font-mono">{nota.notaNumber}</div></div>
+                            <div className="detail-item"><div className="detail-label">No. Nota Internal</div><div className="detail-value font-mono">{nota.notaNumber}</div></div>
                             <div className="detail-item"><div className="detail-label">Total Collie</div><div className="detail-value">{nota.totalCollie || 0}</div></div>
                         </div>
                         <div className="detail-row">
