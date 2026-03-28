@@ -88,6 +88,7 @@ class DeliveryOrderService {
     };
 
     final date = (json['date'] as String?)?.trim();
+    final pickupAddress = (json['pickupAddress'] as String?)?.trim();
     final destination = (json['receiverAddress'] as String?)?.trim();
     final receiverName = (json['receiverName'] as String?)?.trim();
     final notes = (json['notes'] as String?)?.trim();
@@ -98,7 +99,7 @@ class DeliveryOrderService {
       vehiclePlate: (json['vehiclePlate'] as String?)?.trim().isNotEmpty == true
           ? json['vehiclePlate'] as String
           : '-',
-      originLabel: 'Lihat detail order / warehouse',
+      originLabel: pickupAddress?.isNotEmpty == true ? pickupAddress! : '-',
       destinationLabel: destination?.isNotEmpty == true ? destination! : '-',
       customerName: (json['customerName'] as String?)?.trim().isNotEmpty == true
           ? json['customerName'] as String
@@ -118,14 +119,14 @@ class DeliveryOrderService {
 
   String _statusNote(String status, {String? pendingDriverStatus}) {
     if (pendingDriverStatus == 'DELIVERED') {
-      return 'Driver sudah mengajukan selesai dan menunggu approval admin';
+      return 'Menunggu approval admin';
     }
     return switch (status) {
       'HEADING_TO_PICKUP' => 'Driver menuju pickup',
-      'ON_DELIVERY' => 'Pengiriman sedang berjalan',
+      'ON_DELIVERY' => 'Pengiriman berjalan',
       'ARRIVED' => 'Driver sudah tiba',
-      'DELIVERED' => 'Trip sudah disetujui selesai',
-      _ => 'DO sudah ditugaskan ke driver',
+      'DELIVERED' => 'Trip selesai',
+      _ => 'Trip sudah ditugaskan',
     };
   }
 

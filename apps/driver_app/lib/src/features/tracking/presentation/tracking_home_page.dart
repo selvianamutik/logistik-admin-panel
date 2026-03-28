@@ -1327,7 +1327,7 @@ class _StatusChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final (label, color) = switch (status) {
-      TripStatus.assigned => ('Assigned', const Color(0xFF64748B)),
+      TripStatus.assigned => ('Siap', const Color(0xFF64748B)),
       TripStatus.headingToPickup => ('Pickup', const Color(0xFF2563EB)),
       TripStatus.onDelivery => ('Kirim', scheme.primary),
       TripStatus.arrived => ('Tiba', const Color(0xFFB45309)),
