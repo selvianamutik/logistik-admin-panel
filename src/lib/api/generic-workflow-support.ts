@@ -13,6 +13,8 @@ import {
     normalizeOptionalText,
     normalizeText,
 } from './data-helpers';
+import { findMatchingTripRouteRate } from '@/lib/trip-route-rate-support';
+import type { TripRouteRate } from '@/lib/types';
 
 const CUSTOMER_DO_PREFIX_RE = /^[A-Z0-9][A-Z0-9-]{0,7}$/;
 const CUSTOMER_PRODUCT_CODE_RE = /^[A-Z0-9][A-Z0-9-]{0,19}$/;
@@ -452,4 +454,159 @@ export async function normalizeCustomerPickupPayload(data: Record<string, unknow
     next.isDefault = nextDefault;
 
     return next;
+}
+
+export async function normalizeTripRouteRatePayload(data: Record<string, unknown>, existing?: Record<string, unknown>) {
+    const next: Record<string, unknown> = {};
+    const existingId = typeof existing?._id === 'string' ? existing._id : undefined;
+    const originArea =
+        Object.prototype.hasOwnProperty.call(data, 'originArea') || !existing
+            ? normalizeText(data.originArea)
+            : normalizeOptionalText(existing?.originArea) || '';
+    if (!originArea) {
+        throw new Error('Asal area trip wajib diisi');
+    }
+
+    const destinationArea =
+        Object.prototype.hasOwnProperty.call(data, 'destinationArea') || !existing
+            ? normalizeText(data.destinationArea)
+            : normalizeOptionalText(existing?.destinationArea) || '';
+    if (!destinationArea) {
+        throw new Error('Tujuan area trip wajib diisi');
+    }
+
+    const rate =
+        Object.prototype.hasOwnProperty.call(data, 'rate') || !existing
+            ? normalizeNumber(data.rate)
+            : normalizeNumber(existing?.rate);
+    if (!Number.isFinite(rate) || rate <= 0) {
+        throw new Error('Tarif trip harus lebih besar dari 0');
+    }
+
+    const serviceRef =
+        Object.prototype.hasOwnProperty.call(data, 'serviceRef') || !existing
+            ? normalizeOptionalText(data.serviceRef)
+            : normalizeOptionalText(existing?.serviceRef);
+
+    let serviceName: string | undefined;
+    if (serviceRef) {
+        const service = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(serviceRef);
+        if (!service) {
+            throw new Error('Kategori armada tarif trip tidak ditemukan');
+        }
+        if (service.active === false) {
+            throw new Error('Kategori armada tarif trip tidak aktif');
+        }
+        serviceName = service.name || '';
+    }
+
+    const duplicateRate = await getSanityClient().fetch<{ _id: string } | null>(
+        `*[
+            _type == "tripRouteRate" &&
+            lower(originArea) == $originArea &&
+            lower(destinationArea) == $destinationArea &&
+            coalesce(serviceRef, "") == $serviceRef &&
+            _id != $excludeId
+        ][0]{ _id }`,
+        {
+            originArea: originArea.toLowerCase(),
+            destinationArea: destinationArea.toLowerCase(),
+            serviceRef: serviceRef || '',
+            excludeId: existingId || '',
+        }
+    );
+    if (duplicateRate) {
+        throw new Error('Master biaya rute trip untuk kombinasi area dan kategori ini sudah ada');
+    }
+
+    next.originArea = originArea;
+    next.destinationArea = destinationArea;
+    next.serviceRef = serviceRef;
+    next.serviceName = serviceName;
+    next.rate = rate;
+    next.notes =
+        Object.prototype.hasOwnProperty.call(data, 'notes') || !existing
+            ? normalizeOptionalText(data.notes)
+            : normalizeOptionalText(existing?.notes);
+    if (Object.prototype.hasOwnProperty.call(data, 'active') || !existing) {
+        if (data.active !== undefined && typeof data.active !== 'boolean') {
+            throw new Error('Status tarif trip tidak valid');
+        }
+        next.active = typeof data.active === 'boolean' ? data.active : true;
+    }
+
+    return next;
+}
+
+export async function resolveTripRouteRateSelection(
+    data: Record<string, unknown>,
+    options?: { serviceRef?: string | null }
+) {
+    const requestedTripRouteRateRef = normalizeOptionalText(data.tripRouteRateRef);
+    const requestedTripOriginArea = normalizeOptionalText(data.tripOriginArea);
+    const requestedTripDestinationArea = normalizeOptionalText(data.tripDestinationArea);
+    const serviceRef = normalizeOptionalText(options?.serviceRef);
+
+    if (!requestedTripRouteRateRef && !requestedTripOriginArea && !requestedTripDestinationArea) {
+        return {
+            tripRouteRateRef: undefined,
+            tripOriginArea: undefined,
+            tripDestinationArea: undefined,
+            matchedTripRouteRate: null as TripRouteRate | null,
+        };
+    }
+
+    if ((requestedTripOriginArea && !requestedTripDestinationArea) || (!requestedTripOriginArea && requestedTripDestinationArea)) {
+        throw new Error('Asal dan tujuan area trip harus diisi berpasangan');
+    }
+
+    let matchedTripRouteRate: TripRouteRate | null = null;
+
+    if (requestedTripRouteRateRef) {
+        matchedTripRouteRate = await sanityGetById<TripRouteRate>(requestedTripRouteRateRef);
+        if (!matchedTripRouteRate || matchedTripRouteRate._type !== 'tripRouteRate') {
+            throw new Error('Master biaya rute trip tidak ditemukan');
+        }
+        if (matchedTripRouteRate.active === false) {
+            throw new Error('Master biaya rute trip sudah nonaktif');
+        }
+        if (serviceRef && matchedTripRouteRate.serviceRef && matchedTripRouteRate.serviceRef !== serviceRef) {
+            throw new Error('Master biaya rute trip tidak cocok dengan kategori armada surat jalan');
+        }
+    } else if (requestedTripOriginArea && requestedTripDestinationArea) {
+        const candidateRates = await getSanityClient().fetch<TripRouteRate[]>(
+            `*[
+                _type == "tripRouteRate" &&
+                active != false &&
+                lower(originArea) == $originArea &&
+                lower(destinationArea) == $destinationArea
+            ]{
+                _id,
+                _type,
+                originArea,
+                destinationArea,
+                serviceRef,
+                serviceName,
+                rate,
+                notes,
+                active
+            }`,
+            {
+                originArea: requestedTripOriginArea.toLowerCase(),
+                destinationArea: requestedTripDestinationArea.toLowerCase(),
+            }
+        );
+        matchedTripRouteRate = findMatchingTripRouteRate(candidateRates, {
+            originArea: requestedTripOriginArea,
+            destinationArea: requestedTripDestinationArea,
+            serviceRef,
+        });
+    }
+
+    return {
+        tripRouteRateRef: matchedTripRouteRate?._id,
+        tripOriginArea: matchedTripRouteRate?.originArea || requestedTripOriginArea,
+        tripDestinationArea: matchedTripRouteRate?.destinationArea || requestedTripDestinationArea,
+        matchedTripRouteRate,
+    };
 }

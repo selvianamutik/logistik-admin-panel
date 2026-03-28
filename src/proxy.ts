@@ -16,6 +16,7 @@ const INTERNAL_PATH_MODULES: Array<{ path: string; module: AppModule }> = [
     { path: '/delivery-orders', module: 'deliveryOrders' },
     { path: '/invoices', module: 'freightNotas' },
     { path: '/customers', module: 'customers' },
+    { path: '/trip-rates', module: 'tripRouteRates' },
     { path: '/services', module: 'services' },
     { path: '/expense-categories', module: 'expenseCategories' },
     { path: '/expenses', module: 'expenses' },

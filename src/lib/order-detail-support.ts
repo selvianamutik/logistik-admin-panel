@@ -449,6 +449,9 @@ export function buildCreateDeliveryOrderRequestData(params: {
     order: Order | null;
     items: CreateDeliveryOrderItemInput[];
     customerDoNumber?: string;
+    tripRouteRateRef?: string;
+    tripOriginArea?: string;
+    tripDestinationArea?: string;
     vehicleRef?: string;
     selectedVehicle?: VehicleSummary;
     driverRef?: string;
@@ -464,6 +467,9 @@ export function buildCreateDeliveryOrderRequestData(params: {
         items: params.items,
         masterResi: params.order?.masterResi,
         customerDoNumber: params.customerDoNumber?.trim() || undefined,
+        tripRouteRateRef: params.tripRouteRateRef?.trim() || undefined,
+        tripOriginArea: params.tripOriginArea?.trim() || undefined,
+        tripDestinationArea: params.tripDestinationArea?.trim() || undefined,
         vehicleRef: params.vehicleRef || undefined,
         vehiclePlate: params.selectedVehicle?.plateNumber || '',
         vehicleCategoryOverrideReason: params.requiresVehicleOverrideReason ? params.vehicleOverrideReason.trim() : undefined,

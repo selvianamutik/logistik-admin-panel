@@ -29,6 +29,8 @@ import {
     normalizeCustomerPickupPayload,
     normalizeCustomerProductPayload,
     normalizeCustomerRecipientPayload,
+    normalizeTripRouteRatePayload,
+    resolveTripRouteRateSelection,
 } from './generic-workflow-support';
 import {
     handleDriverBoronganDelete,
@@ -119,6 +121,9 @@ function isWorkflowManagedDeleteEntity(entity: string) {
 
 function buildCreateSummary(newDoc: Record<string, unknown>, fallbackId: string) {
     return (
+        (newDoc.originArea && newDoc.destinationArea
+            ? `${newDoc.originArea} -> ${newDoc.destinationArea}${newDoc.serviceName ? ` (${newDoc.serviceName})` : ''}`
+            : undefined) ||
         newDoc.masterResi ||
         newDoc.doNumber ||
         newDoc.invoiceNumber ||
@@ -185,6 +190,9 @@ export async function handleGenericUpdate(
             'podReceiverName',
             'podReceivedDate',
             'podNote',
+            'tripRouteRateRef',
+            'tripOriginArea',
+            'tripDestinationArea',
             'taripBorongan',
             'keteranganBorongan',
         ]);
@@ -204,6 +212,7 @@ export async function handleGenericUpdate(
 
         const updatesPod = updateKeys.some(key => key === 'podReceiverName' || key === 'podReceivedDate' || key === 'podNote');
         const updatesBoronganTariff = updateKeys.some(key => key === 'taripBorongan' || key === 'keteranganBorongan');
+        const updatesTripRouteSelection = updateKeys.some(key => key === 'tripRouteRateRef' || key === 'tripOriginArea' || key === 'tripDestinationArea');
 
         if (updatesPod) {
             if (existingDeliveryOrder.status !== 'DELIVERED') {
@@ -225,7 +234,7 @@ export async function handleGenericUpdate(
             updates.podNote = normalizeOptionalText(updates.podNote);
         }
 
-        if (updatesBoronganTariff) {
+        if (updatesBoronganTariff || updatesTripRouteSelection) {
             if (existingDeliveryOrder.status === 'CANCELLED') {
                 return NextResponse.json({ error: 'Tarip borongan tidak bisa diubah untuk surat jalan yang dibatalkan' }, { status: 409 });
             }
@@ -236,6 +245,28 @@ export async function handleGenericUpdate(
             );
             if (relatedBoronganItem) {
                 return NextResponse.json({ error: 'Tarip borongan DO yang sudah masuk slip borongan tidak boleh diubah' }, { status: 409 });
+            }
+
+            if (updatesTripRouteSelection) {
+                try {
+                    const tripRouteSelection = await resolveTripRouteRateSelection(updates, {
+                        serviceRef: normalizeOptionalText((existingDeliveryOrder as Record<string, unknown>).serviceRef),
+                    });
+                    updates.tripRouteRateRef = tripRouteSelection.tripRouteRateRef;
+                    updates.tripOriginArea = tripRouteSelection.tripOriginArea;
+                    updates.tripDestinationArea = tripRouteSelection.tripDestinationArea;
+                    if (
+                        !Object.prototype.hasOwnProperty.call(updates, 'taripBorongan') &&
+                        tripRouteSelection.matchedTripRouteRate?.rate
+                    ) {
+                        updates.taripBorongan = tripRouteSelection.matchedTripRouteRate.rate;
+                    }
+                } catch (error) {
+                    return NextResponse.json(
+                        { error: error instanceof Error ? error.message : 'Master biaya rute trip tidak valid' },
+                        { status: 400 }
+                    );
+                }
             }
 
             if (Object.prototype.hasOwnProperty.call(updates, 'taripBorongan')) {
@@ -377,6 +408,22 @@ export async function handleGenericUpdate(
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Data master pickup tidak valid' },
+                { status: 400 }
+            );
+        }
+    }
+
+    if (entity === 'trip-route-rates') {
+        const existingTripRouteRate = await sanityGetById<Record<string, unknown>>(id);
+        if (!existingTripRouteRate) {
+            return NextResponse.json({ error: 'Master biaya rute trip tidak ditemukan' }, { status: 404 });
+        }
+
+        try {
+            Object.assign(updates, await normalizeTripRouteRatePayload(updates, existingTripRouteRate));
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Data biaya rute trip tidak valid' },
                 { status: 400 }
             );
         }
@@ -597,6 +644,21 @@ export async function handleGenericDelete(
         }
     }
 
+    if (entity === 'trip-route-rates') {
+        const id = typeof data.id === 'string' ? data.id : '';
+        if (!id) {
+            return NextResponse.json({ error: 'Master biaya rute trip tidak valid' }, { status: 400 });
+        }
+
+        const relatedDeliveryOrder = await getSanityClient().fetch<{ _id: string } | null>(
+            `*[_type == "deliveryOrder" && tripRouteRateRef == $ref][0]{ _id }`,
+            { ref: id }
+        );
+        if (relatedDeliveryOrder) {
+            return NextResponse.json({ error: 'Master biaya rute trip yang sudah dipakai surat jalan tidak boleh dihapus' }, { status: 409 });
+        }
+    }
+
     if (entity === 'tire-events') {
         return NextResponse.json(
             {
@@ -810,6 +872,17 @@ export async function handleGenericCreate(
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Data master pickup tidak valid' },
+                { status: 400 }
+            );
+        }
+    }
+
+    if (entity === 'trip-route-rates') {
+        try {
+            Object.assign(newDoc, await normalizeTripRouteRatePayload(data));
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Data biaya rute trip tidak valid' },
                 { status: 400 }
             );
         }

@@ -48,6 +48,7 @@ import {
     type ResolvedCustomerRecipientData,
     type ResolvedOrderPartyData,
 } from './order-workflow-support';
+import { resolveTripRouteRateSelection } from './generic-workflow-support';
 
 type AuditLogFn = (
     session: Pick<ApiSession, '_id' | 'name'>,
@@ -1507,8 +1508,23 @@ export async function handleDeliveryOrderCreate(
     if (!Number.isFinite(taripBorongan) || taripBorongan < 0) {
         return NextResponse.json({ error: 'Upah trip pada surat jalan tidak valid' }, { status: 400 });
     }
+    let tripRouteSelection: Awaited<ReturnType<typeof resolveTripRouteRateSelection>>;
+    try {
+        tripRouteSelection = await resolveTripRouteRateSelection(data, {
+            serviceRef: order.serviceRef,
+        });
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Master biaya rute trip tidak valid' },
+            { status: 400 }
+        );
+    }
     const customerDoPrefix = normalizeCustomerDoPrefix(customer?.deliveryOrderPrefix);
     const customerDoNumber = manualCustomerDoNumber || undefined;
+    const effectiveTripFee =
+        taripBorongan > 0
+            ? taripBorongan
+            : normalizeNumber(tripRouteSelection?.matchedTripRouteRate?.rate ?? 0);
 
     if (customerDoNumber && orderCustomerRef) {
         const duplicateCustomerDoNumber = await getSanityClient().fetch<{ _id: string } | null>(
@@ -1705,7 +1721,10 @@ export async function handleDeliveryOrderCreate(
         vehiclePlate: vehiclePlate || undefined,
         driverRef: driverRef || undefined,
         driverName: driverName || undefined,
-        taripBorongan: taripBorongan > 0 ? taripBorongan : undefined,
+        tripRouteRateRef: tripRouteSelection?.tripRouteRateRef,
+        tripOriginArea: tripRouteSelection?.tripOriginArea,
+        tripDestinationArea: tripRouteSelection?.tripDestinationArea,
+        taripBorongan: effectiveTripFee > 0 ? effectiveTripFee : undefined,
         date: doDate,
         notes: normalizeOptionalText(data.notes),
         doNumber,

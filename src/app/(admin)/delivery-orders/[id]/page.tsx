@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useApp, useToast } from '../../layout';
@@ -32,7 +32,7 @@ import {
     type ActualDropDraft,
 } from '@/lib/delivery-order-detail-support';
 import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
-import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatDate, formatDateTime, formatInternalDeliveryOrderNumber, formatShipperDeliveryOrderNumber } from '@/lib/utils';
+import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatCurrency, formatDate, formatDateTime, formatInternalDeliveryOrderNumber, formatShipperDeliveryOrderNumber } from '@/lib/utils';
 import {
     formatCargoSummary,
     VOLUME_INPUT_UNIT_OPTIONS,
@@ -40,7 +40,8 @@ import {
 } from '@/lib/measurement';
 import { generateDOPdf } from '@/lib/pdf/doTemplate';
 import { hasPermission, normalizeUserRole } from '@/lib/rbac';
-import type { Customer, DeliveryOrder, DeliveryOrderItem, TrackingLog, CompanyProfile, Order, Driver, Vehicle } from '@/lib/types';
+import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
+import type { Customer, DeliveryOrder, DeliveryOrderItem, TrackingLog, CompanyProfile, Order, Driver, TripRouteRate, Vehicle } from '@/lib/types';
 
 export default function DODetailPage() {
     const params = useParams();
@@ -72,6 +73,10 @@ export default function DODetailPage() {
     const [editingTarip, setEditingTarip] = useState(false);
     const [taripBorongan, setTaripBorongan] = useState<number>(0);
     const [keteranganBorongan, setKeteranganBorongan] = useState('');
+    const [tripRouteRates, setTripRouteRates] = useState<TripRouteRate[]>([]);
+    const [tripRouteRateRef, setTripRouteRateRef] = useState('');
+    const [tripOriginArea, setTripOriginArea] = useState('');
+    const [tripDestinationArea, setTripDestinationArea] = useState('');
     const [updatingStatus, setUpdatingStatus] = useState(false);
     const [savingPOD, setSavingPOD] = useState(false);
     const [savingTarip, setSavingTarip] = useState(false);
@@ -84,6 +89,7 @@ export default function DODetailPage() {
     const [tripVehicleOverrideReason, setTripVehicleOverrideReason] = useState('');
     const [shipperReferenceValue, setShipperReferenceValue] = useState('');
     const [shipperReferenceFormat, setShipperReferenceFormat] = useState('SJ');
+    const editingTaripRef = useRef(false);
     const normalizedRole = user ? normalizeUserRole(user.role) : null;
     const canManageDeliveryStatus = user ? hasPermission(user.role, 'deliveryOrders', 'update') : false;
     const canExportDeliveryOrder = user ? hasPermission(user.role, 'deliveryOrders', 'export') : false;
@@ -92,6 +98,53 @@ export default function DODetailPage() {
     const canEditShipperReference = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL' || normalizedRole === 'FINANCE';
     const canReviewDriverRequest = canManageDeliveryStatus;
     const canManageTripFee = canManageDeliveryStatus;
+    const tripOriginAreaOptions = buildTripRateAreaOptions(tripRouteRates, 'originArea', {
+        serviceRef: doData?.serviceRef,
+    });
+    const tripDestinationAreaOptions = buildTripRateAreaOptions(tripRouteRates, 'destinationArea', {
+        originArea: tripOriginArea,
+        serviceRef: doData?.serviceRef,
+    });
+    const matchedTripRouteRate = findMatchingTripRouteRate(tripRouteRates, {
+        originArea: tripOriginArea,
+        destinationArea: tripDestinationArea,
+        serviceRef: doData?.serviceRef,
+    });
+
+    const applyTripRouteSelection = (nextOriginArea: string, nextDestinationArea: string) => {
+        setTripOriginArea(nextOriginArea);
+        setTripDestinationArea(nextDestinationArea);
+
+        const nextMatchedRate = findMatchingTripRouteRate(tripRouteRates, {
+            originArea: nextOriginArea,
+            destinationArea: nextDestinationArea,
+            serviceRef: doData?.serviceRef,
+        });
+        setTripRouteRateRef(nextMatchedRate?._id || '');
+        if (nextMatchedRate) {
+            setTaripBorongan(nextMatchedRate.rate || 0);
+        }
+    };
+
+    const handleTripOriginAreaChange = (nextOriginArea: string) => {
+        const nextDestinationOptions = buildTripRateAreaOptions(tripRouteRates, 'destinationArea', {
+            originArea: nextOriginArea,
+            serviceRef: doData?.serviceRef,
+        });
+        const preservedDestination =
+            nextOriginArea && nextDestinationOptions.includes(tripDestinationArea)
+                ? tripDestinationArea
+                : '';
+        applyTripRouteSelection(nextOriginArea, preservedDestination);
+    };
+
+    const handleTripDestinationAreaChange = (nextDestinationArea: string) => {
+        applyTripRouteSelection(tripOriginArea, nextDestinationArea);
+    };
+
+    useEffect(() => {
+        editingTaripRef.current = editingTarip;
+    }, [editingTarip]);
 
     const loadDO = useCallback(async (mode: 'initial' | 'refresh' = 'refresh') => {
         if (mode === 'initial') {
@@ -100,7 +153,7 @@ export default function DODetailPage() {
 
         try {
             const deliveryOrder = await fetchAdminData<DeliveryOrder | null>(`/api/data?entity=delivery-orders&id=${doId}`, 'Gagal memuat detail surat jalan');
-            const [itemRows, logRows, sourceOrder, customerData] = await Promise.all([
+            const [itemRows, logRows, sourceOrder, customerData, tripRateRows] = await Promise.all([
                 fetchAllAdminCollectionData<DeliveryOrderItem>(`/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: doId }))}`, 'Gagal memuat detail surat jalan'),
                 fetchAllAdminCollectionData<TrackingLog>(`/api/data?entity=tracking-logs&filter=${encodeURIComponent(JSON.stringify({ refRef: doId, refType: 'DO' }))}`, 'Gagal memuat detail surat jalan'),
                 deliveryOrder?.orderRef
@@ -109,14 +162,23 @@ export default function DODetailPage() {
                 deliveryOrder?.customerRef
                     ? fetchAdminData<Pick<Customer, 'deliveryOrderPrefix'> | null>(`/api/data?entity=customers&id=${deliveryOrder.customerRef}`, 'Gagal memuat detail surat jalan')
                     : Promise.resolve(null),
+                canManageTripFee
+                    ? fetchAdminCollectionData<TripRouteRate[]>(`/api/data?entity=trip-route-rates&filter=${encodeURIComponent(JSON.stringify({ active: true }))}`, 'Gagal memuat detail surat jalan')
+                    : Promise.resolve([] as TripRouteRate[]),
             ]);
 
             const resolvedDeliveryOrder = buildResolvedDeliveryOrder(deliveryOrder, sourceOrder);
 
             setDoData(resolvedDeliveryOrder);
             setShipperReferenceFormat((customerData?.deliveryOrderPrefix || 'SJ').toUpperCase());
-            setTaripBorongan(resolvedDeliveryOrder?.taripBorongan || 0);
-            setKeteranganBorongan(resolvedDeliveryOrder?.keteranganBorongan || '');
+            setTripRouteRates((tripRateRows || []).filter(rate => rate.active !== false));
+            if (!editingTaripRef.current) {
+                setTaripBorongan(resolvedDeliveryOrder?.taripBorongan || 0);
+                setKeteranganBorongan(resolvedDeliveryOrder?.keteranganBorongan || '');
+                setTripRouteRateRef(resolvedDeliveryOrder?.tripRouteRateRef || '');
+                setTripOriginArea(resolvedDeliveryOrder?.tripOriginArea || '');
+                setTripDestinationArea(resolvedDeliveryOrder?.tripDestinationArea || '');
+            }
             setDoItems(itemRows || []);
             setTrackingLogs(sortTrackingLogs(logRows || []));
         } catch (error) {
@@ -126,7 +188,7 @@ export default function DODetailPage() {
                 setLoading(false);
             }
         }
-    }, [addToast, doId]);
+    }, [addToast, canManageTripFee, doId]);
 
     const loadTripResources = useCallback(async () => {
         setLoadingTripResources(true);
@@ -254,6 +316,9 @@ export default function DODetailPage() {
 
     useEffect(() => {
         const intervalId = window.setInterval(() => {
+            if (editingTaripRef.current) {
+                return;
+            }
             void loadDO();
         }, 15000);
 
@@ -395,6 +460,9 @@ export default function DODetailPage() {
                     action: 'update',
                     data: buildDeliveryOrderTripFeeUpdateData({
                         id: doData?._id,
+                        tripRouteRateRef,
+                        tripOriginArea,
+                        tripDestinationArea,
                         taripBorongan,
                         keteranganBorongan,
                     }),
@@ -405,8 +473,16 @@ export default function DODetailPage() {
                 addToast('error', result.error || 'Gagal menyimpan upah trip');
                 return;
             }
-            setDoData(prev => prev ? { ...prev, taripBorongan, keteranganBorongan } : prev);
+            setDoData(prev => prev ? {
+                ...prev,
+                tripRouteRateRef: tripRouteRateRef || undefined,
+                tripOriginArea: tripOriginArea || undefined,
+                tripDestinationArea: tripDestinationArea || undefined,
+                taripBorongan,
+                keteranganBorongan,
+            } : prev);
             setEditingTarip(false);
+            await loadDO();
             addToast('success', 'Upah trip disimpan');
         } catch {
             addToast('error', 'Gagal menyimpan upah trip');
@@ -834,27 +910,84 @@ export default function DODetailPage() {
 
             <CollapsibleCard title="Upah Trip Driver" defaultOpen={!doData.taripBorongan}>
                     {!editingTarip ? (
-                        <div className="detail-row">
-                            <div className="detail-item">
-                                <div className="detail-label">Upah Trip per DO</div>
-                                <div className="detail-value font-semibold" style={{ color: doData.taripBorongan ? 'var(--color-primary)' : 'var(--color-gray-400)' }}>
-                                    {doData.taripBorongan ? `Rp ${doData.taripBorongan.toLocaleString('id')}` : 'Belum diisi'}
+                        <div>
+                            <div className="detail-row">
+                                <div className="detail-item">
+                                    <div className="detail-label">Upah Trip per DO</div>
+                                    <div className="detail-value font-semibold" style={{ color: doData.taripBorongan ? 'var(--color-primary)' : 'var(--color-gray-400)' }}>
+                                        {doData.taripBorongan ? `Rp ${doData.taripBorongan.toLocaleString('id')}` : 'Belum diisi'}
+                                    </div>
+                                </div>
+                                <div className="detail-item">
+                                    <div className="detail-label">Keterangan</div>
+                                    <div className="detail-value">{doData.keteranganBorongan || '-'}</div>
+                                </div>
+                                {canManageTripFee && (
+                                    <div className="detail-item" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end' }}>
+                                        <button className="btn btn-secondary btn-sm" onClick={() => setEditingTarip(true)}>
+                                            <Edit size={14} /> {doData.taripBorongan ? 'Edit Upah' : 'Isi Upah'}
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="detail-row" style={{ marginTop: '0.75rem' }}>
+                                <div className="detail-item">
+                                    <div className="detail-label">Asal Area Trip</div>
+                                    <div className="detail-value">{doData.tripOriginArea || '-'}</div>
+                                </div>
+                                <div className="detail-item">
+                                    <div className="detail-label">Tujuan Area Trip</div>
+                                    <div className="detail-value">{doData.tripDestinationArea || '-'}</div>
+                                </div>
+                                <div className="detail-item">
+                                    <div className="detail-label">Master Tarif</div>
+                                    <div className="detail-value">
+                                        {matchedTripRouteRate
+                                            ? formatTripRouteRateLabel(matchedTripRouteRate)
+                                            : doData.tripRouteRateRef
+                                                ? (canManageTripFee ? 'Master tidak ditemukan' : 'Tersambung ke master tarif')
+                                                : '-'}
+                                    </div>
                                 </div>
                             </div>
-                            <div className="detail-item">
-                                <div className="detail-label">Keterangan</div>
-                                <div className="detail-value">{doData.keteranganBorongan || '-'}</div>
-                            </div>
-                            {canManageTripFee && (
-                                <div className="detail-item" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end' }}>
-                                    <button className="btn btn-secondary btn-sm" onClick={() => setEditingTarip(true)}>
-                                        <Edit size={14} /> {doData.taripBorongan ? 'Edit Upah' : 'Isi Upah'}
-                                    </button>
-                                </div>
-                            )}
                         </div>
                     ) : (
                         <div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Asal Area Trip</label>
+                                    <select className="form-select" value={tripOriginArea} onChange={e => handleTripOriginAreaChange(e.target.value)}>
+                                        <option value="">Pilih asal area</option>
+                                        {tripOriginAreaOptions.map(area => <option key={area} value={area}>{area}</option>)}
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Tujuan Area Trip</label>
+                                    <select className="form-select" value={tripDestinationArea} onChange={e => handleTripDestinationAreaChange(e.target.value)} disabled={!tripOriginArea}>
+                                        <option value="">Pilih tujuan area</option>
+                                        {tripDestinationAreaOptions.map(area => <option key={area} value={area}>{area}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            {matchedTripRouteRate && (
+                                <div
+                                    style={{
+                                        background: 'var(--color-primary-50)',
+                                        border: '1px solid var(--color-primary-100)',
+                                        borderRadius: '0.75rem',
+                                        padding: '0.85rem 1rem',
+                                        marginBottom: '1rem',
+                                    }}
+                                >
+                                    <div style={{ fontWeight: 600, marginBottom: '0.25rem', color: 'var(--color-primary-700)' }}>
+                                        Tarif master ditemukan
+                                    </div>
+                                    <div style={{ fontSize: '0.8rem', color: 'var(--color-primary-700)' }}>
+                                        {formatTripRouteRateLabel(matchedTripRouteRate)} | {formatCurrency(matchedTripRouteRate.rate)}
+                                        {matchedTripRouteRate.notes ? ` | ${matchedTripRouteRate.notes}` : ''}
+                                    </div>
+                                </div>
+                            )}
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Upah Trip per DO (Rp) <span className="required">*</span></label>
@@ -869,7 +1002,19 @@ export default function DODetailPage() {
                                 <button className="btn btn-primary btn-sm" onClick={saveTaripBorongan} disabled={savingTarip}>
                                     <Save size={14} /> {savingTarip ? 'Menyimpan...' : 'Simpan Upah'}
                                 </button>
-                                <button className="btn btn-secondary btn-sm" onClick={() => setEditingTarip(false)}>Batal</button>
+                                <button
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => {
+                                        setTripRouteRateRef(doData.tripRouteRateRef || '');
+                                        setTripOriginArea(doData.tripOriginArea || '');
+                                        setTripDestinationArea(doData.tripDestinationArea || '');
+                                        setTaripBorongan(doData.taripBorongan || 0);
+                                        setKeteranganBorongan(doData.keteranganBorongan || '');
+                                        setEditingTarip(false);
+                                    }}
+                                >
+                                    Batal
+                                </button>
                             </div>
                         </div>
                     )}

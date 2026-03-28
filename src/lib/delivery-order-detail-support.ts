@@ -603,12 +603,18 @@ export function buildDeliveryOrderPodUpdateData(params: {
 
 export function buildDeliveryOrderTripFeeUpdateData(params: {
     id?: string;
+    tripRouteRateRef?: string;
+    tripOriginArea?: string;
+    tripDestinationArea?: string;
     taripBorongan: number;
     keteranganBorongan: string;
 }) {
     return {
         id: params.id,
         updates: {
+            tripRouteRateRef: params.tripRouteRateRef?.trim() || '',
+            tripOriginArea: params.tripOriginArea?.trim() || '',
+            tripDestinationArea: params.tripDestinationArea?.trim() || '',
             taripBorongan: params.taripBorongan,
             keteranganBorongan: params.keteranganBorongan,
         },

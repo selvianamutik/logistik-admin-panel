@@ -22,6 +22,7 @@ export type AppModule =
     | 'deliveryOrders'
     | 'invoices'
     | 'customers'
+    | 'tripRouteRates'
     | 'services'
     | 'expenseCategories'
     | 'expenses'
@@ -97,6 +98,11 @@ const permissionMatrix: Record<AppModule, Partial<Record<EffectiveUserRole, Modu
         OWNER: OWNER_FULL,
         OPERASIONAL: OWNER_FULL,
         FINANCE: { ...DENY_ALL, view: true },
+    },
+    tripRouteRates: {
+        OWNER: OWNER_FULL,
+        OPERASIONAL: { ...DENY_ALL, view: true },
+        ARMADA: { ...DENY_ALL, view: true },
     },
     services: {
         OWNER: OWNER_FULL,
@@ -261,6 +267,7 @@ export function getSidebarMenu(role: UserRole): SidebarMenuGroup[] {
             label: 'Master Data',
             items: [
                 { label: 'Customer', href: '/customers', icon: 'Users', module: 'customers' },
+                { label: 'Biaya Rute Trip', href: '/trip-rates', icon: 'MapPin', module: 'tripRouteRates' },
                 { label: 'Jenis Armada', href: '/services', icon: 'Layers', module: 'services' },
                 { label: 'Kategori Biaya', href: '/expense-categories', icon: 'Tags', module: 'expenseCategories' },
             ],

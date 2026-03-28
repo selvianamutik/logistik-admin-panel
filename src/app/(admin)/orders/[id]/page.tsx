@@ -36,7 +36,8 @@ import {
     type SelectedShipmentMap,
     summarizeSelectedShipments,
 } from '@/lib/order-detail-support';
-import type { Customer, Order, OrderItem, DeliveryOrder, DeliveryOrderItem, Driver, FreightNota, FreightNotaItem, Vehicle } from '@/lib/types';
+import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
+import type { Customer, Order, OrderItem, DeliveryOrder, DeliveryOrderItem, Driver, FreightNota, FreightNotaItem, TripRouteRate, Vehicle } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
 import { hasPermission } from '@/lib/rbac';
 import { useApp } from '../../layout';
@@ -61,6 +62,9 @@ export default function OrderDetailPage() {
     const [doVehicle, setDoVehicle] = useState('');
     const [doDriver, setDoDriver] = useState('');
     const [doTripFee, setDoTripFee] = useState(0);
+    const [doTripRouteRateRef, setDoTripRouteRateRef] = useState('');
+    const [doTripOriginArea, setDoTripOriginArea] = useState('');
+    const [doTripDestinationArea, setDoTripDestinationArea] = useState('');
     const [doVehicleOverrideReason, setDoVehicleOverrideReason] = useState('');
     const [doNotes, setDoNotes] = useState('');
     const [shipperReferenceFormat, setShipperReferenceFormat] = useState('SJ');
@@ -69,6 +73,7 @@ export default function OrderDetailPage() {
     const [busyVehicleIds, setBusyVehicleIds] = useState<string[]>([]);
     const [busyDriverIds, setBusyDriverIds] = useState<string[]>([]);
     const [drivers, setDrivers] = useState<Driver[]>([]);
+    const [tripRouteRates, setTripRouteRates] = useState<TripRouteRate[]>([]);
     const [showHoldModal, setShowHoldModal] = useState(false);
     const [holdingItem, setHoldingItem] = useState<OrderItem | null>(null);
     const [holdQtyKoli, setHoldQtyKoli] = useState('');
@@ -84,13 +89,14 @@ export default function OrderDetailPage() {
     const loadOrderDetail = useCallback(async () => {
         setLoading(true);
         try {
-            const [orderData, itemData, deliveryOrders, vehicleData, driverData, activeDeliveryOrders] = await Promise.all([
+            const [orderData, itemData, deliveryOrders, vehicleData, driverData, activeDeliveryOrders, tripRateData] = await Promise.all([
                 fetchAdminData<Order | null>(`/api/data?entity=orders&id=${orderId}`, 'Gagal memuat detail order'),
                 fetchAdminCollectionData<OrderItem[]>(`/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`, 'Gagal memuat detail order'),
                 fetchAdminCollectionData<DeliveryOrder[]>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`, 'Gagal memuat detail order'),
                 fetchAdminCollectionData<Array<Pick<Vehicle, '_id' | 'unitCode' | 'plateNumber' | 'serviceRef' | 'serviceName'>>>(`/api/data?entity=vehicles&filter=${encodeURIComponent(JSON.stringify({ status: ['ACTIVE', 'IN_SERVICE'] }))}`, 'Gagal memuat detail order'),
                 fetchAdminCollectionData<Driver[]>('/api/data?entity=drivers', 'Gagal memuat detail order'),
                 fetchAdminCollectionData<Array<Pick<DeliveryOrder, '_id' | 'vehicleRef' | 'driverRef' | 'status'>>>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ status: ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'] }))}`, 'Gagal memuat detail order'),
+                fetchAdminCollectionData<TripRouteRate[]>(`/api/data?entity=trip-route-rates&filter=${encodeURIComponent(JSON.stringify({ active: true }))}`, 'Gagal memuat detail order'),
             ]);
             const deliveryOrderIds = (deliveryOrders || []).map(item => item._id);
             const [deliveryOrderItems, notaItems, customerData] = await Promise.all([
@@ -115,6 +121,7 @@ export default function OrderDetailPage() {
             setDoItems(deliveryOrderItems);
             setNotas(orderNotas || []);
             setShipperReferenceFormat((customerData?.deliveryOrderPrefix || 'SJ').toUpperCase());
+            setTripRouteRates((tripRateData || []).filter(rate => rate.active !== false));
             const { busyVehicleIds: nextBusyVehicleIds, busyDriverIds: nextBusyDriverIds } = buildBusyAssignmentIds(activeDeliveryOrders || []);
             setVehicles(vehicleData || []);
             setBusyVehicleIds(nextBusyVehicleIds);
@@ -141,6 +148,49 @@ export default function OrderDetailPage() {
         : 'ddmmyyyy';
     const normalizedShipperReferenceFormat = shipperReferenceFormat.trim().toUpperCase() || 'SJ';
     const shipperReferenceExample = `${normalizedShipperReferenceFormat}/27032026/001`;
+    const tripOriginAreaOptions = buildTripRateAreaOptions(tripRouteRates, 'originArea', {
+        serviceRef: order?.serviceRef,
+    });
+    const tripDestinationAreaOptions = buildTripRateAreaOptions(tripRouteRates, 'destinationArea', {
+        originArea: doTripOriginArea,
+        serviceRef: order?.serviceRef,
+    });
+    const matchedDoTripRouteRate = findMatchingTripRouteRate(tripRouteRates, {
+        originArea: doTripOriginArea,
+        destinationArea: doTripDestinationArea,
+        serviceRef: order?.serviceRef,
+    });
+
+    const applyDoTripRouteSelection = (nextOriginArea: string, nextDestinationArea: string) => {
+        setDoTripOriginArea(nextOriginArea);
+        setDoTripDestinationArea(nextDestinationArea);
+
+        const matchedRate = findMatchingTripRouteRate(tripRouteRates, {
+            originArea: nextOriginArea,
+            destinationArea: nextDestinationArea,
+            serviceRef: order?.serviceRef,
+        });
+        setDoTripRouteRateRef(matchedRate?._id || '');
+        if (matchedRate) {
+            setDoTripFee(matchedRate.rate || 0);
+        }
+    };
+
+    const handleTripOriginAreaChange = (nextOriginArea: string) => {
+        const nextDestinationOptions = buildTripRateAreaOptions(tripRouteRates, 'destinationArea', {
+            originArea: nextOriginArea,
+            serviceRef: order?.serviceRef,
+        });
+        const preservedDestination =
+            nextOriginArea && nextDestinationOptions.includes(doTripDestinationArea)
+                ? doTripDestinationArea
+                : '';
+        applyDoTripRouteSelection(nextOriginArea, preservedDestination);
+    };
+
+    const handleTripDestinationAreaChange = (nextDestinationArea: string) => {
+        applyDoTripRouteSelection(doTripOriginArea, nextDestinationArea);
+    };
 
     useEffect(() => {
         if (!requiresVehicleOverrideReason && doVehicleOverrideReason) {
@@ -194,6 +244,10 @@ export default function OrderDetailPage() {
 
     const openCreateDOModal = () => {
         setSelectedShipments({});
+        setDoTripRouteRateRef('');
+        setDoTripOriginArea('');
+        setDoTripDestinationArea('');
+        setDoTripFee(0);
         if (!doCustomerDoNumber.trim() && normalizedShipperReferenceFormat !== 'SJ') {
             setDoCustomerDoNumber(normalizedShipperReferenceFormat);
         }
@@ -239,6 +293,9 @@ export default function OrderDetailPage() {
                         order,
                         items: selectedItems,
                         customerDoNumber: doCustomerDoNumber,
+                        tripRouteRateRef: doTripRouteRateRef,
+                        tripOriginArea: doTripOriginArea,
+                        tripDestinationArea: doTripDestinationArea,
                         vehicleRef: doVehicle,
                         selectedVehicle: selVeh,
                         driverRef: doDriver,
@@ -266,6 +323,9 @@ export default function OrderDetailPage() {
             setDoCustomerDoNumber('');
             setDoVehicle('');
             setDoDriver('');
+            setDoTripRouteRateRef('');
+            setDoTripOriginArea('');
+            setDoTripDestinationArea('');
             setDoTripFee(0);
             setDoVehicleOverrideReason('');
             setDoNotes('');
@@ -812,6 +872,51 @@ export default function OrderDetailPage() {
                                     </div>
                                 )}
                             </div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Asal Area Trip</label>
+                                    <select
+                                        className="form-select"
+                                        value={doTripOriginArea}
+                                        onChange={e => handleTripOriginAreaChange(e.target.value)}
+                                        disabled={creatingDO}
+                                    >
+                                        <option value="">Pilih asal area</option>
+                                        {tripOriginAreaOptions.map(area => <option key={area} value={area}>{area}</option>)}
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Tujuan Area Trip</label>
+                                    <select
+                                        className="form-select"
+                                        value={doTripDestinationArea}
+                                        onChange={e => handleTripDestinationAreaChange(e.target.value)}
+                                        disabled={creatingDO || !doTripOriginArea}
+                                    >
+                                        <option value="">Pilih tujuan area</option>
+                                        {tripDestinationAreaOptions.map(area => <option key={area} value={area}>{area}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            {matchedDoTripRouteRate && (
+                                <div
+                                    style={{
+                                        background: 'var(--color-primary-50)',
+                                        border: '1px solid var(--color-primary-100)',
+                                        borderRadius: '0.75rem',
+                                        padding: '0.85rem 1rem',
+                                        marginBottom: '1rem',
+                                    }}
+                                >
+                                    <div style={{ fontWeight: 600, marginBottom: '0.25rem', color: 'var(--color-primary-700)' }}>
+                                        Tarif master ditemukan
+                                    </div>
+                                    <div style={{ fontSize: '0.8rem', color: 'var(--color-primary-700)' }}>
+                                        {formatTripRouteRateLabel(matchedDoTripRouteRate)} | {formatCurrency(matchedDoTripRouteRate.rate)}
+                                        {matchedDoTripRouteRate.notes ? ` | ${matchedDoTripRouteRate.notes}` : ''}
+                                    </div>
+                                </div>
+                            )}
                             <div className="form-group">
                                 <label className="form-label">Upah Trip</label>
                                 <CurrencyInput

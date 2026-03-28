@@ -7,6 +7,7 @@ import {
     LayoutDashboard, Package, Truck, Users, Layers, FileText, Wallet, Tags,
     BarChart3, Car, Wrench, AlertTriangle, User, Lock, Building2, UserCog,
     ScrollText, PanelLeftClose, PanelLeftOpen, Menu, LogOut, X, CheckCircle, XCircle, Info, AlertCircle, Landmark,
+    MapPin,
     UserCircle, Receipt
 } from 'lucide-react';
 import { matchesPathSegment } from '@/lib/pathname';
@@ -56,6 +57,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
     UserCog: <UserCog size={20} />,
     ScrollText: <ScrollText size={20} />,
     Landmark: <Landmark size={20} />,
+    MapPin: <MapPin size={20} />,
     UserCircle: <UserCircle size={20} />,
     Receipt: <Receipt size={20} />,
 };
@@ -297,7 +299,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         const previousPart = idx > 0 ? pathParts[idx - 1] : '';
         const labels: Record<string, string> = {
             dashboard: 'Dashboard', orders: 'Order', 'delivery-orders': 'Surat Jalan',
-            invoices: 'Tagihan / Nota', customers: 'Customer', services: 'Jenis Armada',
+            invoices: 'Tagihan / Nota', customers: 'Customer', 'trip-rates': 'Biaya Rute Trip', services: 'Jenis Armada',
             'expense-categories': 'Kategori Biaya', expenses: 'Pengeluaran',
             reports: 'Laporan', fleet: 'Armada', vehicles: 'Kendaraan',
             maintenance: 'Maintenance', incidents: 'Insiden', settings: 'Pengaturan',

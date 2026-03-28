@@ -150,6 +150,18 @@ export interface CustomerPickupLocation {
   isDefault?: boolean;
 }
 
+export interface TripRouteRate {
+  _id: string;
+  _type: 'tripRouteRate';
+  originArea: string;
+  destinationArea: string;
+  serviceRef?: string;
+  serviceName?: string;
+  rate: number;
+  notes?: string;
+  active: boolean;
+}
+
 // ── Service ──
 export interface Service {
   _id: string;
@@ -365,6 +377,9 @@ export interface DeliveryOrder {
   vehicleServiceRef?: string;
   vehicleServiceName?: string;
   vehicleCategoryOverrideReason?: string;
+  tripRouteRateRef?: string;
+  tripOriginArea?: string;
+  tripDestinationArea?: string;
   taripBorongan?: number;       // Tarif upah supir per DO/perjalanan
   keteranganBorongan?: string;  // Keterangan upah borongan
   trackingState?: 'IDLE' | 'ACTIVE' | 'PAUSED' | 'STOPPED';
