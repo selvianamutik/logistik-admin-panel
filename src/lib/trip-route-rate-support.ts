@@ -70,7 +70,17 @@ export function findMatchingTripRouteRate(
         return exactServiceMatch;
     }
 
-    return candidates.find(rate => !rate.serviceRef) || candidates[0];
+    const genericMatch = candidates.find(rate => !rate.serviceRef);
+    if (genericMatch) {
+        return genericMatch;
+    }
+
+    // Never fall back to another service-specific rate when a service is requested.
+    if (normalizedServiceRef) {
+        return null;
+    }
+
+    return candidates[0];
 }
 
 export function formatTripRouteRateLabel(rate: Pick<TripRouteRate, 'originArea' | 'destinationArea' | 'serviceName'>) {

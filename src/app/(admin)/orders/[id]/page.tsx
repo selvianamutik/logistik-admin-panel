@@ -173,6 +173,8 @@ export default function OrderDetailPage() {
         setDoTripRouteRateRef(matchedRate?._id || '');
         if (matchedRate) {
             setDoTripFee(matchedRate.rate || 0);
+        } else {
+            setDoTripFee(0);
         }
     };
 

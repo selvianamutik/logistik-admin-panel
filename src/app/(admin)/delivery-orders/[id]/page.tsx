@@ -123,6 +123,8 @@ export default function DODetailPage() {
         setTripRouteRateRef(nextMatchedRate?._id || '');
         if (nextMatchedRate) {
             setTaripBorongan(nextMatchedRate.rate || 0);
+        } else {
+            setTaripBorongan(0);
         }
     };
 
