@@ -487,7 +487,18 @@ export default function BoronganDetailPage() {
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Metode Pembayaran</label>
-                                    <select className="form-select" value={payMethod} onChange={(e) => setPayMethod(e.target.value)} disabled={paying}>
+                                    <select
+                                        className="form-select"
+                                        value={payMethod}
+                                        onChange={(e) => {
+                                            const nextMethod = e.target.value;
+                                            setPayMethod(nextMethod);
+                                            if (nextMethod === 'CASH') {
+                                                setPayBankRef('');
+                                            }
+                                        }}
+                                        disabled={paying}
+                                    >
                                         <option value="CASH">Tunai</option>
                                         <option value="TRANSFER">Transfer</option>
                                         <option value="OTHER">Lainnya</option>
@@ -497,7 +508,7 @@ export default function BoronganDetailPage() {
                                     <label className="form-label">
                                         Rekening / Kas <span style={{ fontSize: '0.7rem', color: 'var(--color-gray-400)' }}>(opsional, untuk debit)</span>
                                     </label>
-                                    <select className="form-select" value={payBankRef} onChange={(e) => setPayBankRef(e.target.value)} disabled={paying}>
+                                    <select className="form-select" value={payBankRef} onChange={(e) => setPayBankRef(e.target.value)} disabled={paying || payMethod === 'CASH'}>
                                         <option value="">{payMethod === 'CASH' ? '-- Otomatis ke Kas Tunai --' : '-- Tanpa Rekening --'}</option>
                                         {bankAccounts.map((account) => (
                                             <option key={account._id} value={account._id}>
@@ -511,7 +522,7 @@ export default function BoronganDetailPage() {
                                 {payMethod === 'TRANSFER'
                                     ? 'Transfer akan mencatat expense dan membuat mutasi DEBIT pada rekening yang dipilih.'
                                     : payMethod === 'CASH'
-                                        ? 'Tunai akan tetap mencatat expense dan menandai borongan lunas. Jika rekening kosong, sistem otomatis mem-posting ke akun Kas Tunai.'
+                                        ? 'Tunai selalu diposting ke akun Kas Tunai. Jika uangnya nanti disetor ke bank, catat transfer kas ke rekening secara terpisah.'
                                         : 'Metode lain tetap mencatat expense. Mutasi bank hanya dibuat jika rekening dipilih.'}
                             </div>
                             <div className="form-group">

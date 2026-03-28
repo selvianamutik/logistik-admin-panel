@@ -514,6 +514,12 @@ export async function handleBoronganPayment(
                 { status: 400 }
             );
         }
+        if (paymentMethod === 'CASH' && bankAccount?.accountType && bankAccount.accountType !== 'CASH') {
+            return NextResponse.json(
+                { error: 'Metode tunai harus memakai akun Kas Tunai, bukan rekening bank' },
+                { status: 400 }
+            );
+        }
         if (bankAccount && !bankAccount._rev) {
             return NextResponse.json({ error: 'Revisi rekening tidak tersedia' }, { status: 409 });
         }
