@@ -448,12 +448,23 @@ export default function NotaDetailPage() {
                             <div className="form-group"><label className="form-label">Nominal (Rp)</label><CurrencyInput value={payAmount} onValueChange={value => setPayAmount(value)} disabled={paying} placeholder="Ketik nominal pembayaran nota" /></div>
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Metode</label>
-                                    <select className="form-select" value={payMethod} onChange={e => setPayMethod(e.target.value)} disabled={paying}>
+                                    <select
+                                        className="form-select"
+                                        value={payMethod}
+                                        onChange={e => {
+                                            const nextMethod = e.target.value;
+                                            setPayMethod(nextMethod);
+                                            if (nextMethod === 'CASH') {
+                                                setPayBankRef('');
+                                            }
+                                        }}
+                                        disabled={paying}
+                                    >
                                         <option value="TRANSFER">Transfer</option><option value="CASH">Tunai</option><option value="OTHER">Lainnya</option>
                                     </select>
                                 </div>
                                 <div className="form-group"><label className="form-label">Rekening</label>
-                                    <select className="form-select" value={payBankRef} onChange={e => setPayBankRef(e.target.value)} disabled={paying}>
+                                    <select className="form-select" value={payBankRef} onChange={e => setPayBankRef(e.target.value)} disabled={paying || payMethod === 'CASH'}>
                                         <option value="">{payMethod === 'CASH' ? '-- Otomatis ke Kas Tunai --' : '-- Pilih --'}</option>
                                         {bankAccounts.map(a => <option key={a._id} value={a._id}>{a.bankName} - {a.accountNumber}{a.accountType === 'CASH' ? ' (Kas Tunai)' : ''}</option>)}
                                     </select>
@@ -463,7 +474,7 @@ export default function NotaDetailPage() {
                                 {payMethod === 'TRANSFER'
                                     ? 'Transfer akan mengurangi sisa tagihan, mencatat pendapatan, dan menambah saldo rekening yang dipilih.'
                                     : payMethod === 'CASH'
-                                        ? 'Tunai tetap mengurangi sisa tagihan dan mencatat pendapatan. Jika rekening dibiarkan kosong, sistem otomatis mem-posting ke akun Kas Tunai.'
+                                        ? 'Tunai selalu diposting ke akun Kas Tunai. Jika uangnya nanti disetor ke bank, catat transfer kas ke rekening secara terpisah.'
                                         : 'Metode lain tetap mengurangi sisa tagihan dan mencatat pendapatan. Mutasi bank hanya dibuat jika rekening dipilih.'}
                             </div>
                             <div className="form-group"><label className="form-label">Catatan</label><textarea className="form-textarea" rows={2} value={payNote} onChange={e => setPayNote(e.target.value)} disabled={paying} /></div>

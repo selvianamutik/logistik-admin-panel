@@ -98,6 +98,15 @@ async function resolveReceiptBankAccount(method: PaymentMethod, selectedAccountR
         };
     }
 
+    if (method === 'CASH' && bankAcc?.accountType && bankAcc.accountType !== 'CASH') {
+        return {
+            error: NextResponse.json(
+                { error: 'Metode tunai harus memakai akun Kas Tunai, bukan rekening bank' },
+                { status: 400 }
+            ),
+        };
+    }
+
     if (bankAcc && !bankAcc._rev) {
         return { error: NextResponse.json({ error: 'Revisi rekening tidak tersedia' }, { status: 409 }) };
     }

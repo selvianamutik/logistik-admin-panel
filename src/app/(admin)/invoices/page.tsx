@@ -690,13 +690,24 @@ export default function NotaListPage() {
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Metode</label>
-                                    <select className="form-select" value={receiptMethod} onChange={e => setReceiptMethod(e.target.value)} disabled={receiving}>
+                                    <select
+                                        className="form-select"
+                                        value={receiptMethod}
+                                        onChange={e => {
+                                            const nextMethod = e.target.value;
+                                            setReceiptMethod(nextMethod);
+                                            if (nextMethod === 'CASH') {
+                                                setReceiptBankRef('');
+                                            }
+                                        }}
+                                        disabled={receiving}
+                                    >
                                         {Object.entries(PAYMENT_METHOD_MAP).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                                     </select>
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Rekening / Kas</label>
-                                    <select className="form-select" value={receiptBankRef} onChange={e => setReceiptBankRef(e.target.value)} disabled={receiving}>
+                                    <select className="form-select" value={receiptBankRef} onChange={e => setReceiptBankRef(e.target.value)} disabled={receiving || receiptMethod === 'CASH'}>
                                         <option value="">{receiptMethod === 'CASH' ? '-- Otomatis ke Kas Tunai --' : '-- Pilih --'}</option>
                                         {bankAccounts.map(account => <option key={account._id} value={account._id}>{account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''}</option>)}
                                     </select>
@@ -718,7 +729,9 @@ export default function NotaListPage() {
                                 <textarea className="form-textarea" rows={2} value={receiptNote} onChange={e => setReceiptNote(e.target.value)} disabled={receiving} placeholder="Contoh: Transfer gabungan nota Arwana batch 1" />
                             </div>
                             <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--color-gray-600)', marginBottom: '1rem' }}>
-                                Satu penerimaan customer mewakili satu uang masuk nyata di bank/kas. Penerimaan ini bisa dialokasikan ke beberapa nota customer yang sama. Jika ada sisa yang belum dialokasikan, sistem menyimpannya sebagai kredit customer.
+                                {receiptMethod === 'CASH'
+                                    ? 'Penerimaan tunai selalu diposting ke akun Kas Tunai. Jika uangnya nanti disetor ke bank, catat transfer kas ke rekening secara terpisah.'
+                                    : 'Satu penerimaan customer mewakili satu uang masuk nyata di bank/kas. Penerimaan ini bisa dialokasikan ke beberapa nota customer yang sama. Jika ada sisa yang belum dialokasikan, sistem menyimpannya sebagai kredit customer.'}
                             </div>
                             {receiptCustomerRef && (
                                 <div style={{ background: 'var(--color-primary-50)', border: '1px solid var(--color-primary-100)', borderRadius: '0.75rem', padding: '0.9rem 1rem', marginBottom: '1rem' }}>
