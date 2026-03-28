@@ -47,7 +47,7 @@ class _DriverTrackingAppState extends State<DriverTrackingApp> {
       setState(() {
         _isPreparingLocation = false;
         _locationSetupError =
-            'GPS is turned off. Enable location services before using the driver app.';
+            'GPS mati. Aktifkan dulu sebelum memakai aplikasi driver.';
       });
       return;
     }
@@ -63,7 +63,7 @@ class _DriverTrackingAppState extends State<DriverTrackingApp> {
       setState(() {
         _isPreparingLocation = false;
         _locationSetupError =
-            'Location permission is required to track driver position.';
+            'Izin lokasi dibutuhkan untuk kirim posisi driver.';
       });
       return;
     }
@@ -72,7 +72,7 @@ class _DriverTrackingAppState extends State<DriverTrackingApp> {
       setState(() {
         _isPreparingLocation = false;
         _locationSetupError =
-            'Location permission is permanently denied. Open app settings and allow location access.';
+            'Izin lokasi diblokir. Buka pengaturan aplikasi dan aktifkan lagi.';
       });
       return;
     }
@@ -110,7 +110,7 @@ class DriverAppSession {
     required this.email,
     required this.role,
     this.driverRef,
-    this.token,      
+    this.token,
   });
 
   final String driverId;
@@ -118,7 +118,7 @@ class DriverAppSession {
   final String email;
   final String role;
   final String? driverRef;
-  final String? token; 
+  final String? token;
 }
 
 class _StartupLocationPage extends StatelessWidget {
@@ -126,15 +126,27 @@ class _StartupLocationPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    final scheme = Theme.of(context).colorScheme;
+
+    return Scaffold(
       body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('Loading App...'),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 42,
+                height: 42,
+                child: CircularProgressIndicator(color: scheme.primary),
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Menyiapkan aplikasi driver',
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -149,6 +161,8 @@ class _LocationSetupErrorPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
     return Scaffold(
       body: Center(
         child: Padding(
@@ -156,22 +170,53 @@ class _LocationSetupErrorPage extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.location_off_rounded, size: 42),
+              Container(
+                width: 68,
+                height: 68,
+                decoration: BoxDecoration(
+                  color: scheme.errorContainer,
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                child: Icon(
+                  Icons.location_off_rounded,
+                  size: 30,
+                  color: scheme.error,
+                ),
+              ),
               const SizedBox(height: 16),
-              Text(message, textAlign: TextAlign.center),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: () => onRetry(),
-                child: const Text('Retry'),
+              const Text(
+                'Akses lokasi belum siap',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 8),
-              TextButton(
-                onPressed: Geolocator.openAppSettings,
-                child: const Text('Open app settings'),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: scheme.onSurface.withValues(alpha: 0.6),
+                ),
               ),
-              TextButton(
-                onPressed: Geolocator.openLocationSettings,
-                child: const Text('Open GPS settings'),
+              const SizedBox(height: 20),
+              FilledButton(
+                onPressed: () => onRetry(),
+                child: const Text('Coba lagi'),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton(
+                    onPressed: Geolocator.openAppSettings,
+                    child: const Text('Izin app'),
+                  ),
+                  OutlinedButton(
+                    onPressed: Geolocator.openLocationSettings,
+                    child: const Text('Pengaturan GPS'),
+                  ),
+                ],
               ),
             ],
           ),

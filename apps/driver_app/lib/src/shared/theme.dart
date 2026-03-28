@@ -2,14 +2,27 @@ import 'package:flutter/material.dart';
 
 ThemeData buildAppTheme() {
   const base = Color(0xFF0F766E);
+  const surface = Color(0xFFF4F7F6);
+  const outline = Color(0xFFDCE5E1);
 
   return ThemeData(
     colorScheme: ColorScheme.fromSeed(
       seedColor: base,
       brightness: Brightness.light,
     ),
-    scaffoldBackgroundColor: const Color(0xFFF5F7F6),
+    scaffoldBackgroundColor: surface,
     useMaterial3: true,
+    textTheme: const TextTheme(
+      headlineMedium: TextStyle(
+        fontSize: 28,
+        fontWeight: FontWeight.w800,
+        height: 1.05,
+      ),
+      titleLarge: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+      titleMedium: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+      bodyMedium: TextStyle(fontSize: 14, height: 1.45),
+      bodySmall: TextStyle(fontSize: 12, height: 1.4),
+    ),
     appBarTheme: const AppBarTheme(
       centerTitle: false,
       backgroundColor: Colors.transparent,
@@ -20,8 +33,26 @@ ThemeData buildAppTheme() {
       color: Colors.white,
       elevation: 0,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: const BorderSide(color: Color(0xFFE2E8E4)),
+        borderRadius: BorderRadius.circular(22),
+        side: const BorderSide(color: outline),
+      ),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        backgroundColor: base,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+      ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: const Color(0xFF16332F),
+        side: const BorderSide(color: outline),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
       ),
     ),
     inputDecorationTheme: InputDecorationTheme(
@@ -29,11 +60,11 @@ ThemeData buildAppTheme() {
       fillColor: Colors.white,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: Color(0xFFD4DDDA)),
+        borderSide: const BorderSide(color: outline),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: Color(0xFFD4DDDA)),
+        borderSide: const BorderSide(color: outline),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),

@@ -55,63 +55,61 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final width = MediaQuery.sizeOf(context).width;
+    final compact = width < 360;
 
     return Scaffold(
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+            padding: EdgeInsets.symmetric(
+              horizontal: compact ? 18 : 24,
+              vertical: compact ? 24 : 32,
+            ),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
+              constraints: const BoxConstraints(maxWidth: 400),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ── Logo ──
                   Container(
-                    width: 56,
-                    height: 56,
+                    width: compact ? 52 : 56,
+                    height: compact ? 52 : 56,
                     decoration: BoxDecoration(
                       color: scheme.primary,
-                      borderRadius: BorderRadius.circular(18),
+                      borderRadius: BorderRadius.circular(16),
                     ),
                     child: const Icon(
                       Icons.local_shipping_rounded,
                       color: Colors.white,
-                      size: 28,
+                      size: 26,
                     ),
                   ),
-
-                  const SizedBox(height: 28),
-
-                  // ── Heading ──
+                  const SizedBox(height: 24),
                   Text(
-                    'Selamat datang',
+                    'GMS Driver',
                     style: TextStyle(
                       color: scheme.onSurface,
-                      fontSize: 28,
+                      fontSize: compact ? 26 : 30,
                       fontWeight: FontWeight.w800,
                       height: 1.1,
                     ),
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Masuk untuk melihat perjalanan aktif\ndan mengirim lokasi berkala.',
+                    'Masuk untuk lihat trip dan kirim lokasi.',
                     style: TextStyle(
-                      color: scheme.onSurface.withValues(alpha: 0.5),
+                      color: scheme.onSurface.withValues(alpha: 0.56),
                       fontSize: 14,
-                      height: 1.6,
+                      height: 1.45,
                     ),
                   ),
-
-                  const SizedBox(height: 36),
-
-                  // ── Form ──
+                  SizedBox(height: compact ? 28 : 34),
                   Form(
                     key: _formKey,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _FieldLabel(label: 'Email'),
+                        const _FieldLabel(label: 'Email'),
                         const SizedBox(height: 8),
                         TextFormField(
                           controller: _emailController,
@@ -132,16 +130,14 @@ class _LoginPageState extends State<LoginPage> {
                             return null;
                           },
                         ),
-
                         const SizedBox(height: 16),
-
-                        _FieldLabel(label: 'Password'),
+                        const _FieldLabel(label: 'Password'),
                         const SizedBox(height: 8),
                         TextFormField(
                           controller: _passwordController,
                           obscureText: _obscurePassword,
                           decoration: InputDecoration(
-                            hintText: '••••••••',
+                            hintText: 'Masukkan password',
                             prefixIcon: Icon(
                               Icons.lock_outline_rounded,
                               size: 18,
@@ -167,7 +163,6 @@ class _LoginPageState extends State<LoginPage> {
                             return null;
                           },
                         ),
-
                         if (_errorMessage != null) ...[
                           const SizedBox(height: 14),
                           Container(
@@ -201,19 +196,11 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                           ),
                         ],
-
                         const SizedBox(height: 24),
-
                         SizedBox(
                           width: double.infinity,
                           child: FilledButton(
                             onPressed: _submitting ? null : _submit,
-                            style: FilledButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
                             child: _submitting
                                 ? SizedBox(
                                     width: 18,
@@ -230,39 +217,6 @@ class _LoginPageState extends State<LoginPage> {
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // ── Info banner ──
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFECF6F4),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: const Color(0xFFCBE4DF)),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          Icons.info_outline_rounded,
-                          color: scheme.primary,
-                          size: 16,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            'Login mobile memakai endpoint khusus aplikasi driver. Pastikan API_BASE_URL mengarah ke server aplikasi yang benar.',
-                            style: TextStyle(
-                              color: scheme.primary.withValues(alpha: 0.8),
-                              fontSize: 12,
-                              height: 1.5,
-                            ),
                           ),
                         ),
                       ],
@@ -287,7 +241,7 @@ class _FieldLabel extends StatelessWidget {
     return Text(
       label,
       style: TextStyle(
-        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.58),
         fontSize: 13,
         fontWeight: FontWeight.w600,
       ),

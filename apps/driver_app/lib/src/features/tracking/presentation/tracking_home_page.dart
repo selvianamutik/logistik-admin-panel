@@ -347,7 +347,8 @@ class _TrackingHomePageState extends State<TrackingHomePage> {
 
   Future<void> _confirmLogout() async {
     final lockedTrip = _trips.firstWhereOrNull(
-      (trip) => trip.trackingState == 'ACTIVE' || trip.trackingState == 'PAUSED',
+      (trip) =>
+          trip.trackingState == 'ACTIVE' || trip.trackingState == 'PAUSED',
     );
     if (lockedTrip != null) {
       final shouldLogout = await showDialog<bool>(
@@ -380,51 +381,41 @@ class _TrackingHomePageState extends State<TrackingHomePage> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final compact = MediaQuery.sizeOf(context).width < 380;
 
     return Scaffold(
       appBar: AppBar(
-        title: Row(
-          children: [
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                color: scheme.primary,
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(width: 8),
-            const Text(
-              'LOGISTIK',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 2,
-              ),
-            ),
-          ],
+        title: const Text(
+          'GMS Driver',
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
         ),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 12),
-            child: OutlinedButton.icon(
-              onPressed: _confirmLogout,
-              icon: const Icon(Icons.logout_rounded, size: 15),
-              label: const Text('Keluar'),
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 8,
-                ),
-                textStyle: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-            ),
+            child: compact
+                ? IconButton(
+                    onPressed: _confirmLogout,
+                    tooltip: 'Keluar',
+                    icon: const Icon(Icons.logout_rounded),
+                  )
+                : OutlinedButton.icon(
+                    onPressed: _confirmLogout,
+                    icon: const Icon(Icons.logout_rounded, size: 15),
+                    label: const Text('Keluar'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
           ),
         ],
       ),
@@ -432,16 +423,16 @@ class _TrackingHomePageState extends State<TrackingHomePage> {
         onRefresh: _loadTrips,
         color: scheme.primary,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
           children: [
             _DriverCard(session: widget.session, tripCount: _trips.length),
-            const SizedBox(height: 20),
-            _SectionHeader(title: 'Delivery orders', count: _trips.length),
+            const SizedBox(height: 16),
+            _SectionHeader(title: 'Trip', count: _trips.length),
             const SizedBox(height: 10),
             _buildTripList(scheme),
             if (_selectedTrip != null) ...[
-              const SizedBox(height: 24),
-              const _SectionHeader(title: 'Detail DO terpilih'),
+              const SizedBox(height: 20),
+              const _SectionHeader(title: 'Trip dipilih'),
               const SizedBox(height: 10),
               _TripDetailCard(trip: _selectedTrip!),
               const SizedBox(height: 12),
@@ -464,8 +455,7 @@ class _TrackingHomePageState extends State<TrackingHomePage> {
               if (_selectedTrip!.isAwaitingAdminApproval) ...[
                 const _ErrorBanner(
                   icon: Icons.admin_panel_settings_rounded,
-                  message:
-                      'Driver sudah mengajukan selesai. Menunggu approval admin sebelum trip benar-benar ditutup.',
+                  message: 'Trip ini menunggu approval admin.',
                   isWarning: true,
                 ),
                 const SizedBox(height: 12),
@@ -551,10 +541,12 @@ class _DriverCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final tripLabel = tripCount == 1 ? '1 trip' : '$tripCount trip';
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
               width: 46,
@@ -583,10 +575,11 @@ class _DriverCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    session.email,
+                    session.role,
                     style: TextStyle(
                       color: scheme.onSurface.withValues(alpha: 0.5),
-                      fontSize: 13,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
@@ -599,7 +592,7 @@ class _DriverCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Text(
-                '$tripCount DO',
+                tripLabel,
                 style: TextStyle(
                   color: scheme.primary,
                   fontWeight: FontWeight.w700,
@@ -626,21 +619,20 @@ class _SectionHeader extends StatelessWidget {
     return Row(
       children: [
         Text(
-          title.toUpperCase(),
+          title,
           style: TextStyle(
-            color: scheme.onSurface.withValues(alpha: 0.4),
-            fontSize: 11,
+            color: scheme.onSurface,
+            fontSize: 15,
             fontWeight: FontWeight.w700,
-            letterSpacing: 1.5,
           ),
         ),
         if (count != null) ...[
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
               color: scheme.primaryContainer,
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: BorderRadius.circular(999),
             ),
             child: Text(
               '$count',
@@ -675,10 +667,10 @@ class _TripListCard extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        padding: const EdgeInsets.fromLTRB(15, 14, 15, 14),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(18),
           border: Border.all(
             color: isSelected
                 ? scheme.primary.withValues(alpha: 0.5)
@@ -689,52 +681,52 @@ class _TripListCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Expanded(
-                  child: Text(
-                    trip.doNumber,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
-                    ),
+                Text(
+                  trip.doNumber,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
                   ),
                 ),
                 if (isSelected)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: Icon(
-                      Icons.check_circle_rounded,
-                      color: scheme.primary,
-                      size: 16,
-                    ),
+                  Icon(
+                    Icons.check_circle_rounded,
+                    color: scheme.primary,
+                    size: 16,
                   ),
                 _StatusChip(status: trip.status),
               ],
             ),
             const SizedBox(height: 6),
             Text(
-              '${trip.customerName}  ·  ${trip.vehiclePlate}',
+              '${trip.customerName} | ${trip.vehiclePlate}',
               style: TextStyle(
                 color: scheme.onSurface.withValues(alpha: 0.5),
-                fontSize: 13,
+                fontSize: 12.5,
               ),
             ),
             const SizedBox(height: 6),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Icon(
-                  Icons.location_on_rounded,
+                  Icons.route_rounded,
                   size: 13,
                   color: scheme.onSurface.withValues(alpha: 0.35),
                 ),
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
-                    trip.destinationLabel,
+                    '${trip.originLabel} -> ${trip.destinationLabel}',
                     style: TextStyle(
-                      color: scheme.onSurface.withValues(alpha: 0.5),
+                      color: scheme.onSurface.withValues(alpha: 0.62),
                       fontSize: 13,
+                      fontWeight: FontWeight.w600,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -756,59 +748,73 @@ class _TripDetailCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Expanded(
-                  child: Text(
-                    trip.doNumber,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
-                    ),
+                Text(
+                  trip.doNumber,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
                   ),
                 ),
                 _StatusChip(status: trip.status),
               ],
             ),
-            const SizedBox(height: 16),
-            _DetailRow(
-              icon: Icons.business_rounded,
-              label: 'Customer',
-              value: trip.customerName,
-            ),
-            _DetailRow(
-              icon: Icons.local_shipping_rounded,
-              label: 'Kendaraan',
-              value: trip.vehiclePlate,
-            ),
-            if (trip.receiverName != null)
-              _DetailRow(
-                icon: Icons.person_rounded,
-                label: 'Penerima',
-                value: trip.receiverName!,
+            const SizedBox(height: 8),
+            Text(
+              '${trip.originLabel} -> ${trip.destinationLabel}',
+              style: TextStyle(
+                color: scheme.onSurface.withValues(alpha: 0.7),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
               ),
-            _DetailRow(
-              icon: Icons.location_on_rounded,
-              label: 'Tujuan',
-              value: trip.destinationLabel,
             ),
-            _DetailRow(
-              icon: Icons.calendar_today_rounded,
-              label: 'Tanggal',
-              value: trip.etdLabel,
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                _DetailTile(
+                  icon: Icons.business_rounded,
+                  label: 'Customer',
+                  value: trip.customerName,
+                ),
+                _DetailTile(
+                  icon: Icons.local_shipping_rounded,
+                  label: 'Kendaraan',
+                  value: trip.vehiclePlate,
+                ),
+                if (trip.receiverName != null)
+                  _DetailTile(
+                    icon: Icons.person_rounded,
+                    label: 'Penerima',
+                    value: trip.receiverName!,
+                  ),
+                _DetailTile(
+                  icon: Icons.calendar_today_rounded,
+                  label: 'Tanggal',
+                  value: trip.etdLabel,
+                ),
+              ],
             ),
-            if (trip.itemSummary != null && trip.itemSummary!.isNotEmpty)
-              _DetailRow(
+            if (trip.itemSummary != null && trip.itemSummary!.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _DetailNote(
                 icon: Icons.notes_rounded,
                 label: 'Catatan',
                 value: trip.itemSummary!,
               ),
+            ],
           ],
         ),
       ),
@@ -816,8 +822,8 @@ class _TripDetailCard extends StatelessWidget {
   }
 }
 
-class _DetailRow extends StatelessWidget {
-  const _DetailRow({
+class _DetailTile extends StatelessWidget {
+  const _DetailTile({
     required this.icon,
     required this.label,
     required this.value,
@@ -829,24 +835,93 @@ class _DetailRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 140, maxWidth: 220),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        decoration: BoxDecoration(
+          color: scheme.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: scheme.outline.withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 15, color: scheme.primary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: scheme.onSurface.withValues(alpha: 0.5),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    value,
+                    style: const TextStyle(fontSize: 13),
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DetailNote extends StatelessWidget {
+  const _DetailNote({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: scheme.outline.withValues(alpha: 0.4)),
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 15, color: scheme.onSurface.withValues(alpha: 0.3)),
-          const SizedBox(width: 10),
-          SizedBox(
-            width: 72,
-            child: Text(
-              label,
-              style: TextStyle(
-                color: scheme.onSurface.withValues(alpha: 0.5),
-                fontSize: 13,
-              ),
+          Icon(icon, size: 15, color: scheme.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: scheme.onSurface.withValues(alpha: 0.5),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(value, style: const TextStyle(fontSize: 13)),
+              ],
             ),
           ),
-          Expanded(child: Text(value, style: const TextStyle(fontSize: 13))),
         ],
       ),
     );
@@ -919,7 +994,7 @@ class _TrackingCard extends StatelessWidget {
                       ),
                       Text(
                         trackingEnabled
-                            ? 'Mengirim lokasi ke server ($pingCount ping)'
+                            ? '$pingCount ping terkirim'
                             : 'Aktifkan untuk kirim lokasi',
                         style: TextStyle(
                           color: scheme.onSurface.withValues(alpha: 0.5),
@@ -936,16 +1011,32 @@ class _TrackingCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 14),
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Text(
-                  'Interval',
-                  style: TextStyle(
-                    color: scheme.onSurface.withValues(alpha: 0.5),
-                    fontSize: 13,
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 7,
+                  ),
+                  decoration: BoxDecoration(
+                    color: scheme.surface,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: scheme.outline.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Text(
+                    'Interval',
+                    style: TextStyle(
+                      color: scheme.onSurface.withValues(alpha: 0.58),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-                const Spacer(),
                 _Chip(
                   label: '30s',
                   selected: selectedInterval == const Duration(seconds: 30),
@@ -964,12 +1055,18 @@ class _TrackingCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHighest,
+                  color: scheme.surface,
                   borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: scheme.outline.withValues(alpha: 0.4),
+                  ),
                 ),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
                       children: [
                         _StatMini(
                           label: 'Terakhir',
@@ -977,31 +1074,21 @@ class _TrackingCard extends StatelessWidget {
                             location!.recordedAt,
                           ).format(context),
                         ),
-                        Container(
-                          width: 1,
-                          height: 32,
-                          margin: const EdgeInsets.symmetric(horizontal: 12),
-                          color: const Color(0xFFE2E8E4),
-                        ),
                         _StatMini(
                           label: 'Kecepatan',
                           value:
                               '${location!.speedKph.toStringAsFixed(0)} km/h',
                         ),
-                        Container(
-                          width: 1,
-                          height: 32,
-                          margin: const EdgeInsets.symmetric(horizontal: 12),
-                          color: const Color(0xFFE2E8E4),
-                        ),
                         _StatMini(
                           label: 'Akurasi',
-                          value: '±${location!.accuracyM.toStringAsFixed(0)} m',
+                          value:
+                              '+/- ${location!.accuracyM.toStringAsFixed(0)} m',
                         ),
                       ],
                     ),
                     const SizedBox(height: 10),
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Icon(
                           Icons.location_on_rounded,
@@ -1009,13 +1096,15 @@ class _TrackingCard extends StatelessWidget {
                           color: scheme.onSurface.withValues(alpha: 0.4),
                         ),
                         const SizedBox(width: 6),
-                        Text(
-                          '${location!.latitude.toStringAsFixed(6)}, '
-                          '${location!.longitude.toStringAsFixed(6)}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: scheme.onSurface.withValues(alpha: 0.5),
-                            fontFamily: 'monospace',
+                        Expanded(
+                          child: Text(
+                            '${location!.latitude.toStringAsFixed(6)}, '
+                            '${location!.longitude.toStringAsFixed(6)}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: scheme.onSurface.withValues(alpha: 0.5),
+                              fontFamily: 'monospace',
+                            ),
                           ),
                         ),
                       ],
@@ -1057,6 +1146,7 @@ class _ErrorBanner extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(icon, color: color, size: 16),
           const SizedBox(width: 10),
@@ -1067,7 +1157,7 @@ class _ErrorBanner extends StatelessWidget {
             TextButton(
               onPressed: onRetry,
               child: Text(
-                'Retry',
+                'Coba lagi',
                 style: TextStyle(color: color, fontSize: 13),
               ),
             ),
@@ -1091,7 +1181,8 @@ class _Chip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return GestureDetector(
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
@@ -1126,8 +1217,10 @@ class _StatMini extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 92),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             label,
@@ -1168,9 +1261,7 @@ class _StartDeliveryButton extends StatelessWidget {
           alreadyStarted ? Icons.sensors_rounded : Icons.play_arrow_rounded,
           size: 18,
         ),
-        label: Text(
-          alreadyStarted ? 'Pengiriman berjalan' : 'Mulai Pengiriman',
-        ),
+        label: Text(alreadyStarted ? 'Sedang jalan' : 'Mulai trip'),
         style: FilledButton.styleFrom(
           padding: const EdgeInsets.symmetric(vertical: 16),
           shape: RoundedRectangleBorder(
@@ -1196,13 +1287,13 @@ class _AdvanceButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = awaitingAdminApproval
-        ? 'Menunggu Approval Admin'
+        ? 'Tunggu approval'
         : switch (status) {
-            TripStatus.assigned => 'Mulai ke Pickup',
-            TripStatus.headingToPickup => 'Mulai Pengiriman',
+            TripStatus.assigned => 'Ke pickup',
+            TripStatus.headingToPickup => 'Mulai kirim',
             TripStatus.onDelivery => 'Tandai Tiba',
             TripStatus.arrived => 'Ajukan Selesai',
-            TripStatus.delivered => 'Perjalanan Selesai',
+            TripStatus.delivered => 'Trip selesai',
           };
     return SizedBox(
       width: double.infinity,
@@ -1237,10 +1328,10 @@ class _StatusChip extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final (label, color) = switch (status) {
       TripStatus.assigned => ('Assigned', const Color(0xFF64748B)),
-      TripStatus.headingToPickup => ('To Pickup', const Color(0xFF2563EB)),
-      TripStatus.onDelivery => ('On Delivery', scheme.primary),
-      TripStatus.arrived => ('Arrived', const Color(0xFFB45309)),
-      TripStatus.delivered => ('Delivered', const Color(0xFF15803D)),
+      TripStatus.headingToPickup => ('Pickup', const Color(0xFF2563EB)),
+      TripStatus.onDelivery => ('Kirim', scheme.primary),
+      TripStatus.arrived => ('Tiba', const Color(0xFFB45309)),
+      TripStatus.delivered => ('Selesai', const Color(0xFF15803D)),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -1336,14 +1427,6 @@ class _EmptyCard extends StatelessWidget {
               style: TextStyle(
                 color: scheme.onSurface.withValues(alpha: 0.5),
                 fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Hubungi admin untuk penugasan',
-              style: TextStyle(
-                color: scheme.onSurface.withValues(alpha: 0.35),
-                fontSize: 13,
               ),
             ),
           ],

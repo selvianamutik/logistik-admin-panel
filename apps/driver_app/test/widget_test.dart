@@ -22,7 +22,7 @@ void main() {
       ),
     );
 
-    expect(find.text('Selamat datang'), findsOneWidget);
+    expect(find.text('GMS Driver'), findsOneWidget);
     expect(find.text('Masuk'), findsOneWidget);
   });
 }
