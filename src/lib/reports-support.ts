@@ -119,7 +119,7 @@ export function buildReportsSnapshot(params: {
             0
         );
     const openDriverVouchers = driverVouchers
-        .filter(item => item.status !== 'SETTLED')
+        .filter(item => item.status !== 'SETTLED' && inPeriod(item.issuedDate))
         .sort((a, b) => b.issuedDate.localeCompare(a.issuedDate));
     const openVoucherCash = openDriverVouchers.reduce(
         (sum, item) => sum + getDriverVoucherIssuedAmount(item),
