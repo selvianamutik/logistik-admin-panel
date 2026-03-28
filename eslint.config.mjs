@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "output/**",
     "build/**",
+    "apps/driver_app/build/**",
+    "apps/driver_app/.dart_tool/**",
     "next-env.d.ts",
   ]),
 ]);

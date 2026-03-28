@@ -36,7 +36,7 @@ import {
     type SelectedShipmentMap,
     summarizeSelectedShipments,
 } from '@/lib/order-detail-support';
-import type { Order, OrderItem, DeliveryOrder, DeliveryOrderItem, Driver, FreightNota, FreightNotaItem, Vehicle } from '@/lib/types';
+import type { Customer, Order, OrderItem, DeliveryOrder, DeliveryOrderItem, Driver, FreightNota, FreightNotaItem, Vehicle } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
 import { hasPermission } from '@/lib/rbac';
 import { useApp } from '../../layout';
@@ -63,6 +63,7 @@ export default function OrderDetailPage() {
     const [doTripFee, setDoTripFee] = useState(0);
     const [doVehicleOverrideReason, setDoVehicleOverrideReason] = useState('');
     const [doNotes, setDoNotes] = useState('');
+    const [shipperReferenceFormat, setShipperReferenceFormat] = useState('SJ');
     const [selectedShipments, setSelectedShipments] = useState<SelectedShipmentMap>({});
     const [vehicles, setVehicles] = useState<Array<Pick<Vehicle, '_id' | 'unitCode' | 'plateNumber' | 'serviceRef' | 'serviceName'>>>([]);
     const [busyVehicleIds, setBusyVehicleIds] = useState<string[]>([]);
@@ -92,13 +93,16 @@ export default function OrderDetailPage() {
                 fetchAdminCollectionData<Array<Pick<DeliveryOrder, '_id' | 'vehicleRef' | 'driverRef' | 'status'>>>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ status: ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'] }))}`, 'Gagal memuat detail order'),
             ]);
             const deliveryOrderIds = (deliveryOrders || []).map(item => item._id);
-            const [deliveryOrderItems, notaItems] = await Promise.all([
+            const [deliveryOrderItems, notaItems, customerData] = await Promise.all([
                 deliveryOrderIds.length > 0
                     ? fetchAdminCollectionData<DeliveryOrderItem[]>(`/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: deliveryOrderIds }))}`, 'Gagal memuat detail order')
                     : Promise.resolve([] as DeliveryOrderItem[]),
                 deliveryOrderIds.length > 0
                     ? fetchAdminCollectionData<FreightNotaItem[]>(`/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ doRef: deliveryOrderIds }))}`, 'Gagal memuat detail order')
                     : Promise.resolve([] as FreightNotaItem[]),
+                orderData?.customerRef
+                    ? fetchAdminData<Pick<Customer, 'deliveryOrderPrefix'> | null>(`/api/data?entity=customers&id=${orderData.customerRef}`, 'Gagal memuat detail order')
+                    : Promise.resolve(null),
             ]);
             const notaIds = [...new Set((notaItems || []).map(item => item.notaRef).filter(Boolean))];
             const orderNotas = notaIds.length > 0
@@ -110,6 +114,7 @@ export default function OrderDetailPage() {
             setDos(deliveryOrders || []);
             setDoItems(deliveryOrderItems);
             setNotas(orderNotas || []);
+            setShipperReferenceFormat((customerData?.deliveryOrderPrefix || 'SJ').toUpperCase());
             const { busyVehicleIds: nextBusyVehicleIds, busyDriverIds: nextBusyDriverIds } = buildBusyAssignmentIds(activeDeliveryOrders || []);
             setVehicles(vehicleData || []);
             setBusyVehicleIds(nextBusyVehicleIds);
@@ -134,6 +139,8 @@ export default function OrderDetailPage() {
     const internalDoPreviewPeriod = /^\d{4}-\d{2}-\d{2}$/.test(doDate)
         ? `${doDate.slice(8, 10)}${doDate.slice(5, 7)}${doDate.slice(0, 4)}`
         : 'ddmmyyyy';
+    const normalizedShipperReferenceFormat = shipperReferenceFormat.trim().toUpperCase() || 'SJ';
+    const shipperReferenceExample = `${normalizedShipperReferenceFormat}/27032026/001`;
 
     useEffect(() => {
         if (!requiresVehicleOverrideReason && doVehicleOverrideReason) {
@@ -183,6 +190,14 @@ export default function OrderDetailPage() {
             nextSelections[item._id] = createDefaultShipmentSelection(item);
         }
         setSelectedShipments(nextSelections);
+    };
+
+    const openCreateDOModal = () => {
+        setSelectedShipments({});
+        if (!doCustomerDoNumber.trim() && normalizedShipperReferenceFormat !== 'SJ') {
+            setDoCustomerDoNumber(normalizedShipperReferenceFormat);
+        }
+        setShowDOModal(true);
     };
 
     const clearSelectedShipments = () => {
@@ -366,7 +381,7 @@ export default function OrderDetailPage() {
                     </div>
                 </div>
                 <div className="page-actions">
-                    <button className="btn btn-primary" onClick={() => { setSelectedShipments({}); setShowDOModal(true); }} disabled={availableItems.length === 0}>
+                    <button className="btn btn-primary" onClick={openCreateDOModal} disabled={availableItems.length === 0}>
                         <Truck size={16} /> Buat Surat Jalan
                     </button>
                     {canCreateInvoice && (
@@ -735,7 +750,7 @@ export default function OrderDetailPage() {
                                         disabled={creatingDO}
                                     />
                                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                        Diisi manual mengikuti nomor SJ dari pengirim. Jika belum ada, boleh dikosongkan dulu.
+                                        Format referensi customer: <strong>{normalizedShipperReferenceFormat}</strong>. Nomor final tetap diisi manual mengikuti surat jalan dari pengirim, misalnya <strong>{shipperReferenceExample}</strong>.
                                     </div>
                                 </div>
                             </div>

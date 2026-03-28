@@ -40,7 +40,7 @@ import {
 } from '@/lib/measurement';
 import { generateDOPdf } from '@/lib/pdf/doTemplate';
 import { hasPermission, normalizeUserRole } from '@/lib/rbac';
-import type { DeliveryOrder, DeliveryOrderItem, TrackingLog, CompanyProfile, Order, Driver, Vehicle } from '@/lib/types';
+import type { Customer, DeliveryOrder, DeliveryOrderItem, TrackingLog, CompanyProfile, Order, Driver, Vehicle } from '@/lib/types';
 
 export default function DODetailPage() {
     const params = useParams();
@@ -83,6 +83,7 @@ export default function DODetailPage() {
     const [tripDriverRef, setTripDriverRef] = useState('');
     const [tripVehicleOverrideReason, setTripVehicleOverrideReason] = useState('');
     const [shipperReferenceValue, setShipperReferenceValue] = useState('');
+    const [shipperReferenceFormat, setShipperReferenceFormat] = useState('SJ');
     const normalizedRole = user ? normalizeUserRole(user.role) : null;
     const canManageDeliveryStatus = user ? hasPermission(user.role, 'deliveryOrders', 'update') : false;
     const canExportDeliveryOrder = user ? hasPermission(user.role, 'deliveryOrders', 'export') : false;
@@ -99,17 +100,21 @@ export default function DODetailPage() {
 
         try {
             const deliveryOrder = await fetchAdminData<DeliveryOrder | null>(`/api/data?entity=delivery-orders&id=${doId}`, 'Gagal memuat detail surat jalan');
-            const [itemRows, logRows, sourceOrder] = await Promise.all([
+            const [itemRows, logRows, sourceOrder, customerData] = await Promise.all([
                 fetchAllAdminCollectionData<DeliveryOrderItem>(`/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: doId }))}`, 'Gagal memuat detail surat jalan'),
                 fetchAllAdminCollectionData<TrackingLog>(`/api/data?entity=tracking-logs&filter=${encodeURIComponent(JSON.stringify({ refRef: doId, refType: 'DO' }))}`, 'Gagal memuat detail surat jalan'),
                 deliveryOrder?.orderRef
                     ? fetchAdminData<Order | null>(`/api/data?entity=orders&id=${deliveryOrder.orderRef}`, 'Gagal memuat detail surat jalan')
+                    : Promise.resolve(null),
+                deliveryOrder?.customerRef
+                    ? fetchAdminData<Pick<Customer, 'deliveryOrderPrefix'> | null>(`/api/data?entity=customers&id=${deliveryOrder.customerRef}`, 'Gagal memuat detail surat jalan')
                     : Promise.resolve(null),
             ]);
 
             const resolvedDeliveryOrder = buildResolvedDeliveryOrder(deliveryOrder, sourceOrder);
 
             setDoData(resolvedDeliveryOrder);
+            setShipperReferenceFormat((customerData?.deliveryOrderPrefix || 'SJ').toUpperCase());
             setTaripBorongan(resolvedDeliveryOrder?.taripBorongan || 0);
             setKeteranganBorongan(resolvedDeliveryOrder?.keteranganBorongan || '');
             setDoItems(itemRows || []);
@@ -155,7 +160,8 @@ export default function DODetailPage() {
 
     const openShipperReferenceModal = () => {
         if (!canEditShipperReference) return;
-        setShipperReferenceValue(doData?.customerDoNumber || '');
+        const normalizedFormat = shipperReferenceFormat.trim().toUpperCase() || 'SJ';
+        setShipperReferenceValue(doData?.customerDoNumber || (normalizedFormat !== 'SJ' ? normalizedFormat : ''));
         setShowShipperReferenceModal(true);
     };
 
@@ -510,6 +516,8 @@ export default function DODetailPage() {
     const isCompletingDelivery = newStatus === 'DELIVERED';
     const pendingDriverStatusMeta = doData.pendingDriverStatus ? DO_STATUS_MAP[doData.pendingDriverStatus] : null;
     const hasShipperReference = Boolean(doData.customerDoNumber?.trim());
+    const normalizedShipperReferenceFormat = shipperReferenceFormat.trim().toUpperCase() || 'SJ';
+    const shipperReferenceExample = `${normalizedShipperReferenceFormat}/27032026/001`;
     const {
         actualCargoTotals,
         autoActualDropDraft,
@@ -1393,9 +1401,12 @@ export default function DODetailPage() {
                                     className="form-input"
                                     value={shipperReferenceValue}
                                     onChange={e => setShipperReferenceValue(e.target.value.toUpperCase())}
-                                    placeholder="Contoh: BCD/27032026/001"
+                                    placeholder={`Contoh: ${shipperReferenceExample}`}
                                     disabled={savingShipperReference}
                                 />
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                    Format referensi customer: <strong>{normalizedShipperReferenceFormat}</strong>. Nomor final tetap diisi manual mengikuti surat jalan dari pengirim.
+                                </div>
                             </div>
                         </div>
                         <div className="modal-footer">
