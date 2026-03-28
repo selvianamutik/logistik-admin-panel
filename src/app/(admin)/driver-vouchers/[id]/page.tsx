@@ -353,7 +353,7 @@ export default function DriverVoucherDetailPage() {
                             <h1 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>{voucher.bonNumber}</h1>
                             <span className={`badge ${statusConfig.cls}`}>{statusConfig.label}</span>
                         </div>
-                        <p className="page-subtitle" style={{ margin: 0 }}>{voucher.driverName} | {formatDate(voucher.issuedDate)} | Trip {voucher.doNumber || '-'} | Uang jalan trip</p>
+                        <p className="page-subtitle" style={{ margin: 0 }}>{voucher.driverName} | {formatDate(voucher.issuedDate)} | No. DO Internal {voucher.doNumber || '-'} | Uang Jalan Trip</p>
                     </div>
                 </div>
                 <div className="page-actions">
@@ -419,7 +419,7 @@ export default function DriverVoucherDetailPage() {
                 <div className="card-body">
                     <div className="detail-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-4)' }}>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>SUPIR</div><div className="font-medium">{voucher.driverName || '-'}</div></div>
-                        <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>SURAT JALAN</div><div>{voucher.doNumber || '-'}</div></div>
+                        <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>NO. DO INTERNAL</div><div>{voucher.doNumber || '-'}</div></div>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>KENDARAAN</div><div>{voucher.vehiclePlate || '-'}</div></div>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>RUTE</div><div>{voucher.route || '-'}</div></div>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>UANG JALAN AWAL</div><div>{formatCurrency(initialCashGiven)}</div></div>

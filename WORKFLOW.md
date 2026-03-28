@@ -12,8 +12,8 @@ Fokusnya bukan teori bisnis umum, tetapi perilaku aplikasi yang sekarang benar-b
 - `Freight Nota / Nota Ongkos`
   Tagihan ongkos angkut ke customer.
 - `Driver Borongan`
-  Slip upah supir alternatif / legacy untuk perjalanan yang memang tidak disettle lewat uang jalan trip.
-- `Driver Voucher / Uang Jalan Trip`
+  Arsip slip upah supir untuk perjalanan yang memang tidak disettle lewat uang jalan trip.
+- `Uang Jalan Trip`
   Settlement trip per DO: uang jalan awal, top up, biaya perjalanan aktual, upah trip, dan selisih akhir.
 - `Payment`
   Pencatatan pembayaran dari customer.

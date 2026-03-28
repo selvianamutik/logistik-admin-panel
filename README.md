@@ -14,7 +14,7 @@ Stack utama:
 - `/orders` untuk order/resi
 - `/delivery-orders` untuk surat jalan dan tracking per DO
 - `/invoices` untuk nota ongkos angkut
-- `/borongan` untuk slip borongan supir alternatif / legacy
+- `/borongan` untuk arsip slip borongan supir
 - `/driver-vouchers` untuk uang jalan trip dan settlement per DO
 - `/expenses` untuk pengeluaran umum
 - `/bank-accounts` untuk rekening bank dan kas tunai
@@ -29,8 +29,8 @@ Stack utama:
 3. Driver menjalankan tracking dan hanya boleh mengirim progres perjalanan.
 4. Admin menyelesaikan DO dan mengisi POD pada langkah yang sama.
 5. DO yang selesai bisa ditagihkan ke customer lewat Nota Ongkos.
-6. Nota sekarang mendukung klaim / potongan dan satu receipt customer bisa dialokasikan ke beberapa nota sekaligus.
-7. Pembayaran nota atau receipt customer otomatis mem-posting income dan mutasi rekening/kas.
+6. Nota sekarang mendukung klaim / potongan dan satu penerimaan customer bisa dialokasikan ke beberapa nota sekaligus.
+7. Pembayaran nota atau penerimaan customer otomatis mem-posting income dan mutasi rekening/kas.
 8. DO yang selesai bisa dipakai untuk slip borongan bila perusahaan memang memakai workflow itu.
 9. Workflow utama trip driver memakai Uang Jalan Trip yang tertaut ke 1 DO untuk uang jalan awal, top up, biaya perjalanan aktual, upah trip, dan settlement akhir.
 
@@ -51,8 +51,8 @@ Dataset demo saat ini mencakup kondisi:
 - order `OPEN`, `PARTIAL`, `COMPLETE`, `ON_HOLD`, `CANCELLED`
 - DO `CREATED`, `HEADING_TO_PICKUP`, `ON_DELIVERY`, `ARRIVED`, `DELIVERED`, `CANCELLED`
 - nota `UNPAID`, `PARTIAL`, `PAID`
-- receipt customer untuk bayar beberapa nota sekaligus
-- klaim / potongan invoice
+- penerimaan customer untuk bayar beberapa nota sekaligus
+- klaim / potongan nota
 - borongan `UNPAID`, `PAID`
 - uang jalan trip `ISSUED`, `SETTLED`, termasuk skenario sisa uang kembali dan tambahan bayar ke supir
 - maintenance, insiden, tracking log, mutasi rekening, kas tunai, dan laporan

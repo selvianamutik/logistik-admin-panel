@@ -357,7 +357,7 @@ export default function CompanyPage() {
                             </div>
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Kode Seri Cetak Nota</label><input className="form-input" value={data.numberingSettings.notaSeriesCode || '3'} onChange={e => uNum('notaSeriesCode', e.target.value)} /></div>
-                                <div className="form-group"><label className="form-label">Prefix Borongan (legacy)</label><input className="form-input" value={data.numberingSettings.boronganPrefix || 'BRG-'} onChange={e => uNum('boronganPrefix', e.target.value)} /></div>
+                                <div className="form-group"><label className="form-label">Prefix Arsip Borongan</label><input className="form-input" value={data.numberingSettings.boronganPrefix || 'BRG-'} onChange={e => uNum('boronganPrefix', e.target.value)} /></div>
                             </div>
                             <div className="form-row">
                                 <div className="form-group" style={{ alignSelf: 'end' }}>
