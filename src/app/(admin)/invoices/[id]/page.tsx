@@ -95,6 +95,23 @@ export default function NotaDetailPage() {
     const canDeleteInvoice = user ? hasPermission(user.role, 'freightNotas', 'delete') : false;
     const canExportInvoice = user ? hasPermission(user.role, 'freightNotas', 'export') : false;
     const canPrintInvoice = user ? hasPermission(user.role, 'freightNotas', 'print') : false;
+    const paymentAccountOptions = payMethod === 'TRANSFER'
+        ? bankAccounts.filter(account => account.accountType !== 'CASH')
+        : payMethod === 'CASH'
+            ? []
+            : bankAccounts;
+
+    useEffect(() => {
+        if (!payBankRef) return;
+        const selectedAccount = bankAccounts.find(account => account._id === payBankRef);
+        if (!selectedAccount) {
+            setPayBankRef('');
+            return;
+        }
+        if (payMethod === 'TRANSFER' && selectedAccount.accountType === 'CASH') {
+            setPayBankRef('');
+        }
+    }, [bankAccounts, payBankRef, payMethod]);
 
     const handleAddPayment = async () => {
         if (payAmount <= 0) { addToast('error', 'Nominal harus lebih dari 0'); return; }
@@ -466,7 +483,7 @@ export default function NotaDetailPage() {
                                 <div className="form-group"><label className="form-label">Rekening</label>
                                     <select className="form-select" value={payBankRef} onChange={e => setPayBankRef(e.target.value)} disabled={paying || payMethod === 'CASH'}>
                                         <option value="">{payMethod === 'CASH' ? '-- Otomatis ke Kas Tunai --' : '-- Pilih --'}</option>
-                                        {bankAccounts.map(a => <option key={a._id} value={a._id}>{a.bankName} - {a.accountNumber}{a.accountType === 'CASH' ? ' (Kas Tunai)' : ''}</option>)}
+                                        {paymentAccountOptions.map(a => <option key={a._id} value={a._id}>{a.bankName} - {a.accountNumber}{a.accountType === 'CASH' ? ' (Kas Tunai)' : ''}</option>)}
                                     </select>
                                 </div>
                             </div>

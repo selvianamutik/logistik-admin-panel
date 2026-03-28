@@ -81,6 +81,18 @@ export default function BoronganDetailPage() {
         void loadBoronganDetail();
     }, [loadBoronganDetail]);
 
+    useEffect(() => {
+        if (!payBankRef) return;
+        const selectedAccount = bankAccounts.find(account => account._id === payBankRef);
+        if (!selectedAccount) {
+            setPayBankRef('');
+            return;
+        }
+        if (payMethod === 'TRANSFER' && selectedAccount.accountType === 'CASH') {
+            setPayBankRef('');
+        }
+    }, [bankAccounts, payBankRef, payMethod]);
+
     const handleMarkPaid = async () => {
         if (!borong) return;
         if (payMethod === 'TRANSFER' && !payBankRef) {
@@ -192,6 +204,11 @@ export default function BoronganDetailPage() {
     const statusConf = STATUS_MAP[borong.status] || { label: borong.status, color: 'secondary' };
     const accountMap = new Map(bankAccounts.map(account => [account._id, account]));
     const matchedPaidAccount = borong.paidBankRef ? accountMap.get(borong.paidBankRef) : undefined;
+    const boronganPaymentAccountOptions = payMethod === 'TRANSFER'
+        ? bankAccounts.filter(account => account.accountType !== 'CASH')
+        : payMethod === 'CASH'
+            ? []
+            : bankAccounts;
     const paidAccountLabel = borong.paidBankName
         ? `${borong.paidBankName}${borong.paidBankNumber || matchedPaidAccount?.accountNumber ? ` - ${borong.paidBankNumber || matchedPaidAccount?.accountNumber}` : ''}`
         : matchedPaidAccount
@@ -510,7 +527,7 @@ export default function BoronganDetailPage() {
                                     </label>
                                     <select className="form-select" value={payBankRef} onChange={(e) => setPayBankRef(e.target.value)} disabled={paying || payMethod === 'CASH'}>
                                         <option value="">{payMethod === 'CASH' ? '-- Otomatis ke Kas Tunai --' : '-- Tanpa Rekening --'}</option>
-                                        {bankAccounts.map((account) => (
+                                        {boronganPaymentAccountOptions.map((account) => (
                                             <option key={account._id} value={account._id}>
                                                 {account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''} (Saldo: {formatCurrency(account.currentBalance || 0)})
                                             </option>

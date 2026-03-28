@@ -234,6 +234,11 @@ export default function NotaListPage() {
         : unappliedReceiptAmount > 0
             ? 'Simpan Penerimaan & Kredit'
             : 'Simpan Penerimaan';
+    const receiptAccountOptions = receiptMethod === 'TRANSFER'
+        ? bankAccounts.filter(account => account.accountType !== 'CASH')
+        : receiptMethod === 'CASH'
+            ? []
+            : bankAccounts;
 
     useEffect(() => {
         if (!showReceiptModal || !receiptCustomerRef) {
@@ -296,6 +301,18 @@ export default function NotaListPage() {
             cancelled = true;
         };
     }, [addToast, receiptCustomerRef, selectedReceiptCustomer?.name, showReceiptModal]);
+
+    useEffect(() => {
+        if (!receiptBankRef) return;
+        const selectedAccount = bankAccounts.find(account => account._id === receiptBankRef);
+        if (!selectedAccount) {
+            setReceiptBankRef('');
+            return;
+        }
+        if (receiptMethod === 'TRANSFER' && selectedAccount.accountType === 'CASH') {
+            setReceiptBankRef('');
+        }
+    }, [bankAccounts, receiptBankRef, receiptMethod]);
 
     useEffect(() => {
         if (!singleOpenNota) {
@@ -709,7 +726,7 @@ export default function NotaListPage() {
                                     <label className="form-label">Rekening / Kas</label>
                                     <select className="form-select" value={receiptBankRef} onChange={e => setReceiptBankRef(e.target.value)} disabled={receiving || receiptMethod === 'CASH'}>
                                         <option value="">{receiptMethod === 'CASH' ? '-- Otomatis ke Kas Tunai --' : '-- Pilih --'}</option>
-                                        {bankAccounts.map(account => <option key={account._id} value={account._id}>{account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''}</option>)}
+                                        {receiptAccountOptions.map(account => <option key={account._id} value={account._id}>{account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''}</option>)}
                                     </select>
                                 </div>
                             </div>
