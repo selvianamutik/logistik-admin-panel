@@ -483,8 +483,11 @@ export default function CustomerDetailPage() {
                                     <div className="form-group"><label className="form-label">NPWP</label><input className="form-input" value={form.npwp} onChange={e => setForm({ ...form, npwp: e.target.value })} /></div>
                                 </div>
                                 <div className="form-group">
-                                    <label className="form-label">Format No. SJ Pengirim</label>
+                                    <label className="form-label">Awalan Referensi SJ Pengirim</label>
                                     <input className="form-input" value={form.deliveryOrderPrefix} onChange={e => setForm({ ...form, deliveryOrderPrefix: e.target.value.toUpperCase() })} />
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                        Dipakai sebagai awalan referensi nomor SJ dari pengirim. Nomor final tetap diinput manual saat membuat surat jalan.
+                                    </div>
                                 </div>
                                 <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
                                     <button className="btn btn-secondary" onClick={() => setEditing(false)} disabled={saving}>Batal</button>
@@ -502,7 +505,7 @@ export default function CustomerDetailPage() {
                                     <div className="detail-item"><div className="detail-label">Email</div><div className="detail-value">{customer.email}</div></div>
                                 </div>
                                 <div className="detail-row">
-                                    <div className="detail-item"><div className="detail-label">Format No. SJ Pengirim</div><div className="detail-value font-mono">{customer.deliveryOrderPrefix || 'SJ'}</div></div>
+                                    <div className="detail-item"><div className="detail-label">Awalan Referensi SJ Pengirim</div><div className="detail-value font-mono">{customer.deliveryOrderPrefix || 'SJ'}</div></div>
                                     <div className="detail-item"><div className="detail-label">Cara Pakai</div><div className="detail-value">Admin mengisi nomor SJ pengirim manual saat membuat surat jalan.</div></div>
                                 </div>
                                 <div className="detail-item mt-2"><div className="detail-label">Alamat</div><div className="detail-value">{customer.address}</div></div>

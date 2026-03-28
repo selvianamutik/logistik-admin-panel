@@ -153,7 +153,7 @@ export default function DeliveryOrdersPage() {
                         const printableDeliveryOrders = await fetchAllMatchingDeliveryOrders();
                         exportToExcel(buildDeliveryOrderExportRows(printableDeliveryOrders, services) as unknown as Record<string, unknown>[], [
                             { header: 'No. SJ Pengirim', key: 'customerDoNumber', width: 22 },
-                            { header: 'No. DO', key: 'doNumber', width: 18 },
+                            { header: 'No. DO Internal', key: 'doNumber', width: 18 },
                             { header: 'Resi', key: 'masterResi', width: 18 },
                             { header: 'Customer', key: 'customerName', width: 25 },
                             { header: 'Kategori', key: 'serviceLabel', width: 24 },
@@ -222,7 +222,7 @@ export default function DeliveryOrdersPage() {
                 </div>
                 <div className="table-wrapper table-desktop-only">
                     <table>
-                        <thead><tr><th>No. SJ Pengirim</th><th>No. Internal</th><th>Resi</th><th>Customer</th><th>Kategori</th><th>Kendaraan</th><th>Tanggal</th><th>Status</th><th>Tindak Lanjut</th><th>Approval Driver</th><th>Drop Aktual</th><th>Tracking</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>No. SJ Pengirim</th><th>No. DO Internal</th><th>Resi</th><th>Customer</th><th>Kategori</th><th>Kendaraan</th><th>Tanggal</th><th>Status</th><th>Tindak Lanjut</th><th>Approval Driver</th><th>Drop Aktual</th><th>Tracking</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 totalItems === 0 ? (
@@ -305,7 +305,7 @@ export default function DeliveryOrdersPage() {
                                         <span className="mobile-record-value">{formatShipperDeliveryOrderNumber(d)}</span>
                                     </div>
                                     <div className="mobile-record-kv">
-                                        <span className="mobile-record-label">No. Internal</span>
+                                        <span className="mobile-record-label">No. DO Internal</span>
                                         <span className="mobile-record-value">{d.doNumber || '-'}</span>
                                     </div>
                                     <div className="mobile-record-kv">

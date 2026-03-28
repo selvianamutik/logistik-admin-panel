@@ -509,10 +509,10 @@ export default function CustomersPage() {
                                 </div>
                             </div>
                             <div className="form-group">
-                                <label className="form-label">Format No. SJ Pengirim</label>
+                                <label className="form-label">Awalan Referensi SJ Pengirim</label>
                                 <input className="form-input" value={form.deliveryOrderPrefix} onChange={event => setForm({ ...form, deliveryOrderPrefix: event.target.value.toUpperCase() })} placeholder="Contoh: SJ / BK / ARW" />
                                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                    Dipakai sebagai referensi format nomor dari pengirim, misalnya `{form.deliveryOrderPrefix || 'SJ'}-27032026-001`. Nomor final tetap diinput manual saat membuat surat jalan.
+                                    Dipakai sebagai awalan referensi nomor SJ dari pengirim, misalnya `{form.deliveryOrderPrefix || 'SJ'}-27032026-001`. Nomor final tetap diinput manual saat membuat surat jalan.
                                 </div>
                             </div>
                         </div>

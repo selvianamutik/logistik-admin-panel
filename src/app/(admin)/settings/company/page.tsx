@@ -18,7 +18,7 @@ export default function CompanyPage() {
             try {
                 const [res, accountRows] = await Promise.all([
                     fetch('/api/data?entity=company'),
-                    fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat rekening invoice'),
+                    fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat rekening nota'),
                 ]);
                 const payload = await res.json();
                 if (!res.ok) {
@@ -288,7 +288,7 @@ export default function CompanyPage() {
                                                     disabled={!isSelected}
                                                     onChange={() => uInvoice('defaultInvoiceBankAccountRef', account._id)}
                                                 />
-                                                Default
+                                                Default Nota
                                             </label>
                                         </div>
                                     );
@@ -304,7 +304,7 @@ export default function CompanyPage() {
                                 <div style={{ display: 'grid', gap: '0.4rem' }}>
                                     {selectedInvoiceBankAccounts.map(account => (
                                         <div key={account._id} style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-                                            <strong>{data.invoiceSettings?.defaultInvoiceBankAccountRef === account._id ? 'Default' : 'Tambahan'}:</strong> {account.bankName} - {account.accountNumber} a/n {account.accountHolder}
+                                            <strong>{data.invoiceSettings?.defaultInvoiceBankAccountRef === account._id ? 'Default Nota' : 'Tambahan'}:</strong> {account.bankName} - {account.accountNumber} a/n {account.accountHolder}
                                         </div>
                                     ))}
                                 </div>

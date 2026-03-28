@@ -741,7 +741,7 @@ export default function DODetailPage() {
                             <div className="detail-item"><div className="detail-label">Tanggal</div><div className="detail-value">{formatDate(doData.date)}</div></div>
                         </div>
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">No. Internal</div><div className="detail-value font-mono">{doData.doNumber}</div></div>
+                            <div className="detail-item"><div className="detail-label">No. DO Internal</div><div className="detail-value font-mono">{doData.doNumber}</div></div>
                             <div className="detail-item"><div className="detail-label">Kendaraan</div><div className="detail-value">{doData.vehiclePlate || '-'}</div></div>
                         </div>
                         <div className="detail-row">

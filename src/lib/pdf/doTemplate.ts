@@ -93,7 +93,7 @@ export function generateDOPdf(
     y += 6;
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text(`No. Internal: ${formatInternalDeliveryOrderNumber(doData)}`, pageWidth / 2, y, { align: 'center' });
+    doc.text(`No. DO Internal: ${formatInternalDeliveryOrderNumber(doData)}`, pageWidth / 2, y, { align: 'center' });
     y += 10;
 
     // ─── Info Grid ───
@@ -108,7 +108,7 @@ export function generateDOPdf(
     };
 
     addRow('Tanggal', formatDate(doData.date), margin, y);
-    addRow('No. Internal', doData.doNumber || '-', col2X, y);
+    addRow('No. DO Internal', doData.doNumber || '-', col2X, y);
     y += 5;
     addRow('No. SJ Pengirim', formatShipperDeliveryOrderNumber(doData), margin, y);
     addRow('Customer', doData.customerName || '-', col2X, y);

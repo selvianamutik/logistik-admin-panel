@@ -344,7 +344,7 @@ export function buildDeliveryOrderPrintHtml(
                     <td style="border:none;padding:2px 8px">${formatDate(doData.date || '')}</td>
                 </tr>
                 <tr>
-                    <td style="border:none;padding:2px 8px;font-weight:600">No. Internal</td>
+                    <td style="border:none;padding:2px 8px;font-weight:600">No. DO Internal</td>
                     <td style="border:none;padding:2px 8px">${doData.doNumber || '-'}</td>
                     <td style="border:none;padding:2px 8px;font-weight:600">Master Resi</td>
                     <td style="border:none;padding:2px 8px">${doData.masterResi || '-'}</td>

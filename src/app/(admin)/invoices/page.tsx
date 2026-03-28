@@ -615,7 +615,7 @@ export default function NotaListPage() {
                                 <div className="mobile-record-header">
                                     <div>
                                         <div className="mobile-record-title">{formatFreightNotaDisplayNumber(n, company)}</div>
-                                        <div className="mobile-record-subtitle">{n.customerName || '-'} • {formatDate(n.issueDate)}</div>
+                                        <div className="mobile-record-subtitle">{n.customerName || '-'} | {formatDate(n.issueDate)}</div>
                                     </div>
                                     <span className={`badge badge-${STATUS_MAP[n.status]?.color}`}>
                                         <span className="badge-dot" /> {STATUS_MAP[n.status]?.label}
@@ -623,7 +623,7 @@ export default function NotaListPage() {
                                 </div>
                                 <div className="mobile-record-meta">
                                     <div className="mobile-record-kv">
-                                        <span className="mobile-record-label">No. Internal</span>
+                                        <span className="mobile-record-label">No. Nota Internal</span>
                                         <span className="mobile-record-value">{n.notaNumber}</span>
                                     </div>
                                     <div className="mobile-record-kv">
@@ -772,7 +772,7 @@ export default function NotaListPage() {
                                     <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Alokasi Otomatis ke Satu Nota</div>
                                     <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', display: 'grid', gap: '0.25rem' }}>
                                         <div>Nota: <strong>{formatFreightNotaDisplayNumber(singleOpenNota.nota, company)}</strong></div>
-                                        <div>No. Internal: {singleOpenNota.nota.notaNumber}</div>
+                                        <div>No. Nota Internal: {singleOpenNota.nota.notaNumber}</div>
                                         <div>Sisa tagihan: <strong>{formatCurrency(singleOpenNota.remainingAmount)}</strong></div>
                                         <div>Penerimaan yang kamu isi di atas akan langsung dialokasikan ke nota ini sampai penuh. Jika nominalnya lebih besar, sisanya otomatis menjadi kredit customer.</div>
                                     </div>
