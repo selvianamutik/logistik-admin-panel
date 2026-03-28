@@ -105,8 +105,13 @@ export function openBrandedPrint(opts: {
     showCompanyHeader?: boolean;
     showFooter?: boolean;
 }) {
-    const w = window.open('', '_blank');
+    const w = window.open('', '_blank', 'noopener,noreferrer');
     if (!w) return;
+    try {
+        w.opener = null;
+    } catch {
+        // Ignore cross-window hardening failures; print flow can continue.
+    }
 
     const {
         title,

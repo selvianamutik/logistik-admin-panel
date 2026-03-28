@@ -432,6 +432,7 @@ export async function exportInvoices(invoices: Record<string, unknown>[]) {
                 {
                     notaNumber: String(invoice.notaNumber || ''),
                     issueDate: String(invoice.issueDate || ''),
+                    notaDisplayNumber: typeof invoice.notaDisplayNumber === 'string' ? invoice.notaDisplayNumber : undefined,
                 },
                 company,
             ),
@@ -592,7 +593,7 @@ export async function exportFreightNotaDetail(
         .join('  ');
     const invoiceInstructionLines = resolveInvoiceInstructionAccounts(resolvedCompany, invoiceBankAccounts, nota.instructionAccounts || [])
         .map(buildInvoiceInstructionAccountText);
-    const extraNote = [resolvedCompany?.invoiceSettings?.footerNote, nota.notes].filter(Boolean).join(' ');
+    const extraNote = [nota.footerNote || resolvedCompany?.invoiceSettings?.footerNote, nota.notes].filter(Boolean).join(' ');
 
     rows.push(['', '', resolvedCompany?.name || 'Gading Mas Surya', '', '', `PERINCIAN ONGKOS ANGKUT NO.${displayNumber}`, '', '', '', '', 'TGL.', fmtDate(nota.issueDate)]);
     merges.push({ startRow: 1, startCol: 3, endRow: 1, endCol: 5 });

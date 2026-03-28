@@ -79,8 +79,15 @@ export function sanitizeCompanyProfileForRole(
         return company;
     }
 
+    const normalizedRole = normalizeUserRole(role);
+    const canSeeInvoiceFinanceContext = normalizedRole === 'OPERASIONAL' || normalizedRole === 'FINANCE';
+
     return {
         ...company,
+        npwp: canSeeInvoiceFinanceContext ? company.npwp : undefined,
+        bankName: canSeeInvoiceFinanceContext ? company.bankName : undefined,
+        bankAccount: canSeeInvoiceFinanceContext ? company.bankAccount : undefined,
+        bankHolder: canSeeInvoiceFinanceContext ? company.bankHolder : undefined,
         headerStampUrl: undefined,
         signatureStampUrl: undefined,
         numberingSettings: {
@@ -113,15 +120,17 @@ export function sanitizeCompanyProfileForRole(
         invoiceSettings: {
             defaultTermDays: company.invoiceSettings?.defaultTermDays ?? 14,
             dueDateDays: company.invoiceSettings?.dueDateDays ?? company.invoiceSettings?.defaultTermDays ?? 14,
-            footerNote: company.invoiceSettings?.footerNote || '',
-            invoiceMode: company.invoiceSettings?.invoiceMode || 'DO',
-            invoiceBankAccountRefs: Array.isArray(company.invoiceSettings?.invoiceBankAccountRefs)
-                ? company.invoiceSettings.invoiceBankAccountRefs.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+            footerNote: canSeeInvoiceFinanceContext ? company.invoiceSettings?.footerNote || '' : '',
+            invoiceMode: canSeeInvoiceFinanceContext ? company.invoiceSettings?.invoiceMode || 'DO' : 'DO',
+            invoiceBankAccountRefs: canSeeInvoiceFinanceContext
+                ? Array.isArray(company.invoiceSettings?.invoiceBankAccountRefs)
+                    ? company.invoiceSettings.invoiceBankAccountRefs.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+                    : []
                 : [],
-            defaultInvoiceBankAccountRef:
+            defaultInvoiceBankAccountRef: canSeeInvoiceFinanceContext &&
                 typeof company.invoiceSettings?.defaultInvoiceBankAccountRef === 'string'
-                    ? company.invoiceSettings.defaultInvoiceBankAccountRef
-                    : undefined,
+                ? company.invoiceSettings.defaultInvoiceBankAccountRef
+                : undefined,
         },
         documentSettings: {
             showContact: company.documentSettings?.showContact ?? true,
