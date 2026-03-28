@@ -1348,12 +1348,12 @@ export async function handleDriverVoucherDisbursementDelete(
 
         let bank: BankAccountSummary | null = null;
         if (disbursement.bankAccountRef) {
-            bank = await getLedgerAccount(disbursement.bankAccountRef);
+            bank = await sanityGetById<BankAccountSummary>(disbursement.bankAccountRef);
             if (!bank) {
-                return NextResponse.json({ error: 'Rekening tambahan bon tidak ditemukan' }, { status: 404 });
+                return NextResponse.json({ error: 'Rekening historis tambahan bon tidak ditemukan' }, { status: 404 });
             }
             if (!bank._rev) {
-                return NextResponse.json({ error: 'Revisi rekening tambahan bon tidak tersedia' }, { status: 409 });
+                return NextResponse.json({ error: 'Revisi rekening historis tambahan bon tidak tersedia' }, { status: 409 });
             }
         }
 
