@@ -175,7 +175,7 @@ export default function IncidentsPage() {
 
     const handleSave = async () => {
         if ((!form.vehicleRef && !form.relatedDeliveryOrderRef) || !form.description) {
-            addToast('error', 'Kendaraan atau DO terkait serta deskripsi wajib');
+            addToast('error', 'Kendaraan atau DO internal terkait serta deskripsi wajib');
             return;
         }
         const vehicle = vehicles.find(item => item._id === form.vehicleRef);
@@ -230,7 +230,7 @@ export default function IncidentsPage() {
                     <div className="table-toolbar-left">
                         <div className="table-search">
                             <Search size={16} className="table-search-icon" />
-                            <input placeholder="Cari nomor, kendaraan, supir, DO, lokasi..." value={search} onChange={e => setSearch(e.target.value)} />
+                            <input placeholder="Cari nomor, kendaraan, supir, no. DO internal, lokasi..." value={search} onChange={e => setSearch(e.target.value)} />
                         </div>
                         <select className="form-select" style={{ width: 'auto', minWidth: 180 }} value={vehicleFilter} onChange={e => setVehicleFilter(e.target.value)}>
                             <option value="">Semua Kendaraan</option>
@@ -244,7 +244,7 @@ export default function IncidentsPage() {
                 </div>
                 <div className="table-wrapper table-desktop-only">
                     <table>
-                        <thead><tr><th>No.</th><th>Waktu</th><th>Kendaraan</th><th>Supir</th><th>DO</th><th>Tipe</th><th>Lokasi</th><th>Urgency</th><th>Status</th><th>Tindak Lanjut</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>No.</th><th>Waktu</th><th>Kendaraan</th><th>Supir</th><th>No. DO Internal</th><th>Tipe</th><th>Lokasi</th><th>Urgency</th><th>Status</th><th>Tindak Lanjut</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {loading ? [1, 2].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 filteredTotalIncidents === 0 ? <tr><td colSpan={11}><div className="empty-state"><AlertTriangle size={48} className="empty-state-icon" /><div className="empty-state-title">Tidak ada insiden</div></div></td></tr> :
@@ -289,7 +289,7 @@ export default function IncidentsPage() {
                                         <span className="mobile-record-value">{item.driverName || '-'}</span>
                                     </div>
                                     <div className="mobile-record-kv">
-                                        <span className="mobile-record-label">DO</span>
+                                        <span className="mobile-record-label">No. DO Internal</span>
                                         <span className="mobile-record-value">{item.relatedDONumber || '-'}</span>
                                     </div>
                                     <div className="mobile-record-kv">
@@ -346,7 +346,7 @@ export default function IncidentsPage() {
                                     <select className="form-select" value={form.vehicleRef} onChange={e => handleVehicleChange(e.target.value)} disabled={Boolean(form.relatedDeliveryOrderRef)}><option value="">Pilih</option>{vehicles.map(vehicle => <option key={vehicle._id} value={vehicle._id}>{vehicle.plateNumber}</option>)}</select>
                                     {form.relatedDeliveryOrderRef && (
                                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                            Kendaraan mengikuti DO terkait. Hapus pilihan DO dulu jika ingin mengganti kendaraan.
+                                            Kendaraan mengikuti DO internal terkait. Hapus pilihan DO internal dulu jika ingin mengganti kendaraan.
                                         </div>
                                     )}
                                 </div>
@@ -361,7 +361,7 @@ export default function IncidentsPage() {
                                     </div>
                                     <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
                                         {selectedRelatedDO
-                                            ? `DO ${formatInternalDeliveryOrderNumber(selectedRelatedDO)}${selectedRelatedDO.customerDoNumber ? ` | SJ ${formatShipperDeliveryOrderNumber(selectedRelatedDO)}` : ''} / driver ${selectedRelatedDO.driverName || '-'}`
+                                            ? `No. DO Internal ${formatInternalDeliveryOrderNumber(selectedRelatedDO)}${selectedRelatedDO.customerDoNumber ? ` | SJ ${formatShipperDeliveryOrderNumber(selectedRelatedDO)}` : ''} / driver ${selectedRelatedDO.driverName || '-'}`
                                             : `Odometer terakhir ${typeof selectedVehicle?.lastOdometer === 'number' ? `${selectedVehicle.lastOdometer.toLocaleString()} km` : 'belum diisi'}`}
                                     </div>
                                 </div>
@@ -380,7 +380,7 @@ export default function IncidentsPage() {
                                 <div className="form-group"><label className="form-label">Lokasi</label><input className="form-input" value={form.locationText} onChange={e => setForm({ ...form, locationText: e.target.value })} placeholder="Tol Cikampek KM 45..." /></div>
                                 <div className="form-group"><label className="form-label">Odometer</label><FormattedNumberInput allowDecimal={false} value={form.odometer} onValueChange={value => setForm({ ...form, odometer: value })} /></div>
                             </div>
-                            <div className="form-group"><label className="form-label">DO Terkait (Opsional)</label>
+                            <div className="form-group"><label className="form-label">DO Internal Terkait (Opsional)</label>
                                 <select className="form-select" value={form.relatedDeliveryOrderRef} onChange={e => handleRelatedDOChange(e.target.value)}><option value="">- Tidak ada -</option>{filteredDos.map(deliveryOrder => <option key={deliveryOrder._id} value={deliveryOrder._id}>{`${formatInternalDeliveryOrderNumber(deliveryOrder)}${deliveryOrder.customerDoNumber ? ` | SJ ${formatShipperDeliveryOrderNumber(deliveryOrder)}` : ''}`}</option>)}</select></div>
                             <div className="form-group"><label className="form-label">Kronologi / Deskripsi <span className="required">*</span></label><textarea className="form-textarea" rows={4} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Jelaskan kronologi insiden secara detail..." /></div>
                         </div>

@@ -88,7 +88,7 @@ export default function NewDriverVoucherPage() {
 
     const handleSave = async () => {
         if (!form.deliveryOrderRef) {
-            addToast('error', 'Pilih DO / trip terlebih dahulu');
+            addToast('error', 'Pilih DO internal / trip terlebih dahulu');
             return;
         }
         if (!form.cashGiven || form.cashGiven <= 0) {
@@ -100,7 +100,7 @@ export default function NewDriverVoucherPage() {
             return;
         }
         if (!selectedDo) {
-            addToast('error', 'DO trip tidak valid atau sudah tidak bisa dipakai');
+            addToast('error', 'DO internal / trip tidak valid atau sudah tidak bisa dipakai');
             return;
         }
         if (effectiveTripFee <= 0) {
@@ -159,7 +159,7 @@ export default function NewDriverVoucherPage() {
                     <div className="form-section-title">Data Uang Jalan Trip</div>
                     <div className="form-row">
                         <div className="form-group">
-                            <label className="form-label">Surat Jalan / Trip <span className="required">*</span></label>
+                            <label className="form-label">DO Internal / Trip <span className="required">*</span></label>
                             <select
                                 className="form-select"
                                 value={form.deliveryOrderRef}
@@ -173,7 +173,7 @@ export default function NewDriverVoucherPage() {
                                     }));
                                 }}
                             >
-                                <option value="">Pilih DO trip</option>
+                                <option value="">Pilih DO internal / trip</option>
                                 {eligibleDos.map(deliveryOrder => {
                                     const order = deliveryOrder.orderRef
                                         ? orders.find(item => item._id === deliveryOrder.orderRef)
