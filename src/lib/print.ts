@@ -244,6 +244,19 @@ export function formatFreightNotaDisplayNumber(
     );
 }
 
+export function resolveFreightNotaIssuerProfile(
+    nota: Pick<FreightNota, 'issuerCompanyName' | 'issuerCompanyAddress' | 'issuerCompanyPhone' | 'issuerCompanyEmail' | 'issuerCompanyNpwp'>,
+    company?: CompanyProfile | null,
+) {
+    return {
+        name: nota.issuerCompanyName?.trim() || company?.name || 'Gading Mas Surya',
+        address: nota.issuerCompanyAddress?.trim() || company?.address?.trim() || '',
+        phone: nota.issuerCompanyPhone?.trim() || company?.phone?.trim() || '',
+        email: nota.issuerCompanyEmail?.trim() || company?.email?.trim() || '',
+        npwp: nota.issuerCompanyNpwp?.trim() || company?.npwp?.trim() || '',
+    };
+}
+
 export function buildFreightNotaPrintDocument(opts: {
     nota: FreightNota;
     items: FreightNotaItem[];
@@ -252,6 +265,7 @@ export function buildFreightNotaPrintDocument(opts: {
     invoiceBankAccounts?: InvoiceInstructionAccount[];
 }) {
     const { nota, items, company, customer, invoiceBankAccounts = [] } = opts;
+    const issuerProfile = resolveFreightNotaIssuerProfile(nota, company);
     const displayNumber = formatFreightNotaDisplayNumber(nota, company);
     const grossAmount = nota.totalAmount || 0;
     const adjustmentAmount = nota.totalAdjustmentAmount || 0;
@@ -282,9 +296,9 @@ export function buildFreightNotaPrintDocument(opts: {
         .trim()
         .replace(/^./, character => character.toUpperCase());
     const signatureName =
-        company?.bankHolder && company.bankHolder.trim().toLowerCase() !== (company?.name || '').trim().toLowerCase()
+        company?.bankHolder && company.bankHolder.trim().toLowerCase() !== issuerProfile.name.trim().toLowerCase()
             ? company.bankHolder.trim()
-            : invoiceInstructionAccounts[0]?.accountHolder && invoiceInstructionAccounts[0].accountHolder.trim().toLowerCase() !== (company?.name || '').trim().toLowerCase()
+            : invoiceInstructionAccounts[0]?.accountHolder && invoiceInstructionAccounts[0].accountHolder.trim().toLowerCase() !== issuerProfile.name.trim().toLowerCase()
                 ? invoiceInstructionAccounts[0].accountHolder.trim()
             : 'Bagian Administrasi';
 
@@ -340,11 +354,11 @@ export function buildFreightNotaPrintDocument(opts: {
                     </div>
                 </div>
                 <div class="invoice-company-box">
-                    <div class="invoice-company-name">${escapePrintHtml(company?.name || 'Gading Mas Surya')}</div>
-                    ${company?.address ? `<div>${escapePrintHtml(company.address)}</div>` : ''}
-                    ${company?.phone ? `<div>Tel. ${escapePrintHtml(company.phone)}</div>` : ''}
-                    ${company?.email ? `<div>${escapePrintHtml(company.email)}</div>` : ''}
-                    ${company?.npwp ? `<div>NPWP: ${escapePrintHtml(company.npwp)}</div>` : ''}
+                    <div class="invoice-company-name">${escapePrintHtml(issuerProfile.name)}</div>
+                    ${issuerProfile.address ? `<div>${escapePrintHtml(issuerProfile.address)}</div>` : ''}
+                    ${issuerProfile.phone ? `<div>Tel. ${escapePrintHtml(issuerProfile.phone)}</div>` : ''}
+                    ${issuerProfile.email ? `<div>${escapePrintHtml(issuerProfile.email)}</div>` : ''}
+                    ${issuerProfile.npwp ? `<div>NPWP: ${escapePrintHtml(issuerProfile.npwp)}</div>` : ''}
                 </div>
             </div>
 
@@ -460,7 +474,7 @@ export function buildFreightNotaPrintDocument(opts: {
                 </div>
                 <div class="invoice-signature-box">
                     <div class="invoice-signature-title">Hormat Kami,</div>
-                    <div class="invoice-signature-company">${escapePrintHtml(company?.name || 'Gading Mas Surya')}</div>
+                    <div class="invoice-signature-company">${escapePrintHtml(issuerProfile.name)}</div>
                     <div class="invoice-signature-area">
                         ${signatureStampHtml}
                     </div>

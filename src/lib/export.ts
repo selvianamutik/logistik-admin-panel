@@ -11,6 +11,7 @@ import {
     fmtDate,
     fmtNumber,
     formatFreightNotaDisplayNumber,
+    resolveFreightNotaIssuerProfile,
     resolveInvoiceInstructionAccounts,
     type InvoiceInstructionAccount,
 } from './print';
@@ -538,6 +539,7 @@ export async function exportFreightNotaDetail(
     invoiceBankAccounts: InvoiceInstructionAccount[] = [],
 ) {
     const resolvedCompany = company ?? await fetchCompanyProfile();
+    const issuerProfile = resolveFreightNotaIssuerProfile(nota, resolvedCompany);
     const displayNumber = formatFreightNotaDisplayNumber(nota, resolvedCompany);
     const groupedRows = items.reduce<Array<{
         no: number;
@@ -588,18 +590,18 @@ export async function exportFreightNotaDetail(
     const rows: ExportValue[][] = [];
     const merges: MergeRange[] = [];
     const totalColumns = 12;
-    const companyLine = [resolvedCompany?.phone ? `TELP. ${resolvedCompany.phone}` : '', resolvedCompany?.email ? `EMAIL : ${resolvedCompany.email}` : '']
+    const companyLine = [issuerProfile.phone ? `TELP. ${issuerProfile.phone}` : '', issuerProfile.email ? `EMAIL : ${issuerProfile.email}` : '']
         .filter(Boolean)
         .join('  ');
     const invoiceInstructionLines = resolveInvoiceInstructionAccounts(resolvedCompany, invoiceBankAccounts, nota.instructionAccounts || [])
         .map(buildInvoiceInstructionAccountText);
     const extraNote = [nota.footerNote || resolvedCompany?.invoiceSettings?.footerNote, nota.notes].filter(Boolean).join(' ');
 
-    rows.push(['', '', resolvedCompany?.name || 'Gading Mas Surya', '', '', `PERINCIAN ONGKOS ANGKUT NO.${displayNumber}`, '', '', '', '', 'TGL.', fmtDate(nota.issueDate)]);
+    rows.push(['', '', issuerProfile.name, '', '', `PERINCIAN ONGKOS ANGKUT NO.${displayNumber}`, '', '', '', '', 'TGL.', fmtDate(nota.issueDate)]);
     merges.push({ startRow: 1, startCol: 3, endRow: 1, endCol: 5 });
     merges.push({ startRow: 1, startCol: 6, endRow: 1, endCol: 10 });
 
-    rows.push(['', '', resolvedCompany?.address || '', '', '', 'KEPADA YANG TERHORMAT :']);
+    rows.push(['', '', issuerProfile.address || '', '', '', 'KEPADA YANG TERHORMAT :']);
     merges.push({ startRow: 2, startCol: 3, endRow: 2, endCol: 5 });
     merges.push({ startRow: 2, startCol: 6, endRow: 2, endCol: 12 });
 
@@ -666,8 +668,8 @@ export async function exportFreightNotaDetail(
     merges.push({ startRow: rows.length, startCol: 1, endRow: rows.length, endCol: totalColumns });
 
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = resolvedCompany?.name || 'Gading Mas Surya';
-    workbook.company = resolvedCompany?.name || 'Gading Mas Surya';
+    workbook.creator = issuerProfile.name;
+    workbook.company = issuerProfile.name;
     workbook.created = new Date();
     workbook.modified = new Date();
     workbook.subject = `Nota ${displayNumber}`;

@@ -1,9 +1,7 @@
-import { NextResponse } from 'next/server';
-
 import { hashPassword } from '@/lib/auth';
 import { sanitizeUserForClient } from '@/lib/api/data-helpers';
 import { requireInternalSession } from '@/lib/api/driver-portal';
-import { ensureSameOriginRequest } from '@/lib/api/request-security';
+import { ensureSameOriginRequest, jsonNoStore } from '@/lib/api/request-security';
 import { getSanityClient, sanityCreate, sanityGetById, sanityUpdate } from '@/lib/sanity';
 import type { Driver, User } from '@/lib/types';
 
@@ -130,7 +128,7 @@ async function deactivateDriverAccountAtomically(input: {
 export async function GET(request: Request) {
     const auth = await requireInternalSession(['OWNER', 'ARMADA']);
     if ('error' in auth) {
-        return NextResponse.json({ error: auth.error }, { status: auth.status });
+        return jsonNoStore({ error: auth.error }, { status: auth.status });
     }
 
     const { searchParams } = new URL(request.url);
@@ -156,7 +154,7 @@ export async function GET(request: Request) {
 
     if (countOnly) {
         const total = await getSanityClient().fetch<number>(`count(*[${whereClause}])`, params);
-        return NextResponse.json({ data: [], meta: { total } });
+        return jsonNoStore({ data: [], meta: { total } });
     }
 
     const accounts = await getSanityClient().fetch<Array<Pick<User, '_id' | 'name' | 'email' | 'active' | 'driverRef' | 'driverName' | 'lastLoginAt'>>>(
@@ -172,7 +170,7 @@ export async function GET(request: Request) {
         params
     );
 
-    return NextResponse.json({ data: accounts });
+    return jsonNoStore({ data: accounts });
 }
 
 export async function POST(request: Request) {
@@ -183,7 +181,7 @@ export async function POST(request: Request) {
 
     const auth = await requireInternalSession(['OWNER', 'ARMADA']);
     if ('error' in auth) {
-        return NextResponse.json({ error: auth.error }, { status: auth.status });
+        return jsonNoStore({ error: auth.error }, { status: auth.status });
     }
 
     try {
@@ -204,30 +202,30 @@ export async function POST(request: Request) {
         const password = typeof body.password === 'string' ? body.password.trim() : '';
 
         if (!driverRef || !name || !email) {
-            return NextResponse.json({ error: 'Nama, email, dan supir wajib diisi' }, { status: 400 });
+            return jsonNoStore({ error: 'Nama, email, dan supir wajib diisi' }, { status: 400 });
         }
 
         const driver = await sanityGetById<Driver>(driverRef);
         if (!driver) {
-            return NextResponse.json({ error: 'Supir tidak ditemukan' }, { status: 404 });
+            return jsonNoStore({ error: 'Supir tidak ditemukan' }, { status: 404 });
         }
         if (driver.active === false) {
-            return NextResponse.json({ error: 'Supir tidak aktif dan tidak bisa diberi akun mobile' }, { status: 409 });
+            return jsonNoStore({ error: 'Supir tidak aktif dan tidak bisa diberi akun mobile' }, { status: 409 });
         }
 
         if (action === 'create') {
             if (password.length < 8) {
-                return NextResponse.json({ error: 'Password minimal 8 karakter' }, { status: 400 });
+                return jsonNoStore({ error: 'Password minimal 8 karakter' }, { status: 400 });
             }
 
             const duplicateEmail = await getDuplicateEmail(email);
             if (duplicateEmail) {
-                return NextResponse.json({ error: 'Email user sudah digunakan' }, { status: 409 });
+                return jsonNoStore({ error: 'Email user sudah digunakan' }, { status: 409 });
             }
 
             const duplicateDriverAccount = await getDuplicateDriverAccount(driverRef);
             if (duplicateDriverAccount) {
-                return NextResponse.json({ error: 'Supir ini sudah memiliki akun mobile' }, { status: 409 });
+                return jsonNoStore({ error: 'Supir ini sudah memiliki akun mobile' }, { status: 409 });
             }
 
             const created = await sanityCreate<User>({
@@ -243,27 +241,27 @@ export async function POST(request: Request) {
             });
 
             await addAuditLog(auth.session, 'CREATE', created._id, `Membuat akun driver mobile untuk ${driver.name}`);
-            return NextResponse.json({ data: sanitizeUserForClient(created) });
+            return jsonNoStore({ data: sanitizeUserForClient(created) });
         }
 
         const id = normalizeText(body.id);
         if (!id) {
-            return NextResponse.json({ error: 'ID akun driver tidak valid' }, { status: 400 });
+            return jsonNoStore({ error: 'ID akun driver tidak valid' }, { status: 400 });
         }
 
         const existing = await sanityGetById<User>(id);
         if (!existing || existing.role !== 'DRIVER') {
-            return NextResponse.json({ error: 'Akun driver tidak ditemukan' }, { status: 404 });
+            return jsonNoStore({ error: 'Akun driver tidak ditemukan' }, { status: 404 });
         }
 
         const duplicateEmail = await getDuplicateEmail(email, id);
         if (duplicateEmail) {
-            return NextResponse.json({ error: 'Email user sudah digunakan' }, { status: 409 });
+            return jsonNoStore({ error: 'Email user sudah digunakan' }, { status: 409 });
         }
 
         const duplicateDriverAccount = await getDuplicateDriverAccount(driverRef, id);
         if (duplicateDriverAccount) {
-            return NextResponse.json({ error: 'Supir ini sudah memiliki akun mobile' }, { status: 409 });
+            return jsonNoStore({ error: 'Supir ini sudah memiliki akun mobile' }, { status: 409 });
         }
 
         const updates: Record<string, unknown> = {
@@ -279,7 +277,7 @@ export async function POST(request: Request) {
 
         if (password) {
             if (password.length < 8) {
-                return NextResponse.json({ error: 'Password minimal 8 karakter' }, { status: 400 });
+                return jsonNoStore({ error: 'Password minimal 8 karakter' }, { status: 400 });
             }
             updates.passwordHash = await hashPassword(password);
         }
@@ -299,7 +297,7 @@ export async function POST(request: Request) {
             stoppedTrackingCount = trackingResult.stoppedTrackingCount;
             const refreshed = await sanityGetById<User>(id);
             if (!refreshed) {
-                return NextResponse.json({ error: 'Akun driver tidak ditemukan' }, { status: 404 });
+                return jsonNoStore({ error: 'Akun driver tidak ditemukan' }, { status: 404 });
             }
             updated = refreshed;
         } else {
@@ -307,7 +305,7 @@ export async function POST(request: Request) {
         }
 
         await addAuditLog(auth.session, 'UPDATE', id, `Memperbarui akun driver mobile untuk ${driver.name}`);
-        return NextResponse.json({
+        return jsonNoStore({
             data: sanitizeUserForClient(updated),
             meta: {
                 stoppedTrackingCount,
@@ -315,6 +313,6 @@ export async function POST(request: Request) {
         });
     } catch (error) {
         console.error('Driver account route error:', error);
-        return NextResponse.json({ error: 'Terjadi kesalahan server' }, { status: 500 });
+        return jsonNoStore({ error: 'Terjadi kesalahan server' }, { status: 500 });
     }
 }

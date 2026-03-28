@@ -2,12 +2,11 @@
    LOGISTIK — Login API Route (Sanity CMS)
    ============================================================ */
 
-import { NextResponse } from 'next/server';
 import { getSanityClient, sanityGetById, sanityUpdate } from '@/lib/sanity';
 import { verifyPassword, createSession, hashPassword, isPasswordHashMigrated, setSessionCookie } from '@/lib/auth';
 import { writeAuditLog } from '@/lib/api/data-helpers';
 import { clearFailedAttempts, getRequestIp, recordLoginAttempt } from '@/lib/api/rate-limit';
-import { ensureSameOriginRequest } from '@/lib/api/request-security';
+import { ensureSameOriginRequest, jsonNoStore } from '@/lib/api/request-security';
 import { DRIVER_SESSION_COOKIE, SESSION_COOKIE } from '@/lib/session';
 import type { Driver, User } from '@/lib/types';
 
@@ -19,7 +18,7 @@ function buildLoginRateLimitKey(request: Request, email: string, scope: 'ADMIN' 
 }
 
 function tooManyAttemptsResponse(retryAfterSeconds: number) {
-    return NextResponse.json(
+    return jsonNoStore(
         { error: 'Terlalu banyak percobaan login. Coba lagi beberapa saat lagi.' },
         {
             status: 429,
@@ -29,7 +28,7 @@ function tooManyAttemptsResponse(retryAfterSeconds: number) {
 }
 
 export async function GET() {
-    return NextResponse.json({ error: 'Use POST method', methods: ['POST'] }, { status: 405 });
+    return jsonNoStore({ error: 'Use POST method', methods: ['POST'] }, { status: 405 });
 }
 
 export async function POST(request: Request) {
@@ -51,7 +50,7 @@ export async function POST(request: Request) {
         const normalizedPassword = typeof password === 'string' ? password : '';
 
         if (!normalizedEmail || !normalizedPassword) {
-            return NextResponse.json(
+            return jsonNoStore(
                 { error: 'Email dan password wajib diisi' },
                 { status: 400 }
             );
@@ -74,13 +73,13 @@ export async function POST(request: Request) {
         );
 
         if (!user) {
-            return NextResponse.json({ error: 'Email atau password salah' }, { status: 401 });
+            return jsonNoStore({ error: 'Email atau password salah' }, { status: 401 });
         }
 
         // Verify password — normalizedPassword is string ✅
         const isValid = await verifyPassword(normalizedPassword, user.passwordHash);
         if (!isValid) {
-            return NextResponse.json({ error: 'Email atau password salah' }, { status: 401 });
+            return jsonNoStore({ error: 'Email atau password salah' }, { status: 401 });
         }
 
         let nextPasswordHash: string | undefined;
@@ -89,14 +88,14 @@ export async function POST(request: Request) {
         }
 
         if (loginScope === 'DRIVER' && user.role !== 'DRIVER') {
-            return NextResponse.json(
+            return jsonNoStore(
                 { error: 'Akun ini bukan akun mobile driver' },
                 { status: 403 }
             );
         }
 
         if (loginScope === 'ADMIN' && user.role === 'DRIVER') {
-            return NextResponse.json(
+            return jsonNoStore(
                 { error: 'Akun driver harus login dari aplikasi driver' },
                 { status: 403 }
             );
@@ -104,14 +103,14 @@ export async function POST(request: Request) {
 
         if (user.role === 'DRIVER') {
             if (!user.driverRef) {
-                return NextResponse.json(
+                return jsonNoStore(
                     { error: 'Akun driver belum terhubung ke data supir' },
                     { status: 409 }
                 );
             }
             const driver = await sanityGetById<Driver>(user.driverRef);
             if (!driver || driver.active === false) {
-                return NextResponse.json(
+                return jsonNoStore(
                     { error: 'Akun driver tidak aktif atau data supir tidak tersedia' },
                     { status: 409 }
                 );
@@ -142,7 +141,7 @@ export async function POST(request: Request) {
             loginScope === 'DRIVER' ? 'Login portal driver' : 'Login admin web'
         );
 
-        return NextResponse.json({
+        return jsonNoStore({
             success: true,
             user: {
                 _id: user._id,
@@ -154,6 +153,6 @@ export async function POST(request: Request) {
         });
     } catch (err) {
         console.error('Login error:', err);
-        return NextResponse.json({ error: 'Terjadi kesalahan server' }, { status: 500 });
+        return jsonNoStore({ error: 'Terjadi kesalahan server' }, { status: 500 });
     }
 }

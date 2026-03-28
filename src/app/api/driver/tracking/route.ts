@@ -1,5 +1,3 @@
-import { NextResponse } from 'next/server';
-
 import {
     formatTrackingLocationText,
     hasBearerDriverAuth,
@@ -8,7 +6,7 @@ import {
     toSpeedKph,
 } from '@/lib/api/driver-portal';
 import { extractRefId } from '@/lib/api/data-helpers';
-import { ensureSameOriginRequest } from '@/lib/api/request-security';
+import { ensureSameOriginRequest, jsonNoStore } from '@/lib/api/request-security';
 import { handleDeliveryOrderStatusUpdate } from '@/lib/api/order-workflows';
 import { getSanityClient, sanityCreate, sanityGetById, sanityUpdate } from '@/lib/sanity';
 import type { DeliveryOrder, Driver } from '@/lib/types';
@@ -129,7 +127,7 @@ export async function POST(request: Request) {
 
     const auth = await requireDriverSessionContext(request);
     if ('error' in auth) {
-        return NextResponse.json({ error: auth.error }, { status: auth.status });
+        return jsonNoStore({ error: auth.error }, { status: auth.status });
     }
 
     try {
@@ -145,20 +143,20 @@ export async function POST(request: Request) {
         const action = body.action;
         const deliveryOrderRef = typeof body.deliveryOrderRef === 'string' ? body.deliveryOrderRef : '';
         if (!action || !deliveryOrderRef) {
-            return NextResponse.json({ error: 'Aksi tracking tidak valid' }, { status: 400 });
+            return jsonNoStore({ error: 'Aksi tracking tidak valid' }, { status: 400 });
         }
 
         const deliveryOrder = await sanityGetById<DeliveryOrder>(deliveryOrderRef);
         if (!deliveryOrder) {
-            return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
+            return jsonNoStore({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
         }
 
         if (extractRefId(deliveryOrder.driverRef) !== auth.driver._id) {
-            return NextResponse.json({ error: 'Surat jalan ini bukan milik supir yang login' }, { status: 403 });
+            return jsonNoStore({ error: 'Surat jalan ini bukan milik supir yang login' }, { status: 403 });
         }
 
         if (deliveryOrder.status === 'CANCELLED') {
-            return NextResponse.json({ error: 'Surat jalan dibatalkan dan tidak bisa ditrack' }, { status: 409 });
+            return jsonNoStore({ error: 'Surat jalan dibatalkan dan tidak bisa ditrack' }, { status: 409 });
         }
 
         const latitude = normalizeTrackingNumber(body.latitude);
@@ -168,23 +166,23 @@ export async function POST(request: Request) {
         const now = new Date().toISOString();
 
         if ((latitude === null) !== (longitude === null)) {
-            return NextResponse.json({ error: 'Koordinat GPS tidak lengkap' }, { status: 400 });
+            return jsonNoStore({ error: 'Koordinat GPS tidak lengkap' }, { status: 400 });
         }
 
         if (latitude !== null && (latitude < -90 || latitude > 90)) {
-            return NextResponse.json({ error: 'Latitude tidak valid' }, { status: 400 });
+            return jsonNoStore({ error: 'Latitude tidak valid' }, { status: 400 });
         }
 
         if (longitude !== null && (longitude < -180 || longitude > 180)) {
-            return NextResponse.json({ error: 'Longitude tidak valid' }, { status: 400 });
+            return jsonNoStore({ error: 'Longitude tidak valid' }, { status: 400 });
         }
 
         if (accuracyM !== null && accuracyM < 0) {
-            return NextResponse.json({ error: 'Akurasi GPS tidak valid' }, { status: 400 });
+            return jsonNoStore({ error: 'Akurasi GPS tidak valid' }, { status: 400 });
         }
 
         if ((action === 'start' || action === 'resume' || action === 'heartbeat') && (latitude === null || longitude === null)) {
-            return NextResponse.json({ error: 'Tracking live membutuhkan koordinat GPS yang valid' }, { status: 400 });
+            return jsonNoStore({ error: 'Tracking live membutuhkan koordinat GPS yang valid' }, { status: 400 });
         }
 
         const locationPatch =
@@ -216,26 +214,26 @@ export async function POST(request: Request) {
                 { deliveryOrderRef, driverRef: auth.driver._id }
             );
             if (otherActiveDo) {
-                return NextResponse.json(
+                return jsonNoStore(
                     { error: `Masih ada tracking aktif pada ${otherActiveDo.doNumber || otherActiveDo._id}. Hentikan dulu sebelum mulai yang baru.` },
                     { status: 409 }
                 );
             }
 
             if (!['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status)) {
-                return NextResponse.json({ error: 'Hanya DO aktif yang bisa mulai tracking' }, { status: 409 });
+                return jsonNoStore({ error: 'Hanya DO aktif yang bisa mulai tracking' }, { status: 409 });
             }
 
             let driverState = await refreshDriverTrackingState(auth.driver._id);
             if (!driverState || driverState.active === false) {
-                return NextResponse.json({ error: 'Data supir tidak aktif atau tidak ditemukan' }, { status: 403 });
+                return jsonNoStore({ error: 'Data supir tidak aktif atau tidak ditemukan' }, { status: 403 });
             }
 
             const lockedDoRef = extractRefId(driverState.activeTrackingDeliveryOrderRef);
             if (lockedDoRef && lockedDoRef !== deliveryOrderRef) {
                 const lockedDo = await sanityGetById<DeliveryOrder>(lockedDoRef);
                 if (lockedDo && ['ACTIVE', 'PAUSED'].includes(lockedDo.trackingState || '')) {
-                    return NextResponse.json(
+                    return jsonNoStore(
                         { error: `Tracking supir ini masih terkunci pada ${lockedDo.doNumber || lockedDo._id}. Hentikan dulu sebelum mulai yang baru.` },
                         { status: 409 }
                     );
@@ -245,7 +243,7 @@ export async function POST(request: Request) {
                     await clearDriverTrackingLock(driverState, now);
                 } catch (error) {
                     console.warn('Failed to clear stale driver tracking lock', error);
-                    return NextResponse.json(
+                    return jsonNoStore(
                         { error: 'Status tracking supir sedang berubah. Refresh lalu coba lagi.' },
                         { status: 409 }
                     );
@@ -253,12 +251,12 @@ export async function POST(request: Request) {
 
                 driverState = await refreshDriverTrackingState(auth.driver._id);
                 if (!driverState || driverState.active === false) {
-                    return NextResponse.json({ error: 'Data supir tidak aktif atau tidak ditemukan' }, { status: 403 });
+                    return jsonNoStore({ error: 'Data supir tidak aktif atau tidak ditemukan' }, { status: 403 });
                 }
             }
 
             if (!driverState._rev) {
-                return NextResponse.json(
+                return jsonNoStore(
                     { error: 'Kunci tracking supir tidak tersedia. Refresh lalu coba lagi.' },
                     { status: 409 }
                 );
@@ -275,7 +273,7 @@ export async function POST(request: Request) {
                     .commit();
             } catch (error) {
                 console.warn('Failed to acquire driver tracking lock', error);
-                return NextResponse.json(
+                return jsonNoStore(
                     { error: 'Tracking supir sedang dipakai sesi lain. Refresh lalu coba lagi.' },
                     { status: 409 }
                 );
@@ -328,7 +326,7 @@ export async function POST(request: Request) {
                     .unset(['trackingStoppedAt']);
                 const updated = await trackingPatch.commit() as DeliveryOrder;
 
-                return NextResponse.json({ data: updated });
+                return jsonNoStore({ data: updated });
             } catch (error) {
                 try {
                     await releaseDriverTrackingLockIfOwned(auth.driver._id, deliveryOrderRef, now);
@@ -341,25 +339,25 @@ export async function POST(request: Request) {
 
         if (action === 'heartbeat') {
             if (deliveryOrder.trackingState !== 'ACTIVE') {
-                return NextResponse.json({ error: 'Tracking belum aktif untuk DO ini' }, { status: 409 });
+                return jsonNoStore({ error: 'Tracking belum aktif untuk DO ini' }, { status: 409 });
             }
 
             const updated = await sanityUpdate<DeliveryOrder>(deliveryOrderRef, {
                 ...locationPatch,
                 trackingState: 'ACTIVE',
             });
-            return NextResponse.json({ data: updated });
+            return jsonNoStore({ data: updated });
         }
 
         if (action === 'pause') {
             if (!isClosedDeliveryOrder(deliveryOrder.status)) {
-                return NextResponse.json(
+                return jsonNoStore(
                     { error: 'Driver tidak boleh mematikan tracking sebelum DO benar-benar selesai. Tracking akan berhenti otomatis saat admin menutup DO.' },
                     { status: 409 }
                 );
             }
             if (deliveryOrder.trackingState !== 'ACTIVE') {
-                return NextResponse.json({ error: 'Tracking tidak sedang aktif' }, { status: 409 });
+                return jsonNoStore({ error: 'Tracking tidak sedang aktif' }, { status: 409 });
             }
 
             await createTrackingLog({
@@ -378,16 +376,16 @@ export async function POST(request: Request) {
                 trackingState: 'PAUSED',
                 ...locationPatch,
             });
-            return NextResponse.json({ data: updated });
+            return jsonNoStore({ data: updated });
         }
 
         if (action === 'rollback-start') {
             if (deliveryOrder.trackingState !== 'ACTIVE') {
-                return NextResponse.json({ error: 'Tracking tidak sedang aktif' }, { status: 409 });
+                return jsonNoStore({ error: 'Tracking tidak sedang aktif' }, { status: 409 });
             }
 
             if (!canRollbackFreshTrackingStart(deliveryOrder, now)) {
-                return NextResponse.json(
+                return jsonNoStore(
                     { error: 'Tracking ini sudah berjalan terlalu lama untuk dibatalkan otomatis. Hubungi admin bila DO perlu diselesaikan.' },
                     { status: 409 }
                 );
@@ -417,18 +415,18 @@ export async function POST(request: Request) {
                 console.warn('Failed to release driver tracking lock after rollback-start', error);
             }
 
-            return NextResponse.json({ data: updated });
+            return jsonNoStore({ data: updated });
         }
 
         if (action === 'stop') {
             if (!isClosedDeliveryOrder(deliveryOrder.status)) {
-                return NextResponse.json(
+                return jsonNoStore(
                     { error: 'Driver tidak boleh mematikan tracking sebelum DO benar-benar selesai. Tracking akan berhenti otomatis saat admin menutup DO.' },
                     { status: 409 }
                 );
             }
             if (!['ACTIVE', 'PAUSED'].includes(deliveryOrder.trackingState || '')) {
-                return NextResponse.json({ error: 'Tracking tidak sedang berjalan' }, { status: 409 });
+                return jsonNoStore({ error: 'Tracking tidak sedang berjalan' }, { status: 409 });
             }
 
             await createTrackingLog({
@@ -465,12 +463,12 @@ export async function POST(request: Request) {
                 console.warn('Failed to release driver tracking lock', error);
             }
 
-            return NextResponse.json({ data: updated });
+            return jsonNoStore({ data: updated });
         }
 
-        return NextResponse.json({ error: 'Aksi tracking tidak dikenal' }, { status: 400 });
+        return jsonNoStore({ error: 'Aksi tracking tidak dikenal' }, { status: 400 });
     } catch (error) {
         console.error('Driver tracking route error:', error);
-        return NextResponse.json({ error: 'Terjadi kesalahan server' }, { status: 500 });
+        return jsonNoStore({ error: 'Terjadi kesalahan server' }, { status: 500 });
     }
 }

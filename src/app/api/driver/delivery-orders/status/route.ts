@@ -1,12 +1,10 @@
-import { NextResponse } from 'next/server';
-
 import { requireDriverSessionContext } from '@/lib/api/driver-portal';
 import { extractRefId } from '@/lib/api/data-helpers';
 import {
     handleDeliveryOrderDriverStatusRequest,
     handleDeliveryOrderStatusUpdate,
 } from '@/lib/api/order-workflows';
-import { ensureSameOriginRequest } from '@/lib/api/request-security';
+import { ensureSameOriginRequest, jsonNoStore } from '@/lib/api/request-security';
 import { sanityCreate, sanityGetById } from '@/lib/sanity';
 import type { DeliveryOrder } from '@/lib/types';
 
@@ -41,7 +39,7 @@ export async function POST(request: Request) {
 
     const auth = await requireDriverSessionContext(request);
     if ('error' in auth) {
-        return NextResponse.json({ error: auth.error }, { status: auth.status });
+        return jsonNoStore({ error: auth.error }, { status: auth.status });
     }
 
     try {
@@ -56,11 +54,11 @@ export async function POST(request: Request) {
         const note = typeof body.note === 'string' ? body.note : '';
 
         if (!id || !status) {
-            return NextResponse.json({ error: 'Status DO tidak valid' }, { status: 400 });
+            return jsonNoStore({ error: 'Status DO tidak valid' }, { status: 400 });
         }
 
         if (!DRIVER_ALLOWED_STATUS_UPDATES.has(status) && !DRIVER_APPROVAL_REQUEST_STATUSES.has(status)) {
-            return NextResponse.json(
+            return jsonNoStore(
                 { error: 'Driver hanya boleh mengirim progres perjalanan atau mengajukan status selesai ke admin.' },
                 { status: 403 }
             );
@@ -68,11 +66,11 @@ export async function POST(request: Request) {
 
         const deliveryOrder = await sanityGetById<DeliveryOrder>(id);
         if (!deliveryOrder) {
-            return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
+            return jsonNoStore({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
         }
 
         if (extractRefId(deliveryOrder.driverRef) !== auth.driver._id) {
-            return NextResponse.json({ error: 'Surat jalan ini bukan milik supir yang login' }, { status: 403 });
+            return jsonNoStore({ error: 'Surat jalan ini bukan milik supir yang login' }, { status: 403 });
         }
 
         if (DRIVER_APPROVAL_REQUEST_STATUSES.has(status)) {
@@ -90,6 +88,6 @@ export async function POST(request: Request) {
         );
     } catch (error) {
         console.error('Driver delivery status update error:', error);
-        return NextResponse.json({ error: 'Terjadi kesalahan server' }, { status: 500 });
+        return jsonNoStore({ error: 'Terjadi kesalahan server' }, { status: 500 });
     }
 }

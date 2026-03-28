@@ -54,13 +54,13 @@ export function ensureSameOriginRequest(request: Request) {
 
     const requestOrigin = getRequestOrigin(request);
     if (!requestOrigin) {
-        return NextResponse.json({ error: 'Origin request tidak valid' }, { status: 403 });
+        return jsonNoStore({ error: 'Origin request tidak valid' }, { status: 403 });
     }
 
     const originHeader = getOriginFromHeader(request.headers.get('origin'));
     if (originHeader) {
         if (!isEquivalentOrigin(originHeader, requestOrigin)) {
-            return NextResponse.json({ error: 'Origin request ditolak' }, { status: 403 });
+            return jsonNoStore({ error: 'Origin request ditolak' }, { status: 403 });
         }
         return null;
     }
@@ -68,10 +68,34 @@ export function ensureSameOriginRequest(request: Request) {
     const refererOrigin = getOriginFromHeader(request.headers.get('referer'));
     if (refererOrigin) {
         if (!isEquivalentOrigin(refererOrigin, requestOrigin)) {
-            return NextResponse.json({ error: 'Referer request ditolak' }, { status: 403 });
+            return jsonNoStore({ error: 'Referer request ditolak' }, { status: 403 });
         }
         return null;
     }
 
-    return NextResponse.json({ error: 'Origin request wajib dikirim' }, { status: 403 });
+    return jsonNoStore({ error: 'Origin request wajib dikirim' }, { status: 403 });
+}
+
+export function applyPrivateNoStoreHeaders(response: NextResponse) {
+    response.headers.set('Cache-Control', 'private, no-store, no-cache, max-age=0, must-revalidate');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+
+    const existingVary = response.headers.get('Vary') || '';
+    const varySet = new Set(
+        existingVary
+            .split(',')
+            .map(part => part.trim())
+            .filter(Boolean)
+    );
+    varySet.add('Cookie');
+    varySet.add('Authorization');
+    varySet.add('Origin');
+    response.headers.set('Vary', Array.from(varySet).join(', '));
+
+    return response;
+}
+
+export function jsonNoStore(body: unknown, init?: ResponseInit) {
+    return applyPrivateNoStoreHeaders(NextResponse.json(body, init));
 }

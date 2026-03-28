@@ -460,6 +460,11 @@ export interface FreightNota {
   _type: 'freightNota';
   notaNumber: string;
   notaDisplayNumber?: string;
+  issuerCompanyName?: string;
+  issuerCompanyAddress?: string;
+  issuerCompanyPhone?: string;
+  issuerCompanyEmail?: string;
+  issuerCompanyNpwp?: string;
   customerRef?: string;
   customerName: string;
   customerAddress?: string;

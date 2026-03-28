@@ -13,6 +13,15 @@ const nextConfig: NextConfig = {
                     { key: 'Content-Security-Policy', value: "base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'" },
                 ],
             },
+            {
+                source: '/api/:path*',
+                headers: [
+                    { key: 'Cache-Control', value: 'private, no-store, no-cache, max-age=0, must-revalidate' },
+                    { key: 'Pragma', value: 'no-cache' },
+                    { key: 'Expires', value: '0' },
+                    { key: 'Vary', value: 'Cookie, Authorization, Origin' },
+                ],
+            },
         ];
     },
 };

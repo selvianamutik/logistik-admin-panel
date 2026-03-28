@@ -3,8 +3,6 @@
    Centralized CRUD API - Sanity CMS Backend
    ============================================================ */
 
-import { NextResponse } from 'next/server';
-
 import { getSession } from '@/lib/auth';
 import {
     ensureCashAccount,
@@ -13,7 +11,7 @@ import {
     sanitizeUserForClient,
     type ApiSession as Session,
 } from '@/lib/api/data-helpers';
-import { ensureSameOriginRequest } from '@/lib/api/request-security';
+import { ensureSameOriginRequest, jsonNoStore } from '@/lib/api/request-security';
 import {
     handleBoronganPayment,
     handleDriverVoucherCreate,
@@ -135,7 +133,7 @@ function validateEntity(entity: string | null): entity is keyof typeof SANITY_TY
 
 function forbidOwnerOnlyEntity(session: Session, entity: string) {
     if (OWNER_ONLY_MUTATION_ENTITIES.has(entity) && session.role !== 'OWNER') {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
     }
     return null;
 }
@@ -198,7 +196,7 @@ function forbidModuleAccess(session: Session, entity: string, action: keyof Modu
     const targetModule = getEntityModule(entity);
     if (!targetModule) return null;
     if (!hasPermission(session.role, targetModule, action)) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
     }
     return null;
 }
@@ -229,9 +227,9 @@ async function addAuditLog(
 
 export async function GET(request: Request) {
     const session = await getSession();
-    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!session) return jsonNoStore({ error: 'Unauthorized' }, { status: 401 });
     if (session.role === 'DRIVER') {
-        return NextResponse.json({ error: 'Driver tidak diizinkan mengakses API admin' }, { status: 403 });
+        return jsonNoStore({ error: 'Driver tidak diizinkan mengakses API admin' }, { status: 403 });
     }
 
     const { searchParams } = new URL(request.url);
@@ -252,20 +250,20 @@ export async function GET(request: Request) {
 
     if (entity === 'dashboard-summary') {
         if (!hasPermission(session.role, 'dashboard', 'view')) {
-            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+            return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
         }
         try {
             const summary = await getDashboardSummary(session);
-            return NextResponse.json({ data: summary });
+            return jsonNoStore({ data: summary });
         } catch (err) {
             console.error('API GET Dashboard Summary Error:', err);
-            return NextResponse.json({ error: 'Server error' }, { status: 500 });
+            return jsonNoStore({ error: 'Server error' }, { status: 500 });
         }
     }
 
     if (entity === 'customers-summary') {
         if (!hasPermission(session.role, 'customers', 'view')) {
-            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+            return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
         }
         try {
             const idsParam = searchParams.get('ids');
@@ -273,16 +271,16 @@ export async function GET(request: Request) {
                 ? idsParam.split(',').map(value => value.trim()).filter(Boolean)
                 : [];
             const summary = await getCustomersSummary(ids);
-            return NextResponse.json({ data: summary });
+            return jsonNoStore({ data: summary });
         } catch (err) {
             console.error('API GET Customer Summary Error:', err);
-            return NextResponse.json({ error: 'Server error' }, { status: 500 });
+            return jsonNoStore({ error: 'Server error' }, { status: 500 });
         }
     }
 
     if (entity === 'vehicles-summary') {
         if (!hasPermission(session.role, 'vehicles', 'view')) {
-            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+            return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
         }
         try {
             const idsParam = searchParams.get('ids');
@@ -290,80 +288,80 @@ export async function GET(request: Request) {
                 ? idsParam.split(',').map(value => value.trim()).filter(Boolean)
                 : [];
             const summary = await getVehiclesSummary(ids);
-            return NextResponse.json({ data: summary });
+            return jsonNoStore({ data: summary });
         } catch (err) {
             console.error('API GET Vehicle Summary Error:', err);
-            return NextResponse.json({ error: 'Server error' }, { status: 500 });
+            return jsonNoStore({ error: 'Server error' }, { status: 500 });
         }
     }
 
     if (entity === 'expenses-summary') {
         if (!hasPermission(session.role, 'expenses', 'view')) {
-            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+            return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
         }
         try {
             const summary = await getExpensesSummary(session, searchQuery);
-            return NextResponse.json({ data: summary });
+            return jsonNoStore({ data: summary });
         } catch (err) {
             console.error('API GET Expense Summary Error:', err);
-            return NextResponse.json({ error: 'Server error' }, { status: 500 });
+            return jsonNoStore({ error: 'Server error' }, { status: 500 });
         }
     }
 
     if (entity === 'bank-accounts-summary') {
         if (!hasPermission(session.role, 'bankAccounts', 'view')) {
-            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+            return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
         }
         try {
             const summary = await getBankAccountsSummary();
-            return NextResponse.json({ data: summary });
+            return jsonNoStore({ data: summary });
         } catch (err) {
             console.error('API GET Bank Account Summary Error:', err);
-            return NextResponse.json({ error: 'Server error' }, { status: 500 });
+            return jsonNoStore({ error: 'Server error' }, { status: 500 });
         }
     }
 
     if (entity === 'audit-logs-summary') {
         if (!hasPermission(session.role, 'auditLogs', 'view')) {
-            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+            return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
         }
         try {
             const summary = await getAuditLogsSummary();
-            return NextResponse.json({ data: summary });
+            return jsonNoStore({ data: summary });
         } catch (err) {
             console.error('API GET Audit Summary Error:', err);
-            return NextResponse.json({ error: 'Server error' }, { status: 500 });
+            return jsonNoStore({ error: 'Server error' }, { status: 500 });
         }
     }
 
     if (entity === 'driver-borongans-summary') {
         if (session.role !== 'OWNER' || !hasPermission(session.role, 'driverBorongans', 'view')) {
-            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+            return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
         }
         try {
             const summary = await getBoronganSummary(searchQuery, searchParams.get('status') || '');
-            return NextResponse.json({ data: summary });
+            return jsonNoStore({ data: summary });
         } catch (err) {
             console.error('API GET Borongan Summary Error:', err);
-            return NextResponse.json({ error: 'Server error' }, { status: 500 });
+            return jsonNoStore({ error: 'Server error' }, { status: 500 });
         }
     }
 
     if (entity === 'freight-notas-summary') {
         if (!hasPermission(session.role, 'freightNotas', 'view')) {
-            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+            return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
         }
         try {
             const summary = await getFreightNotasSummary(searchQuery, searchParams.get('status') || '');
-            return NextResponse.json({ data: summary });
+            return jsonNoStore({ data: summary });
         } catch (err) {
             console.error('API GET Freight Nota Summary Error:', err);
-            return NextResponse.json({ error: 'Server error' }, { status: 500 });
+            return jsonNoStore({ error: 'Server error' }, { status: 500 });
         }
     }
 
     if (!validateEntity(entity)) {
-        return NextResponse.json({ error: 'Invalid entity type' }, { status: 400 });
+        return jsonNoStore({ error: 'Invalid entity type' }, { status: 400 });
     }
 
     if (entity !== 'users' && entity !== 'company') {
@@ -374,11 +372,11 @@ export async function GET(request: Request) {
     }
 
     if (entity === 'users' && session.role !== 'OWNER' && id !== session._id) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
     }
 
     if (OWNER_ONLY_READ_ENTITIES.has(entity) && session.role !== 'OWNER') {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
     }
 
     const docType = SANITY_TYPE_MAP[entity];
@@ -386,7 +384,7 @@ export async function GET(request: Request) {
     try {
         if (entity === 'company') {
             const profile = await sanityGetCompanyProfile();
-            return NextResponse.json({
+            return jsonNoStore({
                 data: profile
                     ? sanitizeCompanyProfileForRole(profile, session.role)
                     : null,
@@ -399,9 +397,9 @@ export async function GET(request: Request) {
 
         if (id) {
             let item = await sanityGetById(id);
-            if (!item) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+            if (!item) return jsonNoStore({ error: 'Not found' }, { status: 404 });
             if ((item as { _type?: string })._type !== docType) {
-                return NextResponse.json({ error: 'Not found' }, { status: 404 });
+                return jsonNoStore({ error: 'Not found' }, { status: 404 });
             }
 
             if (entity === 'users') {
@@ -411,7 +409,7 @@ export async function GET(request: Request) {
             if (entity === 'vehicles' && session.role !== 'OWNER') {
                 item = sanitizeVehicleForRole(item as unknown as Vehicle, session.role) as unknown as Record<string, unknown>;
             }
-            return NextResponse.json({ data: item });
+            return jsonNoStore({ data: item });
         }
 
         let items: Record<string, unknown>[] = [];
@@ -424,7 +422,7 @@ export async function GET(request: Request) {
             try {
                 filterObj = JSON.parse(filter) as Record<string, unknown>;
             } catch (error) {
-                return NextResponse.json(
+                return jsonNoStore(
                     { error: error instanceof Error ? error.message : 'Filter query tidak valid' },
                     { status: 400 }
                 );
@@ -449,7 +447,7 @@ export async function GET(request: Request) {
                         value: item.value,
                     }));
             } catch (error) {
-                return NextResponse.json(
+                return jsonNoStore(
                     { error: error instanceof Error ? error.message : 'Or filter query tidak valid' },
                     { status: 400 }
                 );
@@ -494,7 +492,7 @@ export async function GET(request: Request) {
                 items = result.items as Record<string, unknown>[];
                 totalItems = result.total;
             } catch (error) {
-                return NextResponse.json(
+                return jsonNoStore(
                     { error: error instanceof Error ? error.message : 'Pagination query tidak valid' },
                     { status: 400 }
                 );
@@ -534,7 +532,7 @@ export async function GET(request: Request) {
         }
 
         if (countOnly) {
-            return NextResponse.json({
+            return jsonNoStore({
                 data: [],
                 meta: {
                     page: pageParam ? Number.parseInt(pageParam, 10) || 1 : 1,
@@ -545,7 +543,7 @@ export async function GET(request: Request) {
         }
 
         if (needsPaginatedList) {
-            return NextResponse.json({
+            return jsonNoStore({
                 data: items,
                 meta: {
                     page: pageParam ? Number.parseInt(pageParam, 10) || 1 : 1,
@@ -555,10 +553,10 @@ export async function GET(request: Request) {
             });
         }
 
-        return NextResponse.json({ data: items });
+        return jsonNoStore({ data: items });
     } catch (err) {
         console.error('API GET Error:', err);
-        return NextResponse.json({ error: 'Server error' }, { status: 500 });
+        return jsonNoStore({ error: 'Server error' }, { status: 500 });
     }
 }
 
@@ -569,9 +567,9 @@ export async function POST(request: Request) {
     }
 
     const session = await getSession();
-    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!session) return jsonNoStore({ error: 'Unauthorized' }, { status: 401 });
     if (session.role === 'DRIVER') {
-        return NextResponse.json({ error: 'Driver tidak diizinkan mengakses API admin' }, { status: 403 });
+        return jsonNoStore({ error: 'Driver tidak diizinkan mengakses API admin' }, { status: 403 });
     }
 
     try {
@@ -586,21 +584,21 @@ export async function POST(request: Request) {
         const data = isPlainObject(body.data) ? body.data : {};
 
         if (!validateEntity(entity)) {
-            return NextResponse.json({ error: 'Invalid entity type' }, { status: 400 });
+            return jsonNoStore({ error: 'Invalid entity type' }, { status: 400 });
         }
 
         if (entity === 'users') {
             if (action === 'delete') {
-                return NextResponse.json({ error: 'User tidak boleh dihapus permanen' }, { status: 409 });
+                return jsonNoStore({ error: 'User tidak boleh dihapus permanen' }, { status: 409 });
             }
 
             if (session.role !== 'OWNER' && action !== 'update') {
-                return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+                return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
             }
         } else {
             const specialMutationPermission = hasSpecialMutationPermission(session, entity, action);
             if (specialMutationPermission === false) {
-                return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+                return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
             }
             if (specialMutationPermission === null) {
                 const forbiddenModuleMutation = forbidModuleAccess(session, entity, getMutationPermissionAction(action));
@@ -614,7 +612,7 @@ export async function POST(request: Request) {
         if (forbidden) return forbidden;
 
         if (LEGACY_READ_ONLY_ENTITIES.has(entity)) {
-            return NextResponse.json(
+            return jsonNoStore(
                 { error: 'Arsip invoice lama sudah dibekukan. Gunakan Nota Ongkos untuk workflow tagihan aktif.' },
                 { status: 409 }
             );
@@ -687,7 +685,7 @@ export async function POST(request: Request) {
         }
 
         if (entity === 'driver-borongans' && action === 'create-with-items') {
-            return NextResponse.json(
+            return jsonNoStore(
                 { error: 'Slip borongan baru sudah dinonaktifkan. Gunakan Uang Jalan Trip per DO/trip untuk settlement aktif.' },
                 { status: 409 }
             );
@@ -750,6 +748,7 @@ export async function POST(request: Request) {
         const message = err instanceof Error ? err.message : 'Server error';
         const status = message === 'Forbidden' ? 403 : 400;
         console.error('API POST Error:', err);
-        return NextResponse.json({ error: message }, { status });
+        return jsonNoStore({ error: message }, { status });
     }
 }
+

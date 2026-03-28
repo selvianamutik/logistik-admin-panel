@@ -1,9 +1,8 @@
-import { NextResponse } from 'next/server';
-
 import { createSession, hashPassword, isPasswordHashMigrated, verifyPassword } from '@/lib/auth';
 import { writeAuditLog } from '@/lib/api/data-helpers';
 import { getDriverAppContext, sanitizeDriverForMobile } from '@/lib/api/driver-portal';
 import { clearFailedAttempts, getRequestIp, recordLoginAttempt } from '@/lib/api/rate-limit';
+import { jsonNoStore } from '@/lib/api/request-security';
 import { sanityGetById, sanityUpdate, getSanityClient } from '@/lib/sanity';
 import type { Driver, User } from '@/lib/types';
 
@@ -15,7 +14,7 @@ function buildLoginRateLimitKey(request: Request, email: string) {
 }
 
 function tooManyAttemptsResponse(retryAfterSeconds: number) {
-    return NextResponse.json(
+    return jsonNoStore(
         { error: 'Terlalu banyak percobaan login. Coba lagi beberapa saat lagi.' },
         {
             status: 429,
@@ -33,7 +32,7 @@ export async function POST(request: Request) {
         const rateLimitKey = buildLoginRateLimitKey(request, normalizedEmail || 'unknown');
 
         if (!normalizedEmail || !password) {
-            return NextResponse.json({ error: 'Email dan password wajib diisi' }, { status: 400 });
+            return jsonNoStore({ error: 'Email dan password wajib diisi' }, { status: 400 });
         }
 
         const rateLimitStatus = await recordLoginAttempt(
@@ -51,25 +50,25 @@ export async function POST(request: Request) {
         );
 
         if (!user) {
-            return NextResponse.json({ error: 'Email atau password salah' }, { status: 401 });
+            return jsonNoStore({ error: 'Email atau password salah' }, { status: 401 });
         }
 
         if (user.role !== 'DRIVER') {
-            return NextResponse.json({ error: 'Akun ini bukan akun mobile driver' }, { status: 403 });
+            return jsonNoStore({ error: 'Akun ini bukan akun mobile driver' }, { status: 403 });
         }
 
         if (!user.driverRef) {
-            return NextResponse.json({ error: 'Akun driver belum terhubung ke data supir' }, { status: 409 });
+            return jsonNoStore({ error: 'Akun driver belum terhubung ke data supir' }, { status: 409 });
         }
 
         const isValid = await verifyPassword(password, user.passwordHash);
         if (!isValid) {
-            return NextResponse.json({ error: 'Email atau password salah' }, { status: 401 });
+            return jsonNoStore({ error: 'Email atau password salah' }, { status: 401 });
         }
 
         const driver = await sanityGetById<Driver>(user.driverRef);
         if (!driver || driver.active === false) {
-            return NextResponse.json({ error: 'Akun driver tidak aktif atau data supir tidak tersedia' }, { status: 409 });
+            return jsonNoStore({ error: 'Akun driver tidak aktif atau data supir tidak tersedia' }, { status: 409 });
         }
 
         let nextPasswordHash: string | undefined;
@@ -99,7 +98,7 @@ export async function POST(request: Request) {
             'Login aplikasi driver'
         );
 
-        return NextResponse.json({
+        return jsonNoStore({
             success: true,
             token,
             expiresIn: 60 * 60 * 24,
@@ -116,6 +115,6 @@ export async function POST(request: Request) {
         });
     } catch (error) {
         console.error('Driver mobile login error:', error);
-        return NextResponse.json({ error: 'Terjadi kesalahan server' }, { status: 500 });
+        return jsonNoStore({ error: 'Terjadi kesalahan server' }, { status: 500 });
     }
 }

@@ -1,8 +1,6 @@
-import { NextResponse } from 'next/server';
-
 import { clearSession, getDriverSession } from '@/lib/auth';
 import { writeAuditLog } from '@/lib/api/data-helpers';
-import { ensureSameOriginRequest } from '@/lib/api/request-security';
+import { ensureSameOriginRequest, jsonNoStore } from '@/lib/api/request-security';
 import { DRIVER_SESSION_COOKIE } from '@/lib/session';
 
 export async function POST(request: Request) {
@@ -16,5 +14,5 @@ export async function POST(request: Request) {
     if (session) {
         await writeAuditLog(session, 'LOGOUT', 'driver-web-auth', session._id, 'Logout portal driver');
     }
-    return NextResponse.json({ success: true });
+    return jsonNoStore({ success: true });
 }

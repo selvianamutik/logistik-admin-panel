@@ -50,8 +50,18 @@ async function loadFreightNotaDocumentSettings(): Promise<{
     instructionAccounts: FreightNotaInstructionAccount[];
     notaSeriesCode?: string;
     footerNote?: string;
+    issuerCompanyName?: string;
+    issuerCompanyAddress?: string;
+    issuerCompanyPhone?: string;
+    issuerCompanyEmail?: string;
+    issuerCompanyNpwp?: string;
 }> {
     const companyDoc = await getSanityClient().fetch<{
+        name?: string;
+        address?: string;
+        phone?: string;
+        email?: string;
+        npwp?: string;
         bankName?: string;
         bankAccount?: string;
         bankHolder?: string;
@@ -65,6 +75,11 @@ async function loadFreightNotaDocumentSettings(): Promise<{
         };
     } | null>(
         `*[_type == "companyProfile"][0]{
+            name,
+            address,
+            phone,
+            email,
+            npwp,
             bankName,
             bankAccount,
             bankHolder,
@@ -120,6 +135,11 @@ async function loadFreightNotaDocumentSettings(): Promise<{
                 }),
                 notaSeriesCode: normalizeOptionalText(companyDoc?.numberingSettings?.notaSeriesCode),
                 footerNote: normalizeOptionalText(companyDoc?.invoiceSettings?.footerNote),
+                issuerCompanyName: normalizeOptionalText(companyDoc?.name),
+                issuerCompanyAddress: normalizeOptionalText(companyDoc?.address),
+                issuerCompanyPhone: normalizeOptionalText(companyDoc?.phone),
+                issuerCompanyEmail: normalizeOptionalText(companyDoc?.email),
+                issuerCompanyNpwp: normalizeOptionalText(companyDoc?.npwp),
             };
         }
     }
@@ -130,6 +150,11 @@ async function loadFreightNotaDocumentSettings(): Promise<{
             instructionAccounts: [],
             notaSeriesCode: normalizeOptionalText(companyDoc?.numberingSettings?.notaSeriesCode),
             footerNote: normalizeOptionalText(companyDoc?.invoiceSettings?.footerNote),
+            issuerCompanyName: normalizeOptionalText(companyDoc?.name),
+            issuerCompanyAddress: normalizeOptionalText(companyDoc?.address),
+            issuerCompanyPhone: normalizeOptionalText(companyDoc?.phone),
+            issuerCompanyEmail: normalizeOptionalText(companyDoc?.email),
+            issuerCompanyNpwp: normalizeOptionalText(companyDoc?.npwp),
         };
     }
 
@@ -141,6 +166,11 @@ async function loadFreightNotaDocumentSettings(): Promise<{
         }],
         notaSeriesCode: normalizeOptionalText(companyDoc?.numberingSettings?.notaSeriesCode),
         footerNote: normalizeOptionalText(companyDoc?.invoiceSettings?.footerNote),
+        issuerCompanyName: normalizeOptionalText(companyDoc?.name),
+        issuerCompanyAddress: normalizeOptionalText(companyDoc?.address),
+        issuerCompanyPhone: normalizeOptionalText(companyDoc?.phone),
+        issuerCompanyEmail: normalizeOptionalText(companyDoc?.email),
+        issuerCompanyNpwp: normalizeOptionalText(companyDoc?.npwp),
     };
 }
 
@@ -1344,6 +1374,11 @@ export async function handleFreightNotaCreate(
         instructionAccounts,
         notaSeriesCode,
         footerNote,
+        issuerCompanyName,
+        issuerCompanyAddress,
+        issuerCompanyPhone,
+        issuerCompanyEmail,
+        issuerCompanyNpwp,
     } = await loadFreightNotaDocumentSettings();
     const notaDisplayNumber = buildFreightNotaDisplayNumberFromParts(
         notaNumber,
@@ -1380,6 +1415,11 @@ export async function handleFreightNotaCreate(
     const notaDoc = {
         _id: notaId,
         _type: 'freightNota',
+        issuerCompanyName,
+        issuerCompanyAddress,
+        issuerCompanyPhone,
+        issuerCompanyEmail,
+        issuerCompanyNpwp,
         customerRef: resolvedCustomerRef,
         customerName: finalCustomerName,
         customerAddress: finalCustomerAddress,
