@@ -428,7 +428,7 @@ export function buildFreightNotaPrintDocument(opts: {
             <div class="invoice-footer-grid">
                 <div class="invoice-panel">
                     <div class="invoice-section-title compact">Petunjuk Pembayaran</div>
-                    <div class="invoice-payment-line">Mohon lakukan pembayaran sebelum <strong>${escapePrintHtml(dueDateLabel)}</strong> dengan menyebutkan nomor invoice <strong>${escapePrintHtml(displayNumber)}</strong>.</div>
+                    <div class="invoice-payment-line">Mohon lakukan pembayaran sebelum <strong>${escapePrintHtml(dueDateLabel)}</strong> dengan menyebutkan nomor nota <strong>${escapePrintHtml(displayNumber)}</strong>.</div>
                     ${invoiceInstructionAccounts.length > 0 ? `
                         <div class="invoice-payment-subtitle">Pembayaran ditujukan ke:</div>
                         <div class="invoice-payment-bank-list">${invoiceInstructionHtml}</div>

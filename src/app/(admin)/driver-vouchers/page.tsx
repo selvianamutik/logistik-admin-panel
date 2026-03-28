@@ -153,7 +153,7 @@ export default function DriverVouchersPage() {
                                             <th>No. Bon</th>
                                             <th>Supir</th>
                                             <th>Tanggal</th>
-                                            <th>DO</th>
+                                            <th>No. DO Internal</th>
                                             <th class="r">Bon Awal</th>
                                             <th class="r">Tambahan</th>
                                             <th class="r">Total Diberikan</th>
@@ -227,7 +227,7 @@ export default function DriverVouchersPage() {
                     <div className="table-toolbar-left">
                         <div className="table-search">
                             <Search size={16} className="table-search-icon" />
-                            <input placeholder="Cari no. bon, supir, DO..." value={search} onChange={event => setSearch(event.target.value)} />
+                            <input placeholder="Cari no. bon, supir, no. DO internal..." value={search} onChange={event => setSearch(event.target.value)} />
                         </div>
                     </div>
                     <div className="table-toolbar-right">
@@ -247,7 +247,7 @@ export default function DriverVouchersPage() {
                                 <th>No. Bon</th>
                                 <th>Supir</th>
                                 <th>Tanggal</th>
-                                <th>DO</th>
+                                <th>No. DO Internal</th>
                                 <th>Rute</th>
                                 <th>Bon Awal</th>
                                 <th>Tambahan</th>
@@ -276,7 +276,7 @@ export default function DriverVouchersPage() {
                                         <div className="empty-state">
                                             <Receipt size={48} className="empty-state-icon" />
                                             <div className="empty-state-title">Belum ada uang jalan trip</div>
-                                            <div className="empty-state-text">Terbitkan uang jalan yang tertaut ke DO untuk mencatat uang jalan awal, top up, biaya perjalanan, upah trip, dan settlement akhir</div>
+                                            <div className="empty-state-text">Terbitkan uang jalan yang tertaut ke DO internal untuk mencatat uang jalan awal, top up, biaya perjalanan, upah trip, dan settlement akhir</div>
                                         </div>
                                     </td>
                                 </tr>
@@ -351,7 +351,7 @@ export default function DriverVouchersPage() {
                         {totalItems === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada uang jalan trip</div>
-                                <div className="mobile-record-subtitle">Terbitkan uang jalan yang tertaut ke DO untuk mencatat uang jalan awal, top up, biaya perjalanan, upah trip, dan settlement akhir.</div>
+                                <div className="mobile-record-subtitle">Terbitkan uang jalan yang tertaut ke DO internal untuk mencatat uang jalan awal, top up, biaya perjalanan, upah trip, dan settlement akhir.</div>
                             </div>
                         ) : items.map(v => {
                             const status = STATUS_MAP[v.status] || { label: v.status, cls: 'badge-gray' };
@@ -374,7 +374,7 @@ export default function DriverVouchersPage() {
                                     </div>
                                     <div className="mobile-record-meta">
                                         <div className="mobile-record-kv">
-                                            <span className="mobile-record-label">DO</span>
+                                            <span className="mobile-record-label">No. DO Internal</span>
                                             <span className="mobile-record-value">{v.doNumber || '-'}</span>
                                         </div>
                                         <div className="mobile-record-kv">
