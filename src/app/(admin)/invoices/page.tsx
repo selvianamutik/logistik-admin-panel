@@ -448,12 +448,16 @@ export default function NotaListPage() {
 
     const fetchCustomerSummary = async (customerRef?: string) => {
         if (!customerRef) return null;
-        const response = await fetch(`/api/data?entity=customers&id=${customerRef}`);
-        const payload = await response.json();
-        if (!response.ok) {
-            throw new Error(payload.error || 'Gagal memuat customer');
+        try {
+            const response = await fetch(`/api/data?entity=customers&id=${customerRef}`);
+            const payload = await response.json();
+            if (!response.ok) {
+                return null;
+            }
+            return (payload.data || null) as Pick<Customer, '_id' | 'name' | 'address' | 'contactPerson' | 'phone'> | null;
+        } catch {
+            return null;
         }
-        return (payload.data || null) as Pick<Customer, '_id' | 'name' | 'address' | 'contactPerson' | 'phone'> | null;
     };
 
     const handlePrintNota = async (nota: FreightNota) => {
@@ -461,7 +465,9 @@ export default function NotaListPage() {
             const [resolvedCompany, notaItems, customer] = await Promise.all([
                 company ? Promise.resolve(company) : fetchCompanyProfile(),
                 fetchNotaItems(nota._id),
-                fetchCustomerSummary(nota.customerRef),
+                nota.customerRef && !(nota.customerAddress || nota.customerContactPerson || nota.customerPhone)
+                    ? fetchCustomerSummary(nota.customerRef)
+                    : Promise.resolve(null),
             ]);
             setCompany(resolvedCompany);
             const doc = buildFreightNotaPrintDocument({

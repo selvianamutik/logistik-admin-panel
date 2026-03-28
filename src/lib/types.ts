@@ -462,6 +462,9 @@ export interface FreightNota {
   notaDisplayNumber?: string;
   customerRef?: string;
   customerName: string;
+  customerAddress?: string;
+  customerContactPerson?: string;
+  customerPhone?: string;
   issueDate: string;
   dueDate?: string;
   status: NotaStatus;
@@ -472,6 +475,7 @@ export interface FreightNota {
   totalWeightKg: number;
   bankAccountRef?: string;
   instructionAccounts?: FreightNotaInstructionAccount[];
+  footerNote?: string;
   notes?: string;
 }
 

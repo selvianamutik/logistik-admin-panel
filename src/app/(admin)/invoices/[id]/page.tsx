@@ -59,9 +59,14 @@ export default function NotaDetailPage() {
                 fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat detail nota'),
                 fetchCompanyProfile(),
             ]);
-            const customerData = notaData?.customerRef
-                ? await fetchAdminData<Pick<Customer, '_id' | 'name' | 'address' | 'contactPerson' | 'phone'> | null>(`/api/data?entity=customers&id=${notaData.customerRef}`, 'Gagal memuat detail nota')
-                : null;
+            let customerData: Pick<Customer, '_id' | 'name' | 'address' | 'contactPerson' | 'phone'> | null = null;
+            if (notaData?.customerRef && !(notaData.customerAddress || notaData.customerContactPerson || notaData.customerPhone)) {
+                try {
+                    customerData = await fetchAdminData<Pick<Customer, '_id' | 'name' | 'address' | 'contactPerson' | 'phone'> | null>(`/api/data?entity=customers&id=${notaData.customerRef}`, 'Gagal memuat detail nota');
+                } catch {
+                    customerData = null;
+                }
+            }
 
             setNota(notaData);
             setItems(notaItems || []);

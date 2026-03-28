@@ -49,6 +49,7 @@ type ReceiptCustomerSource = {
 async function loadFreightNotaDocumentSettings(): Promise<{
     instructionAccounts: FreightNotaInstructionAccount[];
     notaSeriesCode?: string;
+    footerNote?: string;
 }> {
     const companyDoc = await getSanityClient().fetch<{
         bankName?: string;
@@ -60,6 +61,7 @@ async function loadFreightNotaDocumentSettings(): Promise<{
         invoiceSettings?: {
             invoiceBankAccountRefs?: string[];
             defaultInvoiceBankAccountRef?: string;
+            footerNote?: string;
         };
     } | null>(
         `*[_type == "companyProfile"][0]{
@@ -117,6 +119,7 @@ async function loadFreightNotaDocumentSettings(): Promise<{
                     return selectedRefs.indexOf(left.bankAccountRef || '') - selectedRefs.indexOf(right.bankAccountRef || '');
                 }),
                 notaSeriesCode: normalizeOptionalText(companyDoc?.numberingSettings?.notaSeriesCode),
+                footerNote: normalizeOptionalText(companyDoc?.invoiceSettings?.footerNote),
             };
         }
     }
@@ -126,6 +129,7 @@ async function loadFreightNotaDocumentSettings(): Promise<{
         return {
             instructionAccounts: [],
             notaSeriesCode: normalizeOptionalText(companyDoc?.numberingSettings?.notaSeriesCode),
+            footerNote: normalizeOptionalText(companyDoc?.invoiceSettings?.footerNote),
         };
     }
 
@@ -136,6 +140,7 @@ async function loadFreightNotaDocumentSettings(): Promise<{
             accountHolder: normalizeOptionalText(companyDoc?.bankHolder),
         }],
         notaSeriesCode: normalizeOptionalText(companyDoc?.numberingSettings?.notaSeriesCode),
+        footerNote: normalizeOptionalText(companyDoc?.invoiceSettings?.footerNote),
     };
 }
 
@@ -1289,10 +1294,21 @@ export async function handleFreightNotaCreate(
     const issueDate = normalizeText(data.issueDate) || new Date().toISOString().slice(0, 10);
     const customerDerivedFromDo = Boolean(inferredCustomerRef && inferredCustomerRef === resolvedCustomerRef && deliveryOrders.length > 0);
     let finalCustomerName = customerName;
+    let finalCustomerAddress = normalizeOptionalText(data.customerAddress);
+    let finalCustomerContactPerson = normalizeOptionalText(data.customerContactPerson);
+    let finalCustomerPhone = normalizeOptionalText(data.customerPhone);
     let customerTermDays: number | null = null;
     if (resolvedCustomerRef) {
-        const customerDoc = await getSanityClient().fetch<{ _id: string; name?: string; defaultPaymentTerm?: number; active?: boolean } | null>(
-            `*[_type == "customer" && _id == $id][0]{ _id, name, defaultPaymentTerm, active }`,
+        const customerDoc = await getSanityClient().fetch<{
+            _id: string;
+            name?: string;
+            address?: string;
+            contactPerson?: string;
+            phone?: string;
+            defaultPaymentTerm?: number;
+            active?: boolean;
+        } | null>(
+            `*[_type == "customer" && _id == $id][0]{ _id, name, address, contactPerson, phone, defaultPaymentTerm, active }`,
             { id: resolvedCustomerRef }
         );
         if (!customerDoc) {
@@ -1304,6 +1320,9 @@ export async function handleFreightNotaCreate(
         if (customerDoc?.name) {
             finalCustomerName = customerDoc.name;
         }
+        finalCustomerAddress = normalizeOptionalText(customerDoc?.address) || finalCustomerAddress;
+        finalCustomerContactPerson = normalizeOptionalText(customerDoc?.contactPerson) || finalCustomerContactPerson;
+        finalCustomerPhone = normalizeOptionalText(customerDoc?.phone) || finalCustomerPhone;
         if (typeof customerDoc?.defaultPaymentTerm === 'number' && Number.isFinite(customerDoc.defaultPaymentTerm) && customerDoc.defaultPaymentTerm >= 0) {
             customerTermDays = customerDoc.defaultPaymentTerm;
         }
@@ -1324,6 +1343,7 @@ export async function handleFreightNotaCreate(
     const {
         instructionAccounts,
         notaSeriesCode,
+        footerNote,
     } = await loadFreightNotaDocumentSettings();
     const notaDisplayNumber = buildFreightNotaDisplayNumberFromParts(
         notaNumber,
@@ -1362,6 +1382,9 @@ export async function handleFreightNotaCreate(
         _type: 'freightNota',
         customerRef: resolvedCustomerRef,
         customerName: finalCustomerName,
+        customerAddress: finalCustomerAddress,
+        customerContactPerson: finalCustomerContactPerson,
+        customerPhone: finalCustomerPhone,
         issueDate,
         notaDisplayNumber,
         dueDate: resolvedDueDate,
@@ -1372,6 +1395,7 @@ export async function handleFreightNotaCreate(
         totalCollie,
         totalWeightKg,
         instructionAccounts: instructionAccounts.length > 0 ? instructionAccounts : undefined,
+        footerNote,
         notes: normalizeOptionalText(data.notes),
         notaNumber,
     };

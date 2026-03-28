@@ -268,10 +268,10 @@ export function buildFreightNotaPrintDocument(opts: {
     const shipmentNumberLabel = uniqueSjNumbers.length > 0 ? uniqueSjNumbers.join(', ') : '-';
     const shipmentAddressLabel = uniqueDestinations.length > 0 ? uniqueDestinations.join(' / ') : '-';
     const shipmentNoteLabel = [nota.notes, ...uniqueNotes].filter(Boolean).join(' / ');
-    const customerAddressLabel = customer?.address?.trim() || '';
-    const customerContactLabel = [customer?.contactPerson, customer?.phone].filter(Boolean).join(' | ');
+    const customerAddressLabel = nota.customerAddress?.trim() || customer?.address?.trim() || '';
+    const customerContactLabel = [nota.customerContactPerson || customer?.contactPerson, nota.customerPhone || customer?.phone].filter(Boolean).join(' | ');
     const invoiceInstructionAccounts = resolveInvoiceInstructionAccounts(company, invoiceBankAccounts, nota.instructionAccounts || []);
-    const footerNote = company?.invoiceSettings?.footerNote?.trim() || '';
+    const footerNote = nota.footerNote?.trim() || company?.invoiceSettings?.footerNote?.trim() || '';
     const amountInWords = terbilang(Math.max(Math.round(netAmount), 0))
         .replace(/\s+/g, ' ')
         .trim()
