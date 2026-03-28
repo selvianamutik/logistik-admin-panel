@@ -225,6 +225,14 @@ export async function handleServiceDelete(
         return NextResponse.json({ error: 'Kategori truk/armada yang sudah dipakai pada kendaraan tidak boleh dihapus' }, { status: 409 });
     }
 
+    const relatedTripRouteRate = await getSanityClient().fetch<{ _id: string } | null>(
+        `*[_type == "tripRouteRate" && ((serviceRef == $ref || serviceRef._ref == $ref) || lower(coalesce(serviceName, "")) == $serviceName)][0]{ _id }`,
+        { ref: id, serviceName: (service.name || '').toLowerCase() }
+    );
+    if (relatedTripRouteRate) {
+        return NextResponse.json({ error: 'Kategori truk/armada yang sudah dipakai pada biaya rute trip tidak boleh dihapus' }, { status: 409 });
+    }
+
     await sanityDelete(id);
     await addAuditLog(session, 'DELETE', 'services', id, `Deleted vehicle category ${service.name || id}`);
     return NextResponse.json({ success: true });
