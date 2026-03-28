@@ -155,6 +155,32 @@ export default function BankAccountsPage() {
     void load();
   }, [addToast, loadAccounts]);
 
+  useEffect(() => {
+    const activeAccountRefSet = new Set(accounts.map((account) => account._id));
+
+    setTransferForm((current) => {
+      let next = current;
+      let changed = false;
+
+      if (next.fromAccountRef && !activeAccountRefSet.has(next.fromAccountRef)) {
+        next = { ...next, fromAccountRef: "" };
+        changed = true;
+      }
+
+      if (next.toAccountRef && !activeAccountRefSet.has(next.toAccountRef)) {
+        next = { ...next, toAccountRef: "" };
+        changed = true;
+      }
+
+      if (next.fromAccountRef && next.toAccountRef && next.fromAccountRef === next.toAccountRef) {
+        next = { ...next, toAccountRef: "" };
+        changed = true;
+      }
+
+      return changed ? next : current;
+    });
+  }, [accounts]);
+
   const openNew = () => {
     setEditAccount(null);
     setForm(createDefaultBankAccountForm());
@@ -850,6 +876,10 @@ export default function BankAccountsPage() {
                     setTransferForm({
                       ...transferForm,
                       fromAccountRef: event.target.value,
+                      toAccountRef:
+                        transferForm.toAccountRef === event.target.value
+                          ? ""
+                          : transferForm.toAccountRef,
                     })
                   }
                 >
