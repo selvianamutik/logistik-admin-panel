@@ -18,6 +18,39 @@ export async function fetchCompanyProfile(): Promise<CompanyProfile | null> {
     }
 }
 
+export type PrintableCompanyProfile = Pick<CompanyProfile, 'name' | 'address' | 'phone' | 'email' | 'logoUrl'>;
+
+export type DocumentIssuerProfileSnapshot = {
+    issuerCompanyName?: string;
+    issuerCompanyAddress?: string;
+    issuerCompanyPhone?: string;
+    issuerCompanyEmail?: string;
+    issuerCompanyLogoUrl?: string;
+};
+
+export function resolveDocumentIssuerProfile(
+    snapshot?: DocumentIssuerProfileSnapshot | null,
+    company?: PrintableCompanyProfile | null,
+): PrintableCompanyProfile | null {
+    const resolvedName = snapshot?.issuerCompanyName?.trim() || company?.name?.trim();
+    const resolvedAddress = snapshot?.issuerCompanyAddress?.trim() || company?.address?.trim();
+    const resolvedPhone = snapshot?.issuerCompanyPhone?.trim() || company?.phone?.trim();
+    const resolvedEmail = snapshot?.issuerCompanyEmail?.trim() || company?.email?.trim();
+    const resolvedLogoUrl = snapshot?.issuerCompanyLogoUrl?.trim() || company?.logoUrl?.trim();
+
+    if (!resolvedName && !resolvedAddress && !resolvedPhone && !resolvedEmail && !resolvedLogoUrl) {
+        return null;
+    }
+
+    return {
+        name: resolvedName || 'Gading Mas Surya',
+        address: resolvedAddress || '-',
+        phone: resolvedPhone || '-',
+        email: resolvedEmail || '-',
+        logoUrl: resolvedLogoUrl || undefined,
+    };
+}
+
 export type InvoiceInstructionAccount = {
     _id: string;
     bankName: string;
@@ -99,7 +132,7 @@ export function buildInvoiceInstructionAccountText(account: InvoiceInstructionAc
 export function openBrandedPrint(opts: {
     title: string;
     subtitle?: string;
-    company: CompanyProfile | null;
+    company: PrintableCompanyProfile | null;
     bodyHtml: string;
     extraStyles?: string;
     showCompanyHeader?: boolean;

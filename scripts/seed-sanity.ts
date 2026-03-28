@@ -79,6 +79,25 @@ function push(...docs: SeedDoc[]) {
     documents.push(...docs);
 }
 
+function applyDeliveryOrderIssuerSnapshots() {
+    const companyDoc = documents.find((doc) => doc._type === 'companyProfile' && doc._id === 'company');
+    if (!companyDoc) {
+        return;
+    }
+
+    for (const doc of documents) {
+        if (doc._type !== 'deliveryOrder') {
+            continue;
+        }
+
+        doc.issuerCompanyName = typeof companyDoc.name === 'string' ? companyDoc.name : undefined;
+        doc.issuerCompanyAddress = typeof companyDoc.address === 'string' ? companyDoc.address : undefined;
+        doc.issuerCompanyPhone = typeof companyDoc.phone === 'string' ? companyDoc.phone : undefined;
+        doc.issuerCompanyEmail = typeof companyDoc.email === 'string' ? companyDoc.email : undefined;
+        doc.issuerCompanyLogoUrl = typeof companyDoc.logoUrl === 'string' ? companyDoc.logoUrl : undefined;
+    }
+}
+
 function postBankTransaction(input: {
     _id: string;
     bankAccountRef: keyof typeof bankAccounts;
@@ -3177,6 +3196,7 @@ function buildSeedDocuments() {
         relatedExpenseRef: 'exp-004',
     });
 
+    applyDeliveryOrderIssuerSnapshots();
     push(...Object.values(bankAccounts));
 }
 

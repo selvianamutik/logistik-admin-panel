@@ -61,7 +61,7 @@ function drawTable(
 export function generateDOPdf(
     doData: DeliveryOrder,
     doItems: DeliveryOrderItem[],
-    company: CompanyProfile
+    company: Pick<CompanyProfile, 'name' | 'address' | 'phone' | 'email'>
 ) {
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const pageWidth = doc.internal.pageSize.getWidth();

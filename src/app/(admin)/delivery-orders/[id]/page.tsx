@@ -31,7 +31,7 @@ import {
     type ActualCargoDraft,
     type ActualDropDraft,
 } from '@/lib/delivery-order-detail-support';
-import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
+import { fetchCompanyProfile, openBrandedPrint, resolveDocumentIssuerProfile } from '@/lib/print';
 import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatCurrency, formatDate, formatDateTime, formatInternalDeliveryOrderNumber, formatShipperDeliveryOrderNumber } from '@/lib/utils';
 import {
     formatCargoSummary,
@@ -426,7 +426,7 @@ export default function DODetailPage() {
 
     const handlePrint = async () => {
         try {
-            const company = await fetchCompanyProfile();
+            const company = resolveDocumentIssuerProfile(doData, await fetchCompanyProfile());
             openBrandedPrint({
                 title: 'Surat Jalan',
                 subtitle: formatInternalDeliveryOrderNumber(doData || {}),
@@ -442,10 +442,14 @@ export default function DODetailPage() {
         try {
             const companyRes = await fetch('/api/data?entity=company');
             const companyData = await companyRes.json();
-            if (!companyRes.ok || !companyData.data) {
+            if (!companyRes.ok && !companyData.data) {
                 throw new Error(companyData.error || 'Profil perusahaan tidak tersedia');
             }
-            generateDOPdf(doData!, doItems, companyData.data as CompanyProfile);
+            const issuerCompany = resolveDocumentIssuerProfile(doData, companyData.data as CompanyProfile | null);
+            if (!issuerCompany) {
+                throw new Error('Profil perusahaan tidak tersedia');
+            }
+            generateDOPdf(doData!, doItems, issuerCompany);
             addToast('success', 'PDF Surat Jalan berhasil di-download');
         } catch (err) {
             console.error('PDF Export Error:', err);

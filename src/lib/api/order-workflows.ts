@@ -49,6 +49,7 @@ import {
     type ResolvedOrderPartyData,
 } from './order-workflow-support';
 import { resolveTripRouteRateSelection } from './generic-workflow-support';
+import type { CompanyProfile } from '@/lib/types';
 
 type AuditLogFn = (
     session: Pick<ApiSession, '_id' | 'name'>,
@@ -1698,9 +1699,15 @@ export async function handleDeliveryOrderCreate(
 
     const doId = crypto.randomUUID();
     const doNumber = await sanityGetNextNumber('do', doDate);
+    const companyProfile = await sanityGetById<CompanyProfile>('company');
     const doDoc = {
         _id: doId,
         _type: 'deliveryOrder',
+        issuerCompanyName: companyProfile?.name,
+        issuerCompanyAddress: companyProfile?.address,
+        issuerCompanyPhone: companyProfile?.phone,
+        issuerCompanyEmail: companyProfile?.email,
+        issuerCompanyLogoUrl: companyProfile?.logoUrl,
         orderRef,
         masterResi: order.masterResi,
         customerRef: orderCustomerRef || undefined,

@@ -348,6 +348,11 @@ export interface DeliveryOrder {
   _id: string;
   _type: 'deliveryOrder';
   doNumber: string;
+  issuerCompanyName?: string;
+  issuerCompanyAddress?: string;
+  issuerCompanyPhone?: string;
+  issuerCompanyEmail?: string;
+  issuerCompanyLogoUrl?: string;
   customerDoPrefix?: string;
   customerDoSequence?: number;
   customerDoPeriod?: string;
