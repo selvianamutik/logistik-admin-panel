@@ -10,7 +10,7 @@ import {
     sanityGetNextNumber,
     sanityUpdate,
 } from '@/lib/sanity';
-import type { User } from '@/lib/types';
+import type { CompanyProfile, User } from '@/lib/types';
 
 import {
     assertIsoDate,
@@ -64,6 +64,84 @@ type AuditLogFn = (
     entityRef: string,
     summary: string
 ) => void | Promise<void>;
+
+async function sanitizeCompanyInvoiceSettings(
+    input: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+    if (!isPlainObject(input.invoiceSettings)) {
+        return input;
+    }
+
+    const invoiceSettings = input.invoiceSettings as Record<string, unknown>;
+    const rawSelectedRefs = Array.isArray(invoiceSettings.invoiceBankAccountRefs)
+        ? invoiceSettings.invoiceBankAccountRefs
+        : [];
+    const selectedRefs = rawSelectedRefs.filter(
+        (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
+    );
+    const uniqueRefs = Array.from(new Set(selectedRefs));
+    const validRows = uniqueRefs.length > 0
+        ? await getSanityClient().fetch<Array<{ _id: string }>>(
+            `*[_type == "bankAccount" && _id in $refs && active != false && accountType != "CASH"]{ _id }`,
+            { refs: uniqueRefs }
+        )
+        : [];
+    const validRefSet = new Set(validRows.map(row => row._id));
+    const invoiceBankAccountRefs = uniqueRefs.filter(ref => validRefSet.has(ref));
+    const requestedDefaultRef =
+        typeof invoiceSettings.defaultInvoiceBankAccountRef === 'string'
+            ? invoiceSettings.defaultInvoiceBankAccountRef
+            : undefined;
+    const defaultInvoiceBankAccountRef =
+        requestedDefaultRef && invoiceBankAccountRefs.includes(requestedDefaultRef)
+            ? requestedDefaultRef
+            : invoiceBankAccountRefs[0];
+
+    return {
+        ...input,
+        invoiceSettings: {
+            ...invoiceSettings,
+            invoiceBankAccountRefs,
+            defaultInvoiceBankAccountRef,
+        },
+    };
+}
+
+async function removeInvoiceInstructionAccountFromCompany(accountId: string) {
+    const company = await sanityGetCompanyProfile();
+    if (!company?._id) {
+        return;
+    }
+
+    const selectedRefs: string[] = Array.isArray(company.invoiceSettings?.invoiceBankAccountRefs)
+        ? company.invoiceSettings.invoiceBankAccountRefs.filter(
+            (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
+        )
+        : [];
+    const hasSelectedRef = selectedRefs.includes(accountId);
+    const isDefaultRef = company.invoiceSettings?.defaultInvoiceBankAccountRef === accountId;
+
+    if (!hasSelectedRef && !isDefaultRef) {
+        return;
+    }
+
+    const nextRefs = selectedRefs.filter((ref: string) => ref !== accountId);
+    const nextDefaultRef =
+        nextRefs.includes(company.invoiceSettings?.defaultInvoiceBankAccountRef || '')
+            ? company.invoiceSettings?.defaultInvoiceBankAccountRef
+            : nextRefs[0];
+
+    const updatedCompany: CompanyProfile = {
+        ...company,
+        invoiceSettings: {
+            ...company.invoiceSettings,
+            invoiceBankAccountRefs: nextRefs,
+            defaultInvoiceBankAccountRef: nextDefaultRef,
+        },
+    };
+
+    await sanityUpdate(company._id, updatedCompany as unknown as Record<string, unknown>);
+}
 
 async function clearOtherCustomerScopedDefaults(docType: 'customerRecipient' | 'customerPickupLocation', customerRef: string, keepId: string) {
     const otherDocIds = await getSanityClient().fetch<Array<{ _id: string }>>(
@@ -720,6 +798,7 @@ export async function handleGenericDelete(
         }
 
         await sanityUpdate(id, { active: false });
+        await removeInvoiceInstructionAccountFromCompany(id);
         await addAuditLog(
             session,
             'DELETE',
@@ -743,14 +822,15 @@ export async function handleGenericCreate(
     addAuditLog: AuditLogFn
 ) {
     if (entity === 'company') {
+        const sanitizedCompanyData = await sanitizeCompanyInvoiceSettings(data);
         const existing = await sanityGetCompanyProfile();
         if (existing?._id) {
-            const updated = await sanityUpdate(existing._id, data);
+            const updated = await sanityUpdate(existing._id, sanitizedCompanyData);
             await addAuditLog(session, 'UPDATE', 'companyProfile', existing._id, 'Company profile updated');
             return NextResponse.json({ data: updated });
         }
 
-        const created = await sanityCreate({ _type: 'companyProfile', ...data });
+        const created = await sanityCreate({ _type: 'companyProfile', ...sanitizedCompanyData });
         const createdId = (created as Record<string, unknown>)._id as string;
         await addAuditLog(session, 'CREATE', 'companyProfile', createdId, 'Company profile created');
         return NextResponse.json({ data: created });

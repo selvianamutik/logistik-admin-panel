@@ -28,17 +28,19 @@ export default function CompanyPage() {
                 const profile = payload.data || {};
                 profile.numberingSettings = profile.numberingSettings || { resiPrefix: 'R-', resiCounter: 0, doPrefix: 'DO-', doCounter: 0, invoicePrefix: 'INV-', invoiceCounter: 0, notaPrefix: 'NOTA-', notaCounter: 0, notaSeriesCode: '3', receiptPrefix: 'RCV-', receiptCounter: 0, boronganPrefix: 'BRG-', boronganCounter: 0, bonPrefix: 'BON-', bonCounter: 0, incidentPrefix: 'INC-', incidentCounter: 0 };
                 profile.numberingSettings.notaSeriesCode = profile.numberingSettings.notaSeriesCode || '3';
+                const eligibleBankAccounts = (accountRows || []).filter(account => account.active !== false && account.accountType !== 'CASH');
+                const eligibleBankRefSet = new Set(eligibleBankAccounts.map(account => account._id));
                 profile.invoiceSettings = profile.invoiceSettings || { defaultTermDays: 30, dueDateDays: 14, footerNote: '', invoiceMode: 'ORDER', invoiceBankAccountRefs: [], defaultInvoiceBankAccountRef: undefined };
                 profile.invoiceSettings.invoiceBankAccountRefs = Array.isArray(profile.invoiceSettings.invoiceBankAccountRefs)
-                    ? profile.invoiceSettings.invoiceBankAccountRefs.filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0)
+                    ? profile.invoiceSettings.invoiceBankAccountRefs.filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0 && eligibleBankRefSet.has(value))
                     : [];
                 profile.invoiceSettings.defaultInvoiceBankAccountRef =
-                    typeof profile.invoiceSettings.defaultInvoiceBankAccountRef === 'string'
+                    typeof profile.invoiceSettings.defaultInvoiceBankAccountRef === 'string' && profile.invoiceSettings.invoiceBankAccountRefs.includes(profile.invoiceSettings.defaultInvoiceBankAccountRef)
                         ? profile.invoiceSettings.defaultInvoiceBankAccountRef
-                        : undefined;
+                        : profile.invoiceSettings.invoiceBankAccountRefs[0];
                 profile.documentSettings = profile.documentSettings || { showContact: true, dateFormat: 'DD/MM/YYYY' };
                 setData(profile);
-                setBankAccounts((accountRows || []).filter(account => account.active !== false && account.accountType !== 'CASH'));
+                setBankAccounts(eligibleBankAccounts);
             } catch (error) {
                 addToast('error', error instanceof Error ? error.message : 'Gagal memuat pengaturan perusahaan');
             } finally {
@@ -54,7 +56,11 @@ export default function CompanyPage() {
         setSaving(true);
         try {
             const invoiceBankAccountRefs = Array.from(new Set(
-                (data.invoiceSettings?.invoiceBankAccountRefs || []).filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+                (data.invoiceSettings?.invoiceBankAccountRefs || []).filter((value): value is string =>
+                    typeof value === 'string' &&
+                    value.trim().length > 0 &&
+                    bankAccounts.some(account => account._id === value)
+                )
             ));
             const defaultInvoiceBankAccountRef = invoiceBankAccountRefs.includes(data.invoiceSettings?.defaultInvoiceBankAccountRef || '')
                 ? data.invoiceSettings?.defaultInvoiceBankAccountRef
