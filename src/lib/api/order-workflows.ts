@@ -1895,7 +1895,7 @@ export async function handleDeliveryOrderTripResourceAssign(
     );
     if (relatedBoronganItem) {
         return NextResponse.json(
-            { error: 'Armada trip tidak boleh diubah karena DO ini sudah masuk slip borongan legacy' },
+            { error: 'Armada trip tidak boleh diubah karena DO ini sudah masuk arsip slip borongan' },
             { status: 409 }
         );
     }
@@ -2129,7 +2129,7 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
     );
     if (hasBoronganReference) {
         return NextResponse.json(
-            { error: 'No. SJ pengirim tidak boleh diubah karena DO ini sudah masuk slip borongan legacy' },
+            { error: 'No. SJ pengirim tidak boleh diubah karena DO ini sudah masuk arsip slip borongan' },
             { status: 409 }
         );
     }

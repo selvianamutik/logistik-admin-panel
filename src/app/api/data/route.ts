@@ -615,7 +615,7 @@ export async function POST(request: Request) {
 
         if (LEGACY_READ_ONLY_ENTITIES.has(entity)) {
             return NextResponse.json(
-                { error: 'Invoice legacy sudah dibekukan. Gunakan Nota Ongkos untuk workflow tagihan aktif.' },
+                { error: 'Arsip invoice lama sudah dibekukan. Gunakan Nota Ongkos untuk workflow tagihan aktif.' },
                 { status: 409 }
             );
         }

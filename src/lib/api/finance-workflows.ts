@@ -53,7 +53,7 @@ async function loadReceivableSnapshot(invoiceRef: string) {
     if (doc._type !== 'freightNota' && doc._type !== 'invoice') {
         return {
             error: NextResponse.json(
-                { error: 'Pembayaran hanya boleh dicatat untuk nota ongkos atau invoice legacy' },
+                { error: 'Pembayaran hanya boleh dicatat untuk nota ongkos atau arsip invoice lama' },
                 { status: 409 }
             ),
         };
