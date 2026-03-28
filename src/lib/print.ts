@@ -313,7 +313,7 @@ export function buildFreightNotaPrintDocument(opts: {
                 <div class="invoice-brand-left">
                     ${logoHtml}
                     <div>
-                        <div class="invoice-brand-title">Invoice</div>
+                        <div class="invoice-brand-title">Nota Ongkos</div>
                     </div>
                 </div>
                 <div class="invoice-company-box">
@@ -336,11 +336,11 @@ export function buildFreightNotaPrintDocument(opts: {
                     <table class="invoice-info-table">
                         <tbody>
                             <tr>
-                                <td>Nomor Invoice</td>
+                                <td>Nomor Nota</td>
                                 <td>${escapePrintHtml(displayNumber)}</td>
                             </tr>
                             <tr>
-                                <td>Tanggal Invoice</td>
+                                <td>Tanggal Nota</td>
                                 <td>${escapePrintHtml(fmtLongPrintDate(nota.issueDate))}</td>
                             </tr>
                             <tr>
@@ -517,7 +517,7 @@ export function buildFreightNotaPrintDocument(opts: {
     `;
 
     return {
-        title: 'Invoice / Nota Ongkos Angkut',
+        title: 'Nota Ongkos Angkut',
         subtitle: displayNumber,
         bodyHtml,
         extraStyles,

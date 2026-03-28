@@ -393,7 +393,7 @@ export default function VehicleDetailPage() {
                     </div>
                     <div className="card-body">
                         <div className="table-wrapper table-desktop-only"><table>
-                            <thead><tr><th>No. DO</th><th>Tanggal</th><th>Customer</th><th>Status</th></tr></thead>
+                            <thead><tr><th>No. DO Internal</th><th>Tanggal</th><th>Customer</th><th>Status</th></tr></thead>
                             <tbody>{dos.length === 0 ? <tr><td colSpan={4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada riwayat DO</td></tr> : dos.map(d => (
                                 <tr key={d._id}><td><a href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{formatInternalDeliveryOrderNumber(d)}</a>{d.customerDoNumber && <div className="text-muted text-sm font-mono">{formatShipperDeliveryOrderNumber(d)}</div>}</td><td>{formatDate(d.date)}</td><td>{d.customerName}</td><td><span className={`badge badge-${DO_STATUS_MAP[d.status]?.color}`}>{DO_STATUS_MAP[d.status]?.label}</span></td></tr>
                             ))}</tbody>

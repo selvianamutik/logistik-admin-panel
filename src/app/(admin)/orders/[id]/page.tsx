@@ -716,7 +716,7 @@ export default function OrderDetailPage() {
                 <div className="card-header"><span className="card-header-title">Surat Jalan ({dos.length})</span></div>
                 <div className="table-wrapper">
                     <table>
-                        <thead><tr><th>No. DO</th><th>Tanggal</th><th>Kendaraan</th><th>Muatan</th><th>Status</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>No. DO Internal</th><th>Tanggal</th><th>Kendaraan</th><th>Muatan</th><th>Status</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {dos.length === 0 ? (
                                 <tr><td colSpan={6} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada surat jalan</td></tr>

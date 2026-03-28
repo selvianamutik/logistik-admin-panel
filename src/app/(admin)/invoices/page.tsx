@@ -715,7 +715,7 @@ export default function NotaListPage() {
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Catatan</label>
-                                <textarea className="form-textarea" rows={2} value={receiptNote} onChange={e => setReceiptNote(e.target.value)} disabled={receiving} placeholder="Contoh: Transfer gabungan invoice Arwana batch 1" />
+                                <textarea className="form-textarea" rows={2} value={receiptNote} onChange={e => setReceiptNote(e.target.value)} disabled={receiving} placeholder="Contoh: Transfer gabungan nota Arwana batch 1" />
                             </div>
                             <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--color-gray-600)', marginBottom: '1rem' }}>
                                 Satu penerimaan customer mewakili satu uang masuk nyata di bank/kas. Penerimaan ini bisa dialokasikan ke beberapa nota customer yang sama. Jika ada sisa yang belum dialokasikan, sistem menyimpannya sebagai kredit customer.
