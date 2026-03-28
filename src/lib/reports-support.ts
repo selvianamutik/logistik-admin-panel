@@ -15,6 +15,7 @@ export type ReportPeriodMode = 'month' | 'year' | 'all';
 
 export type CashFlowByBankEntry = {
     bankName: string;
+    bankAccountNumber?: string;
     inflow: number;
     outflow: number;
 };
@@ -161,11 +162,11 @@ export function buildReportsSnapshot(params: {
     );
     const cashFlowByBank = filteredBankTx.reduce<Record<string, CashFlowByBankEntry>>(
         (acc, item) => {
-            const bankName =
-                allBankAccounts.find(account => account._id === item.bankAccountRef)
-                    ?.bankName || 'Unknown';
+            const currentAccount = allBankAccounts.find(account => account._id === item.bankAccountRef);
+            const bankName = item.bankAccountName || currentAccount?.bankName || 'Unknown';
+            const bankAccountNumber = item.bankAccountNumber || currentAccount?.accountNumber;
             if (!acc[item.bankAccountRef]) {
-                acc[item.bankAccountRef] = { bankName, inflow: 0, outflow: 0 };
+                acc[item.bankAccountRef] = { bankName, bankAccountNumber, inflow: 0, outflow: 0 };
             }
             if (item.type === 'CREDIT' || item.type === 'TRANSFER_IN') {
                 acc[item.bankAccountRef].inflow += item.amount;
@@ -201,6 +202,25 @@ export function buildReportsSnapshot(params: {
     };
 }
 
+export function resolveBankTransactionAccountLabel(
+    transaction: Pick<BankTransaction, 'bankAccountRef' | 'bankAccountName' | 'bankAccountNumber'>,
+    allBankAccounts: Array<Pick<BankAccount, '_id' | 'bankName' | 'accountNumber'>>
+) {
+    const currentAccount = allBankAccounts.find(account => account._id === transaction.bankAccountRef);
+    const bankName = transaction.bankAccountName || currentAccount?.bankName || '-';
+    const bankAccountNumber = transaction.bankAccountNumber || currentAccount?.accountNumber;
+    return bankAccountNumber ? `${bankName} - ${bankAccountNumber}` : bankName;
+}
+
+export function resolveBankTransactionAccountName(
+    transaction: Pick<BankTransaction, 'bankAccountRef' | 'bankAccountName'>,
+    allBankAccounts: Array<Pick<BankAccount, '_id' | 'bankName'>>
+) {
+    return transaction.bankAccountName
+        || allBankAccounts.find(account => account._id === transaction.bankAccountRef)?.bankName
+        || '-';
+}
+
 export function buildProfitLossExportRows(
     filteredPayments: Payment[],
     filteredExpenses: Expense[]
@@ -226,9 +246,7 @@ export function buildCashflowExportRows(
     allBankAccounts: BankAccount[]
 ) {
     return sortedFilteredBankTx.map(item => ({
-        bank:
-            allBankAccounts.find(account => account._id === item.bankAccountRef)
-                ?.bankName || '-',
+        bank: resolveBankTransactionAccountLabel(item, allBankAccounts),
         tanggal: item.date,
         tipe: item.type,
         deskripsi: item.description,

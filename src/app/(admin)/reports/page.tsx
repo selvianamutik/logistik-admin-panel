@@ -17,6 +17,7 @@ import {
   buildPeriodLabel,
   buildProfitLossExportRows,
   buildReportsSnapshot,
+  resolveBankTransactionAccountName,
   type ReportPeriodMode,
 } from "@/lib/reports-support";
 import {
@@ -137,6 +138,21 @@ export default function ReportsPage() {
     year,
   });
   const fmtN = (n: number) => new Intl.NumberFormat("id-ID").format(n);
+  const cashflowSummaryAccounts = [
+    ...bankAccounts,
+    ...Object.entries(cashFlowByBank)
+      .filter(([accountRef]) => !bankAccounts.some((account) => account._id === accountRef))
+      .map(([accountRef, flow]) => ({
+        _id: accountRef,
+        bankName: flow.bankName,
+        accountNumber: flow.bankAccountNumber,
+        currentBalance:
+          allBankAccounts.find((account) => account._id === accountRef)
+            ?.currentBalance || 0,
+        accountType: "BANK" as const,
+        active: false,
+      })),
+  ];
 
   const prevPeriod = () => {
     if (periodMode === "year") setYear((value) => value - 1);
@@ -208,10 +224,10 @@ export default function ReportsPage() {
             .map((item) => {
               const isIn =
                 item.type === "CREDIT" || item.type === "TRANSFER_IN";
-              const bankName =
-                allBankAccounts.find(
-                  (account) => account._id === item.bankAccountRef,
-                )?.bankName || "-";
+              const bankName = resolveBankTransactionAccountName(
+                item,
+                allBankAccounts,
+              );
               return `<tr><td>${bankName}</td><td>${item.date ? new Date(item.date).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "-"}</td><td>${item.type}</td><td>${item.description}</td><td class="r ${isIn ? "s" : "d"} b">${isIn ? "+" : "-"}${fmtN(item.amount)}</td><td class="r b">${fmtN(item.balanceAfter)}</td></tr>`;
             })
             .join("")}</tbody></table>`,
@@ -897,7 +913,7 @@ export default function ReportsPage() {
               marginBottom: "1.5rem",
             }}
           >
-            {bankAccounts.map((account) => {
+            {cashflowSummaryAccounts.map((account) => {
               const flow = cashFlowByBank[account._id] || {
                 inflow: 0,
                 outflow: 0,
@@ -1025,10 +1041,10 @@ export default function ReportsPage() {
                     sortedFilteredBankTx.map((item) => {
                       const isIn =
                         item.type === "CREDIT" || item.type === "TRANSFER_IN";
-                      const bankName =
-                        allBankAccounts.find(
-                          (account) => account._id === item.bankAccountRef,
-                        )?.bankName || "-";
+                      const bankName = resolveBankTransactionAccountName(
+                        item,
+                        allBankAccounts,
+                      );
                       return (
                         <tr key={item._id}>
                           <td
@@ -1096,10 +1112,10 @@ export default function ReportsPage() {
                 sortedFilteredBankTx.map((item) => {
                   const isIn =
                     item.type === "CREDIT" || item.type === "TRANSFER_IN";
-                  const bankName =
-                    allBankAccounts.find(
-                      (account) => account._id === item.bankAccountRef,
-                    )?.bankName || "-";
+                  const bankName = resolveBankTransactionAccountName(
+                    item,
+                    allBankAccounts,
+                  );
                   return (
                     <div key={item._id} className="mobile-record-card">
                       <div className="mobile-record-header">
