@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 
 import { getSanityClient, sanityCreate, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
-import type { InvoiceAdjustmentKind, Payment, PaymentMethod } from '@/lib/types';
+import { buildFreightNotaDisplayNumberFromParts } from '@/lib/nota-numbering';
+import type { FreightNotaInstructionAccount, InvoiceAdjustmentKind, Payment, PaymentMethod } from '@/lib/types';
 
 import {
     assertIsoDate,
@@ -44,6 +45,99 @@ type ReceiptCustomerSource = {
     name?: string;
     active?: boolean;
 };
+
+async function loadFreightNotaDocumentSettings(): Promise<{
+    instructionAccounts: FreightNotaInstructionAccount[];
+    notaSeriesCode?: string;
+}> {
+    const companyDoc = await getSanityClient().fetch<{
+        bankName?: string;
+        bankAccount?: string;
+        bankHolder?: string;
+        numberingSettings?: {
+            notaSeriesCode?: string;
+        };
+        invoiceSettings?: {
+            invoiceBankAccountRefs?: string[];
+            defaultInvoiceBankAccountRef?: string;
+        };
+    } | null>(
+        `*[_type == "companyProfile"][0]{
+            bankName,
+            bankAccount,
+            bankHolder,
+            numberingSettings,
+            invoiceSettings
+        }`
+    );
+
+    const selectedRefs = Array.isArray(companyDoc?.invoiceSettings?.invoiceBankAccountRefs)
+        ? companyDoc.invoiceSettings.invoiceBankAccountRefs.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+        : [];
+
+    if (selectedRefs.length > 0) {
+        const selectedAccounts = await getSanityClient().fetch<Array<{
+            _id: string;
+            bankName?: string;
+            accountNumber?: string;
+            accountHolder?: string;
+            accountType?: string;
+            active?: boolean;
+        }>>(
+            `*[_type == "bankAccount" && _id in $ids]{
+                _id,
+                bankName,
+                accountNumber,
+                accountHolder,
+                accountType,
+                active
+            }`,
+            { ids: selectedRefs }
+        );
+        const eligibleAccounts = selectedAccounts
+            .filter(account => account.active !== false && account.accountType !== 'CASH')
+            .map<FreightNotaInstructionAccount>(account => ({
+                bankAccountRef: account._id,
+                bankName: normalizeText(account.bankName),
+                accountNumber: normalizeOptionalText(account.accountNumber),
+                accountHolder: normalizeOptionalText(account.accountHolder),
+            }))
+            .filter(account => Boolean(account.bankName));
+
+        if (eligibleAccounts.length > 0) {
+            const defaultRef = typeof companyDoc?.invoiceSettings?.defaultInvoiceBankAccountRef === 'string'
+                ? companyDoc.invoiceSettings.defaultInvoiceBankAccountRef
+                : undefined;
+            return {
+                instructionAccounts: eligibleAccounts.sort((left, right) => {
+                    if (defaultRef) {
+                        if (left.bankAccountRef === defaultRef) return -1;
+                        if (right.bankAccountRef === defaultRef) return 1;
+                    }
+                    return selectedRefs.indexOf(left.bankAccountRef || '') - selectedRefs.indexOf(right.bankAccountRef || '');
+                }),
+                notaSeriesCode: normalizeOptionalText(companyDoc?.numberingSettings?.notaSeriesCode),
+            };
+        }
+    }
+
+    const legacyBankName = normalizeOptionalText(companyDoc?.bankName);
+    if (!legacyBankName) {
+        return {
+            instructionAccounts: [],
+            notaSeriesCode: normalizeOptionalText(companyDoc?.numberingSettings?.notaSeriesCode),
+        };
+    }
+
+    return {
+        instructionAccounts: [{
+            bankName: legacyBankName,
+            accountNumber: normalizeOptionalText(companyDoc?.bankAccount),
+            accountHolder: normalizeOptionalText(companyDoc?.bankHolder),
+        }],
+        notaSeriesCode: normalizeOptionalText(companyDoc?.numberingSettings?.notaSeriesCode),
+    };
+}
 
 async function loadReceivableSnapshot(invoiceRef: string) {
     const doc = await sanityGetById<ReceivableDoc>(invoiceRef);
@@ -1227,6 +1321,15 @@ export async function handleFreightNotaCreate(
 
     const notaId = crypto.randomUUID();
     const notaNumber = await sanityGetNextNumber('nota');
+    const {
+        instructionAccounts,
+        notaSeriesCode,
+    } = await loadFreightNotaDocumentSettings();
+    const notaDisplayNumber = buildFreightNotaDisplayNumberFromParts(
+        notaNumber,
+        issueDate,
+        notaSeriesCode,
+    );
     let resolvedDueDate = normalizeOptionalText(data.dueDate);
     if (!resolvedDueDate) {
         let termDays = customerTermDays;
@@ -1260,6 +1363,7 @@ export async function handleFreightNotaCreate(
         customerRef: resolvedCustomerRef,
         customerName: finalCustomerName,
         issueDate,
+        notaDisplayNumber,
         dueDate: resolvedDueDate,
         status: 'UNPAID',
         totalAmount,
@@ -1267,6 +1371,7 @@ export async function handleFreightNotaCreate(
         netAmount: totalAmount,
         totalCollie,
         totalWeightKg,
+        instructionAccounts: instructionAccounts.length > 0 ? instructionAccounts : undefined,
         notes: normalizeOptionalText(data.notes),
         notaNumber,
     };

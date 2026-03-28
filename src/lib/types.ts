@@ -448,10 +448,18 @@ export interface TrackingLog {
 // ── Freight Nota (Nota Ongkos Angkut) ──
 export type NotaStatus = 'UNPAID' | 'PARTIAL' | 'PAID';
 
+export interface FreightNotaInstructionAccount {
+  bankAccountRef?: string;
+  bankName: string;
+  accountNumber?: string;
+  accountHolder?: string;
+}
+
 export interface FreightNota {
   _id: string;
   _type: 'freightNota';
   notaNumber: string;
+  notaDisplayNumber?: string;
   customerRef?: string;
   customerName: string;
   issueDate: string;
@@ -463,6 +471,7 @@ export interface FreightNota {
   totalCollie: number;
   totalWeightKg: number;
   bankAccountRef?: string;
+  instructionAccounts?: FreightNotaInstructionAccount[];
   notes?: string;
 }
 

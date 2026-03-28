@@ -3,8 +3,9 @@
    ============================================================ */
 
 import DOMPurify from 'dompurify';
+import { buildFreightNotaDisplayNumberFromParts } from './nota-numbering';
 import { resolveCompanyLogoUrl } from './branding';
-import type { BankAccount, CompanyProfile, Customer, FreightNota, FreightNotaItem } from './types';
+import type { BankAccount, CompanyProfile, Customer, FreightNota, FreightNotaInstructionAccount, FreightNotaItem } from './types';
 import { getReceivableNetAmount, terbilang } from './utils';
 
 export async function fetchCompanyProfile(): Promise<CompanyProfile | null> {
@@ -17,12 +18,35 @@ export async function fetchCompanyProfile(): Promise<CompanyProfile | null> {
     }
 }
 
-export type InvoiceInstructionAccount = Pick<BankAccount, '_id' | 'bankName' | 'accountNumber' | 'accountHolder' | 'accountType' | 'active'>;
+export type InvoiceInstructionAccount = {
+    _id: string;
+    bankName: string;
+    accountNumber?: string;
+    accountHolder?: string;
+    accountType?: BankAccount['accountType'];
+    active?: boolean;
+};
 
 export function resolveInvoiceInstructionAccounts(
     company: CompanyProfile | null | undefined,
     bankAccounts: InvoiceInstructionAccount[] = [],
+    storedAccounts: FreightNotaInstructionAccount[] = [],
 ) {
+    const snapshotAccounts = storedAccounts
+        .map<InvoiceInstructionAccount>(account => ({
+            _id: account.bankAccountRef || `snapshot-${account.bankName}-${account.accountNumber || '-'}`,
+            bankName: account.bankName,
+            accountNumber: account.accountNumber,
+            accountHolder: account.accountHolder,
+            accountType: 'BANK',
+            active: true,
+        }))
+        .filter(account => Boolean(account.bankName?.trim()));
+
+    if (snapshotAccounts.length > 0) {
+        return snapshotAccounts;
+    }
+
     const selectedRefs = Array.isArray(company?.invoiceSettings?.invoiceBankAccountRefs)
         ? company.invoiceSettings.invoiceBankAccountRefs.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
         : [];
@@ -201,24 +225,18 @@ function fmtLongPrintDate(value?: string) {
     });
 }
 
-const ROMAN_MONTHS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
-
 export function formatFreightNotaDisplayNumber(
-    nota: Pick<FreightNota, 'notaNumber' | 'issueDate'>,
+    nota: Pick<FreightNota, 'notaNumber' | 'issueDate' | 'notaDisplayNumber'>,
     company?: CompanyProfile | null,
 ) {
-    const date = new Date(nota.issueDate);
-    if (Number.isNaN(date.getTime())) {
-        return nota.notaNumber;
+    if (nota.notaDisplayNumber?.trim()) {
+        return nota.notaDisplayNumber.trim();
     }
-
-    const year = String(date.getFullYear()).slice(-2);
-    const romanMonth = ROMAN_MONTHS[date.getMonth()] || String(date.getMonth() + 1);
-    const sequenceMatch = nota.notaNumber.match(/(\d+)(?!.*\d)/);
-    const sequence = sequenceMatch ? String(Number(sequenceMatch[1])).padStart(3, '0') : nota.notaNumber;
-    const seriesCode = company?.numberingSettings?.notaSeriesCode?.trim() || '3';
-
-    return `${year}/${romanMonth}/${seriesCode}/${sequence}`;
+    return buildFreightNotaDisplayNumberFromParts(
+        nota.notaNumber,
+        nota.issueDate,
+        company?.numberingSettings?.notaSeriesCode,
+    );
 }
 
 export function buildFreightNotaPrintDocument(opts: {
@@ -252,7 +270,7 @@ export function buildFreightNotaPrintDocument(opts: {
     const shipmentNoteLabel = [nota.notes, ...uniqueNotes].filter(Boolean).join(' / ');
     const customerAddressLabel = customer?.address?.trim() || '';
     const customerContactLabel = [customer?.contactPerson, customer?.phone].filter(Boolean).join(' | ');
-    const invoiceInstructionAccounts = resolveInvoiceInstructionAccounts(company, invoiceBankAccounts);
+    const invoiceInstructionAccounts = resolveInvoiceInstructionAccounts(company, invoiceBankAccounts, nota.instructionAccounts || []);
     const footerNote = company?.invoiceSettings?.footerNote?.trim() || '';
     const amountInWords = terbilang(Math.max(Math.round(netAmount), 0))
         .replace(/\s+/g, ' ')

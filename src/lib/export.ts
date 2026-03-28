@@ -590,7 +590,7 @@ export async function exportFreightNotaDetail(
     const companyLine = [resolvedCompany?.phone ? `TELP. ${resolvedCompany.phone}` : '', resolvedCompany?.email ? `EMAIL : ${resolvedCompany.email}` : '']
         .filter(Boolean)
         .join('  ');
-    const invoiceInstructionLines = resolveInvoiceInstructionAccounts(resolvedCompany, invoiceBankAccounts)
+    const invoiceInstructionLines = resolveInvoiceInstructionAccounts(resolvedCompany, invoiceBankAccounts, nota.instructionAccounts || [])
         .map(buildInvoiceInstructionAccountText);
     const extraNote = [resolvedCompany?.invoiceSettings?.footerNote, nota.notes].filter(Boolean).join(' ');
 
