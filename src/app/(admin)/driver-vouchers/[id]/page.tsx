@@ -76,6 +76,20 @@ export default function DriverVoucherDetailPage() {
         void loadVoucherDetail();
     }, [loadVoucherDetail]);
 
+    useEffect(() => {
+        const activeBankRefSet = new Set(bankAccounts.map(account => account._id));
+
+        if (issueBankRepairRef && !activeBankRefSet.has(issueBankRepairRef)) {
+            setIssueBankRepairRef('');
+        }
+        if (settlementBankRef && !activeBankRefSet.has(settlementBankRef)) {
+            setSettlementBankRef('');
+        }
+        if (topUpForm.bankAccountRef && !activeBankRefSet.has(topUpForm.bankAccountRef)) {
+            setTopUpForm(previous => ({ ...previous, bankAccountRef: '' }));
+        }
+    }, [bankAccounts, issueBankRepairRef, settlementBankRef, topUpForm.bankAccountRef]);
+
     const {
         operationalSpent,
         driverFeeAmount,
@@ -165,7 +179,11 @@ export default function DriverVoucherDetailPage() {
 
     const openTopUpModal = () => {
         if (!canTopUpVoucher || !voucher) return;
-        setTopUpForm(createDefaultDriverVoucherTopUpForm(voucher.issueBankRef || ''));
+        const defaultBankRef =
+            voucher.issueBankRef && bankAccounts.some(account => account._id === voucher.issueBankRef)
+                ? voucher.issueBankRef
+                : '';
+        setTopUpForm(createDefaultDriverVoucherTopUpForm(defaultBankRef));
         setShowTopUpModal(true);
     };
 
@@ -212,7 +230,13 @@ export default function DriverVoucherDetailPage() {
                 );
             }
             setShowTopUpModal(false);
-            setTopUpForm(createDefaultDriverVoucherTopUpForm(voucher.issueBankRef || ''));
+            setTopUpForm(
+                createDefaultDriverVoucherTopUpForm(
+                    voucher.issueBankRef && bankAccounts.some(account => account._id === voucher.issueBankRef)
+                        ? voucher.issueBankRef
+                        : ''
+                )
+            );
             addToast('success', 'Tambahan bon berhasil dicatat');
         } catch {
             addToast('error', 'Gagal menambah bon');
@@ -288,7 +312,11 @@ export default function DriverVoucherDetailPage() {
     const openSettleModal = () => {
         if (!canSettleVoucher || !voucher) return;
         setSettlementDate(new Date().toISOString().slice(0, 10));
-        setSettlementBankRef(voucher.issueBankRef || '');
+        setSettlementBankRef(
+            voucher.issueBankRef && bankAccounts.some(account => account._id === voucher.issueBankRef)
+                ? voucher.issueBankRef
+                : ''
+        );
         setShowSettleModal(true);
     };
 
