@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { getSanityClient, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
+import type { CompanyProfile } from '@/lib/types';
 
 import {
     assertIsoDate,
@@ -851,6 +852,7 @@ export async function handleDriverVoucherCreate(
     const voucherId = crypto.randomUUID();
     const initialDisbursementId = crypto.randomUUID();
     const issueTransactionId = crypto.randomUUID();
+    const companyProfile = await sanityGetById<CompanyProfile>('company');
     const driverFeeAmount = normalizeNumber(data.driverFeeAmount ?? requestedDriverFeeAmount);
     const voucherTotals = computeDriverVoucherTotals(cashGiven, 0, driverFeeAmount);
 
@@ -867,6 +869,11 @@ export async function handleDriverVoucherCreate(
         const voucherDoc = {
             _id: voucherId,
             _type: 'driverVoucher',
+            issuerCompanyName: companyProfile?.name,
+            issuerCompanyAddress: companyProfile?.address,
+            issuerCompanyPhone: companyProfile?.phone,
+            issuerCompanyEmail: companyProfile?.email,
+            issuerCompanyLogoUrl: companyProfile?.logoUrl,
             driverRef,
             driverName: canonicalDriverName,
             deliveryOrderRef,

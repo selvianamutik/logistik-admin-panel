@@ -203,6 +203,11 @@ export interface DriverVoucher {
   _id: string;
   _type: 'driverVoucher';
   bonNumber: string;
+  issuerCompanyName?: string;
+  issuerCompanyAddress?: string;
+  issuerCompanyPhone?: string;
+  issuerCompanyEmail?: string;
+  issuerCompanyLogoUrl?: string;
   driverRef: string;
   driverName?: string;
   deliveryOrderRef?: string;

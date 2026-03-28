@@ -79,14 +79,14 @@ function push(...docs: SeedDoc[]) {
     documents.push(...docs);
 }
 
-function applyDeliveryOrderIssuerSnapshots() {
+function applyDocumentIssuerSnapshots() {
     const companyDoc = documents.find((doc) => doc._type === 'companyProfile' && doc._id === 'company');
     if (!companyDoc) {
         return;
     }
 
     for (const doc of documents) {
-        if (doc._type !== 'deliveryOrder') {
+        if (doc._type !== 'deliveryOrder' && doc._type !== 'driverVoucher') {
             continue;
         }
 
@@ -3196,7 +3196,7 @@ function buildSeedDocuments() {
         relatedExpenseRef: 'exp-004',
     });
 
-    applyDeliveryOrderIssuerSnapshots();
+    applyDocumentIssuerSnapshots();
     push(...Object.values(bankAccounts));
 }
 

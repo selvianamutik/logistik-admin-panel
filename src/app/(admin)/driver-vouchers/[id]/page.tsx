@@ -17,7 +17,7 @@ import {
     sortDriverVoucherDisbursements,
 } from '@/lib/driver-voucher-detail-support';
 import { useApp, useToast } from '../../layout';
-import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
+import { fetchCompanyProfile, openBrandedPrint, resolveDocumentIssuerProfile } from '@/lib/print';
 import { normalizeUserRole } from '@/lib/rbac';
 import type { BankAccount, DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem } from '@/lib/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
@@ -359,7 +359,7 @@ export default function DriverVoucherDetailPage() {
     };
 
     const handlePrint = async () => {
-        const company = await fetchCompanyProfile();
+        const company = resolveDocumentIssuerProfile(voucher, await fetchCompanyProfile());
         openBrandedPrint({
             title: `Uang Jalan Trip ${voucher?.bonNumber}`,
             company,
