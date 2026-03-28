@@ -1489,10 +1489,14 @@ export async function handleDriverVoucherSettlement(
             driverFeeAmount
         );
         const balance = totals.balance;
-        const settlementBankRef =
+        const requestedSettlementBankRef =
             typeof data.settlementBankRef === 'string' && data.settlementBankRef
                 ? data.settlementBankRef
-                : state.voucher.issueBankRef || '';
+                : undefined;
+        const settlementBankRef =
+            balance !== 0
+                ? requestedSettlementBankRef || state.voucher.issueBankRef || ''
+                : undefined;
         let settlementBank: BankAccountSummary | null = null;
 
         if (balance !== 0) {
@@ -1502,7 +1506,14 @@ export async function handleDriverVoucherSettlement(
 
             settlementBank = await getLedgerAccount(settlementBankRef);
             if (!settlementBank) {
-                return NextResponse.json({ error: 'Rekening settlement tidak ditemukan' }, { status: 404 });
+                return NextResponse.json(
+                    {
+                        error: requestedSettlementBankRef
+                            ? 'Rekening settlement tidak ditemukan'
+                            : 'Pilih rekening settlement aktif untuk selisih bon',
+                    },
+                    { status: requestedSettlementBankRef ? 404 : 400 }
+                );
             }
             if (!settlementBank._rev) {
                 return NextResponse.json({ error: 'Revisi rekening settlement tidak tersedia' }, { status: 409 });
@@ -1583,7 +1594,7 @@ export async function handleDriverVoucherSettlement(
                 driverFeeAmount: totals.driverFeeAmount,
                 totalClaimAmount: totals.totalClaimAmount,
                 balance: totals.balance,
-                settlementBankRef: settlementBankRef || undefined,
+                settlementBankRef,
                 settlementBankName: settlementBank?.bankName,
             },
         });
@@ -1600,7 +1611,7 @@ export async function handleDriverVoucherSettlement(
                 driverFeeAmount: totals.driverFeeAmount,
                 totalClaimAmount: totals.totalClaimAmount,
                 balance: totals.balance,
-                settlementBankRef: settlementBankRef || undefined,
+                settlementBankRef,
                 settlementBankName: settlementBank?.bankName,
             };
 
