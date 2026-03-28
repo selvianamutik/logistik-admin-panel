@@ -94,6 +94,7 @@ export default function DODetailPage() {
     const canManageDeliveryStatus = user ? hasPermission(user.role, 'deliveryOrders', 'update') : false;
     const canExportDeliveryOrder = user ? hasPermission(user.role, 'deliveryOrders', 'export') : false;
     const canPrintDeliveryOrder = user ? hasPermission(user.role, 'deliveryOrders', 'print') : false;
+    const canViewCustomerDetails = user ? hasPermission(user.role, 'customers', 'view') : false;
     const canAssignTripResources = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL' || normalizedRole === 'ARMADA';
     const canEditShipperReference = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL' || normalizedRole === 'FINANCE';
     const canReviewDriverRequest = canManageDeliveryStatus;
@@ -161,7 +162,7 @@ export default function DODetailPage() {
                 deliveryOrder?.orderRef
                     ? fetchAdminData<Order | null>(`/api/data?entity=orders&id=${deliveryOrder.orderRef}`, 'Gagal memuat detail surat jalan')
                     : Promise.resolve(null),
-                deliveryOrder?.customerRef
+                deliveryOrder?.customerRef && canViewCustomerDetails
                     ? fetchAdminData<Pick<Customer, 'deliveryOrderPrefix'> | null>(`/api/data?entity=customers&id=${deliveryOrder.customerRef}`, 'Gagal memuat detail surat jalan')
                     : Promise.resolve(null),
                 canManageTripFee
@@ -190,7 +191,7 @@ export default function DODetailPage() {
                 setLoading(false);
             }
         }
-    }, [addToast, canManageTripFee, doId]);
+    }, [addToast, canManageTripFee, canViewCustomerDetails, doId]);
 
     const loadTripResources = useCallback(async () => {
         setLoadingTripResources(true);
