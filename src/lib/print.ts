@@ -445,6 +445,11 @@ export function buildFreightNotaPrintDocument(opts: {
                     <div class="invoice-signature-role">Operasional / Finance</div>
                 </div>
             </div>
+
+            <div class="invoice-tax-note-row">
+                <span class="invoice-tax-note-label">No Faktur Pajak:</span>
+                <span class="invoice-tax-note-line"></span>
+            </div>
         </div>
     `;
 
@@ -495,6 +500,9 @@ export function buildFreightNotaPrintDocument(opts: {
         .invoice-payment-bank-item { border: 0.8px solid #4b5563; padding: 0.35rem 0.45rem; }
         .invoice-payment-bank-name { font-weight: 700; margin-bottom: 0.12rem; }
         .invoice-payment-note { margin-top: 0.35rem; color: #111827; }
+        .invoice-tax-note-row { display: flex; align-items: center; gap: 0.45rem; width: 62%; margin-top: -0.2rem; min-height: 18px; }
+        .invoice-tax-note-label { font-weight: 600; white-space: nowrap; }
+        .invoice-tax-note-line { flex: 1; border-bottom: 0.8px solid #111827; height: 0; }
         .invoice-signature-box { border: 0.8px solid #4b5563; padding: 0.55rem 0.65rem; display: flex; flex-direction: column; justify-content: space-between; }
         .invoice-signature-title { margin-bottom: 0.15rem; }
         .invoice-signature-company { font-weight: 700; text-transform: uppercase; margin-bottom: 0.45rem; }
