@@ -45,8 +45,7 @@ class _DeliveryDetailPageState extends State<DeliveryDetailPage> {
     if (!serviceEnabled) {
       if (!mounted) return;
       setState(() {
-        _locationError =
-            'GPS is turned off. Enable location services to show your truck position.';
+        _locationError = 'GPS mati. Aktifkan dulu untuk lihat posisi terbaru.';
       });
       return;
     }
@@ -61,8 +60,7 @@ class _DeliveryDetailPageState extends State<DeliveryDetailPage> {
     if (permission == LocationPermission.denied ||
         permission == LocationPermission.deniedForever) {
       setState(() {
-        _locationError =
-            'Location permission is missing. Re-open the app or enable it from settings.';
+        _locationError = 'Izin lokasi belum aktif. Cek pengaturan aplikasi.';
       });
       return;
     }
@@ -74,9 +72,7 @@ class _DeliveryDetailPageState extends State<DeliveryDetailPage> {
     if (!mounted) return;
 
     _updateLocation(position, animateCamera: false);
-    setState(() {
-      _locationError = null;
-    });
+    setState(() => _locationError = null);
   }
 
   void _startTracking() {
@@ -93,11 +89,10 @@ class _DeliveryDetailPageState extends State<DeliveryDetailPage> {
             if (!mounted) return;
             _updateLocation(position);
           },
-          onError: (Object error) {
+          onError: (Object _) {
             if (!mounted) return;
             setState(() {
-              _locationError =
-                  'Unable to read GPS position. Check permission and GPS.';
+              _locationError = 'Posisi GPS tidak terbaca. Cek izin dan GPS.';
             });
           },
         );
@@ -132,14 +127,10 @@ class _DeliveryDetailPageState extends State<DeliveryDetailPage> {
   Future<void> _setTrackingEnabled(bool value) async {
     if (value) {
       await _syncCurrentLocation();
-      if (_locationError != null) {
-        return;
-      }
+      if (_locationError != null) return;
     }
 
-    setState(() {
-      _trackingEnabled = value;
-    });
+    setState(() => _trackingEnabled = value);
 
     if (value) {
       _startTracking();
@@ -149,10 +140,7 @@ class _DeliveryDetailPageState extends State<DeliveryDetailPage> {
   }
 
   void _changeInterval(Duration value) {
-    setState(() {
-      _trackingInterval = value;
-    });
-
+    setState(() => _trackingInterval = value);
     if (_trackingEnabled) {
       _startTracking();
     }
@@ -160,9 +148,7 @@ class _DeliveryDetailPageState extends State<DeliveryDetailPage> {
 
   Future<void> _beginDelivery() async {
     await _syncCurrentLocation();
-    if (_locationError != null) {
-      return;
-    }
+    if (_locationError != null) return;
 
     if (_trip.status == TripStatus.assigned ||
         _trip.status == TripStatus.headingToPickup) {
@@ -201,7 +187,6 @@ class _DeliveryDetailPageState extends State<DeliveryDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final mapCenter = _latestLocation == null
         ? _fallbackCenter
         : LatLng(_latestLocation!.latitude, _latestLocation!.longitude);
@@ -215,18 +200,19 @@ class _DeliveryDetailPageState extends State<DeliveryDetailPage> {
         title: Text(_trip.doNumber),
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
         children: [
           _DetailCard(trip: _trip),
           const SizedBox(height: 12),
-          if (_locationError != null)
-            _PermissionCard(
-              title: 'Location unavailable',
+          if (_locationError != null) ...[
+            _InfoCard(
+              title: 'Lokasi belum siap',
               message: _locationError!,
-              actionLabel: 'Refresh GPS',
+              actionLabel: 'Muat ulang',
               onPressed: _syncCurrentLocation,
             ),
-          if (_locationError != null) const SizedBox(height: 12),
+            const SizedBox(height: 12),
+          ],
           _MapCard(
             center: mapCenter,
             hasLiveLocation: _latestLocation != null,
@@ -250,10 +236,11 @@ class _DeliveryDetailPageState extends State<DeliveryDetailPage> {
                   ? null
                   : () => unawaited(_beginDelivery()),
               icon: const Icon(Icons.play_arrow_rounded),
-              label: const Text('Track / Begin delivery'),
-              style: FilledButton.styleFrom(
-                backgroundColor: scheme.primary,
-                padding: const EdgeInsets.symmetric(vertical: 16),
+              label: Text(
+                _trip.status == TripStatus.onDelivery ||
+                        _trip.status == TripStatus.arrived
+                    ? 'Sedang jalan'
+                    : 'Mulai trip',
               ),
             ),
           ),
@@ -266,9 +253,6 @@ class _DeliveryDetailPageState extends State<DeliveryDetailPage> {
                   : _advanceStatus,
               icon: const Icon(Icons.flag_circle_rounded),
               label: Text(_advanceLabel(_trip.status)),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-              ),
             ),
           ),
         ],
@@ -279,11 +263,11 @@ class _DeliveryDetailPageState extends State<DeliveryDetailPage> {
 
 String _advanceLabel(TripStatus status) {
   return switch (status) {
-    TripStatus.assigned => 'Mulai ke Pickup',
-    TripStatus.headingToPickup => 'Mulai Pengiriman',
-    TripStatus.onDelivery => 'Tandai Tiba',
-    TripStatus.arrived => 'Tandai Delivered',
-    TripStatus.delivered => 'Perjalanan Selesai',
+    TripStatus.assigned => 'Ke pickup',
+    TripStatus.headingToPickup => 'Mulai kirim',
+    TripStatus.onDelivery => 'Tandai tiba',
+    TripStatus.arrived => 'Selesaikan',
+    TripStatus.delivered => 'Trip selesai',
   };
 }
 
@@ -294,64 +278,82 @@ class _DetailCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Expanded(
-                  child: Text(
-                    trip.doNumber,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 16,
-                    ),
+                Text(
+                  trip.doNumber,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
                   ),
                 ),
                 _StatusChip(status: trip.status),
               ],
             ),
-            const SizedBox(height: 16),
-            _DetailRow(
-              icon: Icons.business_rounded,
-              label: 'Customer',
-              value: trip.customerName,
-            ),
-            _DetailRow(
-              icon: Icons.local_shipping_rounded,
-              label: 'Kendaraan',
-              value: trip.vehiclePlate,
-            ),
-            if (trip.receiverName != null)
-              _DetailRow(
-                icon: Icons.person_rounded,
-                label: 'Penerima',
-                value: trip.receiverName!,
+            const SizedBox(height: 8),
+            Text(
+              '${trip.originLabel} -> ${trip.destinationLabel}',
+              style: TextStyle(
+                color: scheme.onSurface.withValues(alpha: 0.7),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
               ),
-            _DetailRow(
-              icon: Icons.location_on_rounded,
-              label: 'Tujuan',
-              value: trip.destinationLabel,
             ),
-            _DetailRow(
-              icon: Icons.calendar_today_rounded,
-              label: 'Tanggal',
-              value: trip.etdLabel,
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                _DetailTile(
+                  icon: Icons.business_rounded,
+                  label: 'Customer',
+                  value: trip.customerName,
+                ),
+                _DetailTile(
+                  icon: Icons.local_shipping_rounded,
+                  label: 'Kendaraan',
+                  value: trip.vehiclePlate,
+                ),
+                if (trip.receiverName != null)
+                  _DetailTile(
+                    icon: Icons.person_rounded,
+                    label: 'Penerima',
+                    value: trip.receiverName!,
+                  ),
+                _DetailTile(
+                  icon: Icons.calendar_today_rounded,
+                  label: 'Tanggal',
+                  value: trip.etdLabel,
+                ),
+              ],
             ),
-            _DetailRow(
-              icon: Icons.info_outline_rounded,
-              label: 'Status',
-              value: trip.statusNote,
-            ),
-            if (trip.itemSummary != null && trip.itemSummary!.isNotEmpty)
-              _DetailRow(
+            if (trip.statusNote.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _NoteCard(
+                icon: Icons.info_outline_rounded,
+                label: 'Status',
+                value: trip.statusNote,
+              ),
+            ],
+            if (trip.itemSummary != null && trip.itemSummary!.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _NoteCard(
                 icon: Icons.notes_rounded,
                 label: 'Catatan',
                 value: trip.itemSummary!,
               ),
+            ],
           ],
         ),
       ),
@@ -359,8 +361,8 @@ class _DetailCard extends StatelessWidget {
   }
 }
 
-class _DetailRow extends StatelessWidget {
-  const _DetailRow({
+class _DetailTile extends StatelessWidget {
+  const _DetailTile({
     required this.icon,
     required this.label,
     required this.value,
@@ -374,24 +376,94 @@ class _DetailRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 140, maxWidth: 220),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        decoration: BoxDecoration(
+          color: scheme.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: scheme.outline.withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 15, color: scheme.primary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: scheme.onSurface.withValues(alpha: 0.5),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    value,
+                    style: const TextStyle(fontSize: 13),
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NoteCard extends StatelessWidget {
+  const _NoteCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: scheme.outline.withValues(alpha: 0.4)),
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 15, color: scheme.onSurface.withValues(alpha: 0.3)),
-          const SizedBox(width: 10),
-          SizedBox(
-            width: 72,
-            child: Text(
-              label,
-              style: TextStyle(
-                color: scheme.onSurface.withValues(alpha: 0.5),
-                fontSize: 13,
-              ),
+          Icon(icon, size: 15, color: scheme.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: scheme.onSurface.withValues(alpha: 0.5),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(value, style: const TextStyle(fontSize: 13)),
+              ],
             ),
           ),
-          Expanded(child: Text(value, style: const TextStyle(fontSize: 13))),
         ],
       ),
     );
@@ -428,7 +500,7 @@ class _MapCard extends StatelessWidget {
             Marker(
               markerId: const MarkerId('driver-location'),
               position: center,
-              infoWindow: const InfoWindow(title: 'Driver position'),
+              infoWindow: const InfoWindow(title: 'Posisi driver'),
             ),
           },
         ),
@@ -437,8 +509,8 @@ class _MapCard extends StatelessWidget {
   }
 }
 
-class _PermissionCard extends StatelessWidget {
-  const _PermissionCard({
+class _InfoCard extends StatelessWidget {
+  const _InfoCard({
     required this.title,
     required this.message,
     this.actionLabel,
@@ -452,8 +524,6 @@ class _PermissionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -470,7 +540,6 @@ class _PermissionCard extends StatelessWidget {
               const SizedBox(height: 12),
               FilledButton(
                 onPressed: () => unawaited(onPressed!()),
-                style: FilledButton.styleFrom(backgroundColor: scheme.primary),
                 child: Text(actionLabel!),
               ),
             ],
@@ -506,6 +575,7 @@ class _TrackingCard extends StatelessWidget {
         child: Column(
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
                   width: 38,
@@ -562,22 +632,37 @@ class _TrackingCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 14),
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Text(
-                  'Interval',
-                  style: TextStyle(
-                    color: scheme.onSurface.withValues(alpha: 0.5),
-                    fontSize: 13,
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 7,
+                  ),
+                  decoration: BoxDecoration(
+                    color: scheme.surface,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: scheme.outline.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Text(
+                    'Interval',
+                    style: TextStyle(
+                      color: scheme.onSurface.withValues(alpha: 0.58),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-                const Spacer(),
                 _Chip(
                   label: '30s',
                   selected: selectedInterval == const Duration(seconds: 30),
                   onTap: () => onIntervalChanged(const Duration(seconds: 30)),
                 ),
-                const SizedBox(width: 8),
                 _Chip(
                   label: '1 min',
                   selected: selectedInterval == const Duration(minutes: 1),
@@ -590,36 +675,59 @@ class _TrackingCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHighest,
+                  color: scheme.surface,
                   borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: scheme.outline.withValues(alpha: 0.4),
+                  ),
                 ),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _StatMini(
-                      label: 'Terakhir',
-                      value: TimeOfDay.fromDateTime(
-                        location!.recordedAt,
-                      ).format(context),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        _StatMini(
+                          label: 'Terakhir',
+                          value: TimeOfDay.fromDateTime(
+                            location!.recordedAt,
+                          ).format(context),
+                        ),
+                        _StatMini(
+                          label: 'Kecepatan',
+                          value:
+                              '${location!.speedKph.toStringAsFixed(0)} km/h',
+                        ),
+                        _StatMini(
+                          label: 'Akurasi',
+                          value:
+                              '+/- ${location!.accuracyMeters.toStringAsFixed(0)} m',
+                        ),
+                      ],
                     ),
-                    Container(
-                      width: 1,
-                      height: 32,
-                      margin: const EdgeInsets.symmetric(horizontal: 12),
-                      color: const Color(0xFFE2E8E4),
-                    ),
-                    _StatMini(
-                      label: 'Kecepatan',
-                      value: '${location!.speedKph.toStringAsFixed(0)} km/h',
-                    ),
-                    Container(
-                      width: 1,
-                      height: 32,
-                      margin: const EdgeInsets.symmetric(horizontal: 12),
-                      color: const Color(0xFFE2E8E4),
-                    ),
-                    _StatMini(
-                      label: 'Akurasi',
-                      value: '${location!.accuracyMeters.toStringAsFixed(0)} m',
+                    const SizedBox(height: 10),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.location_on_rounded,
+                          size: 13,
+                          color: scheme.onSurface.withValues(alpha: 0.4),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            '${location!.latitude.toStringAsFixed(6)}, '
+                            '${location!.longitude.toStringAsFixed(6)}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: scheme.onSurface.withValues(alpha: 0.5),
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -647,7 +755,8 @@ class _Chip extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
-    return GestureDetector(
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
@@ -683,8 +792,10 @@ class _StatMini extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 92),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             label,
@@ -716,10 +827,10 @@ class _StatusChip extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final (label, color) = switch (status) {
       TripStatus.assigned => ('Assigned', const Color(0xFF64748B)),
-      TripStatus.headingToPickup => ('To Pickup', const Color(0xFF2563EB)),
-      TripStatus.onDelivery => ('On Delivery', scheme.primary),
-      TripStatus.arrived => ('Arrived', const Color(0xFFB45309)),
-      TripStatus.delivered => ('Delivered', const Color(0xFF15803D)),
+      TripStatus.headingToPickup => ('Pickup', const Color(0xFF2563EB)),
+      TripStatus.onDelivery => ('Kirim', scheme.primary),
+      TripStatus.arrived => ('Tiba', const Color(0xFFB45309)),
+      TripStatus.delivered => ('Selesai', const Color(0xFF15803D)),
     };
 
     return Container(
