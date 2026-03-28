@@ -362,7 +362,7 @@ export default function CompanyPage() {
                             <div className="form-row">
                                 <div className="form-group" style={{ alignSelf: 'end' }}>
                                     <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                                        Dipakai untuk nomor cetak nota model client, misalnya <strong>26/II/3/001</strong>. Nomor sistem internal tetap memakai format aplikasi.
+                                        Dipakai untuk nomor cetak nota model client, misalnya <strong>26/II/3/001</strong>. No. Nota Internal tetap memakai format aplikasi.
                                     </p>
                                 </div>
                                 <div className="form-group" />

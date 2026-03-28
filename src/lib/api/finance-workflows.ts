@@ -183,7 +183,7 @@ export async function handlePaymentCreate(
                 paymentRef: paymentId,
                 date: paymentDate,
                 amount,
-                note: loaded.doc._type === 'freightNota' ? 'Pembayaran nota ongkos' : 'Pembayaran invoice',
+                note: loaded.doc._type === 'freightNota' ? 'Pembayaran nota ongkos' : 'Pembayaran arsip invoice',
             })
             .patch(invoiceRef, {
                 ifRevisionID: loaded.doc._rev,
@@ -207,7 +207,7 @@ export async function handlePaymentCreate(
                             ? 'Pembayaran tunai masuk'
                             : loaded.doc._type === 'freightNota'
                                 ? 'Pembayaran nota masuk'
-                                : 'Pembayaran invoice masuk',
+                                : 'Pembayaran arsip invoice masuk',
                     balanceAfter: nextBankBalance,
                     relatedPaymentRef: paymentId,
                 })
@@ -224,7 +224,7 @@ export async function handlePaymentCreate(
                 'CREATE',
                 'payments',
                 paymentId,
-                `Pembayaran dicatat untuk ${loaded.doc._type === 'freightNota' ? 'nota' : 'invoice'} ${invoiceRef}`
+                `Pembayaran dicatat untuk ${loaded.doc._type === 'freightNota' ? 'nota' : 'arsip invoice'} ${invoiceRef}`
             );
             return NextResponse.json({ data: paymentDoc, id: paymentId });
         } catch (err) {
@@ -495,7 +495,7 @@ export async function handleCustomerReceiptCreate(
                     'CREATE',
                     'payments',
                     paymentId,
-                    `Alokasi receipt ${receiptNumber} dicatat`
+                    `Alokasi penerimaan ${receiptNumber} dicatat`
                 );
             }
             return NextResponse.json({
