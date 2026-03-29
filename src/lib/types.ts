@@ -781,6 +781,11 @@ export interface Incident {
   _id: string;
   _type: 'incident';
   incidentNumber: string;
+  issuerCompanyName?: string;
+  issuerCompanyAddress?: string;
+  issuerCompanyPhone?: string;
+  issuerCompanyEmail?: string;
+  issuerCompanyLogoUrl?: string;
   dateTime: string;
   vehicleRef: string;
   vehiclePlate?: string;

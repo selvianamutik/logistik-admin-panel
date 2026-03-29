@@ -120,6 +120,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     const [mobileOpen, setMobileOpen] = useState(false);
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loggingOut, setLoggingOut] = useState(false);
     const [isMobile, setIsMobile] = useState(false);
     const [isTablet, setIsTablet] = useState(false);
 
@@ -262,9 +263,24 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }, []);
 
     const handleLogout = async () => {
-        await fetch('/api/auth/logout', { method: 'POST' });
-        router.push('/login');
-        router.refresh();
+        if (loggingOut) {
+            return;
+        }
+
+        setLoggingOut(true);
+        try {
+            const res = await fetch('/api/auth/logout', { method: 'POST' });
+            if (!res.ok && res.status !== 401) {
+                const payload = await res.json().catch(() => null);
+                throw new Error(payload?.error || 'Gagal keluar dari sesi');
+            }
+            router.push('/login');
+            router.refresh();
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal keluar dari sesi');
+        } finally {
+            setLoggingOut(false);
+        }
     };
 
     if (loading || !user) {
@@ -367,9 +383,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                         </nav>
 
                         <div className="sidebar-footer">
-                            <button className="sidebar-item" onClick={handleLogout} style={{ width: '100%' }}>
+                            <button className="sidebar-item" onClick={handleLogout} style={{ width: '100%' }} disabled={loggingOut}>
                                 <span className="sidebar-item-icon"><LogOut size={20} /></span>
-                                <span className="sidebar-item-label">Keluar</span>
+                                <span className="sidebar-item-label">{loggingOut ? 'Memproses...' : 'Keluar'}</span>
                             </button>
                         </div>
                     </aside>
@@ -415,7 +431,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                             </div>
 
                             <div className="topbar-right">
-                                <div className="topbar-user" onClick={handleLogout} title="Klik untuk keluar">
+                                <div
+                                    className="topbar-user"
+                                    onClick={() => {
+                                        if (!loggingOut) {
+                                            void handleLogout();
+                                        }
+                                    }}
+                                    title={loggingOut ? 'Sedang keluar...' : 'Klik untuk keluar'}
+                                    aria-disabled={loggingOut}
+                                    style={loggingOut ? { opacity: 0.6, pointerEvents: 'none' } : undefined}
+                                >
                                     <div className="topbar-avatar">
                                         {user.name.charAt(0).toUpperCase()}
                                     </div>

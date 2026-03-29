@@ -136,7 +136,13 @@ function applyDocumentIssuerSnapshots() {
             : '/logo.png';
 
     for (const doc of documents) {
-        if (doc._type !== 'deliveryOrder' && doc._type !== 'driverVoucher' && doc._type !== 'driverBorongan' && doc._type !== 'freightNota') {
+        if (
+            doc._type !== 'deliveryOrder' &&
+            doc._type !== 'driverVoucher' &&
+            doc._type !== 'driverBorongan' &&
+            doc._type !== 'freightNota' &&
+            doc._type !== 'incident'
+        ) {
             continue;
         }
 

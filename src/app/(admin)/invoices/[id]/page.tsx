@@ -38,6 +38,8 @@ export default function NotaDetailPage() {
     const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
     const [paying, setPaying] = useState(false);
     const [adjusting, setAdjusting] = useState(false);
+    const [deleting, setDeleting] = useState(false);
+    const [voidingAdjustmentId, setVoidingAdjustmentId] = useState<string | null>(null);
     const [payAmount, setPayAmount] = useState(0);
     const [payMethod, setPayMethod] = useState('TRANSFER');
     const [payDate, setPayDate] = useState(new Date().toISOString().split('T')[0]);
@@ -194,7 +196,9 @@ export default function NotaDetailPage() {
     };
 
     const handleVoidAdjustment = async (adjustmentId: string) => {
+        if (voidingAdjustmentId) return;
         if (!confirm('Void potongan tagihan ini?')) return;
+        setVoidingAdjustmentId(adjustmentId);
         try {
             const res = await fetch('/api/data', {
                 method: 'POST',
@@ -214,6 +218,8 @@ export default function NotaDetailPage() {
             await loadNotaDetail();
         } catch {
             addToast('error', 'Gagal void potongan tagihan');
+        } finally {
+            setVoidingAdjustmentId(current => current === adjustmentId ? null : current);
         }
     };
 
@@ -245,7 +251,9 @@ export default function NotaDetailPage() {
     };
 
     const handleDelete = async () => {
+        if (deleting) return;
         if (!confirm('Hapus nota ini?')) return;
+        setDeleting(true);
         try {
             const res = await fetch('/api/data', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -260,6 +268,8 @@ export default function NotaDetailPage() {
             router.push('/invoices');
         } catch {
             addToast('error', 'Gagal menghapus nota');
+        } finally {
+            setDeleting(false);
         }
     };
 
@@ -301,7 +311,7 @@ export default function NotaDetailPage() {
                     {canManageInvoice && grossAmount > totalAdjustmentAmount && <button className="btn btn-secondary btn-sm" onClick={() => setShowAdjustmentModal(true)}>Catat Potongan</button>}
                     {canExportInvoice && <button className="btn btn-secondary btn-sm" onClick={handleExportExcel}><FileDown size={14} /> Excel</button>}
                     {canPrintInvoice && <button className="btn btn-secondary btn-sm" onClick={handlePrint}><Printer size={14} /> Cetak Nota</button>}
-                    {canDeleteInvoice && <button className="btn btn-secondary btn-sm" onClick={handleDelete}><Trash2 size={14} /></button>}
+                    {canDeleteInvoice && <button className="btn btn-secondary btn-sm" onClick={handleDelete} disabled={deleting}><Trash2 size={14} /></button>}
                 </div>
             </div>
 
@@ -416,7 +426,7 @@ export default function NotaDetailPage() {
                                         </div>
                                         {adjustment.status !== 'VOID' && (
                                             <div style={{ marginTop: '0.5rem' }}>
-                                                {canManageInvoice && <button className="table-action-btn" onClick={() => void handleVoidAdjustment(adjustment._id)}>Void</button>}
+                                                {canManageInvoice && <button className="table-action-btn" onClick={() => void handleVoidAdjustment(adjustment._id)} disabled={voidingAdjustmentId === adjustment._id}>{voidingAdjustmentId === adjustment._id ? 'Memproses...' : 'Void'}</button>}
                                             </div>
                                         )}
                                     </div>

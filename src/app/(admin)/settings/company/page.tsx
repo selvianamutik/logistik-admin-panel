@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ChangeEvent } from 'react';
 import { useToast } from '../../layout';
 import { Save } from 'lucide-react';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
@@ -90,6 +90,35 @@ export default function CompanyPage() {
     const u = (field: string, value: unknown) => setData(prev => prev ? { ...prev, [field]: value } : prev);
     const uNum = (field: string, value: unknown) => setData(prev => prev ? { ...prev, numberingSettings: { ...(prev.numberingSettings || {}), [field]: value } } as CompanyProfile : prev);
     const uInvoice = (field: string, value: unknown) => setData(prev => prev ? { ...prev, invoiceSettings: { ...(prev.invoiceSettings || {}), [field]: value } } as CompanyProfile : prev);
+    const handleLogoFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+        const input = event.currentTarget;
+        const file = input.files?.[0];
+        if (!file) {
+            return;
+        }
+
+        const clearInput = () => {
+            input.value = '';
+        };
+
+        if (file.size > 500 * 1024) {
+            addToast('error', 'Ukuran file logo maksimal 500KB');
+            clearInput();
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = () => {
+            u('logoUrl', reader.result as string);
+            addToast('success', 'Logo siap disimpan');
+            clearInput();
+        };
+        reader.onerror = () => {
+            addToast('error', 'Gagal membaca file logo');
+            clearInput();
+        };
+        reader.readAsDataURL(file);
+    };
 
     const toggleInvoiceBankAccount = (accountId: string) => setData(prev => {
         if (!prev) return prev;
@@ -194,14 +223,7 @@ export default function CompanyPage() {
                                         onMouseOver={e => { (e.currentTarget as HTMLElement).style.background = 'var(--color-primary)'; (e.currentTarget as HTMLElement).style.color = '#fff'; }}
                                         onMouseOut={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'var(--color-primary)'; }}>
                                         Pilih File
-                                        <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => {
-                                            const file = e.target.files?.[0];
-                                            if (!file) return;
-                                            if (file.size > 500 * 1024) { alert('Ukuran file max 500KB'); return; }
-                                            const reader = new FileReader();
-                                            reader.onload = () => { u('logoUrl', reader.result as string); };
-                                            reader.readAsDataURL(file);
-                                        }} />
+                                        <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleLogoFileChange} />
                                     </label>
                                     <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>PNG, JPG, SVG | Max 500KB</p>
                                 </div>

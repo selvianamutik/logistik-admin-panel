@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { useToast } from '../../../layout';
 import { Printer, Save } from 'lucide-react';
-import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
+import { fetchCompanyProfile, openBrandedPrint, resolveDocumentIssuerProfile } from '@/lib/print';
 import { fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import {
     buildIncidentPrintHtml,
@@ -90,7 +90,7 @@ export default function IncidentDetailPage() {
     const available = getAvailableIncidentStatuses(incident.status);
     const handlePrint = async () => {
         try {
-            const company = await fetchCompanyProfile();
+            const company = resolveDocumentIssuerProfile(incident, await fetchCompanyProfile());
             openBrandedPrint({
                 title: 'Laporan Insiden Armada',
                 subtitle: incident.incidentNumber,

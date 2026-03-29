@@ -989,7 +989,14 @@ export default function BankAccountsPage() {
       )}
 
       {canDeleteBankAccounts && deleteConfirm && (
-        <div className="modal-overlay" onClick={() => setDeleteConfirm(null)}>
+        <div
+          className="modal-overlay"
+          onClick={() => {
+            if (deletingAccountId !== deleteConfirm) {
+              setDeleteConfirm(null);
+            }
+          }}
+        >
           <div
             className="modal"
             onClick={(event) => event.stopPropagation()}

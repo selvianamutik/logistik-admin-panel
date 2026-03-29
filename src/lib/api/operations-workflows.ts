@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { resolveCompanyLogoUrl } from '@/lib/branding';
 import { getSanityClient, sanityDelete, sanityGetById, sanityGetNextNumber, sanityUpdate } from '@/lib/sanity';
 import type { Driver, User } from '@/lib/types';
 
@@ -103,6 +104,21 @@ export async function handleIncidentCreate(
     const incidentId = crypto.randomUUID();
     const incidentNumber = await sanityGetNextNumber('incident');
     const timestamp = new Date().toISOString();
+    const companyProfile = await getSanityClient().fetch<{
+        name?: string;
+        address?: string;
+        phone?: string;
+        email?: string;
+        logoUrl?: string;
+    } | null>(
+        `*[_type == "companyProfile"][0]{
+            name,
+            address,
+            phone,
+            email,
+            logoUrl
+        }`
+    );
     const incidentDateTime =
         typeof data.dateTime === 'string' && data.dateTime
             ? data.dateTime
@@ -119,6 +135,11 @@ export async function handleIncidentCreate(
         relatedDONumber,
         description,
         incidentNumber,
+        issuerCompanyName: companyProfile?.name,
+        issuerCompanyAddress: companyProfile?.address,
+        issuerCompanyPhone: companyProfile?.phone,
+        issuerCompanyEmail: companyProfile?.email,
+        issuerCompanyLogoUrl: resolveCompanyLogoUrl(companyProfile),
         status: 'OPEN',
         dateTime: incidentDateTime,
     };

@@ -38,6 +38,7 @@ export default function BoronganDetailPage() {
     const [payBankRef, setPayBankRef] = useState('');
     const [payNote, setPayNote] = useState('');
     const [paying, setPaying] = useState(false);
+    const [deleting, setDeleting] = useState(false);
     const normalizedRole = user ? normalizeUserRole(user.role) : null;
 
     useEffect(() => {
@@ -137,7 +138,9 @@ export default function BoronganDetailPage() {
     };
 
     const handleDelete = async () => {
+        if (deleting) return;
         if (!confirm('Hapus slip borongan ini?')) return;
+        setDeleting(true);
         try {
             const res = await fetch('/api/data', {
                 method: 'POST',
@@ -157,6 +160,8 @@ export default function BoronganDetailPage() {
             router.push('/borongan');
         } catch {
             addToast('error', 'Gagal menghapus slip borongan');
+        } finally {
+            setDeleting(false);
         }
     };
 
@@ -242,7 +247,7 @@ export default function BoronganDetailPage() {
                     <button className="btn btn-secondary btn-sm" onClick={handlePrint}>
                         <Printer size={14} /> Cetak Slip
                     </button>
-                    <button className="btn btn-secondary btn-sm" onClick={handleDelete}>
+                    <button className="btn btn-secondary btn-sm" onClick={handleDelete} disabled={deleting}>
                         <Trash2 size={14} />
                     </button>
                 </div>

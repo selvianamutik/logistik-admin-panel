@@ -105,6 +105,7 @@ export default function DriverPortalPage() {
     const [companyName, setCompanyName] = useState('Gading Mas Surya');
     const [orders, setOrders] = useState<DeliveryOrder[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loggingOut, setLoggingOut] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
     const [feedback, setFeedback] = useState<{ type: 'error' | 'success' | 'info'; message: string } | null>(null);
@@ -362,6 +363,9 @@ export default function DriverPortalPage() {
     }, [activeTrackingDo, handleDriverAuthFailure, loadOrders, postTrackingAction]);
 
     const handleLogout = async () => {
+        if (loggingOut) {
+            return;
+        }
         if (lockedTrackingDo) {
             const confirmed = window.confirm(
                 `Kamu masih terikat ke ${lockedTrackingDo.doNumber}. Keluar sekarang akan menghentikan tracking live di browser ini sampai kamu login lagi. Lanjut keluar?`
@@ -370,11 +374,23 @@ export default function DriverPortalPage() {
                 return;
             }
         }
+
+        setLoggingOut(true);
         try {
-            await fetch('/api/driver/logout', { method: 'POST' });
-        } finally {
+            const res = await fetch('/api/driver/logout', { method: 'POST' });
+            if (!res.ok && res.status !== 401) {
+                const payload = await res.json().catch(() => null);
+                throw createDriverPortalError(res.status, payload?.error || 'Gagal keluar dari portal driver');
+            }
             router.push('/driver/login');
             router.refresh();
+        } catch (error) {
+            setFeedback({
+                type: 'error',
+                message: error instanceof Error ? error.message : 'Gagal keluar dari portal driver',
+            });
+        } finally {
+            setLoggingOut(false);
         }
     };
 
@@ -420,8 +436,8 @@ export default function DriverPortalPage() {
                     <h1>{companyName}</h1>
                     <p>{driver?.name || user?.name} | {driver?.phone || '-'}</p>
                 </div>
-                <button className="btn btn-secondary btn-sm" onClick={handleLogout}>
-                    <LogOut size={15} /> Keluar
+                <button className="btn btn-secondary btn-sm" onClick={handleLogout} disabled={loggingOut}>
+                    <LogOut size={15} /> {loggingOut ? 'Memproses...' : 'Keluar'}
                 </button>
             </section>
 
