@@ -137,20 +137,31 @@ export default function VehiclesPage() {
                 <div className="page-actions">
                     {canExportVehicles && <button
                         className="btn btn-secondary btn-sm"
-                        onClick={async () => exportVehicles(await fetchAllMatchingVehicles() as unknown as Record<string, unknown>[])}
+                        onClick={async () => {
+                            try {
+                                await exportVehicles(await fetchAllMatchingVehicles() as unknown as Record<string, unknown>[]);
+                                addToast('success', 'Excel kendaraan berhasil di-download');
+                            } catch (error) {
+                                addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan Excel kendaraan');
+                            }
+                        }}
                     >
                         <FileDown size={15} /> Excel
                     </button>}
                     {canPrintVehicles && <button
                         className="btn btn-secondary btn-sm"
                         onClick={async () => {
-                            const company = await fetchCompanyProfile();
-                            const printableVehicles = await fetchAllMatchingVehicles();
-                            openBrandedPrint({
-                                title: 'Daftar Kendaraan',
-                                company,
-                                bodyHtml: buildVehiclePrintHtml(printableVehicles, services),
-                            });
+                            try {
+                                const company = await fetchCompanyProfile();
+                                const printableVehicles = await fetchAllMatchingVehicles();
+                                openBrandedPrint({
+                                    title: 'Daftar Kendaraan',
+                                    company,
+                                    bodyHtml: buildVehiclePrintHtml(printableVehicles, services),
+                                });
+                            } catch (error) {
+                                addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan dokumen print kendaraan');
+                            }
                         }}
                     >
                         <Printer size={15} /> Print

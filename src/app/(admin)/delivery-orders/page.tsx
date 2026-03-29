@@ -150,26 +150,35 @@ export default function DeliveryOrdersPage() {
                 </div>
                 <div className="page-actions">
                     {canExportDeliveryOrders && <button className="btn btn-secondary btn-sm" onClick={async () => {
-                        const printableDeliveryOrders = await fetchAllMatchingDeliveryOrders();
-                        exportToExcel(buildDeliveryOrderExportRows(printableDeliveryOrders, services) as unknown as Record<string, unknown>[], [
-                            { header: 'No. SJ Pengirim', key: 'customerDoNumber', width: 22 },
-                            { header: 'No. DO Internal', key: 'doNumber', width: 18 },
-                            { header: 'Resi', key: 'masterResi', width: 18 },
-                            { header: 'Customer', key: 'customerName', width: 25 },
-                            { header: 'Kategori', key: 'serviceLabel', width: 24 },
-                            { header: 'Kendaraan', key: 'vehiclePlate', width: 15 },
-                            { header: 'Driver', key: 'driverName', width: 20 },
-                            { header: 'Tanggal', key: 'date', width: 15 },
-                            { header: 'Status', key: 'status', width: 15 },
-                            { header: 'Drop Aktual', key: 'actualDropPoints', width: 14 },
-                        ], `surat-jalan-${new Date().toISOString().split('T')[0]}`, 'Surat Jalan');
+                        try {
+                            const printableDeliveryOrders = await fetchAllMatchingDeliveryOrders();
+                            exportToExcel(buildDeliveryOrderExportRows(printableDeliveryOrders, services) as unknown as Record<string, unknown>[], [
+                                { header: 'No. SJ Pengirim', key: 'customerDoNumber', width: 22 },
+                                { header: 'No. DO Internal', key: 'doNumber', width: 18 },
+                                { header: 'Resi', key: 'masterResi', width: 18 },
+                                { header: 'Customer', key: 'customerName', width: 25 },
+                                { header: 'Kategori', key: 'serviceLabel', width: 24 },
+                                { header: 'Kendaraan', key: 'vehiclePlate', width: 15 },
+                                { header: 'Driver', key: 'driverName', width: 20 },
+                                { header: 'Tanggal', key: 'date', width: 15 },
+                                { header: 'Status', key: 'status', width: 15 },
+                                { header: 'Drop Aktual', key: 'actualDropPoints', width: 14 },
+                            ], `surat-jalan-${new Date().toISOString().split('T')[0]}`, 'Surat Jalan');
+                            addToast('success', 'Excel surat jalan berhasil di-download');
+                        } catch (error) {
+                            addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan Excel surat jalan');
+                        }
                     }}><FileDown size={15} /> Excel</button>}
                     {canPrintDeliveryOrders && <button className="btn btn-secondary btn-sm" onClick={async () => {
-                        const co = await fetchCompanyProfile();
-                        const printableDeliveryOrders = await fetchAllMatchingDeliveryOrders();
-                        openBrandedPrint({
-                            title: 'Daftar Surat Jalan', company: co, bodyHtml: buildDeliveryOrdersPrintHtml(printableDeliveryOrders, services),
-                        });
+                        try {
+                            const co = await fetchCompanyProfile();
+                            const printableDeliveryOrders = await fetchAllMatchingDeliveryOrders();
+                            openBrandedPrint({
+                                title: 'Daftar Surat Jalan', company: co, bodyHtml: buildDeliveryOrdersPrintHtml(printableDeliveryOrders, services),
+                            });
+                        } catch (error) {
+                            addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan dokumen print surat jalan');
+                        }
                     }}><Printer size={15} /> Print</button>}
                 </div>
             </div>

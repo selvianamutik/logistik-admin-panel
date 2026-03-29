@@ -200,34 +200,45 @@ export default function ExpensesPage() {
         <div>
             <div className="page-header"><div className="page-header-left"><h1 className="page-title">Pengeluaran</h1></div>
                 <div className="page-actions">
-                    {canExportExpenses && <button className="btn btn-secondary btn-sm" onClick={async () => exportExpenses(await fetchAllMatchingExpenses() as unknown as Record<string, unknown>[])}><FileDown size={15} /> Excel</button>}
+                    {canExportExpenses && <button className="btn btn-secondary btn-sm" onClick={async () => {
+                        try {
+                            await exportExpenses(await fetchAllMatchingExpenses() as unknown as Record<string, unknown>[]);
+                            addToast('success', 'Excel pengeluaran berhasil di-download');
+                        } catch (error) {
+                            addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan Excel pengeluaran');
+                        }
+                    }}><FileDown size={15} /> Excel</button>}
                     {canPrintExpenses && <button className="btn btn-secondary btn-sm" onClick={async () => {
-                        const company = await fetchCompanyProfile();
-                        const printableExpenses = await fetchAllMatchingExpenses();
-                        const describeExpense = (expense: Expense) => {
-                            const vehicleLabel =
-                                expense.relatedVehiclePlate ||
-                                (expense.relatedVehicleRef ? vehicleMap.get(expense.relatedVehicleRef)?.plateNumber : '') ||
-                                '';
-                            const matchedAccount = expense.bankAccountRef ? accountMap.get(expense.bankAccountRef) : undefined;
-                            const accountLabel = expense.bankAccountName
-                                ? `${expense.bankAccountName}${expense.bankAccountNumber || matchedAccount?.accountNumber ? ` - ${expense.bankAccountNumber || matchedAccount?.accountNumber}` : ''}`
-                                : matchedAccount
-                                    ? `${matchedAccount.bankName} - ${matchedAccount.accountNumber}`
-                                    : '';
-                            const detailLines = [
-                                expense.note || expense.description || '-',
-                                vehicleLabel ? `Kendaraan: ${vehicleLabel}` : '',
-                                accountLabel ? `Via: ${accountLabel}` : '',
-                            ].filter(Boolean);
-                            return detailLines.join('<br/>');
-                        };
-                        openBrandedPrint({
-                            title: 'Daftar Pengeluaran', company, bodyHtml: `
-                            <table><thead><tr><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th class="r">Jumlah</th></tr></thead>
-                            <tbody>${printableExpenses.map(expense => `<tr><td>${formatDate(expense.date)}</td><td class="b">${expense.categoryName || '-'}</td><td>${describeExpense(expense)}</td><td class="r b">${formatCurrency(expense.amount)}</td></tr>`).join('')}
-                            <tr style="border-top:2px solid #1e293b"><td colspan="3" class="r b">TOTAL</td><td class="r b">${formatCurrency(grandTotal)}</td></tr></tbody></table>`
-                        });
+                        try {
+                            const company = await fetchCompanyProfile();
+                            const printableExpenses = await fetchAllMatchingExpenses();
+                            const describeExpense = (expense: Expense) => {
+                                const vehicleLabel =
+                                    expense.relatedVehiclePlate ||
+                                    (expense.relatedVehicleRef ? vehicleMap.get(expense.relatedVehicleRef)?.plateNumber : '') ||
+                                    '';
+                                const matchedAccount = expense.bankAccountRef ? accountMap.get(expense.bankAccountRef) : undefined;
+                                const accountLabel = expense.bankAccountName
+                                    ? `${expense.bankAccountName}${expense.bankAccountNumber || matchedAccount?.accountNumber ? ` - ${expense.bankAccountNumber || matchedAccount?.accountNumber}` : ''}`
+                                    : matchedAccount
+                                        ? `${matchedAccount.bankName} - ${matchedAccount.accountNumber}`
+                                        : '';
+                                const detailLines = [
+                                    expense.note || expense.description || '-',
+                                    vehicleLabel ? `Kendaraan: ${vehicleLabel}` : '',
+                                    accountLabel ? `Via: ${accountLabel}` : '',
+                                ].filter(Boolean);
+                                return detailLines.join('<br/>');
+                            };
+                            openBrandedPrint({
+                                title: 'Daftar Pengeluaran', company, bodyHtml: `
+                                <table><thead><tr><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th class="r">Jumlah</th></tr></thead>
+                                <tbody>${printableExpenses.map(expense => `<tr><td>${formatDate(expense.date)}</td><td class="b">${expense.categoryName || '-'}</td><td>${describeExpense(expense)}</td><td class="r b">${formatCurrency(expense.amount)}</td></tr>`).join('')}
+                                <tr style="border-top:2px solid #1e293b"><td colspan="3" class="r b">TOTAL</td><td class="r b">${formatCurrency(grandTotal)}</td></tr></tbody></table>`
+                            });
+                        } catch (error) {
+                            addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan dokumen print pengeluaran');
+                        }
                     }}><Printer size={15} /> Print</button>}
                     <button className="btn btn-primary" onClick={() => setShowModal(true)}><Plus size={18} /> Tambah Pengeluaran</button>
                 </div></div>

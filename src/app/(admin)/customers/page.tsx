@@ -227,14 +227,19 @@ export default function CustomersPage() {
                     {canExportCustomers && <button
                         className="btn btn-secondary btn-sm"
                         onClick={async () => {
-                            exportToExcel(await fetchAllMatchingCustomers() as unknown as Record<string, unknown>[], [
-                                { header: 'Nama', key: 'name', width: 25 },
-                                { header: 'Kontak', key: 'contactPerson', width: 20 },
-                                { header: 'Telepon', key: 'phone', width: 18 },
-                                { header: 'Email', key: 'email', width: 25 },
-                                { header: 'Alamat', key: 'address', width: 35 },
-                                { header: 'Format SJ', key: 'deliveryOrderPrefix', width: 12 },
-                            ], `customer-${new Date().toISOString().split('T')[0]}`, 'Customer');
+                            try {
+                                exportToExcel(await fetchAllMatchingCustomers() as unknown as Record<string, unknown>[], [
+                                    { header: 'Nama', key: 'name', width: 25 },
+                                    { header: 'Kontak', key: 'contactPerson', width: 20 },
+                                    { header: 'Telepon', key: 'phone', width: 18 },
+                                    { header: 'Email', key: 'email', width: 25 },
+                                    { header: 'Alamat', key: 'address', width: 35 },
+                                    { header: 'Format SJ', key: 'deliveryOrderPrefix', width: 12 },
+                                ], `customer-${new Date().toISOString().split('T')[0]}`, 'Customer');
+                                addToast('success', 'Excel customer berhasil di-download');
+                            } catch (error) {
+                                addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan Excel customer');
+                            }
                         }}
                     >
                         <FileDown size={15} /> Excel
@@ -242,44 +247,48 @@ export default function CustomersPage() {
                     {canPrintCustomers && <button
                         className="btn btn-secondary btn-sm"
                         onClick={async () => {
-                            const company = await fetchCompanyProfile();
-                            const printableCustomers = await fetchAllMatchingCustomers();
-                            const printableIds = printableCustomers.map(customer => customer._id).join(',');
-                            const summaryRes = await fetch(`/api/data?entity=customers-summary${printableIds ? `&ids=${encodeURIComponent(printableIds)}` : ''}`);
-                            const summaryPayload = await summaryRes.json();
-                            if (!summaryRes.ok) {
-                                throw new Error(summaryPayload.error || 'Gagal memuat ringkasan customer');
+                            try {
+                                const company = await fetchCompanyProfile();
+                                const printableCustomers = await fetchAllMatchingCustomers();
+                                const printableIds = printableCustomers.map(customer => customer._id).join(',');
+                                const summaryRes = await fetch(`/api/data?entity=customers-summary${printableIds ? `&ids=${encodeURIComponent(printableIds)}` : ''}`);
+                                const summaryPayload = await summaryRes.json();
+                                if (!summaryRes.ok) {
+                                    throw new Error(summaryPayload.error || 'Gagal memuat ringkasan customer');
+                                }
+                                const printableCounts = summaryPayload.data?.productCounts || {};
+                                openBrandedPrint({
+                                    title: 'Daftar Customer',
+                                    company,
+                                    bodyHtml: `
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>Nama</th>
+                                                <th>Kontak</th>
+                                                <th>Telepon</th>
+                                                <th>Email</th>
+                                                <th>Alamat</th>
+                                                <th>Format SJ</th>
+                                                <th>Master Barang</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${printableCustomers.map(customer => `<tr>
+                                                <td class="b">${customer.name}</td>
+                                                <td>${customer.contactPerson || '-'}</td>
+                                                <td>${customer.phone || '-'}</td>
+                                                <td>${customer.email || '-'}</td>
+                                                <td>${customer.address || '-'}</td>
+                                                <td>${customer.deliveryOrderPrefix || 'SJ'}</td>
+                                                <td>${printableCounts[customer._id] || 0} barang</td>
+                                            </tr>`).join('')}
+                                        </tbody>
+                                    </table>`,
+                                });
+                            } catch (error) {
+                                addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan dokumen print customer');
                             }
-                            const printableCounts = summaryPayload.data?.productCounts || {};
-                            openBrandedPrint({
-                                title: 'Daftar Customer',
-                                company,
-                                bodyHtml: `
-                                <table>
-                                    <thead>
-                                        <tr>
-                                            <th>Nama</th>
-                                            <th>Kontak</th>
-                                            <th>Telepon</th>
-                                            <th>Email</th>
-                                            <th>Alamat</th>
-                                            <th>Format SJ</th>
-                                            <th>Master Barang</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        ${printableCustomers.map(customer => `<tr>
-                                            <td class="b">${customer.name}</td>
-                                            <td>${customer.contactPerson || '-'}</td>
-                                            <td>${customer.phone || '-'}</td>
-                                            <td>${customer.email || '-'}</td>
-                                            <td>${customer.address || '-'}</td>
-                                            <td>${customer.deliveryOrderPrefix || 'SJ'}</td>
-                                            <td>${printableCounts[customer._id] || 0} barang</td>
-                                        </tr>`).join('')}
-                                    </tbody>
-                                </table>`,
-                            });
                         }}
                     >
                         <Printer size={15} /> Print

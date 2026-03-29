@@ -141,51 +141,55 @@ export default function DriverVouchersPage() {
                     <button
                         className="btn btn-secondary btn-sm"
                         onClick={async () => {
-                            const company = await fetchCompanyProfile();
-                            const printableVouchers = await fetchAllMatchingVouchers();
-                            openBrandedPrint({
-                                title: 'Daftar Uang Jalan Trip',
-                                company,
-                                bodyHtml: `
-                                <table>
-                                    <thead>
-                                        <tr>
-                                            <th>No. Bon</th>
-                                            <th>Supir</th>
-                                            <th>Tanggal</th>
-                                            <th>No. DO Internal</th>
-                                            <th class="r">Bon Awal</th>
-                                            <th class="r">Tambahan</th>
-                                            <th class="r">Total Diberikan</th>
-                                            <th class="r">Biaya</th>
-                                            <th class="r">Upah Trip</th>
-                                            <th class="r">Total Hak Trip</th>
-                                            <th class="r">Selisih</th>
-                                            <th>Status</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        ${printableVouchers.map(v => {
-                                            const totalClaimAmount = v.totalClaimAmount || ((v.totalSpent || 0) + (v.driverFeeAmount || 0));
-                                            const initialCashGiven = v.initialCashGiven || v.cashGiven || 0;
-                                            return `<tr>
-                                                <td class="b">${v.bonNumber}</td>
-                                                <td>${v.driverName || '-'}</td>
-                                                <td>${formatDate(v.issuedDate)}</td>
-                                                <td>${v.doNumber || '-'}</td>
-                                                <td class="r">${formatCurrency(initialCashGiven)}</td>
-                                                <td class="r">${formatCurrency(getDriverVoucherTopUpAmount(v))}</td>
-                                                <td class="r">${formatCurrency(getDriverVoucherIssuedAmount(v))}</td>
-                                                <td class="r">${formatCurrency(v.totalSpent)}</td>
-                                                <td class="r">${formatCurrency(v.driverFeeAmount || 0)}</td>
-                                                <td class="r">${formatCurrency(totalClaimAmount)}</td>
-                                                <td class="r b">${formatCurrency(v.balance)}</td>
-                                                <td>${STATUS_MAP[v.status]?.label || v.status}</td>
-                                            </tr>`;
-                                        }).join('')}
-                                    </tbody>
-                                </table>`,
-                            });
+                            try {
+                                const company = await fetchCompanyProfile();
+                                const printableVouchers = await fetchAllMatchingVouchers();
+                                openBrandedPrint({
+                                    title: 'Daftar Uang Jalan Trip',
+                                    company,
+                                    bodyHtml: `
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>No. Bon</th>
+                                                <th>Supir</th>
+                                                <th>Tanggal</th>
+                                                <th>No. DO Internal</th>
+                                                <th class="r">Bon Awal</th>
+                                                <th class="r">Tambahan</th>
+                                                <th class="r">Total Diberikan</th>
+                                                <th class="r">Biaya</th>
+                                                <th class="r">Upah Trip</th>
+                                                <th class="r">Total Hak Trip</th>
+                                                <th class="r">Selisih</th>
+                                                <th>Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${printableVouchers.map(v => {
+                                                const totalClaimAmount = v.totalClaimAmount || ((v.totalSpent || 0) + (v.driverFeeAmount || 0));
+                                                const initialCashGiven = v.initialCashGiven || v.cashGiven || 0;
+                                                return `<tr>
+                                                    <td class="b">${v.bonNumber}</td>
+                                                    <td>${v.driverName || '-'}</td>
+                                                    <td>${formatDate(v.issuedDate)}</td>
+                                                    <td>${v.doNumber || '-'}</td>
+                                                    <td class="r">${formatCurrency(initialCashGiven)}</td>
+                                                    <td class="r">${formatCurrency(getDriverVoucherTopUpAmount(v))}</td>
+                                                    <td class="r">${formatCurrency(getDriverVoucherIssuedAmount(v))}</td>
+                                                    <td class="r">${formatCurrency(v.totalSpent)}</td>
+                                                    <td class="r">${formatCurrency(v.driverFeeAmount || 0)}</td>
+                                                    <td class="r">${formatCurrency(totalClaimAmount)}</td>
+                                                    <td class="r b">${formatCurrency(v.balance)}</td>
+                                                    <td>${STATUS_MAP[v.status]?.label || v.status}</td>
+                                                </tr>`;
+                                            }).join('')}
+                                        </tbody>
+                                    </table>`,
+                                });
+                            } catch (error) {
+                                addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan dokumen print uang jalan trip');
+                            }
                         }}
                     >
                         <Printer size={15} /> Print

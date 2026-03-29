@@ -186,17 +186,28 @@ export default function OrdersPage() {
                     <h1 className="page-title">Order / Resi</h1>
                 </div>
                 <div className="page-actions">
-                    <button className="btn btn-secondary btn-sm" onClick={async () => exportOrders(await fetchAllMatchingOrders() as unknown as Record<string, unknown>[])}>
+                    <button className="btn btn-secondary btn-sm" onClick={async () => {
+                        try {
+                            await exportOrders(await fetchAllMatchingOrders() as unknown as Record<string, unknown>[]);
+                            addToast('success', 'Excel order berhasil di-download');
+                        } catch (error) {
+                            addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan Excel order');
+                        }
+                    }}>
                         <FileDown size={15} /> Excel
                     </button>
                     <button className="btn btn-secondary btn-sm" onClick={async () => {
-                        const co = await fetchCompanyProfile();
-                        const printableOrders = await fetchAllMatchingOrders();
-                        openBrandedPrint({
-                            title: 'Daftar Order / Resi', company: co, bodyHtml: `
-                            <table><thead><tr><th>Resi</th><th>Customer</th><th>Penerima</th><th>Alamat</th><th>Tanggal</th><th>Status</th></tr></thead>
-                            <tbody>${printableOrders.map(o => `<tr><td class="b">${o.masterResi}</td><td>${o.customerName || '-'}</td><td>${o.receiverName || '-'}</td><td>${o.receiverAddress || '-'}</td><td>${formatDate(o.createdAt)}</td><td>${ORDER_STATUS_MAP[o.status]?.label || o.status}</td></tr>`).join('')}</tbody></table>`
-                        });
+                        try {
+                            const co = await fetchCompanyProfile();
+                            const printableOrders = await fetchAllMatchingOrders();
+                            openBrandedPrint({
+                                title: 'Daftar Order / Resi', company: co, bodyHtml: `
+                                <table><thead><tr><th>Resi</th><th>Customer</th><th>Penerima</th><th>Alamat</th><th>Tanggal</th><th>Status</th></tr></thead>
+                                <tbody>${printableOrders.map(o => `<tr><td class="b">${o.masterResi}</td><td>${o.customerName || '-'}</td><td>${o.receiverName || '-'}</td><td>${o.receiverAddress || '-'}</td><td>${formatDate(o.createdAt)}</td><td>${ORDER_STATUS_MAP[o.status]?.label || o.status}</td></tr>`).join('')}</tbody></table>`
+                            });
+                        } catch (error) {
+                            addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan dokumen print order');
+                        }
                     }}><Printer size={15} /> Print</button>
                     <Link href="/orders/new" className="btn btn-primary">
                         <Plus size={18} className="btn-icon" /> Buat Order Baru
