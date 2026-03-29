@@ -170,68 +170,82 @@ export default function ReportsPage() {
   };
 
   const handleExportExcel = () => {
-    if (tab === "pnl") {
-      const rows = buildProfitLossExportRows(filteredPayments, filteredExpenses);
-      exportToExcel(
-        rows as unknown as Record<string, unknown>[],
-        [
-          { header: "Tipe", key: "tipe", width: 15 },
-          { header: "Tanggal", key: "tanggal", width: 15 },
-          { header: "Deskripsi", key: "deskripsi", width: 35 },
-          { header: "Jumlah", key: "jumlah", width: 18 },
-        ],
-        `laba-rugi-${periodLabel.replace(/\s/g, "-")}`,
-        "Laba Rugi",
-      );
-    } else {
-      const rows = buildCashflowExportRows(
-        sortedFilteredBankTx,
-        allBankAccounts,
-      );
-      exportToExcel(
-        rows as unknown as Record<string, unknown>[],
-        [
-          { header: "Bank", key: "bank", width: 15 },
-          { header: "Tanggal", key: "tanggal", width: 15 },
-          { header: "Tipe", key: "tipe", width: 15 },
-          { header: "Deskripsi", key: "deskripsi", width: 30 },
-          { header: "Jumlah", key: "jumlah", width: 18 },
-          { header: "Saldo", key: "saldo", width: 18 },
-        ],
-        `arus-kas-${periodLabel.replace(/\s/g, "-")}`,
-        "Arus Kas",
+    try {
+      if (tab === "pnl") {
+        const rows = buildProfitLossExportRows(filteredPayments, filteredExpenses);
+        exportToExcel(
+          rows as unknown as Record<string, unknown>[],
+          [
+            { header: "Tipe", key: "tipe", width: 15 },
+            { header: "Tanggal", key: "tanggal", width: 15 },
+            { header: "Deskripsi", key: "deskripsi", width: 35 },
+            { header: "Jumlah", key: "jumlah", width: 18 },
+          ],
+          `laba-rugi-${periodLabel.replace(/\s/g, "-")}`,
+          "Laba Rugi",
+        );
+      } else {
+        const rows = buildCashflowExportRows(
+          sortedFilteredBankTx,
+          allBankAccounts,
+        );
+        exportToExcel(
+          rows as unknown as Record<string, unknown>[],
+          [
+            { header: "Bank", key: "bank", width: 15 },
+            { header: "Tanggal", key: "tanggal", width: 15 },
+            { header: "Tipe", key: "tipe", width: 15 },
+            { header: "Deskripsi", key: "deskripsi", width: 30 },
+            { header: "Jumlah", key: "jumlah", width: 18 },
+            { header: "Saldo", key: "saldo", width: 18 },
+          ],
+          `arus-kas-${periodLabel.replace(/\s/g, "-")}`,
+          "Arus Kas",
+        );
+      }
+      addToast("success", "Excel berhasil di-download");
+    } catch (error) {
+      addToast(
+        "error",
+        error instanceof Error ? error.message : "Gagal menyiapkan Excel laporan",
       );
     }
-    addToast("success", "Excel berhasil di-download");
   };
 
   const handleBrandedPrint = () => {
-    const isPnl = tab === "pnl";
-    openBrandedPrint({
-      title: isPnl ? "Laporan Laba Rugi" : "Laporan Arus Kas",
-      subtitle: periodLabel,
-      company,
-      bodyHtml: isPnl
-        ? `<div class="stats-row"><div class="stat-box"><div class="stat-label">Pendapatan</div><div class="stat-value s">${fmtN(totalRevenue)}</div></div><div class="stat-box"><div class="stat-label">Pengeluaran</div><div class="stat-value d">${fmtN(totalExpense)}</div></div><div class="stat-box"><div class="stat-label">Laba/Rugi Bersih</div><div class="stat-value ${netProfit >= 0 ? "s" : "d"}">${netProfit >= 0 ? "+" : ""}${fmtN(netProfit)}</div></div></div><table><thead><tr><th>Kategori</th><th class="r">Jumlah</th><th class="r">%</th></tr></thead><tbody><tr class="b"><td>PENDAPATAN</td><td class="r s">${fmtN(totalRevenue)}</td><td class="r">100%</td></tr><tr><td style="padding-left:1.5rem">Pembayaran customer (${filteredPayments.length}x)</td><td class="r">${fmtN(totalRevenue)}</td><td class="r">100%</td></tr><tr class="b" style="border-top:2px solid #e2e8f0"><td>PENGELUARAN</td><td class="r d">${fmtN(totalExpense)}</td><td class="r">100%</td></tr>${sortedCategories.map(([cat, amt]) => `<tr><td style="padding-left:1.5rem">${cat}</td><td class="r">${fmtN(amt)}</td><td class="r">${totalExpense > 0 ? ((amt / totalExpense) * 100).toFixed(1) : 0}%</td></tr>`).join("")}<tr class="b" style="border-top:2px solid #1e293b"><td>LABA / RUGI BERSIH</td><td class="r ${netProfit >= 0 ? "s" : "d"}">${netProfit >= 0 ? "+" : ""}${fmtN(netProfit)}</td><td></td></tr></tbody></table>`
-        : `<div class="stats-row">${Object.entries(cashFlowByBank)
-            .map(
-              ([, value]) =>
-                `<div class="stat-box"><div class="stat-label">${value.bankName}</div><div class="stat-value s">+${fmtN(value.inflow)}</div><div class="d" style="font-size:0.78rem;margin-top:0.15rem">-${fmtN(value.outflow)}</div></div>`,
-            )
-            .join(
-              "",
-            )}</div><table><thead><tr><th>Bank</th><th>Tanggal</th><th>Tipe</th><th>Deskripsi</th><th class="r">Jumlah</th><th class="r">Saldo</th></tr></thead><tbody>${sortedFilteredBankTx
-            .map((item) => {
-              const isIn =
-                item.type === "CREDIT" || item.type === "TRANSFER_IN";
-              const bankName = resolveBankTransactionAccountName(
-                item,
-                allBankAccounts,
-              );
-              return `<tr><td>${bankName}</td><td>${item.date ? new Date(item.date).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "-"}</td><td>${item.type}</td><td>${item.description}</td><td class="r ${isIn ? "s" : "d"} b">${isIn ? "+" : "-"}${fmtN(item.amount)}</td><td class="r b">${fmtN(item.balanceAfter)}</td></tr>`;
-            })
-            .join("")}</tbody></table>`,
-    });
+    try {
+      const isPnl = tab === "pnl";
+      openBrandedPrint({
+        title: isPnl ? "Laporan Laba Rugi" : "Laporan Arus Kas",
+        subtitle: periodLabel,
+        company,
+        bodyHtml: isPnl
+          ? `<div class="stats-row"><div class="stat-box"><div class="stat-label">Pendapatan</div><div class="stat-value s">${fmtN(totalRevenue)}</div></div><div class="stat-box"><div class="stat-label">Pengeluaran</div><div class="stat-value d">${fmtN(totalExpense)}</div></div><div class="stat-box"><div class="stat-label">Laba/Rugi Bersih</div><div class="stat-value ${netProfit >= 0 ? "s" : "d"}">${netProfit >= 0 ? "+" : ""}${fmtN(netProfit)}</div></div></div><table><thead><tr><th>Kategori</th><th class="r">Jumlah</th><th class="r">%</th></tr></thead><tbody><tr class="b"><td>PENDAPATAN</td><td class="r s">${fmtN(totalRevenue)}</td><td class="r">100%</td></tr><tr><td style="padding-left:1.5rem">Pembayaran customer (${filteredPayments.length}x)</td><td class="r">${fmtN(totalRevenue)}</td><td class="r">100%</td></tr><tr class="b" style="border-top:2px solid #e2e8f0"><td>PENGELUARAN</td><td class="r d">${fmtN(totalExpense)}</td><td class="r">100%</td></tr>${sortedCategories.map(([cat, amt]) => `<tr><td style="padding-left:1.5rem">${cat}</td><td class="r">${fmtN(amt)}</td><td class="r">${totalExpense > 0 ? ((amt / totalExpense) * 100).toFixed(1) : 0}%</td></tr>`).join("")}<tr class="b" style="border-top:2px solid #1e293b"><td>LABA / RUGI BERSIH</td><td class="r ${netProfit >= 0 ? "s" : "d"}">${netProfit >= 0 ? "+" : ""}${fmtN(netProfit)}</td><td></td></tr></tbody></table>`
+          : `<div class="stats-row">${Object.entries(cashFlowByBank)
+              .map(
+                ([, value]) =>
+                  `<div class="stat-box"><div class="stat-label">${value.bankName}</div><div class="stat-value s">+${fmtN(value.inflow)}</div><div class="d" style="font-size:0.78rem;margin-top:0.15rem">-${fmtN(value.outflow)}</div></div>`,
+              )
+              .join(
+                "",
+              )}</div><table><thead><tr><th>Bank</th><th>Tanggal</th><th>Tipe</th><th>Deskripsi</th><th class="r">Jumlah</th><th class="r">Saldo</th></tr></thead><tbody>${sortedFilteredBankTx
+              .map((item) => {
+                const isIn =
+                  item.type === "CREDIT" || item.type === "TRANSFER_IN";
+                const bankName = resolveBankTransactionAccountName(
+                  item,
+                  allBankAccounts,
+                );
+                return `<tr><td>${bankName}</td><td>${item.date ? new Date(item.date).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "-"}</td><td>${item.type}</td><td>${item.description}</td><td class="r ${isIn ? "s" : "d"} b">${isIn ? "+" : "-"}${fmtN(item.amount)}</td><td class="r b">${fmtN(item.balanceAfter)}</td></tr>`;
+              })
+              .join("")}</tbody></table>`,
+      });
+    } catch (error) {
+      addToast(
+        "error",
+        error instanceof Error ? error.message : "Gagal menyiapkan dokumen print laporan",
+      );
+    }
   };
 
   if (loading)

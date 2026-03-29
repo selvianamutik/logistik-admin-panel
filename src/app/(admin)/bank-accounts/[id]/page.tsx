@@ -121,18 +121,23 @@ export default function BankAccountDetailPage() {
     };
 
     const handleExportExcel = () => {
-        exportToExcel(
-            transactions as unknown as Record<string, unknown>[],
-            [
-                { header: 'Tanggal', key: 'date', width: 15 },
-                { header: 'Tipe', key: 'type', width: 15 },
-                { header: 'Deskripsi', key: 'description', width: 35 },
-                { header: 'Jumlah', key: 'amount', width: 18 },
-                { header: 'Saldo Setelah', key: 'balanceAfter', width: 18 },
-            ],
-            `mutasi-${account?.bankName || 'akun'}-${new Date().toISOString().split('T')[0]}`,
-            'Transaksi'
-        );
+        try {
+            exportToExcel(
+                transactions as unknown as Record<string, unknown>[],
+                [
+                    { header: 'Tanggal', key: 'date', width: 15 },
+                    { header: 'Tipe', key: 'type', width: 15 },
+                    { header: 'Deskripsi', key: 'description', width: 35 },
+                    { header: 'Jumlah', key: 'amount', width: 18 },
+                    { header: 'Saldo Setelah', key: 'balanceAfter', width: 18 },
+                ],
+                `mutasi-${account?.bankName || 'akun'}-${new Date().toISOString().split('T')[0]}`,
+                'Transaksi'
+            );
+            addToast('success', 'Excel mutasi rekening berhasil di-download');
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan Excel mutasi rekening');
+        }
     };
 
     if (loading) {
