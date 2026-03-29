@@ -5,6 +5,7 @@
 
 import { createClient } from '@sanity/client';
 
+import { buildFreightNotaDisplayNumberFromParts } from '../src/lib/nota-numbering';
 import { loadScriptEnv, requireEnv } from './_env';
 
 loadScriptEnv();
@@ -84,6 +85,51 @@ function applyDocumentIssuerSnapshots() {
     if (!companyDoc) {
         return;
     }
+    const companyNumberingSettings =
+        typeof companyDoc.numberingSettings === 'object' && companyDoc.numberingSettings !== null
+            ? companyDoc.numberingSettings as Record<string, unknown>
+            : null;
+    const companyInvoiceSettings =
+        typeof companyDoc.invoiceSettings === 'object' && companyDoc.invoiceSettings !== null
+            ? companyDoc.invoiceSettings as Record<string, unknown>
+            : null;
+    const resolvedFooterNote =
+        typeof companyInvoiceSettings?.footerNote === 'string' && companyInvoiceSettings.footerNote.trim().length > 0
+            ? companyInvoiceSettings.footerNote
+            : undefined;
+    const invoiceBankAccountRefs = Array.isArray(companyInvoiceSettings?.invoiceBankAccountRefs)
+        ? companyInvoiceSettings.invoiceBankAccountRefs.filter(
+            (value): value is string => typeof value === 'string' && value.trim().length > 0
+        )
+        : [];
+    const bankAccountDocs = documents.filter((doc) => doc._type === 'bankAccount');
+    const invoiceInstructionAccounts = invoiceBankAccountRefs
+        .map((accountRef) => bankAccountDocs.find((doc) => doc._id === accountRef))
+        .filter((doc): doc is SeedDoc => Boolean(doc))
+        .filter((doc) => doc.active !== false && doc.accountType !== 'CASH')
+        .map((doc) => ({
+            bankAccountRef: doc._id,
+            bankName: typeof doc.bankName === 'string' ? doc.bankName : '',
+            accountNumber: typeof doc.accountNumber === 'string' ? doc.accountNumber : undefined,
+            accountHolder: typeof doc.accountHolder === 'string' ? doc.accountHolder : undefined,
+        }))
+        .filter((account) => account.bankName.trim().length > 0);
+    const resolvedInstructionAccounts = invoiceInstructionAccounts.length > 0
+        ? invoiceInstructionAccounts
+        : (
+            typeof companyDoc.bankName === 'string' && companyDoc.bankName.trim().length > 0
+                ? [{
+                    bankName: companyDoc.bankName,
+                    accountNumber: typeof companyDoc.bankAccount === 'string' ? companyDoc.bankAccount : undefined,
+                    accountHolder: typeof companyDoc.bankHolder === 'string' ? companyDoc.bankHolder : undefined,
+                }]
+                : []
+        );
+    const customersById = new Map(
+        documents
+            .filter((doc) => doc._type === 'customer')
+            .map((doc) => [doc._id, doc] as const)
+    );
     const resolvedLogoUrl =
         typeof companyDoc.logoUrl === 'string' && companyDoc.logoUrl.trim().length > 0
             ? companyDoc.logoUrl
@@ -107,6 +153,24 @@ function applyDocumentIssuerSnapshots() {
                     ? companyDoc.bankHolder
                     : 'Bagian Administrasi';
             doc.issuerCompanyNpwp = typeof companyDoc.npwp === 'string' ? companyDoc.npwp : undefined;
+            if (typeof doc.notaNumber === 'string' && typeof doc.issueDate === 'string') {
+                doc.notaDisplayNumber = buildFreightNotaDisplayNumberFromParts(
+                    doc.notaNumber,
+                    doc.issueDate,
+                    typeof companyNumberingSettings?.notaSeriesCode === 'string'
+                        ? companyNumberingSettings.notaSeriesCode
+                        : undefined,
+                );
+            }
+            doc.footerNote = resolvedFooterNote;
+            doc.instructionAccounts = resolvedInstructionAccounts.length > 0 ? resolvedInstructionAccounts : undefined;
+            const customerRef = typeof doc.customerRef === 'string' ? doc.customerRef : '';
+            const customerDoc = customerRef ? customersById.get(customerRef) : undefined;
+            if (customerDoc) {
+                doc.customerAddress = typeof customerDoc.address === 'string' ? customerDoc.address : undefined;
+                doc.customerContactPerson = typeof customerDoc.contactPerson === 'string' ? customerDoc.contactPerson : undefined;
+                doc.customerPhone = typeof customerDoc.phone === 'string' ? customerDoc.phone : undefined;
+            }
         }
     }
 }
