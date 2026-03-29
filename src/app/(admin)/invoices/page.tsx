@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Search, Plus, FileText, Printer, FileDown, Receipt } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import CurrencyInput from '@/components/CurrencyInput';
-import { fetchAdminCollectionData } from '@/lib/api/admin-client';
+import { fetchAdminCollectionData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { formatDate, formatCurrency, getReceivableNetAmount, PAYMENT_METHOD_MAP } from '@/lib/utils';
 import { buildFreightNotaPrintDocument, openBrandedPrint, fetchCompanyProfile, formatFreightNotaDisplayNumber, resolveDocumentIssuerProfile } from '@/lib/print';
 import { exportFreightNotaDetail, exportInvoices } from '@/lib/export';
@@ -438,12 +438,10 @@ export default function NotaListPage() {
     };
 
     const fetchNotaItems = async (notaId: string) => {
-        const response = await fetch(`/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ notaRef: notaId }))}`);
-        const payload = await response.json();
-        if (!response.ok) {
-            throw new Error(payload.error || 'Gagal memuat item nota');
-        }
-        return (payload.data || []) as FreightNotaItem[];
+        return fetchAllAdminCollectionData<FreightNotaItem>(
+            `/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ notaRef: notaId }))}`,
+            'Gagal memuat item nota',
+        );
     };
 
     const fetchCustomerSummary = async (customerRef?: string) => {
