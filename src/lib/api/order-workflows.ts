@@ -7,6 +7,7 @@ import {
     getOrderItemProgress,
     roundQuantity,
 } from '@/lib/order-item-progress';
+import { resolveCompanyLogoUrl } from '@/lib/branding';
 import { getSanityClient, sanityGetById, sanityGetNextNumber, sanityUpdate } from '@/lib/sanity';
 
 import {
@@ -1699,7 +1700,15 @@ export async function handleDeliveryOrderCreate(
 
     const doId = crypto.randomUUID();
     const doNumber = await sanityGetNextNumber('do', doDate);
-    const companyProfile = await sanityGetById<CompanyProfile>('company');
+    const companyProfile = await getSanityClient().fetch<Pick<CompanyProfile, 'name' | 'address' | 'phone' | 'email' | 'logoUrl'> | null>(
+        `*[_type == "companyProfile"][0]{
+            name,
+            address,
+            phone,
+            email,
+            logoUrl
+        }`
+    );
     const doDoc = {
         _id: doId,
         _type: 'deliveryOrder',
@@ -1707,7 +1716,7 @@ export async function handleDeliveryOrderCreate(
         issuerCompanyAddress: companyProfile?.address,
         issuerCompanyPhone: companyProfile?.phone,
         issuerCompanyEmail: companyProfile?.email,
-        issuerCompanyLogoUrl: companyProfile?.logoUrl,
+        issuerCompanyLogoUrl: resolveCompanyLogoUrl(companyProfile),
         orderRef,
         masterResi: order.masterResi,
         customerRef: orderCustomerRef || undefined,

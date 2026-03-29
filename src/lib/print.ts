@@ -278,14 +278,17 @@ export function formatFreightNotaDisplayNumber(
 }
 
 export function resolveFreightNotaIssuerProfile(
-    nota: Pick<FreightNota, 'issuerCompanyName' | 'issuerCompanyAddress' | 'issuerCompanyPhone' | 'issuerCompanyEmail' | 'issuerCompanyNpwp'>,
+    nota: Pick<FreightNota, 'issuerCompanyName' | 'issuerCompanyAddress' | 'issuerCompanyPhone' | 'issuerCompanyEmail' | 'issuerCompanyLogoUrl' | 'issuerCompanyNpwp'>,
     company?: CompanyProfile | null,
 ) {
+    const resolvedIssuer = resolveDocumentIssuerProfile(nota, company);
+
     return {
-        name: nota.issuerCompanyName?.trim() || company?.name || 'Gading Mas Surya',
-        address: nota.issuerCompanyAddress?.trim() || company?.address?.trim() || '',
-        phone: nota.issuerCompanyPhone?.trim() || company?.phone?.trim() || '',
-        email: nota.issuerCompanyEmail?.trim() || company?.email?.trim() || '',
+        name: resolvedIssuer?.name || 'Gading Mas Surya',
+        address: resolvedIssuer?.address || '',
+        phone: resolvedIssuer?.phone || '',
+        email: resolvedIssuer?.email || '',
+        logoUrl: resolvedIssuer?.logoUrl,
         npwp: nota.issuerCompanyNpwp?.trim() || company?.npwp?.trim() || '',
     };
 }

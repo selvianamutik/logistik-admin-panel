@@ -11,6 +11,7 @@ import {
     fmtDate,
     fmtNumber,
     formatFreightNotaDisplayNumber,
+    resolveDocumentIssuerProfile,
     resolveFreightNotaIssuerProfile,
     resolveInvoiceInstructionAccounts,
     type InvoiceInstructionAccount,
@@ -194,7 +195,7 @@ function getExcelImageExtension(base64: string): ExcelImageExtension | null {
     return null;
 }
 
-async function resolveCompanyLogoBase64(company?: CompanyProfile | null) {
+async function resolveCompanyLogoBase64(company?: Pick<CompanyProfile, 'logoUrl'> | null) {
     const logoUrl = resolveCompanyLogoUrl(company);
     if (!logoUrl) return null;
     if (logoUrl.startsWith('data:image/')) return logoUrl;
@@ -212,7 +213,7 @@ async function resolveCompanyLogoBase64(company?: CompanyProfile | null) {
 async function addCompanyLogoToWorksheet(
     workbook: ExcelJS.Workbook,
     worksheet: ExcelJS.Worksheet,
-    company?: CompanyProfile | null,
+    company?: Pick<CompanyProfile, 'logoUrl'> | null,
     placement: {
         col: number;
         row: number;
@@ -540,6 +541,7 @@ export async function exportFreightNotaDetail(
 ) {
     const resolvedCompany = company ?? await fetchCompanyProfile();
     const issuerProfile = resolveFreightNotaIssuerProfile(nota, resolvedCompany);
+    const issuerBranding = resolveDocumentIssuerProfile(nota, resolvedCompany);
     const displayNumber = formatFreightNotaDisplayNumber(nota, resolvedCompany);
     const groupedRows = items.reduce<Array<{
         no: number;
@@ -678,7 +680,7 @@ export async function exportFreightNotaDetail(
     const worksheet = workbook.addWorksheet(sanitizeSheetName('Nota Detail'));
     addRows(worksheet, rows);
     applyMerges(worksheet, merges);
-    const logoPlaced = await addCompanyLogoToWorksheet(workbook, worksheet, resolvedCompany, {
+    const logoPlaced = await addCompanyLogoToWorksheet(workbook, worksheet, issuerBranding, {
         col: 0.1,
         row: 0.1,
         width: 88,

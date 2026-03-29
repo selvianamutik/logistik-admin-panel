@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { resolveCompanyLogoUrl } from '@/lib/branding';
 import { getSanityClient, sanityCreate, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
 import { buildFreightNotaDisplayNumberFromParts } from '@/lib/nota-numbering';
 import type { FreightNotaInstructionAccount, InvoiceAdjustmentKind, Payment, PaymentMethod } from '@/lib/types';
@@ -54,6 +55,7 @@ async function loadFreightNotaDocumentSettings(): Promise<{
     issuerCompanyAddress?: string;
     issuerCompanyPhone?: string;
     issuerCompanyEmail?: string;
+    issuerCompanyLogoUrl?: string;
     issuerCompanyNpwp?: string;
 }> {
     const companyDoc = await getSanityClient().fetch<{
@@ -61,6 +63,7 @@ async function loadFreightNotaDocumentSettings(): Promise<{
         address?: string;
         phone?: string;
         email?: string;
+        logoUrl?: string;
         npwp?: string;
         bankName?: string;
         bankAccount?: string;
@@ -79,6 +82,7 @@ async function loadFreightNotaDocumentSettings(): Promise<{
             address,
             phone,
             email,
+            logoUrl,
             npwp,
             bankName,
             bankAccount,
@@ -139,6 +143,7 @@ async function loadFreightNotaDocumentSettings(): Promise<{
                 issuerCompanyAddress: normalizeOptionalText(companyDoc?.address),
                 issuerCompanyPhone: normalizeOptionalText(companyDoc?.phone),
                 issuerCompanyEmail: normalizeOptionalText(companyDoc?.email),
+                issuerCompanyLogoUrl: resolveCompanyLogoUrl(companyDoc),
                 issuerCompanyNpwp: normalizeOptionalText(companyDoc?.npwp),
             };
         }
@@ -154,6 +159,7 @@ async function loadFreightNotaDocumentSettings(): Promise<{
             issuerCompanyAddress: normalizeOptionalText(companyDoc?.address),
             issuerCompanyPhone: normalizeOptionalText(companyDoc?.phone),
             issuerCompanyEmail: normalizeOptionalText(companyDoc?.email),
+            issuerCompanyLogoUrl: resolveCompanyLogoUrl(companyDoc),
             issuerCompanyNpwp: normalizeOptionalText(companyDoc?.npwp),
         };
     }
@@ -170,6 +176,7 @@ async function loadFreightNotaDocumentSettings(): Promise<{
         issuerCompanyAddress: normalizeOptionalText(companyDoc?.address),
         issuerCompanyPhone: normalizeOptionalText(companyDoc?.phone),
         issuerCompanyEmail: normalizeOptionalText(companyDoc?.email),
+        issuerCompanyLogoUrl: resolveCompanyLogoUrl(companyDoc),
         issuerCompanyNpwp: normalizeOptionalText(companyDoc?.npwp),
     };
 }
@@ -1378,6 +1385,7 @@ export async function handleFreightNotaCreate(
         issuerCompanyAddress,
         issuerCompanyPhone,
         issuerCompanyEmail,
+        issuerCompanyLogoUrl,
         issuerCompanyNpwp,
     } = await loadFreightNotaDocumentSettings();
     const notaDisplayNumber = buildFreightNotaDisplayNumberFromParts(
@@ -1419,6 +1427,7 @@ export async function handleFreightNotaCreate(
         issuerCompanyAddress,
         issuerCompanyPhone,
         issuerCompanyEmail,
+        issuerCompanyLogoUrl,
         issuerCompanyNpwp,
         customerRef: resolvedCustomerRef,
         customerName: finalCustomerName,

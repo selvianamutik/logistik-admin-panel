@@ -80,13 +80,17 @@ function push(...docs: SeedDoc[]) {
 }
 
 function applyDocumentIssuerSnapshots() {
-    const companyDoc = documents.find((doc) => doc._type === 'companyProfile' && doc._id === 'company');
+    const companyDoc = documents.find((doc) => doc._type === 'companyProfile');
     if (!companyDoc) {
         return;
     }
+    const resolvedLogoUrl =
+        typeof companyDoc.logoUrl === 'string' && companyDoc.logoUrl.trim().length > 0
+            ? companyDoc.logoUrl
+            : '/logo.png';
 
     for (const doc of documents) {
-        if (doc._type !== 'deliveryOrder' && doc._type !== 'driverVoucher' && doc._type !== 'driverBorongan') {
+        if (doc._type !== 'deliveryOrder' && doc._type !== 'driverVoucher' && doc._type !== 'driverBorongan' && doc._type !== 'freightNota') {
             continue;
         }
 
@@ -94,7 +98,10 @@ function applyDocumentIssuerSnapshots() {
         doc.issuerCompanyAddress = typeof companyDoc.address === 'string' ? companyDoc.address : undefined;
         doc.issuerCompanyPhone = typeof companyDoc.phone === 'string' ? companyDoc.phone : undefined;
         doc.issuerCompanyEmail = typeof companyDoc.email === 'string' ? companyDoc.email : undefined;
-        doc.issuerCompanyLogoUrl = typeof companyDoc.logoUrl === 'string' ? companyDoc.logoUrl : undefined;
+        doc.issuerCompanyLogoUrl = resolvedLogoUrl;
+        if (doc._type === 'freightNota') {
+            doc.issuerCompanyNpwp = typeof companyDoc.npwp === 'string' ? companyDoc.npwp : undefined;
+        }
     }
 }
 

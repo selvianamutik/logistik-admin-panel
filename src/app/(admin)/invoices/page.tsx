@@ -7,7 +7,7 @@ import AppPagination from '@/components/AppPagination';
 import CurrencyInput from '@/components/CurrencyInput';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import { formatDate, formatCurrency, getReceivableNetAmount, PAYMENT_METHOD_MAP } from '@/lib/utils';
-import { buildFreightNotaPrintDocument, openBrandedPrint, fetchCompanyProfile, formatFreightNotaDisplayNumber } from '@/lib/print';
+import { buildFreightNotaPrintDocument, openBrandedPrint, fetchCompanyProfile, formatFreightNotaDisplayNumber, resolveDocumentIssuerProfile } from '@/lib/print';
 import { exportFreightNotaDetail, exportInvoices } from '@/lib/export';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { BankAccount, CompanyProfile, Customer, CustomerReceipt, FreightNota, FreightNotaItem, Payment } from '@/lib/types';
@@ -469,6 +469,7 @@ export default function NotaListPage() {
                     ? fetchCustomerSummary(nota.customerRef)
                     : Promise.resolve(null),
             ]);
+            const issuerBranding = resolveDocumentIssuerProfile(nota, resolvedCompany);
             setCompany(resolvedCompany);
             const doc = buildFreightNotaPrintDocument({
                 nota,
@@ -480,7 +481,7 @@ export default function NotaListPage() {
             openBrandedPrint({
                 title: doc.title,
                 subtitle: doc.subtitle,
-                company: resolvedCompany,
+                company: issuerBranding,
                 bodyHtml: doc.bodyHtml,
                 extraStyles: doc.extraStyles,
                 showCompanyHeader: doc.showCompanyHeader,

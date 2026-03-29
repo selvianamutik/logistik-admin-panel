@@ -15,7 +15,7 @@ import {
     resolvePaymentAccountLabel,
     sortInvoiceAdjustments,
 } from '@/lib/invoice-detail-page-support';
-import { buildFreightNotaPrintDocument, fetchCompanyProfile, formatFreightNotaDisplayNumber, openBrandedPrint } from '@/lib/print';
+import { buildFreightNotaPrintDocument, fetchCompanyProfile, formatFreightNotaDisplayNumber, openBrandedPrint, resolveDocumentIssuerProfile } from '@/lib/print';
 import { exportFreightNotaDetail } from '@/lib/export';
 import { formatDate, formatCurrency, INVOICE_ADJUSTMENT_KIND_MAP, PAYMENT_METHOD_MAP } from '@/lib/utils';
 import type { FreightNota, FreightNotaItem, Payment, BankAccount, CompanyProfile, InvoiceAdjustment, Customer } from '@/lib/types';
@@ -221,6 +221,7 @@ export default function NotaDetailPage() {
         if (!nota) return;
         try {
             const resolvedCompany = company ?? await fetchCompanyProfile();
+            const issuerBranding = resolveDocumentIssuerProfile(nota, resolvedCompany);
             setCompany(resolvedCompany);
             const doc = buildFreightNotaPrintDocument({
                 nota,
@@ -232,7 +233,7 @@ export default function NotaDetailPage() {
             openBrandedPrint({
                 title: doc.title,
                 subtitle: doc.subtitle,
-                company: resolvedCompany,
+                company: issuerBranding,
                 bodyHtml: doc.bodyHtml,
                 extraStyles: doc.extraStyles,
                 showCompanyHeader: doc.showCompanyHeader,

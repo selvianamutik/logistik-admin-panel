@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { resolveCompanyLogoUrl } from '@/lib/branding';
 import { getSanityClient, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
 import type { CompanyProfile } from '@/lib/types';
 
@@ -357,7 +358,15 @@ export async function handleDriverBoronganCreate(
 
     const boronganId = crypto.randomUUID();
     const boronganNumber = await sanityGetNextNumber('borong');
-    const companyProfile = await sanityGetById<CompanyProfile>('company');
+    const companyProfile = await getSanityClient().fetch<Pick<CompanyProfile, 'name' | 'address' | 'phone' | 'email' | 'logoUrl'> | null>(
+        `*[_type == "companyProfile"][0]{
+            name,
+            address,
+            phone,
+            email,
+            logoUrl
+        }`
+    );
     const boronganDoc = {
         _id: boronganId,
         _type: 'driverBorongan',
@@ -365,7 +374,7 @@ export async function handleDriverBoronganCreate(
         issuerCompanyAddress: companyProfile?.address,
         issuerCompanyPhone: companyProfile?.phone,
         issuerCompanyEmail: companyProfile?.email,
-        issuerCompanyLogoUrl: companyProfile?.logoUrl,
+        issuerCompanyLogoUrl: resolveCompanyLogoUrl(companyProfile),
         driverRef: resolvedDriverRef,
         driverName: finalDriverName,
         periodStart,
@@ -858,7 +867,15 @@ export async function handleDriverVoucherCreate(
     const voucherId = crypto.randomUUID();
     const initialDisbursementId = crypto.randomUUID();
     const issueTransactionId = crypto.randomUUID();
-    const companyProfile = await sanityGetById<CompanyProfile>('company');
+    const companyProfile = await getSanityClient().fetch<Pick<CompanyProfile, 'name' | 'address' | 'phone' | 'email' | 'logoUrl'> | null>(
+        `*[_type == "companyProfile"][0]{
+            name,
+            address,
+            phone,
+            email,
+            logoUrl
+        }`
+    );
     const driverFeeAmount = normalizeNumber(data.driverFeeAmount ?? requestedDriverFeeAmount);
     const voucherTotals = computeDriverVoucherTotals(cashGiven, 0, driverFeeAmount);
 
@@ -879,7 +896,7 @@ export async function handleDriverVoucherCreate(
             issuerCompanyAddress: companyProfile?.address,
             issuerCompanyPhone: companyProfile?.phone,
             issuerCompanyEmail: companyProfile?.email,
-            issuerCompanyLogoUrl: companyProfile?.logoUrl,
+            issuerCompanyLogoUrl: resolveCompanyLogoUrl(companyProfile),
             driverRef,
             driverName: canonicalDriverName,
             deliveryOrderRef,
