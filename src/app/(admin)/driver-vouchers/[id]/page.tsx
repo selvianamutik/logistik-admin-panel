@@ -284,29 +284,34 @@ export default function DriverVoucherDetailPage() {
         }
 
         setRepairingIssueLedger(true);
-        const res = await fetch('/api/data', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                entity: 'driver-vouchers',
-                action: 'repair-issue-ledger',
-                data: {
-                    id: voucher._id,
-                    issueBankRef: issueBankRepairRef,
-                },
-            }),
-        });
-        const result = await res.json();
-        setRepairingIssueLedger(false);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'driver-vouchers',
+                    action: 'repair-issue-ledger',
+                    data: {
+                        id: voucher._id,
+                        issueBankRef: issueBankRepairRef,
+                    },
+                }),
+            });
+            const result = await res.json();
 
-        if (!res.ok) {
-            addToast('error', result.error || 'Gagal merekonsiliasi pencairan bon');
-            return;
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal merekonsiliasi pencairan bon');
+                return;
+            }
+
+            setVoucher(result.data);
+            void loadVoucherDetail();
+            addToast('success', 'Pencairan bon berhasil direkonsiliasi');
+        } catch {
+            addToast('error', 'Gagal merekonsiliasi pencairan bon');
+        } finally {
+            setRepairingIssueLedger(false);
         }
-
-        setVoucher(result.data);
-        void loadVoucherDetail();
-        addToast('success', 'Pencairan bon berhasil direkonsiliasi');
     };
 
     const openSettleModal = () => {
@@ -332,30 +337,35 @@ export default function DriverVoucherDetailPage() {
         }
 
         setSettling(true);
-        const res = await fetch('/api/data', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                entity: 'driver-vouchers',
-                action: 'settle',
-                data: {
-                    id: params.id,
-                    date: settlementDate,
-                    settlementBankRef: settlementBankRef || undefined,
-                },
-            }),
-        });
-        const result = await res.json();
-        setSettling(false);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'driver-vouchers',
+                    action: 'settle',
+                    data: {
+                        id: params.id,
+                        date: settlementDate,
+                        settlementBankRef: settlementBankRef || undefined,
+                    },
+                }),
+            });
+            const result = await res.json();
 
-        if (!res.ok) {
-            addToast('error', result.error || 'Gagal menyelesaikan bon');
-            return;
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menyelesaikan bon');
+                return;
+            }
+
+            setVoucher(result.data);
+            setShowSettleModal(false);
+            addToast('success', 'Settlement trip selesai');
+        } catch {
+            addToast('error', 'Gagal menyelesaikan bon');
+        } finally {
+            setSettling(false);
         }
-
-        setVoucher(result.data);
-        setShowSettleModal(false);
-        addToast('success', 'Settlement trip selesai');
     };
 
     const handlePrint = async () => {
