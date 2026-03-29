@@ -1,6 +1,6 @@
 /* ============================================================
-   LOGISTIK — PDF: Surat Jalan (DO) Template
-   Pure jsPDF — no autoTable dependency
+   LOGISTIK - PDF: Surat Jalan (DO) Template
+   Pure jsPDF - no autoTable dependency
    ============================================================ */
 
 import jsPDF from 'jspdf';
@@ -8,7 +8,7 @@ import type { DeliveryOrder, DeliveryOrderItem, CompanyProfile } from '@/lib/typ
 import { DO_ACTUAL_DROP_TYPE_MAP, formatDate, formatInternalDeliveryOrderNumber, formatShipperDeliveryOrderNumber } from '@/lib/utils';
 import { formatCargoSummary } from '@/lib/measurement';
 
-// ── Simple table drawing helper ──
+// Simple table drawing helper
 function drawTable(
     doc: jsPDF,
     startY: number,
@@ -69,7 +69,7 @@ export function generateDOPdf(
     const contentWidth = pageWidth - 2 * margin;
     let y = 15;
 
-    // ─── Header ───
+    // Header
     doc.setFontSize(16);
     doc.setFont('helvetica', 'bold');
     doc.text(company.name, margin, y);
@@ -81,12 +81,12 @@ export function generateDOPdf(
     doc.text(`Telp: ${company.phone} | Email: ${company.email}`, margin, y);
     y += 8;
 
-    // ─── Divider ───
+    // Divider
     doc.setDrawColor(100, 100, 100);
     doc.line(margin, y, pageWidth - margin, y);
     y += 8;
 
-    // ─── Title ───
+    // Title
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
     doc.text('SURAT JALAN', pageWidth / 2, y, { align: 'center' });
@@ -96,7 +96,7 @@ export function generateDOPdf(
     doc.text(`No. DO Internal: ${formatInternalDeliveryOrderNumber(doData)}`, pageWidth / 2, y, { align: 'center' });
     y += 10;
 
-    // ─── Info Grid ───
+    // Info Grid
     const col2X = pageWidth / 2 + 10;
     doc.setFontSize(9);
 
@@ -132,7 +132,7 @@ export function generateDOPdf(
     addRow('Alamat Penerima', doData.receiverAddress || '-', margin, y);
     y += 8;
 
-    // ─── Items Table ───
+    // Items Table
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
     doc.text('Route Tagihan', margin, y);
@@ -211,7 +211,7 @@ export function generateDOPdf(
     y = drawTable(doc, y, ['No', 'Deskripsi Barang', 'Koli', 'Muatan'], tableRows, colWidths, margin);
     y += 6;
 
-    // ─── Notes ───
+    // Notes
     if (doData.notes) {
         doc.setFontSize(9);
         doc.setFont('helvetica', 'bold');
@@ -222,7 +222,7 @@ export function generateDOPdf(
         y += 10;
     }
 
-    // ─── Signature Fields ───
+    // Signature Fields
     y += 5;
     const sigWidth = contentWidth / 3;
     const sigY = y;
@@ -238,12 +238,13 @@ export function generateDOPdf(
         doc.text('(                            )', sx + sigWidth / 2, sigY + 33, { align: 'center' });
     });
 
-    // ─── Footer ───
+    // Footer
     const footerY = doc.internal.pageSize.getHeight() - 10;
     doc.setFontSize(7);
     doc.setTextColor(150);
     doc.text(`Dicetak: ${new Date().toLocaleString('id-ID')}`, margin, footerY);
-    doc.text(`${company.name} — ${formatInternalDeliveryOrderNumber(doData)}`, pageWidth - margin, footerY, { align: 'right' });
+    doc.text(`${company.name} - ${formatInternalDeliveryOrderNumber(doData)}`, pageWidth - margin, footerY, { align: 'right' });
 
     doc.save(`Surat-Jalan-${formatInternalDeliveryOrderNumber(doData)}.pdf`);
 }
+
