@@ -138,7 +138,7 @@ export default function BankAccountsPage() {
         };
         const [accountsRes, companyRes] = await Promise.all([
           loadAccounts(),
-          loadCompany(),
+          loadCompany().catch(() => null),
         ]);
         void accountsRes;
         setCompany(companyRes);

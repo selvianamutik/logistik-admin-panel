@@ -82,7 +82,7 @@ export default function BankAccountDetailPage() {
                         `/api/data?entity=bank-transactions&filter=${encodeURIComponent(JSON.stringify({ bankAccountRef: accountId }))}`,
                         'Gagal memuat detail rekening'
                     ),
-                    fetchCompanyProfile(),
+                    fetchCompanyProfile().catch(() => null),
                 ]);
                 setAccount(accountData);
                 setTransactions(
@@ -160,7 +160,7 @@ export default function BankAccountDetailPage() {
 
     const handlePrint = async () => {
         try {
-            const company = await fetchCompanyProfile();
+            const company = await fetchCompanyProfile().catch(() => null);
             const rows = transactions.length === 0
                 ? '<tr><td colspan="5" class="c">Belum ada transaksi</td></tr>'
                 : transactions.map(tx => {

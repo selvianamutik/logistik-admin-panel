@@ -170,7 +170,7 @@ export default function BoronganDetailPage() {
         if (!printContent) return;
 
         try {
-            const company = resolveDocumentIssuerProfile(borong, await fetchCompanyProfile());
+            const company = resolveDocumentIssuerProfile(borong, await fetchCompanyProfile().catch(() => null));
             openBrandedPrint({
                 title: 'Slip Borongan Supir',
                 subtitle: borong?.boronganNumber,

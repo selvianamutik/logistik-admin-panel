@@ -59,7 +59,7 @@ export default function NotaDetailPage() {
                 fetchAllAdminCollectionData<Payment>(`/api/data?entity=payments&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: notaId }))}`, 'Gagal memuat detail nota'),
                 fetchAllAdminCollectionData<InvoiceAdjustment>(`/api/data?entity=invoice-adjustments&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: notaId }))}`, 'Gagal memuat detail nota'),
                 fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat detail nota'),
-                fetchCompanyProfile(),
+                fetchCompanyProfile().catch(() => null),
             ]);
             let customerData: Pick<Customer, '_id' | 'name' | 'address' | 'contactPerson' | 'phone'> | null = null;
             if (notaData?.customerRef && !(notaData.customerAddress || notaData.customerContactPerson || notaData.customerPhone)) {
@@ -226,7 +226,7 @@ export default function NotaDetailPage() {
     const handlePrint = async () => {
         if (!nota) return;
         try {
-            const resolvedCompany = company ?? await fetchCompanyProfile();
+            const resolvedCompany = company ?? await fetchCompanyProfile().catch(() => null);
             const issuerBranding = resolveDocumentIssuerProfile(nota, resolvedCompany);
             setCompany(resolvedCompany);
             const doc = buildFreightNotaPrintDocument({
@@ -276,7 +276,7 @@ export default function NotaDetailPage() {
     const handleExportExcel = async () => {
         if (!nota) return;
         try {
-            const resolvedCompany = company ?? await fetchCompanyProfile();
+            const resolvedCompany = company ?? await fetchCompanyProfile().catch(() => null);
             setCompany(resolvedCompany);
             await exportFreightNotaDetail(nota, items, resolvedCompany, bankAccounts);
             addToast('success', 'Excel nota berhasil di-download');

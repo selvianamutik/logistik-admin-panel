@@ -130,7 +130,7 @@ export default function NotaListPage() {
             fetchAdminCollectionData<Customer[]>('/api/data?entity=customers', 'Gagal memuat customer'),
             fetchAdminCollectionData<CustomerReceipt[]>('/api/data?entity=customer-receipts', 'Gagal memuat penerimaan customer'),
             fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat rekening'),
-            fetchCompanyProfile(),
+            fetchCompanyProfile().catch(() => null),
         ]);
 
         const [notaPayload, summaryPayload] = await Promise.all([
@@ -461,7 +461,7 @@ export default function NotaListPage() {
     const handlePrintNota = async (nota: FreightNota) => {
         try {
             const [resolvedCompany, notaItems, customer] = await Promise.all([
-                company ? Promise.resolve(company) : fetchCompanyProfile(),
+                company ? Promise.resolve(company) : fetchCompanyProfile().catch(() => null),
                 fetchNotaItems(nota._id),
                 nota.customerRef && !(nota.customerAddress || nota.customerContactPerson || nota.customerPhone)
                     ? fetchCustomerSummary(nota.customerRef)
@@ -493,7 +493,7 @@ export default function NotaListPage() {
     const handleExportNota = async (nota: FreightNota) => {
         try {
             const [resolvedCompany, notaItems] = await Promise.all([
-                company ? Promise.resolve(company) : fetchCompanyProfile(),
+                company ? Promise.resolve(company) : fetchCompanyProfile().catch(() => null),
                 fetchNotaItems(nota._id),
             ]);
             setCompany(resolvedCompany);
@@ -528,7 +528,7 @@ export default function NotaListPage() {
                     </button>}
                     {canPrintInvoices && <button className="btn btn-secondary btn-sm" onClick={async () => {
                         try {
-                            const co = company ?? await fetchCompanyProfile();
+                            const co = company ?? await fetchCompanyProfile().catch(() => null);
                             const allMatchingNotas = await fetchAllMatchingInvoices();
                             setCompany(co);
                             openBrandedPrint({

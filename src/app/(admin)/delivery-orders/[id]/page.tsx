@@ -426,7 +426,7 @@ export default function DODetailPage() {
 
     const handlePrint = async () => {
         try {
-            const company = resolveDocumentIssuerProfile(doData, await fetchCompanyProfile());
+            const company = resolveDocumentIssuerProfile(doData, await fetchCompanyProfile().catch(() => null));
             openBrandedPrint({
                 title: 'Surat Jalan',
                 subtitle: formatInternalDeliveryOrderNumber(doData || {}),
@@ -440,12 +440,8 @@ export default function DODetailPage() {
 
     const handleExportPDF = async () => {
         try {
-            const companyRes = await fetch('/api/data?entity=company');
-            const companyData = await companyRes.json();
-            if (!companyRes.ok && !companyData.data) {
-                throw new Error(companyData.error || 'Profil perusahaan tidak tersedia');
-            }
-            const issuerCompany = resolveDocumentIssuerProfile(doData, companyData.data as CompanyProfile | null);
+            const companyData = await fetchCompanyProfile().catch(() => null);
+            const issuerCompany = resolveDocumentIssuerProfile(doData, companyData as CompanyProfile | null);
             if (!issuerCompany) {
                 throw new Error('Profil perusahaan tidak tersedia');
             }

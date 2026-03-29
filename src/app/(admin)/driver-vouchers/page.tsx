@@ -144,7 +144,7 @@ export default function DriverVouchersPage() {
                             className="btn btn-secondary btn-sm"
                             onClick={async () => {
                                 try {
-                                    const company = await fetchCompanyProfile();
+                                    const company = await fetchCompanyProfile().catch(() => null);
                                     const printableVouchers = await fetchAllMatchingVouchers();
                                     openBrandedPrint({
                                         title: 'Daftar Uang Jalan Trip',

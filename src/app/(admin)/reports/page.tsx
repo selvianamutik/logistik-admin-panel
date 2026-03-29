@@ -83,7 +83,7 @@ export default function ReportsPage() {
             fetchAllAdminCollectionData<DriverVoucher>("/api/data?entity=driver-vouchers", "Gagal memuat driver-vouchers"),
             fetchAllAdminCollectionData<BankAccount>("/api/data?entity=bank-accounts", "Gagal memuat bank-accounts"),
             fetchAllAdminCollectionData<BankTransaction>("/api/data?entity=bank-transactions", "Gagal memuat bank-transactions"),
-            fetchAdminData<CompanyProfile | null>("/api/data?entity=company", "Gagal memuat company"),
+            fetchAdminData<CompanyProfile | null>("/api/data?entity=company", "Gagal memuat company").catch(() => null),
           ]);
         setPayments(pay || []);
         setExpenses(exp || []);

@@ -198,7 +198,7 @@ export default function OrdersPage() {
                     </button>
                     <button className="btn btn-secondary btn-sm" onClick={async () => {
                         try {
-                            const co = await fetchCompanyProfile();
+                            const co = await fetchCompanyProfile().catch(() => null);
                             const printableOrders = await fetchAllMatchingOrders();
                             openBrandedPrint({
                                 title: 'Daftar Order / Resi', company: co, bodyHtml: `

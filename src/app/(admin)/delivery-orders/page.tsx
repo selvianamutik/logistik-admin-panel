@@ -171,7 +171,7 @@ export default function DeliveryOrdersPage() {
                     }}><FileDown size={15} /> Excel</button>}
                     {canPrintDeliveryOrders && <button className="btn btn-secondary btn-sm" onClick={async () => {
                         try {
-                            const co = await fetchCompanyProfile();
+                            const co = await fetchCompanyProfile().catch(() => null);
                             const printableDeliveryOrders = await fetchAllMatchingDeliveryOrders();
                             openBrandedPrint({
                                 title: 'Daftar Surat Jalan', company: co, bodyHtml: buildDeliveryOrdersPrintHtml(printableDeliveryOrders, services),

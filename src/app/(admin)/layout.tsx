@@ -158,7 +158,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 }
 
                 const session = await sessionRes.json();
-                const co = companyRes ? await companyRes.json() : { data: null };
+                let co: { data: CompanyProfile | null } = { data: null };
+                if (companyRes) {
+                    try {
+                        const companyPayload = await companyRes.json();
+                        co = { data: companyPayload?.data || null };
+                    } catch {
+                        co = { data: null };
+                    }
+                }
 
                 if (session.user) {
                     setUser(session.user);

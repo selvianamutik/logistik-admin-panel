@@ -248,7 +248,7 @@ export default function CustomersPage() {
                         className="btn btn-secondary btn-sm"
                         onClick={async () => {
                             try {
-                                const company = await fetchCompanyProfile();
+                                const company = await fetchCompanyProfile().catch(() => null);
                                 const printableCustomers = await fetchAllMatchingCustomers();
                                 const printableIds = printableCustomers.map(customer => customer._id).join(',');
                                 const summaryRes = await fetch(`/api/data?entity=customers-summary${printableIds ? `&ids=${encodeURIComponent(printableIds)}` : ''}`);

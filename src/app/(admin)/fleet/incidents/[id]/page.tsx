@@ -90,7 +90,7 @@ export default function IncidentDetailPage() {
     const available = getAvailableIncidentStatuses(incident.status);
     const handlePrint = async () => {
         try {
-            const company = resolveDocumentIssuerProfile(incident, await fetchCompanyProfile());
+            const company = resolveDocumentIssuerProfile(incident, await fetchCompanyProfile().catch(() => null));
             openBrandedPrint({
                 title: 'Laporan Insiden Armada',
                 subtitle: incident.incidentNumber,

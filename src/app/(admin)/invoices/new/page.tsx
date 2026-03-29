@@ -44,7 +44,7 @@ export default function NewNotaPage() {
             try {
                 const [cust, comp, dos, ords, doItems, notaItems] = await Promise.all([
                     fetchAdminCollectionData<Customer[]>('/api/data?entity=customers', 'Gagal memuat customer'),
-                    fetchAdminData<CompanyProfile | null>('/api/data?entity=company', 'Gagal memuat profil perusahaan'),
+                    fetchAdminData<CompanyProfile | null>('/api/data?entity=company', 'Gagal memuat profil perusahaan').catch(() => null),
                     fetchAdminCollectionData<DeliveryOrder[]>('/api/data?entity=delivery-orders', 'Gagal memuat surat jalan'),
                     fetchAdminCollectionData<Order[]>('/api/data?entity=orders', 'Gagal memuat order'),
                     fetchAdminCollectionData<DeliveryOrderItem[]>('/api/data?entity=delivery-order-items', 'Gagal memuat item DO'),

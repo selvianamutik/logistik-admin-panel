@@ -210,7 +210,7 @@ export default function ExpensesPage() {
                     }}><FileDown size={15} /> Excel</button>}
                     {canPrintExpenses && <button className="btn btn-secondary btn-sm" onClick={async () => {
                         try {
-                            const company = await fetchCompanyProfile();
+                            const company = await fetchCompanyProfile().catch(() => null);
                             const printableExpenses = await fetchAllMatchingExpenses();
                             const describeExpense = (expense: Expense) => {
                                 const vehicleLabel =

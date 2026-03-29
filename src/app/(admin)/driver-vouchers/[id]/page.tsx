@@ -370,7 +370,7 @@ export default function DriverVoucherDetailPage() {
 
     const handlePrint = async () => {
         try {
-            const company = resolveDocumentIssuerProfile(voucher, await fetchCompanyProfile());
+            const company = resolveDocumentIssuerProfile(voucher, await fetchCompanyProfile().catch(() => null));
             openBrandedPrint({
                 title: `Uang Jalan Trip ${voucher?.bonNumber}`,
                 company,
