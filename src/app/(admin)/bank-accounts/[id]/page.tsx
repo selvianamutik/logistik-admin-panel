@@ -294,7 +294,7 @@ export default function BankAccountDetailPage() {
                                 <div className="mobile-record-header">
                                     <div>
                                         <div className="mobile-record-title">{cfg.label}</div>
-                                        <div className="mobile-record-subtitle">{fmtDate(tx.date)} • {tx.description}</div>
+                                        <div className="mobile-record-subtitle">{fmtDate(tx.date)} | {tx.description}</div>
                                     </div>
                                     <span className={`badge ${cfg.badge}`}>{cfg.label}</span>
                                 </div>

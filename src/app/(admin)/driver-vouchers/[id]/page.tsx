@@ -359,12 +359,16 @@ export default function DriverVoucherDetailPage() {
     };
 
     const handlePrint = async () => {
-        const company = resolveDocumentIssuerProfile(voucher, await fetchCompanyProfile());
-        openBrandedPrint({
-            title: `Uang Jalan Trip ${voucher?.bonNumber}`,
-            company,
-            bodyHtml: voucher ? buildDriverVoucherPrintHtml({ voucher, items, disbursements, summary: buildDriverVoucherDetailSummary(voucher, items) }) : '',
-        });
+        try {
+            const company = resolveDocumentIssuerProfile(voucher, await fetchCompanyProfile());
+            openBrandedPrint({
+                title: `Uang Jalan Trip ${voucher?.bonNumber}`,
+                company,
+                bodyHtml: voucher ? buildDriverVoucherPrintHtml({ voucher, items, disbursements, summary: buildDriverVoucherDetailSummary(voucher, items) }) : '',
+            });
+        } catch {
+            addToast('error', 'Gagal menyiapkan dokumen cetak');
+        }
     };
 
     if (loading || !voucher) {

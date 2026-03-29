@@ -338,35 +338,53 @@ export default function BankAccountsPage() {
   };
 
   const handleExportExcel = async () => {
-    const printableAccounts = await fetchAllAccounts();
-    const rows = buildBankAccountExportRows(printableAccounts);
-    exportToExcel(
-      rows as unknown as Record<string, unknown>[],
-      [
-        { header: "Tipe", key: "accountType", width: 12 },
-        { header: "Bank", key: "bankName", width: 18 },
-        { header: "No. Rekening", key: "accountNumber", width: 20 },
-        { header: "Atas Nama", key: "accountHolder", width: 25 },
-        { header: "Saldo Awal", key: "initialBalance", width: 18 },
-        { header: "Saldo Saat Ini", key: "currentBalance", width: 18 },
-      ],
-      `rekening-dan-kas-${new Date().toISOString().split("T")[0]}`,
-      "Rekening dan Kas",
-    );
-    addToast("success", "Excel berhasil di-download");
+    try {
+      const printableAccounts = await fetchAllAccounts();
+      const rows = buildBankAccountExportRows(printableAccounts);
+      exportToExcel(
+        rows as unknown as Record<string, unknown>[],
+        [
+          { header: "Tipe", key: "accountType", width: 12 },
+          { header: "Bank", key: "bankName", width: 18 },
+          { header: "No. Rekening", key: "accountNumber", width: 20 },
+          { header: "Atas Nama", key: "accountHolder", width: 25 },
+          { header: "Saldo Awal", key: "initialBalance", width: 18 },
+          { header: "Saldo Saat Ini", key: "currentBalance", width: 18 },
+        ],
+        `rekening-dan-kas-${new Date().toISOString().split("T")[0]}`,
+        "Rekening dan Kas",
+      );
+      addToast("success", "Excel berhasil di-download");
+    } catch (error) {
+      addToast(
+        "error",
+        error instanceof Error
+          ? error.message
+          : "Gagal menyiapkan Excel rekening",
+      );
+    }
   };
 
   const handleBrandedPrint = async () => {
-    const printableAccounts = await fetchAllAccounts();
-    openBrandedPrint({
-      title: "Laporan Rekening dan Kas",
-      company,
-      bodyHtml: buildBankAccountPrintHtml({
-        accounts: printableAccounts,
-        totalBalance,
-        totalInitial,
-      }),
-    });
+    try {
+      const printableAccounts = await fetchAllAccounts();
+      openBrandedPrint({
+        title: "Laporan Rekening dan Kas",
+        company,
+        bodyHtml: buildBankAccountPrintHtml({
+          accounts: printableAccounts,
+          totalBalance,
+          totalInitial,
+        }),
+      });
+    } catch (error) {
+      addToast(
+        "error",
+        error instanceof Error
+          ? error.message
+          : "Gagal menyiapkan dokumen print rekening",
+      );
+    }
   };
 
   return (
