@@ -476,6 +476,7 @@ export interface FreightNota {
   issuerCompanyEmail?: string;
   issuerCompanyLogoUrl?: string;
   issuerCompanySignatureStampUrl?: string;
+  issuerCompanySignatureName?: string;
   issuerCompanyNpwp?: string;
   customerRef?: string;
   customerName: string;

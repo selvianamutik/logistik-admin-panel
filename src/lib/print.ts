@@ -332,11 +332,10 @@ export function buildFreightNotaPrintDocument(opts: {
         .trim()
         .replace(/^./, character => character.toUpperCase());
     const signatureName =
-        company?.bankHolder && company.bankHolder.trim().toLowerCase() !== issuerProfile.name.trim().toLowerCase()
-            ? company.bankHolder.trim()
-            : invoiceInstructionAccounts[0]?.accountHolder && invoiceInstructionAccounts[0].accountHolder.trim().toLowerCase() !== issuerProfile.name.trim().toLowerCase()
-                ? invoiceInstructionAccounts[0].accountHolder.trim()
-            : 'Bagian Administrasi';
+        nota.issuerCompanySignatureName?.trim()
+        || (invoiceInstructionAccounts[0]?.accountHolder && invoiceInstructionAccounts[0].accountHolder.trim().toLowerCase() !== issuerProfile.name.trim().toLowerCase()
+            ? invoiceInstructionAccounts[0].accountHolder.trim()
+            : 'Bagian Administrasi');
 
     const itemRowsHtml = items.map((item, index) => {
         const qtyText = item.collie && item.collie > 0 ? `${fmtNumber(item.collie)} koli` : '-';

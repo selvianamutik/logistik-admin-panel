@@ -57,6 +57,7 @@ async function loadFreightNotaDocumentSettings(): Promise<{
     issuerCompanyEmail?: string;
     issuerCompanyLogoUrl?: string;
     issuerCompanySignatureStampUrl?: string;
+    issuerCompanySignatureName?: string;
     issuerCompanyNpwp?: string;
 }> {
     const companyDoc = await getSanityClient().fetch<{
@@ -148,6 +149,10 @@ async function loadFreightNotaDocumentSettings(): Promise<{
                 issuerCompanyEmail: normalizeOptionalText(companyDoc?.email),
                 issuerCompanyLogoUrl: resolveCompanyLogoUrl(companyDoc),
                 issuerCompanySignatureStampUrl: normalizeOptionalText(companyDoc?.signatureStampUrl),
+                issuerCompanySignatureName:
+                    normalizeOptionalText(companyDoc?.bankHolder)
+                    || eligibleAccounts.find(account => account.accountHolder)?.accountHolder
+                    || 'Bagian Administrasi',
                 issuerCompanyNpwp: normalizeOptionalText(companyDoc?.npwp),
             };
         }
@@ -165,6 +170,9 @@ async function loadFreightNotaDocumentSettings(): Promise<{
             issuerCompanyEmail: normalizeOptionalText(companyDoc?.email),
             issuerCompanyLogoUrl: resolveCompanyLogoUrl(companyDoc),
             issuerCompanySignatureStampUrl: normalizeOptionalText(companyDoc?.signatureStampUrl),
+            issuerCompanySignatureName:
+                normalizeOptionalText(companyDoc?.bankHolder)
+                || 'Bagian Administrasi',
             issuerCompanyNpwp: normalizeOptionalText(companyDoc?.npwp),
         };
     }
@@ -183,6 +191,9 @@ async function loadFreightNotaDocumentSettings(): Promise<{
         issuerCompanyEmail: normalizeOptionalText(companyDoc?.email),
         issuerCompanyLogoUrl: resolveCompanyLogoUrl(companyDoc),
         issuerCompanySignatureStampUrl: normalizeOptionalText(companyDoc?.signatureStampUrl),
+        issuerCompanySignatureName:
+            normalizeOptionalText(companyDoc?.bankHolder)
+            || 'Bagian Administrasi',
         issuerCompanyNpwp: normalizeOptionalText(companyDoc?.npwp),
     };
 }
@@ -1393,6 +1404,7 @@ export async function handleFreightNotaCreate(
         issuerCompanyEmail,
         issuerCompanyLogoUrl,
         issuerCompanySignatureStampUrl,
+        issuerCompanySignatureName,
         issuerCompanyNpwp,
     } = await loadFreightNotaDocumentSettings();
     const notaDisplayNumber = buildFreightNotaDisplayNumberFromParts(
@@ -1436,6 +1448,7 @@ export async function handleFreightNotaCreate(
         issuerCompanyEmail,
         issuerCompanyLogoUrl,
         issuerCompanySignatureStampUrl,
+        issuerCompanySignatureName,
         issuerCompanyNpwp,
         customerRef: resolvedCustomerRef,
         customerName: finalCustomerName,

@@ -102,6 +102,10 @@ function applyDocumentIssuerSnapshots() {
         if (doc._type === 'freightNota') {
             doc.issuerCompanySignatureStampUrl =
                 typeof companyDoc.signatureStampUrl === 'string' ? companyDoc.signatureStampUrl : undefined;
+            doc.issuerCompanySignatureName =
+                typeof companyDoc.bankHolder === 'string' && companyDoc.bankHolder.trim().length > 0
+                    ? companyDoc.bankHolder
+                    : 'Bagian Administrasi';
             doc.issuerCompanyNpwp = typeof companyDoc.npwp === 'string' ? companyDoc.npwp : undefined;
         }
     }
