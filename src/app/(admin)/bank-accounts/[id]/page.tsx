@@ -120,9 +120,9 @@ export default function BankAccountDetailPage() {
         TRANSFER_OUT: { label: 'Transfer Keluar', badge: 'badge-danger', sign: '-', icon: <ArrowRightLeft size={14} /> },
     };
 
-    const handleExportExcel = () => {
+    const handleExportExcel = async () => {
         try {
-            exportToExcel(
+            await exportToExcel(
                 transactions as unknown as Record<string, unknown>[],
                 [
                     { header: 'Tanggal', key: 'date', width: 15 },

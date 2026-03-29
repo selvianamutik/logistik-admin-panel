@@ -152,7 +152,7 @@ export default function DeliveryOrdersPage() {
                     {canExportDeliveryOrders && <button className="btn btn-secondary btn-sm" onClick={async () => {
                         try {
                             const printableDeliveryOrders = await fetchAllMatchingDeliveryOrders();
-                            exportToExcel(buildDeliveryOrderExportRows(printableDeliveryOrders, services) as unknown as Record<string, unknown>[], [
+                            await exportToExcel(buildDeliveryOrderExportRows(printableDeliveryOrders, services) as unknown as Record<string, unknown>[], [
                                 { header: 'No. SJ Pengirim', key: 'customerDoNumber', width: 22 },
                                 { header: 'No. DO Internal', key: 'doNumber', width: 18 },
                                 { header: 'Resi', key: 'masterResi', width: 18 },

@@ -341,7 +341,7 @@ export default function BankAccountsPage() {
     try {
       const printableAccounts = await fetchAllAccounts();
       const rows = buildBankAccountExportRows(printableAccounts);
-      exportToExcel(
+      await exportToExcel(
         rows as unknown as Record<string, unknown>[],
         [
           { header: "Tipe", key: "accountType", width: 12 },

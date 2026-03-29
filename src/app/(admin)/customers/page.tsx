@@ -228,7 +228,7 @@ export default function CustomersPage() {
                         className="btn btn-secondary btn-sm"
                         onClick={async () => {
                             try {
-                                exportToExcel(await fetchAllMatchingCustomers() as unknown as Record<string, unknown>[], [
+                                await exportToExcel(await fetchAllMatchingCustomers() as unknown as Record<string, unknown>[], [
                                     { header: 'Nama', key: 'name', width: 25 },
                                     { header: 'Kontak', key: 'contactPerson', width: 20 },
                                     { header: 'Telepon', key: 'phone', width: 18 },

@@ -169,11 +169,11 @@ export default function ReportsPage() {
     } else setMonth((value) => value + 1);
   };
 
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
     try {
       if (tab === "pnl") {
         const rows = buildProfitLossExportRows(filteredPayments, filteredExpenses);
-        exportToExcel(
+        await exportToExcel(
           rows as unknown as Record<string, unknown>[],
           [
             { header: "Tipe", key: "tipe", width: 15 },
@@ -189,7 +189,7 @@ export default function ReportsPage() {
           sortedFilteredBankTx,
           allBankAccounts,
         );
-        exportToExcel(
+        await exportToExcel(
           rows as unknown as Record<string, unknown>[],
           [
             { header: "Bank", key: "bank", width: 15 },
