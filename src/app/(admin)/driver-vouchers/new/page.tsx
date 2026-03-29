@@ -37,8 +37,15 @@ export default function NewDriverVoucherPage() {
             fetchAdminCollectionData<Order[]>('/api/data?entity=orders', 'Gagal memuat form uang jalan trip'),
             fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat form uang jalan trip'),
             fetchAdminCollectionData<DriverVoucher[]>('/api/data?entity=driver-vouchers', 'Gagal memuat form uang jalan trip'),
-            fetchAdminCollectionData<Array<{ doRef?: string }>>('/api/data?entity=driver-borongan-items', 'Gagal memuat form uang jalan trip'),
-        ]).then(([driverRows, deliveryOrders, orderRows, accountRows, voucherRows, boronganItemRows]) => {
+            fetch('/api/data?entity=driver-borongan-do-refs')
+                .then(async response => {
+                    const payload = await response.json();
+                    if (!response.ok) {
+                        throw new Error(payload.error || 'Gagal memuat form uang jalan trip');
+                    }
+                    return (payload.data?.doRefs || []) as string[];
+                }),
+        ]).then(([driverRows, deliveryOrders, orderRows, accountRows, voucherRows, boronganDoRefs]) => {
             setDrivers((driverRows || []).filter((driver) => driver.active !== false));
             setDos((deliveryOrders || []).filter((deliveryOrder) => ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED'].includes(deliveryOrder.status)));
             setOrders(orderRows || []);
@@ -48,11 +55,7 @@ export default function NewDriverVoucherPage() {
                     .map(voucher => voucher.deliveryOrderRef)
                     .filter((value): value is string => Boolean(value))
             );
-            setUsedBoronganDoRefs(
-                (boronganItemRows || [])
-                    .map(item => item.doRef)
-                    .filter((value): value is string => Boolean(value))
-            );
+            setUsedBoronganDoRefs(boronganDoRefs || []);
         }).catch(error => {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat form uang jalan trip');
         }).finally(() => {

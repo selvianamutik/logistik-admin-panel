@@ -399,6 +399,23 @@ export async function getBoronganSummary(search = '', status = '') {
     };
 }
 
+export async function getDriverBoronganDoRefsSummary() {
+    const client = getSanityClient();
+    const rows = await client.fetch<Array<{ doRef?: string }>>(
+        `*[_type == "driverBoronganItem" && defined(doRef)]{ doRef }`
+    );
+
+    return {
+        doRefs: Array.from(
+            new Set(
+                rows
+                    .map(item => item.doRef)
+                    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+            )
+        ),
+    };
+}
+
 export type FreightNotasSummary = {
     filteredNetTotal: number;
     filteredOutstandingTotal: number;

@@ -63,6 +63,7 @@ import {
     getAuditLogsSummary,
     getBankAccountsSummary,
     getBoronganSummary,
+    getDriverBoronganDoRefsSummary,
     getCustomersSummary,
     getDashboardSummary,
     getExpensesSummary,
@@ -342,6 +343,19 @@ export async function GET(request: Request) {
             return jsonNoStore({ data: summary });
         } catch (err) {
             console.error('API GET Borongan Summary Error:', err);
+            return jsonNoStore({ error: 'Server error' }, { status: 500 });
+        }
+    }
+
+    if (entity === 'driver-borongan-do-refs') {
+        if (!hasPermission(session.role, 'driverVouchers', 'view')) {
+            return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
+        }
+        try {
+            const summary = await getDriverBoronganDoRefsSummary();
+            return jsonNoStore({ data: summary });
+        } catch (err) {
+            console.error('API GET Driver Borongan DO Ref Summary Error:', err);
             return jsonNoStore({ error: 'Server error' }, { status: 500 });
         }
     }
