@@ -302,10 +302,17 @@ function isProtectedLedgerEntity(entity: string) {
 function isWorkflowManagedCreateEntity(entity: string) {
     return (
         entity === 'orders' ||
+        entity === 'order-items' ||
         entity === 'delivery-orders' ||
+        entity === 'delivery-order-items' ||
+        entity === 'tracking-logs' ||
         entity === 'invoices' ||
+        entity === 'invoice-items' ||
         entity === 'freight-notas' ||
+        entity === 'freight-nota-items' ||
         entity === 'driver-borongans' ||
+        entity === 'driver-borogan-items' ||
+        entity === 'driver-borongan-items' ||
         entity === 'payments' ||
         entity === 'customer-receipts' ||
         entity === 'invoice-adjustments' ||
