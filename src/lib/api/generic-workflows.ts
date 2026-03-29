@@ -321,8 +321,31 @@ function isWorkflowManagedCreateEntity(entity: string) {
     );
 }
 
+function isWorkflowManagedUpdateEntity(entity: string) {
+    return (
+        entity === 'orders' ||
+        entity === 'order-items' ||
+        entity === 'delivery-order-items' ||
+        entity === 'tracking-logs' ||
+        entity === 'driver-vouchers' ||
+        entity === 'freight-notas' ||
+        entity === 'freight-nota-items' ||
+        entity === 'driver-borongans' ||
+        entity === 'driver-borogan-items' ||
+        entity === 'driver-borongan-items' ||
+        entity === 'driver-voucher-items' ||
+        entity === 'driver-voucher-disbursements' ||
+        entity === 'incidents' ||
+        entity === 'incident-action-logs' ||
+        entity === 'audit-logs'
+    );
+}
+
 function isWorkflowManagedDeleteEntity(entity: string) {
     return (
+        entity === 'driver-vouchers' ||
+        entity === 'incidents' ||
+        entity === 'incident-action-logs' ||
         entity === 'delivery-orders' ||
         entity === 'delivery-order-items' ||
         entity === 'order-items' ||
@@ -369,29 +392,8 @@ export async function handleGenericUpdate(
         return NextResponse.json({ error: 'Entri keuangan yang sudah terposting tidak boleh diubah lewat API umum' }, { status: 409 });
     }
 
-    if (entity === 'driver-vouchers') {
-        const existingVoucher = await sanityGetById<{ status?: string }>(id);
-        if (!existingVoucher) {
-            return NextResponse.json({ error: 'Bon supir tidak ditemukan' }, { status: 404 });
-        }
-        if (existingVoucher.status === 'SETTLED') {
-            return NextResponse.json({ error: 'Bon yang sudah settle tidak bisa diubah' }, { status: 409 });
-        }
-
-        const protectedFields = new Set([
-            'bonNumber',
-            'cashGiven',
-            'issueBankRef',
-            'issueBankName',
-            'status',
-            'settledDate',
-            'settledBy',
-            'settlementBankRef',
-            'settlementBankName',
-        ]);
-        if (Object.keys(updates).some(key => protectedFields.has(key))) {
-            return NextResponse.json({ error: 'Field uang jalan trip yang sensitif harus lewat workflow server' }, { status: 400 });
-        }
+    if (isWorkflowManagedUpdateEntity(entity)) {
+        return NextResponse.json({ error: 'Dokumen workflow ini tidak boleh diubah lewat API umum' }, { status: 409 });
     }
 
     if (entity === 'incidents' && typeof updates.status === 'string') {
