@@ -100,6 +100,8 @@ function applyDocumentIssuerSnapshots() {
         doc.issuerCompanyEmail = typeof companyDoc.email === 'string' ? companyDoc.email : undefined;
         doc.issuerCompanyLogoUrl = resolvedLogoUrl;
         if (doc._type === 'freightNota') {
+            doc.issuerCompanySignatureStampUrl =
+                typeof companyDoc.signatureStampUrl === 'string' ? companyDoc.signatureStampUrl : undefined;
             doc.issuerCompanyNpwp = typeof companyDoc.npwp === 'string' ? companyDoc.npwp : undefined;
         }
     }

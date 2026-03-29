@@ -366,10 +366,11 @@ export function buildFreightNotaPrintDocument(opts: {
         </tr>
     `).join('');
 
-    const companyLogo = resolveCompanyLogoUrl(company);
-    const logoHtml = `<img src="${escapePrintAttribute(companyLogo)}" alt="${escapePrintAttribute(company?.name || 'Logo perusahaan')}" class="invoice-logo" />`;
-    const signatureStampHtml = company?.signatureStampUrl
-        ? `<img src="${escapePrintAttribute(company.signatureStampUrl)}" alt="Tanda tangan" class="invoice-signature-image" />`
+    const companyLogo = resolveCompanyLogoUrl({ logoUrl: issuerProfile.logoUrl });
+    const logoHtml = `<img src="${escapePrintAttribute(companyLogo)}" alt="${escapePrintAttribute(issuerProfile.name || 'Logo perusahaan')}" class="invoice-logo" />`;
+    const signatureStampUrl = nota.issuerCompanySignatureStampUrl?.trim() || company?.signatureStampUrl?.trim() || '';
+    const signatureStampHtml = signatureStampUrl
+        ? `<img src="${escapePrintAttribute(signatureStampUrl)}" alt="Tanda tangan" class="invoice-signature-image" />`
         : '';
 
     const invoiceInstructionHtml = invoiceInstructionAccounts.map(account => `
