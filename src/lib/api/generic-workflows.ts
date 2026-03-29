@@ -65,11 +65,51 @@ type AuditLogFn = (
     summary: string
 ) => void | Promise<void>;
 
+const COMPANY_ASSET_DATA_URL_RE = /^data:image\/(?:png|jpeg|jpg|gif|webp|svg\+xml);base64,[a-z0-9+/=]+$/i;
+const COMPANY_ASSET_MAX_LENGTH = 1_500_000;
+
+function sanitizeCompanyAssetUrl(value: unknown, label: string) {
+    const normalized = normalizeOptionalText(value);
+    if (!normalized) {
+        return undefined;
+    }
+
+    if (normalized.length > COMPANY_ASSET_MAX_LENGTH) {
+        throw new Error(`${label} terlalu besar`);
+    }
+
+    if (normalized.startsWith('/')) {
+        return normalized;
+    }
+
+    if (COMPANY_ASSET_DATA_URL_RE.test(normalized)) {
+        return normalized;
+    }
+
+    try {
+        const url = new URL(normalized);
+        if (url.protocol === 'http:' || url.protocol === 'https:') {
+            return normalized;
+        }
+    } catch {
+        // Ignore parse error and fall through to the validation error below.
+    }
+
+    throw new Error(`${label} harus berupa URL gambar http(s), path internal, atau data URL image base64 yang valid`);
+}
+
 async function sanitizeCompanyInvoiceSettings(
     input: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
+    const sanitizedInput: Record<string, unknown> = {
+        ...input,
+        logoUrl: sanitizeCompanyAssetUrl(input.logoUrl, 'Logo perusahaan'),
+        headerStampUrl: sanitizeCompanyAssetUrl(input.headerStampUrl, 'Header stamp perusahaan'),
+        signatureStampUrl: sanitizeCompanyAssetUrl(input.signatureStampUrl, 'Stempel tanda tangan perusahaan'),
+    };
+
     if (!isPlainObject(input.invoiceSettings)) {
-        return input;
+        return sanitizedInput;
     }
 
     const invoiceSettings = input.invoiceSettings as Record<string, unknown>;
@@ -98,7 +138,7 @@ async function sanitizeCompanyInvoiceSettings(
             : invoiceBankAccountRefs[0];
 
     return {
-        ...input,
+        ...sanitizedInput,
         invoiceSettings: {
             ...invoiceSettings,
             invoiceBankAccountRefs,
@@ -822,7 +862,15 @@ export async function handleGenericCreate(
     addAuditLog: AuditLogFn
 ) {
     if (entity === 'company') {
-        const sanitizedCompanyData = await sanitizeCompanyInvoiceSettings(data);
+        let sanitizedCompanyData: Record<string, unknown>;
+        try {
+            sanitizedCompanyData = await sanitizeCompanyInvoiceSettings(data);
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Data perusahaan tidak valid' },
+                { status: 400 }
+            );
+        }
         const existing = await sanityGetCompanyProfile();
         if (existing?._id) {
             const updated = await sanityUpdate(existing._id, sanitizedCompanyData);
