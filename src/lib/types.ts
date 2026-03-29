@@ -520,6 +520,11 @@ export interface DriverBorongan {
   _id: string;
   _type: 'driverBorongan';
   boronganNumber: string;
+  issuerCompanyName?: string;
+  issuerCompanyAddress?: string;
+  issuerCompanyPhone?: string;
+  issuerCompanyEmail?: string;
+  issuerCompanyLogoUrl?: string;
   driverRef?: string;
   driverName: string;
   periodStart: string;

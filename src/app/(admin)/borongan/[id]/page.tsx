@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { CheckCircle, Printer, Trash2 } from 'lucide-react';
 import { useApp, useToast } from '../../layout';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
-import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
+import { fetchCompanyProfile, openBrandedPrint, resolveDocumentIssuerProfile } from '@/lib/print';
 import { normalizeUserRole } from '@/lib/rbac';
 import type { BankAccount, DriverBorongan, DriverBoronganItem } from '@/lib/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
@@ -161,7 +161,7 @@ export default function BoronganDetailPage() {
         if (!printContent) return;
 
         try {
-            const company = await fetchCompanyProfile();
+            const company = resolveDocumentIssuerProfile(borong, await fetchCompanyProfile());
             openBrandedPrint({
                 title: 'Slip Borongan Supir',
                 subtitle: borong?.boronganNumber,

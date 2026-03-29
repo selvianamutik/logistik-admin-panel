@@ -357,9 +357,15 @@ export async function handleDriverBoronganCreate(
 
     const boronganId = crypto.randomUUID();
     const boronganNumber = await sanityGetNextNumber('borong');
+    const companyProfile = await sanityGetById<CompanyProfile>('company');
     const boronganDoc = {
         _id: boronganId,
         _type: 'driverBorongan',
+        issuerCompanyName: companyProfile?.name,
+        issuerCompanyAddress: companyProfile?.address,
+        issuerCompanyPhone: companyProfile?.phone,
+        issuerCompanyEmail: companyProfile?.email,
+        issuerCompanyLogoUrl: companyProfile?.logoUrl,
         driverRef: resolvedDriverRef,
         driverName: finalDriverName,
         periodStart,

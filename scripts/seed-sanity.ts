@@ -86,7 +86,7 @@ function applyDocumentIssuerSnapshots() {
     }
 
     for (const doc of documents) {
-        if (doc._type !== 'deliveryOrder' && doc._type !== 'driverVoucher') {
+        if (doc._type !== 'deliveryOrder' && doc._type !== 'driverVoucher' && doc._type !== 'driverBorongan') {
             continue;
         }
 
