@@ -138,22 +138,26 @@ export default function BoronganDetailPage() {
 
     const handleDelete = async () => {
         if (!confirm('Hapus slip borongan ini?')) return;
-        const res = await fetch('/api/data', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                entity: 'driver-borongans',
-                action: 'delete',
-                data: { id: boronganId },
-            }),
-        });
-        const result = await res.json();
-        if (!res.ok) {
-            addToast('error', result.error || 'Gagal menghapus slip borongan');
-            return;
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'driver-borongans',
+                    action: 'delete',
+                    data: { id: boronganId },
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menghapus slip borongan');
+                return;
+            }
+            addToast('success', 'Slip dihapus');
+            router.push('/borongan');
+        } catch {
+            addToast('error', 'Gagal menghapus slip borongan');
         }
-        addToast('success', 'Slip dihapus');
-        router.push('/borongan');
     };
 
     const handlePrint = async () => {

@@ -246,17 +246,21 @@ export default function NotaDetailPage() {
 
     const handleDelete = async () => {
         if (!confirm('Hapus nota ini?')) return;
-        const res = await fetch('/api/data', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ entity: 'freight-notas', action: 'delete', data: { id: notaId } })
-        });
-        const result = await res.json();
-        if (!res.ok) {
-            addToast('error', result.error || 'Gagal menghapus nota');
-            return;
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entity: 'freight-notas', action: 'delete', data: { id: notaId } })
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menghapus nota');
+                return;
+            }
+            addToast('success', 'Nota dihapus');
+            router.push('/invoices');
+        } catch {
+            addToast('error', 'Gagal menghapus nota');
         }
-        addToast('success', 'Nota dihapus');
-        router.push('/invoices');
     };
 
     const handleExportExcel = async () => {
