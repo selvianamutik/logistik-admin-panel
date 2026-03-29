@@ -34,6 +34,7 @@ import {
 } from './generic-workflow-support';
 import {
     handleDriverBoronganDelete,
+    handleDriverVoucherDisbursementDelete,
     handleDriverVoucherItemDelete,
 } from './driver-workflows';
 import { handleFreightNotaDelete } from './finance-workflows';
@@ -98,21 +99,41 @@ function sanitizeCompanyAssetUrl(value: unknown, label: string) {
     throw new Error(`${label} harus berupa URL gambar http(s), path internal, atau data URL image base64 yang valid`);
 }
 
-async function sanitizeCompanyInvoiceSettings(
-    input: Record<string, unknown>
-): Promise<Record<string, unknown>> {
-    const sanitizedInput: Record<string, unknown> = {
-        ...input,
-        logoUrl: sanitizeCompanyAssetUrl(input.logoUrl, 'Logo perusahaan'),
-        headerStampUrl: sanitizeCompanyAssetUrl(input.headerStampUrl, 'Header stamp perusahaan'),
-        signatureStampUrl: sanitizeCompanyAssetUrl(input.signatureStampUrl, 'Stempel tanda tangan perusahaan'),
-    };
-
-    if (!isPlainObject(input.invoiceSettings)) {
-        return sanitizedInput;
+function sanitizeCompanyCounter(value: unknown, fallback = 0) {
+    const normalized = normalizeNumber(value);
+    if (!Number.isFinite(normalized) || normalized < 0) {
+        return fallback;
     }
+    return Math.floor(normalized);
+}
 
-    const invoiceSettings = input.invoiceSettings as Record<string, unknown>;
+function sanitizeCompanyThemeColor(value: unknown, fallback?: string) {
+    const normalized = normalizeOptionalText(value);
+    if (!normalized) {
+        return fallback;
+    }
+    return /^#[0-9a-f]{6}$/i.test(normalized) ? normalized : fallback;
+}
+
+async function sanitizeCompanyInvoiceSettings(
+    input: Record<string, unknown>,
+    existingCompany?: CompanyProfile | null,
+): Promise<Record<string, unknown>> {
+    const existingNumbering = isPlainObject(existingCompany?.numberingSettings)
+        ? existingCompany.numberingSettings as Record<string, unknown>
+        : {};
+    const numberingInput = isPlainObject(input.numberingSettings) ? input.numberingSettings as Record<string, unknown> : {};
+    const existingInvoiceSettings = isPlainObject(existingCompany?.invoiceSettings)
+        ? existingCompany.invoiceSettings as Record<string, unknown>
+        : {};
+    const invoiceSettings = isPlainObject(input.invoiceSettings) ? input.invoiceSettings as Record<string, unknown> : {};
+    const existingDocumentSettings = isPlainObject(existingCompany?.documentSettings)
+        ? existingCompany.documentSettings as Record<string, unknown>
+        : {};
+    const documentSettingsInput = isPlainObject(input.documentSettings)
+        ? input.documentSettings as Record<string, unknown>
+        : {};
+
     const rawSelectedRefs = Array.isArray(invoiceSettings.invoiceBankAccountRefs)
         ? invoiceSettings.invoiceBankAccountRefs
         : [];
@@ -138,11 +159,79 @@ async function sanitizeCompanyInvoiceSettings(
             : invoiceBankAccountRefs[0];
 
     return {
-        ...sanitizedInput,
+        name: normalizeOptionalText(input.name) || normalizeOptionalText(existingCompany?.name) || 'Gading Mas Surya',
+        address: normalizeOptionalText(input.address) || normalizeOptionalText(existingCompany?.address) || '-',
+        phone: normalizeOptionalText(input.phone) || normalizeOptionalText(existingCompany?.phone) || '-',
+        email: normalizeOptionalText(input.email) || normalizeOptionalText(existingCompany?.email) || '-',
+        npwp: normalizeOptionalText(input.npwp) || normalizeOptionalText(existingCompany?.npwp),
+        bankName: normalizeOptionalText(input.bankName) || normalizeOptionalText(existingCompany?.bankName),
+        bankAccount: normalizeOptionalText(input.bankAccount) || normalizeOptionalText(existingCompany?.bankAccount),
+        bankHolder: normalizeOptionalText(input.bankHolder) || normalizeOptionalText(existingCompany?.bankHolder),
+        themeColor: sanitizeCompanyThemeColor(input.themeColor, sanitizeCompanyThemeColor(existingCompany?.themeColor)),
+        logoUrl: sanitizeCompanyAssetUrl(input.logoUrl, 'Logo perusahaan') ?? sanitizeCompanyAssetUrl(existingCompany?.logoUrl, 'Logo perusahaan'),
+        headerStampUrl:
+            sanitizeCompanyAssetUrl(input.headerStampUrl, 'Header stamp perusahaan')
+            ?? sanitizeCompanyAssetUrl(existingCompany?.headerStampUrl, 'Header stamp perusahaan'),
+        signatureStampUrl:
+            sanitizeCompanyAssetUrl(input.signatureStampUrl, 'Stempel tanda tangan perusahaan')
+            ?? sanitizeCompanyAssetUrl(existingCompany?.signatureStampUrl, 'Stempel tanda tangan perusahaan'),
+        numberingSettings: {
+            resiPrefix: normalizeOptionalText(numberingInput.resiPrefix) || normalizeOptionalText(existingNumbering.resiPrefix) || 'R-',
+            resiCounter: sanitizeCompanyCounter(numberingInput.resiCounter, sanitizeCompanyCounter(existingNumbering.resiCounter)),
+            resiPeriod: normalizeOptionalText(numberingInput.resiPeriod) || normalizeOptionalText(existingNumbering.resiPeriod),
+            doPrefix: normalizeOptionalText(numberingInput.doPrefix) || normalizeOptionalText(existingNumbering.doPrefix) || 'DO-',
+            doCounter: sanitizeCompanyCounter(numberingInput.doCounter, sanitizeCompanyCounter(existingNumbering.doCounter)),
+            doPeriod: normalizeOptionalText(numberingInput.doPeriod) || normalizeOptionalText(existingNumbering.doPeriod),
+            invoicePrefix: normalizeOptionalText(numberingInput.invoicePrefix) || normalizeOptionalText(existingNumbering.invoicePrefix) || 'INV-',
+            invoiceCounter: sanitizeCompanyCounter(numberingInput.invoiceCounter, sanitizeCompanyCounter(existingNumbering.invoiceCounter)),
+            invoicePeriod: normalizeOptionalText(numberingInput.invoicePeriod) || normalizeOptionalText(existingNumbering.invoicePeriod),
+            notaPrefix: normalizeOptionalText(numberingInput.notaPrefix) || normalizeOptionalText(existingNumbering.notaPrefix) || 'NOTA-',
+            notaCounter: sanitizeCompanyCounter(numberingInput.notaCounter, sanitizeCompanyCounter(existingNumbering.notaCounter)),
+            notaPeriod: normalizeOptionalText(numberingInput.notaPeriod) || normalizeOptionalText(existingNumbering.notaPeriod),
+            notaSeriesCode: normalizeOptionalText(numberingInput.notaSeriesCode) || normalizeOptionalText(existingNumbering.notaSeriesCode) || '3',
+            receiptPrefix: normalizeOptionalText(numberingInput.receiptPrefix) || normalizeOptionalText(existingNumbering.receiptPrefix) || 'RCV-',
+            receiptCounter: sanitizeCompanyCounter(numberingInput.receiptCounter, sanitizeCompanyCounter(existingNumbering.receiptCounter)),
+            receiptPeriod: normalizeOptionalText(numberingInput.receiptPeriod) || normalizeOptionalText(existingNumbering.receiptPeriod),
+            boronganPrefix: normalizeOptionalText(numberingInput.boronganPrefix) || normalizeOptionalText(existingNumbering.boronganPrefix) || 'BRG-',
+            boronganCounter: sanitizeCompanyCounter(numberingInput.boronganCounter, sanitizeCompanyCounter(existingNumbering.boronganCounter)),
+            boronganPeriod: normalizeOptionalText(numberingInput.boronganPeriod) || normalizeOptionalText(existingNumbering.boronganPeriod),
+            bonPrefix: normalizeOptionalText(numberingInput.bonPrefix) || normalizeOptionalText(existingNumbering.bonPrefix) || 'BON-',
+            bonCounter: sanitizeCompanyCounter(numberingInput.bonCounter, sanitizeCompanyCounter(existingNumbering.bonCounter)),
+            bonPeriod: normalizeOptionalText(numberingInput.bonPeriod) || normalizeOptionalText(existingNumbering.bonPeriod),
+            incidentPrefix: normalizeOptionalText(numberingInput.incidentPrefix) || normalizeOptionalText(existingNumbering.incidentPrefix) || 'INC-',
+            incidentCounter: sanitizeCompanyCounter(numberingInput.incidentCounter, sanitizeCompanyCounter(existingNumbering.incidentCounter)),
+            incidentPeriod: normalizeOptionalText(numberingInput.incidentPeriod) || normalizeOptionalText(existingNumbering.incidentPeriod),
+        },
         invoiceSettings: {
-            ...invoiceSettings,
+            defaultTermDays: sanitizeCompanyCounter(
+                invoiceSettings.defaultTermDays,
+                sanitizeCompanyCounter(existingInvoiceSettings.defaultTermDays, 30),
+            ),
+            dueDateDays: sanitizeCompanyCounter(
+                invoiceSettings.dueDateDays,
+                sanitizeCompanyCounter(existingInvoiceSettings.dueDateDays, 14),
+            ),
+            footerNote: normalizeOptionalText(invoiceSettings.footerNote) || normalizeOptionalText(existingInvoiceSettings.footerNote) || '',
+            invoiceMode:
+                invoiceSettings.invoiceMode === 'DO' || invoiceSettings.invoiceMode === 'ORDER'
+                    ? invoiceSettings.invoiceMode
+                    : existingInvoiceSettings.invoiceMode === 'DO'
+                        ? 'DO'
+                        : 'ORDER',
             invoiceBankAccountRefs,
             defaultInvoiceBankAccountRef,
+        },
+        documentSettings: {
+            showContact:
+                typeof documentSettingsInput.showContact === 'boolean'
+                    ? documentSettingsInput.showContact
+                    : typeof existingDocumentSettings.showContact === 'boolean'
+                        ? existingDocumentSettings.showContact
+                        : true,
+            dateFormat:
+                normalizeOptionalText(documentSettingsInput.dateFormat)
+                || normalizeOptionalText(existingDocumentSettings.dateFormat)
+                || 'DD/MM/YYYY',
         },
     };
 }
@@ -217,10 +306,18 @@ function isWorkflowManagedCreateEntity(entity: string) {
         entity === 'invoices' ||
         entity === 'freight-notas' ||
         entity === 'driver-borongans' ||
+        entity === 'payments' ||
         entity === 'customer-receipts' ||
         entity === 'invoice-adjustments' ||
         entity === 'incomes' ||
-        entity === 'bank-transactions'
+        entity === 'expenses' ||
+        entity === 'bank-transactions' ||
+        entity === 'driver-vouchers' ||
+        entity === 'driver-voucher-items' ||
+        entity === 'driver-voucher-disbursements' ||
+        entity === 'incidents' ||
+        entity === 'incident-action-logs' ||
+        entity === 'audit-logs'
     );
 }
 
@@ -261,10 +358,12 @@ export async function handleGenericUpdate(
     addAuditLog: AuditLogFn
 ) {
     const id = typeof data.id === 'string' ? data.id : '';
-    const updates = isPlainObject(data.updates) ? data.updates : null;
-    if (!id || !updates) {
+    const updatesInput = isPlainObject(data.updates) ? data.updates : null;
+    if (!id || !updatesInput) {
         return NextResponse.json({ error: 'Invalid update payload' }, { status: 400 });
     }
+    const updates: Record<string, unknown> = { ...updatesInput };
+    let sanitizedEntityUpdates: Record<string, unknown> | null = null;
 
     if (isProtectedLedgerEntity(entity)) {
         return NextResponse.json({ error: 'Entri keuangan yang sudah terposting tidak boleh diubah lewat API umum' }, { status: 409 });
@@ -474,7 +573,7 @@ export async function handleGenericUpdate(
         }
 
         try {
-            Object.assign(updates, normalizeCustomerPayload(updates, existingCustomer));
+            sanitizedEntityUpdates = normalizeCustomerPayload(updates, existingCustomer);
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Data customer tidak valid' },
@@ -490,7 +589,7 @@ export async function handleGenericUpdate(
         }
 
         try {
-            Object.assign(updates, await normalizeCustomerProductPayload(updates, existingCustomerProduct));
+            sanitizedEntityUpdates = await normalizeCustomerProductPayload(updates, existingCustomerProduct);
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Data barang customer tidak valid' },
@@ -506,7 +605,7 @@ export async function handleGenericUpdate(
         }
 
         try {
-            Object.assign(updates, await normalizeCustomerRecipientPayload(updates, existingCustomerRecipient));
+            sanitizedEntityUpdates = await normalizeCustomerRecipientPayload(updates, existingCustomerRecipient);
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Data master penerima tidak valid' },
@@ -522,7 +621,7 @@ export async function handleGenericUpdate(
         }
 
         try {
-            Object.assign(updates, await normalizeCustomerPickupPayload(updates, existingCustomerPickup));
+            sanitizedEntityUpdates = await normalizeCustomerPickupPayload(updates, existingCustomerPickup);
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Data master pickup tidak valid' },
@@ -538,7 +637,7 @@ export async function handleGenericUpdate(
         }
 
         try {
-            Object.assign(updates, await normalizeTripRouteRatePayload(updates, existingTripRouteRate));
+            sanitizedEntityUpdates = await normalizeTripRouteRatePayload(updates, existingTripRouteRate);
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Data biaya rute trip tidak valid' },
@@ -598,31 +697,25 @@ export async function handleGenericUpdate(
         if ('currentBalance' in updates || 'initialBalance' in updates) {
             return NextResponse.json({ error: 'Saldo rekening tidak boleh diubah manual lewat API umum' }, { status: 409 });
         }
+        if ('active' in updates) {
+            return NextResponse.json({ error: 'Status rekening hanya boleh diubah lewat aksi nonaktifkan resmi' }, { status: 409 });
+        }
+        if ('accountType' in updates || 'systemKey' in updates) {
+            return NextResponse.json({ error: 'Tipe dan kunci sistem rekening tidak boleh diubah manual' }, { status: 409 });
+        }
 
         const existingAccount = await sanityGetById<BankAccountSummary>(id);
         if (!existingAccount) {
             return NextResponse.json({ error: 'Rekening tidak ditemukan' }, { status: 404 });
         }
-        if ('active' in updates && updates.active === false) {
-            const currentBalance = typeof existingAccount.currentBalance === 'number' ? existingAccount.currentBalance : 0;
-            if (currentBalance !== 0) {
-                return NextResponse.json(
-                    { error: 'Rekening dengan saldo berjalan tidak boleh dinonaktifkan. Kosongkan atau transfer dulu saldonya.' },
-                    { status: 409 }
-                );
-            }
-        }
         if (existingAccount.systemKey === CASH_ACCOUNT_SYSTEM_KEY) {
-            if ('active' in updates && updates.active === false) {
-                return NextResponse.json({ error: 'Akun Kas Tunai sistem tidak boleh dinonaktifkan' }, { status: 409 });
-            }
             if ('bankName' in updates || 'accountNumber' in updates || 'accountHolder' in updates || 'accountType' in updates || 'systemKey' in updates) {
                 return NextResponse.json({ error: 'Identitas akun Kas Tunai sistem tidak boleh diubah manual' }, { status: 409 });
             }
         }
 
         try {
-            Object.assign(updates, normalizeBankAccountPayload(updates, existingAccount as unknown as Record<string, unknown>));
+            sanitizedEntityUpdates = normalizeBankAccountPayload(updates, existingAccount as unknown as Record<string, unknown>);
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Data rekening / kas tidak valid' },
@@ -640,7 +733,7 @@ export async function handleGenericUpdate(
                     ? await normalizeExpenseCategoryPayload(updates, { partial: true, excludeId: id })
                     : entity === 'vehicles'
                             ? await normalizeVehiclePayload(session, updates, { partial: true, excludeId: id })
-                            : updates;
+                            : sanitizedEntityUpdates ?? updates;
 
     const updated = await sanityUpdate(id, normalizedUpdates);
     if (!updated) {
@@ -697,6 +790,10 @@ export async function handleGenericDelete(
     data: Record<string, unknown>,
     addAuditLog: AuditLogFn
 ) {
+    if (entity === 'driver-voucher-disbursements') {
+        return handleDriverVoucherDisbursementDelete(session, data, addAuditLog);
+    }
+
     if (entity === 'driver-voucher-items') {
         return handleDriverVoucherItemDelete(session, data, addAuditLog);
     }
@@ -862,16 +959,16 @@ export async function handleGenericCreate(
     addAuditLog: AuditLogFn
 ) {
     if (entity === 'company') {
+        const existing = await sanityGetCompanyProfile();
         let sanitizedCompanyData: Record<string, unknown>;
         try {
-            sanitizedCompanyData = await sanitizeCompanyInvoiceSettings(data);
+            sanitizedCompanyData = await sanitizeCompanyInvoiceSettings(data, existing);
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Data perusahaan tidak valid' },
                 { status: 400 }
             );
         }
-        const existing = await sanityGetCompanyProfile();
         if (existing?._id) {
             const updated = await sanityUpdate(existing._id, sanitizedCompanyData);
             await addAuditLog(session, 'UPDATE', 'companyProfile', existing._id, 'Company profile updated');
@@ -888,7 +985,8 @@ export async function handleGenericCreate(
         return NextResponse.json({ error: 'Dokumen ini harus dibuat lewat workflow server yang sesuai' }, { status: 409 });
     }
 
-    const newDoc: { _type: string; [key: string]: unknown } = { _type: docType, ...data };
+    const newDoc: { _type: string; [key: string]: unknown } = { _type: docType };
+    let shouldMergeRawCreatePayload = true;
 
     if (entity === 'delivery-order-items') {
         const deliveryOrderRef = typeof data.deliveryOrderRef === 'string' ? data.deliveryOrderRef : '';
@@ -925,6 +1023,7 @@ export async function handleGenericCreate(
     }
 
     if (entity === 'orders') {
+        shouldMergeRawCreatePayload = false;
         newDoc.masterResi = await sanityGetNextNumber('resi');
         newDoc.status = 'OPEN';
         newDoc.createdAt = new Date().toISOString();
@@ -932,36 +1031,43 @@ export async function handleGenericCreate(
     }
 
     if (entity === 'delivery-orders') {
+        shouldMergeRawCreatePayload = false;
         newDoc.doNumber = await sanityGetNextNumber('do');
         newDoc.status = 'CREATED';
     }
 
     if (entity === 'invoices') {
+        shouldMergeRawCreatePayload = false;
         newDoc.invoiceNumber = await sanityGetNextNumber('invoice');
         newDoc.status = 'UNPAID';
     }
 
     if (entity === 'freight-notas') {
+        shouldMergeRawCreatePayload = false;
         newDoc.notaNumber = await sanityGetNextNumber('nota');
         newDoc.status = 'UNPAID';
     }
 
     if (entity === 'driver-borongans') {
+        shouldMergeRawCreatePayload = false;
         newDoc.boronganNumber = await sanityGetNextNumber('borong');
         newDoc.status = 'UNPAID';
     }
 
     if (entity === 'maintenances') {
+        shouldMergeRawCreatePayload = false;
         const normalizedMaintenance = await normalizeMaintenanceCreatePayload(data);
         Object.assign(newDoc, normalizedMaintenance);
         newDoc.status = 'SCHEDULED';
     }
 
     if (entity === 'services') {
+        shouldMergeRawCreatePayload = false;
         Object.assign(newDoc, await normalizeServicePayload(data));
     }
 
     if (entity === 'customers') {
+        shouldMergeRawCreatePayload = false;
         try {
             Object.assign(newDoc, normalizeCustomerPayload(data));
         } catch (error) {
@@ -973,6 +1079,7 @@ export async function handleGenericCreate(
     }
 
     if (entity === 'customer-products') {
+        shouldMergeRawCreatePayload = false;
         try {
             Object.assign(newDoc, await normalizeCustomerProductPayload(data));
         } catch (error) {
@@ -984,6 +1091,7 @@ export async function handleGenericCreate(
     }
 
     if (entity === 'customer-recipients') {
+        shouldMergeRawCreatePayload = false;
         try {
             Object.assign(newDoc, await normalizeCustomerRecipientPayload(data));
         } catch (error) {
@@ -995,6 +1103,7 @@ export async function handleGenericCreate(
     }
 
     if (entity === 'customer-pickups') {
+        shouldMergeRawCreatePayload = false;
         try {
             Object.assign(newDoc, await normalizeCustomerPickupPayload(data));
         } catch (error) {
@@ -1006,6 +1115,7 @@ export async function handleGenericCreate(
     }
 
     if (entity === 'trip-route-rates') {
+        shouldMergeRawCreatePayload = false;
         try {
             Object.assign(newDoc, await normalizeTripRouteRatePayload(data));
         } catch (error) {
@@ -1017,18 +1127,22 @@ export async function handleGenericCreate(
     }
 
     if (entity === 'expense-categories') {
+        shouldMergeRawCreatePayload = false;
         Object.assign(newDoc, await normalizeExpenseCategoryPayload(data));
     }
 
     if (entity === 'drivers') {
+        shouldMergeRawCreatePayload = false;
         Object.assign(newDoc, await normalizeDriverPayload(data));
     }
 
     if (entity === 'vehicles') {
+        shouldMergeRawCreatePayload = false;
         Object.assign(newDoc, await normalizeVehiclePayload(session, data));
     }
 
     if (entity === 'users') {
+        shouldMergeRawCreatePayload = false;
         const normalizedUser = await normalizeUserCreatePayload(data);
         newDoc.name = normalizedUser.name;
         newDoc.email = normalizedUser.email;
@@ -1040,11 +1154,13 @@ export async function handleGenericCreate(
     }
 
     if (entity === 'tire-events') {
+        shouldMergeRawCreatePayload = false;
         const normalizedTireEvent = await normalizeTireEventPayload(data);
         Object.assign(newDoc, normalizedTireEvent);
     }
 
     if (entity === 'bank-accounts') {
+        shouldMergeRawCreatePayload = false;
         if (data.accountType === 'CASH' || typeof data.systemKey === 'string') {
             return NextResponse.json({ error: 'Akun sistem tidak boleh dibuat manual' }, { status: 409 });
         }
@@ -1057,6 +1173,10 @@ export async function handleGenericCreate(
             );
         }
         newDoc.accountType = 'BANK';
+    }
+
+    if (shouldMergeRawCreatePayload) {
+        Object.assign(newDoc, data);
     }
 
     const created = await sanityCreate(newDoc);

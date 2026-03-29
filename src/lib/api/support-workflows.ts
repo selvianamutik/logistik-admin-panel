@@ -74,7 +74,6 @@ export async function normalizeUserCreatePayload(data: Record<string, unknown>) 
         : { driverRef: undefined, driverName: undefined };
 
     return {
-        ...data,
         name,
         email,
         role,
@@ -92,7 +91,8 @@ export async function normalizeUserUpdates(
     updates: Record<string, unknown>,
     currentPassword: unknown
 ) {
-    const nextUpdates = { ...updates };
+    const allowedOwnerFields = new Set(['name', 'email', 'role', 'active', 'driverRef', 'password', 'passwordHash']);
+    const allowedSelfFields = new Set(['name', 'password', 'passwordHash']);
     const existingUser = await sanityGetById<{ _id: string; email: string; role: string; active: boolean; passwordHash: string; driverRef?: string }>(targetUserId);
     if (!existingUser) {
         throw new Error('User tidak ditemukan');
@@ -103,10 +103,15 @@ export async function normalizeUserUpdates(
         throw new Error('Forbidden');
     }
 
-    if (session.role !== 'OWNER') {
-        const allowedSelfFields = new Set(['name', 'password', 'passwordHash']);
-        if (Object.keys(nextUpdates).some(key => !allowedSelfFields.has(key))) {
-            throw new Error('Perubahan profil ini tidak diizinkan');
+    const allowedFields = session.role === 'OWNER' ? allowedOwnerFields : allowedSelfFields;
+    if (Object.keys(updates).some(key => !allowedFields.has(key))) {
+        throw new Error(session.role === 'OWNER' ? 'Field user tidak valid' : 'Perubahan profil ini tidak diizinkan');
+    }
+
+    const nextUpdates: Record<string, unknown> = {};
+    for (const key of allowedFields) {
+        if (Object.prototype.hasOwnProperty.call(updates, key)) {
+            nextUpdates[key] = updates[key];
         }
     }
 

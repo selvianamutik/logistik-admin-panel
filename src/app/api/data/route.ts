@@ -15,7 +15,6 @@ import { ensureSameOriginRequest, jsonNoStore } from '@/lib/api/request-security
 import {
     handleBoronganPayment,
     handleDriverVoucherCreate,
-    handleDriverVoucherDisbursementDelete,
     handleDriverVoucherIssueRepair,
     handleDriverVoucherItemCreate,
     handleDriverVoucherSettlement,
@@ -701,10 +700,6 @@ export async function POST(request: Request) {
 
         if (entity === 'driver-vouchers' && action === 'repair-issue-ledger') {
             return await handleDriverVoucherIssueRepair(session, data, addAuditLog);
-        }
-
-        if (entity === 'driver-voucher-disbursements' && action === 'delete') {
-            return await handleDriverVoucherDisbursementDelete(session, data, addAuditLog);
         }
 
         if (entity === 'bank-transactions' && action === 'transfer') {
