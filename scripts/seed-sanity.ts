@@ -102,10 +102,10 @@ function applyDocumentIssuerSnapshots() {
             (value): value is string => typeof value === 'string' && value.trim().length > 0
         )
         : [];
-    const bankAccountDocs = documents.filter((doc) => doc._type === 'bankAccount');
+    const bankAccountDocs = Object.values(bankAccounts);
     const invoiceInstructionAccounts = invoiceBankAccountRefs
         .map((accountRef) => bankAccountDocs.find((doc) => doc._id === accountRef))
-        .filter((doc): doc is SeedDoc => Boolean(doc))
+        .filter((doc): doc is (typeof bankAccountDocs)[number] => Boolean(doc))
         .filter((doc) => doc.active !== false && doc.accountType !== 'CASH')
         .map((doc) => ({
             bankAccountRef: doc._id,
