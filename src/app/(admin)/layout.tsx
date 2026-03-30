@@ -313,6 +313,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         'driver-vouchers',
         'bank-accounts',
         'vehicles',
+        'drivers',
         'incidents',
     ]);
 
@@ -325,7 +326,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             dashboard: 'Dashboard', orders: 'Order', 'delivery-orders': 'Surat Jalan',
             invoices: 'Tagihan / Nota', customers: 'Customer', 'trip-rates': 'Biaya Rute Trip', services: 'Jenis Armada',
             'expense-categories': 'Kategori Biaya', expenses: 'Pengeluaran',
-            reports: 'Laporan', fleet: 'Armada', vehicles: 'Kendaraan',
+            reports: 'Laporan', fleet: 'Armada', vehicles: 'Kendaraan', drivers: 'Supir',
             maintenance: 'Maintenance', incidents: 'Insiden', settings: 'Pengaturan',
             profile: 'Profil', password: 'Password', company: 'Perusahaan',
             users: 'Pengguna', 'audit-logs': 'Audit Aktivitas', new: 'Baru', edit: 'Edit',

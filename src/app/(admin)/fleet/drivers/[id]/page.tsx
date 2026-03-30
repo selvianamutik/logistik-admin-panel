@@ -1,0 +1,355 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useParams } from 'next/navigation';
+import { Car, Smartphone, Truck, Wallet } from 'lucide-react';
+import { useApp, useToast } from '../../../layout';
+import PageBackButton from '@/components/PageBackButton';
+import { fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
+import { buildDriverAccountMap, isDriverAccountActive, type DriverMobileAccount } from '@/lib/fleet-asset-page-support';
+import { DRIVER_VOUCHER_STATUS_MAP } from '@/lib/driver-voucher-detail-support';
+import { hasPermission } from '@/lib/rbac';
+import type { DeliveryOrder, Driver, DriverVoucher } from '@/lib/types';
+import {
+    DO_STATUS_MAP,
+    formatCurrency,
+    formatDate,
+    formatDateTime,
+    formatInternalDeliveryOrderNumber,
+    formatShipperDeliveryOrderNumber,
+    getDriverVoucherIssuedAmount,
+    getDriverVoucherOperationalBalance,
+    getDriverVoucherTopUpAmount,
+} from '@/lib/utils';
+
+export default function DriverDetailPage() {
+    const params = useParams();
+    const { user } = useApp();
+    const { addToast } = useToast();
+    const driverId = params.id as string;
+    const [driver, setDriver] = useState<Driver | null>(null);
+    const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([]);
+    const [vouchers, setVouchers] = useState<DriverVoucher[]>([]);
+    const [accounts, setAccounts] = useState<DriverMobileAccount[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    const canViewDriverAccounts = user ? (user.role === 'OWNER' || user.role === 'ARMADA') : false;
+    const canViewDriverVouchers = user ? hasPermission(user.role, 'driverVouchers', 'view') : false;
+
+    const loadDriverDetail = useCallback(async () => {
+        setLoading(true);
+        try {
+            const driverFilter = encodeURIComponent(JSON.stringify({ driverRef: driverId }));
+            const [driverData, doRows, voucherRows, accountRows] = await Promise.all([
+                fetchAdminData<Driver | null>(`/api/data?entity=drivers&id=${driverId}`, 'Gagal memuat data supir'),
+                fetchAllAdminCollectionData<DeliveryOrder>(`/api/data?entity=delivery-orders&filter=${driverFilter}&sortField=date&sortDir=desc`, 'Gagal memuat riwayat DO'),
+                canViewDriverVouchers
+                    ? fetchAllAdminCollectionData<DriverVoucher>(`/api/data?entity=driver-vouchers&filter=${driverFilter}&sortField=issuedDate&sortDir=desc`, 'Gagal memuat riwayat uang jalan')
+                    : Promise.resolve([] as DriverVoucher[]),
+                canViewDriverAccounts
+                    ? fetch(`/api/driver/accounts?driverRefs=${encodeURIComponent(driverId)}`)
+                        .then(async res => {
+                            const payload = await res.json();
+                            if (!res.ok) throw new Error(payload.error || 'Gagal memuat akses mobile driver');
+                            return (payload.data || []) as DriverMobileAccount[];
+                        })
+                    : Promise.resolve([] as DriverMobileAccount[]),
+            ]);
+
+            setDriver(driverData);
+            setDeliveryOrders((doRows || []).sort((a, b) => `${b.date}-${b._id}`.localeCompare(`${a.date}-${a._id}`)));
+            setVouchers((voucherRows || []).sort((a, b) => `${b.issuedDate}-${b._id}`.localeCompare(`${a.issuedDate}-${a._id}`)));
+            setAccounts(accountRows || []);
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail supir');
+        } finally {
+            setLoading(false);
+        }
+    }, [addToast, canViewDriverAccounts, canViewDriverVouchers, driverId]);
+
+    useEffect(() => {
+        void loadDriverDetail();
+    }, [loadDriverDetail]);
+
+    const account = useMemo(() => buildDriverAccountMap(accounts).get(driverId), [accounts, driverId]);
+    const activeTrip = useMemo(
+        () => deliveryOrders.find(item => ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(item.status)),
+        [deliveryOrders]
+    );
+    const unsettledVoucherCount = useMemo(() => vouchers.filter(item => item.status !== 'SETTLED').length, [vouchers]);
+    const totalOperationalSpent = useMemo(() => vouchers.reduce((sum, item) => sum + (item.totalSpent || 0), 0), [vouchers]);
+    const totalDriverFee = useMemo(() => vouchers.reduce((sum, item) => sum + (item.driverFeeAmount || 0), 0), [vouchers]);
+
+    if (loading) {
+        return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 320 }} /></div>;
+    }
+
+    if (!driver) {
+        return <div className="empty-state"><div className="empty-state-title">Supir tidak ditemukan</div></div>;
+    }
+
+    return (
+        <div style={{ display: 'grid', gap: '1rem' }}>
+            <div className="page-header">
+                <div className="page-header-left">
+                    <PageBackButton href="/fleet/drivers" />
+                    <h1 className="page-title">{driver.name}</h1>
+                    <p className="page-subtitle">{driver.phone} | {driver.licenseNumber || 'SIM belum diisi'}</p>
+                </div>
+            </div>
+
+            <div className="kpi-grid">
+                <div className="kpi-card">
+                    <div className="kpi-icon info"><Truck size={20} /></div>
+                    <div className="kpi-content">
+                        <div className="kpi-label">Riwayat DO Driver</div>
+                        <div className="kpi-value">{deliveryOrders.length}</div>
+                    </div>
+                </div>
+                <div className="kpi-card">
+                    <div className="kpi-icon warning"><Truck size={20} /></div>
+                    <div className="kpi-content">
+                        <div className="kpi-label">Trip Aktif</div>
+                        <div className="kpi-value">{activeTrip ? 1 : 0}</div>
+                    </div>
+                </div>
+                {canViewDriverVouchers && (
+                    <div className="kpi-card">
+                        <div className="kpi-icon success"><Wallet size={20} /></div>
+                        <div className="kpi-content">
+                            <div className="kpi-label">Uang Jalan Belum Selesai</div>
+                            <div className="kpi-value">{unsettledVoucherCount}</div>
+                        </div>
+                    </div>
+                )}
+                {canViewDriverVouchers && (
+                    <div className="kpi-card">
+                        <div className="kpi-icon primary"><Car size={20} /></div>
+                        <div className="kpi-content">
+                            <div className="kpi-label">Total Upah Trip Snapshot</div>
+                            <div className="kpi-value" style={{ fontSize: '1rem' }}>{formatCurrency(totalDriverFee)}</div>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            <div className="card">
+                <div className="card-body">
+                    <div className="detail-grid">
+                        <div>
+                            <div className="detail-row"><div className="detail-item"><div className="detail-label">Status Supir</div><div className="detail-value">{driver.active !== false ? 'Aktif' : 'Non-aktif'}</div></div><div className="detail-item"><div className="detail-label">No. SIM</div><div className="detail-value">{driver.licenseNumber || '-'}</div></div></div>
+                            <div className="detail-row"><div className="detail-item"><div className="detail-label">SIM Berlaku Sampai</div><div className="detail-value">{driver.simExpiry ? formatDate(driver.simExpiry) : '-'}</div></div><div className="detail-item"><div className="detail-label">No. KTP</div><div className="detail-value">{driver.ktpNumber || '-'}</div></div></div>
+                            <div className="detail-row"><div className="detail-item"><div className="detail-label">Alamat</div><div className="detail-value">{driver.address || '-'}</div></div><div className="detail-item"><div className="detail-label">Trip Aktif</div><div className="detail-value">{activeTrip ? formatInternalDeliveryOrderNumber(activeTrip) : '-'}</div></div></div>
+                        </div>
+                        <div>
+                            <div style={{ padding: '0.9rem 1rem', borderRadius: '0.8rem', border: '1px solid var(--color-gray-200)', background: 'var(--color-gray-50)' }}>
+                                <div className="text-muted text-sm">Akses Mobile Driver</div>
+                                {!canViewDriverAccounts ? (
+                                    <div style={{ marginTop: '0.35rem' }}>Detail login mobile hanya ditampilkan untuk owner dan armada.</div>
+                                ) : account ? (
+                                    <div style={{ marginTop: '0.35rem', display: 'grid', gap: '0.35rem' }}>
+                                        <div className="font-medium" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <Smartphone size={16} /> {account.email}
+                                        </div>
+                                        <div className="text-muted text-sm">
+                                            {isDriverAccountActive(account) ? 'Akun mobile aktif' : 'Akun mobile non-aktif'}
+                                            {account.lastLoginAt ? ` | Login terakhir ${formatDateTime(account.lastLoginAt)}` : ' | Belum pernah login'}
+                                        </div>
+                                        <div className="text-muted text-sm">
+                                            Kelola akses mobile dari <Link href="/fleet/drivers" style={{ color: 'var(--color-primary)' }}>daftar supir</Link>.
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div style={{ marginTop: '0.35rem' }}>
+                                        Belum ada akun mobile untuk supir ini.
+                                    </div>
+                                )}
+                            </div>
+                            <div style={{ padding: '0.9rem 1rem', borderRadius: '0.8rem', border: '1px solid var(--color-primary-soft)', background: 'var(--color-primary-surface)', marginTop: '1rem' }}>
+                                <div className="text-muted text-sm">Catatan Struktur Data</div>
+                                <div style={{ marginTop: '0.35rem', lineHeight: 1.6 }}>
+                                    Riwayat uang jalan dan upah trip ditampilkan di halaman supir karena ini hak dan settlement perjalanan driver.
+                                    Biaya kendaraan murni dilihat di halaman unit untuk servis, ban, insiden, dan pengeluaran unit.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="card">
+                <div className="card-header">
+                    <div>
+                        <span className="card-header-title">Riwayat DO Driver</span>
+                        <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>Semua trip yang pernah dijalankan supir ini.</div>
+                    </div>
+                </div>
+                <div className="card-body">
+                    <div className="table-wrapper table-desktop-only">
+                        <table>
+                            <thead><tr><th>No. DO Internal</th><th>Tanggal</th><th>Customer</th><th>Kendaraan</th><th>Status</th></tr></thead>
+                            <tbody>
+                                {deliveryOrders.length === 0 ? (
+                                    <tr><td colSpan={5} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada riwayat DO untuk supir ini</td></tr>
+                                ) : deliveryOrders.map(item => (
+                                    <tr key={item._id}>
+                                        <td>
+                                            <Link href={`/delivery-orders/${item._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>
+                                                {formatInternalDeliveryOrderNumber(item)}
+                                            </Link>
+                                            {item.customerDoNumber && <div className="text-muted text-sm font-mono">{formatShipperDeliveryOrderNumber(item)}</div>}
+                                        </td>
+                                        <td>{formatDate(item.date)}</td>
+                                        <td>{item.customerName || '-'}</td>
+                                        <td>{item.vehiclePlate || '-'}</td>
+                                        <td><span className={`badge badge-${DO_STATUS_MAP[item.status]?.color || 'gray'}`}>{DO_STATUS_MAP[item.status]?.label || item.status}</span></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div className="mobile-record-list">
+                        {deliveryOrders.length === 0 ? (
+                            <div className="mobile-record-card"><div className="mobile-record-title">Belum ada riwayat DO untuk supir ini</div></div>
+                        ) : deliveryOrders.map(item => (
+                            <div key={item._id} className="mobile-record-card">
+                                <div className="mobile-record-header">
+                                    <div>
+                                        <div className="mobile-record-title">{formatInternalDeliveryOrderNumber(item)}</div>
+                                        <div className="mobile-record-subtitle">{item.customerName || '-'} | {formatDate(item.date)}</div>
+                                    </div>
+                                    <span className={`badge badge-${DO_STATUS_MAP[item.status]?.color || 'gray'}`}>{DO_STATUS_MAP[item.status]?.label || item.status}</span>
+                                </div>
+                                <div className="mobile-record-meta">
+                                    {item.customerDoNumber && (
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">SJ Pengirim</span>
+                                            <span className="mobile-record-value">{formatShipperDeliveryOrderNumber(item)}</span>
+                                        </div>
+                                    )}
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Kendaraan</span>
+                                        <span className="mobile-record-value">{item.vehiclePlate || '-'}</span>
+                                    </div>
+                                </div>
+                                <div className="mobile-record-actions">
+                                    <Link className="btn btn-secondary" href={`/delivery-orders/${item._id}`}>Lihat Trip</Link>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+
+            <div className="card">
+                <div className="card-header">
+                    <div>
+                        <span className="card-header-title">Riwayat Uang Jalan & Upah Trip</span>
+                        <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
+                            Riwayat ini milik driver/trip. Di sini terlihat uang jalan yang diterima, biaya perjalanan, dan upah trip snapshot DO.
+                        </div>
+                    </div>
+                </div>
+                <div className="card-body">
+                    {!canViewDriverVouchers && (
+                        <div style={{ marginBottom: '1rem', padding: '0.85rem 1rem', borderRadius: '0.8rem', border: '1px solid var(--color-gray-200)', background: 'var(--color-gray-50)' }}>
+                            Detail uang jalan dan upah trip hanya ditampilkan untuk role yang punya akses modul Uang Jalan Trip.
+                        </div>
+                    )}
+                    <div className="table-wrapper table-desktop-only">
+                        <table>
+                            <thead><tr><th>Bon</th><th>Tanggal</th><th>No. DO Internal</th><th>Kendaraan</th><th>Uang Jalan</th><th>Biaya Jalan</th><th>Upah Trip</th><th>Net Settlement</th><th>Status</th></tr></thead>
+                            <tbody>
+                                {vouchers.length === 0 ? (
+                                    <tr><td colSpan={9} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada riwayat uang jalan untuk supir ini</td></tr>
+                                ) : vouchers.map(item => {
+                                    const statusConfig = DRIVER_VOUCHER_STATUS_MAP[item.status] || DRIVER_VOUCHER_STATUS_MAP.DRAFT;
+                                    const issuedAmount = getDriverVoucherIssuedAmount(item);
+                                    const operationalSpent = item.totalSpent || 0;
+                                    const operationalBalance = getDriverVoucherOperationalBalance(item);
+                                    return (
+                                        <tr key={item._id}>
+                                            <td>
+                                                <Link href={`/driver-vouchers/${item._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>
+                                                    {item.bonNumber}
+                                                </Link>
+                                                <div className="text-muted text-sm">{item.route || '-'}</div>
+                                            </td>
+                                            <td>{formatDate(item.issuedDate)}</td>
+                                            <td>{item.doNumber || '-'}</td>
+                                            <td>{item.vehiclePlate || '-'}</td>
+                                            <td>{formatCurrency(issuedAmount)}</td>
+                                            <td>{formatCurrency(operationalSpent)}</td>
+                                            <td>{formatCurrency(item.driverFeeAmount || 0)}</td>
+                                            <td>
+                                                <div>{formatCurrency(item.balance || 0)}</div>
+                                                <div className="text-muted text-sm">Sisa bon: {formatCurrency(operationalBalance)}</div>
+                                            </td>
+                                            <td><span className={`badge ${statusConfig.cls}`}>{statusConfig.label}</span></td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div className="mobile-record-list">
+                        {vouchers.length === 0 ? (
+                            <div className="mobile-record-card"><div className="mobile-record-title">Belum ada riwayat uang jalan untuk supir ini</div></div>
+                        ) : vouchers.map(item => {
+                            const statusConfig = DRIVER_VOUCHER_STATUS_MAP[item.status] || DRIVER_VOUCHER_STATUS_MAP.DRAFT;
+                            return (
+                                <div key={item._id} className="mobile-record-card">
+                                    <div className="mobile-record-header">
+                                        <div>
+                                            <div className="mobile-record-title">{item.bonNumber}</div>
+                                            <div className="mobile-record-subtitle">{formatDate(item.issuedDate)} | {item.doNumber || '-'}</div>
+                                        </div>
+                                        <span className={`badge ${statusConfig.cls}`}>{statusConfig.label}</span>
+                                    </div>
+                                    <div className="mobile-record-meta">
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Kendaraan</span>
+                                            <span className="mobile-record-value">{item.vehiclePlate || '-'}</span>
+                                        </div>
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Uang Jalan</span>
+                                            <span className="mobile-record-value">{formatCurrency(getDriverVoucherIssuedAmount(item))}</span>
+                                        </div>
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Biaya Jalan</span>
+                                            <span className="mobile-record-value">{formatCurrency(item.totalSpent || 0)}</span>
+                                        </div>
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Upah Trip</span>
+                                            <span className="mobile-record-value">{formatCurrency(item.driverFeeAmount || 0)}</span>
+                                        </div>
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Net Settlement</span>
+                                            <span className="mobile-record-value">{formatCurrency(item.balance || 0)}</span>
+                                        </div>
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Top Up</span>
+                                            <span className="mobile-record-value">{formatCurrency(getDriverVoucherTopUpAmount(item))}</span>
+                                        </div>
+                                    </div>
+                                    <div className="mobile-record-actions">
+                                        <Link className="btn btn-secondary" href={`/driver-vouchers/${item._id}`}>Lihat Uang Jalan</Link>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                    <div style={{ marginTop: '1rem', padding: '0.85rem 1rem', borderRadius: '0.8rem', border: '1px solid var(--color-gray-200)', background: 'var(--color-gray-50)' }}>
+                        <div className="text-muted text-sm">Ringkasan</div>
+                        <div style={{ marginTop: '0.35rem', lineHeight: 1.7 }}>
+                            Total biaya perjalanan tercatat: <strong>{formatCurrency(totalOperationalSpent)}</strong>.
+                            Total upah trip snapshot: <strong>{formatCurrency(totalDriverFee)}</strong>.
+                            Riwayat ini mengikuti trip yang dijalankan supir, bukan biaya kepemilikan kendaraan.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}

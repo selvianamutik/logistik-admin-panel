@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useApp, useToast } from '../../layout';
 import { Plus, Search, UserCircle, Save, X, Edit2, ToggleLeft, ToggleRight, Smartphone } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
@@ -325,7 +326,11 @@ export default function DriversPage() {
                                         const account = accountByDriverRef.get(driver._id);
                                         return (
                                             <tr key={driver._id}>
-                                                <td className="font-medium">{driver.name}</td>
+                                                <td>
+                                                    <Link href={`/fleet/drivers/${driver._id}`} className="font-medium" style={{ color: 'var(--color-primary)' }}>
+                                                        {driver.name}
+                                                    </Link>
+                                                </td>
                                                 <td>{driver.phone}</td>
                                                 <td>{driver.licenseNumber || '-'}</td>
                                                 <td className="text-muted">{driver.simExpiry || '-'}</td>
@@ -349,6 +354,9 @@ export default function DriversPage() {
                                                 <td><span className={`badge ${isDriverActive(driver) ? 'badge-green' : 'badge-gray'}`}>{isDriverActive(driver) ? 'Aktif' : 'Non-aktif'}</span></td>
                                                 <td>
                                                     <div style={{ display: 'flex', gap: '0.25rem' }}>
+                                                        <Link className="btn btn-ghost btn-sm" href={`/fleet/drivers/${driver._id}`} title="Lihat detail">
+                                                            Detail
+                                                        </Link>
                                                         {canManageDrivers && <button className="btn btn-ghost btn-sm" onClick={() => openEdit(driver)} title="Edit"><Edit2 size={14} /></button>}
                                                         {canManageDriverAccounts && <button
                                                             className="btn btn-ghost btn-sm"
@@ -381,7 +389,11 @@ export default function DriversPage() {
                                 <div key={driver._id} className="mobile-record-card">
                                     <div className="mobile-record-header">
                                         <div>
-                                            <div className="mobile-record-title">{driver.name}</div>
+                                            <div className="mobile-record-title">
+                                                <Link href={`/fleet/drivers/${driver._id}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+                                                    {driver.name}
+                                                </Link>
+                                            </div>
                                             <div className="mobile-record-subtitle">{driver.phone} | {driver.licenseNumber || 'SIM belum diisi'}</div>
                                         </div>
                                         <span className={`badge ${isDriverActive(driver) ? 'badge-green' : 'badge-gray'}`}>{isDriverActive(driver) ? 'Aktif' : 'Non-aktif'}</span>
@@ -403,6 +415,9 @@ export default function DriversPage() {
                                         </div>
                                     </div>
                                     <div className="mobile-record-actions">
+                                        <Link className="btn btn-secondary" href={`/fleet/drivers/${driver._id}`}>
+                                            Detail
+                                        </Link>
                                         {canManageDrivers && <button className="btn btn-secondary" onClick={() => openEdit(driver)}>
                                             <Edit2 size={14} /> Edit
                                         </button>}

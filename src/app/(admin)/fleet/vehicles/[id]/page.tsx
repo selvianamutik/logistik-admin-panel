@@ -111,7 +111,9 @@ export default function VehicleDetailPage() {
     if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 300 }} /></div>;
     if (!vehicle) return <div className="empty-state"><div className="empty-state-title">Kendaraan tidak ditemukan</div></div>;
 
-    const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
+    const vehicleDirectExpenses = expenses.filter(expense => !expense.voucherRef && !expense.boronganRef);
+    const hiddenTripSettlementExpenses = expenses.filter(expense => Boolean(expense.voucherRef || expense.boronganRef));
+    const totalExpenses = vehicleDirectExpenses.reduce((s, e) => s + e.amount, 0);
     const activeDeliveryOrder = dos.find(deliveryOrder => ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status));
     const {
         normalizedAllTireRows,
@@ -336,7 +338,7 @@ export default function VehicleDetailPage() {
             <div className="tabs">
                 {vehicleTabs.map(t => (
                     <button key={t} className={`tab ${tab === t ? 'active' : ''}`} onClick={() => handleTabChange(t)}>
-                        {t === 'profil' ? 'Profil' : t === 'do' ? 'Riwayat DO' : t === 'maintenance' ? 'Maintenance' : t === 'ban' ? 'Ban' : t === 'insiden' ? 'Insiden' : 'Biaya'}
+                        {t === 'profil' ? 'Profil' : t === 'do' ? 'Riwayat DO' : t === 'maintenance' ? 'Maintenance' : t === 'ban' ? 'Ban' : t === 'insiden' ? 'Insiden' : 'Biaya Kendaraan'}
                     </button>
                 ))}
             </div>
@@ -376,7 +378,7 @@ export default function VehicleDetailPage() {
                                     <div className="kpi-card"><div className="kpi-icon warning"><Wrench size={20} /></div><div className="kpi-content"><div className="kpi-label">Maintenance</div><div className="kpi-value">{maints.length}</div></div></div>
                                     <div className="kpi-card"><div className="kpi-icon danger"><AlertTriangle size={20} /></div><div className="kpi-content"><div className="kpi-label">Insiden</div><div className="kpi-value">{incidents.length}</div></div></div>
                                     <div className="kpi-card"><div className="kpi-icon success"><Disc3 size={20} /></div><div className="kpi-content"><div className="kpi-label">Slot Ban Terisi</div><div className="kpi-value">{filledSlotCount}/{layout.allSlots.length}</div></div></div>
-                                    {isOwner && <div className="kpi-card"><div className="kpi-icon primary"><Car size={20} /></div><div className="kpi-content"><div className="kpi-label">Total Biaya</div><div className="kpi-value" style={{ fontSize: '1rem' }}>{formatCurrency(totalExpenses)}</div></div></div>}
+                                    {isOwner && <div className="kpi-card"><div className="kpi-icon primary"><Car size={20} /></div><div className="kpi-content"><div className="kpi-label">Total Biaya Kendaraan</div><div className="kpi-value" style={{ fontSize: '1rem' }}>{formatCurrency(totalExpenses)}</div></div></div>}
                                 </div>
                             </div>
                         </div>
@@ -609,12 +611,32 @@ export default function VehicleDetailPage() {
             )}
 
             {tab === 'biaya' && isOwner && (
-                <div className="card"><div className="table-wrapper"><table>
-                    <thead><tr><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th>Jumlah</th></tr></thead>
-                    <tbody>{expenses.length === 0 ? <tr><td colSpan={4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada pengeluaran</td></tr> : expenses.map(e => (
-                        <tr key={e._id}><td>{formatDate(e.date)}</td><td>{e.categoryName}</td><td>{e.note || e.description}</td><td className="font-medium">{formatCurrency(e.amount)}</td></tr>
-                    ))}</tbody>
-                </table></div></div>
+                <div className="card">
+                    <div className="card-header">
+                        <div>
+                            <span className="card-header-title">Biaya Kendaraan Langsung</span>
+                            <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
+                                Halaman kendaraan hanya menampilkan pengeluaran yang dicatat langsung ke unit. Uang jalan trip dan upah supir dilihat dari detail supir atau Uang Jalan Trip.
+                            </div>
+                        </div>
+                    </div>
+                    <div className="card-body">
+                        {hiddenTripSettlementExpenses.length > 0 && (
+                            <div style={{ marginBottom: '1rem', padding: '0.85rem 1rem', borderRadius: '0.8rem', border: '1px solid var(--color-primary-soft)', background: 'var(--color-primary-surface)' }}>
+                                <div className="font-medium">Riwayat bon/upah supir tidak ditampilkan di sini</div>
+                                <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
+                                    Ada {hiddenTripSettlementExpenses.length} pengeluaran trip terkait voucher atau settlement driver yang disembunyikan dari biaya kendaraan agar biaya unit tidak tercampur dengan hak driver.
+                                </div>
+                            </div>
+                        )}
+                        <div className="table-wrapper"><table>
+                            <thead><tr><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th>Jumlah</th></tr></thead>
+                            <tbody>{vehicleDirectExpenses.length === 0 ? <tr><td colSpan={4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada biaya kendaraan langsung</td></tr> : vehicleDirectExpenses.map(e => (
+                                <tr key={e._id}><td>{formatDate(e.date)}</td><td>{e.categoryName}</td><td>{e.note || e.description}</td><td className="font-medium">{formatCurrency(e.amount)}</td></tr>
+                            ))}</tbody>
+                        </table></div>
+                    </div>
+                </div>
             )}
 
             {canManageTires && showTireModal && (
