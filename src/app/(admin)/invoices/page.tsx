@@ -7,7 +7,7 @@ import AppPagination from '@/components/AppPagination';
 import CurrencyInput from '@/components/CurrencyInput';
 import { fetchAdminCollectionData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { formatFreightNotaDisplayWeight, normalizeFreightNotaBillingMode } from '@/lib/freight-nota-billing';
-import { formatDate, formatCurrency, getReceivableNetAmount, PAYMENT_METHOD_MAP } from '@/lib/utils';
+import { formatDate, formatCurrency, formatQuantity, getReceivableNetAmount, PAYMENT_METHOD_MAP } from '@/lib/utils';
 import { buildFreightNotaPrintDocument, openBrandedPrint, fetchCompanyProfile, formatFreightNotaDisplayNumber, resolveDocumentIssuerProfile } from '@/lib/print';
 import { exportFreightNotaDetail, exportInvoices } from '@/lib/export';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
@@ -535,7 +535,7 @@ export default function NotaListPage() {
                             openBrandedPrint({
                                 title: 'Daftar Nota Ongkos Angkut', company: co, bodyHtml: `
                                 <table><thead><tr><th>No. Nota</th><th>Customer</th><th>Tanggal</th><th>Total Collie</th><th>Total Berat Tagih</th><th class="r">Tagihan Netto</th><th>Status</th></tr></thead>
-                                <tbody>${allMatchingNotas.map(n => `<tr><td><div class="b">${formatFreightNotaDisplayNumber(n, co)}</div><div style="font-size:11px;color:#64748b">${n.notaNumber}</div></td><td>${n.customerName}</td><td>${formatDate(n.issueDate)}</td><td>${n.totalCollie || 0}</td><td>${formatFreightNotaDisplayWeight({ beratKg: n.totalWeightKg || 0, billingMode: normalizeFreightNotaBillingMode(n.billingMode), includeCanonical: false })}</td><td class="r b">${formatCurrency(getReceivableNetAmount(n))}</td><td>${STATUS_MAP[n.status]?.label || n.status}</td></tr>`).join('')}
+                    <tbody>${allMatchingNotas.map(n => `<tr><td><div class="b">${formatFreightNotaDisplayNumber(n, co)}</div><div style="font-size:11px;color:#64748b">${n.notaNumber}</div></td><td>${n.customerName}</td><td>${formatDate(n.issueDate)}</td><td>${formatQuantity(n.totalCollie || 0)}</td><td>${formatFreightNotaDisplayWeight({ beratKg: n.totalWeightKg || 0, billingMode: normalizeFreightNotaBillingMode(n.billingMode), includeCanonical: false })}</td><td class="r b">${formatCurrency(getReceivableNetAmount(n))}</td><td>${STATUS_MAP[n.status]?.label || n.status}</td></tr>`).join('')}
                                 <tr style="border-top:2px solid #1e293b"><td colspan="5" class="r b">TOTAL</td><td class="r b">${formatCurrency(grandTotal)}</td><td></td></tr></tbody></table>`
                             });
                         } catch (error) {
@@ -610,7 +610,7 @@ export default function NotaListPage() {
                                         </td>
                                         <td>{n.customerName}</td>
                                         <td className="text-muted">{formatDate(n.issueDate)}</td>
-                                        <td>{n.totalCollie || 0}</td>
+                                    <td>{formatQuantity(n.totalCollie || 0)}</td>
                                         <td>{formatFreightNotaDisplayWeight({ beratKg: n.totalWeightKg || 0, billingMode: normalizeFreightNotaBillingMode(n.billingMode), includeCanonical: false })}</td>
                                         <td>
                                             <div className="font-semibold">{formatCurrency(getReceivableNetAmount(n))}</div>
@@ -655,7 +655,7 @@ export default function NotaListPage() {
                                     </div>
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Total Collie</span>
-                                        <span className="mobile-record-value">{n.totalCollie || 0}</span>
+                                                    <span className="mobile-record-value">{formatQuantity(n.totalCollie || 0)}</span>
                                     </div>
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Total Berat Tagih</span>

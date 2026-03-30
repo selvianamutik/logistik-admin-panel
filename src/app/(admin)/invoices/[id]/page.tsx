@@ -24,7 +24,7 @@ import {
 } from '@/lib/invoice-detail-page-support';
 import { buildFreightNotaPrintDocument, fetchCompanyProfile, formatFreightNotaDisplayNumber, openBrandedPrint, resolveDocumentIssuerProfile } from '@/lib/print';
 import { exportFreightNotaDetail } from '@/lib/export';
-import { formatDate, formatCurrency, INVOICE_ADJUSTMENT_KIND_MAP, PAYMENT_METHOD_MAP } from '@/lib/utils';
+import { formatDate, formatCurrency, formatQuantity, INVOICE_ADJUSTMENT_KIND_MAP, PAYMENT_METHOD_MAP } from '@/lib/utils';
 import type { FreightNota, FreightNotaItem, Payment, BankAccount, CompanyProfile, InvoiceAdjustment, Customer } from '@/lib/types';
 import { hasPermission } from '@/lib/rbac';
 export default function NotaDetailPage() {
@@ -342,7 +342,7 @@ export default function NotaDetailPage() {
                         </div>
                         <div className="detail-row">
                             <div className="detail-item"><div className="detail-label">No. Nota Internal</div><div className="detail-value font-mono">{nota.notaNumber}</div></div>
-                            <div className="detail-item"><div className="detail-label">Total Collie</div><div className="detail-value">{nota.totalCollie || 0}</div></div>
+                            <div className="detail-item"><div className="detail-label">Total Collie</div><div className="detail-value">{formatQuantity(nota.totalCollie || 0)}</div></div>
                         </div>
                         <div className="detail-row">
                             <div className="detail-item"><div className="detail-label">Basis Billing</div><div className="detail-value">{getFreightNotaBillingModeLabel(billingMode)}</div></div>
@@ -467,7 +467,7 @@ export default function NotaDetailPage() {
                                             <td>{it.dari}</td>
                                             <td>{it.tujuan}</td>
                                             <td>{it.barang || '-'}</td>
-                                            <td>{it.collie || '-'}</td>
+                                    <td>{it.collie ? formatQuantity(it.collie) : '-'}</td>
                                             <td>{formatFreightNotaDisplayWeight({ beratKg: it.beratKg || 0, billingMode, includeCanonical: false })}</td>
                                             <td>{(it.tarip || 0).toLocaleString('id')}</td>
                                             <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatCurrency(it.uangRp)}</td>
@@ -476,7 +476,7 @@ export default function NotaDetailPage() {
                                     ))}
                                     <tr style={{ background: 'var(--color-bg-secondary)', fontWeight: 700, borderTop: '2px solid var(--color-border)' }}>
                                         <td colSpan={6} style={{ textAlign: 'right' }}>Jumlah</td>
-                                        <td>{nota.totalCollie || 0}</td>
+                            <td>{formatQuantity(nota.totalCollie || 0)}</td>
                                         <td>{totalBilledWeightLabel}</td>
                                         <td></td>
                                         <td style={{ textAlign: 'right', color: 'var(--color-danger)' }}>{formatCurrency(nota.totalAmount)}</td>

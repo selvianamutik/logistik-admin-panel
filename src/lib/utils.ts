@@ -52,6 +52,19 @@ export function formatNumber(num: number | undefined): string {
     return new Intl.NumberFormat('id-ID').format(num);
 }
 
+export function formatQuantity(
+    value: number | string | undefined | null,
+    maxFractionDigits: number = 2
+): string {
+    if (value === undefined || value === null || value === '') return '-';
+    const numeric = parseFormattedNumberish(value, { maxFractionDigits });
+    if (!Number.isFinite(numeric)) return '-';
+    return new Intl.NumberFormat('id-ID', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: maxFractionDigits,
+    }).format(numeric);
+}
+
 export function formatInternalDeliveryOrderNumber(value: {
     customerDoNumber?: string | null;
     doNumber?: string | null;

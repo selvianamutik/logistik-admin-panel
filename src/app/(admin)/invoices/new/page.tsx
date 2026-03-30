@@ -27,7 +27,7 @@ import {
 } from '@/lib/invoice-create-page-support';
 import { convertWeightToKg } from '@/lib/measurement';
 import type { CompanyProfile, Customer, DeliveryOrder, DeliveryOrderItem, FreightNotaBillingMode, Order } from '@/lib/types';
-import { formatCurrency, formatInternalDeliveryOrderNumber, formatShipperDeliveryOrderNumber } from '@/lib/utils';
+import { formatCurrency, formatInternalDeliveryOrderNumber, formatQuantity, formatShipperDeliveryOrderNumber } from '@/lib/utils';
 
 import { useToast } from '../../layout';
 
@@ -442,7 +442,7 @@ export default function NewNotaPage() {
                                 }}
                             >
                                 <span className="text-muted">Total Collie</span>
-                                <strong>{totalCollie}</strong>
+                                <strong>{formatQuantity(totalCollie)}</strong>
                             </div>
                             <div
                                 style={{
@@ -553,7 +553,7 @@ export default function NewNotaPage() {
                                     </td>
                                     <td>
                                         <FormattedNumberInput
-                                            allowDecimal={false}
+                                            maxFractionDigits={2}
                                             value={row.collie}
                                             onValueChange={value => updateRow(row.id, 'collie', value)}
                                         />
@@ -601,7 +601,7 @@ export default function NewNotaPage() {
                                 <td colSpan={6} style={{ textAlign: 'right', paddingRight: '0.75rem' }}>
                                     Jumlah
                                 </td>
-                                <td>{totalCollie}</td>
+                                <td>{formatQuantity(totalCollie)}</td>
                                 <td>{getFreightNotaDisplayWeightValue(totalBerat, billingMode).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: billingMode === 'PER_TON' ? 3 : 2 })}</td>
                                 <td />
                                 <td style={{ color: 'var(--color-danger)' }}>{formatCurrency(totalAmount)}</td>
