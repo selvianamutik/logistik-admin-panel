@@ -44,6 +44,45 @@ function parseGroupedDigits(parts: string[]) {
   return digits ? Number(digits) : 0;
 }
 
+function parseIntegerLikeInput(cleaned: string) {
+  const commaCount = (cleaned.match(/,/g) || []).length;
+  const dotCount = (cleaned.match(/\./g) || []).length;
+  const activeSeparator = commaCount > 0 ? "," : dotCount > 0 ? "." : null;
+
+  if (!activeSeparator) {
+    const digits = cleaned.replace(/\D/g, "");
+    return digits ? Number(digits.replace(/^0+(?=\d)/, "")) : 0;
+  }
+
+  const parts = cleaned.split(activeSeparator);
+  if (parts.length === 2) {
+    const [left = "", right = ""] = parts;
+    const integerPart = left.replace(/\D/g, "");
+    const fractionPart = right.replace(/\D/g, "");
+
+    if (fractionPart.length === 0) {
+      return integerPart ? Number(integerPart.replace(/^0+(?=\d)/, "")) : 0;
+    }
+
+    if (fractionPart.length === 3 && integerPart.length > 0) {
+      const grouped = parseGroupedDigits(parts);
+      if (grouped !== null) {
+        return grouped;
+      }
+    }
+
+    return integerPart ? Number(integerPart.replace(/^0+(?=\d)/, "")) : 0;
+  }
+
+  const grouped = parseGroupedDigits(parts);
+  if (grouped !== null) {
+    return grouped;
+  }
+
+  const digits = cleaned.replace(/\D/g, "");
+  return digits ? Number(digits.replace(/^0+(?=\d)/, "")) : 0;
+}
+
 function parseDecimalParts(
   integerPartRaw: string,
   fractionPartRaw: string,
@@ -66,9 +105,9 @@ export function parseFormattedNumberInput(
   const cleaned = rawValue.replace(/[^\d,.\s]/g, "").trim();
   if (!cleaned) return 0;
 
-  if (!allowDecimal) {
-    const digits = cleaned.replace(/\D/g, "");
-    return digits ? Number(digits.replace(/^0+(?=\d)/, "")) : 0;
+  const supportsFraction = allowDecimal && maxFractionDigits > 0;
+  if (!supportsFraction) {
+    return parseIntegerLikeInput(cleaned);
   }
 
   const commaCount = (cleaned.match(/,/g) || []).length;
@@ -132,18 +171,20 @@ export default function FormattedNumberInput({
   zeroAsEmpty = true,
   ...props
 }: FormattedNumberInputProps) {
+  const supportsFraction = allowDecimal && maxFractionDigits > 0;
+
   return (
     <input
       {...props}
       type="text"
-      inputMode={inputMode || (allowDecimal ? "decimal" : "numeric")}
+      inputMode={inputMode || (supportsFraction ? "decimal" : "numeric")}
       autoComplete={autoComplete || "off"}
       className={["form-input", "currency-input", className]
         .filter(Boolean)
         .join(" ")}
       value={formatFormattedNumberValue(
         value,
-        allowDecimal,
+        supportsFraction,
         maxFractionDigits,
         zeroAsEmpty,
       )}
@@ -151,7 +192,7 @@ export default function FormattedNumberInput({
         onValueChange(
           parseFormattedNumberInput(
             event.target.value,
-            allowDecimal,
+            supportsFraction,
             maxFractionDigits,
           ),
         );
