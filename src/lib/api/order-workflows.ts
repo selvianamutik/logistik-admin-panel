@@ -11,6 +11,7 @@ import { resolveCompanyLogoUrl } from '@/lib/branding';
 import { getSanityClient, sanityGetById, sanityGetNextNumber, sanityUpdate } from '@/lib/sanity';
 
 import {
+    assertIsoDate,
     extractRefId,
     isPlainObject,
     normalizeCurrencyNumber,
@@ -914,6 +915,14 @@ export async function handleDeliveryOrderStatusUpdate(
         if (!podReceivedDate) {
             return NextResponse.json({ error: 'Tanggal terima POD wajib diisi untuk menyelesaikan surat jalan' }, { status: 400 });
         }
+        try {
+            assertIsoDate(podReceivedDate, 'Tanggal terima POD');
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Tanggal terima POD tidak valid' },
+                { status: 400 }
+            );
+        }
     }
 
     const actualCargoByDoItemId =
@@ -1514,6 +1523,14 @@ export async function handleDeliveryOrderCreate(
         typeof data.date === 'string' && data.date
             ? data.date
             : new Date().toISOString().slice(0, 10);
+    try {
+        assertIsoDate(doDate, 'Tanggal surat jalan');
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Tanggal surat jalan tidak valid' },
+            { status: 400 }
+        );
+    }
     const manualCustomerDoNumber = normalizeOptionalText(data.customerDoNumber)?.toUpperCase();
     const taripBorongan = normalizeCurrencyNumber(data.taripBorongan ?? 0);
     if (!Number.isFinite(taripBorongan) || taripBorongan < 0) {
