@@ -1,4 +1,5 @@
 import type { OrderItemStatus } from '@/lib/types';
+import { parseFormattedNumberish, type FormattedNumberParseOptions } from '@/lib/formatted-number';
 
 type OrderItemProgressSource = {
   qtyKoli?: number;
@@ -34,8 +35,8 @@ export type OrderItemProgress = {
   pendingVolume: number;
 };
 
-function clampNonNegative(value: unknown) {
-  const normalized = typeof value === 'number' ? value : Number(value);
+function clampNonNegative(value: unknown, options?: FormattedNumberParseOptions) {
+  const normalized = parseFormattedNumberish(value, options);
   if (!Number.isFinite(normalized) || normalized < 0) {
     return 0;
   }
@@ -66,9 +67,9 @@ export function calculateVolumePortion(totalVolume: number, totalQtyKoli: number
 }
 
 export function getOrderItemProgress(source: OrderItemProgressSource): OrderItemProgress {
-  const totalQtyKoli = clampNonNegative(source.qtyKoli);
-  const totalWeight = clampNonNegative(source.weight);
-  const totalVolume = clampNonNegative(source.volume);
+  const totalQtyKoli = clampNonNegative(source.qtyKoli, { maxFractionDigits: 2 });
+  const totalWeight = clampNonNegative(source.weight, { maxFractionDigits: 2 });
+  const totalVolume = clampNonNegative(source.volume, { maxFractionDigits: 3 });
   const hasExplicitProgress =
     source.deliveredQtyKoli !== undefined ||
     source.deliveredWeight !== undefined ||
@@ -91,15 +92,15 @@ export function getOrderItemProgress(source: OrderItemProgressSource): OrderItem
   let heldVolume = 0;
 
   if (hasExplicitProgress) {
-    deliveredQtyKoli = clampPortion(totalQtyKoli, clampNonNegative(source.deliveredQtyKoli));
-    deliveredWeight = clampPortion(totalWeight, clampNonNegative(source.deliveredWeight));
-    deliveredVolume = clampPortion(totalVolume, clampNonNegative(source.deliveredVolume));
-    assignedQtyKoli = clampPortion(totalQtyKoli, clampNonNegative(source.assignedQtyKoli));
-    assignedWeight = clampPortion(totalWeight, clampNonNegative(source.assignedWeight));
-    assignedVolume = clampPortion(totalVolume, clampNonNegative(source.assignedVolume));
-    heldQtyKoli = clampPortion(totalQtyKoli, clampNonNegative(source.heldQtyKoli));
-    heldWeight = clampPortion(totalWeight, clampNonNegative(source.heldWeight));
-    heldVolume = clampPortion(totalVolume, clampNonNegative(source.heldVolume));
+    deliveredQtyKoli = clampPortion(totalQtyKoli, clampNonNegative(source.deliveredQtyKoli, { maxFractionDigits: 2 }));
+    deliveredWeight = clampPortion(totalWeight, clampNonNegative(source.deliveredWeight, { maxFractionDigits: 2 }));
+    deliveredVolume = clampPortion(totalVolume, clampNonNegative(source.deliveredVolume, { maxFractionDigits: 3 }));
+    assignedQtyKoli = clampPortion(totalQtyKoli, clampNonNegative(source.assignedQtyKoli, { maxFractionDigits: 2 }));
+    assignedWeight = clampPortion(totalWeight, clampNonNegative(source.assignedWeight, { maxFractionDigits: 2 }));
+    assignedVolume = clampPortion(totalVolume, clampNonNegative(source.assignedVolume, { maxFractionDigits: 3 }));
+    heldQtyKoli = clampPortion(totalQtyKoli, clampNonNegative(source.heldQtyKoli, { maxFractionDigits: 2 }));
+    heldWeight = clampPortion(totalWeight, clampNonNegative(source.heldWeight, { maxFractionDigits: 2 }));
+    heldVolume = clampPortion(totalVolume, clampNonNegative(source.heldVolume, { maxFractionDigits: 3 }));
   } else {
     if (source.status === 'DELIVERED') {
       deliveredQtyKoli = totalQtyKoli;
