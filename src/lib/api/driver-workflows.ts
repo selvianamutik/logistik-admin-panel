@@ -464,7 +464,7 @@ export async function handleBoronganPayment(
         return NextResponse.json({ error: 'Borongan tidak valid' }, { status: 400 });
     }
 
-    const amount = typeof data.amount === 'number' ? data.amount : Number(data.amount);
+    const amount = normalizeNumber(data.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
         return NextResponse.json({ error: 'Nominal pembayaran borongan tidak valid' }, { status: 400 });
     }
@@ -697,7 +697,7 @@ export async function handleDriverVoucherCreate(
     data: Record<string, unknown>,
     addAuditLog: AuditLogFn
 ) {
-    const cashGiven = typeof data.cashGiven === 'number' ? data.cashGiven : Number(data.cashGiven);
+    const cashGiven = normalizeNumber(data.cashGiven);
     if (!Number.isFinite(cashGiven) || cashGiven <= 0) {
         return NextResponse.json({ error: 'Nominal uang jalan trip tidak valid' }, { status: 400 });
     }
@@ -1001,7 +1001,7 @@ export async function handleDriverVoucherTopUp(
         return NextResponse.json({ error: 'Bon supir tidak valid' }, { status: 400 });
     }
 
-    const amount = typeof data.amount === 'number' ? data.amount : Number(data.amount);
+    const amount = normalizeNumber(data.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
         return NextResponse.json({ error: 'Nominal tambahan bon tidak valid' }, { status: 400 });
     }
@@ -1161,7 +1161,7 @@ export async function handleDriverVoucherItemCreate(
         return NextResponse.json({ error: 'Bon supir tidak valid' }, { status: 400 });
     }
 
-    const amount = typeof data.amount === 'number' ? data.amount : Number(data.amount);
+    const amount = normalizeNumber(data.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
         return NextResponse.json({ error: 'Nominal item tidak valid' }, { status: 400 });
     }

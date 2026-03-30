@@ -17,6 +17,7 @@ import {
     type InvoiceInstructionAccount,
 } from './print';
 import type { CompanyProfile, FreightNota, FreightNotaItem } from './types';
+import { parseFormattedNumberish } from './formatted-number';
 import { getReceivableNetAmount } from './utils';
 
 type ExportValue = string | number | boolean | Date | null | undefined;
@@ -58,6 +59,10 @@ interface MergeRange {
 }
 
 type ExcelImageExtension = 'png' | 'jpeg' | 'gif';
+
+function numericish(value: unknown): string | number | undefined {
+    return typeof value === 'string' || typeof value === 'number' ? value : undefined;
+}
 
 function sanitizeSheetName(name: string) {
     const normalized = name.replace(/[\\/?*[\]:]/g, ' ').trim();
@@ -439,9 +444,9 @@ export async function exportInvoices(invoices: Record<string, unknown>[]) {
                 company,
             ),
             netAmount: getReceivableNetAmount({
-                totalAmount: Number(invoice.totalAmount || 0),
-                totalAdjustmentAmount: Number(invoice.totalAdjustmentAmount || 0),
-                netAmount: typeof invoice.netAmount === 'number' ? invoice.netAmount : Number(invoice.netAmount || 0),
+                totalAmount: numericish(invoice.totalAmount),
+                totalAdjustmentAmount: numericish(invoice.totalAdjustmentAmount),
+                netAmount: numericish(invoice.netAmount),
             }),
         })),
         [
@@ -463,12 +468,12 @@ export async function exportInvoices(invoices: Record<string, unknown>[]) {
             totalRow: {
                 label: 'TOTAL',
                 values: {
-                    totalCollie: invoices.reduce((sum, item) => sum + Number(item.totalCollie || 0), 0),
-                    totalWeightKg: invoices.reduce((sum, item) => sum + Number(item.totalWeightKg || 0), 0),
+                    totalCollie: invoices.reduce((sum, item) => sum + parseFormattedNumberish(item.totalCollie || 0), 0),
+                    totalWeightKg: invoices.reduce((sum, item) => sum + parseFormattedNumberish(item.totalWeightKg || 0), 0),
                     netAmount: invoices.reduce((sum, item) => sum + getReceivableNetAmount({
-                        totalAmount: Number(item.totalAmount || 0),
-                        totalAdjustmentAmount: Number(item.totalAdjustmentAmount || 0),
-                        netAmount: typeof item.netAmount === 'number' ? item.netAmount : Number(item.netAmount || 0),
+                        totalAmount: numericish(item.totalAmount),
+                        totalAdjustmentAmount: numericish(item.totalAdjustmentAmount),
+                        netAmount: numericish(item.netAmount),
                     }), 0),
                 },
             },
@@ -507,7 +512,7 @@ export async function exportExpenses(expenses: Record<string, unknown>[]) {
             totalRow: {
                 label: 'TOTAL',
                 values: {
-                    amount: expenses.reduce((sum, item) => sum + Number(item.amount || 0), 0),
+                    amount: expenses.reduce((sum, item) => sum + parseFormattedNumberish(item.amount || 0), 0),
                 },
             },
         },
@@ -568,10 +573,10 @@ export async function exportFreightNotaDetail(
             dari: item.dari || '',
             tujuan: item.tujuan || '',
             barang: item.barang || '',
-            collie: item.collie || '',
-            beratKg: item.beratKg ? fmtNumber(item.beratKg) : '',
-            tarip: item.tarip ? fmtNumber(item.tarip) : '',
-            uangRp: item.uangRp ? fmtNumber(item.uangRp) : '',
+            collie: parseFormattedNumberish(item.collie || 0) || '',
+            beratKg: item.beratKg ? fmtNumber(parseFormattedNumberish(item.beratKg)) : '',
+            tarip: item.tarip ? fmtNumber(parseFormattedNumberish(item.tarip)) : '',
+            uangRp: item.uangRp ? fmtNumber(parseFormattedNumberish(item.uangRp)) : '',
             ket: item.ket || '',
         };
 
@@ -649,7 +654,20 @@ export async function exportFreightNotaDetail(
     }
 
     const totalRowIndex = rows.length + 1;
-    rows.push(['Jumlah', '', '', '', '', '', '', nota.totalCollie || 0, nota.totalWeightKg ? fmtNumber(nota.totalWeightKg) : 0, '', nota.totalAmount ? fmtNumber(nota.totalAmount) : 0, '']);
+    rows.push([
+        'Jumlah',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        parseFormattedNumberish(nota.totalCollie || 0) || 0,
+        nota.totalWeightKg ? fmtNumber(parseFormattedNumberish(nota.totalWeightKg)) : 0,
+        '',
+        nota.totalAmount ? fmtNumber(parseFormattedNumberish(nota.totalAmount)) : 0,
+        '',
+    ]);
     merges.push({ startRow: totalRowIndex, startCol: 1, endRow: totalRowIndex, endCol: 7 });
 
     rows.push([]);

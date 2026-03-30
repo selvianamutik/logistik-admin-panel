@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { hashPassword, verifyPassword } from '@/lib/auth';
 import { getSanityClient, sanityDelete, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
 
-import { isPlainObject, normalizeText, type ApiSession } from './data-helpers';
+import { isPlainObject, normalizeNumber, normalizeText, type ApiSession } from './data-helpers';
 
 type AuditLogFn = (
     session: Pick<ApiSession, '_id' | 'name'>,
@@ -224,7 +224,7 @@ export async function handleInvoiceCreate(
         return NextResponse.json({ error: 'Item invoice wajib diisi' }, { status: 400 });
     }
 
-    const totalAmount = typeof data.totalAmount === 'number' ? data.totalAmount : Number(data.totalAmount);
+    const totalAmount = normalizeNumber(data.totalAmount);
     if (!Number.isFinite(totalAmount) || totalAmount <= 0) {
         return NextResponse.json({ error: 'Total invoice tidak valid' }, { status: 400 });
     }
@@ -244,9 +244,9 @@ export async function handleInvoiceCreate(
 
     const transaction = getSanityClient().transaction().create(invoiceDoc);
     for (const item of items) {
-        const subtotal = typeof item.subtotal === 'number' ? item.subtotal : Number(item.subtotal);
-        const qty = typeof item.qty === 'number' ? item.qty : Number(item.qty);
-        const price = typeof item.price === 'number' ? item.price : Number(item.price);
+        const subtotal = normalizeNumber(item.subtotal);
+        const qty = normalizeNumber(item.qty);
+        const price = normalizeNumber(item.price);
         if (!Number.isFinite(subtotal) || !Number.isFinite(qty) || !Number.isFinite(price)) {
             return NextResponse.json({ error: 'Ada item invoice yang tidak valid' }, { status: 400 });
         }

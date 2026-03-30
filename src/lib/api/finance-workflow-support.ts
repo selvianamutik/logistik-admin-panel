@@ -147,7 +147,7 @@ export function computeReceivableSnapshot(
     allPayments: Payment[],
     approvedAdjustments: InvoiceAdjustmentDoc[]
 ): ReceivableSnapshot {
-    const grossAmount = typeof doc.totalAmount === 'number' ? doc.totalAmount : Number(doc.totalAmount || 0);
+    const grossAmount = Math.max(normalizeNumber(doc.totalAmount || 0), 0);
     const totalPaid = allPayments.reduce((sum, item) => sum + normalizeNumber(item.amount || 0), 0);
     const totalAdjustmentAmount = approvedAdjustments.reduce(
         (sum, item) => sum + normalizeNumber(item.amount || 0),

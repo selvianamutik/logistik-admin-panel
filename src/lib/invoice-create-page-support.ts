@@ -1,4 +1,5 @@
 import type { CompanyProfile, Customer, DeliveryOrder, DeliveryOrderItem, Order } from './types';
+import { parseFormattedNumberish } from './formatted-number';
 
 export interface NotaItemRow {
     id: string;
@@ -99,8 +100,14 @@ export function buildNotaRowFromDeliveryOrder(params: {
             .map(item => item.orderItemDescription?.trim())
             .filter((value): value is string => Boolean(value))
     )];
-    const collie = relatedItems.reduce((sum, item) => sum + Number(item.actualQtyKoli ?? item.orderItemQtyKoli ?? 0), 0);
-    const beratKg = relatedItems.reduce((sum, item) => sum + Number(item.actualWeightKg ?? item.orderItemWeight ?? 0), 0);
+    const collie = relatedItems.reduce(
+        (sum, item) => sum + parseFormattedNumberish(item.actualQtyKoli ?? item.orderItemQtyKoli ?? 0),
+        0
+    );
+    const beratKg = relatedItems.reduce(
+        (sum, item) => sum + parseFormattedNumberish(item.actualWeightKg ?? item.orderItemWeight ?? 0),
+        0
+    );
 
     return {
         id: Math.random().toString(36).slice(2),

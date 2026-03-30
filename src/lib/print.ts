@@ -5,6 +5,7 @@
 import DOMPurify from 'dompurify';
 import { buildFreightNotaDisplayNumberFromParts } from './nota-numbering';
 import { resolveCompanyLogoUrl } from './branding';
+import { parseFormattedNumberish } from './formatted-number';
 import type { BankAccount, CompanyProfile, Customer, FreightNota, FreightNotaInstructionAccount, FreightNotaItem } from './types';
 import { getReceivableNetAmount, terbilang } from './utils';
 
@@ -303,8 +304,8 @@ export function buildFreightNotaPrintDocument(opts: {
     const { nota, items, company, customer, invoiceBankAccounts = [] } = opts;
     const issuerProfile = resolveFreightNotaIssuerProfile(nota, company);
     const displayNumber = formatFreightNotaDisplayNumber(nota, company);
-    const grossAmount = nota.totalAmount || 0;
-    const adjustmentAmount = nota.totalAdjustmentAmount || 0;
+    const grossAmount = parseFormattedNumberish(nota.totalAmount || 0);
+    const adjustmentAmount = parseFormattedNumberish(nota.totalAdjustmentAmount || 0);
     const netAmount = getReceivableNetAmount(nota);
     const printDate = fmtLongPrintDate(new Date().toISOString());
     const dueDateLabel = nota.dueDate ? fmtLongPrintDate(nota.dueDate) : '-';
@@ -338,7 +339,10 @@ export function buildFreightNotaPrintDocument(opts: {
             : 'Bagian Administrasi');
 
     const itemRowsHtml = items.map((item, index) => {
-        const qtyText = item.collie && item.collie > 0 ? `${fmtNumber(item.collie)} koli` : '-';
+        const collie = parseFormattedNumberish(item.collie || 0);
+        const tarip = parseFormattedNumberish(item.tarip || 0);
+        const uangRp = parseFormattedNumberish(item.uangRp || 0);
+        const qtyText = collie > 0 ? `${fmtNumber(collie)} koli` : '-';
         const descriptionParts = [item.dari && item.tujuan ? `${item.dari} -> ${item.tujuan}` : item.tujuan || item.dari || ''].filter(Boolean);
 
         return `
@@ -349,8 +353,8 @@ export function buildFreightNotaPrintDocument(opts: {
                     <div class="invoice-item-meta">${escapePrintHtml(descriptionParts.slice(1).join(' | '))}</div>
                 </td>
                 <td class="c">${escapePrintHtml(qtyText)}</td>
-                <td class="r">${escapePrintHtml(fmtCurrency(item.tarip || 0))}</td>
-                <td class="r">${escapePrintHtml(fmtCurrency(item.uangRp || 0))}</td>
+                <td class="r">${escapePrintHtml(fmtCurrency(tarip))}</td>
+                <td class="r">${escapePrintHtml(fmtCurrency(uangRp))}</td>
             </tr>
         `;
     }).join('');

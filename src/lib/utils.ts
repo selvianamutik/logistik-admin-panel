@@ -4,6 +4,7 @@
 
 import { format, parseISO } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
+import { parseFormattedNumberish } from './formatted-number';
 
 const JAKARTA_TIME_ZONE = 'Asia/Jakarta';
 
@@ -65,21 +66,21 @@ export function formatShipperDeliveryOrderNumber(value: {
 }
 
 export function getReceivableNetAmount(value: {
-    totalAmount?: number | null;
-    totalAdjustmentAmount?: number | null;
-    netAmount?: number | null;
+    totalAmount?: number | string | null;
+    totalAdjustmentAmount?: number | string | null;
+    netAmount?: number | string | null;
 }) {
     const grossAmount =
-        typeof value.totalAmount === 'number' && Number.isFinite(value.totalAmount)
-            ? value.totalAmount
+        value.totalAmount !== undefined && value.totalAmount !== null
+            ? Math.max(parseFormattedNumberish(value.totalAmount), 0)
             : 0;
     const adjustmentAmount =
-        typeof value.totalAdjustmentAmount === 'number' && Number.isFinite(value.totalAdjustmentAmount)
-            ? Math.max(value.totalAdjustmentAmount, 0)
+        value.totalAdjustmentAmount !== undefined && value.totalAdjustmentAmount !== null
+            ? Math.max(parseFormattedNumberish(value.totalAdjustmentAmount), 0)
             : 0;
     const storedNetAmount =
-        typeof value.netAmount === 'number' && Number.isFinite(value.netAmount)
-            ? value.netAmount
+        value.netAmount !== undefined && value.netAmount !== null
+            ? Math.max(parseFormattedNumberish(value.netAmount), 0)
             : undefined;
 
     return Math.max(
@@ -90,15 +91,15 @@ export function getReceivableNetAmount(value: {
 
 export function getReceivableRemainingAmount(
     value: {
-        totalAmount?: number | null;
-        totalAdjustmentAmount?: number | null;
-        netAmount?: number | null;
+        totalAmount?: number | string | null;
+        totalAdjustmentAmount?: number | string | null;
+        netAmount?: number | string | null;
     },
-    totalPaid?: number | null
+    totalPaid?: number | string | null
 ) {
     const paidAmount =
-        typeof totalPaid === 'number' && Number.isFinite(totalPaid)
-            ? Math.max(totalPaid, 0)
+        totalPaid !== undefined && totalPaid !== null
+            ? Math.max(parseFormattedNumberish(totalPaid), 0)
             : 0;
 
     return Math.max(getReceivableNetAmount(value) - paidAmount, 0);

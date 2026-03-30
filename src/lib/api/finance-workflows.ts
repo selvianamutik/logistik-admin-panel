@@ -212,7 +212,7 @@ async function loadReceivableSnapshot(invoiceRef: string) {
         };
     }
 
-    const grossAmount = typeof doc.totalAmount === 'number' ? doc.totalAmount : Number(doc.totalAmount || 0);
+    const grossAmount = Math.max(normalizeNumber(doc.totalAmount || 0), 0);
     if (!Number.isFinite(grossAmount) || grossAmount <= 0) {
         return { error: NextResponse.json({ error: 'Total tagihan tidak valid' }, { status: 400 }) };
     }
@@ -272,7 +272,7 @@ export async function handlePaymentCreate(
     data: Record<string, unknown>,
     addAuditLog: AuditLogFn
 ) {
-    const amount = typeof data.amount === 'number' ? data.amount : Number(data.amount);
+    const amount = normalizeNumber(data.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
         return NextResponse.json({ error: 'Nominal pembayaran tidak valid' }, { status: 400 });
     }
@@ -427,7 +427,7 @@ export async function handleCustomerReceiptCreate(
     data: Record<string, unknown>,
     addAuditLog: AuditLogFn
 ) {
-    const totalAmount = typeof data.totalAmount === 'number' ? data.totalAmount : Number(data.totalAmount);
+    const totalAmount = normalizeNumber(data.totalAmount);
     if (!Number.isFinite(totalAmount) || totalAmount <= 0) {
         return NextResponse.json({ error: 'Total penerimaan tidak valid' }, { status: 400 });
     }
@@ -448,7 +448,7 @@ export async function handleCustomerReceiptCreate(
         .filter(isPlainObject)
         .map<CustomerReceiptAllocationInput>((row) => {
             const invoiceRef = normalizeText(row.invoiceRef);
-            const amount = typeof row.amount === 'number' ? row.amount : Number(row.amount);
+            const amount = normalizeNumber(row.amount);
             const note = normalizeOptionalText(row.note);
 
             if (!invoiceRef) {
@@ -710,7 +710,7 @@ export async function handleInvoiceAdjustmentCreate(
         return NextResponse.json({ error: 'Referensi nota wajib diisi' }, { status: 400 });
     }
 
-    const amount = typeof data.amount === 'number' ? data.amount : Number(data.amount);
+    const amount = normalizeNumber(data.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
         return NextResponse.json({ error: 'Nominal klaim/potongan tidak valid' }, { status: 400 });
     }
@@ -856,7 +856,7 @@ export async function handleBankTransfer(
     data: Record<string, unknown>,
     addAuditLog: AuditLogFn
 ) {
-    const amount = typeof data.amount === 'number' ? data.amount : Number(data.amount);
+    const amount = normalizeNumber(data.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
         return NextResponse.json({ error: 'Nominal transfer tidak valid' }, { status: 400 });
     }
@@ -963,7 +963,7 @@ export async function handleExpenseCreate(
         return NextResponse.json({ error: 'Kategori pengeluaran wajib dipilih' }, { status: 400 });
     }
 
-    const amount = typeof data.amount === 'number' ? data.amount : Number(data.amount);
+    const amount = normalizeNumber(data.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
         return NextResponse.json({ error: 'Nominal pengeluaran tidak valid' }, { status: 400 });
     }
