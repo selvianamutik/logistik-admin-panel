@@ -27,7 +27,6 @@ export default function NewDriverVoucherPage() {
         issueBankRef: '',
         issuedDate: new Date().toISOString().split('T')[0],
         cashGiven: 0,
-        driverFeeAmount: 0,
         notes: '',
     });
 
@@ -88,7 +87,7 @@ export default function NewDriverVoucherPage() {
         selectedDo?.pickupAddress || selectedOrder?.pickupAddress,
         selectedDo?.receiverAddress || selectedOrder?.receiverAddress,
     ].filter(Boolean).join(' -> ') || '';
-    const effectiveTripFee = parseFormattedNumberish(form.driverFeeAmount || 0);
+    const effectiveTripFee = parseFormattedNumberish(selectedDo?.taripBorongan || 0);
 
     const handleSave = async () => {
         if (!form.deliveryOrderRef) {
@@ -119,7 +118,6 @@ export default function NewDriverVoucherPage() {
             issuedDate: form.issuedDate,
             cashGiven: form.cashGiven,
             issueBankRef: form.issueBankRef,
-            driverFeeAmount: effectiveTripFee,
             notes: form.notes || undefined,
         };
 
@@ -169,11 +167,9 @@ export default function NewDriverVoucherPage() {
                                 value={form.deliveryOrderRef}
                                 onChange={e => {
                                     const deliveryOrderRef = e.target.value;
-                                    const nextSelectedDo = dos.find(deliveryOrder => deliveryOrder._id === deliveryOrderRef) || null;
                                     setForm(previous => ({
                                         ...previous,
                                         deliveryOrderRef,
-                                        driverFeeAmount: parseFormattedNumberish(nextSelectedDo?.taripBorongan || 0),
                                     }));
                                 }}
                             >
@@ -218,7 +214,7 @@ export default function NewDriverVoucherPage() {
                                     </div>
                                     <div>
                                         <div className="detail-label">Upah Trip</div>
-                                        <div className="detail-value">{effectiveTripFee > 0 ? formatCurrency(effectiveTripFee) : 'Belum diisi'}</div>
+                                        <div className="detail-value">{effectiveTripFee > 0 ? formatCurrency(effectiveTripFee) : 'Belum diisi di DO'}</div>
                                     </div>
                                 </div>
                             </div>
@@ -238,12 +234,15 @@ export default function NewDriverVoucherPage() {
                         </div>
                     </div>
                     <div className="form-group">
-                        <label className="form-label">Upah Trip <span className="required">*</span></label>
-                        <CurrencyInput
-                            value={form.driverFeeAmount}
-                            onValueChange={value => setForm({ ...form, driverFeeAmount: value })}
-                            placeholder="Ketik upah trip"
+                        <label className="form-label">Upah Trip Snapshot DO <span className="required">*</span></label>
+                        <input
+                            className="form-input"
+                            value={effectiveTripFee > 0 ? formatCurrency(effectiveTripFee) : 'Belum diisi di DO'}
+                            readOnly
                         />
+                        <div className="text-muted" style={{ fontSize: '0.78rem', marginTop: '0.35rem' }}>
+                            Upah trip mengikuti DO dan master biaya rute trip. Untuk mengubah nominal ini, edit DO sebelum uang jalan trip diterbitkan.
+                        </div>
                     </div>
                     <div className="form-group">
                         <label className="form-label">Catatan</label>

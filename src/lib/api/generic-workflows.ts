@@ -474,6 +474,19 @@ export async function handleGenericUpdate(
                 return NextResponse.json({ error: 'Tarip borongan DO yang sudah masuk slip borongan tidak boleh diubah' }, { status: 409 });
             }
 
+            const relatedVoucher = await getSanityClient().fetch<{ _id: string; bonNumber?: string } | null>(
+                `*[_type == "driverVoucher" && (deliveryOrderRef == $ref || deliveryOrderRef._ref == $ref)][0]{ _id, bonNumber }`,
+                { ref: id }
+            );
+            if (relatedVoucher) {
+                return NextResponse.json(
+                    {
+                        error: `Upah trip DO yang sudah punya uang jalan trip ${relatedVoucher.bonNumber || ''} tidak boleh diubah`,
+                    },
+                    { status: 409 }
+                );
+            }
+
             if (updatesTripRouteSelection) {
                 try {
                     const tripRouteSelection = await resolveTripRouteRateSelection(updates, {

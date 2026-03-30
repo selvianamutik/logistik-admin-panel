@@ -24,6 +24,7 @@ import {
   formatCurrency,
   formatDate,
   getDriverVoucherIssuedAmount,
+  getDriverVoucherOperationalBalance,
 } from "@/lib/utils";
 import { exportToExcel } from "@/lib/export";
 import type {
@@ -526,7 +527,7 @@ export default function ReportsPage() {
                       textTransform: "uppercase",
                     }}
                   >
-                    Potensi Uang Kembali
+                    Potensi Pengembalian Akhir
                   </div>
                   <div
                     style={{
@@ -552,7 +553,7 @@ export default function ReportsPage() {
                       textTransform: "uppercase",
                     }}
                   >
-                    Potensi Tambahan Bayar
+                    Potensi Tambahan Bayar Akhir
                   </div>
                   <div
                     style={{
@@ -577,14 +578,15 @@ export default function ReportsPage() {
                       <th style={{ textAlign: "right" }}>Biaya</th>
                       <th style={{ textAlign: "right" }}>Upah Trip</th>
                       <th style={{ textAlign: "right" }}>Total Hak Trip</th>
-                      <th style={{ textAlign: "right" }}>Selisih</th>
+                      <th style={{ textAlign: "right" }}>Sisa Bon Operasional</th>
+                      <th style={{ textAlign: "right" }}>Net Settlement Akhir</th>
                     </tr>
                   </thead>
                   <tbody>
                     {openDriverVouchers.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={9}
+                          colSpan={10}
                           style={{
                             textAlign: "center",
                             padding: "2rem 1rem",
@@ -599,6 +601,8 @@ export default function ReportsPage() {
                         const totalClaimAmount =
                           item.totalClaimAmount ||
                           (item.totalSpent || 0) + (item.driverFeeAmount || 0);
+                        const operationalBalance =
+                          getDriverVoucherOperationalBalance(item);
                         return (
                           <tr key={item._id}>
                             <td style={{ fontWeight: 600 }}>{item.bonNumber}</td>
@@ -616,6 +620,18 @@ export default function ReportsPage() {
                             </td>
                             <td style={{ textAlign: "right", fontWeight: 600 }}>
                               {formatCurrency(totalClaimAmount)}
+                            </td>
+                            <td
+                              style={{
+                                textAlign: "right",
+                                fontWeight: 700,
+                                color:
+                                  operationalBalance < 0
+                                    ? "var(--color-danger)"
+                                    : "var(--color-success)",
+                              }}
+                            >
+                              {formatCurrency(operationalBalance)}
                             </td>
                             <td
                               style={{
@@ -651,6 +667,8 @@ export default function ReportsPage() {
                     const totalClaimAmount =
                       item.totalClaimAmount ||
                       (item.totalSpent || 0) + (item.driverFeeAmount || 0);
+                    const operationalBalance =
+                      getDriverVoucherOperationalBalance(item);
                     return (
                       <div key={item._id} className="mobile-record-card">
                         <div className="mobile-record-header">
@@ -696,7 +714,22 @@ export default function ReportsPage() {
                             </span>
                           </div>
                           <div className="mobile-record-kv">
-                            <span className="mobile-record-label">Selisih</span>
+                            <span className="mobile-record-label">Sisa Bon Operasional</span>
+                            <span
+                              className="mobile-record-value"
+                              style={{
+                                fontWeight: 700,
+                                color:
+                                  operationalBalance < 0
+                                    ? "var(--color-danger)"
+                                    : "var(--color-success)",
+                              }}
+                            >
+                              {formatCurrency(operationalBalance)}
+                            </span>
+                          </div>
+                          <div className="mobile-record-kv">
+                            <span className="mobile-record-label">Net Settlement Akhir</span>
                             <span
                               className="mobile-record-value"
                               style={{

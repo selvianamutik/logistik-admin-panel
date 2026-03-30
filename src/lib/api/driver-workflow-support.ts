@@ -6,6 +6,7 @@ import {
 
 export type DriverVoucherTotals = {
     totalSpent: number;
+    operationalBalance: number;
     driverFeeAmount: number;
     totalClaimAmount: number;
     balance: number;
@@ -35,10 +36,12 @@ export function computeDriverVoucherTotals(
     const safeCashGiven = Number.isFinite(cashGiven) ? cashGiven : 0;
     const safeOperationalSpent = Number.isFinite(operationalSpent) ? operationalSpent : 0;
     const safeDriverFeeAmount = Number.isFinite(driverFeeAmount) ? driverFeeAmount : 0;
+    const operationalBalance = safeCashGiven - safeOperationalSpent;
     const totalClaimAmount = safeOperationalSpent + safeDriverFeeAmount;
 
     return {
         totalSpent: safeOperationalSpent,
+        operationalBalance,
         driverFeeAmount: safeDriverFeeAmount,
         totalClaimAmount,
         balance: safeCashGiven - totalClaimAmount,

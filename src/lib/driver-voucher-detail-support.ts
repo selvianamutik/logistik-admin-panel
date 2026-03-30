@@ -1,6 +1,6 @@
 import { escapePrintHtml } from './print';
 import type { DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem } from './types';
-import { formatCurrency, formatDate, getDriverVoucherInitialCash, getDriverVoucherIssuedAmount, getDriverVoucherTopUpAmount } from './utils';
+import { formatCurrency, formatDate, getDriverVoucherInitialCash, getDriverVoucherIssuedAmount, getDriverVoucherOperationalBalance, getDriverVoucherTopUpAmount } from './utils';
 
 export const DRIVER_VOUCHER_STATUS_MAP: Record<string, { label: string; cls: string }> = {
     DRAFT: { label: 'Draft', cls: 'badge-gray' },
@@ -53,22 +53,27 @@ export function buildDriverVoucherDetailSummary(voucher: DriverVoucher | null, i
     const initialCashGiven = getDriverVoucherInitialCash(voucher || {});
     const totalIssuedAmount = getDriverVoucherIssuedAmount(voucher || {});
     const topUpAmount = getDriverVoucherTopUpAmount(voucher || {});
+    const operationalBalance = getDriverVoucherOperationalBalance({
+        ...(voucher || {}),
+        totalSpent: operationalSpent,
+    });
     const balance = totalIssuedAmount - totalClaimAmount;
     const isSettled = voucher?.status === 'SETTLED';
     const statusConfig = DRIVER_VOUCHER_STATUS_MAP[voucher?.status || ''] || { label: voucher?.status || '-', cls: 'badge-gray' };
     const settlementLabel = balance > 0
-        ? 'Sisa akan kembali ke rekening atau kas perusahaan'
+        ? 'Driver mengembalikan net settlement akhir ke rekening atau kas perusahaan'
         : balance < 0
-            ? 'Perusahaan masih perlu menambah pembayaran ke supir'
-            : 'Tidak ada selisih';
+            ? 'Perusahaan masih perlu menambah pembayaran akhir ke supir'
+            : 'Tidak ada net settlement akhir';
     const settlementPrimaryLabel = balance > 0
-        ? 'Selesaikan & Catat Pengembalian'
+        ? 'Selesaikan & Catat Pengembalian Akhir'
         : balance < 0
-            ? 'Selesaikan & Tambah Bayar Supir'
+            ? 'Selesaikan & Tambah Bayar Akhir'
             : 'Selesaikan Trip';
 
     return {
         operationalSpent,
+        operationalBalance,
         driverFeeAmount,
         totalClaimAmount,
         initialCashGiven,
@@ -91,6 +96,7 @@ export function buildDriverVoucherPrintHtml(params: {
     const { voucher, items, disbursements, summary } = params;
     const {
         operationalSpent,
+        operationalBalance,
         driverFeeAmount,
         totalClaimAmount,
         initialCashGiven,
@@ -131,7 +137,8 @@ export function buildDriverVoucherPrintHtml(params: {
                     <tr><td style="border:none;padding:2px 8px;font-weight:600">No. DO Internal</td><td style="border:none;padding:2px 8px">${escapePrintHtml(voucher.doNumber || '-')}</td><td style="border:none;padding:2px 8px;font-weight:600">Rute</td><td style="border:none;padding:2px 8px">${escapePrintHtml(voucher.route || '-')}</td></tr>
                     <tr><td style="border:none;padding:2px 8px;font-weight:600">Uang Jalan Awal</td><td style="border:none;padding:2px 8px;font-weight:700;font-size:1.05em">${escapePrintHtml(formatCurrency(initialCashGiven))}</td><td style="border:none;padding:2px 8px;font-weight:600">Top Up Uang Jalan</td><td style="border:none;padding:2px 8px">${escapePrintHtml(formatCurrency(topUpAmount))}</td></tr>
                     <tr><td style="border:none;padding:2px 8px;font-weight:600">Total Uang Diberikan</td><td style="border:none;padding:2px 8px;font-weight:700">${escapePrintHtml(formatCurrency(totalIssuedAmount))}</td><td style="border:none;padding:2px 8px;font-weight:600">Rekening Sumber</td><td style="border:none;padding:2px 8px">${escapePrintHtml(voucher.issueBankName || '-')}</td></tr>
-                    <tr><td style="border:none;padding:2px 8px;font-weight:600">Upah Trip</td><td style="border:none;padding:2px 8px">${escapePrintHtml(formatCurrency(driverFeeAmount))}</td><td style="border:none;padding:2px 8px;font-weight:600">Biaya Perjalanan</td><td style="border:none;padding:2px 8px">${escapePrintHtml(formatCurrency(operationalSpent))}</td></tr>
+                    <tr><td style="border:none;padding:2px 8px;font-weight:600">Biaya Perjalanan</td><td style="border:none;padding:2px 8px">${escapePrintHtml(formatCurrency(operationalSpent))}</td><td style="border:none;padding:2px 8px;font-weight:600">Sisa Bon Operasional</td><td style="border:none;padding:2px 8px">${escapePrintHtml(formatCurrency(operationalBalance))}</td></tr>
+                    <tr><td style="border:none;padding:2px 8px;font-weight:600">Upah Trip Snapshot DO</td><td style="border:none;padding:2px 8px">${escapePrintHtml(formatCurrency(driverFeeAmount))}</td><td style="border:none;padding:2px 8px;font-weight:600">Net Settlement Akhir</td><td style="border:none;padding:2px 8px">${escapePrintHtml(formatCurrency(balance))}</td></tr>
                     <tr><td style="border:none;padding:2px 8px;font-weight:600">Status</td><td style="border:none;padding:2px 8px">${escapePrintHtml(DRIVER_VOUCHER_STATUS_MAP[voucher.status || '']?.label || voucher.status)}</td><td style="border:none;padding:2px 8px;font-weight:600">Rekening Settlement</td><td style="border:none;padding:2px 8px">${escapePrintHtml(voucher.settlementBankName || '-')}</td></tr>
                 </tbody>
             </table>
@@ -150,12 +157,13 @@ export function buildDriverVoucherPrintHtml(params: {
                     </tr>
                 `).join('')}
                 <tr style="border-top:2px solid #1e293b"><td colspan="4" class="r b">Total Biaya Perjalanan</td><td class="r b">${escapePrintHtml(formatCurrency(operationalSpent))}</td></tr>
+                <tr><td colspan="4" class="r b">Sisa Bon Operasional</td><td class="r">${escapePrintHtml(formatCurrency(operationalBalance))}</td></tr>
                 <tr><td colspan="4" class="r b">Upah Trip</td><td class="r">${escapePrintHtml(formatCurrency(driverFeeAmount))}</td></tr>
                 <tr><td colspan="4" class="r b">Total Hak Trip</td><td class="r">${escapePrintHtml(formatCurrency(totalClaimAmount))}</td></tr>
                 <tr><td colspan="4" class="r b">Uang Jalan Awal</td><td class="r">${escapePrintHtml(formatCurrency(initialCashGiven))}</td></tr>
                 <tr><td colspan="4" class="r b">Top Up Uang Jalan</td><td class="r">${escapePrintHtml(formatCurrency(topUpAmount))}</td></tr>
                 <tr><td colspan="4" class="r b">Total Uang Diberikan</td><td class="r">${escapePrintHtml(formatCurrency(totalIssuedAmount))}</td></tr>
-                <tr style="border-top:2px solid #1e293b"><td colspan="4" class="r b">${escapePrintHtml(balance >= 0 ? 'Sisa Dikembalikan' : 'Tambahan Bayar ke Supir')}</td><td class="r b" style="color:${balance < 0 ? '#ef4444' : '#16a34a'}">${escapePrintHtml(formatCurrency(Math.abs(balance)))}</td></tr>
+                <tr style="border-top:2px solid #1e293b"><td colspan="4" class="r b">${escapePrintHtml(balance >= 0 ? 'Net Settlement Akhir (Kembali ke Perusahaan)' : 'Net Settlement Akhir (Tambah Bayar ke Supir)')}</td><td class="r b" style="color:${balance < 0 ? '#ef4444' : '#16a34a'}">${escapePrintHtml(formatCurrency(Math.abs(balance)))}</td></tr>
             </tbody>
         </table>
         <div style="margin-top:40px;display:flex;justify-content:space-between">

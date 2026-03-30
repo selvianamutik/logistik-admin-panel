@@ -842,19 +842,19 @@ export async function handleDriverVoucherCreate(
     }
 
     const deliveryOrderTripFee = normalizeNumber(deliveryOrder.taripBorongan || 0);
-    const effectiveDriverFeeAmount =
-        requestedDriverFeeAmount > 0
-            ? requestedDriverFeeAmount
-            : deliveryOrderTripFee;
-    if (!Number.isFinite(effectiveDriverFeeAmount) || effectiveDriverFeeAmount <= 0) {
+    if (requestedDriverFeeAmount > 0 && Math.abs(requestedDriverFeeAmount - deliveryOrderTripFee) > 0.01) {
         return NextResponse.json(
-            { error: `Isi upah trip saat membuat bon untuk DO ${deliveryOrder.doNumber || deliveryOrderRef}.` },
+            { error: 'Upah trip mengikuti snapshot DO. Ubah DO terlebih dahulu sebelum menerbitkan uang jalan trip.' },
             { status: 409 }
         );
     }
-
-    data.driverFeeAmount = effectiveDriverFeeAmount;
-    const shouldSyncDriverFeeToDo = Math.abs(deliveryOrderTripFee - effectiveDriverFeeAmount) > 0.01;
+    const effectiveDriverFeeAmount = deliveryOrderTripFee;
+    if (!Number.isFinite(effectiveDriverFeeAmount) || effectiveDriverFeeAmount <= 0) {
+        return NextResponse.json(
+            { error: `Isi upah trip di DO ${deliveryOrder.doNumber || deliveryOrderRef} dulu sebelum menerbitkan uang jalan trip.` },
+            { status: 409 }
+        );
+    }
 
     if (canonicalVehicleRef && !canonicalVehiclePlate) {
         const vehicle = await sanityGetById<{ _id: string; plateNumber?: string }>(canonicalVehicleRef);
@@ -877,7 +877,7 @@ export async function handleDriverVoucherCreate(
             logoUrl
         }`
     );
-    const driverFeeAmount = normalizeCurrencyNumber(data.driverFeeAmount ?? requestedDriverFeeAmount);
+    const driverFeeAmount = normalizeCurrencyNumber(effectiveDriverFeeAmount);
     const voucherTotals = computeDriverVoucherTotals(cashGiven, 0, driverFeeAmount);
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -955,12 +955,6 @@ export async function handleDriverVoucherCreate(
                 ifRevisionID: issueBank._rev,
                 set: { currentBalance: newBalance },
             });
-
-        if (shouldSyncDriverFeeToDo) {
-            transaction.patch(deliveryOrderRef, {
-                set: { taripBorongan: effectiveDriverFeeAmount },
-            });
-        }
 
         try {
             await transaction.commit();
@@ -1532,7 +1526,7 @@ export async function handleDriverVoucherSettlement(
 
         if (balance !== 0) {
             if (!settlementBankRef) {
-                return NextResponse.json({ error: 'Rekening settlement wajib dipilih untuk selisih bon' }, { status: 400 });
+                return NextResponse.json({ error: 'Rekening settlement wajib dipilih untuk net settlement akhir' }, { status: 400 });
             }
 
             settlementBank = await getLedgerAccount(settlementBankRef);
@@ -1541,7 +1535,7 @@ export async function handleDriverVoucherSettlement(
                     {
                         error: requestedSettlementBankRef
                             ? 'Rekening settlement tidak ditemukan'
-                            : 'Pilih rekening settlement aktif untuk selisih bon',
+                            : 'Pilih rekening settlement aktif untuk penyelesaian akhir',
                     },
                     { status: requestedSettlementBankRef ? 404 : 400 }
                 );

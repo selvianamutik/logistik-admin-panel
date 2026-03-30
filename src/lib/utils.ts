@@ -155,6 +155,20 @@ export function getDriverVoucherTopUpAmount(value: {
     );
 }
 
+export function getDriverVoucherOperationalBalance(value: {
+    initialCashGiven?: number | null;
+    totalIssuedAmount?: number | null;
+    cashGiven?: number | null;
+    totalSpent?: number | null;
+}) {
+    const totalIssuedAmount = getDriverVoucherIssuedAmount(value);
+    const totalSpent =
+        typeof value.totalSpent === 'number' && Number.isFinite(value.totalSpent)
+            ? Math.max(value.totalSpent, 0)
+            : 0;
+    return totalIssuedAmount - totalSpent;
+}
+
 // ── Status labels & colors ──
 export const ORDER_STATUS_MAP: Record<string, { label: string; color: string }> = {
     OPEN: { label: 'Belum Terkirim', color: 'info' },

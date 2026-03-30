@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Eye, Plus, Search, Receipt, Printer } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 
-import { formatDate, formatCurrency, getDriverVoucherIssuedAmount, getDriverVoucherTopUpAmount } from '@/lib/utils';
+import { formatDate, formatCurrency, getDriverVoucherIssuedAmount, getDriverVoucherOperationalBalance, getDriverVoucherTopUpAmount } from '@/lib/utils';
 import { openBrandedPrint, openPrintWindow, fetchCompanyProfile } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { DriverVoucher } from '@/lib/types';
@@ -169,7 +169,8 @@ export default function DriverVouchersPage() {
                                                     <th class="r">Biaya</th>
                                                     <th class="r">Upah Trip</th>
                                                     <th class="r">Total Hak Trip</th>
-                                                    <th class="r">Selisih</th>
+                                                    <th class="r">Sisa Bon Operasional</th>
+                                                    <th class="r">Net Settlement Akhir</th>
                                                     <th>Status</th>
                                                 </tr>
                                             </thead>
@@ -177,6 +178,7 @@ export default function DriverVouchersPage() {
                                                 ${printableVouchers.map(v => {
                                                     const totalClaimAmount = v.totalClaimAmount || ((v.totalSpent || 0) + (v.driverFeeAmount || 0));
                                                     const initialCashGiven = v.initialCashGiven || v.cashGiven || 0;
+                                                    const operationalBalance = getDriverVoucherOperationalBalance(v);
                                                     return `<tr>
                                                         <td class="b">${v.bonNumber}</td>
                                                         <td>${v.driverName || '-'}</td>
@@ -188,6 +190,7 @@ export default function DriverVouchersPage() {
                                                         <td class="r">${formatCurrency(v.totalSpent)}</td>
                                                         <td class="r">${formatCurrency(v.driverFeeAmount || 0)}</td>
                                                         <td class="r">${formatCurrency(totalClaimAmount)}</td>
+                                                        <td class="r">${formatCurrency(operationalBalance)}</td>
                                                         <td class="r b">${formatCurrency(v.balance)}</td>
                                                         <td>${STATUS_MAP[v.status]?.label || v.status}</td>
                                                     </tr>`;
@@ -271,7 +274,8 @@ export default function DriverVouchersPage() {
                                 <th>Biaya</th>
                                 <th>Upah Trip</th>
                                 <th>Total Hak Trip</th>
-                                <th>Selisih</th>
+                                <th>Sisa Bon Operasional</th>
+                                <th>Net Settlement Akhir</th>
                                 <th>Status</th>
                                 <th>Tindak Lanjut</th>
                                 <th>Aksi</th>
@@ -281,14 +285,14 @@ export default function DriverVouchersPage() {
                             {loading ? (
                                 [1, 2, 3].map(i => (
                                     <tr key={i}>
-                                        {Array.from({ length: 15 }).map((_, j) => (
+                                        {Array.from({ length: 16 }).map((_, j) => (
                                             <td key={j}><div className="skeleton skeleton-text" /></td>
                                         ))}
                                     </tr>
                                 ))
                             ) : totalItems === 0 ? (
                                 <tr>
-                                    <td colSpan={15}>
+                                    <td colSpan={16}>
                                         <div className="empty-state">
                                             <Receipt size={48} className="empty-state-icon" />
                                             <div className="empty-state-title">Belum ada uang jalan trip</div>
@@ -303,6 +307,7 @@ export default function DriverVouchersPage() {
                                     const initialCashGiven = v.initialCashGiven || v.cashGiven || 0;
                                     const topUpAmount = getDriverVoucherTopUpAmount(v);
                                     const totalIssuedAmount = getDriverVoucherIssuedAmount(v);
+                                    const operationalBalance = getDriverVoucherOperationalBalance(v);
 
                                     return (
                                         <tr key={v._id}>
@@ -329,6 +334,9 @@ export default function DriverVouchersPage() {
                                             <td>{formatCurrency(v.totalSpent)}</td>
                                             <td>{formatCurrency(v.driverFeeAmount || 0)}</td>
                                             <td className="font-medium">{formatCurrency(totalClaimAmount)}</td>
+                                            <td className="font-medium" style={{ color: operationalBalance < 0 ? '#ef4444' : operationalBalance > 0 ? '#16a34a' : undefined }}>
+                                                {formatCurrency(operationalBalance)}
+                                            </td>
                                             <td
                                                 className="font-medium"
                                                 style={{ color: v.balance < 0 ? '#ef4444' : v.balance > 0 ? '#16a34a' : undefined }}
@@ -375,6 +383,7 @@ export default function DriverVouchersPage() {
                             const initialCashGiven = v.initialCashGiven || v.cashGiven || 0;
                             const topUpAmount = getDriverVoucherTopUpAmount(v);
                             const totalIssuedAmount = getDriverVoucherIssuedAmount(v);
+                            const operationalBalance = getDriverVoucherOperationalBalance(v);
 
                             return (
                                 <div key={v._id} className="mobile-record-card">
@@ -422,7 +431,13 @@ export default function DriverVouchersPage() {
                                             <span className="mobile-record-value">{formatCurrency(totalClaimAmount)}</span>
                                         </div>
                                         <div className="mobile-record-kv">
-                                            <span className="mobile-record-label">Selisih</span>
+                                            <span className="mobile-record-label">Sisa Bon Operasional</span>
+                                            <span className="mobile-record-value" style={{ fontWeight: 700, color: operationalBalance < 0 ? '#ef4444' : operationalBalance > 0 ? '#16a34a' : undefined }}>
+                                                {formatCurrency(operationalBalance)}
+                                            </span>
+                                        </div>
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Net Settlement Akhir</span>
                                             <span className="mobile-record-value" style={{ fontWeight: 700, color: v.balance < 0 ? '#ef4444' : v.balance > 0 ? '#16a34a' : undefined }}>
                                                 {formatCurrency(v.balance)}
                                             </span>

@@ -92,6 +92,7 @@ export default function DriverVoucherDetailPage() {
 
     const {
         operationalSpent,
+        operationalBalance,
         driverFeeAmount,
         totalClaimAmount,
         initialCashGiven,
@@ -332,7 +333,7 @@ export default function DriverVoucherDetailPage() {
             return;
         }
         if (balance !== 0 && !settlementBankRef) {
-            addToast('error', 'Pilih rekening settlement untuk selisih bon');
+            addToast('error', 'Pilih rekening settlement untuk net settlement akhir');
             return;
         }
 
@@ -454,14 +455,24 @@ export default function DriverVoucherDetailPage() {
                     <div style={{ fontSize: '1.3rem', fontWeight: 700, color: '#ef4444' }}>{formatCurrency(operationalSpent)}</div>
                 </div></div>
                 <div className="card"><div className="card-body" style={{ padding: 'var(--space-4)' }}>
-                    <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>Upah Trip</div>
-                    <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{formatCurrency(driverFeeAmount)}</div>
+                    <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>Sisa Bon Operasional</div>
+                    <div style={{ fontSize: '1.3rem', fontWeight: 700, color: operationalBalance >= 0 ? '#16a34a' : '#ef4444' }}>{formatCurrency(Math.abs(operationalBalance))}</div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                        {operationalBalance >= 0 ? 'Sisa dana operasional yang masih dipegang driver' : 'Biaya perjalanan melebihi uang jalan operasional'}
+                    </div>
                 </div></div>
                 <div className="card"><div className="card-body" style={{ padding: 'var(--space-4)' }}>
-                    <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>{balance >= 0 ? 'Sisa (Dikembalikan)' : 'Tambahan Bayar'}</div>
+                    <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>Upah Trip Snapshot DO</div>
+                    <div style={{ fontSize: '1.3rem', fontWeight: 700 }}>{formatCurrency(driverFeeAmount)}</div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                        Nilai ini mengikuti snapshot DO dan master biaya rute trip
+                    </div>
+                </div></div>
+                <div className="card"><div className="card-body" style={{ padding: 'var(--space-4)' }}>
+                    <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 2 }}>Net Settlement Akhir</div>
                     <div style={{ fontSize: '1.3rem', fontWeight: 700, color: balance >= 0 ? '#16a34a' : '#ef4444' }}>{formatCurrency(Math.abs(balance))}</div>
                     <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                        Total hak trip {formatCurrency(totalClaimAmount)}
+                        {balance >= 0 ? 'Kembali ke perusahaan setelah biaya dan upah diperhitungkan' : 'Tambahan bayar ke supir setelah biaya dan upah diperhitungkan'}
                     </div>
                 </div></div>
             </div>
@@ -475,8 +486,10 @@ export default function DriverVoucherDetailPage() {
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>RUTE</div><div>{voucher.route || '-'}</div></div>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>UANG JALAN AWAL</div><div>{formatCurrency(initialCashGiven)}</div></div>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>TOTAL UANG DIBERIKAN</div><div>{formatCurrency(totalIssuedAmount)}</div></div>
-                        <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>UPAH TRIP</div><div>{formatCurrency(driverFeeAmount)}</div></div>
+                        <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>SISA BON OPERASIONAL</div><div>{formatCurrency(operationalBalance)}</div></div>
+                        <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>UPAH TRIP SNAPSHOT DO</div><div>{formatCurrency(driverFeeAmount)}</div></div>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>REKENING SUMBER</div><div>{voucher.issueBankName || '-'}</div></div>
+                        <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>NET SETTLEMENT AKHIR</div><div>{formatCurrency(balance)}</div></div>
                         {voucher.notes && <div style={{ gridColumn: '1 / -1' }}><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>CATATAN</div><div>{voucher.notes}</div></div>}
                         {isSettled && voucher.settledDate && <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>TANGGAL SELESAI</div><div>{formatDate(voucher.settledDate)}</div></div>}
                         {isSettled && <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>REKENING SETTLEMENT</div><div>{voucher.settlementBankName || '-'}</div></div>}
@@ -630,7 +643,7 @@ export default function DriverVoucherDetailPage() {
                                         <div className="font-semibold">{formatCurrency(totalClaimAmount)}</div>
                                     </div>
                                     <div>
-                                        <div className="text-muted text-sm">Selisih Saat Ini</div>
+                                        <div className="text-muted text-sm">Net Settlement Saat Ini</div>
                                         <div className="font-semibold" style={{ color: balance < 0 ? 'var(--color-danger)' : 'inherit' }}>{formatCurrency(Math.abs(balance))}</div>
                                     </div>
                                 </div>
@@ -672,11 +685,15 @@ export default function DriverVoucherDetailPage() {
                                         <div className="font-semibold">{formatCurrency(totalIssuedAmount)}</div>
                                     </div>
                                     <div>
+                                        <div className="text-muted text-sm">Sisa Bon Operasional</div>
+                                        <div className="font-semibold" style={{ color: operationalBalance >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>{formatCurrency(operationalBalance)}</div>
+                                    </div>
+                                    <div>
                                         <div className="text-muted text-sm">Total Hak Trip</div>
                                         <div className="font-semibold">{formatCurrency(totalClaimAmount)}</div>
                                     </div>
                                     <div>
-                                        <div className="text-muted text-sm">{balance >= 0 ? 'Sisa Kembali' : 'Tambahan Bayar'}</div>
+                                        <div className="text-muted text-sm">Net Settlement Akhir</div>
                                         <div className="font-semibold" style={{ color: balance >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>{formatCurrency(Math.abs(balance))}</div>
                                     </div>
                                 </div>
@@ -686,7 +703,7 @@ export default function DriverVoucherDetailPage() {
                                 <input type="date" className="form-input" value={settlementDate} onChange={event => setSettlementDate(event.target.value)} disabled={settling} />
                             </div>
                             <div className="form-group">
-                                <label className="form-label">Rekening / Kas Penyelesaian {balance !== 0 ? <span className="required">*</span> : null}</label>
+                                <label className="form-label">Rekening / Kas Penyelesaian Akhir {balance !== 0 ? <span className="required">*</span> : null}</label>
                                 <select className="form-select" value={settlementBankRef} onChange={event => setSettlementBankRef(event.target.value)} disabled={settling}>
                                     <option value="">Pilih rekening atau kas</option>
                                     {bankAccounts.map(account => <option key={account._id} value={account._id}>{account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''}</option>)}
@@ -698,9 +715,10 @@ export default function DriverVoucherDetailPage() {
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Top Up Uang Jalan</span><strong>{formatCurrency(topUpAmount)}</strong></div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Total Uang Diberikan</span><strong>{formatCurrency(totalIssuedAmount)}</strong></div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Biaya Perjalanan</span><strong>{formatCurrency(operationalSpent)}</strong></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Sisa Bon Operasional</span><strong>{formatCurrency(operationalBalance)}</strong></div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Upah Trip</span><strong>{formatCurrency(driverFeeAmount)}</strong></div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}><span>Total Hak Trip</span><strong>{formatCurrency(totalClaimAmount)}</strong></div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{balance >= 0 ? 'Sisa Dikembalikan' : 'Tambahan Bayar ke Supir'}</span><strong style={{ color: balance >= 0 ? '#16a34a' : '#ef4444' }}>{formatCurrency(Math.abs(balance))}</strong></div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Net Settlement Akhir</span><strong style={{ color: balance >= 0 ? '#16a34a' : '#ef4444' }}>{formatCurrency(Math.abs(balance))}</strong></div>
                             </div>
                         </div>
                         <div className="modal-footer">

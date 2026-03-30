@@ -42,7 +42,7 @@ import {
 import { generateDOPdf } from '@/lib/pdf/doTemplate';
 import { hasPermission, normalizeUserRole } from '@/lib/rbac';
 import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
-import type { Customer, DeliveryOrder, DeliveryOrderItem, TrackingLog, CompanyProfile, Order, Driver, TripRouteRate, Vehicle } from '@/lib/types';
+import type { Customer, DeliveryOrder, DeliveryOrderItem, TrackingLog, CompanyProfile, Order, Driver, DriverVoucher, TripRouteRate, Vehicle } from '@/lib/types';
 
 export default function DODetailPage() {
     const params = useParams();
@@ -78,6 +78,7 @@ export default function DODetailPage() {
     const [tripRouteRateRef, setTripRouteRateRef] = useState('');
     const [tripOriginArea, setTripOriginArea] = useState('');
     const [tripDestinationArea, setTripDestinationArea] = useState('');
+    const [linkedVoucherBonNumber, setLinkedVoucherBonNumber] = useState('');
     const [updatingStatus, setUpdatingStatus] = useState(false);
     const [savingPOD, setSavingPOD] = useState(false);
     const [savingTarip, setSavingTarip] = useState(false);
@@ -157,7 +158,7 @@ export default function DODetailPage() {
 
         try {
             const deliveryOrder = await fetchAdminData<DeliveryOrder | null>(`/api/data?entity=delivery-orders&id=${doId}`, 'Gagal memuat detail surat jalan');
-            const [itemRows, logRows, sourceOrder, customerData, tripRateRows] = await Promise.all([
+            const [itemRows, logRows, sourceOrder, customerData, tripRateRows, linkedVoucherRows] = await Promise.all([
                 fetchAllAdminCollectionData<DeliveryOrderItem>(`/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: doId }))}`, 'Gagal memuat detail surat jalan'),
                 fetchAllAdminCollectionData<TrackingLog>(`/api/data?entity=tracking-logs&filter=${encodeURIComponent(JSON.stringify({ refRef: doId, refType: 'DO' }))}`, 'Gagal memuat detail surat jalan'),
                 deliveryOrder?.orderRef
@@ -169,6 +170,9 @@ export default function DODetailPage() {
                 canManageTripFee
                     ? fetchAdminCollectionData<TripRouteRate[]>(`/api/data?entity=trip-route-rates&filter=${encodeURIComponent(JSON.stringify({ active: true }))}`, 'Gagal memuat detail surat jalan')
                     : Promise.resolve([] as TripRouteRate[]),
+                canManageTripFee
+                    ? fetchAdminCollectionData<DriverVoucher[]>(`/api/data?entity=driver-vouchers&pageSize=1&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: doId }))}`, 'Gagal memuat detail surat jalan')
+                    : Promise.resolve([] as DriverVoucher[]),
             ]);
 
             const resolvedDeliveryOrder = buildResolvedDeliveryOrder(deliveryOrder, sourceOrder);
@@ -176,6 +180,7 @@ export default function DODetailPage() {
             setDoData(resolvedDeliveryOrder);
             setShipperReferenceFormat((customerData?.deliveryOrderPrefix || 'SJ').toUpperCase());
             setTripRouteRates((tripRateRows || []).filter(rate => rate.active !== false));
+            setLinkedVoucherBonNumber(linkedVoucherRows?.[0]?.bonNumber || '');
             if (!editingTaripRef.current) {
                 setTaripBorongan(resolvedDeliveryOrder?.taripBorongan || 0);
                 setKeteranganBorongan(resolvedDeliveryOrder?.keteranganBorongan || '');
@@ -935,7 +940,7 @@ export default function DODetailPage() {
                                     <div className="detail-label">Keterangan</div>
                                     <div className="detail-value">{doData.keteranganBorongan || '-'}</div>
                                 </div>
-                                {canManageTripFee && (
+                                {canManageTripFee && !linkedVoucherBonNumber && (
                                     <div className="detail-item" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end' }}>
                                         <button className="btn btn-secondary btn-sm" onClick={() => setEditingTarip(true)}>
                                             <Edit size={14} /> {doData.taripBorongan ? 'Edit Upah' : 'Isi Upah'}
@@ -957,12 +962,17 @@ export default function DODetailPage() {
                                     <div className="detail-value">
                                         {matchedTripRouteRate
                                             ? formatTripRouteRateLabel(matchedTripRouteRate)
-                                            : doData.tripRouteRateRef
-                                                ? (canManageTripFee ? 'Master tidak ditemukan' : 'Tersambung ke master tarif')
-                                                : '-'}
+                                        : doData.tripRouteRateRef
+                                            ? (canManageTripFee ? 'Master tidak ditemukan' : 'Tersambung ke master tarif')
+                                            : '-'}
                                     </div>
                                 </div>
                             </div>
+                            {linkedVoucherBonNumber && (
+                                <div className="text-muted text-sm" style={{ marginTop: '0.75rem' }}>
+                                    Upah trip sudah terkunci karena DO ini sudah punya uang jalan trip {linkedVoucherBonNumber}. Untuk menjaga settlement tetap konsisten, nominal dan master rute tidak bisa diubah lagi dari DO.
+                                </div>
+                            )}
                         </div>
                     ) : (
                         <div>
