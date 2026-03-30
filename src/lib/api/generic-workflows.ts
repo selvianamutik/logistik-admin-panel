@@ -898,6 +898,15 @@ export async function handleGenericDelete(
         }
     }
 
+    if (entity === 'maintenances') {
+        return NextResponse.json(
+            {
+                error: 'Maintenance tidak boleh dihapus langsung karena histori servis harus tetap utuh. Ubah status maintenance bila jadwal tidak jadi dijalankan.',
+            },
+            { status: 409 }
+        );
+    }
+
     if (entity === 'tire-events') {
         return NextResponse.json(
             {
