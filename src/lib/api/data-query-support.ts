@@ -1,5 +1,5 @@
 import type { ApiSession } from '@/lib/api/data-helpers';
-import { filterExpensesByRole } from '@/lib/rbac';
+import { filterExpensesByRole, hasPageAccess, hasPermission } from '@/lib/rbac';
 import {
     getSanityClient,
 } from '@/lib/sanity';
@@ -67,6 +67,11 @@ export function getListSortClause(entity: string, sortPreset?: string | null) {
 
 export async function getDashboardSummary(session: ApiSession): Promise<DashboardSummary> {
     const client = getSanityClient();
+    const canViewOrders = hasPageAccess(session.role, 'orders');
+    const canViewInvoices = hasPermission(session.role, 'freightNotas', 'view');
+    const canViewTripCash = hasPermission(session.role, 'driverVouchers', 'view');
+    const canViewFleet = hasPermission(session.role, 'incidents', 'view') || hasPermission(session.role, 'maintenance', 'view');
+    const canSeeBorongan = hasPermission(session.role, 'driverBorongans', 'view');
     const [
         orderStats,
         doStats,
@@ -78,47 +83,63 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
         recentOrders,
         recentNotas,
     ] = await Promise.all([
-        client.fetch<DashboardSummary['orderStats']>(`{
-            "total": count(*[_type == "order"]),
-            "open": count(*[_type == "order" && status == "OPEN"]),
-            "partial": count(*[_type == "order" && status == "PARTIAL"]),
-            "complete": count(*[_type == "order" && status == "COMPLETE"]),
-            "onHold": count(*[_type == "order" && status == "ON_HOLD"])
-        }`),
+        canViewOrders
+            ? client.fetch<DashboardSummary['orderStats']>(`{
+                "total": count(*[_type == "order"]),
+                "open": count(*[_type == "order" && status == "OPEN"]),
+                "partial": count(*[_type == "order" && status == "PARTIAL"]),
+                "complete": count(*[_type == "order" && status == "COMPLETE"]),
+                "onHold": count(*[_type == "order" && status == "ON_HOLD"])
+            }`)
+            : Promise.resolve({ total: 0, open: 0, partial: 0, complete: 0, onHold: 0 }),
         client.fetch<DashboardSummary['doStats']>(`{
             "total": count(*[_type == "deliveryOrder"]),
             "onDelivery": count(*[_type == "deliveryOrder" && status == "ON_DELIVERY"])
         }`),
-        client.fetch<Array<{ _id: string; totalAmount?: number; totalAdjustmentAmount?: number; netAmount?: number }>>(
-            `*[_type == "freightNota" && status != "PAID"]{ _id, totalAmount, totalAdjustmentAmount, netAmount }`
-        ),
-        client.fetch<Array<{ invoiceRef?: string; amount?: number }>>(
-            `*[_type == "payment" && defined(invoiceRef)]{ invoiceRef, amount }`
-        ),
-        client.fetch<Array<{ totalAmount?: number }>>(`*[_type == "driverBorongan" && status != "PAID"]{ totalAmount }`),
-        client.fetch<Array<{ cashGiven?: number; totalIssuedAmount?: number }>>(
-            `*[_type == "driverVoucher" && status != "SETTLED"]{ cashGiven, totalIssuedAmount }`
-        ),
-        client.fetch<DashboardSummary['fleetStats']>(`{
-            "openIncidents": count(*[_type == "incident" && (status == "OPEN" || status == "IN_PROGRESS")]),
-            "maintenanceDue": count(*[_type == "maintenance" && status == "SCHEDULED"])
-        }`),
-        client.fetch<DashboardSummary['recentOrders']>(`*[_type == "order"] | order(_createdAt desc)[0...5]{
-            _id,
-            masterResi,
-            customerName,
-            status,
-            createdAt
-        }`),
-        client.fetch<DashboardSummary['recentNotas']>(`*[_type == "freightNota"] | order(_createdAt desc)[0...5]{
-            _id,
-            notaNumber,
-            customerName,
-            status,
-            totalAmount,
-            totalAdjustmentAmount,
-            netAmount
-        }`),
+        canViewInvoices
+            ? client.fetch<Array<{ _id: string; totalAmount?: number; totalAdjustmentAmount?: number; netAmount?: number }>>(
+                `*[_type == "freightNota" && status != "PAID"]{ _id, totalAmount, totalAdjustmentAmount, netAmount }`
+            )
+            : Promise.resolve([]),
+        canViewInvoices
+            ? client.fetch<Array<{ invoiceRef?: string; amount?: number }>>(
+                `*[_type == "payment" && defined(invoiceRef)]{ invoiceRef, amount }`
+            )
+            : Promise.resolve([]),
+        canSeeBorongan
+            ? client.fetch<Array<{ totalAmount?: number }>>(`*[_type == "driverBorongan" && status != "PAID"]{ totalAmount }`)
+            : Promise.resolve([]),
+        canViewTripCash
+            ? client.fetch<Array<{ cashGiven?: number; totalIssuedAmount?: number }>>(
+                `*[_type == "driverVoucher" && status != "SETTLED"]{ cashGiven, totalIssuedAmount }`
+            )
+            : Promise.resolve([]),
+        canViewFleet
+            ? client.fetch<DashboardSummary['fleetStats']>(`{
+                "openIncidents": count(*[_type == "incident" && (status == "OPEN" || status == "IN_PROGRESS")]),
+                "maintenanceDue": count(*[_type == "maintenance" && status == "SCHEDULED"])
+            }`)
+            : Promise.resolve({ openIncidents: 0, maintenanceDue: 0 }),
+        canViewOrders
+            ? client.fetch<DashboardSummary['recentOrders']>(`*[_type == "order"] | order(_createdAt desc)[0...5]{
+                _id,
+                masterResi,
+                customerName,
+                status,
+                createdAt
+            }`)
+            : Promise.resolve([]),
+        canViewInvoices
+            ? client.fetch<DashboardSummary['recentNotas']>(`*[_type == "freightNota"] | order(_createdAt desc)[0...5]{
+                _id,
+                notaNumber,
+                customerName,
+                status,
+                totalAmount,
+                totalAdjustmentAmount,
+                netAmount
+            }`)
+            : Promise.resolve([]),
     ]);
 
     const notaPaymentTotals = notaPayments.reduce<Record<string, number>>((acc, payment) => {
@@ -148,16 +169,16 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
         orderStats,
         doStats,
         notaStats: {
-            unpaid: unpaidNotas.length,
-            totalOutstanding: canSeeFinancialTotals ? notaOutstanding : 0,
+            unpaid: canViewInvoices ? unpaidNotas.length : 0,
+            totalOutstanding: canViewInvoices && canSeeFinancialTotals ? notaOutstanding : 0,
         },
         boronganStats: {
-            unpaid: unpaidBorongans.length,
-            totalOutstanding: canSeeFinancialTotals ? boronganOutstanding : 0,
+            unpaid: canSeeBorongan ? unpaidBorongans.length : 0,
+            totalOutstanding: canSeeBorongan ? boronganOutstanding : 0,
         },
         voucherStats: {
-            unsettled: openVouchers.length,
-            totalIssued: canSeeFinancialTotals ? voucherIssued : 0,
+            unsettled: canViewTripCash ? openVouchers.length : 0,
+            totalIssued: canViewTripCash && canSeeFinancialTotals ? voucherIssued : 0,
         },
         fleetStats,
         recentOrders,

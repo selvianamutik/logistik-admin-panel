@@ -348,7 +348,7 @@ export async function GET(request: Request) {
     }
 
     if (entity === 'driver-borongan-do-refs') {
-        if (!hasPermission(session.role, 'driverVouchers', 'view')) {
+        if (!hasPermission(session.role, 'driverVouchers', 'create')) {
             return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
         }
         try {
