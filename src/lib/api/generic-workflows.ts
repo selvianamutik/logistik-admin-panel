@@ -492,14 +492,28 @@ export async function handleGenericUpdate(
                     const tripRouteSelection = await resolveTripRouteRateSelection(updates, {
                         serviceRef: normalizeOptionalText((existingDeliveryOrder as Record<string, unknown>).serviceRef),
                     });
+                    const matchedTripRouteRateFee = normalizeCurrencyNumber(tripRouteSelection.matchedTripRouteRate?.rate ?? 0);
+                    if (
+                        Object.prototype.hasOwnProperty.call(updates, 'taripBorongan') &&
+                        matchedTripRouteRateFee > 0
+                    ) {
+                        const requestedTaripBorongan = normalizeCurrencyNumber(updates.taripBorongan);
+                        if (
+                            Number.isFinite(requestedTaripBorongan) &&
+                            requestedTaripBorongan > 0 &&
+                            Math.abs(requestedTaripBorongan - matchedTripRouteRateFee) > 0.01
+                        ) {
+                            return NextResponse.json(
+                                { error: 'Upah trip mengikuti master biaya rute trip yang dipilih. Ubah area trip jika ingin memakai master yang berbeda.' },
+                                { status: 409 }
+                            );
+                        }
+                    }
                     updates.tripRouteRateRef = tripRouteSelection.tripRouteRateRef;
                     updates.tripOriginArea = tripRouteSelection.tripOriginArea;
                     updates.tripDestinationArea = tripRouteSelection.tripDestinationArea;
-                    if (
-                        !Object.prototype.hasOwnProperty.call(updates, 'taripBorongan') &&
-                        tripRouteSelection.matchedTripRouteRate?.rate
-                    ) {
-                        updates.taripBorongan = tripRouteSelection.matchedTripRouteRate.rate;
+                    if (matchedTripRouteRateFee > 0) {
+                        updates.taripBorongan = matchedTripRouteRateFee;
                     }
                 } catch (error) {
                     return NextResponse.json(

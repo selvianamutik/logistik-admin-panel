@@ -1547,12 +1547,23 @@ export async function handleDeliveryOrderCreate(
             { status: 400 }
         );
     }
+    const matchedTripRouteRateFee = normalizeCurrencyNumber(tripRouteSelection?.matchedTripRouteRate?.rate ?? 0);
+    if (
+        matchedTripRouteRateFee > 0 &&
+        taripBorongan > 0 &&
+        Math.abs(taripBorongan - matchedTripRouteRateFee) > 0.01
+    ) {
+        return NextResponse.json(
+            { error: 'Upah trip mengikuti master biaya rute trip yang dipilih. Ubah area trip jika ingin memakai master yang berbeda.' },
+            { status: 409 }
+        );
+    }
     const customerDoPrefix = normalizeCustomerDoPrefix(customer?.deliveryOrderPrefix);
     const customerDoNumber = manualCustomerDoNumber || undefined;
     const effectiveTripFee =
-        taripBorongan > 0
-            ? taripBorongan
-            : normalizeCurrencyNumber(tripRouteSelection?.matchedTripRouteRate?.rate ?? 0);
+        matchedTripRouteRateFee > 0
+            ? matchedTripRouteRateFee
+            : taripBorongan;
 
     if (customerDoNumber && orderCustomerRef) {
         const duplicateCustomerDoNumber = await getSanityClient().fetch<{ _id: string } | null>(

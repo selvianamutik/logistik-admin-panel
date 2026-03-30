@@ -161,6 +161,7 @@ export default function OrderDetailPage() {
         destinationArea: doTripDestinationArea,
         serviceRef: order?.serviceRef,
     });
+    const isDoTripFeeLockedToMaster = Boolean(matchedDoTripRouteRate);
 
     const applyDoTripRouteSelection = (nextOriginArea: string, nextDestinationArea: string) => {
         setDoTripOriginArea(nextOriginArea);
@@ -303,7 +304,7 @@ export default function OrderDetailPage() {
                         selectedVehicle: selVeh,
                         driverRef: doDriver,
                         selectedDriver: selDriver,
-                        taripBorongan: doTripFee,
+                        taripBorongan: matchedDoTripRouteRate?.rate ?? doTripFee,
                         date: doDate,
                         notes: doNotes,
                         requiresVehicleOverrideReason,
@@ -931,11 +932,16 @@ export default function OrderDetailPage() {
                             <div className="form-group">
                                 <label className="form-label">Upah Trip</label>
                                 <CurrencyInput
-                                    value={doTripFee}
+                                    value={matchedDoTripRouteRate?.rate ?? doTripFee}
                                     onValueChange={setDoTripFee}
-                                    placeholder="Ketik upah trip bila sudah diketahui"
-                                    disabled={creatingDO}
+                                    placeholder={isDoTripFeeLockedToMaster ? 'Mengikuti master biaya rute trip' : 'Ketik upah trip bila sudah diketahui'}
+                                    disabled={creatingDO || isDoTripFeeLockedToMaster}
                                 />
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                    {isDoTripFeeLockedToMaster
+                                        ? 'Upah trip terkunci mengikuti master biaya rute trip yang dipilih.'
+                                        : 'Jika belum ada master rute yang cocok, upah trip boleh diisi manual sebelum voucher diterbitkan.'}
+                                </div>
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Catatan</label>
