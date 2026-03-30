@@ -252,102 +252,105 @@ export default function DriverDetailPage() {
                     </div>
                 </div>
                 <div className="card-body">
-                    {!canViewDriverVouchers && (
-                        <div style={{ marginBottom: '1rem', padding: '0.85rem 1rem', borderRadius: '0.8rem', border: '1px solid var(--color-gray-200)', background: 'var(--color-gray-50)' }}>
+                    {!canViewDriverVouchers ? (
+                        <div style={{ padding: '0.85rem 1rem', borderRadius: '0.8rem', border: '1px solid var(--color-gray-200)', background: 'var(--color-gray-50)' }}>
                             Detail uang jalan dan upah trip hanya ditampilkan untuk role yang punya akses modul Uang Jalan Trip.
                         </div>
-                    )}
-                    <div className="table-wrapper table-desktop-only">
-                        <table>
-                            <thead><tr><th>Bon</th><th>Tanggal</th><th>No. DO Internal</th><th>Kendaraan</th><th>Uang Jalan</th><th>Biaya Jalan</th><th>Upah Trip</th><th>Net Settlement</th><th>Status</th></tr></thead>
-                            <tbody>
+                    ) : (
+                        <>
+                            <div className="table-wrapper table-desktop-only">
+                                <table>
+                                    <thead><tr><th>Bon</th><th>Tanggal</th><th>No. DO Internal</th><th>Kendaraan</th><th>Uang Jalan</th><th>Biaya Jalan</th><th>Upah Trip</th><th>Net Settlement</th><th>Status</th></tr></thead>
+                                    <tbody>
+                                        {vouchers.length === 0 ? (
+                                            <tr><td colSpan={9} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada riwayat uang jalan untuk supir ini</td></tr>
+                                        ) : vouchers.map(item => {
+                                            const statusConfig = DRIVER_VOUCHER_STATUS_MAP[item.status] || DRIVER_VOUCHER_STATUS_MAP.DRAFT;
+                                            const issuedAmount = getDriverVoucherIssuedAmount(item);
+                                            const operationalSpent = item.totalSpent || 0;
+                                            const operationalBalance = getDriverVoucherOperationalBalance(item);
+                                            return (
+                                                <tr key={item._id}>
+                                                    <td>
+                                                        <Link href={`/driver-vouchers/${item._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>
+                                                            {item.bonNumber}
+                                                        </Link>
+                                                        <div className="text-muted text-sm">{item.route || '-'}</div>
+                                                    </td>
+                                                    <td>{formatDate(item.issuedDate)}</td>
+                                                    <td>{item.doNumber || '-'}</td>
+                                                    <td>{item.vehiclePlate || '-'}</td>
+                                                    <td>{formatCurrency(issuedAmount)}</td>
+                                                    <td>{formatCurrency(operationalSpent)}</td>
+                                                    <td>{formatCurrency(item.driverFeeAmount || 0)}</td>
+                                                    <td>
+                                                        <div>{formatCurrency(item.balance || 0)}</div>
+                                                        <div className="text-muted text-sm">Sisa bon: {formatCurrency(operationalBalance)}</div>
+                                                    </td>
+                                                    <td><span className={`badge ${statusConfig.cls}`}>{statusConfig.label}</span></td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div className="mobile-record-list">
                                 {vouchers.length === 0 ? (
-                                    <tr><td colSpan={9} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada riwayat uang jalan untuk supir ini</td></tr>
+                                    <div className="mobile-record-card"><div className="mobile-record-title">Belum ada riwayat uang jalan untuk supir ini</div></div>
                                 ) : vouchers.map(item => {
                                     const statusConfig = DRIVER_VOUCHER_STATUS_MAP[item.status] || DRIVER_VOUCHER_STATUS_MAP.DRAFT;
-                                    const issuedAmount = getDriverVoucherIssuedAmount(item);
-                                    const operationalSpent = item.totalSpent || 0;
-                                    const operationalBalance = getDriverVoucherOperationalBalance(item);
                                     return (
-                                        <tr key={item._id}>
-                                            <td>
-                                                <Link href={`/driver-vouchers/${item._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>
-                                                    {item.bonNumber}
-                                                </Link>
-                                                <div className="text-muted text-sm">{item.route || '-'}</div>
-                                            </td>
-                                            <td>{formatDate(item.issuedDate)}</td>
-                                            <td>{item.doNumber || '-'}</td>
-                                            <td>{item.vehiclePlate || '-'}</td>
-                                            <td>{formatCurrency(issuedAmount)}</td>
-                                            <td>{formatCurrency(operationalSpent)}</td>
-                                            <td>{formatCurrency(item.driverFeeAmount || 0)}</td>
-                                            <td>
-                                                <div>{formatCurrency(item.balance || 0)}</div>
-                                                <div className="text-muted text-sm">Sisa bon: {formatCurrency(operationalBalance)}</div>
-                                            </td>
-                                            <td><span className={`badge ${statusConfig.cls}`}>{statusConfig.label}</span></td>
-                                        </tr>
+                                        <div key={item._id} className="mobile-record-card">
+                                            <div className="mobile-record-header">
+                                                <div>
+                                                    <div className="mobile-record-title">{item.bonNumber}</div>
+                                                    <div className="mobile-record-subtitle">{formatDate(item.issuedDate)} | {item.doNumber || '-'}</div>
+                                                </div>
+                                                <span className={`badge ${statusConfig.cls}`}>{statusConfig.label}</span>
+                                            </div>
+                                            <div className="mobile-record-meta">
+                                                <div className="mobile-record-kv">
+                                                    <span className="mobile-record-label">Kendaraan</span>
+                                                    <span className="mobile-record-value">{item.vehiclePlate || '-'}</span>
+                                                </div>
+                                                <div className="mobile-record-kv">
+                                                    <span className="mobile-record-label">Uang Jalan</span>
+                                                    <span className="mobile-record-value">{formatCurrency(getDriverVoucherIssuedAmount(item))}</span>
+                                                </div>
+                                                <div className="mobile-record-kv">
+                                                    <span className="mobile-record-label">Biaya Jalan</span>
+                                                    <span className="mobile-record-value">{formatCurrency(item.totalSpent || 0)}</span>
+                                                </div>
+                                                <div className="mobile-record-kv">
+                                                    <span className="mobile-record-label">Upah Trip</span>
+                                                    <span className="mobile-record-value">{formatCurrency(item.driverFeeAmount || 0)}</span>
+                                                </div>
+                                                <div className="mobile-record-kv">
+                                                    <span className="mobile-record-label">Net Settlement</span>
+                                                    <span className="mobile-record-value">{formatCurrency(item.balance || 0)}</span>
+                                                </div>
+                                                <div className="mobile-record-kv">
+                                                    <span className="mobile-record-label">Top Up</span>
+                                                    <span className="mobile-record-value">{formatCurrency(getDriverVoucherTopUpAmount(item))}</span>
+                                                </div>
+                                            </div>
+                                            <div className="mobile-record-actions">
+                                                <Link className="btn btn-secondary" href={`/driver-vouchers/${item._id}`}>Lihat Uang Jalan</Link>
+                                            </div>
+                                        </div>
                                     );
                                 })}
-                            </tbody>
-                        </table>
-                    </div>
-                    <div className="mobile-record-list">
-                        {vouchers.length === 0 ? (
-                            <div className="mobile-record-card"><div className="mobile-record-title">Belum ada riwayat uang jalan untuk supir ini</div></div>
-                        ) : vouchers.map(item => {
-                            const statusConfig = DRIVER_VOUCHER_STATUS_MAP[item.status] || DRIVER_VOUCHER_STATUS_MAP.DRAFT;
-                            return (
-                                <div key={item._id} className="mobile-record-card">
-                                    <div className="mobile-record-header">
-                                        <div>
-                                            <div className="mobile-record-title">{item.bonNumber}</div>
-                                            <div className="mobile-record-subtitle">{formatDate(item.issuedDate)} | {item.doNumber || '-'}</div>
-                                        </div>
-                                        <span className={`badge ${statusConfig.cls}`}>{statusConfig.label}</span>
-                                    </div>
-                                    <div className="mobile-record-meta">
-                                        <div className="mobile-record-kv">
-                                            <span className="mobile-record-label">Kendaraan</span>
-                                            <span className="mobile-record-value">{item.vehiclePlate || '-'}</span>
-                                        </div>
-                                        <div className="mobile-record-kv">
-                                            <span className="mobile-record-label">Uang Jalan</span>
-                                            <span className="mobile-record-value">{formatCurrency(getDriverVoucherIssuedAmount(item))}</span>
-                                        </div>
-                                        <div className="mobile-record-kv">
-                                            <span className="mobile-record-label">Biaya Jalan</span>
-                                            <span className="mobile-record-value">{formatCurrency(item.totalSpent || 0)}</span>
-                                        </div>
-                                        <div className="mobile-record-kv">
-                                            <span className="mobile-record-label">Upah Trip</span>
-                                            <span className="mobile-record-value">{formatCurrency(item.driverFeeAmount || 0)}</span>
-                                        </div>
-                                        <div className="mobile-record-kv">
-                                            <span className="mobile-record-label">Net Settlement</span>
-                                            <span className="mobile-record-value">{formatCurrency(item.balance || 0)}</span>
-                                        </div>
-                                        <div className="mobile-record-kv">
-                                            <span className="mobile-record-label">Top Up</span>
-                                            <span className="mobile-record-value">{formatCurrency(getDriverVoucherTopUpAmount(item))}</span>
-                                        </div>
-                                    </div>
-                                    <div className="mobile-record-actions">
-                                        <Link className="btn btn-secondary" href={`/driver-vouchers/${item._id}`}>Lihat Uang Jalan</Link>
-                                    </div>
+                            </div>
+                            <div style={{ marginTop: '1rem', padding: '0.85rem 1rem', borderRadius: '0.8rem', border: '1px solid var(--color-gray-200)', background: 'var(--color-gray-50)' }}>
+                                <div className="text-muted text-sm">Ringkasan</div>
+                                <div style={{ marginTop: '0.35rem', lineHeight: 1.7 }}>
+                                    Total biaya perjalanan tercatat: <strong>{formatCurrency(totalOperationalSpent)}</strong>.
+                                    Total upah trip snapshot: <strong>{formatCurrency(totalDriverFee)}</strong>.
+                                    Riwayat ini mengikuti trip yang dijalankan supir, bukan biaya kepemilikan kendaraan.
                                 </div>
-                            );
-                        })}
-                    </div>
-                    <div style={{ marginTop: '1rem', padding: '0.85rem 1rem', borderRadius: '0.8rem', border: '1px solid var(--color-gray-200)', background: 'var(--color-gray-50)' }}>
-                        <div className="text-muted text-sm">Ringkasan</div>
-                        <div style={{ marginTop: '0.35rem', lineHeight: 1.7 }}>
-                            Total biaya perjalanan tercatat: <strong>{formatCurrency(totalOperationalSpent)}</strong>.
-                            Total upah trip snapshot: <strong>{formatCurrency(totalDriverFee)}</strong>.
-                            Riwayat ini mengikuti trip yang dijalankan supir, bukan biaya kepemilikan kendaraan.
-                        </div>
-                    </div>
+                            </div>
+                        </>
+                    )}
                 </div>
             </div>
         </div>
