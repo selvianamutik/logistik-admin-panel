@@ -89,25 +89,25 @@ export function createCargoAggregate(): CargoAggregate {
 
 export function addCargoAggregate(base: CargoAggregate, next: Partial<CargoAggregate>) {
     return {
-        qtyKoli: roundQuantity(base.qtyKoli + Number(next.qtyKoli || 0)),
-        weightKg: roundQuantity(base.weightKg + Number(next.weightKg || 0)),
-        volumeM3: roundQuantity(base.volumeM3 + Number(next.volumeM3 || 0), 3),
+        qtyKoli: roundQuantity(base.qtyKoli + parseFormattedNumberish(next.qtyKoli || 0)),
+        weightKg: roundQuantity(base.weightKg + parseFormattedNumberish(next.weightKg || 0)),
+        volumeM3: roundQuantity(base.volumeM3 + parseFormattedNumberish(next.volumeM3 || 0, { maxFractionDigits: 3 }), 3),
     };
 }
 
 export function getPlannedDoItemCargo(doItem: DeliveryOrderItem): CargoAggregate {
     return {
-        qtyKoli: Number(doItem.orderItemQtyKoli || 0),
-        weightKg: Number(doItem.orderItemWeight || 0),
-        volumeM3: Number(doItem.orderItemVolumeM3 || 0),
+        qtyKoli: parseFormattedNumberish(doItem.orderItemQtyKoli || 0),
+        weightKg: parseFormattedNumberish(doItem.orderItemWeight || 0),
+        volumeM3: parseFormattedNumberish(doItem.orderItemVolumeM3 || 0, { maxFractionDigits: 3 }),
     };
 }
 
 export function getActualDoItemCargo(doItem: DeliveryOrderItem): CargoAggregate {
     return {
-        qtyKoli: Number(doItem.actualQtyKoli ?? doItem.orderItemQtyKoli ?? 0),
-        weightKg: Number(doItem.actualWeightKg ?? doItem.orderItemWeight ?? 0),
-        volumeM3: Number(doItem.actualVolumeM3 ?? doItem.orderItemVolumeM3 ?? 0),
+        qtyKoli: parseFormattedNumberish(doItem.actualQtyKoli ?? doItem.orderItemQtyKoli ?? 0),
+        weightKg: parseFormattedNumberish(doItem.actualWeightKg ?? doItem.orderItemWeight ?? 0),
+        volumeM3: parseFormattedNumberish(doItem.actualVolumeM3 ?? doItem.orderItemVolumeM3 ?? 0, { maxFractionDigits: 3 }),
     };
 }
 

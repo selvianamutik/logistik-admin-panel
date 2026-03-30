@@ -1,7 +1,12 @@
 import type { DeliveryOrder, DeliveryOrderItem, Driver, Order, TrackingLog, Vehicle } from '@/lib/types';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
-import type { VolumeInputUnit, WeightInputUnit } from '@/lib/measurement';
-import { formatCargoSummary } from '@/lib/measurement';
+import {
+    convertKgToWeightInputValue,
+    convertM3ToVolumeInputValue,
+    formatCargoSummary,
+    type VolumeInputUnit,
+    type WeightInputUnit,
+} from '@/lib/measurement';
 import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatDate, formatDateTime, formatShipperDeliveryOrderNumber } from '@/lib/utils';
 
 export interface ActualCargoDraft {
@@ -55,25 +60,70 @@ export type DeliveryOrderDetailState = {
 };
 
 export function buildActualCargoDraft(item: DeliveryOrderItem): ActualCargoDraft {
-    const plannedQtyKoli = Number(item.orderItemQtyKoli || item.shippedQtyKoli || 0);
+    const plannedQtyKoli = parseFormattedNumberish(item.orderItemQtyKoli ?? item.shippedQtyKoli ?? 0);
+    const plannedWeightKg = parseFormattedNumberish(item.orderItemWeight ?? item.shippedWeight ?? 0);
+    const plannedWeightInputUnit = item.orderItemWeightInputUnit || 'KG';
+    const plannedWeightInputValue =
+        item.orderItemWeightInputValue !== undefined && item.orderItemWeightInputValue !== null
+            ? parseFormattedNumberish(item.orderItemWeightInputValue, {
+                maxFractionDigits: plannedWeightInputUnit === 'TON' ? 3 : 2,
+            })
+            : plannedWeightKg > 0
+                ? convertKgToWeightInputValue(plannedWeightKg, plannedWeightInputUnit)
+                : undefined;
+    const plannedVolumeM3 = parseFormattedNumberish(item.orderItemVolumeM3 ?? 0, { maxFractionDigits: 3 });
+    const plannedVolumeInputUnit = item.orderItemVolumeInputUnit || 'M3';
+    const plannedVolumeInputValue =
+        item.orderItemVolumeInputValue !== undefined && item.orderItemVolumeInputValue !== null
+            ? parseFormattedNumberish(item.orderItemVolumeInputValue, {
+                maxFractionDigits: plannedVolumeInputUnit === 'LITER' ? 0 : 3,
+            })
+            : plannedVolumeM3 > 0
+                ? convertM3ToVolumeInputValue(plannedVolumeM3, plannedVolumeInputUnit)
+                : undefined;
+    const actualWeightInputUnit = item.actualWeightInputUnit || plannedWeightInputUnit || 'KG';
+    const actualWeightInputValue =
+        item.actualWeightInputValue !== undefined && item.actualWeightInputValue !== null
+            ? String(
+                parseFormattedNumberish(item.actualWeightInputValue, {
+                    maxFractionDigits: actualWeightInputUnit === 'TON' ? 3 : 2,
+                })
+            )
+            : plannedWeightKg > 0
+                ? String(convertKgToWeightInputValue(parseFormattedNumberish(item.actualWeightKg ?? item.orderItemWeight ?? item.shippedWeight ?? 0), actualWeightInputUnit))
+                : '';
+    const actualVolumeInputUnit = item.actualVolumeInputUnit || plannedVolumeInputUnit || 'M3';
+    const actualVolumeInputValue =
+        item.actualVolumeInputValue !== undefined && item.actualVolumeInputValue !== null
+            ? String(
+                parseFormattedNumberish(item.actualVolumeInputValue, {
+                    maxFractionDigits: actualVolumeInputUnit === 'LITER' ? 0 : 3,
+                })
+            )
+            : plannedVolumeM3 > 0
+                ? String(convertM3ToVolumeInputValue(parseFormattedNumberish(item.actualVolumeM3 ?? item.orderItemVolumeM3 ?? 0, { maxFractionDigits: 3 }), actualVolumeInputUnit))
+                : '';
     return {
         deliveryOrderItemRef: item._id,
         description: item.orderItemDescription || '-',
         plannedQtyKoli,
-        plannedWeightKg: Number(item.orderItemWeight || item.shippedWeight || 0),
-        plannedWeightInputValue: item.orderItemWeightInputValue,
-        plannedWeightInputUnit: item.orderItemWeightInputUnit,
-        plannedVolumeM3: item.orderItemVolumeM3,
-        plannedVolumeInputValue: item.orderItemVolumeInputValue,
-        plannedVolumeInputUnit: item.orderItemVolumeInputUnit,
-        actualQtyKoli: plannedQtyKoli > 0 ? String(item.actualQtyKoli ?? item.orderItemQtyKoli ?? item.shippedQtyKoli ?? 0) : '',
-        actualWeightInputValue: String(item.actualWeightInputValue ?? item.orderItemWeightInputValue ?? item.actualWeightKg ?? item.orderItemWeight ?? item.shippedWeight ?? ''),
-        actualWeightInputUnit: item.actualWeightInputUnit || item.orderItemWeightInputUnit || 'KG',
-        actualVolumeInputValue: String(item.actualVolumeInputValue ?? item.orderItemVolumeInputValue ?? item.actualVolumeM3 ?? item.orderItemVolumeM3 ?? ''),
-        actualVolumeInputUnit: item.actualVolumeInputUnit || item.orderItemVolumeInputUnit || 'M3',
+        plannedWeightKg,
+        plannedWeightInputValue,
+        plannedWeightInputUnit,
+        plannedVolumeM3,
+        plannedVolumeInputValue,
+        plannedVolumeInputUnit,
+        actualQtyKoli:
+            plannedQtyKoli > 0
+                ? String(parseFormattedNumberish(item.actualQtyKoli ?? item.orderItemQtyKoli ?? item.shippedQtyKoli ?? 0))
+                : '',
+        actualWeightInputValue,
+        actualWeightInputUnit,
+        actualVolumeInputValue,
+        actualVolumeInputUnit,
         requireQty: plannedQtyKoli > 0,
-        requireWeight: Number(item.orderItemWeight || item.shippedWeight || 0) > 0,
-        requireVolume: Number(item.orderItemVolumeM3 || 0) > 0,
+        requireWeight: plannedWeightKg > 0,
+        requireVolume: plannedVolumeM3 > 0,
     };
 }
 

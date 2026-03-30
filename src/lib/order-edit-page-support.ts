@@ -1,4 +1,5 @@
 import type { Customer, Order, OrderItem } from './types';
+import { parseFormattedNumberish } from './formatted-number';
 import {
     convertKgToWeightInputValue,
     convertM3ToVolumeInputValue,
@@ -114,15 +115,15 @@ export function getOrderEditItems(orderItems: OrderItem[]) {
 
 export function hasOrderItemOperationalProgress(orderItems: OrderItem[]) {
     return (orderItems || []).some(item =>
-        Number(item.deliveredQtyKoli || 0) > 0 ||
-        Number(item.assignedQtyKoli || 0) > 0 ||
-        Number(item.heldQtyKoli || 0) > 0 ||
-        Number(item.deliveredWeight || 0) > 0 ||
-        Number(item.assignedWeight || 0) > 0 ||
-        Number(item.heldWeight || 0) > 0 ||
-        Number(item.deliveredVolume || 0) > 0 ||
-        Number(item.assignedVolume || 0) > 0 ||
-        Number(item.heldVolume || 0) > 0
+        parseFormattedNumberish(item.deliveredQtyKoli || 0) > 0 ||
+        parseFormattedNumberish(item.assignedQtyKoli || 0) > 0 ||
+        parseFormattedNumberish(item.heldQtyKoli || 0) > 0 ||
+        parseFormattedNumberish(item.deliveredWeight || 0) > 0 ||
+        parseFormattedNumberish(item.assignedWeight || 0) > 0 ||
+        parseFormattedNumberish(item.heldWeight || 0) > 0 ||
+        parseFormattedNumberish(item.deliveredVolume || 0) > 0 ||
+        parseFormattedNumberish(item.assignedVolume || 0) > 0 ||
+        parseFormattedNumberish(item.heldVolume || 0) > 0
     );
 }
 

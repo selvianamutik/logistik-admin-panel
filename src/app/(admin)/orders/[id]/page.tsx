@@ -1079,7 +1079,7 @@ export default function OrderDetailPage() {
                                                                     <FormattedNumberInput
                                                                         min={0}
                                                                         maxFractionDigits={2}
-                                                                        value={Number(selection?.qtyKoli || 0)}
+                                                                        value={parseFormattedNumberish(selection?.qtyKoli || 0, { maxFractionDigits: 2 })}
                                                                         disabled={!selection || creatingDO}
                                                                 onValueChange={value => {
                                                                             setSelectedShipments(prev => ({
@@ -1116,7 +1116,9 @@ export default function OrderDetailPage() {
                                                                                         <FormattedNumberInput
                                                                                             min={0}
                                                                                             maxFractionDigits={(selection.weightInputUnit || 'KG') === 'TON' ? 3 : 2}
-                                                                                            value={Number(selection.weightInputValue || 0)}
+                                                                                            value={parseFormattedNumberish(selection.weightInputValue || 0, {
+                                                                                                maxFractionDigits: (selection.weightInputUnit || 'KG') === 'TON' ? 3 : 2,
+                                                                                            })}
                                                                                             disabled={!selection || creatingDO}
                                                                                             onValueChange={value => {
                                                                                                 setSelectedShipments(prev => ({
@@ -1154,7 +1156,9 @@ export default function OrderDetailPage() {
                                                                                         <FormattedNumberInput
                                                                                             min={0}
                                                                                             maxFractionDigits={(selection.volumeInputUnit || 'M3') === 'LITER' ? 0 : 3}
-                                                                                            value={Number(selection.volumeInputValue || 0)}
+                                                                                            value={parseFormattedNumberish(selection.volumeInputValue || 0, {
+                                                                                                maxFractionDigits: (selection.volumeInputUnit || 'M3') === 'LITER' ? 0 : 3,
+                                                                                            })}
                                                                                             disabled={!selection || creatingDO}
                                                                                             onValueChange={value => {
                                                                                                 setSelectedShipments(prev => ({
@@ -1370,7 +1374,7 @@ export default function OrderDetailPage() {
                                     <FormattedNumberInput
                                         min={0}
                                         maxFractionDigits={2}
-                                        value={Number(holdQtyKoli || 0)}
+                                        value={parseFormattedNumberish(holdQtyKoli || 0, { maxFractionDigits: 2 })}
                                         onValueChange={value => setHoldQtyKoli(String(value))}
                                         disabled={savingHold}
                                     />
@@ -1384,7 +1388,9 @@ export default function OrderDetailPage() {
                                                 <FormattedNumberInput
                                                     min={0}
                                                     maxFractionDigits={holdWeightInputUnit === 'TON' ? 3 : 2}
-                                                    value={Number(holdWeightInputValue || 0)}
+                                                    value={parseFormattedNumberish(holdWeightInputValue || 0, {
+                                                        maxFractionDigits: holdWeightInputUnit === 'TON' ? 3 : 2,
+                                                    })}
                                                     onValueChange={value => setHoldWeightInputValue(String(value))}
                                                     disabled={savingHold}
                                                 />
@@ -1401,7 +1407,9 @@ export default function OrderDetailPage() {
                                                 <FormattedNumberInput
                                                     min={0}
                                                     maxFractionDigits={holdVolumeInputUnit === 'LITER' ? 0 : 3}
-                                                    value={Number(holdVolumeInputValue || 0)}
+                                                    value={parseFormattedNumberish(holdVolumeInputValue || 0, {
+                                                        maxFractionDigits: holdVolumeInputUnit === 'LITER' ? 0 : 3,
+                                                    })}
                                                     onValueChange={value => setHoldVolumeInputValue(String(value))}
                                                     disabled={savingHold}
                                                 />

@@ -8,6 +8,7 @@ import { Printer, FileDown, Truck, Upload, Save, MapPin, Radio, Edit } from 'luc
 import CurrencyInput from '@/components/CurrencyInput';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
+import { parseFormattedNumberish } from '@/lib/formatted-number';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData, fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import {
@@ -1280,7 +1281,7 @@ export default function DODetailPage() {
                                                             <FormattedNumberInput
                                                                 min={0}
                                                                 maxFractionDigits={2}
-                                                                value={Number(item.actualQtyKoli || 0)}
+                                                                value={parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 })}
                                                                 onValueChange={value => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualQtyKoli', String(value))}
                                                                 disabled={updatingStatus || !item.requireQty}
                                                             />
@@ -1291,7 +1292,9 @@ export default function DODetailPage() {
                                                                 <FormattedNumberInput
                                                                     min={0}
                                                                     maxFractionDigits={item.actualWeightInputUnit === 'TON' ? 3 : 2}
-                                                                    value={Number(item.actualWeightInputValue || 0)}
+                                                                    value={parseFormattedNumberish(item.actualWeightInputValue || 0, {
+                                                                        maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
+                                                                    })}
                                                                     onValueChange={value => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualWeightInputValue', String(value))}
                                                                     disabled={updatingStatus}
                                                                 />
@@ -1315,7 +1318,9 @@ export default function DODetailPage() {
                                                                 <FormattedNumberInput
                                                                     min={0}
                                                                     maxFractionDigits={item.actualVolumeInputUnit === 'LITER' ? 0 : 3}
-                                                                    value={Number(item.actualVolumeInputValue || 0)}
+                                                                    value={parseFormattedNumberish(item.actualVolumeInputValue || 0, {
+                                                                        maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
+                                                                    })}
                                                                     onValueChange={value => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualVolumeInputValue', String(value))}
                                                                     disabled={updatingStatus}
                                                                 />
@@ -1419,7 +1424,7 @@ export default function DODetailPage() {
                                                                     <FormattedNumberInput
                                                                         min={0}
                                                                         maxFractionDigits={2}
-                                                                        value={Number(item.qtyKoli || 0)}
+                                                                        value={parseFormattedNumberish(item.qtyKoli || 0, { maxFractionDigits: 2 })}
                                                                         onValueChange={value => updateActualDropDraft(item.draftKey, 'qtyKoli', String(value))}
                                                                         disabled={updatingStatus}
                                                                     />
@@ -1430,7 +1435,9 @@ export default function DODetailPage() {
                                                                         <FormattedNumberInput
                                                                             min={0}
                                                                             maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
-                                                                            value={Number(item.weightInputValue || 0)}
+                                                                            value={parseFormattedNumberish(item.weightInputValue || 0, {
+                                                                                maxFractionDigits: item.weightInputUnit === 'TON' ? 3 : 2,
+                                                                            })}
                                                                             onValueChange={value => updateActualDropDraft(item.draftKey, 'weightInputValue', String(value))}
                                                                             disabled={updatingStatus}
                                                                         />
@@ -1454,7 +1461,9 @@ export default function DODetailPage() {
                                                                     <FormattedNumberInput
                                                                         min={0}
                                                                         maxFractionDigits={item.volumeInputUnit === 'LITER' ? 0 : 3}
-                                                                        value={Number(item.volumeInputValue || 0)}
+                                                                        value={parseFormattedNumberish(item.volumeInputValue || 0, {
+                                                                            maxFractionDigits: item.volumeInputUnit === 'LITER' ? 0 : 3,
+                                                                        })}
                                                                         onValueChange={value => updateActualDropDraft(item.draftKey, 'volumeInputValue', String(value))}
                                                                         disabled={updatingStatus}
                                                                         />
