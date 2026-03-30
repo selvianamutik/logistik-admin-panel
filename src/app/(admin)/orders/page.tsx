@@ -8,7 +8,7 @@ import { Plus, Search, Eye, Edit, Trash2, Package, FileDown, Printer } from 'luc
 import AppPagination from '@/components/AppPagination';
 import { formatDate, ORDER_STATUS_MAP } from '@/lib/utils';
 import { exportOrders } from '@/lib/export';
-import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
+import { openBrandedPrint, openPrintWindow, fetchCompanyProfile } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import type { Order, Service } from '@/lib/types';
@@ -197,15 +197,23 @@ export default function OrdersPage() {
                         <FileDown size={15} /> Excel
                     </button>
                     <button className="btn btn-secondary btn-sm" onClick={async () => {
+                        const printWindow = openPrintWindow('Menyiapkan print order...');
+                        if (!printWindow) {
+                            addToast('error', 'Popup browser diblok. Izinkan pop-up lalu coba print lagi.');
+                            return;
+                        }
                         try {
                             const co = await fetchCompanyProfile().catch(() => null);
                             const printableOrders = await fetchAllMatchingOrders();
                             openBrandedPrint({
-                                title: 'Daftar Order / Resi', company: co, bodyHtml: `
+                                title: 'Daftar Order / Resi', company: co, targetWindow: printWindow, bodyHtml: `
                                 <table><thead><tr><th>Resi</th><th>Customer</th><th>Penerima</th><th>Alamat</th><th>Tanggal</th><th>Status</th></tr></thead>
                                 <tbody>${printableOrders.map(o => `<tr><td class="b">${o.masterResi}</td><td>${o.customerName || '-'}</td><td>${o.receiverName || '-'}</td><td>${o.receiverAddress || '-'}</td><td>${formatDate(o.createdAt)}</td><td>${ORDER_STATUS_MAP[o.status]?.label || o.status}</td></tr>`).join('')}</tbody></table>`
                             });
                         } catch (error) {
+                            try {
+                                printWindow.close();
+                            } catch {}
                             addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan dokumen print order');
                         }
                     }}><Printer size={15} /> Print</button>

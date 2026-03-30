@@ -18,7 +18,7 @@ import {
 } from '@/lib/fleet-vehicle-page-support';
 import { VEHICLE_STATUS_MAP } from '@/lib/utils';
 import { exportVehicles } from '@/lib/export';
-import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
+import { fetchCompanyProfile, openBrandedPrint, openPrintWindow } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { Service, Vehicle } from '@/lib/types';
 import { hasPermission } from '@/lib/rbac';
@@ -151,15 +151,24 @@ export default function VehiclesPage() {
                     {canPrintVehicles && <button
                         className="btn btn-secondary btn-sm"
                         onClick={async () => {
+                            const printWindow = openPrintWindow('Menyiapkan print kendaraan...');
+                            if (!printWindow) {
+                                addToast('error', 'Popup browser diblok. Izinkan pop-up lalu coba print lagi.');
+                                return;
+                            }
                             try {
                                 const company = await fetchCompanyProfile().catch(() => null);
                                 const printableVehicles = await fetchAllMatchingVehicles();
                                 openBrandedPrint({
                                     title: 'Daftar Kendaraan',
                                     company,
+                                    targetWindow: printWindow,
                                     bodyHtml: buildVehiclePrintHtml(printableVehicles, services),
                                 });
                             } catch (error) {
+                                try {
+                                    printWindow.close();
+                                } catch {}
                                 addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan dokumen print kendaraan');
                             }
                         }}

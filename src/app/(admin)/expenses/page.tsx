@@ -8,7 +8,7 @@ import CurrencyInput from '@/components/CurrencyInput';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { exportExpenses } from '@/lib/export';
-import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
+import { openBrandedPrint, openPrintWindow, fetchCompanyProfile } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { BankAccount, Expense, ExpenseCategory, Vehicle } from '@/lib/types';
 import { hasPermission } from '@/lib/rbac';
@@ -209,6 +209,11 @@ export default function ExpensesPage() {
                         }
                     }}><FileDown size={15} /> Excel</button>}
                     {canPrintExpenses && <button className="btn btn-secondary btn-sm" onClick={async () => {
+                        const printWindow = openPrintWindow('Menyiapkan print pengeluaran...');
+                        if (!printWindow) {
+                            addToast('error', 'Popup browser diblok. Izinkan pop-up lalu coba print lagi.');
+                            return;
+                        }
                         try {
                             const company = await fetchCompanyProfile().catch(() => null);
                             const printableExpenses = await fetchAllMatchingExpenses();
@@ -231,12 +236,15 @@ export default function ExpensesPage() {
                                 return detailLines.join('<br/>');
                             };
                             openBrandedPrint({
-                                title: 'Daftar Pengeluaran', company, bodyHtml: `
+                                title: 'Daftar Pengeluaran', company, targetWindow: printWindow, bodyHtml: `
                                 <table><thead><tr><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th class="r">Jumlah</th></tr></thead>
                                 <tbody>${printableExpenses.map(expense => `<tr><td>${formatDate(expense.date)}</td><td class="b">${expense.categoryName || '-'}</td><td>${describeExpense(expense)}</td><td class="r b">${formatCurrency(expense.amount)}</td></tr>`).join('')}
                                 <tr style="border-top:2px solid #1e293b"><td colspan="3" class="r b">TOTAL</td><td class="r b">${formatCurrency(grandTotal)}</td></tr></tbody></table>`
                             });
                         } catch (error) {
+                            try {
+                                printWindow.close();
+                            } catch {}
                             addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan dokumen print pengeluaran');
                         }
                     }}><Printer size={15} /> Print</button>}

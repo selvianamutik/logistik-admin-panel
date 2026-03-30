@@ -8,7 +8,7 @@ import PageBackButton from '@/components/PageBackButton';
 import { useApp, useToast } from '../../layout';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import { exportToExcel } from '@/lib/export';
-import { fetchCompanyProfile, openBrandedPrint } from '@/lib/print';
+import { fetchCompanyProfile, openBrandedPrint, openPrintWindow } from '@/lib/print';
 import type { BankAccount, BankTransaction, CompanyProfile } from '@/lib/types';
 import { hasPermission } from '@/lib/rbac';
 
@@ -159,8 +159,13 @@ export default function BankAccountDetailPage() {
     const totalOut = transactions.filter(tx => tx.type === 'DEBIT' || tx.type === 'TRANSFER_OUT').reduce((sum, tx) => sum + tx.amount, 0);
 
     const handlePrint = async () => {
+        const printWindow = openPrintWindow('Menyiapkan print rekening...');
+        if (!printWindow) {
+            addToast('error', 'Popup browser diblok. Izinkan pop-up lalu coba print lagi.');
+            return;
+        }
         try {
-            const company = await fetchCompanyProfile().catch(() => null);
+            const resolvedCompany = company ?? await fetchCompanyProfile().catch(() => null);
             const rows = transactions.length === 0
                 ? '<tr><td colspan="5" class="c">Belum ada transaksi</td></tr>'
                 : transactions.map(tx => {
@@ -171,7 +176,8 @@ export default function BankAccountDetailPage() {
             openBrandedPrint({
                 title: cashAccount ? `Mutasi Kas ${account.bankName}` : `Mutasi Rekening ${account.bankName}`,
                 subtitle: `${account.accountNumber} - a.n. ${account.accountHolder}`,
-                company,
+                company: resolvedCompany,
+                targetWindow: printWindow,
                 bodyHtml: `
                     <div class="stats-row">
                         <div class="stat-box"><div class="stat-label">Saldo Saat Ini</div><div class="stat-value">${fmtN(account.currentBalance || 0)}</div></div>
@@ -187,6 +193,9 @@ export default function BankAccountDetailPage() {
                 `,
             });
         } catch {
+            try {
+                printWindow.close();
+            } catch {}
             addToast('error', 'Gagal menyiapkan dokumen print rekening');
         }
     };

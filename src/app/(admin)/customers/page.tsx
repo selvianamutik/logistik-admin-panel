@@ -8,7 +8,7 @@ import AppPagination from '@/components/AppPagination';
 
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { exportToExcel } from '@/lib/export';
-import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
+import { openBrandedPrint, openPrintWindow, fetchCompanyProfile } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { Customer } from '@/lib/types';
 import { hasPermission } from '@/lib/rbac';
@@ -247,6 +247,11 @@ export default function CustomersPage() {
                     {canPrintCustomers && <button
                         className="btn btn-secondary btn-sm"
                         onClick={async () => {
+                            const printWindow = openPrintWindow('Menyiapkan print customer...');
+                            if (!printWindow) {
+                                addToast('error', 'Popup browser diblok. Izinkan pop-up lalu coba print lagi.');
+                                return;
+                            }
                             try {
                                 const company = await fetchCompanyProfile().catch(() => null);
                                 const printableCustomers = await fetchAllMatchingCustomers();
@@ -260,6 +265,7 @@ export default function CustomersPage() {
                                 openBrandedPrint({
                                     title: 'Daftar Customer',
                                     company,
+                                    targetWindow: printWindow,
                                     bodyHtml: `
                                     <table>
                                         <thead>
@@ -287,6 +293,9 @@ export default function CustomersPage() {
                                     </table>`,
                                 });
                             } catch (error) {
+                                try {
+                                    printWindow.close();
+                                } catch {}
                                 addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan dokumen print customer');
                             }
                         }}

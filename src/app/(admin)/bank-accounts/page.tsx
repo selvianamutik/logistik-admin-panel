@@ -28,7 +28,7 @@ import {
   sortBankAccountsForDisplay,
 } from "@/lib/bank-account-page-support";
 import { exportToExcel } from "@/lib/export";
-import { openBrandedPrint } from "@/lib/print";
+import { openBrandedPrint, openPrintWindow } from "@/lib/print";
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import type { BankAccount, CompanyProfile } from "@/lib/types";
 import { hasPermission } from "@/lib/rbac";
@@ -366,11 +366,17 @@ export default function BankAccountsPage() {
   };
 
   const handleBrandedPrint = async () => {
+    const printWindow = openPrintWindow("Menyiapkan print rekening...");
+    if (!printWindow) {
+      addToast("error", "Popup browser diblok. Izinkan pop-up lalu coba print lagi.");
+      return;
+    }
     try {
       const printableAccounts = await fetchAllAccounts();
       openBrandedPrint({
         title: "Laporan Rekening dan Kas",
         company,
+        targetWindow: printWindow,
         bodyHtml: buildBankAccountPrintHtml({
           accounts: printableAccounts,
           totalBalance,
@@ -378,6 +384,9 @@ export default function BankAccountsPage() {
         }),
       });
     } catch (error) {
+      try {
+        printWindow.close();
+      } catch {}
       addToast(
         "error",
         error instanceof Error

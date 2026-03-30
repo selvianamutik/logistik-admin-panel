@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { CheckCircle, Printer, Trash2 } from 'lucide-react';
 import { useApp, useToast } from '../../layout';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
-import { fetchCompanyProfile, openBrandedPrint, resolveDocumentIssuerProfile } from '@/lib/print';
+import { fetchCompanyProfile, openBrandedPrint, openPrintWindow, resolveDocumentIssuerProfile } from '@/lib/print';
 import { normalizeUserRole } from '@/lib/rbac';
 import type { BankAccount, DriverBorongan, DriverBoronganItem } from '@/lib/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
@@ -168,6 +168,11 @@ export default function BoronganDetailPage() {
     const handlePrint = async () => {
         const printContent = document.getElementById('borong-print-area')?.innerHTML;
         if (!printContent) return;
+        const printWindow = openPrintWindow('Menyiapkan cetak slip borongan...');
+        if (!printWindow) {
+            addToast('error', 'Popup browser diblok. Izinkan pop-up lalu coba cetak lagi.');
+            return;
+        }
 
         try {
             const company = resolveDocumentIssuerProfile(borong, await fetchCompanyProfile().catch(() => null));
@@ -175,6 +180,7 @@ export default function BoronganDetailPage() {
                 title: 'Slip Borongan Supir',
                 subtitle: borong?.boronganNumber,
                 company,
+                targetWindow: printWindow,
                 bodyHtml: printContent,
                 extraStyles: `
                     .header-grid { display: flex; justify-content: space-between; margin-bottom: 0.75rem; gap: 1rem; }
@@ -185,6 +191,9 @@ export default function BoronganDetailPage() {
                 `,
             });
         } catch {
+            try {
+                printWindow.close();
+            } catch {}
             addToast('error', 'Gagal menyiapkan dokumen cetak');
         }
     };

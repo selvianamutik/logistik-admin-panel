@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { useToast } from '../../../layout';
 import { Printer, Save } from 'lucide-react';
-import { fetchCompanyProfile, openBrandedPrint, resolveDocumentIssuerProfile } from '@/lib/print';
+import { fetchCompanyProfile, openBrandedPrint, openPrintWindow, resolveDocumentIssuerProfile } from '@/lib/print';
 import { fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import {
     buildIncidentPrintHtml,
@@ -89,15 +89,24 @@ export default function IncidentDetailPage() {
 
     const available = getAvailableIncidentStatuses(incident.status);
     const handlePrint = async () => {
+        const printWindow = openPrintWindow('Menyiapkan cetak insiden...');
+        if (!printWindow) {
+            addToast('error', 'Popup browser diblok. Izinkan pop-up lalu coba cetak lagi.');
+            return;
+        }
         try {
             const company = resolveDocumentIssuerProfile(incident, await fetchCompanyProfile().catch(() => null));
             openBrandedPrint({
                 title: 'Laporan Insiden Armada',
                 subtitle: incident.incidentNumber,
                 company,
+                targetWindow: printWindow,
                 bodyHtml: buildIncidentPrintHtml(incident, logs),
             });
         } catch {
+            try {
+                printWindow.close();
+            } catch {}
             addToast('error', 'Gagal menyiapkan dokumen cetak');
         }
     };

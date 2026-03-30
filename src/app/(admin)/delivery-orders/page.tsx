@@ -18,7 +18,7 @@ import {
     getSelectableDeliveryOrderServices,
 } from '@/lib/delivery-order-page-support';
 import { exportToExcel } from '@/lib/export';
-import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
+import { openBrandedPrint, openPrintWindow, fetchCompanyProfile } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import type { DeliveryOrder, Service } from '@/lib/types';
@@ -170,13 +170,21 @@ export default function DeliveryOrdersPage() {
                         }
                     }}><FileDown size={15} /> Excel</button>}
                     {canPrintDeliveryOrders && <button className="btn btn-secondary btn-sm" onClick={async () => {
+                        const printWindow = openPrintWindow('Menyiapkan print surat jalan...');
+                        if (!printWindow) {
+                            addToast('error', 'Popup browser diblok. Izinkan pop-up lalu coba print lagi.');
+                            return;
+                        }
                         try {
                             const co = await fetchCompanyProfile().catch(() => null);
                             const printableDeliveryOrders = await fetchAllMatchingDeliveryOrders();
                             openBrandedPrint({
-                                title: 'Daftar Surat Jalan', company: co, bodyHtml: buildDeliveryOrdersPrintHtml(printableDeliveryOrders, services),
+                                title: 'Daftar Surat Jalan', company: co, targetWindow: printWindow, bodyHtml: buildDeliveryOrdersPrintHtml(printableDeliveryOrders, services),
                             });
                         } catch (error) {
+                            try {
+                                printWindow.close();
+                            } catch {}
                             addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan dokumen print surat jalan');
                         }
                     }}><Printer size={15} /> Print</button>}

@@ -17,7 +17,7 @@ import {
     sortDriverVoucherDisbursements,
 } from '@/lib/driver-voucher-detail-support';
 import { useApp, useToast } from '../../layout';
-import { fetchCompanyProfile, openBrandedPrint, resolveDocumentIssuerProfile } from '@/lib/print';
+import { fetchCompanyProfile, openBrandedPrint, openPrintWindow, resolveDocumentIssuerProfile } from '@/lib/print';
 import { normalizeUserRole } from '@/lib/rbac';
 import type { BankAccount, DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem } from '@/lib/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
@@ -369,14 +369,23 @@ export default function DriverVoucherDetailPage() {
     };
 
     const handlePrint = async () => {
+        const printWindow = openPrintWindow('Menyiapkan cetak uang jalan trip...');
+        if (!printWindow) {
+            addToast('error', 'Popup browser diblok. Izinkan pop-up lalu coba cetak lagi.');
+            return;
+        }
         try {
             const company = resolveDocumentIssuerProfile(voucher, await fetchCompanyProfile().catch(() => null));
             openBrandedPrint({
                 title: `Uang Jalan Trip ${voucher?.bonNumber}`,
                 company,
+                targetWindow: printWindow,
                 bodyHtml: voucher ? buildDriverVoucherPrintHtml({ voucher, items, disbursements, summary: buildDriverVoucherDetailSummary(voucher, items) }) : '',
             });
         } catch {
+            try {
+                printWindow.close();
+            } catch {}
             addToast('error', 'Gagal menyiapkan dokumen cetak');
         }
     };

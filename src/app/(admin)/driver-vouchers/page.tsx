@@ -6,7 +6,7 @@ import { Eye, Plus, Search, Receipt, Printer } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 
 import { formatDate, formatCurrency, getDriverVoucherIssuedAmount, getDriverVoucherTopUpAmount } from '@/lib/utils';
-import { openBrandedPrint, fetchCompanyProfile } from '@/lib/print';
+import { openBrandedPrint, openPrintWindow, fetchCompanyProfile } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { DriverVoucher } from '@/lib/types';
 import { hasPermission } from '@/lib/rbac';
@@ -143,12 +143,18 @@ export default function DriverVouchersPage() {
                         <button
                             className="btn btn-secondary btn-sm"
                             onClick={async () => {
+                                const printWindow = openPrintWindow('Menyiapkan print uang jalan trip...');
+                                if (!printWindow) {
+                                    addToast('error', 'Popup browser diblok. Izinkan pop-up lalu coba print lagi.');
+                                    return;
+                                }
                                 try {
                                     const company = await fetchCompanyProfile().catch(() => null);
                                     const printableVouchers = await fetchAllMatchingVouchers();
                                     openBrandedPrint({
                                         title: 'Daftar Uang Jalan Trip',
                                         company,
+                                        targetWindow: printWindow,
                                         bodyHtml: `
                                         <table>
                                             <thead>
@@ -190,6 +196,9 @@ export default function DriverVouchersPage() {
                                         </table>`,
                                     });
                                 } catch (error) {
+                                    try {
+                                        printWindow.close();
+                                    } catch {}
                                     addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan dokumen print uang jalan trip');
                                 }
                             }}

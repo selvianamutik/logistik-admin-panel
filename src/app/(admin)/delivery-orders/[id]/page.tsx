@@ -32,7 +32,7 @@ import {
     type ActualCargoDraft,
     type ActualDropDraft,
 } from '@/lib/delivery-order-detail-support';
-import { fetchCompanyProfile, openBrandedPrint, resolveDocumentIssuerProfile } from '@/lib/print';
+import { fetchCompanyProfile, openBrandedPrint, openPrintWindow, resolveDocumentIssuerProfile } from '@/lib/print';
 import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatCurrency, formatDate, formatDateTime, formatInternalDeliveryOrderNumber, formatShipperDeliveryOrderNumber } from '@/lib/utils';
 import {
     formatCargoSummary,
@@ -426,15 +426,24 @@ export default function DODetailPage() {
     };
 
     const handlePrint = async () => {
+        const printWindow = openPrintWindow('Menyiapkan cetak surat jalan...');
+        if (!printWindow) {
+            addToast('error', 'Popup browser diblok. Izinkan pop-up lalu coba cetak lagi.');
+            return;
+        }
         try {
             const company = resolveDocumentIssuerProfile(doData, await fetchCompanyProfile().catch(() => null));
             openBrandedPrint({
                 title: 'Surat Jalan',
                 subtitle: formatInternalDeliveryOrderNumber(doData || {}),
                 company,
+                targetWindow: printWindow,
                 bodyHtml: doData ? buildDeliveryOrderPrintHtml(doData, doItems, trackingLogs) : '',
             });
         } catch {
+            try {
+                printWindow.close();
+            } catch {}
             addToast('error', 'Gagal menyiapkan dokumen cetak');
         }
     };
