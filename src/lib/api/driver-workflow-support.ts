@@ -49,28 +49,24 @@ export function computeDriverVoucherTotals(
 }
 
 export function getDriverVoucherIssuedAmount(value: {
-    totalIssuedAmount?: number | null;
-    cashGiven?: number | null;
+    totalIssuedAmount?: number | string | null;
+    cashGiven?: number | string | null;
 }) {
-    if (typeof value.totalIssuedAmount === 'number' && Number.isFinite(value.totalIssuedAmount)) {
-        return Math.max(value.totalIssuedAmount, 0);
-    }
-    if (typeof value.cashGiven === 'number' && Number.isFinite(value.cashGiven)) {
-        return Math.max(value.cashGiven, 0);
-    }
+    const totalIssuedAmount = normalizeNumber(value.totalIssuedAmount ?? 0, { maxFractionDigits: 0 });
+    if (Number.isFinite(totalIssuedAmount) && totalIssuedAmount > 0) return totalIssuedAmount;
+    const cashGiven = normalizeNumber(value.cashGiven ?? 0, { maxFractionDigits: 0 });
+    if (Number.isFinite(cashGiven) && cashGiven > 0) return cashGiven;
     return 0;
 }
 
 export function getDriverVoucherInitialCash(value: {
-    initialCashGiven?: number | null;
-    cashGiven?: number | null;
+    initialCashGiven?: number | string | null;
+    cashGiven?: number | string | null;
 }) {
-    if (typeof value.initialCashGiven === 'number' && Number.isFinite(value.initialCashGiven)) {
-        return Math.max(value.initialCashGiven, 0);
-    }
-    if (typeof value.cashGiven === 'number' && Number.isFinite(value.cashGiven)) {
-        return Math.max(value.cashGiven, 0);
-    }
+    const initialCashGiven = normalizeNumber(value.initialCashGiven ?? 0, { maxFractionDigits: 0 });
+    if (Number.isFinite(initialCashGiven) && initialCashGiven > 0) return initialCashGiven;
+    const cashGiven = normalizeNumber(value.cashGiven ?? 0, { maxFractionDigits: 0 });
+    if (Number.isFinite(cashGiven) && cashGiven > 0) return cashGiven;
     return 0;
 }
 

@@ -84,27 +84,45 @@ export function buildOrderEditForm(order: Order | null): OrderEditFormState {
 export function mapOrderItemToOrderEditForm(item: OrderItem): OrderItemForm {
     const nextWeightUnit = (item.weightInputUnit || 'KG') as WeightInputUnit;
     const nextVolumeUnit = (item.volumeInputUnit || 'M3') as VolumeInputUnit;
+    const normalizedQtyKoli = parseFormattedNumberish(item.qtyKoli ?? 0, {
+        maxFractionDigits: 2,
+    });
+    const normalizedWeightInputValue = parseFormattedNumberish(item.weightInputValue ?? 0, {
+        maxFractionDigits: nextWeightUnit === 'TON' ? 3 : 2,
+    });
+    const normalizedWeightKg = parseFormattedNumberish(item.weight ?? 0, {
+        maxFractionDigits: 2,
+    });
+    const normalizedVolumeInputValue = parseFormattedNumberish(item.volumeInputValue ?? 0, {
+        maxFractionDigits: nextVolumeUnit === 'LITER' ? 0 : 3,
+    });
+    const normalizedVolumeM3 = parseFormattedNumberish(item.volume ?? 0, {
+        maxFractionDigits: 3,
+    });
+    const normalizedValue = parseFormattedNumberish(item.value ?? 0, {
+        maxFractionDigits: 0,
+    });
 
     return {
         id: item._id,
         customerProductRef: item.customerProductRef || '',
         description: item.description || '',
-        qtyKoli: typeof item.qtyKoli === 'number' ? item.qtyKoli : 0,
+        qtyKoli: normalizedQtyKoli,
         weightInputValue:
-            typeof item.weightInputValue === 'number' && item.weightInputValue > 0
-                ? item.weightInputValue
-                : typeof item.weight === 'number' && item.weight > 0
-                    ? convertKgToWeightInputValue(item.weight, nextWeightUnit)
+            normalizedWeightInputValue > 0
+                ? normalizedWeightInputValue
+                : normalizedWeightKg > 0
+                    ? convertKgToWeightInputValue(normalizedWeightKg, nextWeightUnit)
                     : 0,
         weightInputUnit: nextWeightUnit,
         volumeInputValue:
-            typeof item.volumeInputValue === 'number' && item.volumeInputValue > 0
-                ? item.volumeInputValue
-                : typeof item.volume === 'number' && item.volume > 0
-                    ? convertM3ToVolumeInputValue(item.volume, nextVolumeUnit)
+            normalizedVolumeInputValue > 0
+                ? normalizedVolumeInputValue
+                : normalizedVolumeM3 > 0
+                    ? convertM3ToVolumeInputValue(normalizedVolumeM3, nextVolumeUnit)
                     : 0,
         volumeInputUnit: nextVolumeUnit,
-        value: item.value || 0,
+        value: normalizedValue,
     };
 }
 

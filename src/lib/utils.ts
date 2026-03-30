@@ -37,19 +37,23 @@ export function formatDateTime(dateStr: string | undefined): string {
 }
 
 // ── Currency formatting ──
-export function formatCurrency(amount: number | undefined): string {
+export function formatCurrency(amount: number | string | undefined | null): string {
     if (amount === undefined || amount === null) return '-';
+    const numeric = parseFormattedNumberish(amount, { maxFractionDigits: 0 });
+    if (!Number.isFinite(numeric)) return '-';
     return new Intl.NumberFormat('id-ID', {
         style: 'currency',
         currency: 'IDR',
         minimumFractionDigits: 0,
         maximumFractionDigits: 0,
-    }).format(amount);
+    }).format(numeric);
 }
 
-export function formatNumber(num: number | undefined): string {
+export function formatNumber(num: number | string | undefined | null): string {
     if (num === undefined || num === null) return '-';
-    return new Intl.NumberFormat('id-ID').format(num);
+    const numeric = parseFormattedNumberish(num);
+    if (!Number.isFinite(numeric)) return '-';
+    return new Intl.NumberFormat('id-ID').format(numeric);
 }
 
 export function formatQuantity(
@@ -119,35 +123,31 @@ export function getReceivableRemainingAmount(
 }
 
 export function getDriverVoucherInitialCash(value: {
-    initialCashGiven?: number | null;
-    cashGiven?: number | null;
+    initialCashGiven?: number | string | null;
+    cashGiven?: number | string | null;
 }) {
-    if (typeof value.initialCashGiven === 'number' && Number.isFinite(value.initialCashGiven)) {
-        return Math.max(value.initialCashGiven, 0);
-    }
-    if (typeof value.cashGiven === 'number' && Number.isFinite(value.cashGiven)) {
-        return Math.max(value.cashGiven, 0);
-    }
+    const initialCash = parseFormattedNumberish(value.initialCashGiven ?? 0, { maxFractionDigits: 0 });
+    if (Number.isFinite(initialCash) && initialCash > 0) return initialCash;
+    const cashGiven = parseFormattedNumberish(value.cashGiven ?? 0, { maxFractionDigits: 0 });
+    if (Number.isFinite(cashGiven) && cashGiven > 0) return cashGiven;
     return 0;
 }
 
 export function getDriverVoucherIssuedAmount(value: {
-    totalIssuedAmount?: number | null;
-    cashGiven?: number | null;
+    totalIssuedAmount?: number | string | null;
+    cashGiven?: number | string | null;
 }) {
-    if (typeof value.totalIssuedAmount === 'number' && Number.isFinite(value.totalIssuedAmount)) {
-        return Math.max(value.totalIssuedAmount, 0);
-    }
-    if (typeof value.cashGiven === 'number' && Number.isFinite(value.cashGiven)) {
-        return Math.max(value.cashGiven, 0);
-    }
+    const totalIssuedAmount = parseFormattedNumberish(value.totalIssuedAmount ?? 0, { maxFractionDigits: 0 });
+    if (Number.isFinite(totalIssuedAmount) && totalIssuedAmount > 0) return totalIssuedAmount;
+    const cashGiven = parseFormattedNumberish(value.cashGiven ?? 0, { maxFractionDigits: 0 });
+    if (Number.isFinite(cashGiven) && cashGiven > 0) return cashGiven;
     return 0;
 }
 
 export function getDriverVoucherTopUpAmount(value: {
-    initialCashGiven?: number | null;
-    totalIssuedAmount?: number | null;
-    cashGiven?: number | null;
+    initialCashGiven?: number | string | null;
+    totalIssuedAmount?: number | string | null;
+    cashGiven?: number | string | null;
 }) {
     return Math.max(
         getDriverVoucherIssuedAmount(value) - getDriverVoucherInitialCash(value),
@@ -156,16 +156,13 @@ export function getDriverVoucherTopUpAmount(value: {
 }
 
 export function getDriverVoucherOperationalBalance(value: {
-    initialCashGiven?: number | null;
-    totalIssuedAmount?: number | null;
-    cashGiven?: number | null;
-    totalSpent?: number | null;
+    initialCashGiven?: number | string | null;
+    totalIssuedAmount?: number | string | null;
+    cashGiven?: number | string | null;
+    totalSpent?: number | string | null;
 }) {
     const totalIssuedAmount = getDriverVoucherIssuedAmount(value);
-    const totalSpent =
-        typeof value.totalSpent === 'number' && Number.isFinite(value.totalSpent)
-            ? Math.max(value.totalSpent, 0)
-            : 0;
+    const totalSpent = Math.max(parseFormattedNumberish(value.totalSpent ?? 0, { maxFractionDigits: 0 }), 0);
     return totalIssuedAmount - totalSpent;
 }
 

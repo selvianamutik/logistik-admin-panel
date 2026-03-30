@@ -1036,8 +1036,8 @@ export async function handleDriverVoucherTopUp(
         const nextTopUpCount = Math.max(state.voucher.topUpCount || 0, 0) + 1;
         const totals = computeDriverVoucherTotals(
             nextIssuedAmount,
-            state.items.reduce((sum, item) => sum + item.amount, 0),
-            normalizeNumber(state.voucher.driverFeeAmount || 0)
+            state.items.reduce((sum, item) => sum + normalizeNumber(item.amount || 0, { maxFractionDigits: 0 }), 0),
+            normalizeNumber(state.voucher.driverFeeAmount || 0, { maxFractionDigits: 0 })
         );
         const transactionId = crypto.randomUUID();
         const disbursementId = crypto.randomUUID();
@@ -1178,11 +1178,14 @@ export async function handleDriverVoucherItemCreate(
         }
 
         const itemId = crypto.randomUUID();
-        const nextOperationalSpent = state.items.reduce((sum, item) => sum + item.amount, 0) + amount;
+        const nextOperationalSpent = state.items.reduce(
+            (sum, item) => sum + normalizeNumber(item.amount || 0, { maxFractionDigits: 0 }),
+            0
+        ) + amount;
         const nextTotals = computeDriverVoucherTotals(
             getDriverVoucherIssuedAmount(state.voucher),
             nextOperationalSpent,
-            normalizeNumber(state.voucher.driverFeeAmount || 0)
+            normalizeNumber(state.voucher.driverFeeAmount || 0, { maxFractionDigits: 0 })
         );
         const itemDoc = {
             _id: itemId,
@@ -1275,7 +1278,7 @@ export async function handleDriverVoucherItemDelete(
         const nextTotals = computeDriverVoucherTotals(
             getDriverVoucherIssuedAmount(state.voucher),
             nextOperationalSpent,
-            normalizeNumber(state.voucher.driverFeeAmount || 0)
+            normalizeNumber(state.voucher.driverFeeAmount || 0, { maxFractionDigits: 0 })
         );
         const deletedItem = state.items.find(existing => existing._id === itemId);
 
@@ -1386,8 +1389,8 @@ export async function handleDriverVoucherDisbursementDelete(
         const nextTopUpCount = Math.max((state.voucher.topUpCount || 0) - 1, 0);
         const totals = computeDriverVoucherTotals(
             nextIssuedAmount,
-            state.items.reduce((sum, item) => sum + item.amount, 0),
-            normalizeNumber(state.voucher.driverFeeAmount || 0)
+            state.items.reduce((sum, item) => sum + normalizeNumber(item.amount || 0, { maxFractionDigits: 0 }), 0),
+            normalizeNumber(state.voucher.driverFeeAmount || 0, { maxFractionDigits: 0 })
         );
 
         const transaction = getSanityClient().transaction().delete(disbursementId);
@@ -1481,7 +1484,7 @@ export async function handleDriverVoucherSettlement(
         if (state.voucher.status === 'SETTLED') {
             return NextResponse.json({ error: 'Bon supir ini sudah settle' }, { status: 409 });
         }
-        const driverFeeAmount = normalizeNumber(state.voucher.driverFeeAmount || 0);
+        const driverFeeAmount = normalizeNumber(state.voucher.driverFeeAmount || 0, { maxFractionDigits: 0 });
         if (state.items.length === 0 && driverFeeAmount <= 0) {
             return NextResponse.json({ error: 'Isi biaya perjalanan atau upah supir sebelum penyelesaian trip' }, { status: 400 });
         }
@@ -1507,7 +1510,10 @@ export async function handleDriverVoucherSettlement(
             }
         }
 
-        const totalSpent = state.items.reduce((sum, item) => sum + item.amount, 0);
+        const totalSpent = state.items.reduce(
+            (sum, item) => sum + normalizeNumber(item.amount || 0, { maxFractionDigits: 0 }),
+            0
+        );
         const totals = computeDriverVoucherTotals(
             getDriverVoucherIssuedAmount(state.voucher),
             totalSpent,
@@ -1553,7 +1559,7 @@ export async function handleDriverVoucherSettlement(
                 categoryRef: toCategoryRef(item.category),
                 categoryName: item.category,
                 date: item.expenseDate || settledDate,
-                amount: item.amount,
+                amount: normalizeCurrencyNumber(item.amount),
                 description: item.description || `Pengeluaran uang jalan trip ${state.voucher.bonNumber}`,
                 note: `Uang jalan trip ${state.voucher.bonNumber}`,
                 privacyLevel: 'internal',

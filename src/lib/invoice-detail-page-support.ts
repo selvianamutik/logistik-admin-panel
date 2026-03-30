@@ -1,3 +1,4 @@
+import { parseFormattedNumberish } from './formatted-number';
 import { getReceivableNetAmount } from './utils';
 import type { BankAccount, FreightNota, InvoiceAdjustment, Payment } from './types';
 
@@ -16,11 +17,17 @@ export function buildInvoiceDetailSummary(params: {
     payments: Payment[];
     adjustments: InvoiceAdjustment[];
 }) {
-    const totalPaid = params.payments.reduce((sum, payment) => sum + payment.amount, 0);
-    const grossAmount = params.nota?.totalAmount || 0;
-    const totalAdjustmentAmount = params.nota?.totalAdjustmentAmount || params.adjustments
-        .filter(item => item.status === 'APPROVED')
-        .reduce((sum, item) => sum + item.amount, 0);
+    const totalPaid = params.payments.reduce(
+        (sum, payment) => sum + parseFormattedNumberish(payment.amount || 0, { maxFractionDigits: 0 }),
+        0
+    );
+    const grossAmount = parseFormattedNumberish(params.nota?.totalAmount || 0, { maxFractionDigits: 0 });
+    const totalAdjustmentAmount =
+        params.nota?.totalAdjustmentAmount !== undefined && params.nota?.totalAdjustmentAmount !== null
+            ? parseFormattedNumberish(params.nota.totalAdjustmentAmount, { maxFractionDigits: 0 })
+            : params.adjustments
+                .filter(item => item.status === 'APPROVED')
+                .reduce((sum, item) => sum + parseFormattedNumberish(item.amount || 0, { maxFractionDigits: 0 }), 0);
     const netAmount = params.nota ? getReceivableNetAmount(params.nota) : 0;
     const remaining = Math.max(netAmount - totalPaid, 0);
     const creditAmount = Math.max(totalPaid - netAmount, 0);

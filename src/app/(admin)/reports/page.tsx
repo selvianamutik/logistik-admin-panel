@@ -27,6 +27,7 @@ import {
   getDriverVoucherOperationalBalance,
 } from "@/lib/utils";
 import { exportToExcel } from "@/lib/export";
+import { parseFormattedNumberish } from "@/lib/formatted-number";
 import type {
   BankAccount,
   BankTransaction,
@@ -139,6 +140,8 @@ export default function ReportsPage() {
     year,
   });
   const fmtN = (n: number) => new Intl.NumberFormat("id-ID").format(n);
+  const parseWholeMoneyLike = (value: unknown) =>
+    Math.max(parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 }), 0);
   const cashflowSummaryAccounts = [
     ...bankAccounts,
     ...Object.entries(cashFlowByBank)
@@ -237,7 +240,9 @@ export default function ReportsPage() {
                   item,
                   allBankAccounts,
                 );
-                return `<tr><td>${bankName}</td><td>${item.date ? new Date(item.date).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "-"}</td><td>${item.type}</td><td>${item.description}</td><td class="r ${isIn ? "s" : "d"} b">${isIn ? "+" : "-"}${fmtN(item.amount)}</td><td class="r b">${fmtN(item.balanceAfter)}</td></tr>`;
+                const amount = parseWholeMoneyLike(item.amount);
+                const balanceAfter = parseWholeMoneyLike(item.balanceAfter);
+                return `<tr><td>${bankName}</td><td>${item.date ? new Date(item.date).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "-"}</td><td>${item.type}</td><td>${item.description}</td><td class="r ${isIn ? "s" : "d"} b">${isIn ? "+" : "-"}${fmtN(amount)}</td><td class="r b">${fmtN(balanceAfter)}</td></tr>`;
               })
               .join("")}</tbody></table>`,
       });
@@ -598,9 +603,12 @@ export default function ReportsPage() {
                       </tr>
                     ) : (
                       openDriverVouchers.map((item) => {
+                        const totalSpent = parseWholeMoneyLike(item.totalSpent);
+                        const driverFeeAmount = parseWholeMoneyLike(item.driverFeeAmount);
+                        const balance = parseFormattedNumberish(item.balance ?? 0, { maxFractionDigits: 0 });
                         const totalClaimAmount =
-                          item.totalClaimAmount ||
-                          (item.totalSpent || 0) + (item.driverFeeAmount || 0);
+                          parseWholeMoneyLike(item.totalClaimAmount) ||
+                          totalSpent + driverFeeAmount;
                         const operationalBalance =
                           getDriverVoucherOperationalBalance(item);
                         return (
@@ -613,10 +621,10 @@ export default function ReportsPage() {
                               {formatCurrency(getDriverVoucherIssuedAmount(item))}
                             </td>
                             <td style={{ textAlign: "right" }}>
-                              {formatCurrency(item.totalSpent)}
+                              {formatCurrency(totalSpent)}
                             </td>
                             <td style={{ textAlign: "right" }}>
-                              {formatCurrency(item.driverFeeAmount || 0)}
+                              {formatCurrency(driverFeeAmount)}
                             </td>
                             <td style={{ textAlign: "right", fontWeight: 600 }}>
                               {formatCurrency(totalClaimAmount)}
@@ -638,12 +646,12 @@ export default function ReportsPage() {
                                 textAlign: "right",
                                 fontWeight: 700,
                                 color:
-                                  item.balance < 0
+                                  balance < 0
                                     ? "var(--color-danger)"
                                     : "var(--color-success)",
                               }}
                             >
-                              {formatCurrency(item.balance)}
+                              {formatCurrency(balance)}
                             </td>
                           </tr>
                         );
@@ -664,9 +672,12 @@ export default function ReportsPage() {
                   </div>
                 ) : (
                   openDriverVouchers.map((item) => {
+                    const totalSpent = parseWholeMoneyLike(item.totalSpent);
+                    const driverFeeAmount = parseWholeMoneyLike(item.driverFeeAmount);
+                    const balance = parseFormattedNumberish(item.balance ?? 0, { maxFractionDigits: 0 });
                     const totalClaimAmount =
-                      item.totalClaimAmount ||
-                      (item.totalSpent || 0) + (item.driverFeeAmount || 0);
+                      parseWholeMoneyLike(item.totalClaimAmount) ||
+                      totalSpent + driverFeeAmount;
                     const operationalBalance =
                       getDriverVoucherOperationalBalance(item);
                     return (
@@ -698,13 +709,13 @@ export default function ReportsPage() {
                           <div className="mobile-record-kv">
                             <span className="mobile-record-label">Biaya</span>
                             <span className="mobile-record-value">
-                              {formatCurrency(item.totalSpent)}
+                              {formatCurrency(totalSpent)}
                             </span>
                           </div>
                           <div className="mobile-record-kv">
                             <span className="mobile-record-label">Upah Trip</span>
                             <span className="mobile-record-value">
-                              {formatCurrency(item.driverFeeAmount || 0)}
+                              {formatCurrency(driverFeeAmount)}
                             </span>
                           </div>
                           <div className="mobile-record-kv">
@@ -735,12 +746,12 @@ export default function ReportsPage() {
                               style={{
                                 fontWeight: 700,
                                 color:
-                                  item.balance < 0
+                                  balance < 0
                                     ? "var(--color-danger)"
                                     : "var(--color-success)",
                               }}
                             >
-                              {formatCurrency(item.balance)}
+                              {formatCurrency(balance)}
                             </span>
                           </div>
                         </div>
@@ -1092,6 +1103,8 @@ export default function ReportsPage() {
                         item,
                         allBankAccounts,
                       );
+                      const amount = parseWholeMoneyLike(item.amount);
+                      const balanceAfter = parseWholeMoneyLike(item.balanceAfter);
                       return (
                         <tr key={item._id}>
                           <td
@@ -1127,7 +1140,7 @@ export default function ReportsPage() {
                             }}
                           >
                             {isIn ? "+" : "-"}
-                            {formatCurrency(item.amount)}
+                            {formatCurrency(amount)}
                           </td>
                           <td
                             style={{
@@ -1136,7 +1149,7 @@ export default function ReportsPage() {
                               whiteSpace: "nowrap",
                             }}
                           >
-                            {formatCurrency(item.balanceAfter)}
+                            {formatCurrency(balanceAfter)}
                           </td>
                         </tr>
                       );
@@ -1163,6 +1176,8 @@ export default function ReportsPage() {
                     item,
                     allBankAccounts,
                   );
+                  const amount = parseWholeMoneyLike(item.amount);
+                  const balanceAfter = parseWholeMoneyLike(item.balanceAfter);
                   return (
                     <div key={item._id} className="mobile-record-card">
                       <div className="mobile-record-header">
@@ -1191,13 +1206,13 @@ export default function ReportsPage() {
                             }}
                           >
                             {isIn ? "+" : "-"}
-                            {formatCurrency(item.amount)}
+                            {formatCurrency(amount)}
                           </span>
                         </div>
                         <div className="mobile-record-kv">
                           <span className="mobile-record-label">Saldo Setelah</span>
                           <span className="mobile-record-value">
-                            {formatCurrency(item.balanceAfter)}
+                            {formatCurrency(balanceAfter)}
                           </span>
                         </div>
                       </div>

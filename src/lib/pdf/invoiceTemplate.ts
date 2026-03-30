@@ -10,6 +10,7 @@ import {
     resolveInvoiceInstructionAccounts,
     type InvoiceInstructionAccount,
 } from '@/lib/print';
+import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { formatDate, formatCurrency, terbilang } from '@/lib/utils';
 
 // ── Simple table drawing helper ──
@@ -150,13 +151,17 @@ export function generateInvoicePdf(
     y += 5;
 
     // ─── Totals ───
-    const totalPaid = payments.reduce((s, p) => s + p.amount, 0);
-    const remaining = invoice.totalAmount - totalPaid;
+    const totalPaid = payments.reduce(
+        (sum, payment) => sum + parseFormattedNumberish(payment.amount || 0, { maxFractionDigits: 0 }),
+        0
+    );
+    const invoiceTotalAmount = parseFormattedNumberish(invoice.totalAmount || 0, { maxFractionDigits: 0 });
+    const remaining = invoiceTotalAmount - totalPaid;
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
     doc.text('Total:', pageWidth - margin - 60, y);
-    doc.text(formatCurrency(invoice.totalAmount), pageWidth - margin, y, { align: 'right' });
+    doc.text(formatCurrency(invoiceTotalAmount), pageWidth - margin, y, { align: 'right' });
     y += 5;
 
     if (totalPaid > 0) {
@@ -175,7 +180,7 @@ export function generateInvoicePdf(
     y += 3;
     doc.setFontSize(9);
     doc.setFont('helvetica', 'italic');
-    const amt = remaining > 0 ? remaining : invoice.totalAmount;
+    const amt = remaining > 0 ? remaining : invoiceTotalAmount;
     doc.text(`Terbilang: ${terbilang(amt)} rupiah`, margin, y, { maxWidth: contentWidth });
     y += 10;
 

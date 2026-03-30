@@ -1,4 +1,5 @@
 import type { CustomerPickupLocation, CustomerProduct, CustomerRecipient } from './types';
+import { parseFormattedNumberish } from './formatted-number';
 import {
     convertKgToWeightInputValue,
     convertM3ToVolumeInputValue,
@@ -47,7 +48,7 @@ export function getDraftOrderItems(items: OrderItemForm[]) {
 
 export function summarizeDraftOrderCargo(items: OrderItemForm[]) {
     return getDraftOrderItems(items).reduce((sum, item) => ({
-        qtyKoli: sum.qtyKoli + Number(item.qtyKoli || 0),
+        qtyKoli: sum.qtyKoli + parseFormattedNumberish(item.qtyKoli || 0, { maxFractionDigits: 2 }),
         weightKg: sum.weightKg + (item.weightInputValue > 0 ? convertWeightToKg(item.weightInputValue, item.weightInputUnit) : 0),
         volumeM3: sum.volumeM3 + (item.volumeInputValue > 0 ? convertVolumeToM3(item.volumeInputValue, item.volumeInputUnit) : 0),
     }), { qtyKoli: 0, weightKg: 0, volumeM3: 0 });
@@ -64,24 +65,41 @@ export function applyCustomerProductToOrderItem(item: OrderItemForm, selectedPro
 
     const nextWeightUnit = selectedProduct.defaultWeightInputUnit || item.weightInputUnit || 'KG';
     const nextVolumeUnit = selectedProduct.defaultVolumeInputUnit || item.volumeInputUnit || 'M3';
+    const normalizedQtyKoli = parseFormattedNumberish(selectedProduct.defaultQtyKoli ?? item.qtyKoli ?? 0, {
+        maxFractionDigits: 2,
+    });
+    const normalizedWeightInputValue = parseFormattedNumberish(
+        selectedProduct.defaultWeightInputValue ?? 0,
+        { maxFractionDigits: nextWeightUnit === 'TON' ? 3 : 2 }
+    );
+    const normalizedWeightKg = parseFormattedNumberish(selectedProduct.defaultWeight ?? 0, {
+        maxFractionDigits: 2,
+    });
     const nextWeightValue =
-        typeof selectedProduct.defaultWeightInputValue === 'number' && selectedProduct.defaultWeightInputValue > 0
-            ? selectedProduct.defaultWeightInputValue
-            : typeof selectedProduct.defaultWeight === 'number' && selectedProduct.defaultWeight > 0
-                ? convertKgToWeightInputValue(selectedProduct.defaultWeight, nextWeightUnit)
+        normalizedWeightInputValue > 0
+            ? normalizedWeightInputValue
+            : normalizedWeightKg > 0
+                ? convertKgToWeightInputValue(normalizedWeightKg, nextWeightUnit)
                 : 0;
+    const normalizedVolumeInputValue = parseFormattedNumberish(
+        selectedProduct.defaultVolumeInputValue ?? 0,
+        { maxFractionDigits: nextVolumeUnit === 'LITER' ? 0 : 3 }
+    );
+    const normalizedVolumeM3 = parseFormattedNumberish(selectedProduct.defaultVolume ?? 0, {
+        maxFractionDigits: 3,
+    });
     const nextVolumeValue =
-        typeof selectedProduct.defaultVolumeInputValue === 'number' && selectedProduct.defaultVolumeInputValue > 0
-            ? selectedProduct.defaultVolumeInputValue
-            : typeof selectedProduct.defaultVolume === 'number' && selectedProduct.defaultVolume > 0
-                ? convertM3ToVolumeInputValue(selectedProduct.defaultVolume, nextVolumeUnit)
+        normalizedVolumeInputValue > 0
+            ? normalizedVolumeInputValue
+            : normalizedVolumeM3 > 0
+                ? convertM3ToVolumeInputValue(normalizedVolumeM3, nextVolumeUnit)
                 : 0;
 
     return {
         ...item,
         customerProductRef: selectedProduct._id,
         description: selectedProduct.description || selectedProduct.name || item.description,
-        qtyKoli: selectedProduct.defaultQtyKoli ?? item.qtyKoli ?? 0,
+        qtyKoli: normalizedQtyKoli,
         weightInputValue: nextWeightValue,
         weightInputUnit: nextWeightUnit,
         volumeInputValue: nextVolumeValue,

@@ -6,6 +6,7 @@ import { Search, Plus, FileText, Printer, FileDown, Receipt } from 'lucide-react
 import AppPagination from '@/components/AppPagination';
 import CurrencyInput from '@/components/CurrencyInput';
 import { fetchAdminCollectionData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
+import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { formatFreightNotaDisplayWeight, normalizeFreightNotaBillingMode } from '@/lib/freight-nota-billing';
 import { formatDate, formatCurrency, formatQuantity, getReceivableNetAmount, PAYMENT_METHOD_MAP } from '@/lib/utils';
 import { buildFreightNotaPrintDocument, openBrandedPrint, openPrintWindow, fetchCompanyProfile, formatFreightNotaDisplayNumber, resolveDocumentIssuerProfile } from '@/lib/print';
@@ -184,8 +185,11 @@ export default function NotaListPage() {
         setPage(1);
     }, [search, statusFilter]);
 
+    const parseWholeMoneyLike = (value: unknown) =>
+        Math.max(parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 }), 0);
+
     const paymentTotalsByInvoice = payments.reduce<Record<string, number>>((acc, payment) => {
-        acc[payment.invoiceRef] = (acc[payment.invoiceRef] || 0) + payment.amount;
+        acc[payment.invoiceRef] = (acc[payment.invoiceRef] || 0) + parseWholeMoneyLike(payment.amount);
         return acc;
     }, {});
 
@@ -202,7 +206,7 @@ export default function NotaListPage() {
 
     const selectedReceiptCustomer = receiptCustomerOptions.find(option => option.ref === receiptCustomerRef) || null;
     const receiptPaymentTotals = receiptOpenPayments.reduce<Record<string, number>>((acc, payment) => {
-        acc[payment.invoiceRef] = (acc[payment.invoiceRef] || 0) + payment.amount;
+        acc[payment.invoiceRef] = (acc[payment.invoiceRef] || 0) + parseWholeMoneyLike(payment.amount);
         return acc;
     }, {});
     const receiptOpenNotaItems = receiptOpenNotas
@@ -222,7 +226,7 @@ export default function NotaListPage() {
     const customerCreditByRef = customerReceipts.reduce<Record<string, number>>((acc, receipt) => {
         const key = receipt.customerRef || receipt.customerName;
         if (!key) return acc;
-        const unappliedAmount = typeof receipt.unappliedAmount === 'number' ? receipt.unappliedAmount : 0;
+        const unappliedAmount = parseWholeMoneyLike(receipt.unappliedAmount);
         if (unappliedAmount <= 0) return acc;
         acc[key] = (acc[key] || 0) + unappliedAmount;
         return acc;
@@ -411,7 +415,7 @@ export default function NotaListPage() {
                 addToast('error', payload.error || 'Gagal mencatat penerimaan');
                 return;
             }
-            const unappliedAmount = typeof payload.data?.unappliedAmount === 'number' ? payload.data.unappliedAmount : 0;
+            const unappliedAmount = parseWholeMoneyLike(payload.data?.unappliedAmount);
             addToast(
                 'success',
                 unappliedAmount > 0

@@ -36,12 +36,30 @@ function sum(items, valueFn) {
     return items.reduce((total, item) => total + valueFn(item), 0);
 }
 
+function parseWholeMoneyLike(value) {
+    if (typeof value === 'number') {
+        return Number.isFinite(value) ? value : 0;
+    }
+    if (typeof value !== 'string') {
+        return 0;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) return 0;
+    if (/^-?\d+$/.test(trimmed)) {
+        return Number(trimmed);
+    }
+    const negative = trimmed.startsWith('-');
+    const digits = trimmed.replace(/[^\d]/g, '');
+    if (!digits) return 0;
+    return (negative ? -1 : 1) * Number(digits);
+}
+
 function fmtCurrency(amount) {
     return new Intl.NumberFormat('id-ID', {
         style: 'currency',
         currency: 'IDR',
         minimumFractionDigits: 0,
-    }).format(amount || 0);
+    }).format(parseWholeMoneyLike(amount));
 }
 
 function printSection(title, findings) {
@@ -132,13 +150,13 @@ async function main() {
 
     for (const receipt of data.customerReceipts) {
         const allocations = receiptPaymentGroups.get(receipt._id) || [];
-        const allocatedTotal = sum(allocations, item => item.amount || 0);
-        const unappliedAmount = receipt.unappliedAmount || 0;
+        const allocatedTotal = sum(allocations, item => parseWholeMoneyLike(item.amount));
+        const unappliedAmount = parseWholeMoneyLike(receipt.unappliedAmount);
         const resolvedTotal = allocatedTotal + unappliedAmount;
         if (allocations.length === 0 && unappliedAmount === 0) {
             receivableFindings.push(`Receipt ${receipt.receiptNumber || receipt._id} tidak punya alokasi payment`);
         }
-        if (resolvedTotal !== (receipt.totalAmount || 0)) {
+        if (resolvedTotal !== parseWholeMoneyLike(receipt.totalAmount)) {
             receivableFindings.push(
                 `Receipt ${receipt.receiptNumber || receipt._id} total ${fmtCurrency(receipt.totalAmount)} tidak cocok dengan alokasi ${fmtCurrency(allocatedTotal)} + kredit ${fmtCurrency(unappliedAmount)}`
             );
@@ -159,15 +177,17 @@ async function main() {
     for (const doc of receivableDocs) {
         const docPayments = paymentGroups.get(doc._id) || [];
         const docAdjustments = adjustmentGroups.get(doc._id) || [];
-        const totalPaid = sum(docPayments, item => item.amount || 0);
-        const totalAdjustment = sum(docAdjustments, item => item.amount || 0);
-        const expectedNet = Math.max((doc.totalAmount || 0) - totalAdjustment, 0);
+        const totalPaid = sum(docPayments, item => parseWholeMoneyLike(item.amount));
+        const totalAdjustment = sum(docAdjustments, item => parseWholeMoneyLike(item.amount));
+        const expectedNet = Math.max(parseWholeMoneyLike(doc.totalAmount) - totalAdjustment, 0);
+        const storedAdjustment = parseWholeMoneyLike(doc.totalAdjustmentAmount);
+        const storedNet = parseWholeMoneyLike(doc.netAmount);
         const expectedStatus = totalPaid >= expectedNet ? 'PAID' : totalPaid > 0 ? 'PARTIAL' : 'UNPAID';
 
-        if ((doc.totalAdjustmentAmount || 0) !== totalAdjustment) {
+        if (storedAdjustment !== totalAdjustment) {
             receivableFindings.push(`${doc.kind} ${doc.label} totalAdjustmentAmount ${fmtCurrency(doc.totalAdjustmentAmount)} tidak cocok dengan adjustment ${fmtCurrency(totalAdjustment)}`);
         }
-        if ((doc.netAmount || 0) !== expectedNet) {
+        if (storedNet !== expectedNet) {
             receivableFindings.push(`${doc.kind} ${doc.label} netAmount ${fmtCurrency(doc.netAmount)} tidak cocok dengan netto ${fmtCurrency(expectedNet)}`);
         }
         if (totalPaid > expectedNet) {
@@ -182,7 +202,7 @@ async function main() {
     if (data.invoices.length > 0) {
         const outstandingLegacy = sum(
             data.invoices.filter(item => item.status !== 'PAID'),
-            item => item.totalAmount || 0
+            item => parseWholeMoneyLike(item.totalAmount)
         );
         legacyInvoiceNotes.push(
             `${data.invoices.length} invoice legacy masih ada di dataset dengan outstanding ${fmtCurrency(outstandingLegacy)}`
@@ -233,13 +253,15 @@ async function main() {
         const disbursements = voucherDisbursementGroups.get(voucher._id) || [];
         const expenses = voucherExpenseGroups.get(voucher._id) || [];
         const bankTx = voucherBankTxGroups.get(voucher._id) || [];
-        const computedSpent = sum(items, item => item.amount || 0);
-        const computedDriverFee = voucher.driverFeeAmount || 0;
+        const computedSpent = sum(items, item => parseWholeMoneyLike(item.amount));
+        const computedDriverFee = parseWholeMoneyLike(voucher.driverFeeAmount);
         const computedClaim = computedSpent + computedDriverFee;
         const computedIssued = disbursements.length > 0
-            ? sum(disbursements, item => item.amount || 0)
-            : (voucher.totalIssuedAmount || voucher.cashGiven || 0);
-        const computedInitial = disbursements.find(item => item.kind === 'INITIAL')?.amount || voucher.initialCashGiven || voucher.cashGiven || 0;
+            ? sum(disbursements, item => parseWholeMoneyLike(item.amount))
+            : parseWholeMoneyLike(voucher.totalIssuedAmount || voucher.cashGiven);
+        const computedInitial = parseWholeMoneyLike(
+            disbursements.find(item => item.kind === 'INITIAL')?.amount || voucher.initialCashGiven || voucher.cashGiven
+        );
         const computedTopUpCount = disbursements.filter(item => item.kind === 'TOP_UP').length;
         const computedBalance = computedIssued - computedClaim;
 
@@ -260,29 +282,29 @@ async function main() {
             if (voucher.vehicleRef && relatedDeliveryOrder.vehicleRef && voucher.vehicleRef !== relatedDeliveryOrder.vehicleRef) {
                 voucherFindings.push(`Bon ${voucher.bonNumber} punya kendaraan berbeda dari DO ${relatedDeliveryOrder.doNumber || voucher.deliveryOrderRef}`);
             }
-            if ((voucher.driverFeeAmount || 0) !== (relatedDeliveryOrder.taripBorongan || 0)) {
+            if (parseWholeMoneyLike(voucher.driverFeeAmount) !== parseWholeMoneyLike(relatedDeliveryOrder.taripBorongan)) {
                 voucherFindings.push(`Bon ${voucher.bonNumber} upah trip ${fmtCurrency(voucher.driverFeeAmount)} tidak cocok dengan tarif DO ${fmtCurrency(relatedDeliveryOrder.taripBorongan)}`);
             }
         }
         if (voucher.deliveryOrderRef && boronganDoRefs.has(voucher.deliveryOrderRef)) {
             voucherFindings.push(`Bon ${voucher.bonNumber} masih bentrok dengan slip borongan pada DO yang sama`);
         }
-        if ((voucher.initialCashGiven || voucher.cashGiven || 0) !== computedInitial) {
+        if (parseWholeMoneyLike(voucher.initialCashGiven || voucher.cashGiven) !== computedInitial) {
             voucherFindings.push(`Bon ${voucher.bonNumber} initialCashGiven ${fmtCurrency(voucher.initialCashGiven || voucher.cashGiven)} tidak cocok dengan histori pencairan ${fmtCurrency(computedInitial)}`);
         }
-        if ((voucher.totalIssuedAmount || voucher.cashGiven || 0) !== computedIssued) {
+        if (parseWholeMoneyLike(voucher.totalIssuedAmount || voucher.cashGiven) !== computedIssued) {
             voucherFindings.push(`Bon ${voucher.bonNumber} totalIssuedAmount ${fmtCurrency(voucher.totalIssuedAmount || voucher.cashGiven)} tidak cocok dengan histori pencairan ${fmtCurrency(computedIssued)}`);
         }
         if ((voucher.topUpCount || 0) !== computedTopUpCount) {
             voucherFindings.push(`Bon ${voucher.bonNumber} topUpCount ${voucher.topUpCount || 0} tidak cocok dengan histori ${computedTopUpCount}`);
         }
-        if ((voucher.totalSpent || 0) !== computedSpent) {
+        if (parseWholeMoneyLike(voucher.totalSpent) !== computedSpent) {
             voucherFindings.push(`Bon ${voucher.bonNumber} totalSpent ${fmtCurrency(voucher.totalSpent)} tidak cocok dengan item ${fmtCurrency(computedSpent)}`);
         }
-        if ((voucher.totalClaimAmount || 0) !== computedClaim) {
+        if (parseWholeMoneyLike(voucher.totalClaimAmount) !== computedClaim) {
             voucherFindings.push(`Bon ${voucher.bonNumber} totalClaimAmount ${fmtCurrency(voucher.totalClaimAmount)} tidak cocok dengan perhitungan ${fmtCurrency(computedClaim)}`);
         }
-        if ((voucher.balance || 0) !== computedBalance) {
+        if (parseWholeMoneyLike(voucher.balance) !== computedBalance) {
             voucherFindings.push(`Bon ${voucher.bonNumber} balance ${fmtCurrency(voucher.balance)} tidak cocok dengan perhitungan ${fmtCurrency(computedBalance)}`);
         }
         if (disbursements.length > 0) {
@@ -303,7 +325,7 @@ async function main() {
             if (computedDriverFee > 0) {
                 if (wageExpenses.length !== 1) {
                     voucherFindings.push(`Bon ${voucher.bonNumber} harus punya tepat 1 expense upah supir`);
-                } else if ((wageExpenses[0].amount || 0) !== computedDriverFee) {
+                } else if (parseWholeMoneyLike(wageExpenses[0].amount) !== computedDriverFee) {
                     voucherFindings.push(`Bon ${voucher.bonNumber} expense upah supir ${fmtCurrency(wageExpenses[0].amount)} tidak cocok dengan driver fee ${fmtCurrency(computedDriverFee)}`);
                 }
             } else if (wageExpenses.length > 0) {
@@ -336,14 +358,15 @@ async function main() {
         const transactions = bankTxGroups.get(account._id) || [];
         const movement = transactions.reduce((total, tx) => {
             const isCredit = tx.type === 'CREDIT' || tx.type === 'TRANSFER_IN';
-            return total + (isCredit ? tx.amount : -tx.amount);
+            const amount = parseWholeMoneyLike(tx.amount);
+            return total + (isCredit ? amount : -amount);
         }, 0);
-        const expectedBalance = (account.initialBalance || 0) + movement;
+        const expectedBalance = parseWholeMoneyLike(account.initialBalance) + movement;
 
-        if (expectedBalance !== (account.currentBalance || 0)) {
+        if (expectedBalance !== parseWholeMoneyLike(account.currentBalance)) {
             bankFindings.push(`Saldo ${account.bankName} mismatch. expected ${fmtCurrency(expectedBalance)} aktual ${fmtCurrency(account.currentBalance)}`);
         }
-        if (account.active === false && (account.currentBalance || 0) !== 0) {
+        if (account.active === false && parseWholeMoneyLike(account.currentBalance) !== 0) {
             bankFindings.push(`Rekening nonaktif ${account.bankName} masih menyimpan saldo ${fmtCurrency(account.currentBalance)}`);
         }
     }

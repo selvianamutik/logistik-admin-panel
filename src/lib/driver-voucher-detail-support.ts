@@ -1,5 +1,6 @@
 import { escapePrintHtml } from './print';
 import type { DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem } from './types';
+import { parseFormattedNumberish } from './formatted-number';
 import { formatCurrency, formatDate, getDriverVoucherInitialCash, getDriverVoucherIssuedAmount, getDriverVoucherOperationalBalance, getDriverVoucherTopUpAmount } from './utils';
 
 export const DRIVER_VOUCHER_STATUS_MAP: Record<string, { label: string; cls: string }> = {
@@ -47,8 +48,11 @@ export function sortDriverVoucherDisbursements(disbursements: DriverVoucherDisbu
 }
 
 export function buildDriverVoucherDetailSummary(voucher: DriverVoucher | null, items: DriverVoucherItem[]) {
-    const operationalSpent = items.reduce((sum, item) => sum + item.amount, 0);
-    const driverFeeAmount = voucher?.driverFeeAmount || 0;
+    const operationalSpent = items.reduce(
+        (sum, item) => sum + parseFormattedNumberish(item.amount || 0, { maxFractionDigits: 0 }),
+        0
+    );
+    const driverFeeAmount = parseFormattedNumberish(voucher?.driverFeeAmount || 0, { maxFractionDigits: 0 });
     const totalClaimAmount = operationalSpent + driverFeeAmount;
     const initialCashGiven = getDriverVoucherInitialCash(voucher || {});
     const totalIssuedAmount = getDriverVoucherIssuedAmount(voucher || {});

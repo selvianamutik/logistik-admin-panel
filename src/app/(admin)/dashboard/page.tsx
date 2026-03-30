@@ -21,6 +21,10 @@ export default function DashboardPage() {
     useEffect(() => {
         const controller = new AbortController();
         let disposed = false;
+        const markDisposed = () => {
+            disposed = true;
+            controller.abort();
+        };
 
         async function load() {
             setLoading(true);
@@ -34,7 +38,19 @@ export default function DashboardPage() {
 
                 setData(payload.data);
             } catch (err) {
-                if (disposed || controller.signal.aborted || (err instanceof Error && err.name === 'AbortError')) {
+                const pageHidden =
+                    typeof document !== 'undefined' && document.visibilityState === 'hidden';
+                const transientNavigationFailure =
+                    err instanceof TypeError &&
+                    err.message === 'Failed to fetch' &&
+                    pageHidden;
+
+                if (
+                    disposed ||
+                    controller.signal.aborted ||
+                    transientNavigationFailure ||
+                    (err instanceof Error && err.name === 'AbortError')
+                ) {
                     return;
                 }
                 console.error('Dashboard load error:', err);
@@ -49,9 +65,13 @@ export default function DashboardPage() {
         }
         void load();
 
+        window.addEventListener('pagehide', markDisposed);
+        window.addEventListener('beforeunload', markDisposed);
+
         return () => {
-            disposed = true;
-            controller.abort();
+            window.removeEventListener('pagehide', markDisposed);
+            window.removeEventListener('beforeunload', markDisposed);
+            markDisposed();
         };
     }, [addToast]);
 

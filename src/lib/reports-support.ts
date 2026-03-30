@@ -6,10 +6,15 @@ import type {
     FreightNota,
     Payment,
 } from './types';
+import { parseFormattedNumberish } from './formatted-number';
 import {
     getDriverVoucherIssuedAmount,
     getReceivableRemainingAmount,
 } from './utils';
+
+function parseWholeMoneyLike(value: unknown) {
+    return Math.max(parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 }), 0);
+}
 
 export type ReportPeriodMode = 'month' | 'year' | 'all';
 
@@ -99,12 +104,12 @@ export function buildReportsSnapshot(params: {
     const sortedFilteredBankTx = [...filteredBankTx].sort(
         (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
     );
-    const totalRevenue = filteredPayments.reduce((sum, item) => sum + item.amount, 0);
-    const totalExpense = filteredExpenses.reduce((sum, item) => sum + item.amount, 0);
+    const totalRevenue = filteredPayments.reduce((sum, item) => sum + parseWholeMoneyLike(item.amount), 0);
+    const totalExpense = filteredExpenses.reduce((sum, item) => sum + parseWholeMoneyLike(item.amount), 0);
     const netProfit = totalRevenue - totalExpense;
     const paymentTotalsByInvoice = payments.reduce<Record<string, number>>(
         (acc, payment) => {
-            acc[payment.invoiceRef] = (acc[payment.invoiceRef] || 0) + payment.amount;
+            acc[payment.invoiceRef] = (acc[payment.invoiceRef] || 0) + parseWholeMoneyLike(payment.amount);
             return acc;
         },
         {}
@@ -127,32 +132,34 @@ export function buildReportsSnapshot(params: {
         0
     );
     const openVoucherOperationalSpent = openDriverVouchers.reduce(
-        (sum, item) => sum + (item.totalSpent || 0),
+        (sum, item) => sum + parseWholeMoneyLike(item.totalSpent),
         0
     );
     const openVoucherDriverFees = openDriverVouchers.reduce(
-        (sum, item) => sum + (item.driverFeeAmount || 0),
+        (sum, item) => sum + parseWholeMoneyLike(item.driverFeeAmount),
         0
     );
     const openVoucherClaims = openDriverVouchers.reduce(
         (sum, item) =>
             sum +
-            (item.totalClaimAmount ||
-                (item.totalSpent || 0) + (item.driverFeeAmount || 0)),
+            (
+                parseWholeMoneyLike(item.totalClaimAmount)
+                || parseWholeMoneyLike(item.totalSpent) + parseWholeMoneyLike(item.driverFeeAmount)
+            ),
         0
     );
     const openVoucherReturn = openDriverVouchers.reduce(
-        (sum, item) => sum + Math.max(item.balance || 0, 0),
+        (sum, item) => sum + Math.max(parseWholeMoneyLike(item.balance), 0),
         0
     );
     const openVoucherShortage = openDriverVouchers.reduce(
-        (sum, item) => sum + Math.abs(Math.min(item.balance || 0, 0)),
+        (sum, item) => sum + Math.abs(Math.min(parseFormattedNumberish(item.balance ?? 0, { maxFractionDigits: 0 }), 0)),
         0
     );
     const expenseByCategory = filteredExpenses.reduce<Record<string, number>>(
         (acc, item) => {
             acc[item.categoryName || 'Lainnya'] =
-                (acc[item.categoryName || 'Lainnya'] || 0) + item.amount;
+                (acc[item.categoryName || 'Lainnya'] || 0) + parseWholeMoneyLike(item.amount);
             return acc;
         },
         {}
@@ -169,9 +176,9 @@ export function buildReportsSnapshot(params: {
                 acc[item.bankAccountRef] = { bankName, bankAccountNumber, inflow: 0, outflow: 0 };
             }
             if (item.type === 'CREDIT' || item.type === 'TRANSFER_IN') {
-                acc[item.bankAccountRef].inflow += item.amount;
+                acc[item.bankAccountRef].inflow += parseWholeMoneyLike(item.amount);
             } else {
-                acc[item.bankAccountRef].outflow += item.amount;
+                acc[item.bankAccountRef].outflow += parseWholeMoneyLike(item.amount);
             }
             return acc;
         },
@@ -230,13 +237,13 @@ export function buildProfitLossExportRows(
             tipe: 'Pendapatan',
             tanggal: item.date,
             deskripsi: item.note || 'Pembayaran customer',
-            jumlah: item.amount,
+            jumlah: parseWholeMoneyLike(item.amount),
         })),
         ...filteredExpenses.map(item => ({
             tipe: 'Pengeluaran',
             tanggal: item.date,
             deskripsi: item.note || item.categoryName || '-',
-            jumlah: -item.amount,
+            jumlah: -parseWholeMoneyLike(item.amount),
         })),
     ];
 }
@@ -250,7 +257,7 @@ export function buildCashflowExportRows(
         tanggal: item.date,
         tipe: item.type,
         deskripsi: item.description,
-        jumlah: item.amount,
-        saldo: item.balanceAfter,
+        jumlah: parseWholeMoneyLike(item.amount),
+        saldo: parseWholeMoneyLike(item.balanceAfter),
     }));
 }

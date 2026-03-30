@@ -4,6 +4,7 @@ import {
     getSanityClient,
 } from '@/lib/sanity';
 import { getSuggestedVehicleTireLayout, resolveTireAssetStatus, resolveTireSlotCode } from '@/lib/tire-slots';
+import { parseFormattedNumberish } from '@/lib/formatted-number';
 import type {
     BankAccount,
     CustomerReceipt,
@@ -15,6 +16,10 @@ import type {
     Vehicle,
 } from '@/lib/types';
 import { getDriverVoucherIssuedAmount, getReceivableNetAmount, getReceivableRemainingAmount } from '@/lib/utils';
+
+function parseWholeMoneyLike(value: unknown) {
+    return Math.max(parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 }), 0);
+}
 
 export type DashboardSummary = {
     orderStats: { total: number; open: number; partial: number; complete: number; onHold: number };
@@ -144,19 +149,19 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
 
     const notaPaymentTotals = notaPayments.reduce<Record<string, number>>((acc, payment) => {
         if (typeof payment.invoiceRef === 'string' && payment.invoiceRef) {
-            acc[payment.invoiceRef] = (acc[payment.invoiceRef] || 0) + (typeof payment.amount === 'number' ? payment.amount : 0);
+            acc[payment.invoiceRef] = (acc[payment.invoiceRef] || 0) + parseWholeMoneyLike(payment.amount);
         }
         return acc;
     }, {});
     const notaOutstanding = unpaidNotas.reduce((sum, nota) => {
-        const grossAmount = typeof nota.totalAmount === 'number' ? nota.totalAmount : 0;
-        const adjustmentAmount = typeof nota.totalAdjustmentAmount === 'number' ? nota.totalAdjustmentAmount : 0;
-        const netAmount = typeof nota.netAmount === 'number' ? nota.netAmount : grossAmount - adjustmentAmount;
+        const grossAmount = parseWholeMoneyLike(nota.totalAmount);
+        const adjustmentAmount = parseWholeMoneyLike(nota.totalAdjustmentAmount);
+        const netAmount = nota.netAmount !== undefined ? parseWholeMoneyLike(nota.netAmount) : grossAmount - adjustmentAmount;
         const paidAmount = notaPaymentTotals[nota._id] || 0;
         return sum + Math.max(netAmount - paidAmount, 0);
     }, 0);
     const boronganOutstanding = unpaidBorongans.reduce(
-        (sum, borongan) => sum + (typeof borongan.totalAmount === 'number' ? borongan.totalAmount : 0),
+        (sum, borongan) => sum + parseWholeMoneyLike(borongan.totalAmount),
         0
     );
     const voucherIssued = openVouchers.reduce(
@@ -325,11 +330,11 @@ export async function getExpensesSummary(session: ApiSession, search = '') {
             );
         });
 
-    const grandTotal = filteredExpenses.reduce((sum, expense) => sum + (typeof expense.amount === 'number' ? expense.amount : 0), 0);
+    const grandTotal = filteredExpenses.reduce((sum, expense) => sum + parseWholeMoneyLike(expense.amount), 0);
     const categoryTotals = Object.entries(
         filteredExpenses.reduce<Record<string, number>>((acc, expense) => {
             const key = expense.categoryName || 'Lainnya';
-            acc[key] = (acc[key] || 0) + (typeof expense.amount === 'number' ? expense.amount : 0);
+            acc[key] = (acc[key] || 0) + parseWholeMoneyLike(expense.amount);
             return acc;
         }, {})
     )
@@ -360,10 +365,10 @@ export async function getBankAccountsSummary() {
     const isCash = (account: Pick<BankAccount, 'accountType' | 'systemKey'>) =>
         account.accountType === 'CASH' || account.systemKey === 'cash-on-hand';
 
-    const totalBalance = accounts.reduce((sum, account) => sum + (account.currentBalance || 0), 0);
-    const totalInitial = accounts.reduce((sum, account) => sum + (account.initialBalance || 0), 0);
-    const cashBalance = accounts.filter(isCash).reduce((sum, account) => sum + (account.currentBalance || 0), 0);
-    const bankBalance = accounts.filter(account => !isCash(account)).reduce((sum, account) => sum + (account.currentBalance || 0), 0);
+    const totalBalance = accounts.reduce((sum, account) => sum + parseWholeMoneyLike(account.currentBalance), 0);
+    const totalInitial = accounts.reduce((sum, account) => sum + parseWholeMoneyLike(account.initialBalance), 0);
+    const cashBalance = accounts.filter(isCash).reduce((sum, account) => sum + parseWholeMoneyLike(account.currentBalance), 0);
+    const bankBalance = accounts.filter(account => !isCash(account)).reduce((sum, account) => sum + parseWholeMoneyLike(account.currentBalance), 0);
 
     return {
         totalAccounts: accounts.length,
@@ -414,7 +419,7 @@ export async function getBoronganSummary(search = '', status = '') {
     });
 
     return {
-        totalAmount: filtered.reduce((sum, item) => sum + (item.totalAmount || 0), 0),
+        totalAmount: filtered.reduce((sum, item) => sum + parseWholeMoneyLike(item.totalAmount), 0),
         unpaidCount: filtered.filter(item => item.status === 'UNPAID').length,
         paidCount: filtered.filter(item => item.status === 'PAID').length,
     };
@@ -486,7 +491,7 @@ export async function getFreightNotasSummary(search = '', status = ''): Promise<
 
     const paymentTotalsByInvoice = paymentRows.reduce<Record<string, number>>((acc, payment) => {
         if (!payment.invoiceRef) return acc;
-        acc[payment.invoiceRef] = (acc[payment.invoiceRef] || 0) + (typeof payment.amount === 'number' ? payment.amount : 0);
+        acc[payment.invoiceRef] = (acc[payment.invoiceRef] || 0) + parseWholeMoneyLike(payment.amount);
         return acc;
     }, {});
 
@@ -506,7 +511,7 @@ export async function getFreightNotasSummary(search = '', status = ''): Promise<
         partialCount: notaRows.filter(nota => nota.status === 'PARTIAL').length,
         paidCount: notaRows.filter(nota => nota.status === 'PAID').length,
         customerCreditTotal: receiptRows.reduce(
-            (sum, receipt) => sum + (typeof receipt.unappliedAmount === 'number' ? receipt.unappliedAmount : 0),
+            (sum, receipt) => sum + parseWholeMoneyLike(receipt.unappliedAmount),
             0
         ),
     };
