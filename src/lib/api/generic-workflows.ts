@@ -663,6 +663,12 @@ export async function handleGenericUpdate(
     }
 
     if (entity === 'maintenances' && typeof updates.status === 'string') {
+        const allowedMaintenanceFields = new Set(['status', 'completedDate']);
+        const updateKeys = Object.keys(updates);
+        if (updateKeys.some(key => !allowedMaintenanceFields.has(key))) {
+            return NextResponse.json({ error: 'Field maintenance ini tidak boleh diubah lewat API umum' }, { status: 400 });
+        }
+
         const existingMaintenance = await sanityGetById<{ status?: string }>(id);
         if (!existingMaintenance) {
             return NextResponse.json({ error: 'Maintenance tidak ditemukan' }, { status: 404 });
@@ -679,6 +685,15 @@ export async function handleGenericUpdate(
         if (typeof updates.completedDate !== 'string' || !updates.completedDate) {
             updates.completedDate = new Date().toISOString().slice(0, 10);
         }
+
+        sanitizedEntityUpdates = {
+            status: updates.status,
+            completedDate: updates.completedDate,
+        };
+    }
+
+    if (entity === 'maintenances' && typeof updates.status !== 'string') {
+        return NextResponse.json({ error: 'Maintenance hanya boleh diubah lewat update status resmi' }, { status: 409 });
     }
 
     if (entity === 'tire-events') {
