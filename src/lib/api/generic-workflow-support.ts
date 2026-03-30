@@ -10,6 +10,7 @@ import { normalizeFreightNotaBillingMode } from '@/lib/freight-nota-billing';
 import { getSanityClient, sanityGetById } from '@/lib/sanity';
 
 import {
+    normalizeCurrencyNumber,
     normalizeNumber,
     normalizeOptionalText,
     normalizeText,
@@ -148,7 +149,7 @@ export function normalizeBankAccountPayload(data: Record<string, unknown>, exist
     }
 
     if (Object.prototype.hasOwnProperty.call(data, 'initialBalance') || !existing) {
-        const initialBalance = normalizeNumber(data.initialBalance);
+        const initialBalance = normalizeCurrencyNumber(data.initialBalance);
         if (!Number.isFinite(initialBalance) || initialBalance < 0) {
             throw new Error('Saldo awal rekening / kas tidak valid');
         }
@@ -496,8 +497,8 @@ export async function normalizeTripRouteRatePayload(data: Record<string, unknown
 
     const rate =
         Object.prototype.hasOwnProperty.call(data, 'rate') || !existing
-            ? normalizeNumber(data.rate)
-            : normalizeNumber(existing?.rate);
+            ? normalizeCurrencyNumber(data.rate)
+            : normalizeCurrencyNumber(existing?.rate);
     if (!Number.isFinite(rate) || rate <= 0) {
         throw new Error('Tarif trip harus lebih besar dari 0');
     }

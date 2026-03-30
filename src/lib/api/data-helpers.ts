@@ -45,6 +45,14 @@ export function normalizeNumber(value: unknown, options?: FormattedNumberParseOp
     return parseFormattedNumberish(value, options);
 }
 
+export function normalizeCurrencyNumber(value: unknown, options?: FormattedNumberParseOptions) {
+    const normalized = normalizeNumber(value, options);
+    if (!Number.isFinite(normalized)) {
+        return normalized;
+    }
+    return Number.isInteger(normalized) ? normalized : Number.NaN;
+}
+
 export function assertIsoDate(value: string, label: string) {
     if (!ISO_DATE_RE.test(value)) {
         throw new Error(`${label} tidak valid`);

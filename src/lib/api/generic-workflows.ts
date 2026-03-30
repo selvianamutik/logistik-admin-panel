@@ -17,6 +17,7 @@ import {
     CASH_ACCOUNT_SYSTEM_KEY,
     extractRefId,
     isPlainObject,
+    normalizeCurrencyNumber,
     normalizeNumber,
     normalizeOptionalText,
     sanitizeUserForClient,
@@ -496,7 +497,7 @@ export async function handleGenericUpdate(
             }
 
             if (Object.prototype.hasOwnProperty.call(updates, 'taripBorongan')) {
-                const taripBorongan = normalizeNumber(updates.taripBorongan);
+                const taripBorongan = normalizeCurrencyNumber(updates.taripBorongan);
                 if (!Number.isFinite(taripBorongan) || taripBorongan <= 0) {
                     return NextResponse.json({ error: 'Tarip borongan harus lebih besar dari 0' }, { status: 400 });
                 }
@@ -1225,9 +1226,9 @@ export async function handleGenericCreate(
 
     if (entity === 'bank-accounts') {
         const initialBalance =
-            typeof data.initialBalance === 'number'
-                ? data.initialBalance
-                : Number(data.initialBalance || 0);
+            typeof newDoc.initialBalance === 'number' && Number.isFinite(newDoc.initialBalance)
+                ? newDoc.initialBalance
+                : normalizeCurrencyNumber(data.initialBalance || 0);
         await sanityUpdate(newId, { currentBalance: Number.isFinite(initialBalance) ? initialBalance : 0 });
     }
 

@@ -13,6 +13,7 @@ import { getSanityClient, sanityGetById, sanityGetNextNumber, sanityUpdate } fro
 import {
     extractRefId,
     isPlainObject,
+    normalizeCurrencyNumber,
     normalizeNumber,
     normalizeOptionalText,
     normalizeText,
@@ -1514,7 +1515,7 @@ export async function handleDeliveryOrderCreate(
             ? data.date
             : new Date().toISOString().slice(0, 10);
     const manualCustomerDoNumber = normalizeOptionalText(data.customerDoNumber)?.toUpperCase();
-    const taripBorongan = normalizeNumber(data.taripBorongan ?? 0);
+    const taripBorongan = normalizeCurrencyNumber(data.taripBorongan ?? 0);
     if (!Number.isFinite(taripBorongan) || taripBorongan < 0) {
         return NextResponse.json({ error: 'Upah trip pada surat jalan tidak valid' }, { status: 400 });
     }
@@ -1534,7 +1535,7 @@ export async function handleDeliveryOrderCreate(
     const effectiveTripFee =
         taripBorongan > 0
             ? taripBorongan
-            : normalizeNumber(tripRouteSelection?.matchedTripRouteRate?.rate ?? 0);
+            : normalizeCurrencyNumber(tripRouteSelection?.matchedTripRouteRate?.rate ?? 0);
 
     if (customerDoNumber && orderCustomerRef) {
         const duplicateCustomerDoNumber = await getSanityClient().fetch<{ _id: string } | null>(

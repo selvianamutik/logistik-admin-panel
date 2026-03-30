@@ -11,6 +11,7 @@ import {
     getLedgerAccount,
     isMutationConflictError,
     isPlainObject,
+    normalizeCurrencyNumber,
     normalizeNumber,
     normalizeOptionalText,
     normalizeText,
@@ -95,7 +96,7 @@ export async function handleDriverBoronganCreate(
             const noSJ = normalizeText(row.noSJ);
             const tujuan = normalizeText(row.tujuan);
             const beratKg = normalizeNumber(row.beratKg);
-            const tarip = normalizeNumber(row.tarip);
+            const tarip = normalizeCurrencyNumber(row.tarip);
             const collie = normalizeNumber(row.collie ?? 0);
 
             if ((!date || !noSJ || !tujuan) && !doRef) {
@@ -464,7 +465,7 @@ export async function handleBoronganPayment(
         return NextResponse.json({ error: 'Borongan tidak valid' }, { status: 400 });
     }
 
-    const amount = normalizeNumber(data.amount);
+    const amount = normalizeCurrencyNumber(data.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
         return NextResponse.json({ error: 'Nominal pembayaran borongan tidak valid' }, { status: 400 });
     }
@@ -697,7 +698,7 @@ export async function handleDriverVoucherCreate(
     data: Record<string, unknown>,
     addAuditLog: AuditLogFn
 ) {
-    const cashGiven = normalizeNumber(data.cashGiven);
+    const cashGiven = normalizeCurrencyNumber(data.cashGiven);
     if (!Number.isFinite(cashGiven) || cashGiven <= 0) {
         return NextResponse.json({ error: 'Nominal uang jalan trip tidak valid' }, { status: 400 });
     }
@@ -718,7 +719,7 @@ export async function handleDriverVoucherCreate(
             : new Date().toISOString().slice(0, 10);
     assertIsoDate(issueDate, 'Tanggal bon');
 
-    const requestedDriverFeeAmount = normalizeNumber(data.driverFeeAmount ?? 0);
+    const requestedDriverFeeAmount = normalizeCurrencyNumber(data.driverFeeAmount ?? 0);
     if (!Number.isFinite(requestedDriverFeeAmount) || requestedDriverFeeAmount < 0) {
         return NextResponse.json({ error: 'Upah trip pada bon tidak valid' }, { status: 400 });
     }
@@ -876,7 +877,7 @@ export async function handleDriverVoucherCreate(
             logoUrl
         }`
     );
-    const driverFeeAmount = normalizeNumber(data.driverFeeAmount ?? requestedDriverFeeAmount);
+    const driverFeeAmount = normalizeCurrencyNumber(data.driverFeeAmount ?? requestedDriverFeeAmount);
     const voucherTotals = computeDriverVoucherTotals(cashGiven, 0, driverFeeAmount);
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -1001,7 +1002,7 @@ export async function handleDriverVoucherTopUp(
         return NextResponse.json({ error: 'Bon supir tidak valid' }, { status: 400 });
     }
 
-    const amount = normalizeNumber(data.amount);
+    const amount = normalizeCurrencyNumber(data.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
         return NextResponse.json({ error: 'Nominal tambahan bon tidak valid' }, { status: 400 });
     }
@@ -1161,7 +1162,7 @@ export async function handleDriverVoucherItemCreate(
         return NextResponse.json({ error: 'Bon supir tidak valid' }, { status: 400 });
     }
 
-    const amount = normalizeNumber(data.amount);
+    const amount = normalizeCurrencyNumber(data.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
         return NextResponse.json({ error: 'Nominal item tidak valid' }, { status: 400 });
     }
