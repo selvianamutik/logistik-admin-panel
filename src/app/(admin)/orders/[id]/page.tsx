@@ -7,6 +7,7 @@ import { useToast } from '../../layout';
 import { Truck, FileText, Edit, Eye } from 'lucide-react';
 import CurrencyInput from '@/components/CurrencyInput';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
+import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { fetchAdminCollectionData, fetchAdminData } from '@/lib/api/admin-client';
 import { formatDate, formatCurrency, formatNumber, getReceivableNetAmount, ORDER_STATUS_MAP, ITEM_STATUS_MAP, DO_STATUS_MAP, INVOICE_STATUS_MAP, formatInternalDeliveryOrderNumber, formatShipperDeliveryOrderNumber } from '@/lib/utils';
 import {
@@ -368,10 +369,18 @@ export default function OrderDetailPage() {
                     action: 'set-hold-quantity',
                     data: {
                         id: holdingItem._id,
-                        holdQtyKoli: Number(holdQtyKoli),
-                        holdWeightInputValue: holdWeightInputValue.trim() ? Number(holdWeightInputValue) : 0,
+                        holdQtyKoli: parseFormattedNumberish(holdQtyKoli),
+                        holdWeightInputValue: holdWeightInputValue.trim()
+                            ? parseFormattedNumberish(holdWeightInputValue, {
+                                maxFractionDigits: holdWeightInputUnit === 'TON' ? 3 : 2,
+                            })
+                            : 0,
                         holdWeightInputUnit,
-                        holdVolumeInputValue: holdVolumeInputValue.trim() ? Number(holdVolumeInputValue) : 0,
+                        holdVolumeInputValue: holdVolumeInputValue.trim()
+                            ? parseFormattedNumberish(holdVolumeInputValue, {
+                                maxFractionDigits: holdVolumeInputUnit === 'LITER' ? 0 : 3,
+                            })
+                            : 0,
                         holdVolumeInputUnit,
                         holdReason,
                         holdLocation,

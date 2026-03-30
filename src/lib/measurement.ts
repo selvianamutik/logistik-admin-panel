@@ -1,6 +1,8 @@
 export type WeightInputUnit = 'KG' | 'TON';
 export type VolumeInputUnit = 'M3' | 'LITER' | 'KL';
 
+import { parseFormattedNumberish } from '@/lib/formatted-number';
+
 export const WEIGHT_INPUT_UNIT_OPTIONS: Array<{ value: WeightInputUnit; label: string }> = [
   { value: 'KG', label: 'Kg' },
   { value: 'TON', label: 'Ton' },
@@ -66,9 +68,11 @@ export function formatWeightDisplay(input: {
   weightInputUnit?: WeightInputUnit;
   includeCanonical?: boolean;
 }) {
-  const weightKg = Number(input.weightKg || 0);
-  const inputValue = Number(input.weightInputValue || 0);
   const unit = input.weightInputUnit || 'KG';
+  const weightKg = parseFormattedNumberish(input.weightKg || 0);
+  const inputValue = parseFormattedNumberish(input.weightInputValue || 0, {
+    maxFractionDigits: unit === 'TON' ? 3 : 2,
+  });
 
   if (inputValue > 0) {
     const inputLabel = `${formatWeightValue(inputValue, unit)} ${unit === 'TON' ? 'ton' : 'kg'}`;
@@ -91,9 +95,13 @@ export function formatVolumeDisplay(input: {
   volumeInputUnit?: VolumeInputUnit;
   includeCanonical?: boolean;
 }) {
-  const volumeM3 = Number(input.volumeM3 || 0);
-  const inputValue = Number(input.volumeInputValue || 0);
   const unit = input.volumeInputUnit || 'M3';
+  const volumeM3 = parseFormattedNumberish(input.volumeM3 || 0, {
+    maxFractionDigits: 3,
+  });
+  const inputValue = parseFormattedNumberish(input.volumeInputValue || 0, {
+    maxFractionDigits: unit === 'LITER' ? 0 : 3,
+  });
 
   if (inputValue > 0) {
     const unitLabel = unit === 'M3' ? 'm3' : unit === 'KL' ? 'KL' : 'liter';

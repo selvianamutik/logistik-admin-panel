@@ -1,4 +1,5 @@
 import type { DeliveryOrder, DeliveryOrderItem, Driver, Order, TrackingLog, Vehicle } from '@/lib/types';
+import { parseFormattedNumberish } from '@/lib/formatted-number';
 import type { VolumeInputUnit, WeightInputUnit } from '@/lib/measurement';
 import { formatCargoSummary } from '@/lib/measurement';
 import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatDate, formatDateTime, formatShipperDeliveryOrderNumber } from '@/lib/utils';
@@ -77,14 +78,18 @@ export function buildActualCargoDraft(item: DeliveryOrderItem): ActualCargoDraft
 }
 
 export function summarizeActualCargoDrafts(items: ActualCargoDraft[]) {
-    const qtyKoli = items.reduce((sum, item) => sum + Number(item.actualQtyKoli || 0), 0);
+    const qtyKoli = items.reduce((sum, item) => sum + parseFormattedNumberish(item.actualQtyKoli || 0), 0);
     const weightKg = items.reduce((sum, item) => {
-        const value = Number(item.actualWeightInputValue || 0);
+        const value = parseFormattedNumberish(item.actualWeightInputValue || 0, {
+            maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
+        });
         if (!value) return sum;
         return sum + (item.actualWeightInputUnit === 'TON' ? value * 1000 : value);
     }, 0);
     const volumeM3 = items.reduce((sum, item) => {
-        const value = Number(item.actualVolumeInputValue || 0);
+        const value = parseFormattedNumberish(item.actualVolumeInputValue || 0, {
+            maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
+        });
         if (!value) return sum;
         if (item.actualVolumeInputUnit === 'LITER') return sum + value / 1000;
         if (item.actualVolumeInputUnit === 'KL') return sum + value;
@@ -282,9 +287,13 @@ export function buildDeliveryOrderDetailState(params: {
     const autoActualDropDraft = buildAutoActualDropDraft(doData, actualCargoItems);
     const effectiveActualDropPoints = showAdvancedDropEditor ? actualDropPoints : [autoActualDropDraft];
     const actualCargoReady = actualCargoItems.every(item => {
-        const qty = Number(item.actualQtyKoli);
-        const weight = Number(item.actualWeightInputValue);
-        const volume = Number(item.actualVolumeInputValue);
+        const qty = parseFormattedNumberish(item.actualQtyKoli);
+        const weight = parseFormattedNumberish(item.actualWeightInputValue, {
+            maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
+        });
+        const volume = parseFormattedNumberish(item.actualVolumeInputValue, {
+            maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
+        });
         return (
             (!item.requireQty || (Number.isFinite(qty) && qty > 0)) &&
             (!item.requireWeight || (Number.isFinite(weight) && weight > 0)) &&
@@ -297,9 +306,13 @@ export function buildDeliveryOrderDetailState(params: {
         );
     });
     const actualDropReady = effectiveActualDropPoints.length > 0 && effectiveActualDropPoints.every(item => {
-        const qty = Number(item.qtyKoli);
-        const weight = Number(item.weightInputValue);
-        const volume = Number(item.volumeInputValue);
+        const qty = parseFormattedNumberish(item.qtyKoli);
+        const weight = parseFormattedNumberish(item.weightInputValue, {
+            maxFractionDigits: item.weightInputUnit === 'TON' ? 3 : 2,
+        });
+        const volume = parseFormattedNumberish(item.volumeInputValue, {
+            maxFractionDigits: item.volumeInputUnit === 'LITER' ? 0 : 3,
+        });
         return (
             Boolean(item.locationName.trim() || item.locationAddress.trim()) &&
             ((Number.isFinite(qty) && qty > 0) || (Number.isFinite(weight) && weight > 0) || (Number.isFinite(volume) && volume > 0))
@@ -561,11 +574,15 @@ export function buildDeliveryOrderStatusUpdateData(params: {
                 podNote: params.podNote,
                 actualItems: params.actualCargoItems.map(item => ({
                     deliveryOrderItemRef: item.deliveryOrderItemRef,
-                    actualQtyKoli: Number(item.actualQtyKoli),
-                    actualWeightInputValue: Number(item.actualWeightInputValue),
+                    actualQtyKoli: parseFormattedNumberish(item.actualQtyKoli),
+                    actualWeightInputValue: parseFormattedNumberish(item.actualWeightInputValue, {
+                        maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
+                    }),
                     actualWeightInputUnit: item.actualWeightInputUnit,
                     actualVolumeInputValue: item.actualVolumeInputValue.trim()
-                        ? Number(item.actualVolumeInputValue)
+                        ? parseFormattedNumberish(item.actualVolumeInputValue, {
+                            maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
+                        })
                         : 0,
                     actualVolumeInputUnit: item.actualVolumeInputUnit,
                 })),
@@ -573,10 +590,18 @@ export function buildDeliveryOrderStatusUpdateData(params: {
                     stopType: item.stopType,
                     locationName: item.locationName,
                     locationAddress: item.locationAddress,
-                    qtyKoli: item.qtyKoli.trim() ? Number(item.qtyKoli) : 0,
-                    weightInputValue: item.weightInputValue.trim() ? Number(item.weightInputValue) : 0,
+                    qtyKoli: item.qtyKoli.trim() ? parseFormattedNumberish(item.qtyKoli) : 0,
+                    weightInputValue: item.weightInputValue.trim()
+                        ? parseFormattedNumberish(item.weightInputValue, {
+                            maxFractionDigits: item.weightInputUnit === 'TON' ? 3 : 2,
+                        })
+                        : 0,
                     weightInputUnit: item.weightInputUnit,
-                    volumeInputValue: item.volumeInputValue.trim() ? Number(item.volumeInputValue) : 0,
+                    volumeInputValue: item.volumeInputValue.trim()
+                        ? parseFormattedNumberish(item.volumeInputValue, {
+                            maxFractionDigits: item.volumeInputUnit === 'LITER' ? 0 : 3,
+                        })
+                        : 0,
                     volumeInputUnit: item.volumeInputUnit,
                     note: item.note,
                 })),

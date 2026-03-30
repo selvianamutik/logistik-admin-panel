@@ -306,12 +306,16 @@ export async function normalizeOrderItemsInput(customerRef: string, rawItems: un
         .map<NormalizedOrderItemInput>(item => {
             const description = normalizeOptionalText(item.description) || '';
             const customerProductRef = normalizeOptionalText(item.customerProductRef);
-            const qtyKoli = normalizeNumber(item.qtyKoli);
-            const rawWeightInputValue = normalizeNumber(item.weightInputValue ?? item.weight ?? 0);
-            const rawVolumeInputValue = normalizeNumber(item.volumeInputValue ?? item.volume);
             const weightInputUnit: WeightInputUnit = item.weightInputUnit === 'TON' ? 'TON' : 'KG';
             const volumeInputUnit: VolumeInputUnit =
                 item.volumeInputUnit === 'LITER' || item.volumeInputUnit === 'KL' ? item.volumeInputUnit : 'M3';
+            const qtyKoli = normalizeNumber(item.qtyKoli);
+            const rawWeightInputValue = normalizeNumber(item.weightInputValue ?? item.weight ?? 0, {
+                maxFractionDigits: weightInputUnit === 'TON' ? 3 : 2,
+            });
+            const rawVolumeInputValue = normalizeNumber(item.volumeInputValue ?? item.volume, {
+                maxFractionDigits: volumeInputUnit === 'LITER' ? 0 : 3,
+            });
             const value = normalizeNumber(item.value);
 
             if (!description && !customerProductRef) {
@@ -396,8 +400,12 @@ export async function normalizeOrderItemsInput(customerRef: string, rawItems: un
             if (!item.weightInputValue || item.weightInputValue <= 0) {
                 const productWeightUnit = customerProduct.defaultWeightInputUnit === 'TON' ? 'TON' : 'KG';
                 const productWeightInputValue =
-                    normalizeNumber(customerProduct.defaultWeightInputValue) > 0
-                        ? normalizeNumber(customerProduct.defaultWeightInputValue)
+                    normalizeNumber(customerProduct.defaultWeightInputValue, {
+                        maxFractionDigits: productWeightUnit === 'TON' ? 3 : 2,
+                    }) > 0
+                        ? normalizeNumber(customerProduct.defaultWeightInputValue, {
+                            maxFractionDigits: productWeightUnit === 'TON' ? 3 : 2,
+                        })
                         : convertKgToWeightInputValue(normalizeNumber(customerProduct.defaultWeight ?? 0), productWeightUnit);
                 item.weightInputValue = productWeightInputValue > 0 ? productWeightInputValue : undefined;
                 item.weightInputUnit = productWeightInputValue > 0 ? productWeightUnit : undefined;
@@ -410,8 +418,12 @@ export async function normalizeOrderItemsInput(customerRef: string, rawItems: un
                             ? 'KL'
                             : 'M3';
                 const productVolumeInputValue =
-                    normalizeNumber(customerProduct.defaultVolumeInputValue) > 0
-                        ? normalizeNumber(customerProduct.defaultVolumeInputValue)
+                    normalizeNumber(customerProduct.defaultVolumeInputValue, {
+                        maxFractionDigits: productVolumeUnit === 'LITER' ? 0 : 3,
+                    }) > 0
+                        ? normalizeNumber(customerProduct.defaultVolumeInputValue, {
+                            maxFractionDigits: productVolumeUnit === 'LITER' ? 0 : 3,
+                        })
                         : convertM3ToVolumeInputValue(normalizeNumber(customerProduct.defaultVolume ?? 0), productVolumeUnit);
                 item.volumeInputValue = productVolumeInputValue > 0 ? productVolumeInputValue : undefined;
                 item.volumeInputUnit = productVolumeInputValue > 0 ? productVolumeUnit : undefined;
@@ -429,11 +441,15 @@ export async function normalizeOrderItemsInput(customerRef: string, rawItems: un
         const finalVolumeInputUnit =
             item.volumeInputUnit === 'LITER' || item.volumeInputUnit === 'KL' ? item.volumeInputUnit : 'M3';
         const finalWeightInputValue = roundQuantity(
-            normalizeNumber(item.weightInputValue ?? 0),
+            normalizeNumber(item.weightInputValue ?? 0, {
+                maxFractionDigits: finalWeightInputUnit === 'TON' ? 3 : 2,
+            }),
             finalWeightInputUnit === 'TON' ? 3 : 2
         );
         const finalVolumeInputValue = roundQuantity(
-            normalizeNumber(item.volumeInputValue ?? 0),
+            normalizeNumber(item.volumeInputValue ?? 0, {
+                maxFractionDigits: finalVolumeInputUnit === 'LITER' ? 0 : 3,
+            }),
             finalVolumeInputUnit === 'LITER' ? 0 : 3
         );
         if (!Number.isFinite(finalWeightInputValue) || finalWeightInputValue < 0) {
@@ -471,8 +487,12 @@ export function normalizeDeliveryOrderSelections(data: Record<string, unknown>, 
                         : item.volumeInputUnit === 'KL'
                             ? 'KL'
                             : 'M3';
-                const weightInputValue = roundQuantity(normalizeNumber(item.weightInputValue), weightInputUnit === 'TON' ? 3 : 2);
-                const volumeInputValue = roundQuantity(normalizeNumber(item.volumeInputValue), volumeInputUnit === 'LITER' ? 0 : 3);
+                const weightInputValue = roundQuantity(normalizeNumber(item.weightInputValue, {
+                    maxFractionDigits: weightInputUnit === 'TON' ? 3 : 2,
+                }), weightInputUnit === 'TON' ? 3 : 2);
+                const volumeInputValue = roundQuantity(normalizeNumber(item.volumeInputValue, {
+                    maxFractionDigits: volumeInputUnit === 'LITER' ? 0 : 3,
+                }), volumeInputUnit === 'LITER' ? 0 : 3);
                 return {
                     orderItemRef: normalizeText(item.orderItemRef),
                     qtyKoli: normalizeNumber(item.qtyKoli),
@@ -496,18 +516,28 @@ export function normalizeDeliveryOrderSelections(data: Record<string, unknown>, 
             orderItemRef: item._id,
             qtyKoli: normalizeNumber(item.qtyKoli),
             weightInputValue:
-                normalizeNumber(item.weightInputValue) > 0
-                    ? roundQuantity(normalizeNumber(item.weightInputValue), item.weightInputUnit === 'TON' ? 3 : 2)
+                normalizeNumber(item.weightInputValue, {
+                    maxFractionDigits: item.weightInputUnit === 'TON' ? 3 : 2,
+                }) > 0
+                    ? roundQuantity(normalizeNumber(item.weightInputValue, {
+                        maxFractionDigits: item.weightInputUnit === 'TON' ? 3 : 2,
+                    }), item.weightInputUnit === 'TON' ? 3 : 2)
                     : normalizeNumber(item.weight) > 0
                         ? roundQuantity(convertKgToWeightInputValue(normalizeNumber(item.weight), item.weightInputUnit === 'TON' ? 'TON' : 'KG'), item.weightInputUnit === 'TON' ? 3 : 2)
                         : undefined,
             weightInputUnit:
-                normalizeNumber(item.weightInputValue) > 0 || normalizeNumber(item.weight) > 0
+                normalizeNumber(item.weightInputValue, {
+                    maxFractionDigits: item.weightInputUnit === 'TON' ? 3 : 2,
+                }) > 0 || normalizeNumber(item.weight) > 0
                     ? item.weightInputUnit === 'TON' ? 'TON' : 'KG'
                     : undefined,
             volumeInputValue:
-                normalizeNumber(item.volumeInputValue) > 0
-                    ? roundQuantity(normalizeNumber(item.volumeInputValue), item.volumeInputUnit === 'LITER' ? 0 : 3)
+                normalizeNumber(item.volumeInputValue, {
+                    maxFractionDigits: item.volumeInputUnit === 'LITER' ? 0 : 3,
+                }) > 0
+                    ? roundQuantity(normalizeNumber(item.volumeInputValue, {
+                        maxFractionDigits: item.volumeInputUnit === 'LITER' ? 0 : 3,
+                    }), item.volumeInputUnit === 'LITER' ? 0 : 3)
                     : normalizeNumber(item.volume) > 0
                         ? roundQuantity(
                             convertM3ToVolumeInputValue(
@@ -522,7 +552,9 @@ export function normalizeDeliveryOrderSelections(data: Record<string, unknown>, 
                         )
                         : undefined,
             volumeInputUnit:
-                normalizeNumber(item.volumeInputValue) > 0 || normalizeNumber(item.volume) > 0
+                normalizeNumber(item.volumeInputValue, {
+                    maxFractionDigits: item.volumeInputUnit === 'LITER' ? 0 : 3,
+                }) > 0 || normalizeNumber(item.volume) > 0
                     ? item.volumeInputUnit === 'LITER'
                         ? 'LITER'
                         : item.volumeInputUnit === 'KL'
@@ -577,14 +609,18 @@ export function normalizeDeliveryOrderActualCargoInputs(
             (item.actualWeightKg !== undefined
                 ? convertKgToWeightInputValue(normalizeNumber(item.actualWeightKg), weightInputUnit)
                 : item.orderItemWeightInputValue ?? convertKgToWeightInputValue(plannedWeightKg, weightInputUnit))
-        ), weightInputUnit === 'TON' ? 3 : 2);
+        , {
+            maxFractionDigits: weightInputUnit === 'TON' ? 3 : 2,
+        }), weightInputUnit === 'TON' ? 3 : 2);
         const rawVolumeInputValue = roundQuantity(normalizeNumber(
             rawItem?.actualVolumeInputValue ??
             item.actualVolumeInputValue ??
             (item.actualVolumeM3 !== undefined
                 ? convertM3ToVolumeInputValue(normalizeNumber(item.actualVolumeM3), volumeInputUnit)
                 : item.orderItemVolumeInputValue ?? convertM3ToVolumeInputValue(plannedVolumeM3, volumeInputUnit))
-        ), volumeInputUnit === 'LITER' ? 0 : 3);
+        , {
+            maxFractionDigits: volumeInputUnit === 'LITER' ? 0 : 3,
+        }), volumeInputUnit === 'LITER' ? 0 : 3);
         const actualWeightKg = roundQuantity(convertWeightToKg(rawWeightInputValue, weightInputUnit));
         const actualVolumeM3 = roundQuantity(convertVolumeToM3(rawVolumeInputValue, volumeInputUnit), 3);
 
@@ -681,13 +717,17 @@ export function normalizeDeliveryActualDropPoints(
         const qtyKoli = roundQuantity(normalizeNumber(rawPoint.qtyKoli));
         const weightInputUnit: WeightInputUnit = rawPoint.weightInputUnit === 'TON' ? 'TON' : 'KG';
         const rawWeightInputValue = roundQuantity(
-            normalizeNumber(rawPoint.weightInputValue ?? rawPoint.weightKg ?? 0),
+            normalizeNumber(rawPoint.weightInputValue ?? rawPoint.weightKg ?? 0, {
+                maxFractionDigits: weightInputUnit === 'TON' ? 3 : 2,
+            }),
             weightInputUnit === 'TON' ? 3 : 2
         );
         const volumeInputUnit: VolumeInputUnit =
             rawPoint.volumeInputUnit === 'LITER' || rawPoint.volumeInputUnit === 'KL' ? rawPoint.volumeInputUnit : 'M3';
         const rawVolumeInputValue = roundQuantity(
-            normalizeNumber(rawPoint.volumeInputValue ?? rawPoint.volumeM3 ?? 0),
+            normalizeNumber(rawPoint.volumeInputValue ?? rawPoint.volumeM3 ?? 0, {
+                maxFractionDigits: volumeInputUnit === 'LITER' ? 0 : 3,
+            }),
             volumeInputUnit === 'LITER' ? 0 : 3
         );
         const weightKg = roundQuantity(convertWeightToKg(rawWeightInputValue, weightInputUnit));
@@ -756,7 +796,9 @@ export function summarizeSelection(selection: DeliveryOrderItemSelection, descri
     if (selection.qtyKoli <= 0) {
         const segments: string[] = [];
         if ((selection.weightInputValue || 0) > 0) {
-            segments.push(`${roundQuantity(normalizeNumber(selection.weightInputValue), selection.weightInputUnit === 'TON' ? 3 : 2)} ${selection.weightInputUnit === 'TON' ? 'ton' : 'kg'}`);
+            segments.push(`${roundQuantity(normalizeNumber(selection.weightInputValue, {
+                maxFractionDigits: selection.weightInputUnit === 'TON' ? 3 : 2,
+            }), selection.weightInputUnit === 'TON' ? 3 : 2)} ${selection.weightInputUnit === 'TON' ? 'ton' : 'kg'}`);
         }
         if ((selection.volumeInputValue || 0) > 0) {
             const volumeUnitLabel =
@@ -765,7 +807,9 @@ export function summarizeSelection(selection: DeliveryOrderItemSelection, descri
                     : selection.volumeInputUnit === 'KL'
                         ? 'KL'
                         : 'm3';
-            segments.push(`${roundQuantity(normalizeNumber(selection.volumeInputValue), selection.volumeInputUnit === 'LITER' ? 0 : 3)} ${volumeUnitLabel}`);
+            segments.push(`${roundQuantity(normalizeNumber(selection.volumeInputValue, {
+                maxFractionDigits: selection.volumeInputUnit === 'LITER' ? 0 : 3,
+            }), selection.volumeInputUnit === 'LITER' ? 0 : 3)} ${volumeUnitLabel}`);
         }
         return `${description || selection.orderItemRef}: ${segments.join(' / ') || 'muatan parsial'}${selection.holdRemaining ? ' + sisa hold' : ''}`;
     }

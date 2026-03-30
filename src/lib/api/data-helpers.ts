@@ -5,6 +5,7 @@ import {
     sanityGetCompanyProfile,
     sanityUpdate,
 } from '@/lib/sanity';
+import { parseFormattedNumberish, type FormattedNumberParseOptions } from '@/lib/formatted-number';
 import { normalizeUserRole } from '@/lib/rbac';
 import type { CompanyProfile, User } from '@/lib/types';
 
@@ -40,8 +41,8 @@ export function normalizeOptionalText(value: unknown) {
     return normalized || undefined;
 }
 
-export function normalizeNumber(value: unknown) {
-    return typeof value === 'number' ? value : Number(value);
+export function normalizeNumber(value: unknown, options?: FormattedNumberParseOptions) {
+    return parseFormattedNumberish(value, options);
 }
 
 export function assertIsoDate(value: string, label: string) {

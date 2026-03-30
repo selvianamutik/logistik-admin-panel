@@ -131,14 +131,18 @@ export async function handleOrderItemHoldSet(
     const id = typeof data.id === 'string' ? data.id : '';
     const holdQtyKoli = normalizeNumber(data.holdQtyKoli);
     const holdWeightInputUnit: WeightInputUnit = data.holdWeightInputUnit === 'TON' ? 'TON' : 'KG';
-    const holdWeightInputValue = roundQuantity(normalizeNumber(data.holdWeightInputValue), holdWeightInputUnit === 'TON' ? 3 : 2);
+    const holdWeightInputValue = roundQuantity(normalizeNumber(data.holdWeightInputValue, {
+        maxFractionDigits: holdWeightInputUnit === 'TON' ? 3 : 2,
+    }), holdWeightInputUnit === 'TON' ? 3 : 2);
     const holdVolumeInputUnit: VolumeInputUnit =
         data.holdVolumeInputUnit === 'LITER'
             ? 'LITER'
             : data.holdVolumeInputUnit === 'KL'
                 ? 'KL'
                 : 'M3';
-    const holdVolumeInputValue = roundQuantity(normalizeNumber(data.holdVolumeInputValue), holdVolumeInputUnit === 'LITER' ? 0 : 3);
+    const holdVolumeInputValue = roundQuantity(normalizeNumber(data.holdVolumeInputValue, {
+        maxFractionDigits: holdVolumeInputUnit === 'LITER' ? 0 : 3,
+    }), holdVolumeInputUnit === 'LITER' ? 0 : 3);
     const holdReason = normalizeOptionalText(data.holdReason);
     const holdLocation = normalizeOptionalText(data.holdLocation);
 
@@ -674,7 +678,9 @@ export async function handleOrderTargetRevision(
         }
 
         const weightInputUnit: WeightInputUnit = rawItem.weightInputUnit === 'TON' ? 'TON' : 'KG';
-        const weightInputValue = roundQuantity(normalizeNumber(rawItem.weightInputValue), weightInputUnit === 'TON' ? 3 : 2);
+        const weightInputValue = roundQuantity(normalizeNumber(rawItem.weightInputValue, {
+            maxFractionDigits: weightInputUnit === 'TON' ? 3 : 2,
+        }), weightInputUnit === 'TON' ? 3 : 2);
         if (!Number.isFinite(weightInputValue) || weightInputValue < 0) {
             return NextResponse.json(
                 { error: `Target berat untuk ${existingItem.description || 'item order'} tidak valid` },
@@ -689,7 +695,9 @@ export async function handleOrderTargetRevision(
                 : rawItem.volumeInputUnit === 'KL'
                     ? 'KL'
                     : 'M3';
-        const volumeInputValue = roundQuantity(normalizeNumber(rawItem.volumeInputValue), volumeInputUnit === 'LITER' ? 0 : 3);
+        const volumeInputValue = roundQuantity(normalizeNumber(rawItem.volumeInputValue, {
+            maxFractionDigits: volumeInputUnit === 'LITER' ? 0 : 3,
+        }), volumeInputUnit === 'LITER' ? 0 : 3);
         if (!Number.isFinite(volumeInputValue) || volumeInputValue < 0) {
             return NextResponse.json(
                 { error: `Target volume untuk ${existingItem.description || 'item order'} tidak valid` },
@@ -1661,8 +1669,12 @@ export async function handleDeliveryOrderCreate(
                 { status: 400 }
             );
         }
-        const selectedWeightInputValue = normalizeNumber(selection.weightInputValue ?? 0);
-        const selectedVolumeInputValue = normalizeNumber(selection.volumeInputValue ?? 0);
+        const selectedWeightInputValue = normalizeNumber(selection.weightInputValue ?? 0, {
+            maxFractionDigits: selection.weightInputUnit === 'TON' ? 3 : 2,
+        });
+        const selectedVolumeInputValue = normalizeNumber(selection.volumeInputValue ?? 0, {
+            maxFractionDigits: selection.volumeInputUnit === 'LITER' ? 0 : 3,
+        });
         const selectedWeightKg = selectedWeightInputValue > 0 && selection.weightInputUnit
             ? roundQuantity(convertWeightToKg(selectedWeightInputValue, selection.weightInputUnit))
             : 0;
@@ -1757,8 +1769,12 @@ export async function handleDeliveryOrderCreate(
         const progress = getOrderItemProgress(item);
         const usesQtyBasis = progress.totalQtyKoli > 0;
         const shippedQtyKoli = usesQtyBasis ? roundQuantity(selection.qtyKoli) : 0;
-        const selectedWeightInputValue = normalizeNumber(selection.weightInputValue ?? 0);
-        const selectedVolumeInputValue = normalizeNumber(selection.volumeInputValue ?? 0);
+        const selectedWeightInputValue = normalizeNumber(selection.weightInputValue ?? 0, {
+            maxFractionDigits: selection.weightInputUnit === 'TON' ? 3 : 2,
+        });
+        const selectedVolumeInputValue = normalizeNumber(selection.volumeInputValue ?? 0, {
+            maxFractionDigits: selection.volumeInputUnit === 'LITER' ? 0 : 3,
+        });
         const shippedWeight = usesQtyBasis
             ? calculateWeightPortion(progress.totalWeight, progress.totalQtyKoli, shippedQtyKoli)
             : (selectedWeightInputValue > 0 && selection.weightInputUnit

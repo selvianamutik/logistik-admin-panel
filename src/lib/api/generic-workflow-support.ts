@@ -223,10 +223,15 @@ export async function normalizeCustomerProductPayload(data: Record<string, unkno
         Object.prototype.hasOwnProperty.call(data, 'defaultWeightInputValue') ||
         Object.prototype.hasOwnProperty.call(data, 'defaultWeight') ||
         !existing
-            ? normalizeNumber(data.defaultWeightInputValue ?? data.defaultWeight ?? 0)
+            ? normalizeNumber(data.defaultWeightInputValue ?? data.defaultWeight ?? 0, {
+                maxFractionDigits: weightInputUnit === 'TON' ? 3 : 2,
+            })
             : normalizeNumber(
                 existing?.defaultWeightInputValue ??
-                convertKgToWeightInputValue(normalizeNumber(existing?.defaultWeight ?? 0), weightInputUnit)
+                convertKgToWeightInputValue(normalizeNumber(existing?.defaultWeight ?? 0), weightInputUnit),
+                {
+                    maxFractionDigits: weightInputUnit === 'TON' ? 3 : 2,
+                }
             );
     if (!Number.isFinite(defaultWeightInputValue) || defaultWeightInputValue < 0) {
         throw new Error('Default berat barang customer tidak valid');
@@ -247,10 +252,15 @@ export async function normalizeCustomerProductPayload(data: Record<string, unkno
         Object.prototype.hasOwnProperty.call(data, 'defaultVolumeInputValue') ||
         Object.prototype.hasOwnProperty.call(data, 'defaultVolume') ||
         !existing
-            ? normalizeNumber(data.defaultVolumeInputValue ?? data.defaultVolume ?? 0)
+            ? normalizeNumber(data.defaultVolumeInputValue ?? data.defaultVolume ?? 0, {
+                maxFractionDigits: volumeInputUnit === 'LITER' ? 0 : 3,
+            })
             : normalizeNumber(
                 existing?.defaultVolumeInputValue ??
-                convertM3ToVolumeInputValue(normalizeNumber(existing?.defaultVolume ?? 0), volumeInputUnit)
+                convertM3ToVolumeInputValue(normalizeNumber(existing?.defaultVolume ?? 0), volumeInputUnit),
+                {
+                    maxFractionDigits: volumeInputUnit === 'LITER' ? 0 : 3,
+                }
             );
     if (!Number.isFinite(defaultVolumeInputValue) || defaultVolumeInputValue < 0) {
         throw new Error('Default volume barang customer tidak valid');

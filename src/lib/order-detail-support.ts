@@ -7,6 +7,7 @@ import {
     type VolumeInputUnit,
     type WeightInputUnit,
 } from '@/lib/measurement';
+import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { calculateWeightPortion, getOrderItemProgress, roundQuantity } from '@/lib/order-item-progress';
 import type { DeliveryOrder, DeliveryOrderItem, Driver, Order, OrderItem, Vehicle } from '@/lib/types';
 
@@ -123,11 +124,15 @@ export function buildSelectedNonKoliCargo(selection?: SelectedShipmentMap[string
         qtyKoli: 0,
         weightKg:
             selection.weightInputValue.trim() && selection.weightInputUnit
-                ? roundQuantity(convertWeightToKg(Number(selection.weightInputValue), selection.weightInputUnit))
+                ? roundQuantity(convertWeightToKg(parseFormattedNumberish(selection.weightInputValue, {
+                    maxFractionDigits: selection.weightInputUnit === 'TON' ? 3 : 2,
+                }), selection.weightInputUnit))
                 : 0,
         volumeM3:
             selection.volumeInputValue.trim() && selection.volumeInputUnit
-                ? roundQuantity(convertVolumeToM3(Number(selection.volumeInputValue), selection.volumeInputUnit), 3)
+                ? roundQuantity(convertVolumeToM3(parseFormattedNumberish(selection.volumeInputValue, {
+                    maxFractionDigits: selection.volumeInputUnit === 'LITER' ? 0 : 3,
+                }), selection.volumeInputUnit), 3)
                 : 0,
     };
 }
@@ -309,7 +314,7 @@ export function summarizeSelectedShipments(
         }
         const progressInfo = itemProgressById[item._id];
         if (progressInfo.totalQtyKoli > 0) {
-            const qtyKoli = Number(selection.qtyKoli || 0);
+            const qtyKoli = parseFormattedNumberish(selection.qtyKoli || 0);
             const ratio = progressInfo.totalQtyKoli > 0 ? qtyKoli / progressInfo.totalQtyKoli : 0;
             return [{
                 itemId: item._id,
@@ -348,14 +353,22 @@ export function buildCreateDeliveryOrderItems(
         .map(item => {
             const progress = itemProgressById[item._id];
             const selection = selectedShipments[item._id];
-            const qtyKoli = Number(selection.qtyKoli || 0);
+            const qtyKoli = parseFormattedNumberish(selection.qtyKoli || 0);
             const selectedNonKoliCargo = buildSelectedNonKoliCargo(selection);
             return {
                 orderItemRef: item._id,
                 qtyKoli,
-                weightInputValue: selection.weightInputValue.trim() ? Number(selection.weightInputValue) : 0,
+                weightInputValue: selection.weightInputValue.trim()
+                    ? parseFormattedNumberish(selection.weightInputValue, {
+                        maxFractionDigits: selection.weightInputUnit === 'TON' ? 3 : 2,
+                    })
+                    : 0,
                 weightInputUnit: selection.weightInputUnit,
-                volumeInputValue: selection.volumeInputValue.trim() ? Number(selection.volumeInputValue) : 0,
+                volumeInputValue: selection.volumeInputValue.trim()
+                    ? parseFormattedNumberish(selection.volumeInputValue, {
+                        maxFractionDigits: selection.volumeInputUnit === 'LITER' ? 0 : 3,
+                    })
+                    : 0,
                 volumeInputUnit: selection.volumeInputUnit,
                 holdRemaining:
                     selection.holdRemaining &&
