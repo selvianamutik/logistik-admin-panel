@@ -6,6 +6,7 @@ import {
     type VolumeInputUnit,
     type WeightInputUnit,
 } from '@/lib/measurement';
+import { normalizeFreightNotaBillingMode } from '@/lib/freight-nota-billing';
 import { getSanityClient, sanityGetById } from '@/lib/sanity';
 
 import {
@@ -88,6 +89,14 @@ export function normalizeCustomerPayload(data: Record<string, unknown>, existing
 
     if (Object.prototype.hasOwnProperty.call(data, 'deliveryOrderPrefix') || !existing) {
         next.deliveryOrderPrefix = normalizeCustomerDoPrefix(data.deliveryOrderPrefix);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'defaultFreightNotaBillingMode') || !existing) {
+        next.defaultFreightNotaBillingMode = normalizeFreightNotaBillingMode(
+            Object.prototype.hasOwnProperty.call(data, 'defaultFreightNotaBillingMode')
+                ? data.defaultFreightNotaBillingMode
+                : existing?.defaultFreightNotaBillingMode
+        );
     }
 
     if (Object.prototype.hasOwnProperty.call(data, 'active') || !existing) {

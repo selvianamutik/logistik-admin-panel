@@ -152,6 +152,10 @@ function applyDocumentIssuerSnapshots() {
         doc.issuerCompanyEmail = typeof companyDoc.email === 'string' ? companyDoc.email : undefined;
         doc.issuerCompanyLogoUrl = resolvedLogoUrl;
         if (doc._type === 'freightNota') {
+            doc.billingMode =
+                typeof doc.billingMode === 'string' && (doc.billingMode === 'PER_TON' || doc.billingMode === 'PER_KG')
+                    ? doc.billingMode
+                    : 'PER_KG';
             doc.issuerCompanySignatureStampUrl =
                 typeof companyDoc.signatureStampUrl === 'string' ? companyDoc.signatureStampUrl : undefined;
             doc.issuerCompanySignatureName =
@@ -426,6 +430,7 @@ function buildSeedDocuments() {
             deliveryOrderPrefix: 'SJ',
             deliveryOrderCounter: 5,
             deliveryOrderPeriod: '202603',
+            defaultFreightNotaBillingMode: 'PER_KG',
             active: true,
         },
         {
@@ -440,6 +445,7 @@ function buildSeedDocuments() {
             deliveryOrderPrefix: 'BK',
             deliveryOrderCounter: 4,
             deliveryOrderPeriod: '202603',
+            defaultFreightNotaBillingMode: 'PER_TON',
             active: true,
         },
         {
@@ -454,6 +460,7 @@ function buildSeedDocuments() {
             deliveryOrderPrefix: 'SP',
             deliveryOrderCounter: 2,
             deliveryOrderPeriod: '202603',
+            defaultFreightNotaBillingMode: 'PER_KG',
             active: true,
         },
         {
@@ -467,6 +474,7 @@ function buildSeedDocuments() {
             defaultPaymentTerm: 14,
             deliveryOrderPrefix: 'OLD',
             deliveryOrderCounter: 0,
+            defaultFreightNotaBillingMode: 'PER_KG',
             active: false,
         },
         {

@@ -6,14 +6,25 @@ import { useToast } from '../../layout';
 import { Save } from 'lucide-react';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
+import { FREIGHT_NOTA_BILLING_MODE_OPTIONS } from '@/lib/freight-nota-billing';
 
 export default function CustomerNewPage() {
     const router = useRouter();
     const { addToast } = useToast();
     const [saving, setSaving] = useState(false);
-    const [form, setForm] = useState({
+    const [form, setForm] = useState<{
+        name: string;
+        address: string;
+        contactPerson: string;
+        phone: string;
+        email: string;
+        defaultPaymentTerm: number;
+        npwp: string;
+        deliveryOrderPrefix: string;
+        defaultFreightNotaBillingMode: 'PER_KG' | 'PER_TON';
+    }>({
         name: '', address: '', contactPerson: '', phone: '', email: '',
-        defaultPaymentTerm: 14, npwp: '', deliveryOrderPrefix: 'SJ'
+        defaultPaymentTerm: 14, npwp: '', deliveryOrderPrefix: 'SJ', defaultFreightNotaBillingMode: 'PER_KG',
     });
 
     const handleSave = async (e: React.FormEvent) => {
@@ -78,6 +89,21 @@ export default function CustomerNewPage() {
                             <input className="form-input" value={form.deliveryOrderPrefix} onChange={e => setForm({ ...form, deliveryOrderPrefix: e.target.value.toUpperCase() })} placeholder="Contoh: SJ / BK / ARW" />
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
                                 Dipakai sebagai awalan referensi nomor SJ dari pengirim, misalnya `{form.deliveryOrderPrefix || 'SJ'}-27032026-001`. Nomor final tetap diinput manual saat membuat surat jalan.
+                            </div>
+                        </div>
+                        <div className="form-group" style={{ maxWidth: 280 }}>
+                            <label className="form-label">Default Basis Billing Nota</label>
+                            <select
+                                className="form-select"
+                                value={form.defaultFreightNotaBillingMode}
+                                onChange={e => setForm({ ...form, defaultFreightNotaBillingMode: e.target.value as 'PER_KG' | 'PER_TON' })}
+                            >
+                                {FREIGHT_NOTA_BILLING_MODE_OPTIONS.map(option => (
+                                    <option key={option.value} value={option.value}>{option.label}</option>
+                                ))}
+                            </select>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                Menentukan default tampilan berat dan basis tarif saat admin membuat nota customer ini.
                             </div>
                         </div>
                     </div>

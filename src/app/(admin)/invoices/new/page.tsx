@@ -9,13 +9,24 @@ import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData, fetchAdminData } from '@/lib/api/admin-client';
 import {
+    calculateFreightNotaRowAmount,
+    FREIGHT_NOTA_BILLING_MODE_OPTIONS,
+    formatFreightNotaDisplayWeight,
+    getFreightNotaBillingModeLabel,
+    getFreightNotaDisplayWeightValue,
+    getFreightNotaRateColumnLabel,
+    getFreightNotaWeightColumnLabel,
+    normalizeFreightNotaBillingMode,
+} from '@/lib/freight-nota-billing';
+import {
     buildNotaRowFromDeliveryOrder,
     createEmptyNotaRow,
     getSuggestedNotaDueDate,
     isEmptyNotaRow,
     type NotaItemRow,
 } from '@/lib/invoice-create-page-support';
-import type { CompanyProfile, Customer, DeliveryOrder, DeliveryOrderItem, Order } from '@/lib/types';
+import { convertWeightToKg } from '@/lib/measurement';
+import type { CompanyProfile, Customer, DeliveryOrder, DeliveryOrderItem, FreightNotaBillingMode, Order } from '@/lib/types';
 import { formatCurrency, formatInternalDeliveryOrderNumber, formatShipperDeliveryOrderNumber } from '@/lib/utils';
 
 import { useToast } from '../../layout';
@@ -38,6 +49,7 @@ export default function NewNotaPage() {
     const [dueDateTouched, setDueDateTouched] = useState(false);
     const [notes, setNotes] = useState('');
     const [rows, setRows] = useState<NotaItemRow[]>([createEmptyNotaRow()]);
+    const [billingMode, setBillingMode] = useState<FreightNotaBillingMode>('PER_KG');
 
     useEffect(() => {
         async function loadData() {
@@ -81,13 +93,35 @@ export default function NewNotaPage() {
         }
     }, [company, customerRef, customers, dueDateTouched, issueDate]);
 
+    useEffect(() => {
+        if (!customerRef) return;
+        const selectedCustomer = customers.find(item => item._id === customerRef);
+        if (!selectedCustomer) return;
+        setBillingMode(normalizeFreightNotaBillingMode(selectedCustomer.defaultFreightNotaBillingMode));
+    }, [customerRef, customers]);
+
+    useEffect(() => {
+        setRows(previous => previous.map(row => ({
+            ...row,
+            uangRp: calculateFreightNotaRowAmount({
+                beratKg: row.beratKg,
+                tarip: row.tarip,
+                billingMode,
+            }),
+        })));
+    }, [billingMode]);
+
     const updateRow = (id: string, field: keyof NotaItemRow, value: string | number) => {
         setRows(previous =>
             previous.map(row => {
                 if (row.id !== id) return row;
                 const updated = { ...row, [field]: value };
                 if (field === 'beratKg' || field === 'tarip') {
-                    updated.uangRp = updated.beratKg * updated.tarip;
+                    updated.uangRp = calculateFreightNotaRowAmount({
+                        beratKg: updated.beratKg,
+                        tarip: updated.tarip,
+                        billingMode,
+                    });
                 }
                 return updated;
             })
@@ -154,6 +188,11 @@ export default function NewNotaPage() {
     const totalBerat = rows.reduce((sum, row) => sum + (row.beratKg || 0), 0);
     const totalAmount = rows.reduce((sum, row) => sum + (row.uangRp || 0), 0);
     const hasSelectedRows = rows.some(row => Boolean(row.doRef));
+    const totalBeratLabel = formatFreightNotaDisplayWeight({
+        beratKg: totalBerat,
+        billingMode,
+        includeCanonical: billingMode === 'PER_TON',
+    });
 
     const handleSave = async () => {
         if (!customerName) {
@@ -180,6 +219,7 @@ export default function NewNotaPage() {
                         issueDate,
                         dueDate: dueDate || undefined,
                         notes: notes || undefined,
+                        billingMode,
                         items: filledRows,
                     },
                 }),
@@ -298,6 +338,22 @@ export default function NewNotaPage() {
                                 </div>
                             </div>
 
+                            <div className="form-group" style={{ maxWidth: 320 }}>
+                                <label className="form-label">Basis Billing Nota</label>
+                                <select
+                                    className="form-select"
+                                    value={billingMode}
+                                    onChange={event => setBillingMode(event.target.value as FreightNotaBillingMode)}
+                                >
+                                    {FREIGHT_NOTA_BILLING_MODE_OPTIONS.map(option => (
+                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                    ))}
+                                </select>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                    Default customer akan terpakai otomatis. Kamu masih bisa override per nota kalau customer minta tagihan dalam ton.
+                                </div>
+                            </div>
+
                             <div className="form-group">
                                 <label className="form-label">Catatan</label>
                                 <textarea
@@ -397,7 +453,18 @@ export default function NewNotaPage() {
                                 }}
                             >
                                 <span className="text-muted">Total Berat</span>
-                                <strong>{totalBerat.toLocaleString('id')} kg</strong>
+                                <strong>{totalBeratLabel}</strong>
+                            </div>
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    marginBottom: '1rem',
+                                    fontSize: '0.85rem',
+                                }}
+                            >
+                                <span className="text-muted">Basis Billing</span>
+                                <strong>{getFreightNotaBillingModeLabel(billingMode)}</strong>
                             </div>
                             <button className="btn btn-primary" style={{ width: '100%' }} onClick={handleSave} disabled={saving}>
                                 <Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan Nota'}
@@ -425,8 +492,8 @@ export default function NewNotaPage() {
                                 <th style={{ minWidth: 120 }}>TUJUAN</th>
                                 <th style={{ minWidth: 100 }}>BARANG</th>
                                 <th style={{ minWidth: 70 }}>COLLIE</th>
-                                <th style={{ minWidth: 80 }}>BERAT KG</th>
-                                <th style={{ minWidth: 90 }}>TARIF/KG</th>
+                                <th style={{ minWidth: 90 }}>{getFreightNotaWeightColumnLabel(billingMode)}</th>
+                                <th style={{ minWidth: 100 }}>{getFreightNotaRateColumnLabel(billingMode)}</th>
                                 <th style={{ minWidth: 110 }}>UANG RP</th>
                                 <th style={{ minWidth: 80 }}>KET</th>
                                 <th style={{ width: 36 }} />
@@ -493,16 +560,20 @@ export default function NewNotaPage() {
                                     </td>
                                     <td>
                                         <FormattedNumberInput
-                                            maxFractionDigits={2}
-                                            value={row.beratKg}
-                                            onValueChange={value => updateRow(row.id, 'beratKg', value)}
+                                            maxFractionDigits={billingMode === 'PER_TON' ? 3 : 2}
+                                            value={getFreightNotaDisplayWeightValue(row.beratKg, billingMode)}
+                                            onValueChange={value => updateRow(
+                                                row.id,
+                                                'beratKg',
+                                                convertWeightToKg(value, billingMode === 'PER_TON' ? 'TON' : 'KG'),
+                                            )}
                                         />
                                     </td>
                                     <td>
                                         <CurrencyInput
                                             value={row.tarip}
                                             onValueChange={value => updateRow(row.id, 'tarip', value)}
-                                            placeholder="Ketik tarif per kg"
+                                            placeholder={billingMode === 'PER_TON' ? 'Ketik tarif per ton' : 'Ketik tarif per kg'}
                                         />
                                     </td>
                                     <td style={{ fontWeight: 600, color: 'var(--color-primary)' }}>{formatCurrency(row.uangRp)}</td>
@@ -531,7 +602,7 @@ export default function NewNotaPage() {
                                     Jumlah
                                 </td>
                                 <td>{totalCollie}</td>
-                                <td>{totalBerat.toLocaleString('id')}</td>
+                                <td>{getFreightNotaDisplayWeightValue(totalBerat, billingMode).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: billingMode === 'PER_TON' ? 3 : 2 })}</td>
                                 <td />
                                 <td style={{ color: 'var(--color-danger)' }}>{formatCurrency(totalAmount)}</td>
                                 <td colSpan={2} />

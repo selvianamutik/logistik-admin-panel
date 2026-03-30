@@ -101,6 +101,7 @@ export interface Customer {
   deliveryOrderPrefix?: string;
   deliveryOrderCounter?: number;
   deliveryOrderPeriod?: string;
+  defaultFreightNotaBillingMode?: FreightNotaBillingMode;
   active: boolean;
 }
 
@@ -465,6 +466,8 @@ export interface FreightNotaInstructionAccount {
   accountHolder?: string;
 }
 
+export type FreightNotaBillingMode = 'PER_KG' | 'PER_TON';
+
 export interface FreightNota {
   _id: string;
   _type: 'freightNota';
@@ -491,6 +494,7 @@ export interface FreightNota {
   netAmount?: number;
   totalCollie: number;
   totalWeightKg: number;
+  billingMode?: FreightNotaBillingMode;
   bankAccountRef?: string;
   instructionAccounts?: FreightNotaInstructionAccount[];
   footerNote?: string;

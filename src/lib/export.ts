@@ -6,6 +6,13 @@
 import ExcelJS from 'exceljs';
 import { resolveCompanyLogoUrl } from './branding';
 import {
+    formatFreightNotaDisplayWeight,
+    getFreightNotaBillingModeLabel,
+    getFreightNotaRateColumnLabel,
+    getFreightNotaWeightColumnLabel,
+    normalizeFreightNotaBillingMode,
+} from './freight-nota-billing';
+import {
     buildInvoiceInstructionAccountText,
     fetchCompanyProfile,
     fmtDate,
@@ -455,7 +462,23 @@ export async function exportInvoices(invoices: Record<string, unknown>[]) {
             { header: 'Customer', key: 'customerName', width: 28 },
             { header: 'Tanggal', key: 'issueDate', width: 18, formatter: (value) => fmtDate(String(value || '')) },
             { header: 'Jatuh Tempo', key: 'dueDate', width: 18, formatter: (value) => value ? fmtDate(String(value)) : '-' },
+            {
+                header: 'Basis Billing',
+                key: 'billingMode',
+                width: 16,
+                formatter: (value) => getFreightNotaBillingModeLabel(normalizeFreightNotaBillingMode(value)),
+            },
             { header: 'Total Collie', key: 'totalCollie', width: 14 },
+            {
+                header: 'Total Berat Tagih',
+                key: 'totalWeightKg',
+                width: 18,
+                formatter: (value, row) => formatFreightNotaDisplayWeight({
+                    beratKg: value,
+                    billingMode: normalizeFreightNotaBillingMode(row.billingMode),
+                    includeCanonical: false,
+                }),
+            },
             { header: 'Total Berat (Kg)', key: 'totalWeightKg', width: 16 },
             { header: 'Tagihan Netto', key: 'netAmount', width: 18 },
             { header: 'Status', key: 'status', width: 14 },
@@ -548,6 +571,7 @@ export async function exportFreightNotaDetail(
     const issuerProfile = resolveFreightNotaIssuerProfile(nota, resolvedCompany);
     const issuerBranding = resolveDocumentIssuerProfile(nota, resolvedCompany);
     const displayNumber = formatFreightNotaDisplayNumber(nota, resolvedCompany);
+    const billingMode = normalizeFreightNotaBillingMode(nota.billingMode);
     const groupedRows = items.reduce<Array<{
         no: number;
         vehiclePlate: string;
@@ -558,7 +582,7 @@ export async function exportFreightNotaDetail(
             tujuan: string;
             barang: string;
             collie: string | number;
-            beratKg: string | number;
+            billedWeight: string;
             tarip: string | number;
             uangRp: string | number;
             ket: string;
@@ -574,7 +598,11 @@ export async function exportFreightNotaDetail(
             tujuan: item.tujuan || '',
             barang: item.barang || '',
             collie: parseFormattedNumberish(item.collie || 0) || '',
-            beratKg: item.beratKg ? fmtNumber(parseFormattedNumberish(item.beratKg)) : '',
+            billedWeight: formatFreightNotaDisplayWeight({
+                beratKg: item.beratKg || 0,
+                billingMode,
+                includeCanonical: false,
+            }),
             tarip: item.tarip ? fmtNumber(parseFormattedNumberish(item.tarip)) : '',
             uangRp: item.uangRp ? fmtNumber(parseFormattedNumberish(item.uangRp)) : '',
             ket: item.ket || '',
@@ -619,7 +647,7 @@ export async function exportFreightNotaDetail(
     rows.push([]);
 
     const headerRowIndex = rows.length + 1;
-    rows.push(['NO', 'NO.TRUCK', 'TANGGAL', 'NO. SJ', 'DARI', 'TUJUAN', 'BARANG', 'COLLIE', 'BERAT KG', 'TARIF/KG', 'UANG RP.', 'KET']);
+    rows.push(['NO', 'NO.TRUCK', 'TANGGAL', 'NO. SJ', 'DARI', 'TUJUAN', 'BARANG', 'COLLIE', getFreightNotaWeightColumnLabel(billingMode), getFreightNotaRateColumnLabel(billingMode), 'UANG RP.', 'KET']);
 
     groupedRows.forEach((group) => {
         const groupStartRow = rows.length + 1;
@@ -633,7 +661,7 @@ export async function exportFreightNotaDetail(
                 entry.tujuan,
                 entry.barang,
                 entry.collie,
-                entry.beratKg,
+                entry.billedWeight,
                 entry.tarip,
                 entry.uangRp,
                 entry.ket,
@@ -663,7 +691,11 @@ export async function exportFreightNotaDetail(
         '',
         '',
         parseFormattedNumberish(nota.totalCollie || 0) || 0,
-        nota.totalWeightKg ? fmtNumber(parseFormattedNumberish(nota.totalWeightKg)) : 0,
+        formatFreightNotaDisplayWeight({
+            beratKg: nota.totalWeightKg || 0,
+            billingMode,
+            includeCanonical: false,
+        }),
         '',
         nota.totalAmount ? fmtNumber(parseFormattedNumberish(nota.totalAmount)) : 0,
         '',
@@ -685,6 +717,8 @@ export async function exportFreightNotaDetail(
     }
 
     rows.push([`NO. SISTEM : ${nota.notaNumber}`]);
+    merges.push({ startRow: rows.length, startCol: 1, endRow: rows.length, endCol: totalColumns });
+    rows.push([`BASIS BILLING : ${getFreightNotaBillingModeLabel(billingMode)}`]);
     merges.push({ startRow: rows.length, startCol: 1, endRow: rows.length, endCol: totalColumns });
 
     const workbook = new ExcelJS.Workbook();

@@ -9,6 +9,13 @@ import CurrencyInput from '@/components/CurrencyInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData, fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import {
+    formatFreightNotaDisplayWeight,
+    getFreightNotaBillingModeLabel,
+    getFreightNotaRateColumnLabel,
+    getFreightNotaWeightColumnLabel,
+    normalizeFreightNotaBillingMode,
+} from '@/lib/freight-nota-billing';
+import {
     buildBankAccountMap,
     buildInvoiceDetailSummary,
     INVOICE_DETAIL_STATUS_MAP,
@@ -290,6 +297,12 @@ export default function NotaDetailPage() {
 
     const statusConf = INVOICE_DETAIL_STATUS_MAP[nota.status] || { label: nota.status, color: 'secondary' };
     const displayNotaNumber = formatFreightNotaDisplayNumber(nota, company);
+    const billingMode = normalizeFreightNotaBillingMode(nota.billingMode);
+    const totalBilledWeightLabel = formatFreightNotaDisplayWeight({
+        beratKg: nota.totalWeightKg || 0,
+        billingMode,
+        includeCanonical: billingMode === 'PER_TON',
+    });
 
     return (
         <div>
@@ -332,7 +345,11 @@ export default function NotaDetailPage() {
                             <div className="detail-item"><div className="detail-label">Total Collie</div><div className="detail-value">{nota.totalCollie || 0}</div></div>
                         </div>
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">Total Berat</div><div className="detail-value">{(nota.totalWeightKg || 0).toLocaleString('id')} kg</div></div>
+                            <div className="detail-item"><div className="detail-label">Basis Billing</div><div className="detail-value">{getFreightNotaBillingModeLabel(billingMode)}</div></div>
+                            <div className="detail-item"><div className="detail-label">Total Berat Ditagihkan</div><div className="detail-value">{totalBilledWeightLabel}</div></div>
+                        </div>
+                        <div className="detail-row">
+                            <div className="detail-item"><div className="detail-label">Total Berat Canonical</div><div className="detail-value">{(nota.totalWeightKg || 0).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} kg</div></div>
                             <div className="detail-item"><div className="detail-label">Tagihan Netto</div><div className="detail-value font-semibold">{formatCurrency(netAmount)}</div></div>
                         </div>
                     </div>
@@ -440,7 +457,7 @@ export default function NotaDetailPage() {
                     <CollapsibleCard title="Rincian Perjalanan">
                         <div className="table-wrapper" style={{ overflowX: 'auto' }}>
                             <table style={{ minWidth: 800 }}>
-                                <thead><tr><th>NO.TRUCK</th><th>TGL</th><th>NO.SJ</th><th>DARI</th><th>TUJUAN</th><th>BARANG</th><th>COLLIE</th><th>BERAT KG</th><th>TARIF/KG</th><th style={{ textAlign: 'right' }}>UANG RP</th><th>KET</th></tr></thead>
+                                <thead><tr><th>NO.TRUCK</th><th>TGL</th><th>NO.SJ</th><th>DARI</th><th>TUJUAN</th><th>BARANG</th><th>COLLIE</th><th>{getFreightNotaWeightColumnLabel(billingMode)}</th><th>{getFreightNotaRateColumnLabel(billingMode)}</th><th style={{ textAlign: 'right' }}>UANG RP</th><th>KET</th></tr></thead>
                                 <tbody>
                                     {items.map(it => (
                                         <tr key={it._id}>
@@ -451,7 +468,7 @@ export default function NotaDetailPage() {
                                             <td>{it.tujuan}</td>
                                             <td>{it.barang || '-'}</td>
                                             <td>{it.collie || '-'}</td>
-                                            <td>{(it.beratKg || 0).toLocaleString('id')}</td>
+                                            <td>{formatFreightNotaDisplayWeight({ beratKg: it.beratKg || 0, billingMode, includeCanonical: false })}</td>
                                             <td>{(it.tarip || 0).toLocaleString('id')}</td>
                                             <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatCurrency(it.uangRp)}</td>
                                             <td className="text-muted">{it.ket || '-'}</td>
@@ -460,7 +477,7 @@ export default function NotaDetailPage() {
                                     <tr style={{ background: 'var(--color-bg-secondary)', fontWeight: 700, borderTop: '2px solid var(--color-border)' }}>
                                         <td colSpan={6} style={{ textAlign: 'right' }}>Jumlah</td>
                                         <td>{nota.totalCollie || 0}</td>
-                                        <td>{(nota.totalWeightKg || 0).toLocaleString('id')}</td>
+                                        <td>{totalBilledWeightLabel}</td>
                                         <td></td>
                                         <td style={{ textAlign: 'right', color: 'var(--color-danger)' }}>{formatCurrency(nota.totalAmount)}</td>
                                         <td></td>

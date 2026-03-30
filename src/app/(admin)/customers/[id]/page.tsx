@@ -8,6 +8,7 @@ import { Edit, Package, DollarSign, Plus, Save, Trash2, X } from 'lucide-react';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
+import { FREIGHT_NOTA_BILLING_MODE_OPTIONS, getFreightNotaBillingModeLabel } from '@/lib/freight-nota-billing';
 import { formatDate, formatCurrency, getReceivableNetAmount } from '@/lib/utils';
 import { formatCargoSummary, VOLUME_INPUT_UNIT_OPTIONS, WEIGHT_INPUT_UNIT_OPTIONS, type VolumeInputUnit, type WeightInputUnit } from '@/lib/measurement';
 import type { Customer, CustomerPickupLocation, CustomerProduct, CustomerRecipient, Order, FreightNota } from '@/lib/types';
@@ -104,7 +105,16 @@ export default function CustomerDetailPage() {
     const [savingPickup, setSavingPickup] = useState(false);
     const [deletingPickupId, setDeletingPickupId] = useState<string | null>(null);
     const [editPickup, setEditPickup] = useState<CustomerPickupLocation | null>(null);
-    const [form, setForm] = useState({ name: '', address: '', contactPerson: '', phone: '', email: '', npwp: '', deliveryOrderPrefix: 'SJ' });
+    const [form, setForm] = useState({
+        name: '',
+        address: '',
+        contactPerson: '',
+        phone: '',
+        email: '',
+        npwp: '',
+        deliveryOrderPrefix: 'SJ',
+        defaultFreightNotaBillingMode: 'PER_KG' as 'PER_KG' | 'PER_TON',
+    });
     const [productForm, setProductForm] = useState<CustomerProductForm>(DEFAULT_PRODUCT_FORM);
     const [recipientForm, setRecipientForm] = useState<CustomerRecipientForm>(DEFAULT_RECIPIENT_FORM);
     const [pickupForm, setPickupForm] = useState<CustomerPickupForm>(DEFAULT_PICKUP_FORM);
@@ -137,6 +147,7 @@ export default function CustomerDetailPage() {
                         email: cust.email,
                         npwp: cust.npwp || '',
                         deliveryOrderPrefix: cust.deliveryOrderPrefix || 'SJ',
+                        defaultFreightNotaBillingMode: cust.defaultFreightNotaBillingMode === 'PER_TON' ? 'PER_TON' : 'PER_KG',
                     });
                 }
             } catch (error) {
@@ -482,6 +493,18 @@ export default function CustomerDetailPage() {
                                     <div className="form-group"><label className="form-label">Email</label><input className="form-input" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
                                     <div className="form-group"><label className="form-label">NPWP</label><input className="form-input" value={form.npwp} onChange={e => setForm({ ...form, npwp: e.target.value })} /></div>
                                 </div>
+                                <div className="form-group" style={{ maxWidth: 320 }}>
+                                    <label className="form-label">Default Basis Billing Nota</label>
+                                    <select
+                                        className="form-select"
+                                        value={form.defaultFreightNotaBillingMode}
+                                        onChange={e => setForm({ ...form, defaultFreightNotaBillingMode: e.target.value as 'PER_KG' | 'PER_TON' })}
+                                    >
+                                        {FREIGHT_NOTA_BILLING_MODE_OPTIONS.map(option => (
+                                            <option key={option.value} value={option.value}>{option.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
                                 <div className="form-group">
                                     <label className="form-label">Awalan Referensi SJ Pengirim</label>
                                     <input className="form-input" value={form.deliveryOrderPrefix} onChange={e => setForm({ ...form, deliveryOrderPrefix: e.target.value.toUpperCase() })} />
@@ -505,8 +528,12 @@ export default function CustomerDetailPage() {
                                     <div className="detail-item"><div className="detail-label">Email</div><div className="detail-value">{customer.email}</div></div>
                                 </div>
                                 <div className="detail-row">
-                                    <div className="detail-item"><div className="detail-label">Awalan Referensi SJ Pengirim</div><div className="detail-value font-mono">{customer.deliveryOrderPrefix || 'SJ'}</div></div>
+                                    <div className="detail-item"><div className="detail-label">Default Basis Billing Nota</div><div className="detail-value">{getFreightNotaBillingModeLabel(customer.defaultFreightNotaBillingMode === 'PER_TON' ? 'PER_TON' : 'PER_KG')}</div></div>
                                     <div className="detail-item"><div className="detail-label">Cara Pakai</div><div className="detail-value">Admin mengisi nomor SJ pengirim manual saat membuat surat jalan.</div></div>
+                                </div>
+                                <div className="detail-row">
+                                    <div className="detail-item"><div className="detail-label">Awalan Referensi SJ Pengirim</div><div className="detail-value font-mono">{customer.deliveryOrderPrefix || 'SJ'}</div></div>
+                                    <div className="detail-item"><div className="detail-label">Termin Default</div><div className="detail-value">{customer.defaultPaymentTerm || 0} hari</div></div>
                                 </div>
                                 <div className="detail-item mt-2"><div className="detail-label">Alamat</div><div className="detail-value">{customer.address}</div></div>
                                 {customer.npwp && <div className="detail-item mt-2"><div className="detail-label">NPWP</div><div className="detail-value font-mono">{customer.npwp}</div></div>}

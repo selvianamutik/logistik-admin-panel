@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { resolveCompanyLogoUrl } from '@/lib/branding';
+import { calculateFreightNotaRowAmount, normalizeFreightNotaBillingMode } from '@/lib/freight-nota-billing';
 import { getSanityClient, sanityCreate, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
 import { buildFreightNotaDisplayNumberFromParts } from '@/lib/nota-numbering';
 import type { FreightNotaInstructionAccount, InvoiceAdjustmentKind, Payment, PaymentMethod } from '@/lib/types';
@@ -1093,6 +1094,7 @@ export async function handleFreightNotaCreate(
     data: Record<string, unknown>,
     addAuditLog: AuditLogFn
 ) {
+    let billingMode = normalizeFreightNotaBillingMode(data.billingMode);
     let resolvedCustomerRef = normalizeOptionalText(data.customerRef);
     const customerName = normalizeText(data.customerName);
 
@@ -1118,7 +1120,7 @@ export async function handleFreightNotaCreate(
                 throw new Error('Berat pada baris nota harus lebih besar dari 0');
             }
             if (!Number.isFinite(tarip) || tarip <= 0) {
-                throw new Error('Tarif per kg pada baris nota harus lebih besar dari 0');
+                throw new Error('Tarif nota pada baris harus lebih besar dari 0');
             }
             if (!Number.isFinite(collie) || collie < 0) {
                 throw new Error('Collie pada baris nota tidak valid');
@@ -1136,7 +1138,7 @@ export async function handleFreightNotaCreate(
                 collie: collie > 0 ? collie : undefined,
                 beratKg,
                 tarip,
-                uangRp: beratKg * tarip,
+                uangRp: calculateFreightNotaRowAmount({ beratKg, tarip, billingMode }),
                 ket: normalizeOptionalText(row.ket),
             };
         });
@@ -1264,7 +1266,7 @@ export async function handleFreightNotaCreate(
         } else if (!Number.isFinite(row.beratKg) || row.beratKg <= 0) {
             row.beratKg = itemSummary.beratKg;
         }
-        row.uangRp = row.beratKg * row.tarip;
+        row.uangRp = calculateFreightNotaRowAmount({ beratKg: row.beratKg, tarip: row.tarip, billingMode });
     }
 
     for (const row of rows) {
@@ -1282,11 +1284,11 @@ export async function handleFreightNotaCreate(
         }
         if (!Number.isFinite(row.tarip) || row.tarip <= 0) {
             return NextResponse.json(
-                { error: `Tarif per kg pada baris nota ${row.doNumber || row.noSJ || row.doRef || ''} tidak valid` },
+                { error: `Tarif nota pada baris ${row.doNumber || row.noSJ || row.doRef || ''} tidak valid` },
                 { status: 400 }
             );
         }
-        row.uangRp = row.beratKg * row.tarip;
+        row.uangRp = calculateFreightNotaRowAmount({ beratKg: row.beratKg, tarip: row.tarip, billingMode });
     }
 
     if (uniqueDoRefs.length > 0) {
@@ -1360,9 +1362,10 @@ export async function handleFreightNotaCreate(
             contactPerson?: string;
             phone?: string;
             defaultPaymentTerm?: number;
+            defaultFreightNotaBillingMode?: string;
             active?: boolean;
         } | null>(
-            `*[_type == "customer" && _id == $id][0]{ _id, name, address, contactPerson, phone, defaultPaymentTerm, active }`,
+            `*[_type == "customer" && _id == $id][0]{ _id, name, address, contactPerson, phone, defaultPaymentTerm, defaultFreightNotaBillingMode, active }`,
             { id: resolvedCustomerRef }
         );
         if (!customerDoc) {
@@ -1379,6 +1382,12 @@ export async function handleFreightNotaCreate(
         finalCustomerPhone = normalizeOptionalText(customerDoc?.phone) || finalCustomerPhone;
         if (typeof customerDoc?.defaultPaymentTerm === 'number' && Number.isFinite(customerDoc.defaultPaymentTerm) && customerDoc.defaultPaymentTerm >= 0) {
             customerTermDays = customerDoc.defaultPaymentTerm;
+        }
+        if (!Object.prototype.hasOwnProperty.call(data, 'billingMode')) {
+            billingMode = normalizeFreightNotaBillingMode(customerDoc?.defaultFreightNotaBillingMode);
+            for (const row of rows) {
+                row.uangRp = calculateFreightNotaRowAmount({ beratKg: row.beratKg, tarip: row.tarip, billingMode });
+            }
         }
     }
     if (!finalCustomerName) {
@@ -1464,6 +1473,7 @@ export async function handleFreightNotaCreate(
         netAmount: totalAmount,
         totalCollie,
         totalWeightKg,
+        billingMode,
         instructionAccounts: instructionAccounts.length > 0 ? instructionAccounts : undefined,
         footerNote,
         notes: normalizeOptionalText(data.notes),

@@ -3,6 +3,12 @@
    ============================================================ */
 
 import DOMPurify from 'dompurify';
+import {
+    formatFreightNotaDisplayWeight,
+    getFreightNotaBillingModeLabel,
+    getFreightNotaRateColumnLabel,
+    normalizeFreightNotaBillingMode,
+} from './freight-nota-billing';
 import { buildFreightNotaDisplayNumberFromParts } from './nota-numbering';
 import { resolveCompanyLogoUrl } from './branding';
 import { parseFormattedNumberish } from './formatted-number';
@@ -307,6 +313,7 @@ export function buildFreightNotaPrintDocument(opts: {
     const grossAmount = parseFormattedNumberish(nota.totalAmount || 0);
     const adjustmentAmount = parseFormattedNumberish(nota.totalAdjustmentAmount || 0);
     const netAmount = getReceivableNetAmount(nota);
+    const billingMode = normalizeFreightNotaBillingMode(nota.billingMode);
     const printDate = fmtLongPrintDate(new Date().toISOString());
     const dueDateLabel = nota.dueDate ? fmtLongPrintDate(nota.dueDate) : '-';
     const uniqueShipmentDates = [...new Set(items.map(item => item.date).filter(Boolean))].sort();
@@ -332,6 +339,11 @@ export function buildFreightNotaPrintDocument(opts: {
         .replace(/\s+/g, ' ')
         .trim()
         .replace(/^./, character => character.toUpperCase());
+    const billedWeightLabel = formatFreightNotaDisplayWeight({
+        beratKg: nota.totalWeightKg || 0,
+        billingMode,
+        includeCanonical: billingMode === 'PER_TON',
+    });
     const signatureName =
         nota.issuerCompanySignatureName?.trim()
         || (invoiceInstructionAccounts[0]?.accountHolder && invoiceInstructionAccounts[0].accountHolder.trim().toLowerCase() !== issuerProfile.name.trim().toLowerCase()
@@ -343,14 +355,17 @@ export function buildFreightNotaPrintDocument(opts: {
         const tarip = parseFormattedNumberish(item.tarip || 0);
         const uangRp = parseFormattedNumberish(item.uangRp || 0);
         const qtyText = collie > 0 ? `${fmtNumber(collie)} koli` : '-';
-        const descriptionParts = [item.dari && item.tujuan ? `${item.dari} -> ${item.tujuan}` : item.tujuan || item.dari || ''].filter(Boolean);
+        const metaSegments = [
+            item.dari && item.tujuan ? `${item.dari} -> ${item.tujuan}` : item.tujuan || item.dari || '',
+            `Berat: ${formatFreightNotaDisplayWeight({ beratKg: item.beratKg || 0, billingMode, includeCanonical: false })}`,
+        ].filter(Boolean);
 
         return `
             <tr>
                 <td class="c">${index + 1}</td>
                 <td>
                     <div class="invoice-item-title">${escapePrintHtml(item.barang || 'Jasa pengiriman')}</div>
-                    <div class="invoice-item-meta">${escapePrintHtml(descriptionParts.slice(1).join(' | '))}</div>
+                    <div class="invoice-item-meta">${escapePrintHtml(metaSegments.join(' | '))}</div>
                 </td>
                 <td class="c">${escapePrintHtml(qtyText)}</td>
                 <td class="r">${escapePrintHtml(fmtCurrency(tarip))}</td>
@@ -428,6 +443,14 @@ export function buildFreightNotaPrintDocument(opts: {
                                 <td>Jatuh Tempo</td>
                                 <td>${escapePrintHtml(dueDateLabel)}</td>
                             </tr>
+                            <tr>
+                                <td>Basis Billing</td>
+                                <td>${escapePrintHtml(getFreightNotaBillingModeLabel(billingMode))}</td>
+                            </tr>
+                            <tr>
+                                <td>Total Berat Ditagihkan</td>
+                                <td>${escapePrintHtml(billedWeightLabel)}</td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -464,7 +487,7 @@ export function buildFreightNotaPrintDocument(opts: {
                         <th class="c invoice-col-no">No</th>
                         <th>Uraian</th>
                         <th class="c invoice-col-qty">Qty</th>
-                        <th class="r invoice-col-price">Harga Satuan</th>
+                        <th class="r invoice-col-price">${escapePrintHtml(getFreightNotaRateColumnLabel(billingMode))}</th>
                         <th class="r invoice-col-total">Jumlah</th>
                     </tr>
                 </thead>
