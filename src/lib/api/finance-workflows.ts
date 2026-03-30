@@ -48,6 +48,13 @@ type ReceiptCustomerSource = {
     active?: boolean;
 };
 
+function normalizeFreightNotaAmount(value: number) {
+    if (!Number.isFinite(value) || value <= 0) {
+        return 0;
+    }
+    return Math.round(value);
+}
+
 async function loadFreightNotaDocumentSettings(): Promise<{
     instructionAccounts: FreightNotaInstructionAccount[];
     notaSeriesCode?: string;
@@ -1138,7 +1145,7 @@ export async function handleFreightNotaCreate(
                 collie: collie > 0 ? collie : undefined,
                 beratKg,
                 tarip,
-                uangRp: calculateFreightNotaRowAmount({ beratKg, tarip, billingMode }),
+                uangRp: normalizeFreightNotaAmount(calculateFreightNotaRowAmount({ beratKg, tarip, billingMode })),
                 ket: normalizeOptionalText(row.ket),
             };
         });
@@ -1266,7 +1273,9 @@ export async function handleFreightNotaCreate(
         } else if (!Number.isFinite(row.beratKg) || row.beratKg <= 0) {
             row.beratKg = itemSummary.beratKg;
         }
-        row.uangRp = calculateFreightNotaRowAmount({ beratKg: row.beratKg, tarip: row.tarip, billingMode });
+        row.uangRp = normalizeFreightNotaAmount(
+            calculateFreightNotaRowAmount({ beratKg: row.beratKg, tarip: row.tarip, billingMode })
+        );
     }
 
     for (const row of rows) {
@@ -1288,7 +1297,9 @@ export async function handleFreightNotaCreate(
                 { status: 400 }
             );
         }
-        row.uangRp = calculateFreightNotaRowAmount({ beratKg: row.beratKg, tarip: row.tarip, billingMode });
+        row.uangRp = normalizeFreightNotaAmount(
+            calculateFreightNotaRowAmount({ beratKg: row.beratKg, tarip: row.tarip, billingMode })
+        );
     }
 
     if (uniqueDoRefs.length > 0) {
@@ -1386,7 +1397,9 @@ export async function handleFreightNotaCreate(
         if (!Object.prototype.hasOwnProperty.call(data, 'billingMode')) {
             billingMode = normalizeFreightNotaBillingMode(customerDoc?.defaultFreightNotaBillingMode);
             for (const row of rows) {
-                row.uangRp = calculateFreightNotaRowAmount({ beratKg: row.beratKg, tarip: row.tarip, billingMode });
+                row.uangRp = normalizeFreightNotaAmount(
+                    calculateFreightNotaRowAmount({ beratKg: row.beratKg, tarip: row.tarip, billingMode })
+                );
             }
         }
     }
@@ -1394,7 +1407,7 @@ export async function handleFreightNotaCreate(
         return NextResponse.json({ error: 'Nama customer nota wajib diisi' }, { status: 400 });
     }
 
-    const totalAmount = rows.reduce((sum, row) => sum + row.uangRp, 0);
+    const totalAmount = normalizeFreightNotaAmount(rows.reduce((sum, row) => sum + row.uangRp, 0));
     const totalCollie = rows.reduce((sum, row) => sum + (row.collie || 0), 0);
     const totalWeightKg = rows.reduce((sum, row) => sum + row.beratKg, 0);
     if (totalAmount <= 0) {

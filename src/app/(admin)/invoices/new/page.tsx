@@ -103,11 +103,11 @@ export default function NewNotaPage() {
     useEffect(() => {
         setRows(previous => previous.map(row => ({
             ...row,
-            uangRp: calculateFreightNotaRowAmount({
+            uangRp: Math.round(calculateFreightNotaRowAmount({
                 beratKg: row.beratKg,
                 tarip: row.tarip,
                 billingMode,
-            }),
+            })),
         })));
     }, [billingMode]);
 
@@ -117,11 +117,11 @@ export default function NewNotaPage() {
                 if (row.id !== id) return row;
                 const updated = { ...row, [field]: value };
                 if (field === 'beratKg' || field === 'tarip') {
-                    updated.uangRp = calculateFreightNotaRowAmount({
+                    updated.uangRp = Math.round(calculateFreightNotaRowAmount({
                         beratKg: updated.beratKg,
                         tarip: updated.tarip,
                         billingMode,
-                    });
+                    }));
                 }
                 return updated;
             })

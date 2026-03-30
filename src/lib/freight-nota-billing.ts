@@ -46,6 +46,14 @@ export function getFreightNotaDisplayWeightValue(beratKg: unknown, mode: Freight
         : normalizedKg;
 }
 
+export function roundFreightNotaCurrencyAmount(value: unknown) {
+    const numeric = parseFormattedNumberish(value || 0);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+        return 0;
+    }
+    return Math.round(numeric);
+}
+
 export function calculateFreightNotaRowAmount(params: {
     beratKg: unknown;
     tarip: unknown;
@@ -56,7 +64,7 @@ export function calculateFreightNotaRowAmount(params: {
     const billedWeight = params.billingMode === 'PER_TON'
         ? convertKgToWeightInputValue(beratKg, 'TON')
         : beratKg;
-    return billedWeight * tarip;
+    return roundFreightNotaCurrencyAmount(billedWeight * tarip);
 }
 
 function formatBillingValue(value: number, maxFractionDigits: number) {

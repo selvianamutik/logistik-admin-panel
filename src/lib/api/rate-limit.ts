@@ -186,13 +186,13 @@ export async function recordLoginAttempt(key: string, limit: number, windowMs: n
                     })
                     .commit();
             } else {
-                await getSanityClient()
-                    .patch(docId)
-                    .set({
-                        count: nextCount,
-                        updatedAt: nowIso(now),
-                    })
-                    .commit();
+                await getSanityClient().create({
+                    _id: docId,
+                    _type: RATE_LIMIT_DOC_TYPE,
+                    count: nextCount,
+                    resetAt,
+                    updatedAt: nowIso(now),
+                });
             }
 
             writeLocalRateLimitBucket(docId, nextCount, resetAt);
@@ -205,6 +205,10 @@ export async function recordLoginAttempt(key: string, limit: number, windowMs: n
 
             return { limited: false, retryAfterSeconds: 0 };
         } catch (error) {
+            if (isRateLimitNotFoundError(error) && attemptIndex < MAX_MUTATION_RETRIES - 1) {
+                clearLocalRateLimitBucket(docId);
+                continue;
+            }
             if (isRateLimitConflictError(error) && attemptIndex < MAX_MUTATION_RETRIES - 1) {
                 continue;
             }

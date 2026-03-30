@@ -86,6 +86,14 @@ export const INVOICE_ADJUSTMENT_KIND_SET = new Set<InvoiceAdjustmentKind>([
     'OTHER',
 ]);
 
+function roundCurrencyAmount(value: unknown) {
+    const normalized = normalizeNumber(value);
+    if (!Number.isFinite(normalized) || normalized <= 0) {
+        return 0;
+    }
+    return Math.round(normalized);
+}
+
 export function summarizeDeliveryOrderItems(items: FreightNotaDeliveryOrderItemSource[]) {
     const descriptions = [
         ...new Set(
@@ -133,8 +141,8 @@ export function buildReceivablePatch(
     totalPaid: number,
     totalAdjustmentAmount: number
 ) {
-    const nextAdjustment = Math.max(totalAdjustmentAmount, 0);
-    const nextNetAmount = Math.max(snapshot.grossAmount - nextAdjustment, 0);
+    const nextAdjustment = roundCurrencyAmount(totalAdjustmentAmount);
+    const nextNetAmount = roundCurrencyAmount(Math.max(snapshot.grossAmount - nextAdjustment, 0));
     return {
         status: deriveBillingStatus(nextNetAmount, totalPaid),
         totalAdjustmentAmount: nextAdjustment,
@@ -147,13 +155,14 @@ export function computeReceivableSnapshot(
     allPayments: Payment[],
     approvedAdjustments: InvoiceAdjustmentDoc[]
 ): ReceivableSnapshot {
-    const grossAmount = Math.max(normalizeNumber(doc.totalAmount || 0), 0);
-    const totalPaid = allPayments.reduce((sum, item) => sum + normalizeNumber(item.amount || 0), 0);
-    const totalAdjustmentAmount = approvedAdjustments.reduce(
-        (sum, item) => sum + normalizeNumber(item.amount || 0),
-        0
+    const grossAmount = roundCurrencyAmount(doc.totalAmount || 0);
+    const totalPaid = roundCurrencyAmount(
+        allPayments.reduce((sum, item) => sum + normalizeNumber(item.amount || 0), 0)
     );
-    const netAmount = Math.max(grossAmount - totalAdjustmentAmount, 0);
+    const totalAdjustmentAmount = roundCurrencyAmount(
+        approvedAdjustments.reduce((sum, item) => sum + normalizeNumber(item.amount || 0), 0)
+    );
+    const netAmount = roundCurrencyAmount(Math.max(grossAmount - totalAdjustmentAmount, 0));
     const customerRef =
         typeof doc.customerRef === 'string'
             ? doc.customerRef
@@ -172,8 +181,8 @@ export function computeReceivableSnapshot(
         totalAdjustmentAmount,
         netAmount,
         totalPaid,
-        remainingAmount: Math.max(netAmount - totalPaid, 0),
-        creditAmount: Math.max(totalPaid - netAmount, 0),
+        remainingAmount: roundCurrencyAmount(Math.max(netAmount - totalPaid, 0)),
+        creditAmount: roundCurrencyAmount(Math.max(totalPaid - netAmount, 0)),
         customerRef,
         customerName,
         label,
