@@ -984,7 +984,7 @@ export default function OrderDetailPage() {
                                                 const selection = selectedShipments[item._id];
                                                 const progressInfo = itemProgressById[item._id];
                                                 const usesQtyBasis = progressInfo.totalQtyKoli > 0;
-                                                const selectedQty = Number(selection?.qtyKoli || 0);
+                                                const selectedQty = parseFormattedNumberish(selection?.qtyKoli || 0, { maxFractionDigits: 2 });
                                                 const shippedWeightPreview = selectedQty > 0
                                                     ? calculateWeightPortion(progressInfo.totalWeight, progressInfo.totalQtyKoli, selectedQty)
                                                     : 0;

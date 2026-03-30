@@ -63,8 +63,8 @@ export function convertM3ToVolumeInputValue(valueM3: number, unit: VolumeInputUn
 }
 
 export function formatWeightDisplay(input: {
-  weightKg?: number;
-  weightInputValue?: number;
+  weightKg?: number | string;
+  weightInputValue?: number | string;
   weightInputUnit?: WeightInputUnit;
   includeCanonical?: boolean;
 }) {
@@ -90,8 +90,8 @@ export function formatWeightDisplay(input: {
 }
 
 export function formatVolumeDisplay(input: {
-  volumeM3?: number;
-  volumeInputValue?: number;
+  volumeM3?: number | string;
+  volumeInputValue?: number | string;
   volumeInputUnit?: VolumeInputUnit;
   includeCanonical?: boolean;
 }) {
@@ -120,16 +120,18 @@ export function formatVolumeDisplay(input: {
 }
 
 export function formatCargoSummary(input: {
-  qtyKoli?: number;
-  weightKg?: number;
-  weightInputValue?: number;
+  qtyKoli?: number | string;
+  weightKg?: number | string;
+  weightInputValue?: number | string;
   weightInputUnit?: WeightInputUnit;
-  volumeM3?: number;
-  volumeInputValue?: number;
+  volumeM3?: number | string;
+  volumeInputValue?: number | string;
   volumeInputUnit?: VolumeInputUnit;
 }) {
   const segments: string[] = [];
-  const qtyKoli = Number(input.qtyKoli || 0);
+  const qtyKoli = parseFormattedNumberish(input.qtyKoli || 0, {
+    maxFractionDigits: 2,
+  });
   if (qtyKoli > 0) {
     segments.push(`${formatQuantityValue(qtyKoli)} koli`);
   }

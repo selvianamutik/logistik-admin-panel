@@ -7,6 +7,7 @@ import { Save } from 'lucide-react';
 import CurrencyInput from '@/components/CurrencyInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
+import { parseFormattedNumberish } from '@/lib/formatted-number';
 import type { BankAccount, Driver, DeliveryOrder, DriverVoucher, Order } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
 
@@ -87,7 +88,7 @@ export default function NewDriverVoucherPage() {
         selectedDo?.pickupAddress || selectedOrder?.pickupAddress,
         selectedDo?.receiverAddress || selectedOrder?.receiverAddress,
     ].filter(Boolean).join(' -> ') || '';
-    const effectiveTripFee = Number(form.driverFeeAmount || 0);
+    const effectiveTripFee = parseFormattedNumberish(form.driverFeeAmount || 0);
 
     const handleSave = async () => {
         if (!form.deliveryOrderRef) {
@@ -172,7 +173,7 @@ export default function NewDriverVoucherPage() {
                                     setForm(previous => ({
                                         ...previous,
                                         deliveryOrderRef,
-                                        driverFeeAmount: Number(nextSelectedDo?.taripBorongan || 0),
+                                        driverFeeAmount: parseFormattedNumberish(nextSelectedDo?.taripBorongan || 0),
                                     }));
                                 }}
                             >
