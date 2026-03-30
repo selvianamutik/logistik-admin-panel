@@ -314,6 +314,30 @@ export async function handleCustomerDelete(
         return NextResponse.json({ error: 'Hapus dulu master barang customer sebelum menghapus customer' }, { status: 409 });
     }
 
+    const relatedCustomerRecipient = await getSanityClient().fetch<{ _id: string } | null>(
+        `*[_type == "customerRecipient" && customerRef == $ref][0]{ _id }`,
+        { ref: id }
+    );
+    if (relatedCustomerRecipient) {
+        return NextResponse.json({ error: 'Hapus dulu master penerima customer sebelum menghapus customer' }, { status: 409 });
+    }
+
+    const relatedCustomerPickup = await getSanityClient().fetch<{ _id: string } | null>(
+        `*[_type == "customerPickupLocation" && customerRef == $ref][0]{ _id }`,
+        { ref: id }
+    );
+    if (relatedCustomerPickup) {
+        return NextResponse.json({ error: 'Hapus dulu master pickup customer sebelum menghapus customer' }, { status: 409 });
+    }
+
+    const relatedCustomerReceipt = await getSanityClient().fetch<{ _id: string } | null>(
+        `*[_type == "customerReceipt" && customerRef == $ref][0]{ _id }`,
+        { ref: id }
+    );
+    if (relatedCustomerReceipt) {
+        return NextResponse.json({ error: 'Customer yang sudah dipakai pada penerimaan tidak boleh dihapus' }, { status: 409 });
+    }
+
     await sanityDelete(id);
     await addAuditLog(session, 'DELETE', 'customers', id, `Deleted customers ${customer.name || id}`);
     return NextResponse.json({ success: true });

@@ -330,6 +330,14 @@ export async function handleDriverDelete(
         return NextResponse.json({ error: 'Supir yang sudah dipakai pada uang jalan trip tidak boleh dihapus' }, { status: 409 });
     }
 
+    const relatedIncident = await getSanityClient().fetch<{ _id: string } | null>(
+        `*[_type == "incident" && ((driverRef == $ref || driverRef._ref == $ref) || lower(coalesce(driverName, "")) == $driverName)][0]{ _id }`,
+        { ref: id, driverName: (driver.name || '').toLowerCase() }
+    );
+    if (relatedIncident) {
+        return NextResponse.json({ error: 'Supir yang sudah dipakai pada insiden tidak boleh dihapus' }, { status: 409 });
+    }
+
     const relatedDriverUser = await getSanityClient().fetch<{ _id: string } | null>(
         `*[_type == "user" && role == "DRIVER" && driverRef == $ref][0]{ _id }`,
         { ref: id }
