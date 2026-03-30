@@ -46,9 +46,18 @@ export default function PasswordPage() {
             <div className="card" style={{ maxWidth: 520 }}>
                 <div className="card-body">
                     <form onSubmit={handleSubmit}>
-                        <div className="form-group"><label className="form-label">Password Saat Ini</label><input type="password" className="form-input" value={currentPw} onChange={e => setCurrentPw(e.target.value)} required /></div>
-                        <div className="form-group"><label className="form-label">Password Baru</label><input type="password" className="form-input" value={newPw} onChange={e => setNewPw(e.target.value)} required /><div className="form-hint">Minimal 8 karakter</div></div>
-                        <div className="form-group"><label className="form-label">Konfirmasi Password Baru</label><input type="password" className="form-input" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} required /></div>
+                        <input
+                            type="email"
+                            value={user?.email || ''}
+                            autoComplete="username"
+                            readOnly
+                            tabIndex={-1}
+                            aria-hidden="true"
+                            style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', height: 0, width: 0 }}
+                        />
+                        <div className="form-group"><label className="form-label">Password Saat Ini</label><input type="password" className="form-input" value={currentPw} onChange={e => setCurrentPw(e.target.value)} autoComplete="current-password" required /></div>
+                        <div className="form-group"><label className="form-label">Password Baru</label><input type="password" className="form-input" value={newPw} onChange={e => setNewPw(e.target.value)} autoComplete="new-password" required /><div className="form-hint">Minimal 8 karakter</div></div>
+                        <div className="form-group"><label className="form-label">Konfirmasi Password Baru</label><input type="password" className="form-input" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} autoComplete="new-password" required /></div>
                         <button type="submit" className="btn btn-primary" disabled={loading}><Lock size={16} /> {loading ? 'Menyimpan...' : 'Ubah Password'}</button>
                     </form>
                 </div>

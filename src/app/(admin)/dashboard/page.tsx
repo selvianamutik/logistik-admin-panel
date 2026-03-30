@@ -20,6 +20,7 @@ export default function DashboardPage() {
 
     useEffect(() => {
         const controller = new AbortController();
+        let disposed = false;
 
         async function load() {
             setLoading(true);
@@ -33,7 +34,7 @@ export default function DashboardPage() {
 
                 setData(payload.data);
             } catch (err) {
-                if (controller.signal.aborted || (err instanceof Error && err.name === 'AbortError')) {
+                if (disposed || controller.signal.aborted || (err instanceof Error && err.name === 'AbortError')) {
                     return;
                 }
                 console.error('Dashboard load error:', err);
@@ -48,7 +49,10 @@ export default function DashboardPage() {
         }
         void load();
 
-        return () => controller.abort();
+        return () => {
+            disposed = true;
+            controller.abort();
+        };
     }, [addToast]);
 
     if (loading) {

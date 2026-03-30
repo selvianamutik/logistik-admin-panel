@@ -506,11 +506,17 @@ export async function handleCustomerReceiptCreate(
         let baseCustomerRef = explicitCustomerRef;
         let customerName = '-';
         if (loadedSnapshots.length > 0) {
-            const matchedExplicitCustomerRef =
-                explicitCustomerRef && loadedSnapshots.every(snapshot => snapshot.customerRef === explicitCustomerRef)
-                    ? explicitCustomerRef
-                    : undefined;
-            const derivedCustomerRef = matchedExplicitCustomerRef ?? loadedSnapshots[0]?.customerRef;
+            if (
+                explicitCustomerRef &&
+                loadedSnapshots.some(snapshot => snapshot.customerRef && snapshot.customerRef !== explicitCustomerRef)
+            ) {
+                return NextResponse.json(
+                    { error: 'Customer penerimaan tidak cocok dengan nota yang dipilih' },
+                    { status: 409 }
+                );
+            }
+
+            const derivedCustomerRef = explicitCustomerRef ?? loadedSnapshots[0]?.customerRef;
             const baseCustomerName = loadedSnapshots[0]?.customerName || '-';
 
             if (

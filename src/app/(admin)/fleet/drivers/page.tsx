@@ -479,15 +479,15 @@ export default function DriversPage() {
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Nama Akun Driver <span className="required">*</span></label>
-                                <input className="form-input" value={accountForm.name} onChange={e => setAccountForm({ ...accountForm, name: e.target.value })} />
+                                <input className="form-input" value={accountForm.name} onChange={e => setAccountForm({ ...accountForm, name: e.target.value })} autoComplete="name" />
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Email Login Driver <span className="required">*</span></label>
-                                <input className="form-input" type="email" value={accountForm.email} onChange={e => setAccountForm({ ...accountForm, email: e.target.value })} placeholder="contoh: driver.andi@company.local" />
+                                <input className="form-input" type="email" value={accountForm.email} onChange={e => setAccountForm({ ...accountForm, email: e.target.value })} autoComplete="username" placeholder="contoh: driver.andi@company.local" />
                             </div>
                             <div className="form-group">
                                 <label className="form-label">{accountForm.accountId ? 'Reset Password (opsional)' : 'Password Awal *'}</label>
-                                <input className="form-input" type="password" value={accountForm.password} onChange={e => setAccountForm({ ...accountForm, password: e.target.value })} />
+                                <input className="form-input" type="password" value={accountForm.password} onChange={e => setAccountForm({ ...accountForm, password: e.target.value })} autoComplete="new-password" />
                                 <div className="form-hint">Minimal 8 karakter. Driver login dari halaman <code>/driver/login</code>.</div>
                             </div>
                             <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
