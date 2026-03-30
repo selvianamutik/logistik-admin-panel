@@ -3,7 +3,15 @@ import { NextResponse } from 'next/server';
 import { hashPassword, verifyPassword } from '@/lib/auth';
 import { getSanityClient, sanityDelete, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
 
-import { isPlainObject, normalizeCurrencyNumber, normalizeNumber, normalizeText, type ApiSession } from './data-helpers';
+import {
+    assertIsoDate,
+    isPlainObject,
+    normalizeCurrencyNumber,
+    normalizeNumber,
+    normalizeOptionalText,
+    normalizeText,
+    type ApiSession,
+} from './data-helpers';
 
 type AuditLogFn = (
     session: Pick<ApiSession, '_id' | 'name'>,
@@ -229,18 +237,65 @@ export async function handleInvoiceCreate(
         return NextResponse.json({ error: 'Total invoice tidak valid' }, { status: 400 });
     }
 
+    const issueDate =
+        normalizeOptionalText(data.issueDate) ||
+        normalizeOptionalText(data.date) ||
+        new Date().toISOString().slice(0, 10);
+    const dueDate =
+        normalizeOptionalText(data.dueDate) ||
+        normalizeOptionalText(data.date) ||
+        issueDate;
+    try {
+        assertIsoDate(issueDate, 'Tanggal invoice');
+        assertIsoDate(dueDate, 'Tanggal jatuh tempo invoice');
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Tanggal invoice tidak valid' },
+            { status: 400 }
+        );
+    }
+
+    const mode =
+        typeof data.mode === 'string' && (data.mode === 'ORDER' || data.mode === 'DO') ? data.mode : 'ORDER';
+    const orderRef = normalizeOptionalText(data.orderRef);
+    const doRef = normalizeOptionalText(data.doRef);
+    const customerRef = normalizeOptionalText(data.customerRef);
+    const customerName = normalizeOptionalText(data.customerName);
+    const masterResi = normalizeOptionalText(data.masterResi);
+    const notes = normalizeOptionalText(data.notes);
+
     const invoiceId = crypto.randomUUID();
     const invoiceNumber = await sanityGetNextNumber('invoice');
-    const invoiceDoc = {
+    const invoiceDoc: { _id: string; _type: 'invoice'; [key: string]: unknown } = {
         _id: invoiceId,
         _type: 'invoice',
-        ...data,
         invoiceNumber,
+        mode,
+        issueDate,
+        dueDate,
         status: 'UNPAID',
         totalAmount,
         totalAdjustmentAmount: 0,
         netAmount: totalAmount,
     };
+    if (orderRef) {
+        invoiceDoc.orderRef = orderRef;
+    }
+    if (doRef) {
+        invoiceDoc.doRef = doRef;
+    }
+    if (customerRef) {
+        invoiceDoc.customerRef = customerRef;
+    }
+    if (customerName) {
+        invoiceDoc.customerName = customerName;
+    }
+    if (masterResi) {
+        invoiceDoc.masterResi = masterResi;
+    }
+    if (notes) {
+        invoiceDoc.notes = notes;
+    }
 
     const transaction = getSanityClient().transaction().create(invoiceDoc);
     for (const item of items) {

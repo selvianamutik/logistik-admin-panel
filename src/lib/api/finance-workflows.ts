@@ -325,15 +325,22 @@ export async function handlePaymentCreate(
         const { bankAcc } = resolvedBank;
 
         const nextTotalPaid = loaded.totalPaid + amount;
+        const paymentNote = normalizeOptionalText(data.note);
+        const paymentAttachmentUrl = normalizeOptionalText(data.attachmentUrl);
         const paymentDoc: { _id: string; _type: 'payment'; [key: string]: unknown } = {
             _id: paymentId,
             _type: 'payment',
-            ...data,
             invoiceRef,
             date: paymentDate,
             amount,
             method: paymentMethod,
         };
+        if (paymentNote) {
+            paymentDoc.note = paymentNote;
+        }
+        if (paymentAttachmentUrl) {
+            paymentDoc.attachmentUrl = paymentAttachmentUrl;
+        }
         if (bankAcc) {
             paymentDoc.bankAccountRef = bankAcc._id;
             paymentDoc.bankAccountName = bankAcc.bankName;

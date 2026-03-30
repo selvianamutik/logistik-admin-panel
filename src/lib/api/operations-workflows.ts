@@ -9,6 +9,7 @@ import {
 } from './data-helpers';
 import {
     normalizeDriverPayload,
+    normalizeOptionalWholeNumber,
 } from './operations-workflow-support';
 
 export {
@@ -41,6 +42,22 @@ export async function handleIncidentCreate(
     addAuditLog: AuditLogFn
 ) {
     const description = typeof data.description === 'string' ? data.description.trim() : '';
+    const incidentType =
+        data.incidentType === 'BLOWOUT_TIRE' ||
+        data.incidentType === 'ENGINE_TROUBLE' ||
+        data.incidentType === 'ACCIDENT_MINOR' ||
+        data.incidentType === 'ACCIDENT_MAJOR'
+            ? data.incidentType
+            : 'OTHER';
+    const urgency =
+        data.urgency === 'LOW' || data.urgency === 'HIGH'
+            ? data.urgency
+            : 'MEDIUM';
+    const locationText =
+        typeof data.locationText === 'string' && data.locationText.trim()
+            ? data.locationText.trim()
+            : '';
+    const odometer = normalizeOptionalWholeNumber(data.odometer, 'Odometer insiden');
     const relatedDeliveryOrderRef =
         typeof data.relatedDeliveryOrderRef === 'string' && data.relatedDeliveryOrderRef
             ? data.relatedDeliveryOrderRef
@@ -54,10 +71,7 @@ export async function handleIncidentCreate(
         typeof data.driverRef === 'string' && data.driverRef.trim()
             ? data.driverRef.trim()
             : undefined;
-    let driverName =
-        typeof data.driverName === 'string' && data.driverName.trim()
-            ? data.driverName.trim()
-            : undefined;
+    let driverName: string | undefined;
     let relatedDONumber =
         typeof data.relatedDONumber === 'string' && data.relatedDONumber.trim()
             ? data.relatedDONumber.trim()
@@ -84,7 +98,11 @@ export async function handleIncidentCreate(
             return NextResponse.json({ error: 'Kendaraan insiden tidak cocok dengan DO terkait' }, { status: 409 });
         }
         vehiclePlate = deliveryOrder.vehiclePlate || vehiclePlate;
-        driverRef = deliveryOrder.driverRef || driverRef;
+        if (!driverRef && deliveryOrder.driverRef) {
+            driverRef = deliveryOrder.driverRef;
+        } else if (driverRef && deliveryOrder.driverRef && driverRef !== deliveryOrder.driverRef) {
+            return NextResponse.json({ error: 'Supir insiden tidak cocok dengan DO terkait' }, { status: 409 });
+        }
         driverName = deliveryOrder.driverName || driverName;
     }
 
@@ -100,6 +118,14 @@ export async function handleIncidentCreate(
         return NextResponse.json({ error: 'Kendaraan yang sudah dijual tidak bisa dilaporkan sebagai insiden baru' }, { status: 409 });
     }
     vehiclePlate = vehiclePlate || vehicle.plateNumber;
+
+    if (driverRef) {
+        const driver = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(driverRef);
+        if (!driver) {
+            return NextResponse.json({ error: 'Supir insiden tidak ditemukan' }, { status: 404 });
+        }
+        driverName = driver.name || driverName;
+    }
 
     const incidentId = crypto.randomUUID();
     const incidentNumber = await sanityGetNextNumber('incident');
@@ -123,10 +149,12 @@ export async function handleIncidentCreate(
         typeof data.dateTime === 'string' && data.dateTime
             ? data.dateTime
             : timestamp.slice(0, 16);
+    if (Number.isNaN(new Date(incidentDateTime).getTime())) {
+        return NextResponse.json({ error: 'Waktu insiden tidak valid' }, { status: 400 });
+    }
     const incidentDoc = {
         _id: incidentId,
         _type: 'incident',
-        ...data,
         vehicleRef,
         vehiclePlate,
         driverRef,
@@ -134,6 +162,10 @@ export async function handleIncidentCreate(
         relatedDeliveryOrderRef,
         relatedDONumber,
         description,
+        incidentType,
+        urgency,
+        locationText,
+        odometer,
         incidentNumber,
         issuerCompanyName: companyProfile?.name,
         issuerCompanyAddress: companyProfile?.address,

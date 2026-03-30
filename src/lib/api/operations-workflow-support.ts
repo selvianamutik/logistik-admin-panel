@@ -64,6 +64,48 @@ function normalizeOptionalNonNegativeNumber(value: unknown, label: string) {
     return normalized;
 }
 
+export function normalizeOptionalWholeNumber(value: unknown, label: string) {
+    if (value === '' || value === null || value === undefined) {
+        return undefined;
+    }
+
+    if (typeof value === 'number') {
+        if (!Number.isFinite(value) || value < 0 || !Number.isInteger(value)) {
+            throw new Error(`${label} harus berupa angka bulat`);
+        }
+        return value;
+    }
+
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed) {
+            return undefined;
+        }
+
+        const parts = trimmed.replace(/\s+/g, '').split(/[,.]/);
+        if (parts.length > 1) {
+            const tailGroups = parts
+                .slice(1)
+                .map(part => part.replace(/\D/g, ''))
+                .filter(Boolean);
+            const hasValidThousandsGrouping =
+                tailGroups.length > 0 &&
+                tailGroups.every(part => part.length === 3);
+
+            if (!hasValidThousandsGrouping) {
+                throw new Error(`${label} harus berupa angka bulat`);
+            }
+        }
+    }
+
+    const normalized = normalizeNumber(value, { allowDecimal: false, maxFractionDigits: 0 });
+    if (!Number.isFinite(normalized) || normalized < 0) {
+        throw new Error(`${label} tidak valid`);
+    }
+
+    return normalized;
+}
+
 function normalizeTirePositionKey(posisi: string) {
     return posisi.trim().toLowerCase().replace(/\s+/g, ' ');
 }
@@ -395,7 +437,7 @@ export async function normalizeVehiclePayload(
     }
 
     if (!partial || hasOwnKey(data, 'lastOdometer')) {
-        const lastOdometer = normalizeOptionalNonNegativeNumber(data.lastOdometer, 'Odometer kendaraan') ?? 0;
+        const lastOdometer = normalizeOptionalWholeNumber(data.lastOdometer, 'Odometer kendaraan') ?? 0;
         if (
             existingVehicle &&
             typeof existingVehicle.lastOdometer === 'number' &&
@@ -482,9 +524,8 @@ export async function normalizeMaintenanceCreatePayload(data: Record<string, unk
         };
     }
 
-    const plannedOdometer =
-        typeof data.plannedOdometer === 'number' ? data.plannedOdometer : Number(data.plannedOdometer);
-    if (!Number.isFinite(plannedOdometer) || plannedOdometer <= 0) {
+    const plannedOdometer = normalizeOptionalWholeNumber(data.plannedOdometer, 'Odometer maintenance');
+    if (plannedOdometer === undefined || !Number.isFinite(plannedOdometer) || plannedOdometer <= 0) {
         throw new Error('Odometer maintenance wajib lebih besar dari 0');
     }
 
