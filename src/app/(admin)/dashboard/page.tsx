@@ -19,11 +19,13 @@ export default function DashboardPage() {
     const [loadError, setLoadError] = useState<string | null>(null);
 
     useEffect(() => {
+        const controller = new AbortController();
+
         async function load() {
             setLoading(true);
             setLoadError(null);
             try {
-                const res = await fetch('/api/data?entity=dashboard-summary');
+                const res = await fetch('/api/data?entity=dashboard-summary', { signal: controller.signal });
                 const payload = await res.json();
                 if (!res.ok) {
                     throw new Error(payload.error || 'Gagal memuat dashboard');
@@ -31,15 +33,22 @@ export default function DashboardPage() {
 
                 setData(payload.data);
             } catch (err) {
+                if (controller.signal.aborted || (err instanceof Error && err.name === 'AbortError')) {
+                    return;
+                }
                 console.error('Dashboard load error:', err);
                 const message = err instanceof Error ? err.message : 'Gagal memuat dashboard';
                 setLoadError(message);
                 addToast('error', message);
             } finally {
-                setLoading(false);
+                if (!controller.signal.aborted) {
+                    setLoading(false);
+                }
             }
         }
         void load();
+
+        return () => controller.abort();
     }, [addToast]);
 
     if (loading) {
