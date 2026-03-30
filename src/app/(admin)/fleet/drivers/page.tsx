@@ -41,6 +41,8 @@ export default function DriversPage() {
     const [accountForm, setAccountForm] = useState(createDefaultDriverAccessForm());
     const canCreateDrivers = user ? hasPermission(user.role, 'drivers', 'create') : false;
     const canManageDrivers = user ? hasPermission(user.role, 'drivers', 'update') : false;
+    const canViewDriverAccounts = user ? (user.role === 'OWNER' || user.role === 'ARMADA') : false;
+    const canManageDriverAccounts = canViewDriverAccounts && canManageDrivers;
 
     useEffect(() => {
         setPage(1);
@@ -64,37 +66,58 @@ export default function DriversPage() {
             const drivers = (listPayload.data || []) as Driver[];
             const driverRefs = drivers.map(driver => driver._id).join(',');
 
-            const [accountsRes, activeRes, inactiveRes, mobileReadyRes] = await Promise.all([
-                fetch(`/api/driver/accounts${driverRefs ? `?driverRefs=${encodeURIComponent(driverRefs)}` : ''}`),
+            const statsRequests: Promise<Response>[] = [
                 fetch(`/api/data?entity=drivers&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ active: true }))}`),
                 fetch(`/api/data?entity=drivers&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ active: false }))}`),
-                fetch('/api/driver/accounts?countOnly=1&activeOnly=1'),
-            ]);
+            ];
+            if (canViewDriverAccounts) {
+                statsRequests.unshift(
+                    fetch(`/api/driver/accounts${driverRefs ? `?driverRefs=${encodeURIComponent(driverRefs)}` : ''}`),
+                );
+                statsRequests.push(fetch('/api/driver/accounts?countOnly=1&activeOnly=1'));
+            }
 
-            const [accountsPayload, activePayload, inactivePayload, mobileReadyPayload] = await Promise.all([
-                accountsRes.json(),
-                activeRes.json(),
-                inactiveRes.json(),
-                mobileReadyRes.json(),
-            ]);
+            const responses = await Promise.all(statsRequests);
+            const payloads = await Promise.all(responses.map(async response => ({
+                ok: response.ok,
+                payload: await response.json(),
+            })));
 
-            if (!accountsRes.ok) throw new Error(accountsPayload.error || 'Gagal memuat akses mobile driver');
-            if (!activeRes.ok) throw new Error(activePayload.error || 'Gagal memuat statistik supir');
-            if (!inactiveRes.ok) throw new Error(inactivePayload.error || 'Gagal memuat statistik supir');
-            if (!mobileReadyRes.ok) throw new Error(mobileReadyPayload.error || 'Gagal memuat statistik app driver');
+            let accountsPayload: { data?: DriverMobileAccount[]; error?: string } = {};
+            let activePayload: { meta?: { total?: number }; error?: string };
+            let inactivePayload: { meta?: { total?: number }; error?: string };
+            let mobileReadyPayload: { meta?: { total?: number }; error?: string } = {};
+
+            if (canViewDriverAccounts) {
+                const [accountsResult, activeResult, inactiveResult, mobileReadyResult] = payloads;
+                if (!accountsResult.ok) throw new Error(accountsResult.payload.error || 'Gagal memuat akses mobile driver');
+                if (!activeResult.ok) throw new Error(activeResult.payload.error || 'Gagal memuat statistik supir');
+                if (!inactiveResult.ok) throw new Error(inactiveResult.payload.error || 'Gagal memuat statistik supir');
+                if (!mobileReadyResult.ok) throw new Error(mobileReadyResult.payload.error || 'Gagal memuat statistik app driver');
+                accountsPayload = accountsResult.payload;
+                activePayload = activeResult.payload;
+                inactivePayload = inactiveResult.payload;
+                mobileReadyPayload = mobileReadyResult.payload;
+            } else {
+                const [activeResult, inactiveResult] = payloads;
+                if (!activeResult.ok) throw new Error(activeResult.payload.error || 'Gagal memuat statistik supir');
+                if (!inactiveResult.ok) throw new Error(inactiveResult.payload.error || 'Gagal memuat statistik supir');
+                activePayload = activeResult.payload;
+                inactivePayload = inactiveResult.payload;
+            }
 
             setItems(drivers);
             setTotalDrivers(listPayload.meta?.total || 0);
-            setAccounts(accountsPayload.data || []);
+            setAccounts(canViewDriverAccounts ? (accountsPayload.data || []) : []);
             setActiveDrivers(activePayload.meta?.total || 0);
             setInactiveDrivers(inactivePayload.meta?.total || 0);
-            setMobileReadyDrivers(mobileReadyPayload.meta?.total || 0);
+            setMobileReadyDrivers(canViewDriverAccounts ? (mobileReadyPayload.meta?.total || 0) : 0);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat data supir');
         } finally {
             setLoading(false);
         }
-    }, [addToast, buildCurrentDriversQuery]);
+    }, [addToast, buildCurrentDriversQuery, canViewDriverAccounts]);
 
     useEffect(() => {
         void loadDrivers();
@@ -183,6 +206,10 @@ export default function DriversPage() {
     };
 
     const openAccessModal = (driver: Driver) => {
+        if (!canManageDriverAccounts) {
+            addToast('error', 'Akses akun mobile driver hanya untuk owner dan armada');
+            return;
+        }
         if (!isDriverActive(driver)) {
             addToast('error', 'Aktifkan supir dulu sebelum mengatur akses mobile');
             return;
@@ -283,7 +310,7 @@ export default function DriversPage() {
                 </div></div>
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Supir Aktif</div><div className="kpi-value">{activeDrivers}</div></div></div>
-                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Siap App Driver</div><div className="kpi-value">{mobileReadyDrivers}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">{canViewDriverAccounts ? 'Siap App Driver' : 'Total Supir'}</div><div className="kpi-value">{canViewDriverAccounts ? mobileReadyDrivers : totalDrivers}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Supir Nonaktif</div><div className="kpi-value">{inactiveDrivers}</div></div></div>
             </div>
             <div className="table-container">
@@ -303,7 +330,9 @@ export default function DriversPage() {
                                                 <td>{driver.licenseNumber || '-'}</td>
                                                 <td className="text-muted">{driver.simExpiry || '-'}</td>
                                                 <td>
-                                                    {account ? (
+                                                    {!canViewDriverAccounts ? (
+                                                        <span className="text-muted">Hanya owner / armada</span>
+                                                    ) : account ? (
                                                         <div>
                                                             <div className="font-medium" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                                                                 <Smartphone size={14} /> {account.email}
@@ -321,7 +350,7 @@ export default function DriversPage() {
                                                 <td>
                                                     <div style={{ display: 'flex', gap: '0.25rem' }}>
                                                         {canManageDrivers && <button className="btn btn-ghost btn-sm" onClick={() => openEdit(driver)} title="Edit"><Edit2 size={14} /></button>}
-                                                        {canManageDrivers && <button
+                                                        {canManageDriverAccounts && <button
                                                             className="btn btn-ghost btn-sm"
                                                             onClick={() => openAccessModal(driver)}
                                                             title={isDriverActive(driver) ? 'Atur akses mobile' : 'Aktifkan supir dulu untuk mengatur akses mobile'}
@@ -365,9 +394,11 @@ export default function DriversPage() {
                                         <div className="mobile-record-kv">
                                             <span className="mobile-record-label">Akses Mobile</span>
                                             <span className="mobile-record-value">
-                                                {account
-                                                    ? `${account.email} | ${isDriverAccountActive(account) ? 'Aktif' : 'Non-aktif'}${account.lastLoginAt ? ` | Login ${formatDateTime(account.lastLoginAt)}` : ''}`
-                                                    : 'Belum ada akun mobile'}
+                                                {!canViewDriverAccounts
+                                                    ? 'Hanya owner / armada'
+                                                    : account
+                                                        ? `${account.email} | ${isDriverAccountActive(account) ? 'Aktif' : 'Non-aktif'}${account.lastLoginAt ? ` | Login ${formatDateTime(account.lastLoginAt)}` : ''}`
+                                                        : 'Belum ada akun mobile'}
                                             </span>
                                         </div>
                                     </div>
@@ -375,7 +406,7 @@ export default function DriversPage() {
                                         {canManageDrivers && <button className="btn btn-secondary" onClick={() => openEdit(driver)}>
                                             <Edit2 size={14} /> Edit
                                         </button>}
-                                        {canManageDrivers && <button
+                                        {canManageDriverAccounts && <button
                                             className="btn btn-secondary"
                                             onClick={() => openAccessModal(driver)}
                                             disabled={!isDriverActive(driver) || togglingDriverId === driver._id}
