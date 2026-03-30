@@ -103,7 +103,7 @@ export function sanitizeCompanyProfileForRole(
             notaPrefix: undefined,
             notaCounter: undefined,
             notaPeriod: undefined,
-            notaSeriesCode: company.numberingSettings?.notaSeriesCode,
+            notaSeriesCode: canSeeInvoiceFinanceContext ? company.numberingSettings?.notaSeriesCode : undefined,
             receiptPrefix: undefined,
             receiptCounter: undefined,
             receiptPeriod: undefined,
@@ -118,8 +118,8 @@ export function sanitizeCompanyProfileForRole(
             incidentPeriod: undefined,
         },
         invoiceSettings: {
-            defaultTermDays: company.invoiceSettings?.defaultTermDays ?? 14,
-            dueDateDays: company.invoiceSettings?.dueDateDays ?? company.invoiceSettings?.defaultTermDays ?? 14,
+            defaultTermDays: canSeeInvoiceFinanceContext ? company.invoiceSettings?.defaultTermDays ?? 14 : 0,
+            dueDateDays: canSeeInvoiceFinanceContext ? company.invoiceSettings?.dueDateDays ?? company.invoiceSettings?.defaultTermDays ?? 14 : 0,
             footerNote: canSeeInvoiceFinanceContext ? company.invoiceSettings?.footerNote || '' : '',
             invoiceMode: canSeeInvoiceFinanceContext ? company.invoiceSettings?.invoiceMode || 'DO' : 'DO',
             invoiceBankAccountRefs: canSeeInvoiceFinanceContext
