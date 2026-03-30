@@ -22,7 +22,7 @@ import {
     resolvePaymentAccountLabel,
     sortInvoiceAdjustments,
 } from '@/lib/invoice-detail-page-support';
-import { buildFreightNotaPrintDocument, fetchCompanyProfile, formatFreightNotaDisplayNumber, openBrandedPrint, resolveDocumentIssuerProfile } from '@/lib/print';
+import { buildFreightNotaPrintDocument, fetchCompanyProfile, formatFreightNotaDisplayNumber, openBrandedPrint, openPrintWindow, resolveDocumentIssuerProfile } from '@/lib/print';
 import { exportFreightNotaDetail } from '@/lib/export';
 import { formatDate, formatCurrency, formatQuantity, INVOICE_ADJUSTMENT_KIND_MAP, PAYMENT_METHOD_MAP } from '@/lib/utils';
 import type { FreightNota, FreightNotaItem, Payment, BankAccount, CompanyProfile, InvoiceAdjustment, Customer } from '@/lib/types';
@@ -232,6 +232,11 @@ export default function NotaDetailPage() {
 
     const handlePrint = async () => {
         if (!nota) return;
+        const printWindow = openPrintWindow('Menyiapkan cetak nota...');
+        if (!printWindow) {
+            addToast('error', 'Popup browser diblok. Izinkan pop-up lalu coba cetak lagi.');
+            return;
+        }
         try {
             const resolvedCompany = company ?? await fetchCompanyProfile().catch(() => null);
             const issuerBranding = resolveDocumentIssuerProfile(nota, resolvedCompany);
@@ -251,8 +256,12 @@ export default function NotaDetailPage() {
                 extraStyles: doc.extraStyles,
                 showCompanyHeader: doc.showCompanyHeader,
                 showFooter: doc.showFooter,
+                targetWindow: printWindow,
             });
         } catch {
+            try {
+                printWindow.close();
+            } catch {}
             addToast('error', 'Gagal menyiapkan dokumen cetak');
         }
     };

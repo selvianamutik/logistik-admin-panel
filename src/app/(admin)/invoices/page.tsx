@@ -8,7 +8,7 @@ import CurrencyInput from '@/components/CurrencyInput';
 import { fetchAdminCollectionData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { formatFreightNotaDisplayWeight, normalizeFreightNotaBillingMode } from '@/lib/freight-nota-billing';
 import { formatDate, formatCurrency, formatQuantity, getReceivableNetAmount, PAYMENT_METHOD_MAP } from '@/lib/utils';
-import { buildFreightNotaPrintDocument, openBrandedPrint, fetchCompanyProfile, formatFreightNotaDisplayNumber, resolveDocumentIssuerProfile } from '@/lib/print';
+import { buildFreightNotaPrintDocument, openBrandedPrint, openPrintWindow, fetchCompanyProfile, formatFreightNotaDisplayNumber, resolveDocumentIssuerProfile } from '@/lib/print';
 import { exportFreightNotaDetail, exportInvoices } from '@/lib/export';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { BankAccount, CompanyProfile, Customer, CustomerReceipt, FreightNota, FreightNotaItem, Payment } from '@/lib/types';
@@ -460,6 +460,11 @@ export default function NotaListPage() {
     };
 
     const handlePrintNota = async (nota: FreightNota) => {
+        const printWindow = openPrintWindow('Menyiapkan cetak nota...');
+        if (!printWindow) {
+            addToast('error', 'Popup browser diblok. Izinkan pop-up lalu coba cetak lagi.');
+            return;
+        }
         try {
             const [resolvedCompany, notaItems, customer] = await Promise.all([
                 company ? Promise.resolve(company) : fetchCompanyProfile().catch(() => null),
@@ -485,9 +490,41 @@ export default function NotaListPage() {
                 extraStyles: doc.extraStyles,
                 showCompanyHeader: doc.showCompanyHeader,
                 showFooter: doc.showFooter,
+                targetWindow: printWindow,
             });
         } catch {
+            try {
+                printWindow.close();
+            } catch {}
             addToast('error', 'Gagal menyiapkan cetak nota');
+        }
+    };
+
+    const handlePrintInvoiceList = async () => {
+        const printWindow = openPrintWindow('Menyiapkan print daftar nota...');
+        if (!printWindow) {
+            addToast('error', 'Popup browser diblok. Izinkan pop-up lalu coba print lagi.');
+            return;
+        }
+        try {
+            const [allMatchingNotas, co] = await Promise.all([
+                fetchAllMatchingInvoices(),
+                company ? Promise.resolve(company) : fetchCompanyProfile().catch(() => null),
+            ]);
+            setCompany(co);
+            const grandTotal = allMatchingNotas.reduce((sum, nota) => sum + getReceivableNetAmount(nota), 0);
+            openBrandedPrint({
+                title: 'Daftar Nota Ongkos Angkut', company: co, bodyHtml: `
+                    <table><thead><tr><th>No. Nota</th><th>Customer</th><th>Tanggal</th><th>Total Collie</th><th>Total Berat Tagih</th><th class="r">Tagihan Netto</th><th>Status</th></tr></thead>
+                    <tbody>${allMatchingNotas.map(n => `<tr><td><div class="b">${formatFreightNotaDisplayNumber(n, co)}</div><div style="font-size:11px;color:#64748b">${n.notaNumber}</div></td><td>${n.customerName}</td><td>${formatDate(n.issueDate)}</td><td>${formatQuantity(n.totalCollie || 0)}</td><td>${formatFreightNotaDisplayWeight({ beratKg: n.totalWeightKg || 0, billingMode: normalizeFreightNotaBillingMode(n.billingMode), includeCanonical: false })}</td><td class="r b">${formatCurrency(getReceivableNetAmount(n))}</td><td>${STATUS_MAP[n.status]?.label || n.status}</td></tr>`).join('')}
+                    <tr style="border-top:2px solid #1e293b"><td colspan="5" class="r b">TOTAL</td><td class="r b">${formatCurrency(grandTotal)}</td><td></td></tr></tbody></table>`,
+                targetWindow: printWindow,
+            });
+        } catch (error) {
+            try {
+                printWindow.close();
+            } catch {}
+            addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan dokumen print daftar nota');
         }
     };
 
@@ -527,21 +564,7 @@ export default function NotaListPage() {
                     >
                         <FileDown size={15} /> Excel
                     </button>}
-                    {canPrintInvoices && <button className="btn btn-secondary btn-sm" onClick={async () => {
-                        try {
-                            const co = company ?? await fetchCompanyProfile().catch(() => null);
-                            const allMatchingNotas = await fetchAllMatchingInvoices();
-                            setCompany(co);
-                            openBrandedPrint({
-                                title: 'Daftar Nota Ongkos Angkut', company: co, bodyHtml: `
-                                <table><thead><tr><th>No. Nota</th><th>Customer</th><th>Tanggal</th><th>Total Collie</th><th>Total Berat Tagih</th><th class="r">Tagihan Netto</th><th>Status</th></tr></thead>
-                    <tbody>${allMatchingNotas.map(n => `<tr><td><div class="b">${formatFreightNotaDisplayNumber(n, co)}</div><div style="font-size:11px;color:#64748b">${n.notaNumber}</div></td><td>${n.customerName}</td><td>${formatDate(n.issueDate)}</td><td>${formatQuantity(n.totalCollie || 0)}</td><td>${formatFreightNotaDisplayWeight({ beratKg: n.totalWeightKg || 0, billingMode: normalizeFreightNotaBillingMode(n.billingMode), includeCanonical: false })}</td><td class="r b">${formatCurrency(getReceivableNetAmount(n))}</td><td>${STATUS_MAP[n.status]?.label || n.status}</td></tr>`).join('')}
-                                <tr style="border-top:2px solid #1e293b"><td colspan="5" class="r b">TOTAL</td><td class="r b">${formatCurrency(grandTotal)}</td><td></td></tr></tbody></table>`
-                            });
-                        } catch (error) {
-                            addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan dokumen print daftar nota');
-                        }
-                    }}><Printer size={15} /> Print</button>}
+                    {canPrintInvoices && <button className="btn btn-secondary btn-sm" onClick={() => void handlePrintInvoiceList()}><Printer size={15} /> Print</button>}
                     {canCreateInvoice && <button className="btn btn-primary" onClick={() => router.push('/invoices/new')}><Plus size={18} /> Buat Nota Baru</button>}
                 </div>
             </div>

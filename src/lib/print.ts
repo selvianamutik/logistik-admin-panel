@@ -136,6 +136,26 @@ export function buildInvoiceInstructionAccountText(account: InvoiceInstructionAc
     ].filter(Boolean).join(' | ');
 }
 
+export function openPrintWindow(loadingTitle: string = 'Menyiapkan dokumen cetak...') {
+    const w = window.open('', '_blank');
+    if (!w) return null;
+    try {
+        w.opener = null;
+    } catch {
+        // Ignore cross-window hardening failures; print flow can continue.
+    }
+
+    const safeTitle = escapePrintHtml(loadingTitle);
+    w.document.write(`<!DOCTYPE html><html><head><title>${safeTitle}</title><style>
+        body { font-family: 'Segoe UI', -apple-system, sans-serif; padding: 2rem; color: #1e293b; }
+        .print-loading { display: flex; align-items: center; gap: 0.75rem; font-size: 0.95rem; }
+        .print-loading-dot { width: 0.75rem; height: 0.75rem; border-radius: 999px; background: #1e40af; animation: pulse 1s infinite alternate; }
+        @keyframes pulse { from { opacity: 0.35; transform: scale(0.92); } to { opacity: 1; transform: scale(1); } }
+    </style></head><body><div class="print-loading"><div class="print-loading-dot"></div><div>${safeTitle}</div></div></body></html>`);
+    w.document.close();
+    return w;
+}
+
 export function openBrandedPrint(opts: {
     title: string;
     subtitle?: string;
@@ -144,14 +164,12 @@ export function openBrandedPrint(opts: {
     extraStyles?: string;
     showCompanyHeader?: boolean;
     showFooter?: boolean;
+    targetWindow?: Window | null;
 }) {
-    const w = window.open('', '_blank', 'noopener,noreferrer');
+    const w = opts.targetWindow && !opts.targetWindow.closed
+        ? opts.targetWindow
+        : openPrintWindow(opts.title);
     if (!w) return;
-    try {
-        w.opener = null;
-    } catch {
-        // Ignore cross-window hardening failures; print flow can continue.
-    }
 
     const {
         title,
@@ -161,7 +179,9 @@ export function openBrandedPrint(opts: {
         extraStyles,
         showCompanyHeader = true,
         showFooter = true,
+        targetWindow: _targetWindow,
     } = opts;
+    void _targetWindow;
 
     const companyName = company?.name || 'Gading Mas Surya';
     const companyLogo = resolveCompanyLogoUrl(company);
