@@ -513,6 +513,7 @@ export async function normalizeMaintenanceCreatePayload(data: Record<string, unk
         if (!plannedDate) {
             throw new Error('Tanggal maintenance wajib diisi');
         }
+        assertIsoDate(plannedDate, 'Tanggal maintenance');
 
         return {
             vehicleRef,

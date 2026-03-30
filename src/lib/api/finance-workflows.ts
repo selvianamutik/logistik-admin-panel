@@ -1134,6 +1134,10 @@ export async function handleFreightNotaCreate(
             const tarip = normalizeCurrencyNumber(row.tarip);
             const collie = normalizeNumber(row.collie ?? 0);
 
+            if (date) {
+                assertIsoDate(date, 'Tanggal baris nota');
+            }
+
             if ((!date || !noSJ || !tujuan) && !doRef) {
                 throw new Error('Baris nota wajib punya tanggal, nomor SJ, dan tujuan');
             }
@@ -1373,6 +1377,7 @@ export async function handleFreightNotaCreate(
     }
 
     const issueDate = normalizeText(data.issueDate) || new Date().toISOString().slice(0, 10);
+    assertIsoDate(issueDate, 'Tanggal nota');
     const customerDerivedFromDo = Boolean(inferredCustomerRef && inferredCustomerRef === resolvedCustomerRef && deliveryOrders.length > 0);
     let finalCustomerName = customerName;
     let finalCustomerAddress = normalizeOptionalText(data.customerAddress);
@@ -1449,6 +1454,9 @@ export async function handleFreightNotaCreate(
         notaSeriesCode,
     );
     let resolvedDueDate = normalizeOptionalText(data.dueDate);
+    if (resolvedDueDate) {
+        assertIsoDate(resolvedDueDate, 'Tanggal jatuh tempo nota');
+    }
     if (!resolvedDueDate) {
         let termDays = customerTermDays;
         if (termDays === null) {
