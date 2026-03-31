@@ -61,9 +61,20 @@ export function applyDerivedDriverVoucherFinancials<T extends {
     driverFeeAmount?: number | string | null;
     totalClaimAmount?: number | string | null;
     balance?: number | string | null;
+    status?: string | null;
+    settledDate?: string | null;
+    settledBy?: string | null;
+    settlementBankRef?: string | null;
+    settlementBankName?: string | null;
 }>(vouchers: T[]) {
     return vouchers.map(voucher => {
         const summary = getDriverVoucherFinancialSummary(voucher);
+        const hasSettlementMarker = Boolean(
+            voucher.settledDate ||
+            voucher.settledBy ||
+            voucher.settlementBankRef ||
+            voucher.settlementBankName
+        );
         return {
             ...voucher,
             initialCashGiven: summary.initialCashGiven,
@@ -72,6 +83,11 @@ export function applyDerivedDriverVoucherFinancials<T extends {
             driverFeeAmount: summary.driverFeeAmount,
             totalClaimAmount: summary.totalClaimAmount,
             balance: summary.balance,
+            status: hasSettlementMarker
+                ? 'SETTLED'
+                : summary.totalIssuedAmount > 0
+                    ? 'ISSUED'
+                    : 'DRAFT',
         };
     });
 }
@@ -87,6 +103,11 @@ export function applyDerivedDriverVoucherLedger<
         driverFeeAmount?: number | string | null;
         totalClaimAmount?: number | string | null;
         balance?: number | string | null;
+        status?: string | null;
+        settledDate?: string | null;
+        settledBy?: string | null;
+        settlementBankRef?: string | null;
+        settlementBankName?: string | null;
     }
 >(
     vouchers: T[],
@@ -126,6 +147,12 @@ export function applyDerivedDriverVoucherLedger<
         const totalSpent = derivedTotalSpent !== undefined ? derivedTotalSpent : fallback.totalSpent;
         const topUpCount = derivedDisbursement ? derivedDisbursement.topUpCount : Math.max(parseFormattedNumberish(voucher.topUpCount ?? 0, { maxFractionDigits: 0 }), 0);
         const driverFeeAmount = Math.max(parseFormattedNumberish(voucher.driverFeeAmount ?? fallback.driverFeeAmount, { maxFractionDigits: 0 }), 0);
+        const hasSettlementMarker = Boolean(
+            voucher.settledDate ||
+            voucher.settledBy ||
+            voucher.settlementBankRef ||
+            voucher.settlementBankName
+        );
         const summary = getDriverVoucherFinancialSummary({
             initialCashGiven,
             cashGiven: initialCashGiven,
@@ -144,6 +171,11 @@ export function applyDerivedDriverVoucherLedger<
             driverFeeAmount: summary.driverFeeAmount,
             totalClaimAmount: summary.totalClaimAmount,
             balance: summary.balance,
+            status: hasSettlementMarker
+                ? 'SETTLED'
+                : summary.totalIssuedAmount > 0
+                    ? 'ISSUED'
+                    : 'DRAFT',
         };
     });
 }
@@ -443,6 +475,130 @@ export async function getDriverVoucherById(id: string) {
     ]);
     if (!voucher) return null;
     return applyDerivedDriverVoucherLedger([voucher], disbursements, items)[0];
+}
+
+function matchesDriverVoucherFilter(
+    voucher: Record<string, unknown>,
+    filterObj: Record<string, unknown>,
+    orFilters: Array<{ fields: string[]; value: string | number | boolean }>,
+    definedFields: string[],
+    search: string,
+    searchFields: string[]
+) {
+    const matchesSearch =
+        !search ||
+        searchFields.length === 0 ||
+        searchFields.some(field => {
+            const value = voucher[field];
+            return typeof value === 'string' && value.toLowerCase().includes(search);
+        });
+
+    if (!matchesSearch) return false;
+
+    const matchesFilter = Object.entries(filterObj).every(([key, expectedValue]) =>
+        matchesScalarFilter(voucher[key], expectedValue)
+    );
+    if (!matchesFilter) return false;
+
+    const matchesDefinedFields = definedFields.every(field => {
+        const value = voucher[field];
+        return value !== undefined && value !== null && value !== '';
+    });
+    if (!matchesDefinedFields) return false;
+
+    return orFilters.every(orFilter =>
+        orFilter.fields.some(field => matchesScalarFilter(voucher[field], orFilter.value))
+    );
+}
+
+function compareDriverVoucherValues(left: unknown, right: unknown, direction: 'asc' | 'desc') {
+    const leftNumber = parseFormattedNumberish(left as string | number | undefined | null);
+    const rightNumber = parseFormattedNumberish(right as string | number | undefined | null);
+    const canCompareAsNumber = Number.isFinite(leftNumber) && Number.isFinite(rightNumber);
+    const multiplier = direction === 'asc' ? 1 : -1;
+
+    if (canCompareAsNumber) {
+        if (leftNumber === rightNumber) return 0;
+        return leftNumber > rightNumber ? multiplier : -multiplier;
+    }
+
+    const leftText = typeof left === 'string' ? left : String(left ?? '');
+    const rightText = typeof right === 'string' ? right : String(right ?? '');
+    return leftText.localeCompare(rightText) * multiplier;
+}
+
+export async function getDriverVoucherList(params: {
+    filterObj?: Record<string, unknown>;
+    orFilters?: Array<{ fields: string[]; value: string | number | boolean }>;
+    definedFields?: string[];
+    search?: string;
+    searchFields?: string[];
+    page?: number;
+    pageSize?: number;
+    sortField?: string;
+    sortDir?: 'asc' | 'desc';
+    sortPreset?: string | null;
+    countOnly?: boolean;
+}) {
+    const client = getSanityClient();
+    const [voucherRows, disbursementRows, itemRows] = await Promise.all([
+        client.fetch<DriverVoucher[]>(`*[_type == "driverVoucher"]`),
+        client.fetch<Array<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>>(
+            `*[_type == "driverVoucherDisbursement"]{ voucherRef, amount, kind }`
+        ),
+        client.fetch<Array<Pick<DriverVoucherItem, 'voucherRef' | 'amount'>>>(
+            `*[_type == "driverVoucherItem"]{ voucherRef, amount }`
+        ),
+    ]);
+
+    const search = params.search?.trim().toLowerCase() || '';
+    const filterObj = params.filterObj ?? {};
+    const orFilters = params.orFilters ?? [];
+    const definedFields = params.definedFields ?? [];
+    const searchFields = (params.searchFields ?? []).map(field => field.trim()).filter(Boolean);
+    let filtered = applyDerivedDriverVoucherLedger(voucherRows, disbursementRows, itemRows).filter(voucher =>
+        matchesDriverVoucherFilter(
+            voucher as unknown as Record<string, unknown>,
+            filterObj,
+            orFilters,
+            definedFields,
+            search,
+            searchFields
+        )
+    );
+
+    if (params.sortPreset === 'work-queue') {
+        const statusRank: Record<string, number> = { ISSUED: 0, DRAFT: 1, SETTLED: 2 };
+        filtered = [...filtered].sort((left, right) => {
+            const leftRank = statusRank[left.status || ''] ?? 99;
+            const rightRank = statusRank[right.status || ''] ?? 99;
+            if (leftRank !== rightRank) return leftRank - rightRank;
+            return (right.issuedDate || '').localeCompare(left.issuedDate || '');
+        });
+    } else if (params.sortField) {
+        const direction = params.sortDir === 'asc' ? 'asc' : 'desc';
+        const sortField = params.sortField;
+        filtered = [...filtered].sort((left, right) => {
+            const leftValue = (left as unknown as Record<string, unknown>)[sortField];
+            const rightValue = (right as unknown as Record<string, unknown>)[sortField];
+            return compareDriverVoucherValues(leftValue, rightValue, direction);
+        });
+    }
+
+    const total = filtered.length;
+    if (params.countOnly) {
+        return { items: [] as DriverVoucher[], total };
+    }
+
+    if (!params.page || !params.pageSize) {
+        return { items: filtered, total };
+    }
+
+    const offset = Math.max(params.page - 1, 0) * Math.max(params.pageSize, 1);
+    return {
+        items: filtered.slice(offset, offset + params.pageSize),
+        total,
+    };
 }
 
 export async function getDriverBoronganById(id: string) {
@@ -760,9 +916,14 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
             )
             : Promise.resolve([]),
         canViewTripCash
-            ? client.fetch<Array<Pick<DriverVoucher, '_id' | 'cashGiven' | 'initialCashGiven' | 'topUpCount' | 'totalIssuedAmount' | 'totalSpent' | 'driverFeeAmount' | 'totalClaimAmount' | 'balance'>>>(
-                `*[_type == "driverVoucher" && status != "SETTLED"]{
+            ? client.fetch<Array<Pick<DriverVoucher, '_id' | 'status' | 'settledDate' | 'settledBy' | 'settlementBankRef' | 'settlementBankName' | 'cashGiven' | 'initialCashGiven' | 'topUpCount' | 'totalIssuedAmount' | 'totalSpent' | 'driverFeeAmount' | 'totalClaimAmount' | 'balance'>>>(
+                `*[_type == "driverVoucher"]{
                     _id,
+                    status,
+                    settledDate,
+                    settledBy,
+                    settlementBankRef,
+                    settlementBankName,
                     cashGiven,
                     initialCashGiven,
                     topUpCount,
@@ -823,7 +984,8 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
     const derivedUnpaidNotas = applyDerivedFreightNotaStatus(unpaidNotas, notaPaymentTotals).filter(nota => nota.status !== 'PAID');
     const recentNotasWithDerivedStatus = applyDerivedFreightNotaStatus(recentNotas, notaPaymentTotals);
     const unpaidBorongansWithDerivedTotals = applyDerivedDriverBoronganTotals(unpaidBorongans, unpaidBoronganItems);
-    const openVouchersWithDerivedFinancials = applyDerivedDriverVoucherLedger(openVouchers, openVoucherDisbursements, openVoucherItems);
+    const openVouchersWithDerivedFinancials = applyDerivedDriverVoucherLedger(openVouchers, openVoucherDisbursements, openVoucherItems)
+        .filter(voucher => voucher.status !== 'SETTLED');
     const notaOutstanding = derivedUnpaidNotas.reduce((sum, nota) => {
         const paidAmount = notaPaymentTotals[nota._id] || 0;
         return sum + Math.max(getReceivableNetAmount(nota) - paidAmount, 0);

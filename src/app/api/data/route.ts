@@ -69,6 +69,7 @@ import {
     getDriverBoronganById,
     getDriverBoronganList,
     getDriverBoronganDoRefsSummary,
+    getDriverVoucherList,
     getCustomersSummary,
     getDashboardSummary,
     getExpensesSummary,
@@ -697,6 +698,34 @@ export async function GET(request: Request) {
                     { status: 400 }
                 );
             }
+        } else if (entity === 'driver-vouchers') {
+            try {
+                const page = pageParam ? Number.parseInt(pageParam, 10) : 1;
+                const pageSize = pageSizeParam ? Number.parseInt(pageSizeParam, 10) : 10;
+                const searchFields = searchFieldsParam
+                    ? searchFieldsParam.split(',').map(field => field.trim()).filter(Boolean)
+                    : [];
+                const result = await getDriverVoucherList({
+                    filterObj,
+                    orFilters,
+                    definedFields,
+                    search: searchQuery || undefined,
+                    searchFields,
+                    page: needsPaginatedList && !countOnly ? page : undefined,
+                    pageSize: needsPaginatedList && !countOnly ? pageSize : undefined,
+                    sortField,
+                    sortDir,
+                    sortPreset,
+                    countOnly,
+                });
+                items = result.items as unknown as Record<string, unknown>[];
+                totalItems = result.total;
+            } catch (error) {
+                return jsonNoStore(
+                    { error: error instanceof Error ? error.message : 'Query bon trip tidak valid' },
+                    { status: 400 }
+                );
+            }
         } else if (needsPaginatedList) {
             try {
                 const page = pageParam ? Number.parseInt(pageParam, 10) : 1;
@@ -801,7 +830,7 @@ export async function GET(request: Request) {
             ) as unknown as Record<string, unknown>[];
         }
 
-        if (entity === 'driver-vouchers') {
+        if (entity === 'driver-vouchers' && !needsPaginatedList && items.length > 0) {
             const ids = items
                 .map(item => (typeof item._id === 'string' ? item._id : ''))
                 .filter(Boolean);
