@@ -6,6 +6,7 @@ import type {
     FreightNota,
     Payment,
 } from './types';
+import { getBusinessCalendarDateParts, parseBusinessDateValue } from './business-date';
 import { parseFormattedNumberish } from './formatted-number';
 import {
     getDriverVoucherFinancialSummary,
@@ -14,6 +15,22 @@ import {
 
 function parseWholeMoneyLike(value: unknown) {
     return Math.max(parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 }), 0);
+}
+
+function getDateSortTime(value?: string) {
+    if (!value) return 0;
+
+    const parsedDateValue = parseBusinessDateValue(value);
+    if (parsedDateValue) {
+        return Date.UTC(
+            Number(parsedDateValue.year),
+            Number(parsedDateValue.month) - 1,
+            Number(parsedDateValue.day),
+        );
+    }
+
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? 0 : date.getTime();
 }
 
 export type ReportPeriodMode = 'month' | 'year' | 'all';
@@ -55,9 +72,12 @@ export function createPeriodMatcher(
 ) {
     return (dateStr: string) => {
         if (periodMode === 'all') return true;
-        const date = new Date(dateStr);
-        if (periodMode === 'year') return date.getFullYear() === year;
-        return date.getFullYear() === year && date.getMonth() === month;
+        const parts = getBusinessCalendarDateParts(dateStr);
+        if (!parts) return false;
+        const itemYear = Number(parts.year);
+        const itemMonth = Number(parts.month) - 1;
+        if (periodMode === 'year') return itemYear === year;
+        return itemYear === year && itemMonth === month;
     };
 }
 
@@ -102,7 +122,7 @@ export function buildReportsSnapshot(params: {
     const filteredExpenses = expenses.filter(item => inPeriod(item.date));
     const filteredBankTx = bankTransactions.filter(item => inPeriod(item.date));
     const sortedFilteredBankTx = [...filteredBankTx].sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+        (a, b) => getDateSortTime(b.date) - getDateSortTime(a.date)
     );
     const totalRevenue = filteredPayments.reduce((sum, item) => sum + parseWholeMoneyLike(item.amount), 0);
     const totalExpense = filteredExpenses.reduce((sum, item) => sum + parseWholeMoneyLike(item.amount), 0);
