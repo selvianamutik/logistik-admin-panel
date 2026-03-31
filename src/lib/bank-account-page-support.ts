@@ -1,4 +1,5 @@
 import { DEFAULT_PAGE_SIZE } from './pagination';
+import { getBusinessDateValue } from './business-date';
 import { parseFormattedNumberish } from './formatted-number';
 import type { BankAccount } from './types';
 
@@ -114,7 +115,7 @@ export function createDefaultBankTransferForm(): BankTransferFormState {
     fromAccountRef: "",
     toAccountRef: "",
     amount: 0,
-    date: new Date().toISOString().slice(0, 10),
+    date: getBusinessDateValue(),
   };
 }
 

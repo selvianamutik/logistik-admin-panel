@@ -6,6 +6,7 @@ import { useApp, useToast } from '../layout';
 import { Plus, Search, Edit, Trash2, Users, Save, X, FileDown, Printer } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 
+import { getBusinessDateValue } from '@/lib/business-date';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { exportToExcel } from '@/lib/export';
 import { openBrandedPrint, openPrintWindow, fetchCompanyProfile } from '@/lib/print';
@@ -251,7 +252,7 @@ export default function CustomersPage() {
                                     { header: 'Email', key: 'email', width: 25 },
                                     { header: 'Alamat', key: 'address', width: 35 },
                                     { header: 'Format SJ', key: 'deliveryOrderPrefix', width: 12 },
-                                ], `customer-${new Date().toISOString().split('T')[0]}`, 'Customer');
+                                ], `customer-${getBusinessDateValue()}`, 'Customer');
                                 addToast('success', 'Excel customer berhasil di-download');
                             } catch (error) {
                                 addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan Excel customer');

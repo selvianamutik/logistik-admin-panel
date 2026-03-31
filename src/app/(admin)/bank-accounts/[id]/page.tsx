@@ -7,6 +7,7 @@ import { ArrowRightLeft, FileDown, Printer, TrendingDown, TrendingUp } from 'luc
 import PageBackButton from '@/components/PageBackButton';
 import { useApp, useToast } from '../../layout';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
+import { getBusinessDateValue } from '@/lib/business-date';
 import { exportToExcel } from '@/lib/export';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { fetchCompanyProfile, openBrandedPrint, openPrintWindow } from '@/lib/print';
@@ -140,7 +141,7 @@ export default function BankAccountDetailPage() {
                     { header: 'Jumlah', key: 'amount', width: 18 },
                     { header: 'Saldo Setelah', key: 'balanceAfter', width: 18 },
                 ],
-                `mutasi-${account?.bankName || 'akun'}-${new Date().toISOString().split('T')[0]}`,
+                `mutasi-${account?.bankName || 'akun'}-${getBusinessDateValue()}`,
                 'Transaksi'
             );
             addToast('success', 'Excel mutasi rekening berhasil di-download');

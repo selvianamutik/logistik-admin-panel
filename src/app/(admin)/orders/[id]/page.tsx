@@ -9,6 +9,7 @@ import CurrencyInput from '@/components/CurrencyInput';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { fetchAdminCollectionData, fetchAdminData } from '@/lib/api/admin-client';
+import { getBusinessDateValue } from '@/lib/business-date';
 import { formatDate, formatCurrency, formatNumber, getReceivableNetAmount, ORDER_STATUS_MAP, ITEM_STATUS_MAP, DO_STATUS_MAP, INVOICE_STATUS_MAP, formatInternalDeliveryOrderNumber, formatShipperDeliveryOrderNumber } from '@/lib/utils';
 import {
     formatCargoSummary,
@@ -58,7 +59,7 @@ export default function OrderDetailPage() {
     const [showDOModal, setShowDOModal] = useState(false);
     const [creatingDO, setCreatingDO] = useState(false);
     // DO form
-    const [doDate, setDoDate] = useState(new Date().toISOString().split('T')[0]);
+    const [doDate, setDoDate] = useState(getBusinessDateValue());
     const [doCustomerDoNumber, setDoCustomerDoNumber] = useState('');
     const [doVehicle, setDoVehicle] = useState('');
     const [doDriver, setDoDriver] = useState('');
@@ -333,7 +334,7 @@ export default function OrderDetailPage() {
             setDoTripFee(0);
             setDoVehicleOverrideReason('');
             setDoNotes('');
-            setDoDate(new Date().toISOString().split('T')[0]);
+            setDoDate(getBusinessDateValue());
             await loadOrderDetail();
         } catch {
             addToast('error', 'Gagal membuat surat jalan');

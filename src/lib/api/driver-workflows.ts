@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { getBusinessDateValue } from '@/lib/business-date';
 import { resolveCompanyLogoUrl } from '@/lib/branding';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { getSanityClient, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
@@ -81,7 +82,7 @@ export async function handleDriverBoronganCreate(
     let resolvedDriverRef = normalizeOptionalText(data.driverRef);
     const driverName = normalizeText(data.driverName);
 
-    const periodStart = normalizeText(data.periodStart) || new Date().toISOString().slice(0, 10);
+    const periodStart = normalizeText(data.periodStart) || getBusinessDateValue();
     const periodEnd = normalizeText(data.periodEnd) || periodStart;
     if (periodEnd < periodStart) {
         return NextResponse.json({ error: 'Periode akhir borongan tidak boleh sebelum periode mulai' }, { status: 400 });
@@ -482,7 +483,7 @@ export async function handleBoronganPayment(
     const paidDate =
         typeof data.date === 'string' && data.date
             ? data.date
-            : new Date().toISOString().slice(0, 10);
+            : getBusinessDateValue();
     assertIsoDate(paidDate, 'Tanggal pembayaran');
     const note = typeof data.note === 'string' && data.note.trim() ? data.note.trim() : undefined;
     const expenseId = crypto.randomUUID();
@@ -753,7 +754,7 @@ export async function handleDriverVoucherCreate(
     const issueDate =
         typeof data.issuedDate === 'string' && data.issuedDate
             ? data.issuedDate
-            : new Date().toISOString().slice(0, 10);
+            : getBusinessDateValue();
     assertIsoDate(issueDate, 'Tanggal bon');
 
     const requestedDriverFeeAmount = normalizeCurrencyNumber(data.driverFeeAmount ?? 0);
@@ -1046,7 +1047,7 @@ export async function handleDriverVoucherTopUp(
     const topUpDate =
         typeof data.date === 'string' && data.date
             ? data.date
-            : new Date().toISOString().slice(0, 10);
+            : getBusinessDateValue();
     assertIsoDate(topUpDate, 'Tanggal tambahan bon');
 
     const note = normalizeOptionalText(data.note);
@@ -1201,7 +1202,7 @@ export async function handleDriverVoucherItemCreate(
     const expenseDate =
         typeof data.expenseDate === 'string' && data.expenseDate
             ? data.expenseDate
-            : new Date().toISOString().slice(0, 10);
+            : getBusinessDateValue();
     assertIsoDate(expenseDate, 'Tanggal biaya perjalanan');
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -1508,7 +1509,7 @@ export async function handleDriverVoucherSettlement(
     const settledDate =
         typeof data.date === 'string' && data.date
             ? data.date
-            : new Date().toISOString().slice(0, 10);
+            : getBusinessDateValue();
     assertIsoDate(settledDate, 'Tanggal settlement');
 
     for (let attempt = 0; attempt < 3; attempt += 1) {

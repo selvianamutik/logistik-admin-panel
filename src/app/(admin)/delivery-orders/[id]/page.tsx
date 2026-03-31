@@ -11,6 +11,7 @@ import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData, fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
+import { getBusinessDateValue } from '@/lib/business-date';
 import {
     buildDeliveryOrderDetailState,
     buildDeliveryOrderPrintHtml,
@@ -68,7 +69,7 @@ export default function DODetailPage() {
     const [reviewingDriverRequest, setReviewingDriverRequest] = useState(false);
     const [rejectRequestNote, setRejectRequestNote] = useState('');
     const [podName, setPodName] = useState('');
-    const [podDate, setPodDate] = useState(new Date().toISOString().split('T')[0]);
+    const [podDate, setPodDate] = useState(getBusinessDateValue());
     const [podNote, setPodNote] = useState('');
     const [actualCargoItems, setActualCargoItems] = useState<ActualCargoDraft[]>([]);
     const [actualDropPoints, setActualDropPoints] = useState<ActualDropDraft[]>([]);
@@ -245,7 +246,7 @@ export default function DODetailPage() {
         setStatusNote(fromDriverRequest ? (doData?.pendingDriverStatusNote || '') : '');
         setReviewingDriverRequest(fromDriverRequest);
         setPodName('');
-        setPodDate(new Date().toISOString().split('T')[0]);
+        setPodDate(getBusinessDateValue());
         setPodNote('');
         const nextActualCargoItems = doItems.map(buildActualCargoDraft);
         const nextActualDropPoints = buildDefaultActualDropDrafts(doData, nextActualCargoItems);
@@ -403,7 +404,7 @@ export default function DODetailPage() {
             setReviewingDriverRequest(false);
             if (completingDelivery) {
                 setPodName('');
-                setPodDate(new Date().toISOString().split('T')[0]);
+                setPodDate(getBusinessDateValue());
                 setPodNote('');
                 setActualCargoItems([]);
                 setActualDropPoints([]);
@@ -443,7 +444,7 @@ export default function DODetailPage() {
             setDoData(prev => prev ? { ...prev, podReceiverName: podName, podReceivedDate: podDate, podNote } : prev);
             setShowPODModal(false);
             setPodName('');
-            setPodDate(new Date().toISOString().split('T')[0]);
+            setPodDate(getBusinessDateValue());
             setPodNote('');
             addToast('success', 'POD berhasil disimpan');
         } catch {
@@ -683,7 +684,7 @@ export default function DODetailPage() {
                             className="btn btn-success"
                             onClick={() => {
                                 setPodName('');
-                                setPodDate(new Date().toISOString().split('T')[0]);
+                                setPodDate(getBusinessDateValue());
                                 setPodNote('');
                                 setShowPODModal(true);
                             }}

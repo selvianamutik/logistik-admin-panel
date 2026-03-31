@@ -1,4 +1,5 @@
 import type { ApiSession } from '@/lib/api/data-helpers';
+import { getBusinessDateValue } from '@/lib/business-date';
 import { filterExpensesByRole, hasPageAccess, hasPermission } from '@/lib/rbac';
 import {
     getSanityClient,
@@ -1242,7 +1243,7 @@ export async function getBankAccountsSummary() {
 
 export async function getAuditLogsSummary() {
     const client = getSanityClient();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getBusinessDateValue();
     const [totalLogs, todayLogs, loginLogs, mutationLogs] = await Promise.all([
         client.fetch<number>(`count(*[_type == "auditLog"])`),
         client.fetch<number>(`count(*[_type == "auditLog" && (coalesce(timestamp, _createdAt)[0..9] == $today)])`, { today }),

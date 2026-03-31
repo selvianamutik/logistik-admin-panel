@@ -7,6 +7,7 @@ import AppPagination from '@/components/AppPagination';
 import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
 import CurrencyInput from '@/components/CurrencyInput';
 import { fetchAdminCollectionData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
+import { getBusinessDateValue } from '@/lib/business-date';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { formatFreightNotaDisplayWeight, normalizeFreightNotaBillingMode } from '@/lib/freight-nota-billing';
 import { deriveReceivableStatus, formatDate, formatCurrency, formatQuantity, getReceivableNetAmount, PAYMENT_METHOD_MAP } from '@/lib/utils';
@@ -88,7 +89,7 @@ export default function NotaListPage() {
     const [showReceiptModal, setShowReceiptModal] = useState(false);
     const [receiving, setReceiving] = useState(false);
     const [receiptCustomerRef, setReceiptCustomerRef] = useState('');
-    const [receiptDate, setReceiptDate] = useState(new Date().toISOString().split('T')[0]);
+    const [receiptDate, setReceiptDate] = useState(getBusinessDateValue());
     const [receiptMethod, setReceiptMethod] = useState('TRANSFER');
     const [receiptAmount, setReceiptAmount] = useState(0);
     const [receiptNote, setReceiptNote] = useState('');
@@ -391,7 +392,7 @@ export default function NotaListPage() {
 
     const resetReceiptModal = () => {
         setReceiptCustomerRef('');
-        setReceiptDate(new Date().toISOString().split('T')[0]);
+        setReceiptDate(getBusinessDateValue());
         setReceiptMethod('TRANSFER');
         setReceiptAmount(0);
         setReceiptNote('');

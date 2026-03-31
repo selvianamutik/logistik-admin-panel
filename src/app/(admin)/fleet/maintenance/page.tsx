@@ -15,6 +15,7 @@ import {
     getMaintenanceNextAction,
     type MaintenanceFormState,
 } from '@/lib/fleet-queue-page-support';
+import { getBusinessDateValue } from '@/lib/business-date';
 import { formatDate, formatQuantity, MAINTENANCE_STATUS_MAP } from '@/lib/utils';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { Maintenance, Vehicle } from '@/lib/types';
@@ -213,7 +214,7 @@ export default function MaintenancePage() {
                 body: JSON.stringify({
                     entity: 'maintenances',
                     action: 'update',
-                    data: { id, updates: { status, completedDate: new Date().toISOString().split('T')[0] } },
+                    data: { id, updates: { status, completedDate: getBusinessDateValue() } },
                 }),
             });
             const payload = await res.json();

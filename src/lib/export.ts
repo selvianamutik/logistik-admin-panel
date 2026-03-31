@@ -5,6 +5,7 @@
 
 import ExcelJS from 'exceljs';
 import { resolveCompanyLogoUrl } from './branding';
+import { getBusinessDateValue } from './business-date';
 import {
     formatFreightNotaDisplayWeight,
     getFreightNotaBillingModeLabel,
@@ -431,7 +432,7 @@ export async function exportOrders(orders: Record<string, unknown>[]) {
             { header: 'Status', key: 'status', width: 14 },
             { header: 'Tanggal', key: 'createdAt', width: 18, formatter: (value) => fmtDate(String(value || '')) },
         ],
-        `orders-${new Date().toISOString().split('T')[0]}`,
+        `orders-${getBusinessDateValue()}`,
         'Orders',
         { title: 'Daftar Order / Resi' },
     );
@@ -483,7 +484,7 @@ export async function exportInvoices(invoices: Record<string, unknown>[]) {
             { header: 'Tagihan Netto', key: 'netAmount', width: 18 },
             { header: 'Status', key: 'status', width: 14 },
         ],
-        `nota-ongkos-${new Date().toISOString().split('T')[0]}`,
+        `nota-ongkos-${getBusinessDateValue()}`,
         'Nota Ongkos',
         {
             title: 'Daftar Nota Ongkos Angkut',
@@ -528,7 +529,7 @@ export async function exportExpenses(expenses: Record<string, unknown>[]) {
             { header: 'Jumlah', key: 'amount', width: 18 },
             { header: 'Privasi', key: 'privacyLevel', width: 14 },
         ],
-        `expenses-${new Date().toISOString().split('T')[0]}`,
+        `expenses-${getBusinessDateValue()}`,
         'Expenses',
         {
             title: 'Daftar Pengeluaran',
@@ -555,7 +556,7 @@ export async function exportVehicles(vehicles: Record<string, unknown>[]) {
             { header: 'Status', key: 'status', width: 14 },
             { header: 'Odometer', key: 'lastOdometer', width: 14 },
         ],
-        `vehicles-${new Date().toISOString().split('T')[0]}`,
+        `vehicles-${getBusinessDateValue()}`,
         'Vehicles',
         { title: 'Daftar Kendaraan' },
     );

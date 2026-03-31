@@ -8,6 +8,7 @@ import CurrencyInput from '@/components/CurrencyInput';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData, fetchAdminData } from '@/lib/api/admin-client';
+import { getBusinessDateValue } from '@/lib/business-date';
 import {
     calculateFreightNotaRowAmount,
     FREIGHT_NOTA_BILLING_MODE_OPTIONS,
@@ -44,7 +45,7 @@ export default function NewNotaPage() {
 
     const [customerRef, setCustomerRef] = useState('');
     const [customerName, setCustomerName] = useState('');
-    const [issueDate, setIssueDate] = useState(new Date().toISOString().split('T')[0]);
+    const [issueDate, setIssueDate] = useState(getBusinessDateValue());
     const [dueDate, setDueDate] = useState('');
     const [dueDateTouched, setDueDateTouched] = useState(false);
     const [notes, setNotes] = useState('');

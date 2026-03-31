@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { addDaysToDateValue, getBusinessDateValue } from '@/lib/business-date';
 import { resolveCompanyLogoUrl } from '@/lib/branding';
 import { calculateFreightNotaRowAmount, normalizeFreightNotaBillingMode } from '@/lib/freight-nota-billing';
 import { getSanityClient, sanityCreate, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
@@ -300,7 +301,7 @@ export async function handlePaymentCreate(
     }
 
     const paymentDate =
-        typeof data.date === 'string' && data.date ? data.date : new Date().toISOString().slice(0, 10);
+        typeof data.date === 'string' && data.date ? data.date : getBusinessDateValue();
     assertIsoDate(paymentDate, 'Tanggal pembayaran');
 
     const paymentId = crypto.randomUUID();
@@ -450,7 +451,7 @@ export async function handleCustomerReceiptCreate(
     }
 
     const receiptDate =
-        typeof data.date === 'string' && data.date ? data.date : new Date().toISOString().slice(0, 10);
+        typeof data.date === 'string' && data.date ? data.date : getBusinessDateValue();
     assertIsoDate(receiptDate, 'Tanggal penerimaan');
 
     const paymentMethod = typeof data.method === 'string' ? data.method as PaymentMethod : 'TRANSFER';
@@ -738,7 +739,7 @@ export async function handleInvoiceAdjustmentCreate(
         return NextResponse.json({ error: 'Nominal klaim/potongan tidak valid' }, { status: 400 });
     }
 
-    const date = typeof data.date === 'string' && data.date ? data.date : new Date().toISOString().slice(0, 10);
+    const date = typeof data.date === 'string' && data.date ? data.date : getBusinessDateValue();
     assertIsoDate(date, 'Tanggal klaim/potongan');
 
     const kind = typeof data.kind === 'string' ? data.kind as InvoiceAdjustmentKind : 'OTHER';
@@ -893,7 +894,7 @@ export async function handleBankTransfer(
     const transferDate =
         typeof data.date === 'string' && data.date
             ? data.date
-            : new Date().toISOString().slice(0, 10);
+            : getBusinessDateValue();
     assertIsoDate(transferDate, 'Tanggal transfer');
 
     const transferId = `transfer-${Date.now()}`;
@@ -992,7 +993,7 @@ export async function handleExpenseCreate(
     }
 
     const expenseDate =
-        typeof data.date === 'string' && data.date ? data.date : new Date().toISOString().slice(0, 10);
+        typeof data.date === 'string' && data.date ? data.date : getBusinessDateValue();
     assertIsoDate(expenseDate, 'Tanggal pengeluaran');
 
     const category = await sanityGetById<{ _id: string; name?: string }>(categoryRef);
@@ -1385,7 +1386,7 @@ export async function handleFreightNotaCreate(
         }
     }
 
-    const issueDate = normalizeText(data.issueDate) || new Date().toISOString().slice(0, 10);
+    const issueDate = normalizeText(data.issueDate) || getBusinessDateValue();
     assertIsoDate(issueDate, 'Tanggal nota');
     const customerDerivedFromDo = Boolean(inferredCustomerRef && inferredCustomerRef === resolvedCustomerRef && deliveryOrders.length > 0);
     let finalCustomerName = customerName;
@@ -1484,11 +1485,7 @@ export async function handleFreightNotaCreate(
         }
 
         if (termDays !== null) {
-            const dueDate = new Date(issueDate);
-            if (!Number.isNaN(dueDate.getTime())) {
-                dueDate.setDate(dueDate.getDate() + termDays);
-                resolvedDueDate = dueDate.toISOString().slice(0, 10);
-            }
+            resolvedDueDate = addDaysToDateValue(issueDate, termDays);
         }
     }
 

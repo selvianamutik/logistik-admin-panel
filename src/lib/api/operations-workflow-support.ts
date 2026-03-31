@@ -1,4 +1,5 @@
 import { getSanityClient, sanityGetById } from '@/lib/sanity';
+import { getBusinessDateValue } from '@/lib/business-date';
 import {
     buildTirePlacementLabel,
     formatTireSlotLabel,
@@ -447,7 +448,7 @@ export async function normalizeVehiclePayload(
         }
         next.lastOdometer = lastOdometer;
         if (lastOdometer > 0 && !hasOwnKey(data, 'lastOdometerAt')) {
-            next.lastOdometerAt = new Date().toISOString().slice(0, 10);
+            next.lastOdometerAt = getBusinessDateValue();
         }
     }
 

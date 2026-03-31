@@ -1,3 +1,4 @@
+import { getBusinessDateValue } from './business-date';
 import type { TireEvent, Vehicle } from './types';
 import {
     compareTireSlotCodes,
@@ -37,7 +38,7 @@ export function createDefaultVehicleTireForm(slotCode = '1L'): VehicleTireFormSt
         tireType: 'Tubeless',
         tireBrand: '',
         tireSize: '',
-        installDate: new Date().toISOString().split('T')[0],
+        installDate: getBusinessDateValue(),
         notes: '',
     };
 }

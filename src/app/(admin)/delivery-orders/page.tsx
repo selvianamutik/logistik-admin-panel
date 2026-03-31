@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Search, Eye, Truck, FileDown, Printer } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
+import { getBusinessDateValue } from '@/lib/business-date';
 import { formatDate, formatDateTime, DO_STATUS_MAP, formatInternalDeliveryOrderNumber, formatShipperDeliveryOrderNumber } from '@/lib/utils';
 import {
     buildDeliveryOrderExportRows,
@@ -168,7 +169,7 @@ export default function DeliveryOrdersPage() {
                                 { header: 'Tanggal', key: 'date', width: 15 },
                                 { header: 'Status', key: 'status', width: 15 },
                                 { header: 'Drop Aktual', key: 'actualDropPoints', width: 14 },
-                            ], `surat-jalan-${new Date().toISOString().split('T')[0]}`, 'Surat Jalan');
+                            ], `surat-jalan-${getBusinessDateValue()}`, 'Surat Jalan');
                             addToast('success', 'Excel surat jalan berhasil di-download');
                         } catch (error) {
                             addToast('error', error instanceof Error ? error.message : 'Gagal menyiapkan Excel surat jalan');

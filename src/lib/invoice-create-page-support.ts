@@ -1,3 +1,4 @@
+import { addDaysToDateValue, getBusinessDateValue } from './business-date';
 import type { CompanyProfile, Customer, DeliveryOrder, DeliveryOrderItem, Order } from './types';
 import { parseFormattedNumberish } from './formatted-number';
 
@@ -25,7 +26,7 @@ export function createEmptyNotaRow(): NotaItemRow {
         doRef: '',
         doNumber: '',
         vehiclePlate: '',
-        date: new Date().toISOString().split('T')[0],
+        date: getBusinessDateValue(),
         noSJ: '',
         dari: '',
         tujuan: '',
@@ -56,12 +57,7 @@ export function isEmptyNotaRow(row: NotaItemRow) {
 }
 
 export function calculateNotaDueDate(baseDate: string, termDays: number) {
-    const parsed = new Date(baseDate);
-    if (Number.isNaN(parsed.getTime())) {
-        return '';
-    }
-    parsed.setDate(parsed.getDate() + termDays);
-    return parsed.toISOString().slice(0, 10);
+    return addDaysToDateValue(baseDate, termDays);
 }
 
 export function getSuggestedNotaDueDate(params: {
@@ -100,7 +96,7 @@ export function buildNotaRowsFromDeliveryOrder(params: {
         doRef: deliveryOrder._id,
         doNumber: deliveryOrder.doNumber || '',
         vehiclePlate: deliveryOrder.vehiclePlate || '',
-        date: deliveryOrder.date || new Date().toISOString().split('T')[0],
+        date: deliveryOrder.date || getBusinessDateValue(),
         noSJ: deliveryOrder.customerDoNumber || '',
         dari: deliveryOrder.pickupAddress || relatedOrder?.pickupAddress || '',
         tujuan: deliveryOrder.receiverAddress || relatedOrder?.receiverAddress || '',

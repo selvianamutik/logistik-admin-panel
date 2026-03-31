@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { getBusinessDateValue } from '@/lib/business-date';
 import { createSession, setSessionCookie } from '@/lib/auth';
 import {
     getSanityClient,
@@ -810,7 +811,7 @@ export async function handleGenericUpdate(
         }
 
         if (typeof updates.completedDate !== 'string' || !updates.completedDate) {
-            updates.completedDate = new Date().toISOString().slice(0, 10);
+            updates.completedDate = getBusinessDateValue();
         }
 
         sanitizedEntityUpdates = {

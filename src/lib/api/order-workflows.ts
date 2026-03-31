@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { getBusinessDateValue } from '@/lib/business-date';
 import {
     calculateWeightPortion,
     calculateVolumePortion,
@@ -1522,7 +1523,7 @@ export async function handleDeliveryOrderCreate(
     const doDate =
         typeof data.date === 'string' && data.date
             ? data.date
-            : new Date().toISOString().slice(0, 10);
+            : getBusinessDateValue();
     try {
         assertIsoDate(doDate, 'Tanggal surat jalan');
     } catch (error) {

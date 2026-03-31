@@ -7,6 +7,7 @@ import { Save } from 'lucide-react';
 import CurrencyInput from '@/components/CurrencyInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
+import { getBusinessDateValue } from '@/lib/business-date';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import type { BankAccount, Driver, DeliveryOrder, DriverVoucher, Order } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
@@ -25,7 +26,7 @@ export default function NewDriverVoucherPage() {
     const [form, setForm] = useState({
         deliveryOrderRef: '',
         issueBankRef: '',
-        issuedDate: new Date().toISOString().split('T')[0],
+        issuedDate: getBusinessDateValue(),
         cashGiven: 0,
         notes: '',
     });

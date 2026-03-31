@@ -1,5 +1,6 @@
 import { escapePrintHtml } from './print';
 import type { DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem } from './types';
+import { getBusinessDateValue } from './business-date';
 import { parseFormattedNumberish } from './formatted-number';
 import { formatCurrency, formatDate, getDriverVoucherInitialCash, getDriverVoucherIssuedAmount, getDriverVoucherOperationalBalance, getDriverVoucherTopUpAmount } from './utils';
 
@@ -27,7 +28,7 @@ export type DriverVoucherTopUpFormState = {
 
 export function createDefaultDriverVoucherItemForm(): DriverVoucherItemFormState {
     return {
-        expenseDate: new Date().toISOString().slice(0, 10),
+        expenseDate: getBusinessDateValue(),
         category: 'BBM / Solar',
         description: '',
         amount: 0,
@@ -36,7 +37,7 @@ export function createDefaultDriverVoucherItemForm(): DriverVoucherItemFormState
 
 export function createDefaultDriverVoucherTopUpForm(issueBankRef = ''): DriverVoucherTopUpFormState {
     return {
-        date: new Date().toISOString().slice(0, 10),
+        date: getBusinessDateValue(),
         bankAccountRef: issueBankRef,
         amount: 0,
         note: '',

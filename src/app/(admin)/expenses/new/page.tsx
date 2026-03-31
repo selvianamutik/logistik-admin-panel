@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useApp, useToast } from '../../layout';
 import { Save } from 'lucide-react';
+import { getBusinessDateValue } from '@/lib/business-date';
 import CurrencyInput from '@/components/CurrencyInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
@@ -20,7 +21,7 @@ export default function ExpenseNewPage() {
     const [vehicles, setVehicles] = useState<Vehicle[]>([]);
     const [form, setForm] = useState({
         categoryRef: '', categoryName: '',
-        date: new Date().toISOString().split('T')[0],
+        date: getBusinessDateValue(),
         amount: 0, note: '',
         privacyLevel: 'internal' as 'internal' | 'ownerOnly',
         relatedVehicleRef: '',

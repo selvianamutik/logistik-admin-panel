@@ -1,4 +1,5 @@
 import { DEFAULT_PAGE_SIZE } from './pagination';
+import { getBusinessDateTimeLocalValue, getBusinessDateValue } from './business-date';
 import type { DeliveryOrder, Incident, Maintenance, Vehicle } from './types';
 
 export type IncidentFormState = {
@@ -22,11 +23,11 @@ export type MaintenanceFormState = {
 };
 
 export function getDefaultIncidentDateTime() {
-    return new Date().toISOString().slice(0, 16);
+    return getBusinessDateTimeLocalValue();
 }
 
 export function getTodayDate() {
-    return new Date().toISOString().split('T')[0];
+    return getBusinessDateValue();
 }
 
 export function createDefaultIncidentForm(vehicle?: Vehicle | null, deliveryOrder?: DeliveryOrder | null): IncidentFormState {

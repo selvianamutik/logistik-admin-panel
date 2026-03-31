@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { CheckCircle, Printer, Trash2 } from 'lucide-react';
 import { useApp, useToast } from '../../layout';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
+import { getBusinessDateValue } from '@/lib/business-date';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { fetchCompanyProfile, openBrandedPrint, openPrintWindow, resolveDocumentIssuerProfile } from '@/lib/print';
 import { normalizeUserRole } from '@/lib/rbac';
@@ -34,7 +35,7 @@ export default function BoronganDetailPage() {
     const [loading, setLoading] = useState(true);
 
     const [showPayModal, setShowPayModal] = useState(false);
-    const [payDate, setPayDate] = useState(new Date().toISOString().split('T')[0]);
+    const [payDate, setPayDate] = useState(getBusinessDateValue());
     const [payMethod, setPayMethod] = useState('CASH');
     const [payBankRef, setPayBankRef] = useState('');
     const [payNote, setPayNote] = useState('');

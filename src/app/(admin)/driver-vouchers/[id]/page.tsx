@@ -8,6 +8,7 @@ import CollapsibleCard from '@/components/CollapsibleCard';
 import CurrencyInput from '@/components/CurrencyInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData, fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
+import { getBusinessDateValue } from '@/lib/business-date';
 import {
     buildDriverVoucherDetailSummary,
     buildDriverVoucherPrintHtml,
@@ -42,7 +43,7 @@ export default function DriverVoucherDetailPage() {
     const [repairingIssueLedger, setRepairingIssueLedger] = useState(false);
     const [itemForm, setItemForm] = useState(createDefaultDriverVoucherItemForm());
     const [topUpForm, setTopUpForm] = useState(createDefaultDriverVoucherTopUpForm());
-    const [settlementDate, setSettlementDate] = useState(new Date().toISOString().slice(0, 10));
+    const [settlementDate, setSettlementDate] = useState(getBusinessDateValue());
     const [settlementBankRef, setSettlementBankRef] = useState('');
     const [issueBankRepairRef, setIssueBankRepairRef] = useState('');
     const normalizedRole = user ? normalizeUserRole(user.role) : null;
@@ -317,7 +318,7 @@ export default function DriverVoucherDetailPage() {
 
     const openSettleModal = () => {
         if (!canSettleVoucher || !voucher) return;
-        setSettlementDate(new Date().toISOString().slice(0, 10));
+        setSettlementDate(getBusinessDateValue());
         setSettlementBankRef(
             voucher.issueBankRef && bankAccounts.some(account => account._id === voucher.issueBankRef)
                 ? voucher.issueBankRef

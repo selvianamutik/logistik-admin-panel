@@ -8,6 +8,7 @@ import CollapsibleCard from '@/components/CollapsibleCard';
 import CurrencyInput from '@/components/CurrencyInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData, fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
+import { getBusinessDateValue } from '@/lib/business-date';
 import {
     formatFreightNotaDisplayWeight,
     getFreightNotaBillingModeLabel,
@@ -49,12 +50,12 @@ export default function NotaDetailPage() {
     const [voidingAdjustmentId, setVoidingAdjustmentId] = useState<string | null>(null);
     const [payAmount, setPayAmount] = useState(0);
     const [payMethod, setPayMethod] = useState('TRANSFER');
-    const [payDate, setPayDate] = useState(new Date().toISOString().split('T')[0]);
+    const [payDate, setPayDate] = useState(getBusinessDateValue());
     const [payNote, setPayNote] = useState('');
     const [payBankRef, setPayBankRef] = useState('');
     const [adjustAmount, setAdjustAmount] = useState(0);
     const [adjustKind, setAdjustKind] = useState('DAMAGE_CLAIM');
-    const [adjustDate, setAdjustDate] = useState(new Date().toISOString().split('T')[0]);
+    const [adjustDate, setAdjustDate] = useState(getBusinessDateValue());
     const [adjustNote, setAdjustNote] = useState('');
 
     const loadNotaDetail = useCallback(async () => {

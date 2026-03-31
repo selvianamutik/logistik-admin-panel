@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { getBusinessDateValue } from '@/lib/business-date';
 import { hashPassword, verifyPassword } from '@/lib/auth';
 import { getSanityClient, sanityDelete, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
 
@@ -240,7 +241,7 @@ export async function handleInvoiceCreate(
     const issueDate =
         normalizeOptionalText(data.issueDate) ||
         normalizeOptionalText(data.date) ||
-        new Date().toISOString().slice(0, 10);
+        getBusinessDateValue();
     const dueDate =
         normalizeOptionalText(data.dueDate) ||
         normalizeOptionalText(data.date) ||

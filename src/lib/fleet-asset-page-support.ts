@@ -1,3 +1,4 @@
+import { getBusinessDateValue } from './business-date';
 import { DEFAULT_PAGE_SIZE } from './pagination';
 import {
     formatTireSlotLabel,
@@ -49,7 +50,7 @@ export function createDefaultTireForm(): TireFormState {
         tireType: 'Tubeless',
         tireBrand: '',
         tireSize: '',
-        installDate: new Date().toISOString().split('T')[0],
+        installDate: getBusinessDateValue(),
         notes: '',
         externalPartyName: '',
         externalPlateNumber: '',

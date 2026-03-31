@@ -7,6 +7,7 @@ import AppPagination from '@/components/AppPagination';
 import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
 import CurrencyInput from '@/components/CurrencyInput';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
+import { getBusinessDateValue } from '@/lib/business-date';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { exportExpenses } from '@/lib/export';
 import { openBrandedPrint, openPrintWindow, fetchCompanyProfile } from '@/lib/print';
@@ -39,7 +40,7 @@ export default function ExpensesPage() {
     const [dateSortDir, setDateSortDir] = useState<SortDirection | null>(null);
     const [form, setForm] = useState({
         categoryRef: '',
-        date: new Date().toISOString().split('T')[0],
+        date: getBusinessDateValue(),
         amount: 0,
         note: '',
         description: '',
@@ -182,7 +183,7 @@ export default function ExpensesPage() {
             setShowModal(false);
             setForm({
                 categoryRef: '',
-                date: new Date().toISOString().split('T')[0],
+                date: getBusinessDateValue(),
                 amount: 0,
                 note: '',
                 description: '',
