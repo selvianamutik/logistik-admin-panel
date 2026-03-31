@@ -30,7 +30,9 @@ const getNextInvoiceAction = (nota: FreightNota, remainingAmount: number) => {
     if (nota.status === 'PARTIAL') {
         return remainingAmount > 0 ? 'Follow up sisa pembayaran nota' : 'Cek alokasi penerimaan';
     }
-    return (nota.totalAdjustmentAmount || 0) > 0 ? 'Arsip + cek potongan tagihan' : 'Arsip / cetak';
+    return parseFormattedNumberish(nota.totalAdjustmentAmount || 0, { maxFractionDigits: 0 }) > 0
+        ? 'Arsip + cek potongan tagihan'
+        : 'Arsip / cetak';
 };
 
 export default function NotaListPage() {
@@ -641,7 +643,7 @@ export default function NotaListPage() {
                                         <td>{formatFreightNotaDisplayWeight({ beratKg: n.totalWeightKg || 0, billingMode: normalizeFreightNotaBillingMode(n.billingMode), includeCanonical: false })}</td>
                                         <td>
                                             <div className="font-semibold">{formatCurrency(getReceivableNetAmount(n))}</div>
-                                            {(n.totalAdjustmentAmount || 0) > 0 && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Bruto {formatCurrency(n.totalAmount)}</div>}
+                                            {parseWholeMoneyLike(n.totalAdjustmentAmount) > 0 && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Bruto {formatCurrency(n.totalAmount)}</div>}
                                         </td>
                                         <td><span className={`badge badge-${STATUS_MAP[n.status]?.color}`}><span className="badge-dot" /> {STATUS_MAP[n.status]?.label}</span></td>
                                         <td><span style={{ fontWeight: 500 }}>{getNextInvoiceAction(n, getNotaRemaining(n))}</span></td>

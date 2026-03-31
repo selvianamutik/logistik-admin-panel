@@ -116,7 +116,7 @@ export function buildReportsSnapshot(params: {
     );
     const totalNotaIssued = freightNotas
         .filter(item => inPeriod(item.issueDate))
-        .reduce((sum, item) => sum + item.totalAmount, 0);
+        .reduce((sum, item) => sum + parseWholeMoneyLike(item.totalAmount), 0);
     const totalNotaOutstanding = freightNotas
         .filter(item => item.status !== 'PAID' && inPeriod(item.issueDate))
         .reduce(

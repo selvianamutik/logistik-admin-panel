@@ -1,4 +1,5 @@
 import { getReceivableNetAmount } from './utils';
+import { parseFormattedNumberish } from './formatted-number';
 
 export interface DashboardData {
     orderStats: { total: number; open: number; partial: number; complete: number; onHold: number };
@@ -29,7 +30,9 @@ export function getRecentOrderAction(status: string) {
 export function getRecentNotaAction(nota: DashboardData['recentNotas'][number]) {
     if (nota.status === 'UNPAID') return 'Tagih atau catat penerimaan';
     if (nota.status === 'PARTIAL') return 'Follow up sisa pembayaran nota';
-    return (nota.totalAdjustmentAmount || 0) > 0 ? 'Arsip + cek potongan tagihan' : 'Arsip / cetak';
+    return parseFormattedNumberish(nota.totalAdjustmentAmount || 0, { maxFractionDigits: 0 }) > 0
+        ? 'Arsip + cek potongan tagihan'
+        : 'Arsip / cetak';
 }
 
 export function getDashboardNotaNetAmount(nota: DashboardData['recentNotas'][number]) {
