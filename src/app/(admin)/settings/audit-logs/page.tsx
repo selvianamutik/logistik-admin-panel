@@ -52,30 +52,53 @@ export default function AuditLogsPage() {
         return params.toString();
     }, [page, search]);
 
+    const fetchAllMatchingAuditLogs = useCallback(async () => {
+        const pageSize = 200;
+        let currentPage = 1;
+        let total = 0;
+        const allItems: AuditLog[] = [];
+
+        do {
+            const res = await fetch(`/api/data?${buildAuditLogsQuery(currentPage, pageSize)}`);
+            const payload = await res.json();
+            if (!res.ok) {
+                throw new Error(payload.error || 'Gagal memuat audit log');
+            }
+
+            const nextItems = (payload.data || []) as AuditLog[];
+            total = payload.meta?.total || nextItems.length;
+            allItems.push(...nextItems);
+            if (nextItems.length === 0) break;
+            currentPage += 1;
+        } while (allItems.length < total);
+
+        return allItems;
+    }, [buildAuditLogsQuery]);
+
     useEffect(() => {
         const loadAuditLogs = async () => {
             setLoading(true);
             try {
-                const [listRes, summaryRes] = await Promise.all([
+                const [listRes, matchingLogs] = await Promise.all([
                     fetch(`/api/data?${buildAuditLogsQuery()}`),
-                    fetch('/api/data?entity=audit-logs-summary'),
+                    fetchAllMatchingAuditLogs(),
                 ]);
-                const [listPayload, summaryPayload] = await Promise.all([
-                    listRes.json(),
-                    summaryRes.json(),
-                ]);
+                const listPayload = await listRes.json();
                 if (!listRes.ok) {
                     throw new Error(listPayload.error || 'Gagal memuat audit log');
                 }
-                if (!summaryRes.ok) {
-                    throw new Error(summaryPayload.error || 'Gagal memuat ringkasan audit log');
-                }
+
+                const today = new Date().toISOString().slice(0, 10);
+                const nextTodayLogs = matchingLogs.filter(log => (log.timestamp || log._createdAt || '').slice(0, 10) === today).length;
+                const nextLoginLogs = matchingLogs.filter(log => log.action === 'LOGIN' || log.action === 'LOGOUT').length;
+                const nextMutationLogs = matchingLogs.filter(log => log.action === 'CREATE' || log.action === 'UPDATE' || log.action === 'DELETE').length;
+
                 setLogs(listPayload.data || []);
                 setFilteredTotalLogs(listPayload.meta?.total || 0);
-                setTotalLogs(summaryPayload.data?.totalLogs || 0);
-                setTodayLogs(summaryPayload.data?.todayLogs || 0);
-                setLoginLogs(summaryPayload.data?.loginLogs || 0);
-                setMutationLogs(summaryPayload.data?.mutationLogs || 0);
+                setTotalLogs(matchingLogs.length);
+                setTodayLogs(nextTodayLogs);
+                setLoginLogs(nextLoginLogs);
+                setMutationLogs(nextMutationLogs);
             } catch (error) {
                 addToast('error', error instanceof Error ? error.message : 'Gagal memuat audit log');
             } finally {
@@ -84,7 +107,7 @@ export default function AuditLogsPage() {
         };
 
         void loadAuditLogs();
-    }, [addToast, buildAuditLogsQuery]);
+    }, [addToast, buildAuditLogsQuery, fetchAllMatchingAuditLogs]);
 
     useEffect(() => {
         setPage(1);
