@@ -67,6 +67,7 @@ import {
     getCustomersSummary,
     getDashboardSummary,
     getExpensesSummary,
+    getFreightNotaList,
     getFreightNotasSummary,
     getListSortClause,
     getVehiclesSummary,
@@ -483,7 +484,35 @@ export async function GET(request: Request) {
             Boolean(sortField) ||
             Boolean(sortDir);
 
-        if (needsPaginatedList) {
+        if (entity === 'freight-notas') {
+            try {
+                const page = pageParam ? Number.parseInt(pageParam, 10) : 1;
+                const pageSize = pageSizeParam ? Number.parseInt(pageSizeParam, 10) : 10;
+                const searchFields = searchFieldsParam
+                    ? searchFieldsParam.split(',').map(field => field.trim()).filter(Boolean)
+                    : [];
+                const result = await getFreightNotaList({
+                    filterObj,
+                    orFilters,
+                    definedFields,
+                    search: searchQuery || undefined,
+                    searchFields,
+                    page: needsPaginatedList && !countOnly ? page : undefined,
+                    pageSize: needsPaginatedList && !countOnly ? pageSize : undefined,
+                    sortField,
+                    sortDir,
+                    sortPreset,
+                    countOnly,
+                });
+                items = result.items as unknown as Record<string, unknown>[];
+                totalItems = result.total;
+            } catch (error) {
+                return jsonNoStore(
+                    { error: error instanceof Error ? error.message : 'Query nota tidak valid' },
+                    { status: 400 }
+                );
+            }
+        } else if (needsPaginatedList) {
             try {
                 const page = pageParam ? Number.parseInt(pageParam, 10) : 1;
                 const pageSize = pageSizeParam ? Number.parseInt(pageSizeParam, 10) : 10;
