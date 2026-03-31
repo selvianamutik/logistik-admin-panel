@@ -146,17 +146,9 @@ export default function NotaListPage() {
 
     const reloadData = useCallback(async () => {
         setLoading(true);
-        const summaryParams = new URLSearchParams({ entity: 'freight-notas-summary' });
-        if (search.trim()) {
-            summaryParams.set('q', search.trim());
-        }
-        if (statusFilter) {
-            summaryParams.set('status', statusFilter);
-        }
-
-        const [notaRes, summaryRes, customerRes, receiptRes, receiptPaymentRes, bankRes, companyPayload] = await Promise.all([
+        const [notaRes, matchingNotas, customerRes, receiptRes, receiptPaymentRes, bankRes, companyPayload] = await Promise.all([
             fetch(`/api/data?${buildInvoicesQuery()}`),
-            fetch(`/api/data?${summaryParams.toString()}`),
+            fetchAllMatchingInvoices(),
             fetchAdminCollectionData<Customer[]>('/api/data?entity=customers', 'Gagal memuat customer'),
             fetchAdminCollectionData<CustomerReceipt[]>('/api/data?entity=customer-receipts', 'Gagal memuat penerimaan customer'),
             fetchAdminCollectionData<Payment[]>('/api/data?entity=payments&definedFields=receiptRef', 'Gagal memuat alokasi receipt'),
@@ -164,47 +156,64 @@ export default function NotaListPage() {
             fetchCompanyProfile().catch(() => null),
         ]);
 
-        const [notaPayload, summaryPayload] = await Promise.all([
-            notaRes.json(),
-            summaryRes.json(),
-        ]);
+        const notaPayload = await notaRes.json();
 
         if (!notaRes.ok) throw new Error(notaPayload.error || 'Gagal memuat nota ongkos');
-        if (!summaryRes.ok) throw new Error(summaryPayload.error || 'Gagal memuat ringkasan nota');
 
         const notaRows = (notaPayload.data || []) as FreightNota[];
-        const notaIds = notaRows.map(nota => nota._id).filter(Boolean);
-        let paymentRows: Payment[] = [];
+        const matchingNotaIds = matchingNotas.map(nota => nota._id).filter(Boolean);
+        let matchingPaymentRows: Payment[] = [];
 
-        if (notaIds.length > 0) {
-            paymentRows = await fetchAdminCollectionData<Payment[]>(
-                `/api/data?entity=payments&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: notaIds }))}`,
+        if (matchingNotaIds.length > 0) {
+            matchingPaymentRows = await fetchAdminCollectionData<Payment[]>(
+                `/api/data?entity=payments&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: matchingNotaIds }))}`,
                 'Gagal memuat pembayaran nota'
             );
         }
+        const currentNotaIds = new Set(notaRows.map(nota => nota._id).filter(Boolean));
+        const paymentRows = matchingPaymentRows.filter(payment => currentNotaIds.has(payment.invoiceRef));
+        const matchingPaymentTotals = matchingPaymentRows.reduce<Record<string, number>>((acc, payment) => {
+            acc[payment.invoiceRef] = (acc[payment.invoiceRef] || 0) + parseWholeMoneyLike(payment.amount);
+            return acc;
+        }, {});
 
         const derivedReceipts = deriveCustomerReceiptAllocations(receiptRes || [], receiptPaymentRes || []);
         const derivedCustomerCreditTotal = derivedReceipts.reduce(
             (sum, receipt) => sum + parseWholeMoneyLike(receipt.unappliedAmount),
             0
         );
+        const derivedSummary = matchingNotas.reduce(
+            (acc, nota) => {
+                const paidAmount = matchingPaymentTotals[nota._id] || 0;
+                const derivedStatus = deriveReceivableStatus(nota, paidAmount);
+                acc.filteredNetTotal += getReceivableNetAmount(nota);
+                acc.filteredOutstandingTotal += Math.max(getReceivableNetAmount(nota) - paidAmount, 0);
+                if (derivedStatus === 'UNPAID') acc.unpaidCount += 1;
+                if (derivedStatus === 'PARTIAL') acc.partialCount += 1;
+                if (derivedStatus === 'PAID') acc.paidCount += 1;
+                return acc;
+            },
+            {
+                filteredNetTotal: 0,
+                filteredOutstandingTotal: 0,
+                unpaidCount: 0,
+                partialCount: 0,
+                paidCount: 0,
+            }
+        );
 
         setItems(notaRows);
         setPayments(paymentRows);
         setTotalInvoices(notaPayload.meta?.total || 0);
         setSummary({
-            filteredNetTotal: summaryPayload.data?.filteredNetTotal || 0,
-            filteredOutstandingTotal: summaryPayload.data?.filteredOutstandingTotal || 0,
-            unpaidCount: summaryPayload.data?.unpaidCount || 0,
-            partialCount: summaryPayload.data?.partialCount || 0,
-            paidCount: summaryPayload.data?.paidCount || 0,
+            ...derivedSummary,
             customerCreditTotal: derivedCustomerCreditTotal,
         });
         setCustomers((customerRes || []).filter(customer => customer.active !== false));
         setCustomerReceipts(derivedReceipts);
         setBankAccounts((bankRes || []).filter(account => account.active !== false));
         setCompany(companyPayload);
-    }, [buildInvoicesQuery, search, statusFilter]);
+    }, [buildInvoicesQuery, fetchAllMatchingInvoices]);
 
     useEffect(() => {
         reloadData()

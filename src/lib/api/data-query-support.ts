@@ -20,7 +20,7 @@ import type {
     TireEvent,
     Vehicle,
 } from '@/lib/types';
-import { deriveReceivableStatus, getDriverVoucherFinancialSummary, getDriverVoucherIssuedAmount, getReceivableNetAmount, getReceivableRemainingAmount } from '@/lib/utils';
+import { deriveReceivableStatus, getDriverVoucherFinancialSummary, getDriverVoucherIssuedAmount, getReceivableNetAmount } from '@/lib/utils';
 
 function parseWholeMoneyLike(value: unknown) {
     return Math.max(parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 }), 0);
@@ -1275,84 +1275,3 @@ export async function getDriverBoronganDoRefsSummary() {
     };
 }
 
-export type FreightNotasSummary = {
-    filteredNetTotal: number;
-    filteredOutstandingTotal: number;
-    unpaidCount: number;
-    partialCount: number;
-    paidCount: number;
-    customerCreditTotal: number;
-};
-
-function matchesFreightNotaSearch(nota: Pick<FreightNota, 'notaNumber' | 'customerName'>, search: string) {
-    if (!search) return true;
-    const query = search.trim().toLowerCase();
-    if (!query) return true;
-
-    return (
-        nota.notaNumber?.toLowerCase().includes(query) ||
-        nota.customerName?.toLowerCase().includes(query)
-    );
-}
-
-export async function getFreightNotasSummary(search = '', status = ''): Promise<FreightNotasSummary> {
-    const client = getSanityClient();
-    const [notaRows, paymentRows, receiptRows] = await Promise.all([
-        client.fetch<Array<Pick<FreightNota, '_id' | 'notaNumber' | 'customerName' | 'status' | 'totalAmount' | 'totalAdjustmentAmount' | 'netAmount'>>>(
-            `*[_type == "freightNota"]{
-                _id,
-                notaNumber,
-                customerName,
-                status,
-                totalAmount,
-                totalAdjustmentAmount,
-                netAmount
-            }`
-        ),
-        client.fetch<Array<Pick<Payment, 'invoiceRef' | 'receiptRef' | 'amount'>>>(
-            `*[_type == "payment" && defined(invoiceRef)]{
-                invoiceRef,
-                receiptRef,
-                amount
-            }`
-        ),
-        client.fetch<Array<Pick<CustomerReceipt, '_id' | 'totalAmount' | 'allocatedAmount' | 'unappliedAmount' | 'allocationCount'>>>(
-            `*[_type == "customerReceipt"]{
-                _id,
-                totalAmount,
-                allocatedAmount,
-                unappliedAmount,
-                allocationCount
-            }`
-        ),
-    ]);
-
-    const paymentTotalsByInvoice = getFreightNotaPaymentTotals(paymentRows);
-    const notasWithDerivedStatus = applyDerivedFreightNotaStatus(notaRows, paymentTotalsByInvoice);
-    const receiptAllocations = paymentRows.flatMap(payment =>
-        payment.receiptRef
-            ? [{ receiptRef: payment.receiptRef, amount: payment.amount }]
-            : []
-    );
-    const receiptsWithDerivedAllocations = applyDerivedCustomerReceiptAllocations(receiptRows, receiptAllocations);
-    const filteredNotas = notasWithDerivedStatus.filter(nota => {
-        const matchesSearch = matchesFreightNotaSearch(nota, search);
-        const matchesStatus = !status || nota.status === status;
-        return matchesSearch && matchesStatus;
-    });
-
-    return {
-        filteredNetTotal: filteredNotas.reduce((sum, nota) => sum + getReceivableNetAmount(nota), 0),
-        filteredOutstandingTotal: filteredNotas.reduce(
-            (sum, nota) => sum + getReceivableRemainingAmount(nota, paymentTotalsByInvoice[nota._id] || 0),
-            0
-        ),
-        unpaidCount: notasWithDerivedStatus.filter(nota => nota.status === 'UNPAID').length,
-        partialCount: notasWithDerivedStatus.filter(nota => nota.status === 'PARTIAL').length,
-        paidCount: notasWithDerivedStatus.filter(nota => nota.status === 'PAID').length,
-        customerCreditTotal: receiptsWithDerivedAllocations.reduce(
-            (sum, receipt) => sum + parseWholeMoneyLike(receipt.unappliedAmount),
-            0
-        ),
-    };
-}
