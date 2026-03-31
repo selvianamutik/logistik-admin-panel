@@ -77,6 +77,8 @@ import {
     getDriverVoucherById,
     getListSortClause,
     getVehiclesSummary,
+    applyDerivedDriverBoronganTotals,
+    applyDerivedFreightNotaStatus,
     applyDerivedDriverVoucherFinancials,
 } from '@/lib/api/data-query-support';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
@@ -90,7 +92,7 @@ import {
     sanityGetCompanyProfile,
     sanityList,
 } from '@/lib/sanity';
-import type { DriverVoucher, Expense, User, Vehicle } from '@/lib/types';
+import type { DriverBorongan, DriverBoronganItem, DriverVoucher, Expense, FreightNota, User, Vehicle } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -719,6 +721,56 @@ export async function GET(request: Request) {
 
         if (entity === 'users') {
             items = items.map(item => sanitizeUserForClient(item as unknown as User) as unknown as Record<string, unknown>);
+        }
+
+        if (entity === 'freight-notas' && items.length > 0) {
+            const ids = items
+                .map(item => (typeof item._id === 'string' ? item._id : ''))
+                .filter(Boolean);
+            const paymentRows = await getSanityClient().fetch<Array<{ invoiceRef?: string; amount?: unknown }>>(
+                `*[_type == "payment" && defined(invoiceRef) && invoiceRef in $ids]{
+                    invoiceRef,
+                    amount
+                }`,
+                { ids }
+            );
+            const paymentTotalsByInvoice = paymentRows.reduce<Record<string, number>>((acc, payment) => {
+                if (!payment.invoiceRef) return acc;
+                acc[payment.invoiceRef] = (acc[payment.invoiceRef] || 0) + parseWholeMoneyLike(payment.amount);
+                return acc;
+            }, {});
+            items = applyDerivedFreightNotaStatus(items as unknown as FreightNota[], paymentTotalsByInvoice) as unknown as Record<string, unknown>[];
+        }
+
+        if (entity === 'customer-receipts' && items.length > 0) {
+            items = await deriveCustomerReceiptsForResponse(items as ReceiptResponseShape[]) as unknown as Record<string, unknown>[];
+        }
+
+        if (entity === 'driver-borongans' && items.length > 0) {
+            const ids = items
+                .map(item => (typeof item._id === 'string' ? item._id : ''))
+                .filter(Boolean);
+            const boronganItems = await getSanityClient().fetch<Array<{
+                boronganRef?: string;
+                collie?: unknown;
+                beratKg?: unknown;
+                uangRp?: unknown;
+            }>>(
+                `*[_type == "driverBoronganItem" && defined(boronganRef) && boronganRef in $ids]{
+                    boronganRef,
+                    collie,
+                    beratKg,
+                    uangRp
+                }`,
+                { ids }
+            );
+            items = applyDerivedDriverBoronganTotals(
+                items as unknown as DriverBorongan[],
+                boronganItems.filter(
+                    (item): item is { boronganRef: string; collie?: unknown; beratKg?: unknown; uangRp?: unknown } =>
+                        typeof item.boronganRef === 'string' && item.boronganRef.length > 0
+                ) as Array<Pick<DriverBoronganItem, 'boronganRef' | 'collie' | 'beratKg' | 'uangRp'>>
+            ) as unknown as Record<string, unknown>[];
         }
 
         if (entity === 'driver-vouchers') {

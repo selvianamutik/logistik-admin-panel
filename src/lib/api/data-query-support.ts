@@ -31,7 +31,7 @@ function getFreightNotaPaymentTotals(paymentRows: Array<{ invoiceRef?: string; a
     }, {});
 }
 
-function applyDerivedFreightNotaStatus<T extends {
+export function applyDerivedFreightNotaStatus<T extends {
     _id: string;
     status?: string;
     totalAmount?: string | number | null;
@@ -78,6 +78,8 @@ export function applyDerivedDriverBoronganTotals<
         totalAmount?: number | string | null;
         totalCollie?: number | string | null;
         totalWeightKg?: number | string | null;
+        totalBeratKg?: number | string | null;
+        totalUangJalan?: number | string | null;
     }
 >(
     borongans: T[],
@@ -99,11 +101,18 @@ export function applyDerivedDriverBoronganTotals<
     return borongans.map(borongan => {
         const derived = totalsByBorongan[borongan._id];
         if (!derived) {
+            const normalizedTotalAmount = parseWholeMoneyLike(borongan.totalAmount);
+            const normalizedTotalWeightKg = Math.max(
+                parseFormattedNumberish(borongan.totalWeightKg ?? borongan.totalBeratKg ?? 0, { maxFractionDigits: 3 }),
+                0
+            );
             return {
                 ...borongan,
-                totalAmount: parseWholeMoneyLike(borongan.totalAmount),
+                totalAmount: normalizedTotalAmount,
                 totalCollie: Math.max(parseFormattedNumberish(borongan.totalCollie ?? 0, { maxFractionDigits: 2 }), 0),
-                totalWeightKg: Math.max(parseFormattedNumberish(borongan.totalWeightKg ?? 0, { maxFractionDigits: 3 }), 0),
+                totalWeightKg: normalizedTotalWeightKg,
+                totalBeratKg: normalizedTotalWeightKg,
+                totalUangJalan: normalizedTotalAmount,
             };
         }
         return {
@@ -111,6 +120,8 @@ export function applyDerivedDriverBoronganTotals<
             totalAmount: derived.totalAmount,
             totalCollie: derived.totalCollie,
             totalWeightKg: derived.totalWeightKg,
+            totalBeratKg: derived.totalWeightKg,
+            totalUangJalan: derived.totalAmount,
         };
     });
 }
