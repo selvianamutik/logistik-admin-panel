@@ -92,38 +92,28 @@ export default function DriverVouchersPage() {
     const loadVouchers = useCallback(async () => {
         setLoading(true);
         try {
-            const [listRes, issuedRes, draftRes, settledRes] = await Promise.all([
+            const [listRes, matchingVouchers] = await Promise.all([
                 fetch(`/api/data?${buildVoucherQuery()}`),
-                fetch(`/api/data?entity=driver-vouchers&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ status: 'ISSUED' }))}`),
-                fetch(`/api/data?entity=driver-vouchers&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ status: 'DRAFT' }))}`),
-                fetch(`/api/data?entity=driver-vouchers&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ status: 'SETTLED' }))}`),
+                fetchAllMatchingVouchers(),
             ]);
 
-            const [listPayload, issuedPayload, draftPayload, settledPayload] = await Promise.all([
-                listRes.json(),
-                issuedRes.json(),
-                draftRes.json(),
-                settledRes.json(),
-            ]);
+            const listPayload = await listRes.json();
 
             if (!listRes.ok) throw new Error(listPayload.error || 'Gagal memuat uang jalan trip');
-            if (!issuedRes.ok) throw new Error(issuedPayload.error || 'Gagal memuat statistik uang jalan trip');
-            if (!draftRes.ok) throw new Error(draftPayload.error || 'Gagal memuat statistik uang jalan trip');
-            if (!settledRes.ok) throw new Error(settledPayload.error || 'Gagal memuat statistik uang jalan trip');
 
             setItems(listPayload.data || []);
             setTotalItems(listPayload.meta?.total || 0);
             setQueueCounts({
-                issued: issuedPayload.meta?.total || 0,
-                draft: draftPayload.meta?.total || 0,
-                settled: settledPayload.meta?.total || 0,
+                issued: matchingVouchers.filter(voucher => voucher.status === 'ISSUED').length,
+                draft: matchingVouchers.filter(voucher => voucher.status === 'DRAFT').length,
+                settled: matchingVouchers.filter(voucher => voucher.status === 'SETTLED').length,
             });
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat uang jalan trip');
         } finally {
             setLoading(false);
         }
-    }, [addToast, buildVoucherQuery]);
+    }, [addToast, buildVoucherQuery, fetchAllMatchingVouchers]);
 
     useEffect(() => {
         void loadVouchers();
