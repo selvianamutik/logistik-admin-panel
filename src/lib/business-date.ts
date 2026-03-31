@@ -48,6 +48,46 @@ export function getBusinessDateTimeLocalValue(date: Date = new Date(), timeZone:
     return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
 }
 
+export function formatBusinessDate(
+    value: Date | string = new Date(),
+    locale: string = 'id-ID',
+    options?: Intl.DateTimeFormatOptions,
+    timeZone: string = BUSINESS_TIME_ZONE,
+) {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return typeof value === 'string' ? value : '';
+    }
+
+    return new Intl.DateTimeFormat(locale, {
+        timeZone,
+        ...options,
+    }).format(date);
+}
+
+export function formatBusinessDateTime(
+    value: Date | string = new Date(),
+    locale: string = 'id-ID',
+    options?: Intl.DateTimeFormatOptions,
+    timeZone: string = BUSINESS_TIME_ZONE,
+) {
+    return formatBusinessDate(
+        value,
+        locale,
+        {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false,
+            ...options,
+        },
+        timeZone,
+    );
+}
+
 export function addDaysToDateValue(dateValue: string, days: number) {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateValue);
     if (!match) return '';

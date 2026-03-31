@@ -4,6 +4,7 @@
    ============================================================ */
 
 import jsPDF from 'jspdf';
+import { formatBusinessDateTime } from '@/lib/business-date';
 import type { DeliveryOrder, DeliveryOrderItem, CompanyProfile } from '@/lib/types';
 import { DO_ACTUAL_DROP_TYPE_MAP, formatDate, formatInternalDeliveryOrderNumber, formatShipperDeliveryOrderNumber } from '@/lib/utils';
 import { formatCargoSummary } from '@/lib/measurement';
@@ -242,7 +243,7 @@ export function generateDOPdf(
     const footerY = doc.internal.pageSize.getHeight() - 10;
     doc.setFontSize(7);
     doc.setTextColor(150);
-    doc.text(`Dicetak: ${new Date().toLocaleString('id-ID')}`, margin, footerY);
+    doc.text(`Dicetak: ${formatBusinessDateTime(new Date()).replace(/\./g, ':')}`, margin, footerY);
     doc.text(`${company.name} - ${formatInternalDeliveryOrderNumber(doData)}`, pageWidth - margin, footerY, { align: 'right' });
 
     doc.save(`Surat-Jalan-${formatInternalDeliveryOrderNumber(doData)}.pdf`);

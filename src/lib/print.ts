@@ -3,6 +3,7 @@
    ============================================================ */
 
 import DOMPurify from 'dompurify';
+import { formatBusinessDate } from './business-date';
 import {
     formatFreightNotaDisplayWeight,
     getFreightNotaBillingModeLabel,
@@ -185,7 +186,7 @@ export function openBrandedPrint(opts: {
 
     const companyName = company?.name || 'Gading Mas Surya';
     const companyLogo = resolveCompanyLogoUrl(company);
-    const printDate = new Date().toLocaleDateString('id-ID', {
+    const printDate = formatBusinessDate(new Date(), 'id-ID', {
         day: '2-digit',
         month: 'long',
         year: 'numeric',
@@ -268,7 +269,7 @@ function escapePrintAttribute(value: unknown) {
         .replace(/>/g, '&gt;');
 }
 
-function fmtPrintDate(value?: string) {
+function fmtPrintDate(value?: string | Date) {
     if (!value) return '-';
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
@@ -279,11 +280,11 @@ function fmtPrintDate(value?: string) {
     return `${day}-${month}-${year}`;
 }
 
-function fmtLongPrintDate(value?: string) {
+function fmtLongPrintDate(value?: string | Date) {
     if (!value) return '-';
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
-    return date.toLocaleDateString('id-ID', {
+    return formatBusinessDate(date, 'id-ID', {
         day: 'numeric',
         month: 'long',
         year: 'numeric',
@@ -334,7 +335,7 @@ export function buildFreightNotaPrintDocument(opts: {
     const adjustmentAmount = parseFormattedNumberish(nota.totalAdjustmentAmount || 0);
     const netAmount = getReceivableNetAmount(nota);
     const billingMode = normalizeFreightNotaBillingMode(nota.billingMode);
-    const printDate = fmtLongPrintDate(new Date().toISOString());
+    const printDate = fmtLongPrintDate(new Date());
     const dueDateLabel = nota.dueDate ? fmtLongPrintDate(nota.dueDate) : '-';
     const uniqueShipmentDates = [...new Set(items.map(item => item.date).filter(Boolean))].sort();
     const uniqueShipmentRefs = [...new Set(items.map(item => item.doNumber).filter(Boolean))];

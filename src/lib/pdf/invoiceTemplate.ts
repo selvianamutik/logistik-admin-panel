@@ -4,6 +4,7 @@
    ============================================================ */
 
 import jsPDF from 'jspdf';
+import { formatBusinessDateTime } from '@/lib/business-date';
 import type { Invoice, InvoiceItem, CompanyProfile, Payment } from '@/lib/types';
 import {
     buildInvoiceInstructionAccountText,
@@ -222,7 +223,7 @@ export function generateInvoicePdf(
     const footerY = doc.internal.pageSize.getHeight() - 10;
     doc.setFontSize(7);
     doc.setTextColor(150);
-    doc.text(`Dicetak: ${new Date().toLocaleString('id-ID')}`, margin, footerY);
+    doc.text(`Dicetak: ${formatBusinessDateTime(new Date()).replace(/\./g, ':')}`, margin, footerY);
     doc.text(`${company.name} — ${invoice.invoiceNumber}`, pageWidth - margin, footerY, { align: 'right' });
 
     doc.save(`Invoice-${invoice.invoiceNumber}.pdf`);

@@ -28,6 +28,7 @@ import {
   normalizeBankAccountAmount,
   sortBankAccountsForDisplay,
 } from "@/lib/bank-account-page-support";
+import { getBusinessDateValue } from "@/lib/business-date";
 import { exportToExcel } from "@/lib/export";
 import { openBrandedPrint, openPrintWindow } from "@/lib/print";
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
@@ -352,7 +353,7 @@ export default function BankAccountsPage() {
           { header: "Saldo Awal", key: "initialBalance", width: 18 },
           { header: "Saldo Saat Ini", key: "currentBalance", width: 18 },
         ],
-        `rekening-dan-kas-${new Date().toISOString().split("T")[0]}`,
+        `rekening-dan-kas-${getBusinessDateValue()}`,
         "Rekening dan Kas",
       );
       addToast("success", "Excel berhasil di-download");
