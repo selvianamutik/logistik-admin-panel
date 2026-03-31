@@ -29,6 +29,8 @@ import {
     shouldRequireTripVehicleOverrideReason,
     shouldOpenAdvancedDropEditor,
     sortTrackingLogs,
+    updateActualCargoDraftVolumeUnit,
+    updateActualCargoDraftWeightUnit,
     type ActualCargoDraft,
     type ActualDropDraft,
 } from '@/lib/delivery-order-detail-support';
@@ -294,6 +296,26 @@ export default function DODetailPage() {
             previous.map(item =>
                 item.deliveryOrderItemRef === deliveryOrderItemRef
                     ? { ...item, [field]: value }
+                    : item
+            )
+        );
+    };
+
+    const updateActualCargoWeightUnit = (deliveryOrderItemRef: string, nextUnit: ActualCargoDraft['actualWeightInputUnit']) => {
+        setActualCargoItems(previous =>
+            previous.map(item =>
+                item.deliveryOrderItemRef === deliveryOrderItemRef
+                    ? updateActualCargoDraftWeightUnit(item, nextUnit)
+                    : item
+            )
+        );
+    };
+
+    const updateActualCargoVolumeUnit = (deliveryOrderItemRef: string, nextUnit: ActualCargoDraft['actualVolumeInputUnit']) => {
+        setActualCargoItems(previous =>
+            previous.map(item =>
+                item.deliveryOrderItemRef === deliveryOrderItemRef
+                    ? updateActualCargoDraftVolumeUnit(item, nextUnit)
                     : item
             )
         );
@@ -1331,7 +1353,7 @@ export default function DODetailPage() {
                                                                 <select
                                                                     className="form-select"
                                                                     value={item.actualWeightInputUnit}
-                                                                    onChange={e => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualWeightInputUnit', e.target.value)}
+                                                                    onChange={e => updateActualCargoWeightUnit(item.deliveryOrderItemRef, e.target.value as ActualCargoDraft['actualWeightInputUnit'])}
                                                                     disabled={updatingStatus}
                                                                 >
                                                                     {WEIGHT_INPUT_UNIT_OPTIONS.map(option => (
@@ -1357,7 +1379,7 @@ export default function DODetailPage() {
                                                                 <select
                                                                     className="form-select"
                                                                     value={item.actualVolumeInputUnit}
-                                                                    onChange={e => updateActualCargoDraft(item.deliveryOrderItemRef, 'actualVolumeInputUnit', e.target.value)}
+                                                                    onChange={e => updateActualCargoVolumeUnit(item.deliveryOrderItemRef, e.target.value as ActualCargoDraft['actualVolumeInputUnit'])}
                                                                     disabled={updatingStatus}
                                                                 >
                                                                     {VOLUME_INPUT_UNIT_OPTIONS.map(option => (

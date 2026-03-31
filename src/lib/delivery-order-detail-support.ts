@@ -1,7 +1,9 @@
 import type { DeliveryOrder, DeliveryOrderItem, Driver, Order, TrackingLog, Vehicle } from '@/lib/types';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import {
+    convertWeightToKg,
     convertKgToWeightInputValue,
+    convertVolumeToM3,
     convertM3ToVolumeInputValue,
     formatCargoSummary,
     type VolumeInputUnit,
@@ -124,6 +126,46 @@ export function buildActualCargoDraft(item: DeliveryOrderItem): ActualCargoDraft
         requireQty: plannedQtyKoli > 0,
         requireWeight: plannedWeightKg > 0,
         requireVolume: plannedVolumeM3 > 0,
+    };
+}
+
+export function updateActualCargoDraftWeightUnit(item: ActualCargoDraft, nextUnit: WeightInputUnit): ActualCargoDraft {
+    if (item.actualWeightInputUnit === nextUnit) {
+        return item;
+    }
+
+    const currentWeightInputValue = parseFormattedNumberish(item.actualWeightInputValue || 0, {
+        maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
+    });
+    const currentWeightKg =
+        currentWeightInputValue > 0
+            ? convertWeightToKg(currentWeightInputValue, item.actualWeightInputUnit)
+            : 0;
+
+    return {
+        ...item,
+        actualWeightInputUnit: nextUnit,
+        actualWeightInputValue: currentWeightKg > 0 ? String(convertKgToWeightInputValue(currentWeightKg, nextUnit)) : '',
+    };
+}
+
+export function updateActualCargoDraftVolumeUnit(item: ActualCargoDraft, nextUnit: VolumeInputUnit): ActualCargoDraft {
+    if (item.actualVolumeInputUnit === nextUnit) {
+        return item;
+    }
+
+    const currentVolumeInputValue = parseFormattedNumberish(item.actualVolumeInputValue || 0, {
+        maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
+    });
+    const currentVolumeM3 =
+        currentVolumeInputValue > 0
+            ? convertVolumeToM3(currentVolumeInputValue, item.actualVolumeInputUnit)
+            : 0;
+
+    return {
+        ...item,
+        actualVolumeInputUnit: nextUnit,
+        actualVolumeInputValue: currentVolumeM3 > 0 ? String(convertM3ToVolumeInputValue(currentVolumeM3, nextUnit)) : '',
     };
 }
 

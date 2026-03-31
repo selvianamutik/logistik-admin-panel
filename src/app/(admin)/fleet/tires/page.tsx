@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useApp, useToast } from '../../layout';
 import { Plus, Search, Disc3, CheckCircle, Warehouse, ExternalLink, History } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
+import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import {
     buildTiresQuery,
@@ -52,6 +53,7 @@ export default function TiresPage() {
     const [historyTarget, setHistoryTarget] = useState<ResolvedFleetTireEvent | null>(null);
     const [historyRows, setHistoryRows] = useState<TireHistoryLog[]>([]);
     const [loadingHistory, setLoadingHistory] = useState(false);
+    const [dateSortDir, setDateSortDir] = useState<SortDirection | null>(null);
     const canCreateTires = user ? hasPermission(user.role, 'tires', 'create') : false;
     const canManageTires = user ? hasPermission(user.role, 'tires', 'update') : false;
 
@@ -67,8 +69,10 @@ export default function TiresPage() {
                 search,
                 filterVehicle,
                 filterStatus,
+                sortField: dateSortDir ? 'installDate' : undefined,
+                sortDir: dateSortDir || undefined,
             }),
-        [filterStatus, filterVehicle, page, search]
+        [dateSortDir, filterStatus, filterVehicle, page, search]
     );
 
     const loadData = useCallback(async () => {
@@ -270,7 +274,7 @@ export default function TiresPage() {
                                 <th>Lokasi Saat Ini</th>
                                 <th>Status</th>
                                 <th>Merk & Ukuran</th>
-                                <th>Tgl Catat</th>
+                                <th><SortableTableHeader label="Tgl Catat" direction={dateSortDir} onToggle={() => setDateSortDir(current => current === 'desc' ? 'asc' : 'desc')} /></th>
                                 <th>Catatan</th>
                                 <th></th>
                             </tr>

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Search, Plus, FileText, Printer, FileDown, Receipt } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
+import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
 import CurrencyInput from '@/components/CurrencyInput';
 import { fetchAdminCollectionData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
@@ -96,6 +97,7 @@ export default function NotaListPage() {
     const [receiptOpenNotas, setReceiptOpenNotas] = useState<FreightNota[]>([]);
     const [receiptOpenPayments, setReceiptOpenPayments] = useState<Payment[]>([]);
     const [receiptNotesLoading, setReceiptNotesLoading] = useState(false);
+    const [dateSortDir, setDateSortDir] = useState<SortDirection | null>(null);
     const canCreateInvoice = user ? hasPermission(user.role, 'freightNotas', 'create') : false;
     const canCreateReceipt = user ? hasPermission(user.role, 'freightNotas', 'update') : false;
     const canExportInvoices = user ? hasPermission(user.role, 'freightNotas', 'export') : false;
@@ -106,8 +108,14 @@ export default function NotaListPage() {
             entity: 'freight-notas',
             page: String(targetPage),
             pageSize: String(targetPageSize),
-            sortPreset: 'work-queue',
         });
+
+        if (dateSortDir) {
+            params.set('sortField', 'issueDate');
+            params.set('sortDir', dateSortDir);
+        } else {
+            params.set('sortPreset', 'work-queue');
+        }
 
         if (search.trim()) {
             params.set('q', search.trim());
@@ -119,7 +127,7 @@ export default function NotaListPage() {
         }
 
         return params.toString();
-    }, [page, search, statusFilter]);
+    }, [dateSortDir, page, search, statusFilter]);
 
     const fetchAllMatchingInvoices = useCallback(async () => {
         const pageSize = 200;
@@ -652,7 +660,7 @@ export default function NotaListPage() {
                 </div>
                 <div className="table-wrapper table-desktop-only">
                     <table>
-                        <thead><tr><th>No. Nota</th><th>Customer</th><th>Tanggal</th><th>Total Collie</th><th>Total Berat Tagih</th><th>Tagihan Netto</th><th>Status</th><th>Tindak Lanjut</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>No. Nota</th><th>Customer</th><th><SortableTableHeader label="Tanggal" direction={dateSortDir} onToggle={() => setDateSortDir(current => current === 'desc' ? 'asc' : 'desc')} /></th><th>Total Collie</th><th>Total Berat Tagih</th><th>Tagihan Netto</th><th>Status</th><th>Tindak Lanjut</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 totalInvoices === 0 ? (

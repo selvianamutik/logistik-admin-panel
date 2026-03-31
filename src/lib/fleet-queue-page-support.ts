@@ -82,13 +82,21 @@ export function buildIncidentsQuery(params: {
     search?: string;
     vehicleFilter?: string;
     statusFilter?: string;
+    sortField?: string;
+    sortDir?: 'asc' | 'desc';
 }) {
     const query = new URLSearchParams({
         entity: 'incidents',
         page: String(params.page ?? 1),
         pageSize: String(params.pageSize ?? DEFAULT_PAGE_SIZE),
-        sortPreset: 'work-queue',
     });
+
+    if (params.sortField) {
+        query.set('sortField', params.sortField);
+        query.set('sortDir', params.sortDir === 'asc' ? 'asc' : 'desc');
+    } else {
+        query.set('sortPreset', 'work-queue');
+    }
 
     if (params.search?.trim()) {
         query.set('q', params.search.trim());
@@ -115,13 +123,21 @@ export function buildMaintenanceQuery(params: {
     search?: string;
     vehicleFilter?: string;
     statusFilter?: string;
+    sortField?: string;
+    sortDir?: 'asc' | 'desc';
 }) {
     const query = new URLSearchParams({
         entity: 'maintenances',
         page: String(params.page ?? 1),
         pageSize: String(params.pageSize ?? DEFAULT_PAGE_SIZE),
-        sortPreset: 'work-queue',
     });
+
+    if (params.sortField) {
+        query.set('sortField', params.sortField);
+        query.set('sortDir', params.sortDir === 'asc' ? 'asc' : 'desc');
+    } else {
+        query.set('sortPreset', 'work-queue');
+    }
 
     if (params.search?.trim()) {
         query.set('q', params.search.trim());

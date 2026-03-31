@@ -34,14 +34,22 @@ export function buildDeliveryOrdersQuery(params: {
     search?: string;
     statusFilter?: string;
     serviceFilter?: string;
+    sortField?: string;
+    sortDir?: 'asc' | 'desc';
 }) {
     const search = params.search?.trim() || '';
     const paramsBuilder = new URLSearchParams({
         entity: 'delivery-orders',
         page: String(params.page ?? 1),
         pageSize: String(params.pageSize ?? DEFAULT_PAGE_SIZE),
-        sortPreset: 'work-queue',
     });
+
+    if (params.sortField) {
+        paramsBuilder.set('sortField', params.sortField);
+        paramsBuilder.set('sortDir', params.sortDir === 'asc' ? 'asc' : 'desc');
+    } else {
+        paramsBuilder.set('sortPreset', 'work-queue');
+    }
 
     if (search) {
         paramsBuilder.set('q', search);

@@ -99,12 +99,19 @@ export function buildTiresQuery(params: {
     search?: string;
     filterVehicle?: string;
     filterStatus?: 'all' | TireAssetStatus;
+    sortField?: string;
+    sortDir?: 'asc' | 'desc';
 }) {
     const query = new URLSearchParams({
         entity: 'tire-events',
         page: String(params.page ?? 1),
         pageSize: String(params.pageSize ?? DEFAULT_PAGE_SIZE),
     });
+
+    if (params.sortField) {
+        query.set('sortField', params.sortField);
+        query.set('sortDir', params.sortDir === 'asc' ? 'asc' : 'desc');
+    }
 
     if (params.search?.trim()) {
         query.set('q', params.search.trim());

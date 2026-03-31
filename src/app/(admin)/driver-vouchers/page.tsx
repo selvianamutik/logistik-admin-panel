@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Eye, Plus, Search, Receipt, Printer } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
+import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
 
 import { formatDate, formatCurrency, getDriverVoucherFinancialSummary } from '@/lib/utils';
 import { openBrandedPrint, openPrintWindow, fetchCompanyProfile } from '@/lib/print';
@@ -46,6 +47,7 @@ export default function DriverVouchersPage() {
     const [page, setPage] = useState(1);
     const [totalItems, setTotalItems] = useState(0);
     const [queueCounts, setQueueCounts] = useState({ issued: 0, draft: 0, settled: 0 });
+    const [dateSortDir, setDateSortDir] = useState<SortDirection | null>(null);
     const canCreateVoucher = user ? hasPermission(user.role, 'driverVouchers', 'create') : false;
     const canPrintVoucher = user ? hasPermission(user.role, 'driverVouchers', 'print') : false;
 
@@ -54,8 +56,13 @@ export default function DriverVouchersPage() {
             entity: 'driver-vouchers',
             page: String(targetPage),
             pageSize: String(targetPageSize),
-            sortPreset: 'work-queue',
         });
+        if (dateSortDir) {
+            params.set('sortField', 'issuedDate');
+            params.set('sortDir', dateSortDir);
+        } else {
+            params.set('sortPreset', 'work-queue');
+        }
         if (search.trim()) {
             params.set('q', search.trim());
             params.set('searchFields', 'bonNumber,driverName,doNumber');
@@ -64,7 +71,7 @@ export default function DriverVouchersPage() {
             params.set('filter', JSON.stringify({ status: statusFilter }));
         }
         return params.toString();
-    }, [page, search, statusFilter]);
+    }, [dateSortDir, page, search, statusFilter]);
 
     const fetchAllMatchingVouchers = useCallback(async () => {
         const pageSize = 200;
@@ -273,7 +280,7 @@ export default function DriverVouchersPage() {
                             <tr>
                                 <th>No. Bon</th>
                                 <th>Supir</th>
-                                <th>Tanggal</th>
+                                <th><SortableTableHeader label="Tanggal" direction={dateSortDir} onToggle={() => setDateSortDir(current => current === 'desc' ? 'asc' : 'desc')} /></th>
                                 <th>No. DO Internal</th>
                                 <th>Rute</th>
                                 <th>Bon Awal</th>

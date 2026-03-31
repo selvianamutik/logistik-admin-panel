@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useToast, useApp } from '../layout';
 import { Plus, Search, Wallet, Save, X, FileDown, Printer } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
+import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
 import CurrencyInput from '@/components/CurrencyInput';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import { formatDate, formatCurrency } from '@/lib/utils';
@@ -35,6 +36,7 @@ export default function ExpensesPage() {
     const [categoryTotals, setCategoryTotals] = useState<ExpenseCategoryTotal[]>([]);
     const [showModal, setShowModal] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [dateSortDir, setDateSortDir] = useState<SortDirection | null>(null);
     const [form, setForm] = useState({
         categoryRef: '',
         date: new Date().toISOString().split('T')[0],
@@ -64,6 +66,11 @@ export default function ExpensesPage() {
             pageSize: String(targetPageSize),
         });
 
+        if (dateSortDir) {
+            params.set('sortField', 'date');
+            params.set('sortDir', dateSortDir);
+        }
+
         if (search.trim()) {
             params.set('q', search.trim());
             params.set('searchFields', 'note,description,categoryName,relatedVehiclePlate');
@@ -74,7 +81,7 @@ export default function ExpensesPage() {
         }
 
         return params.toString();
-    }, [isOwner, page, search]);
+    }, [dateSortDir, isOwner, page, search]);
 
     const fetchAllMatchingExpenses = useCallback(async () => {
         const pageSize = 200;
@@ -294,7 +301,7 @@ export default function ExpensesPage() {
                 <div className="table-toolbar"><div className="table-toolbar-left"><div className="table-search"><Search size={16} className="table-search-icon" /><input placeholder="Cari..." value={search} onChange={event => setSearch(event.target.value)} /></div></div></div>
                 <div className="table-wrapper table-desktop-only">
                     <table>
-                        <thead><tr><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th>Jumlah</th>{isOwner && <th>Privacy</th>}</tr></thead>
+                        <thead><tr><th><SortableTableHeader label="Tanggal" direction={dateSortDir} onToggle={() => setDateSortDir(current => current === 'desc' ? 'asc' : 'desc')} /></th><th>Kategori</th><th>Deskripsi</th><th>Jumlah</th>{isOwner && <th>Privacy</th>}</tr></thead>
                         <tbody>
                             {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 filteredTotalExpenses === 0 ? <tr><td colSpan={isOwner ? 5 : 4}><div className="empty-state"><Wallet size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada pengeluaran</div></div></td></tr> :

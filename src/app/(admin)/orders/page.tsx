@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useToast } from '../layout';
 import { Plus, Search, Eye, Edit, Trash2, Package, FileDown, Printer } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
+import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
 import { formatDate, ORDER_STATUS_MAP } from '@/lib/utils';
 import { exportOrders } from '@/lib/export';
 import { openBrandedPrint, openPrintWindow, fetchCompanyProfile } from '@/lib/print';
@@ -44,14 +45,21 @@ export default function OrdersPage() {
     const [queueCounts, setQueueCounts] = useState({ needDispatch: 0, inProgress: 0, onHold: 0 });
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [deletingId, setDeletingId] = useState<string | null>(null);
+    const [dateSortDir, setDateSortDir] = useState<SortDirection | null>(null);
 
     const buildOrdersQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
         const params = new URLSearchParams({
             entity: 'orders',
             page: String(targetPage),
             pageSize: String(targetPageSize),
-            sortPreset: 'work-queue',
         });
+
+        if (dateSortDir) {
+            params.set('sortField', 'createdAt');
+            params.set('sortDir', dateSortDir);
+        } else {
+            params.set('sortPreset', 'work-queue');
+        }
 
         if (search.trim()) {
             params.set('q', search.trim());
@@ -66,7 +74,7 @@ export default function OrdersPage() {
         }
 
         return params.toString();
-    }, [page, search, serviceFilter, statusFilter]);
+    }, [dateSortDir, page, search, serviceFilter, statusFilter]);
 
     const fetchAllMatchingOrders = useCallback(async () => {
         const pageSize = 200;
@@ -294,7 +302,13 @@ export default function OrdersPage() {
                                 <th>Kategori Armada</th>
                                 <th>Status</th>
                                 <th>Tindak Lanjut</th>
-                                <th>Tanggal</th>
+                                <th>
+                                    <SortableTableHeader
+                                        label="Tanggal"
+                                        direction={dateSortDir}
+                                        onToggle={() => setDateSortDir(current => current === 'desc' ? 'asc' : 'desc')}
+                                    />
+                                </th>
                                 <th>Aksi</th>
                             </tr>
                         </thead>

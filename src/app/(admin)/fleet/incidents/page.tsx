@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useToast } from '../../layout';
 import { Plus, Search, Eye, AlertTriangle, X } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
+import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import {
@@ -39,6 +40,7 @@ export default function IncidentsPage() {
     const [saving, setSaving] = useState(false);
     const [prefillApplied, setPrefillApplied] = useState(false);
     const [form, setForm] = useState<IncidentFormState>(createDefaultIncidentForm());
+    const [dateSortDir, setDateSortDir] = useState<SortDirection | null>(null);
 
     useEffect(() => {
         setPage(1);
@@ -52,8 +54,10 @@ export default function IncidentsPage() {
                 search,
                 vehicleFilter,
                 statusFilter,
+                sortField: dateSortDir ? 'dateTime' : undefined,
+                sortDir: dateSortDir || undefined,
             }),
-        [page, search, vehicleFilter, statusFilter]
+        [dateSortDir, page, search, vehicleFilter, statusFilter]
     );
 
     const loadIncidents = useCallback(async () => {
@@ -244,7 +248,7 @@ export default function IncidentsPage() {
                 </div>
                 <div className="table-wrapper table-desktop-only">
                     <table>
-                        <thead><tr><th>No.</th><th>Waktu</th><th>Kendaraan</th><th>Supir</th><th>No. DO Internal</th><th>Tipe</th><th>Lokasi</th><th>Urgency</th><th>Status</th><th>Tindak Lanjut</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>No.</th><th><SortableTableHeader label="Waktu" direction={dateSortDir} onToggle={() => setDateSortDir(current => current === 'desc' ? 'asc' : 'desc')} /></th><th>Kendaraan</th><th>Supir</th><th>No. DO Internal</th><th>Tipe</th><th>Lokasi</th><th>Urgency</th><th>Status</th><th>Tindak Lanjut</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {loading ? [1, 2].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 filteredTotalIncidents === 0 ? <tr><td colSpan={11}><div className="empty-state"><AlertTriangle size={48} className="empty-state-icon" /><div className="empty-state-title">Tidak ada insiden</div></div></td></tr> :

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Search, Eye, Truck, FileDown, Printer } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
+import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
 import { formatDate, formatDateTime, DO_STATUS_MAP, formatInternalDeliveryOrderNumber, formatShipperDeliveryOrderNumber } from '@/lib/utils';
 import {
     buildDeliveryOrderExportRows,
@@ -43,6 +44,7 @@ export default function DeliveryOrdersPage() {
         onRoad: 0,
         waitingStart: 0,
     });
+    const [dateSortDir, setDateSortDir] = useState<SortDirection | null>(null);
     const canViewServices = user ? hasPermission(user.role, 'services', 'view') : false;
     const canExportDeliveryOrders = user ? hasPermission(user.role, 'deliveryOrders', 'export') : false;
     const canPrintDeliveryOrders = user ? hasPermission(user.role, 'deliveryOrders', 'print') : false;
@@ -58,8 +60,10 @@ export default function DeliveryOrdersPage() {
             search,
             statusFilter,
             serviceFilter,
+            sortField: dateSortDir ? 'date' : undefined,
+            sortDir: dateSortDir || undefined,
         })
-    ), [page, search, serviceFilter, statusFilter]);
+    ), [dateSortDir, page, search, serviceFilter, statusFilter]);
 
     const fetchAllMatchingDeliveryOrders = useCallback(async () => {
         const pageSize = 200;
@@ -239,7 +243,7 @@ export default function DeliveryOrdersPage() {
                 </div>
                 <div className="table-wrapper table-desktop-only">
                     <table>
-                        <thead><tr><th>No. SJ Pengirim</th><th>No. DO Internal</th><th>Resi</th><th>Customer</th><th>Kategori</th><th>Kendaraan</th><th>Tanggal</th><th>Status</th><th>Tindak Lanjut</th><th>Approval Driver</th><th>Drop Aktual</th><th>Tracking</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>No. SJ Pengirim</th><th>No. DO Internal</th><th>Resi</th><th>Customer</th><th>Kategori</th><th>Kendaraan</th><th><SortableTableHeader label="Tanggal" direction={dateSortDir} onToggle={() => setDateSortDir(current => current === 'desc' ? 'asc' : 'desc')} /></th><th>Status</th><th>Tindak Lanjut</th><th>Approval Driver</th><th>Drop Aktual</th><th>Tracking</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 totalItems === 0 ? (
