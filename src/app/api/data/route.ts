@@ -67,6 +67,7 @@ import {
     getCustomersSummary,
     getDashboardSummary,
     getExpensesSummary,
+    getFreightNotaById,
     getFreightNotaList,
     getFreightNotasSummary,
     getListSortClause,
@@ -410,7 +411,10 @@ export async function GET(request: Request) {
         }
 
         if (id) {
-            let item = await sanityGetById(id);
+            let item =
+                entity === 'freight-notas'
+                    ? await getFreightNotaById(id)
+                    : await sanityGetById(id);
             if (!item) return jsonNoStore({ error: 'Not found' }, { status: 404 });
             if ((item as { _type?: string })._type !== docType) {
                 return jsonNoStore({ error: 'Not found' }, { status: 404 });

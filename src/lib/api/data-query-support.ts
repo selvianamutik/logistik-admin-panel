@@ -180,6 +180,24 @@ export async function getFreightNotaList(params: {
     };
 }
 
+export async function getFreightNotaById(id: string) {
+    const client = getSanityClient();
+    const [nota, paymentRows] = await Promise.all([
+        client.fetch<(FreightNota & { _createdAt?: string }) | null>(
+            `*[_type == "freightNota" && _id == $id][0]`,
+            { id }
+        ),
+        client.fetch<Array<{ invoiceRef?: string; amount?: unknown }>>(
+            `*[_type == "payment" && invoiceRef == $id]{ invoiceRef, amount }`,
+            { id }
+        ),
+    ]);
+
+    if (!nota) return null;
+    const paymentTotalsByInvoice = getFreightNotaPaymentTotals(paymentRows);
+    return applyDerivedFreightNotaStatus([nota], paymentTotalsByInvoice)[0];
+}
+
 export type DashboardSummary = {
     orderStats: { total: number; open: number; partial: number; complete: number; onHold: number };
     doStats: { total: number; onDelivery: number };

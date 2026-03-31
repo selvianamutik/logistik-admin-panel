@@ -15,7 +15,7 @@ import {
     getIncidentNextAction,
     type IncidentFormState,
 } from '@/lib/fleet-queue-page-support';
-import { formatDateTime, formatInternalDeliveryOrderNumber, formatShipperDeliveryOrderNumber, INCIDENT_STATUS_MAP, URGENCY_MAP, INCIDENT_TYPE_MAP } from '@/lib/utils';
+import { formatDateTime, formatInternalDeliveryOrderNumber, formatQuantity, formatShipperDeliveryOrderNumber, INCIDENT_STATUS_MAP, URGENCY_MAP, INCIDENT_TYPE_MAP } from '@/lib/utils';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { Incident, Vehicle, DeliveryOrder } from '@/lib/types';
 
@@ -362,7 +362,7 @@ export default function IncidentsPage() {
                                     <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
                                         {selectedRelatedDO
                                             ? `No. DO Internal ${formatInternalDeliveryOrderNumber(selectedRelatedDO)}${selectedRelatedDO.customerDoNumber ? ` | SJ ${formatShipperDeliveryOrderNumber(selectedRelatedDO)}` : ''} / driver ${selectedRelatedDO.driverName || '-'}`
-                                            : `Odometer terakhir ${typeof selectedVehicle?.lastOdometer === 'number' ? `${selectedVehicle.lastOdometer.toLocaleString()} km` : 'belum diisi'}`}
+                                            : `Odometer terakhir ${selectedVehicle?.lastOdometer ? `${formatQuantity(selectedVehicle.lastOdometer, 0)} km` : 'belum diisi'}`}
                                     </div>
                                 </div>
                             )}

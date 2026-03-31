@@ -14,6 +14,7 @@ import {
     formatCurrency,
     formatShipperDeliveryOrderNumber,
     formatInternalDeliveryOrderNumber,
+    formatQuantity,
 } from '@/lib/utils';
 import {
     formatTireSlotLabel,
@@ -354,7 +355,7 @@ export default function VehicleDetailPage() {
                                 <div className="detail-row"><div className="detail-item"><div className="detail-label">Merk/Model</div><div className="detail-value">{vehicle.brandModel}</div></div><div className="detail-item"><div className="detail-label">Kapasitas (kg)</div><div className="detail-value">{vehicle.capacityKg || '-'}</div></div></div>
                                 <div className="detail-row"><div className="detail-item"><div className="detail-label">Kapasitas Vol (m3)</div><div className="detail-value">{vehicle.capacityVolume || '-'}</div></div><div className="detail-item"><div className="detail-label">Tanggal Update</div><div className="detail-value">{formatDate(vehicle.lastOdometerAt)}</div></div></div>
                                 {isOwner && <div className="detail-row"><div className="detail-item"><div className="detail-label">No. Rangka</div><div className="detail-value font-mono">{vehicle.chassisNumber || '-'}</div></div><div className="detail-item"><div className="detail-label">No. Mesin</div><div className="detail-value font-mono">{vehicle.engineNumber || '-'}</div></div></div>}
-                                <div className="detail-row"><div className="detail-item"><div className="detail-label">Odometer Terakhir</div><div className="detail-value">{vehicle.lastOdometer ? `${vehicle.lastOdometer.toLocaleString()} km` : '-'}</div></div><div className="detail-item"><div className="detail-label">Catatan</div><div className="detail-value">{vehicle.notes || '-'}</div></div></div>
+                                <div className="detail-row"><div className="detail-item"><div className="detail-label">Odometer Terakhir</div><div className="detail-value">{vehicle.lastOdometer ? `${formatQuantity(vehicle.lastOdometer, 0)} km` : '-'}</div></div><div className="detail-item"><div className="detail-label">Catatan</div><div className="detail-value">{vehicle.notes || '-'}</div></div></div>
                             </div>
                             <div>
                                 {activeDeliveryOrder && (
@@ -454,7 +455,7 @@ export default function VehicleDetailPage() {
                         <div className="table-wrapper table-desktop-only"><table>
                             <thead><tr><th>Tipe</th><th>Jadwal</th><th>Status</th><th>Odometer</th><th>Vendor</th></tr></thead>
                             <tbody>{maints.length === 0 ? <tr><td colSpan={5} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada maintenance</td></tr> : maints.map(m => (
-                                <tr key={m._id}><td>{m.type}</td><td>{m.scheduleType === 'DATE' ? formatDate(m.plannedDate) : `${(m.plannedOdometer || 0).toLocaleString()} km`}</td><td><span className={`badge badge-${MAINTENANCE_STATUS_MAP[m.status]?.color}`}>{MAINTENANCE_STATUS_MAP[m.status]?.label}</span></td><td>{m.odometerAtService ? `${m.odometerAtService.toLocaleString()} km` : '-'}</td><td>{m.vendor || '-'}</td></tr>
+                                <tr key={m._id}><td>{m.type}</td><td>{m.scheduleType === 'DATE' ? formatDate(m.plannedDate) : `${formatQuantity(m.plannedOdometer || 0, 0)} km`}</td><td><span className={`badge badge-${MAINTENANCE_STATUS_MAP[m.status]?.color}`}>{MAINTENANCE_STATUS_MAP[m.status]?.label}</span></td><td>{m.odometerAtService ? `${formatQuantity(m.odometerAtService, 0)} km` : '-'}</td><td>{m.vendor || '-'}</td></tr>
                             ))}</tbody>
                         </table></div>
                         <div className="mobile-record-list">
@@ -467,7 +468,7 @@ export default function VehicleDetailPage() {
                                     <div className="mobile-record-header">
                                         <div>
                                             <div className="mobile-record-title">{m.type}</div>
-                                            <div className="mobile-record-subtitle">{m.scheduleType === 'DATE' ? formatDate(m.plannedDate) : `${(m.plannedOdometer || 0).toLocaleString()} km`}</div>
+                                            <div className="mobile-record-subtitle">{m.scheduleType === 'DATE' ? formatDate(m.plannedDate) : `${formatQuantity(m.plannedOdometer || 0, 0)} km`}</div>
                                         </div>
                                         <span className={`badge badge-${MAINTENANCE_STATUS_MAP[m.status]?.color}`}>{MAINTENANCE_STATUS_MAP[m.status]?.label}</span>
                                     </div>
@@ -478,7 +479,7 @@ export default function VehicleDetailPage() {
                                         </div>
                                         <div className="mobile-record-kv">
                                             <span className="mobile-record-label">Odometer</span>
-                                            <span className="mobile-record-value">{m.odometerAtService ? `${m.odometerAtService.toLocaleString()} km` : '-'}</span>
+                                            <span className="mobile-record-value">{m.odometerAtService ? `${formatQuantity(m.odometerAtService, 0)} km` : '-'}</span>
                                         </div>
                                     </div>
                                 </div>

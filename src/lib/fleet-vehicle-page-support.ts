@@ -1,4 +1,4 @@
-import { formatDate, VEHICLE_STATUS_MAP } from './utils';
+import { formatDate, formatQuantity, VEHICLE_STATUS_MAP } from './utils';
 import { DEFAULT_PAGE_SIZE } from './pagination';
 import type { Service, Vehicle, VehicleStatus } from './types';
 
@@ -155,7 +155,7 @@ export function buildVehiclePrintHtml(vehicles: Vehicle[], services: Service[]) 
                             <td>${vehicle.vehicleType}</td>
                             <td>${vehicle.year}</td>
                             <td>${VEHICLE_STATUS_MAP[vehicle.status]?.label || vehicle.status}</td>
-                            <td class="r">${vehicle.lastOdometer ? `${vehicle.lastOdometer.toLocaleString('id-ID')} km` : '-'}</td>
+                            <td class="r">${vehicle.lastOdometer ? `${formatQuantity(vehicle.lastOdometer, 0)} km` : '-'}</td>
                             <td>${formatDate(vehicle.lastOdometerAt)}</td>
                         </tr>`
                     )

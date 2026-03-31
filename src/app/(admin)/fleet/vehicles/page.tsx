@@ -16,7 +16,7 @@ import {
     getVehicleServiceLabel,
     type VehicleTireSummary,
 } from '@/lib/fleet-vehicle-page-support';
-import { VEHICLE_STATUS_MAP } from '@/lib/utils';
+import { formatQuantity, VEHICLE_STATUS_MAP } from '@/lib/utils';
 import { exportVehicles } from '@/lib/export';
 import { fetchCompanyProfile, openBrandedPrint, openPrintWindow } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
@@ -225,7 +225,7 @@ export default function VehiclesPage() {
                                                 <td>{vehicle.year}</td>
                                                 <td><span className={`badge badge-${VEHICLE_STATUS_MAP[vehicle.status]?.color}`}><span className="badge-dot" /> {VEHICLE_STATUS_MAP[vehicle.status]?.label}</span></td>
                                                 <td>{getVehicleNextAction(vehicle, tireSummaryByVehicle)}</td>
-                                                <td>{vehicle.lastOdometer ? `${vehicle.lastOdometer.toLocaleString('id-ID')} km` : '-'}</td>
+                                                <td>{vehicle.lastOdometer ? `${formatQuantity(vehicle.lastOdometer, 0)} km` : '-'}</td>
                                                 <td><div className="table-actions">
                                                     <button className="table-action-btn" onClick={() => router.push(`/fleet/vehicles/${vehicle._id}`)}><Eye size={14} /> Lihat</button>
                                                     {canManageVehicle && <button className="table-action-btn" onClick={() => router.push(`/fleet/vehicles/${vehicle._id}/edit`)}><Edit size={14} /> Edit</button>}
@@ -285,7 +285,7 @@ export default function VehiclesPage() {
                                         </div>
                                         <div className="mobile-record-kv">
                                             <span className="mobile-record-label">Odometer</span>
-                                            <span className="mobile-record-value">{vehicle.lastOdometer ? `${vehicle.lastOdometer.toLocaleString('id-ID')} km` : '-'}</span>
+                                            <span className="mobile-record-value">{vehicle.lastOdometer ? `${formatQuantity(vehicle.lastOdometer, 0)} km` : '-'}</span>
                                         </div>
                                     </div>
                                     <div className="mobile-record-actions">

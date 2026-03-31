@@ -15,7 +15,7 @@ import {
     getMaintenanceNextAction,
     type MaintenanceFormState,
 } from '@/lib/fleet-queue-page-support';
-import { formatDate, MAINTENANCE_STATUS_MAP } from '@/lib/utils';
+import { formatDate, formatQuantity, MAINTENANCE_STATUS_MAP } from '@/lib/utils';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { Maintenance, Vehicle } from '@/lib/types';
 import { hasPermission } from '@/lib/rbac';
@@ -216,7 +216,7 @@ export default function MaintenancePage() {
                                         <tr key={item._id}>
                                             <td><Link href={`/fleet/vehicles/${item.vehicleRef}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{item.vehiclePlate}</Link></td>
                                             <td>{item.type}</td>
-                                            <td>{item.scheduleType === 'DATE' ? formatDate(item.plannedDate) : `${(item.plannedOdometer || 0).toLocaleString()} km`}</td>
+                                            <td>{item.scheduleType === 'DATE' ? formatDate(item.plannedDate) : `${formatQuantity(item.plannedOdometer || 0, 0)} km`}</td>
                                             <td><span className={`badge badge-${MAINTENANCE_STATUS_MAP[item.status]?.color}`}><span className="badge-dot" /> {MAINTENANCE_STATUS_MAP[item.status]?.label}</span></td>
                                             <td>{getMaintenanceNextAction(item)}</td>
                                             <td><div className="table-actions">
@@ -247,7 +247,7 @@ export default function MaintenancePage() {
                                 <div className="mobile-record-meta">
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Jadwal</span>
-                                        <span className="mobile-record-value">{item.scheduleType === 'DATE' ? formatDate(item.plannedDate) : `${(item.plannedOdometer || 0).toLocaleString()} km`}</span>
+                                        <span className="mobile-record-value">{item.scheduleType === 'DATE' ? formatDate(item.plannedDate) : `${formatQuantity(item.plannedOdometer || 0, 0)} km`}</span>
                                     </div>
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Tindak Lanjut</span>
@@ -308,7 +308,7 @@ export default function MaintenancePage() {
                                     <div className="text-muted text-sm">Unit yang dipilih</div>
                                     <div className="font-medium">{selectedVehicle.plateNumber} - {selectedVehicle.brandModel}</div>
                                     <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
-                                        Odometer terakhir {typeof selectedVehicle.lastOdometer === 'number' ? `${selectedVehicle.lastOdometer.toLocaleString()} km` : 'belum diisi'}.
+                                        Odometer terakhir {selectedVehicle.lastOdometer ? `${formatQuantity(selectedVehicle.lastOdometer, 0)} km` : 'belum diisi'}.
                                     </div>
                                 </div>
                             )}

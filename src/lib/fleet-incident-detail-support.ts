@@ -1,5 +1,5 @@
 import { escapePrintHtml } from './print';
-import { formatDateTime, INCIDENT_STATUS_MAP, INCIDENT_TYPE_MAP, URGENCY_MAP } from './utils';
+import { formatDateTime, formatQuantity, INCIDENT_STATUS_MAP, INCIDENT_TYPE_MAP, URGENCY_MAP } from './utils';
 import type { Incident, IncidentActionLog } from './types';
 
 const INCIDENT_NEXT_STATUS_MAP: Record<string, string[]> = {
@@ -24,7 +24,7 @@ export function buildIncidentPrintHtml(incident: Incident, logs: IncidentActionL
     const urgency = escapePrintHtml(URGENCY_MAP[incident.urgency]?.label || incident.urgency);
     const vehiclePlate = escapePrintHtml(incident.vehiclePlate || '-');
     const driverName = escapePrintHtml(incident.driverName || '-');
-    const odometerLabel = escapePrintHtml(`${incident.odometer?.toLocaleString('id-ID') || '-'} km`);
+    const odometerLabel = escapePrintHtml(`${incident.odometer ? formatQuantity(incident.odometer, 0) : '-'} km`);
     const locationText = escapePrintHtml(incident.locationText || '-');
     const relatedDONumber = incident.relatedDONumber ? escapePrintHtml(incident.relatedDONumber) : '';
     const description = escapePrintHtml(incident.description || '-');
