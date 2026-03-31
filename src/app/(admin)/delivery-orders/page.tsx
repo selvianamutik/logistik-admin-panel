@@ -87,21 +87,12 @@ export default function DeliveryOrdersPage() {
     const loadDeliveryOrders = useCallback(async () => {
         setLoading(true);
         try {
-            const [listRes, approvalRes, completionRes, onRoadRes, createdRes] = await Promise.all([
+            const [listRes, matchingDeliveryOrders] = await Promise.all([
                 fetch(`/api/data?${buildDeliveryOrdersQuery()}`),
-                fetch('/api/data?entity=delivery-orders&countOnly=1&definedFields=pendingDriverStatus'),
-                fetch(`/api/data?entity=delivery-orders&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ status: 'ARRIVED' }))}`),
-                fetch(`/api/data?entity=delivery-orders&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ status: ['HEADING_TO_PICKUP', 'ON_DELIVERY'] }))}`),
-                fetch(`/api/data?entity=delivery-orders&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ status: 'CREATED' }))}`),
+                fetchAllMatchingDeliveryOrders(),
             ]);
 
-            const [listPayload, approvalPayload, completionPayload, onRoadPayload, createdPayload] = await Promise.all([
-                listRes.json(),
-                approvalRes.json(),
-                completionRes.json(),
-                onRoadRes.json(),
-                createdRes.json(),
-            ]);
+            const listPayload = await listRes.json();
 
             let serviceRows: Service[] = [];
             if (canViewServices) {
@@ -112,26 +103,36 @@ export default function DeliveryOrdersPage() {
             }
 
             if (!listRes.ok) throw new Error(listPayload.error || 'Gagal memuat surat jalan');
-            if (!approvalRes.ok) throw new Error(approvalPayload.error || 'Gagal memuat statistik surat jalan');
-            if (!completionRes.ok) throw new Error(completionPayload.error || 'Gagal memuat statistik surat jalan');
-            if (!onRoadRes.ok) throw new Error(onRoadPayload.error || 'Gagal memuat statistik surat jalan');
-            if (!createdRes.ok) throw new Error(createdPayload.error || 'Gagal memuat statistik surat jalan');
+
+            const nextQueueCounts = matchingDeliveryOrders.reduce(
+                (totals, deliveryOrder) => {
+                    if (deliveryOrder.pendingDriverStatus) {
+                        totals.needApproval += 1;
+                    }
+                    if (deliveryOrder.status === 'ARRIVED') {
+                        totals.needCompletion += 1;
+                    }
+                    if (deliveryOrder.status === 'HEADING_TO_PICKUP' || deliveryOrder.status === 'ON_DELIVERY') {
+                        totals.onRoad += 1;
+                    }
+                    if (deliveryOrder.status === 'CREATED') {
+                        totals.waitingStart += 1;
+                    }
+                    return totals;
+                },
+                { needApproval: 0, needCompletion: 0, onRoad: 0, waitingStart: 0 }
+            );
 
             setItems(listPayload.data || []);
             setTotalItems(listPayload.meta?.total || 0);
             setServices(serviceRows || []);
-            setQueueCounts({
-                needApproval: approvalPayload.meta?.total || 0,
-                needCompletion: completionPayload.meta?.total || 0,
-                onRoad: onRoadPayload.meta?.total || 0,
-                waitingStart: createdPayload.meta?.total || 0,
-            });
+            setQueueCounts(nextQueueCounts);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat surat jalan');
         } finally {
             setLoading(false);
         }
-    }, [addToast, buildDeliveryOrdersQuery, canViewServices]);
+    }, [addToast, buildDeliveryOrdersQuery, canViewServices, fetchAllMatchingDeliveryOrders]);
 
     useEffect(() => {
         void loadDeliveryOrders();

@@ -94,40 +94,40 @@ export default function OrdersPage() {
     const loadOrders = useCallback(async () => {
         setLoading(true);
         try {
-            const [ordersRes, serviceRows, openRes, partialRes, holdRes] = await Promise.all([
+            const [ordersRes, serviceRows, matchingOrders] = await Promise.all([
                 fetch(`/api/data?${buildOrdersQuery()}`),
                 fetchAdminCollectionData<Service[]>('/api/data?entity=services&sortField=code&sortDir=asc', 'Gagal memuat kategori armada'),
-                fetch(`/api/data?entity=orders&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ status: 'OPEN' }))}`),
-                fetch(`/api/data?entity=orders&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ status: 'PARTIAL' }))}`),
-                fetch(`/api/data?entity=orders&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ status: 'ON_HOLD' }))}`),
+                fetchAllMatchingOrders(),
             ]);
 
-            const [ordersPayload, openPayload, partialPayload, holdPayload] = await Promise.all([
-                ordersRes.json(),
-                openRes.json(),
-                partialRes.json(),
-                holdRes.json(),
-            ]);
+            const ordersPayload = await ordersRes.json();
 
             if (!ordersRes.ok) throw new Error(ordersPayload.error || 'Gagal memuat order');
-            if (!openRes.ok) throw new Error(openPayload.error || 'Gagal memuat statistik order');
-            if (!partialRes.ok) throw new Error(partialPayload.error || 'Gagal memuat statistik order');
-            if (!holdRes.ok) throw new Error(holdPayload.error || 'Gagal memuat statistik order');
+
+            const nextQueueCounts = matchingOrders.reduce(
+                (totals, order) => {
+                    if (order.status === 'OPEN') {
+                        totals.needDispatch += 1;
+                    } else if (order.status === 'PARTIAL') {
+                        totals.inProgress += 1;
+                    } else if (order.status === 'ON_HOLD') {
+                        totals.onHold += 1;
+                    }
+                    return totals;
+                },
+                { needDispatch: 0, inProgress: 0, onHold: 0 }
+            );
 
             setOrders(ordersPayload.data || []);
             setTotalOrders(ordersPayload.meta?.total || 0);
             setServices(serviceRows || []);
-            setQueueCounts({
-                needDispatch: openPayload.meta?.total || 0,
-                inProgress: partialPayload.meta?.total || 0,
-                onHold: holdPayload.meta?.total || 0,
-            });
+            setQueueCounts(nextQueueCounts);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat order');
         } finally {
             setLoading(false);
         }
-    }, [addToast, buildOrdersQuery]);
+    }, [addToast, buildOrdersQuery, fetchAllMatchingOrders]);
 
     useEffect(() => {
         void loadOrders();

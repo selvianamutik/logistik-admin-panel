@@ -55,70 +55,71 @@ export default function DriversPage() {
         [page, search]
     );
 
+    const fetchAllMatchingDrivers = useCallback(async () => {
+        const pageSize = 200;
+        let currentPage = 1;
+        let total = 0;
+        const allItems: Driver[] = [];
+
+        do {
+            const res = await fetch(`/api/data?${buildCurrentDriversQuery(currentPage, pageSize)}`);
+            const payload = await res.json();
+            if (!res.ok) {
+                throw new Error(payload.error || 'Gagal memuat data supir');
+            }
+
+            const nextItems = (payload.data || []) as Driver[];
+            total = payload.meta?.total || nextItems.length;
+            allItems.push(...nextItems);
+            if (nextItems.length === 0) break;
+            currentPage += 1;
+        } while (allItems.length < total);
+
+        return allItems;
+    }, [buildCurrentDriversQuery]);
+
     const loadDrivers = useCallback(async () => {
         setLoading(true);
         try {
-            const listRes = await fetch(`/api/data?${buildCurrentDriversQuery()}`);
+            const [listRes, matchingDrivers] = await Promise.all([
+                fetch(`/api/data?${buildCurrentDriversQuery()}`),
+                fetchAllMatchingDrivers(),
+            ]);
             const listPayload = await listRes.json();
             if (!listRes.ok) {
                 throw new Error(listPayload.error || 'Gagal memuat data supir');
             }
 
             const drivers = (listPayload.data || []) as Driver[];
-            const driverRefs = drivers.map(driver => driver._id).join(',');
-
-            const statsRequests: Promise<Response>[] = [
-                fetch(`/api/data?entity=drivers&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ active: true }))}`),
-                fetch(`/api/data?entity=drivers&countOnly=1&filter=${encodeURIComponent(JSON.stringify({ active: false }))}`),
-            ];
+            let matchingAccounts: DriverMobileAccount[] = [];
             if (canViewDriverAccounts) {
-                statsRequests.unshift(
-                    fetch(`/api/driver/accounts${driverRefs ? `?driverRefs=${encodeURIComponent(driverRefs)}` : ''}`),
-                );
-                statsRequests.push(fetch('/api/driver/accounts?countOnly=1&activeOnly=1'));
+                const accountsRes = await fetch('/api/driver/accounts');
+                const accountsPayload = await accountsRes.json();
+                if (!accountsRes.ok) {
+                    throw new Error(accountsPayload.error || 'Gagal memuat akses mobile driver');
+                }
+                matchingAccounts = (accountsPayload.data || []) as DriverMobileAccount[];
             }
 
-            const responses = await Promise.all(statsRequests);
-            const payloads = await Promise.all(responses.map(async response => ({
-                ok: response.ok,
-                payload: await response.json(),
-            })));
-
-            let accountsPayload: { data?: DriverMobileAccount[]; error?: string } = {};
-            let activePayload: { meta?: { total?: number }; error?: string };
-            let inactivePayload: { meta?: { total?: number }; error?: string };
-            let mobileReadyPayload: { meta?: { total?: number }; error?: string } = {};
-
-            if (canViewDriverAccounts) {
-                const [accountsResult, activeResult, inactiveResult, mobileReadyResult] = payloads;
-                if (!accountsResult.ok) throw new Error(accountsResult.payload.error || 'Gagal memuat akses mobile driver');
-                if (!activeResult.ok) throw new Error(activeResult.payload.error || 'Gagal memuat statistik supir');
-                if (!inactiveResult.ok) throw new Error(inactiveResult.payload.error || 'Gagal memuat statistik supir');
-                if (!mobileReadyResult.ok) throw new Error(mobileReadyResult.payload.error || 'Gagal memuat statistik app driver');
-                accountsPayload = accountsResult.payload;
-                activePayload = activeResult.payload;
-                inactivePayload = inactiveResult.payload;
-                mobileReadyPayload = mobileReadyResult.payload;
-            } else {
-                const [activeResult, inactiveResult] = payloads;
-                if (!activeResult.ok) throw new Error(activeResult.payload.error || 'Gagal memuat statistik supir');
-                if (!inactiveResult.ok) throw new Error(inactiveResult.payload.error || 'Gagal memuat statistik supir');
-                activePayload = activeResult.payload;
-                inactivePayload = inactiveResult.payload;
-            }
+            const matchingDriverRefs = new Set(matchingDrivers.map(driver => driver._id));
+            const activeMatchingDrivers = matchingDrivers.filter(driver => driver.active !== false).length;
+            const inactiveMatchingDrivers = matchingDrivers.length - activeMatchingDrivers;
+            const mobileReadyMatchingDrivers = canViewDriverAccounts
+                ? matchingAccounts.filter(account => account.driverRef && matchingDriverRefs.has(account.driverRef) && account.active !== false).length
+                : 0;
 
             setItems(drivers);
             setTotalDrivers(listPayload.meta?.total || 0);
-            setAccounts(canViewDriverAccounts ? (accountsPayload.data || []) : []);
-            setActiveDrivers(activePayload.meta?.total || 0);
-            setInactiveDrivers(inactivePayload.meta?.total || 0);
-            setMobileReadyDrivers(canViewDriverAccounts ? (mobileReadyPayload.meta?.total || 0) : 0);
+            setAccounts(canViewDriverAccounts ? matchingAccounts : []);
+            setActiveDrivers(activeMatchingDrivers);
+            setInactiveDrivers(inactiveMatchingDrivers);
+            setMobileReadyDrivers(mobileReadyMatchingDrivers);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat data supir');
         } finally {
             setLoading(false);
         }
-    }, [addToast, buildCurrentDriversQuery, canViewDriverAccounts]);
+    }, [addToast, buildCurrentDriversQuery, canViewDriverAccounts, fetchAllMatchingDrivers]);
 
     useEffect(() => {
         void loadDrivers();
