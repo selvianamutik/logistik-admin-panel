@@ -24,6 +24,8 @@ import {
     findDefaultCustomerRecipient,
     sortCustomerPickups,
     sortCustomerRecipients,
+    updateOrderItemVolumeUnit,
+    updateOrderItemWeightUnit,
     type OrderItemForm,
 } from '@/lib/order-create-page-support';
 import {
@@ -666,7 +668,15 @@ export default function OrderEditPage() {
                                     <label className="form-label">{isRevisionMode ? 'Target Berat' : 'Berat'}</label>
                                     <div style={{ display: 'flex', gap: 8 }}>
                                         <FormattedNumberInput min={0} maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2} value={item.weightInputValue} onValueChange={value => updateItem(idx, 'weightInputValue', value)} disabled={false} />
-                                        <select className="form-select" value={item.weightInputUnit} onChange={e => updateItem(idx, 'weightInputUnit', e.target.value as WeightInputUnit)} style={{ width: 92 }} disabled={false}>
+                                        <select
+                                            className="form-select"
+                                            value={item.weightInputUnit}
+                                            onChange={e => setItems(prev => prev.map((entry, i) => (
+                                                i === idx ? updateOrderItemWeightUnit(entry, e.target.value as WeightInputUnit) : entry
+                                            )))}
+                                            style={{ width: 92 }}
+                                            disabled={false}
+                                        >
                                             {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                         </select>
                                     </div>
@@ -675,7 +685,15 @@ export default function OrderEditPage() {
                                     <label className="form-label">{isRevisionMode ? 'Target Volume' : 'Volume'}</label>
                                     <div style={{ display: 'flex', gap: 8 }}>
                                         <FormattedNumberInput min={0} maxFractionDigits={item.volumeInputUnit === 'LITER' ? 0 : 3} value={item.volumeInputValue} onValueChange={value => updateItem(idx, 'volumeInputValue', value)} disabled={false} />
-                                        <select className="form-select" value={item.volumeInputUnit} onChange={e => updateItem(idx, 'volumeInputUnit', e.target.value as VolumeInputUnit)} style={{ width: 92 }} disabled={false}>
+                                        <select
+                                            className="form-select"
+                                            value={item.volumeInputUnit}
+                                            onChange={e => setItems(prev => prev.map((entry, i) => (
+                                                i === idx ? updateOrderItemVolumeUnit(entry, e.target.value as VolumeInputUnit) : entry
+                                            )))}
+                                            style={{ width: 92 }}
+                                            disabled={false}
+                                        >
                                             {VOLUME_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                         </select>
                                     </div>

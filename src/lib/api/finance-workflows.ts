@@ -1127,6 +1127,7 @@ export async function handleFreightNotaCreate(
         .map<NormalizedFreightNotaRow>(row => {
             const date = normalizeText(row.date);
             const doRef = normalizeOptionalText(row.doRef);
+            const deliveryOrderItemRef = normalizeOptionalText(row.deliveryOrderItemRef);
             const doNumber = normalizeOptionalText(row.doNumber);
             const noSJ = normalizeText(row.noSJ);
             const tujuan = normalizeText(row.tujuan);
@@ -1154,6 +1155,7 @@ export async function handleFreightNotaCreate(
 
             return {
                 doRef,
+                deliveryOrderItemRef,
                 doNumber,
                 vehiclePlate: normalizeOptionalText(row.vehiclePlate),
                 date,
@@ -1175,9 +1177,6 @@ export async function handleFreightNotaCreate(
 
     const doRefs = rows.flatMap(row => (row.doRef ? [row.doRef] : []));
     const uniqueDoRefs = [...new Set(doRefs)];
-    if (uniqueDoRefs.length !== doRefs.length) {
-        return NextResponse.json({ error: 'DO yang sama tidak boleh dimasukkan dua kali dalam nota' }, { status: 400 });
-    }
 
     const deliveryOrders = uniqueDoRefs.length > 0
         ? await getSanityClient().fetch<Array<{
@@ -1229,6 +1228,7 @@ export async function handleFreightNotaCreate(
     const deliveryOrderItems = uniqueDoRefs.length > 0
         ? await getSanityClient().fetch<FreightNotaDeliveryOrderItemSource[]>(
             `*[_type == "deliveryOrderItem" && deliveryOrderRef in $ids]{
+                _id,
                 deliveryOrderRef,
                 orderItemDescription,
                 orderItemQtyKoli,
@@ -1243,7 +1243,12 @@ export async function handleFreightNotaCreate(
     const deliveryOrderMap = new Map(deliveryOrders.map(item => [item._id, item]));
     const orderMap = new Map(sourceOrders.map(order => [order._id, order]));
     const doItemMap = new Map<string, FreightNotaDeliveryOrderItemSource[]>();
+    const doItemById = new Map<string, FreightNotaDeliveryOrderItemSource>();
     for (const item of deliveryOrderItems) {
+        const itemId = normalizeOptionalText(item._id);
+        if (itemId) {
+            doItemById.set(itemId, item);
+        }
         const deliveryOrderRef = normalizeOptionalText(item.deliveryOrderRef);
         if (!deliveryOrderRef) continue;
         const current = doItemMap.get(deliveryOrderRef) || [];
@@ -1262,7 +1267,10 @@ export async function handleFreightNotaCreate(
         }
         const orderRef = extractRefId(deliveryOrder.orderRef);
         const sourceOrder = orderRef ? orderMap.get(orderRef) : undefined;
-        const itemSummary = summarizeDeliveryOrderItems(doItemMap.get(row.doRef) || []);
+        const itemSource = row.deliveryOrderItemRef ? doItemById.get(row.deliveryOrderItemRef) : undefined;
+        const itemSummary = itemSource
+            ? summarizeDeliveryOrderItems([itemSource])
+            : summarizeDeliveryOrderItems(doItemMap.get(row.doRef) || []);
 
         row.doNumber = normalizeOptionalText(deliveryOrder.doNumber) || row.doNumber;
         row.noSJ =
@@ -1523,6 +1531,7 @@ export async function handleFreightNotaCreate(
             _type: 'freightNotaItem',
             notaRef: notaId,
             doRef: row.doRef,
+            deliveryOrderItemRef: row.deliveryOrderItemRef,
             doNumber: row.doNumber,
             vehiclePlate: row.vehiclePlate,
             date: row.date,
