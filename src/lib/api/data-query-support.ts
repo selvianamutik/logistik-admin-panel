@@ -222,6 +222,12 @@ export function applyDerivedDriverBoronganTotals<
         totalWeightKg?: number | string | null;
         totalBeratKg?: number | string | null;
         totalUangJalan?: number | string | null;
+        status?: string | null;
+        paidDate?: string | null;
+        paidMethod?: string | null;
+        paidBankRef?: string | null;
+        paidBankName?: string | null;
+        paidBankNumber?: string | null;
     }
 >(
     borongans: T[],
@@ -242,6 +248,13 @@ export function applyDerivedDriverBoronganTotals<
 
     return borongans.map(borongan => {
         const derived = totalsByBorongan[borongan._id];
+        const hasPaymentMarker = Boolean(
+            borongan.paidDate ||
+            borongan.paidMethod ||
+            borongan.paidBankRef ||
+            borongan.paidBankName ||
+            borongan.paidBankNumber
+        );
         if (!derived) {
             const normalizedTotalAmount = parseWholeMoneyLike(borongan.totalAmount);
             const normalizedTotalWeightKg = Math.max(
@@ -255,6 +268,7 @@ export function applyDerivedDriverBoronganTotals<
                 totalWeightKg: normalizedTotalWeightKg,
                 totalBeratKg: normalizedTotalWeightKg,
                 totalUangJalan: normalizedTotalAmount,
+                status: hasPaymentMarker ? 'PAID' : 'UNPAID',
             };
         }
         return {
@@ -264,6 +278,7 @@ export function applyDerivedDriverBoronganTotals<
             totalWeightKg: derived.totalWeightKg,
             totalBeratKg: derived.totalWeightKg,
             totalUangJalan: derived.totalAmount,
+            status: hasPaymentMarker ? 'PAID' : 'UNPAID',
         };
     });
 }
@@ -862,11 +877,11 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
         doStats,
         unpaidNotas,
         notaPayments,
-        unpaidBorongans,
-        unpaidBoronganItems,
-        openVouchers,
-        openVoucherDisbursements,
-        openVoucherItems,
+        borongans,
+        boronganItems,
+        vouchers,
+        voucherDisbursements,
+        voucherItems,
         fleetStats,
         recentOrders,
         recentNotas,
@@ -895,19 +910,24 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
             )
             : Promise.resolve([]),
         canSeeBorongan
-            ? client.fetch<Array<Pick<DriverBorongan, '_id' | 'status' | 'totalAmount' | 'totalCollie' | 'totalWeightKg'>>>(
-                `*[_type == "driverBorongan" && status != "PAID"]{
+            ? client.fetch<Array<Pick<DriverBorongan, '_id' | 'status' | 'totalAmount' | 'totalCollie' | 'totalWeightKg' | 'paidDate' | 'paidMethod' | 'paidBankRef' | 'paidBankName' | 'paidBankNumber'>>>(
+                `*[_type == "driverBorongan"]{
                     _id,
                     status,
                     totalAmount,
                     totalCollie,
-                    totalWeightKg
+                    totalWeightKg,
+                    paidDate,
+                    paidMethod,
+                    paidBankRef,
+                    paidBankName,
+                    paidBankNumber
                 }`
             )
             : Promise.resolve([]),
         canSeeBorongan
             ? client.fetch<Array<Pick<DriverBoronganItem, 'boronganRef' | 'collie' | 'beratKg' | 'uangRp'>>>(
-                `*[_type == "driverBoronganItem" && boronganRef in *[_type == "driverBorongan" && status != "PAID"]._id]{
+                `*[_type == "driverBoronganItem" && defined(boronganRef)]{
                     boronganRef,
                     collie,
                     beratKg,
@@ -937,7 +957,7 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
             : Promise.resolve([]),
         canViewTripCash
             ? client.fetch<Array<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>>(
-                `*[_type == "driverVoucherDisbursement" && voucherRef in *[_type == "driverVoucher" && status != "SETTLED"]._id]{
+                `*[_type == "driverVoucherDisbursement" && defined(voucherRef)]{
                     voucherRef,
                     amount,
                     kind
@@ -946,7 +966,7 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
             : Promise.resolve([]),
         canViewTripCash
             ? client.fetch<Array<Pick<DriverVoucherItem, 'voucherRef' | 'amount'>>>(
-                `*[_type == "driverVoucherItem" && voucherRef in *[_type == "driverVoucher" && status != "SETTLED"]._id]{
+                `*[_type == "driverVoucherItem" && defined(voucherRef)]{
                     voucherRef,
                     amount
                 }`
@@ -983,8 +1003,9 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
     const notaPaymentTotals = getFreightNotaPaymentTotals(notaPayments);
     const derivedUnpaidNotas = applyDerivedFreightNotaStatus(unpaidNotas, notaPaymentTotals).filter(nota => nota.status !== 'PAID');
     const recentNotasWithDerivedStatus = applyDerivedFreightNotaStatus(recentNotas, notaPaymentTotals);
-    const unpaidBorongansWithDerivedTotals = applyDerivedDriverBoronganTotals(unpaidBorongans, unpaidBoronganItems);
-    const openVouchersWithDerivedFinancials = applyDerivedDriverVoucherLedger(openVouchers, openVoucherDisbursements, openVoucherItems)
+    const unpaidBorongansWithDerivedTotals = applyDerivedDriverBoronganTotals(borongans, boronganItems)
+        .filter(borongan => borongan.status !== 'PAID');
+    const openVouchersWithDerivedFinancials = applyDerivedDriverVoucherLedger(vouchers, voucherDisbursements, voucherItems)
         .filter(voucher => voucher.status !== 'SETTLED');
     const notaOutstanding = derivedUnpaidNotas.reduce((sum, nota) => {
         const paidAmount = notaPaymentTotals[nota._id] || 0;
@@ -1234,46 +1255,6 @@ export async function getAuditLogsSummary() {
         todayLogs,
         loginLogs,
         mutationLogs,
-    };
-}
-
-export async function getBoronganSummary(search = '', status = '') {
-    const client = getSanityClient();
-    const [borongans, boronganItems] = await Promise.all([
-        client.fetch<Array<Pick<DriverBorongan, '_id' | 'boronganNumber' | 'driverName' | 'status' | 'totalAmount' | 'totalCollie' | 'totalWeightKg'>>>(
-            `*[_type == "driverBorongan"]{
-                _id,
-                boronganNumber,
-                driverName,
-                status,
-                totalAmount,
-                totalCollie,
-                totalWeightKg
-            }`
-        ),
-        client.fetch<Array<Pick<DriverBoronganItem, 'boronganRef' | 'collie' | 'beratKg' | 'uangRp'>>>(
-            `*[_type == "driverBoronganItem"]{
-                boronganRef,
-                collie,
-                beratKg,
-                uangRp
-            }`
-        ),
-    ]);
-
-    const query = search.trim().toLowerCase();
-    const filtered = applyDerivedDriverBoronganTotals(borongans, boronganItems).filter(item => {
-        const matchesSearch = !query ||
-            item.boronganNumber?.toLowerCase().includes(query) ||
-            item.driverName?.toLowerCase().includes(query);
-        const matchesStatus = !status || item.status === status;
-        return matchesSearch && matchesStatus;
-    });
-
-    return {
-        totalAmount: filtered.reduce((sum, item) => sum + parseWholeMoneyLike(item.totalAmount), 0),
-        unpaidCount: filtered.filter(item => item.status === 'UNPAID').length,
-        paidCount: filtered.filter(item => item.status === 'PAID').length,
     };
 }
 

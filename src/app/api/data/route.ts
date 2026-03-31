@@ -62,7 +62,6 @@ import {
 import {
     getAuditLogsSummary,
     getBankAccountsSummary,
-    getBoronganSummary,
     applyDerivedBankAccountBalances,
     getCustomerReceiptById,
     getCustomerReceiptList,
@@ -437,19 +436,6 @@ export async function GET(request: Request) {
             return jsonNoStore({ data: summary });
         } catch (err) {
             console.error('API GET Audit Summary Error:', err);
-            return jsonNoStore({ error: 'Server error' }, { status: 500 });
-        }
-    }
-
-    if (entity === 'driver-borongans-summary') {
-        if (session.role !== 'OWNER' || !hasPermission(session.role, 'driverBorongans', 'view')) {
-            return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
-        }
-        try {
-            const summary = await getBoronganSummary(searchQuery, searchParams.get('status') || '');
-            return jsonNoStore({ data: summary });
-        } catch (err) {
-            console.error('API GET Borongan Summary Error:', err);
             return jsonNoStore({ error: 'Server error' }, { status: 500 });
         }
     }

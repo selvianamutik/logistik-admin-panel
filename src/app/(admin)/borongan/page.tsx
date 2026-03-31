@@ -7,6 +7,7 @@ import AppPagination from '@/components/AppPagination';
 import { formatDate, formatCurrency, formatQuantity } from '@/lib/utils';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import { normalizeUserRole } from '@/lib/rbac';
+import { parseFormattedNumberish } from '@/lib/formatted-number';
 import type { DriverBorongan } from '@/lib/types';
 import { useApp, useToast } from '../layout';
 
@@ -55,6 +56,21 @@ export default function BoronganListPage() {
         return params.toString();
     }, [page, search, statusFilter]);
 
+    const buildBoronganSummaryQuery = useCallback(() => {
+        const params = new URLSearchParams({
+            entity: 'driver-borongans',
+        });
+        if (search.trim()) {
+            params.set('q', search.trim());
+            params.set('searchFields', 'boronganNumber,driverName');
+        }
+        if (statusFilter) {
+            params.set('filter', JSON.stringify({ status: statusFilter }));
+            params.set('status', statusFilter);
+        }
+        return params.toString();
+    }, [search, statusFilter]);
+
     useEffect(() => {
         const loadBorongan = async () => {
             if (normalizedRole && normalizedRole !== 'OWNER') {
@@ -65,7 +81,7 @@ export default function BoronganListPage() {
             try {
                 const [listRes, summaryRes] = await Promise.all([
                     fetch(`/api/data?${buildBoronganQuery()}`),
-                    fetch(`/api/data?entity=driver-borongans-summary${search.trim() ? `&q=${encodeURIComponent(search.trim())}` : ''}${statusFilter ? `&status=${encodeURIComponent(statusFilter)}` : ''}`),
+                    fetch(`/api/data?${buildBoronganSummaryQuery()}`),
                 ]);
                 const [listPayload, summaryPayload] = await Promise.all([
                     listRes.json(),
@@ -77,11 +93,12 @@ export default function BoronganListPage() {
                 if (!summaryRes.ok) {
                     throw new Error(summaryPayload.error || 'Gagal memuat ringkasan slip borongan');
                 }
+                const summaryItems = Array.isArray(summaryPayload.data) ? summaryPayload.data as DriverBorongan[] : [];
                 setItems(listPayload.data || []);
                 setFilteredTotalBorongans(listPayload.meta?.total || 0);
-                setTotalUpah(summaryPayload.data?.totalAmount || 0);
-                setUnpaidCount(summaryPayload.data?.unpaidCount || 0);
-                setPaidCount(summaryPayload.data?.paidCount || 0);
+                setTotalUpah(summaryItems.reduce((sum, item) => sum + Math.max(parseFormattedNumberish(item.totalAmount ?? 0, { maxFractionDigits: 0 }), 0), 0));
+                setUnpaidCount(summaryItems.filter(item => item.status === 'UNPAID').length);
+                setPaidCount(summaryItems.filter(item => item.status === 'PAID').length);
             } catch (error) {
                 addToast('error', error instanceof Error ? error.message : 'Gagal memuat slip borongan');
             } finally {
@@ -90,7 +107,7 @@ export default function BoronganListPage() {
         };
 
         void loadBorongan();
-    }, [addToast, buildBoronganQuery, normalizedRole, search, statusFilter]);
+    }, [addToast, buildBoronganQuery, buildBoronganSummaryQuery, normalizedRole, search, statusFilter]);
 
     useEffect(() => {
         setPage(1);
