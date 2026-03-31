@@ -3,7 +3,7 @@
    ============================================================ */
 
 import DOMPurify from 'dompurify';
-import { formatBusinessDate } from './business-date';
+import { formatBusinessDate, getBusinessCalendarDateParts } from './business-date';
 import {
     formatFreightNotaDisplayWeight,
     getFreightNotaBillingModeLabel,
@@ -271,20 +271,14 @@ function escapePrintAttribute(value: unknown) {
 
 function fmtPrintDate(value?: string | Date) {
     if (!value) return '-';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return value;
-
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = String(date.getFullYear());
-    return `${day}-${month}-${year}`;
+    const parts = getBusinessCalendarDateParts(value);
+    if (!parts) return typeof value === 'string' ? value : '';
+    return `${parts.day}-${parts.month}-${parts.year}`;
 }
 
 function fmtLongPrintDate(value?: string | Date) {
     if (!value) return '-';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return value;
-    return formatBusinessDate(date, 'id-ID', {
+    return formatBusinessDate(value, 'id-ID', {
         day: 'numeric',
         month: 'long',
         year: 'numeric',
@@ -658,7 +652,7 @@ export const fmtNumber = (n: number) => new Intl.NumberFormat('id-ID').format(n)
 
 export const fmtDate = (d: string) => {
     try {
-        return new Date(d).toLocaleDateString('id-ID', {
+        return formatBusinessDate(d, 'id-ID', {
             day: '2-digit',
             month: 'short',
             year: 'numeric',

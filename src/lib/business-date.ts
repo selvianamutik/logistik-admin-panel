@@ -1,4 +1,5 @@
 export const BUSINESS_TIME_ZONE = 'Asia/Jakarta';
+const DATE_VALUE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 type DatePartMap = {
     year: string;
@@ -8,6 +9,45 @@ type DatePartMap = {
     minute: string;
     second: string;
 };
+
+export type BusinessCalendarDateParts = Pick<DatePartMap, 'year' | 'month' | 'day'>;
+
+export function parseBusinessDateValue(value: string): BusinessCalendarDateParts | null {
+    const match = DATE_VALUE_RE.exec(value.trim());
+    if (!match) {
+        return null;
+    }
+
+    return {
+        year: match[1],
+        month: match[2],
+        day: match[3],
+    };
+}
+
+export function getBusinessCalendarDateParts(
+    value: Date | string = new Date(),
+    timeZone: string = BUSINESS_TIME_ZONE,
+): BusinessCalendarDateParts | null {
+    if (typeof value === 'string') {
+        const parsedDateValue = parseBusinessDateValue(value);
+        if (parsedDateValue) {
+            return parsedDateValue;
+        }
+    }
+
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return null;
+    }
+
+    const parts = getBusinessDateParts(date, timeZone);
+    return {
+        year: parts.year,
+        month: parts.month,
+        day: parts.day,
+    };
+}
 
 function getBusinessDateParts(date: Date, timeZone: string = BUSINESS_TIME_ZONE): DatePartMap {
     const formatter = new Intl.DateTimeFormat('en-US', {
@@ -54,6 +94,19 @@ export function formatBusinessDate(
     options?: Intl.DateTimeFormatOptions,
     timeZone: string = BUSINESS_TIME_ZONE,
 ) {
+    const parsedDateValue = typeof value === 'string' ? parseBusinessDateValue(value) : null;
+    if (parsedDateValue) {
+        const dateOnly = new Date(Date.UTC(
+            Number(parsedDateValue.year),
+            Number(parsedDateValue.month) - 1,
+            Number(parsedDateValue.day),
+        ));
+        return new Intl.DateTimeFormat(locale, {
+            timeZone: 'UTC',
+            ...options,
+        }).format(dateOnly);
+    }
+
     const date = value instanceof Date ? value : new Date(value);
     if (Number.isNaN(date.getTime())) {
         return typeof value === 'string' ? value : '';

@@ -7,7 +7,7 @@ import { ArrowRightLeft, FileDown, Printer, TrendingDown, TrendingUp } from 'luc
 import PageBackButton from '@/components/PageBackButton';
 import { useApp, useToast } from '../../layout';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
-import { getBusinessDateValue } from '@/lib/business-date';
+import { formatBusinessDate, getBusinessDateValue } from '@/lib/business-date';
 import { exportToExcel } from '@/lib/export';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { fetchCompanyProfile, openBrandedPrint, openPrintWindow } from '@/lib/print';
@@ -111,7 +111,7 @@ export default function BankAccountDetailPage() {
         parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 });
     const fmtDate = (d: string) => {
         try {
-            return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+            return formatBusinessDate(d, 'id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
         } catch {
             return d;
         }

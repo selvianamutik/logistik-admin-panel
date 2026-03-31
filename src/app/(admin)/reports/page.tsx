@@ -12,6 +12,7 @@ import {
 import { useToast } from "../layout";
 import { openBrandedPrint } from "@/lib/print";
 import { fetchAdminData, fetchAllAdminCollectionData } from "@/lib/api/admin-client";
+import { formatBusinessDate } from "@/lib/business-date";
 import {
   buildCashflowExportRows,
   buildPeriodLabel,
@@ -242,7 +243,7 @@ export default function ReportsPage() {
                 );
                 const amount = parseWholeMoneyLike(item.amount);
                 const balanceAfter = parseWholeMoneyLike(item.balanceAfter);
-                return `<tr><td>${bankName}</td><td>${item.date ? new Date(item.date).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "-"}</td><td>${item.type}</td><td>${item.description}</td><td class="r ${isIn ? "s" : "d"} b">${isIn ? "+" : "-"}${fmtN(amount)}</td><td class="r b">${fmtN(balanceAfter)}</td></tr>`;
+                return `<tr><td>${bankName}</td><td>${item.date ? formatBusinessDate(item.date, "id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "-"}</td><td>${item.type}</td><td>${item.description}</td><td class="r ${isIn ? "s" : "d"} b">${isIn ? "+" : "-"}${fmtN(amount)}</td><td class="r b">${fmtN(balanceAfter)}</td></tr>`;
               })
               .join("")}</tbody></table>`,
       });
