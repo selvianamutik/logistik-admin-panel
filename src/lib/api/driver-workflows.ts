@@ -361,7 +361,7 @@ export async function handleDriverBoronganCreate(
     }
 
     const boronganId = crypto.randomUUID();
-    const boronganNumber = await sanityGetNextNumber('borong');
+    const boronganNumber = await sanityGetNextNumber('borong', periodEnd);
     const companyProfile = await getSanityClient().fetch<Pick<CompanyProfile, 'name' | 'address' | 'phone' | 'email' | 'logoUrl'> | null>(
         `*[_type == "companyProfile"][0]{
             name,
@@ -902,7 +902,7 @@ export async function handleDriverVoucherCreate(
         canonicalVehiclePlate = vehicle.plateNumber;
     }
 
-    const bonNumber = await sanityGetNextNumber('bon');
+    const bonNumber = await sanityGetNextNumber('bon', issueDate);
     const voucherId = crypto.randomUUID();
     const initialDisbursementId = crypto.randomUUID();
     const issueTransactionId = crypto.randomUUID();

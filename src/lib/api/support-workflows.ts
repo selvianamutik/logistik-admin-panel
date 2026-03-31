@@ -266,7 +266,7 @@ export async function handleInvoiceCreate(
     const notes = normalizeOptionalText(data.notes);
 
     const invoiceId = crypto.randomUUID();
-    const invoiceNumber = await sanityGetNextNumber('invoice');
+    const invoiceNumber = await sanityGetNextNumber('invoice', issueDate);
     const invoiceDoc: { _id: string; _type: 'invoice'; [key: string]: unknown } = {
         _id: invoiceId,
         _type: 'invoice',

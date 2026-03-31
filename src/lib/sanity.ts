@@ -4,6 +4,7 @@
    ============================================================ */
 
 import { createClient } from '@sanity/client';
+import { getBusinessDateValue, parseBusinessDateValue } from './business-date';
 
 type SanityConfig = {
     projectId: string;
@@ -150,22 +151,19 @@ function numberFromUnknown(value: unknown) {
 }
 
 function buildNumberingPeriod(key: keyof typeof NUMBERING_CONFIG, dateValue?: string) {
-    const sourceDate = typeof dateValue === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateValue)
-        ? new Date(`${dateValue}T00:00:00`)
-        : new Date();
+    const parts =
+        (typeof dateValue === 'string' ? parseBusinessDateValue(dateValue) : null)
+        || parseBusinessDateValue(getBusinessDateValue());
 
-    if (Number.isNaN(sourceDate.getTime())) {
-        const fallback = new Date();
-        return key === 'do'
-            ? `${String(fallback.getDate()).padStart(2, '0')}${String(fallback.getMonth() + 1).padStart(2, '0')}${fallback.getFullYear()}`
-            : `${fallback.getFullYear()}${String(fallback.getMonth() + 1).padStart(2, '0')}`;
+    if (!parts) {
+        return key === 'do' ? '01012000' : '200001';
     }
 
     if (key === 'do') {
-        return `${String(sourceDate.getDate()).padStart(2, '0')}${String(sourceDate.getMonth() + 1).padStart(2, '0')}${sourceDate.getFullYear()}`;
+        return `${parts.day}${parts.month}${parts.year}`;
     }
 
-    return `${sourceDate.getFullYear()}${String(sourceDate.getMonth() + 1).padStart(2, '0')}`;
+    return `${parts.year}${parts.month}`;
 }
 
 // Build client lazily so misconfigured env does not crash route-module import time.

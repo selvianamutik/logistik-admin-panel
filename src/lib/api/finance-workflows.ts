@@ -580,7 +580,7 @@ export async function handleCustomerReceiptCreate(
         const receiptId = crypto.randomUUID();
         const incomeId = crypto.randomUUID();
         const bankTransactionId = crypto.randomUUID();
-        const receiptNumber = await sanityGetNextNumber('receipt');
+        const receiptNumber = await sanityGetNextNumber('receipt', receiptDate);
         const transaction = getSanityClient()
             .transaction()
             .create({
@@ -1444,7 +1444,7 @@ export async function handleFreightNotaCreate(
     }
 
     const notaId = crypto.randomUUID();
-    const notaNumber = await sanityGetNextNumber('nota');
+    const notaNumber = await sanityGetNextNumber('nota', issueDate);
     const {
         instructionAccounts,
         notaSeriesCode,

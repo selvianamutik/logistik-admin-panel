@@ -129,7 +129,6 @@ export async function handleIncidentCreate(
     }
 
     const incidentId = crypto.randomUUID();
-    const incidentNumber = await sanityGetNextNumber('incident');
     const timestamp = new Date().toISOString();
     const companyProfile = await getSanityClient().fetch<{
         name?: string;
@@ -158,6 +157,7 @@ export async function handleIncidentCreate(
             { status: 400 }
         );
     }
+    const incidentNumber = await sanityGetNextNumber('incident', incidentDateTime.slice(0, 10));
     const incidentDoc = {
         _id: incidentId,
         _type: 'incident',

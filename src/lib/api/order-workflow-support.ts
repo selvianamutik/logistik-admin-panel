@@ -9,6 +9,7 @@ import {
     type VolumeInputUnit,
     type WeightInputUnit,
 } from '@/lib/measurement';
+import { getBusinessDateValue } from '@/lib/business-date';
 import { getSanityClient, sanityGetById } from '@/lib/sanity';
 import type { DeliveryActualDropPoint, DeliveryActualDropType } from '@/lib/types';
 
@@ -202,7 +203,7 @@ export function getPeriodFromDate(value: string) {
     if (match) {
         return `${match[1]}${match[2]}`;
     }
-    return new Date().toISOString().slice(0, 7).replace('-', '');
+    return getBusinessDateValue().slice(0, 7).replace('-', '');
 }
 
 export function normalizeCustomerDoPrefix(value: unknown) {
