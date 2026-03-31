@@ -8,7 +8,7 @@ import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import { fetchCompanyProfile, openBrandedPrint, openPrintWindow, resolveDocumentIssuerProfile } from '@/lib/print';
 import { normalizeUserRole } from '@/lib/rbac';
 import type { BankAccount, DriverBorongan, DriverBoronganItem } from '@/lib/types';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, formatQuantity } from '@/lib/utils';
 import PageBackButton from '@/components/PageBackButton';
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
@@ -295,11 +295,11 @@ export default function BoronganDetailPage() {
                         <div className="detail-row">
                             <div className="detail-item">
                                 <div className="detail-label">Total Collie</div>
-                                <div className="detail-value">{borong.totalCollie || 0}</div>
+                                <div className="detail-value">{formatQuantity(borong.totalCollie || 0)}</div>
                             </div>
                             <div className="detail-item">
                                 <div className="detail-label">Total Berat (info)</div>
-                                <div className="detail-value">{(borong.totalWeightKg || 0).toLocaleString('id')} kg</div>
+                                <div className="detail-value">{formatQuantity(borong.totalWeightKg || 0)} kg</div>
                             </div>
                         </div>
                         {borong.paidDate && (
@@ -341,11 +341,11 @@ export default function BoronganDetailPage() {
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
                                 <span className="text-muted">Total Collie</span>
-                                <strong>{borong.totalCollie || 0}</strong>
+                                <strong>{formatQuantity(borong.totalCollie || 0)}</strong>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem', fontSize: '0.85rem' }}>
                                 <span className="text-muted">Total Berat (info)</span>
-                                <strong>{(borong.totalWeightKg || 0).toLocaleString('id')} kg</strong>
+                                <strong>{formatQuantity(borong.totalWeightKg || 0)} kg</strong>
                             </div>
                             <div style={{ fontSize: '0.78rem', color: 'var(--color-gray-500)', lineHeight: 1.45, marginBottom: '1rem' }}>
                                 Slip ini dihitung dari tarif borongan per DO/perjalanan. Berat dan collie tetap disimpan sebagai konteks operasional.
@@ -402,17 +402,17 @@ export default function BoronganDetailPage() {
                                             <td>{it.noSJ || '-'}</td>
                                             <td>{it.tujuan}</td>
                                             <td>{it.barang || '-'}</td>
-                                            <td>{it.collie || '-'}</td>
-                                            <td>{(it.beratKg || 0).toLocaleString('id')}</td>
-                                            <td>{(it.tarip || 0).toLocaleString('id')}</td>
+                                            <td>{it.collie ? formatQuantity(it.collie) : '-'}</td>
+                                            <td>{formatQuantity(it.beratKg || 0)}</td>
+                                            <td>{formatQuantity(it.tarip || 0)}</td>
                                             <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatCurrency(it.uangRp)}</td>
                                             <td className="text-muted">{it.ket || '-'}</td>
                                         </tr>
                                     ))}
                                     <tr style={{ background: 'var(--color-bg-secondary)', fontWeight: 700, borderTop: '2px solid var(--color-border)' }}>
                                         <td colSpan={5} style={{ textAlign: 'right' }}>Jumlah</td>
-                                        <td>{borong.totalCollie || 0}</td>
-                                        <td>{(borong.totalWeightKg || 0).toLocaleString('id')}</td>
+                                        <td>{formatQuantity(borong.totalCollie || 0)}</td>
+                                        <td>{formatQuantity(borong.totalWeightKg || 0)}</td>
                                         <td />
                                         <td style={{ textAlign: 'right', color: 'var(--color-danger)' }}>{formatCurrency(borong.totalAmount)}</td>
                                         <td />
@@ -459,19 +459,19 @@ export default function BoronganDetailPage() {
                                 <td>{it.noSJ || '-'}</td>
                                 <td>{it.tujuan}</td>
                                 <td>{it.barang || '-'}</td>
-                                <td>{it.collie || '-'}</td>
-                                <td>{(it.beratKg || 0).toLocaleString('id')}</td>
-                                <td>{(it.tarip || 0).toLocaleString('id')}</td>
-                                <td className="right">{it.uangRp.toLocaleString('id')}</td>
+                                <td>{it.collie ? formatQuantity(it.collie) : '-'}</td>
+                                <td>{formatQuantity(it.beratKg || 0)}</td>
+                                <td>{formatQuantity(it.tarip || 0)}</td>
+                                <td className="right">{formatQuantity(it.uangRp || 0)}</td>
                                 <td>{it.ket || '-'}</td>
                             </tr>
                         ))}
                         <tr className="total-row">
                             <td colSpan={5} className="right bold">Jumlah</td>
-                            <td className="bold">{borong.totalCollie || 0}</td>
-                            <td className="bold">{(borong.totalWeightKg || 0).toLocaleString('id')}</td>
+                            <td className="bold">{formatQuantity(borong.totalCollie || 0)}</td>
+                            <td className="bold">{formatQuantity(borong.totalWeightKg || 0)}</td>
                             <td />
-                            <td className="right bold">{borong.totalAmount.toLocaleString('id')}</td>
+                            <td className="right bold">{formatQuantity(borong.totalAmount || 0)}</td>
                             <td />
                         </tr>
                     </tbody>

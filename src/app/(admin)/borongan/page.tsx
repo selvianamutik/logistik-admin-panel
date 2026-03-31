@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Search, Plus, Receipt } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
-import { formatDate, formatCurrency } from '@/lib/utils';
+import { formatDate, formatCurrency, formatQuantity } from '@/lib/utils';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import { normalizeUserRole } from '@/lib/rbac';
 import type { DriverBorongan } from '@/lib/types';
@@ -203,8 +203,8 @@ export default function BoronganListPage() {
                                     </td>
                                     <td className="font-semibold">{borongan.driverName}</td>
                                     <td className="text-muted">{formatDate(borongan.periodStart)} - {formatDate(borongan.periodEnd)}</td>
-                                    <td>{borongan.totalCollie || 0}</td>
-                                    <td>{(borongan.totalWeightKg || 0).toLocaleString('id')} kg</td>
+                                    <td>{formatQuantity(borongan.totalCollie || 0)}</td>
+                                    <td>{formatQuantity(borongan.totalWeightKg || 0)} kg</td>
                                     <td className="font-semibold">{formatCurrency(borongan.totalAmount)}</td>
                                     <td>
                                         <span className={`badge badge-${STATUS_MAP[borongan.status]?.color}`}>

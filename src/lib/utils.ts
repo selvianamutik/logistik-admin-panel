@@ -87,8 +87,9 @@ export function getReceivableNetAmount(value: {
     totalAdjustmentAmount?: number | string | null;
     netAmount?: number | string | null;
 }) {
+    const hasGrossAmount = value.totalAmount !== undefined && value.totalAmount !== null && value.totalAmount !== '';
     const grossAmount =
-        value.totalAmount !== undefined && value.totalAmount !== null
+        hasGrossAmount
             ? Math.max(parseFormattedNumberish(value.totalAmount), 0)
             : 0;
     const adjustmentAmount =
@@ -100,10 +101,31 @@ export function getReceivableNetAmount(value: {
             ? Math.max(parseFormattedNumberish(value.netAmount), 0)
             : undefined;
 
-    return Math.max(
-        storedNetAmount ?? grossAmount - adjustmentAmount,
-        0,
-    );
+    const computedNetAmount = Math.max(grossAmount - adjustmentAmount, 0);
+    if (hasGrossAmount) {
+        return computedNetAmount;
+    }
+
+    return Math.max(storedNetAmount ?? computedNetAmount, 0);
+}
+
+export function deriveReceivableStatus(
+    value: {
+        totalAmount?: number | string | null;
+        totalAdjustmentAmount?: number | string | null;
+        netAmount?: number | string | null;
+    },
+    totalPaid?: number | string | null
+): 'UNPAID' | 'PARTIAL' | 'PAID' {
+    const paidAmount =
+        totalPaid !== undefined && totalPaid !== null
+            ? Math.max(parseFormattedNumberish(totalPaid, { maxFractionDigits: 0 }), 0)
+            : 0;
+    const netAmount = getReceivableNetAmount(value);
+
+    if (paidAmount >= netAmount) return 'PAID';
+    if (paidAmount > 0) return 'PARTIAL';
+    return 'UNPAID';
 }
 
 export function getReceivableRemainingAmount(

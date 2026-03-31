@@ -24,7 +24,7 @@ import {
 } from '@/lib/invoice-detail-page-support';
 import { buildFreightNotaPrintDocument, fetchCompanyProfile, formatFreightNotaDisplayNumber, openBrandedPrint, openPrintWindow, resolveDocumentIssuerProfile } from '@/lib/print';
 import { exportFreightNotaDetail } from '@/lib/export';
-import { formatDate, formatCurrency, formatQuantity, INVOICE_ADJUSTMENT_KIND_MAP, PAYMENT_METHOD_MAP } from '@/lib/utils';
+import { deriveReceivableStatus, formatDate, formatCurrency, formatQuantity, INVOICE_ADJUSTMENT_KIND_MAP, PAYMENT_METHOD_MAP } from '@/lib/utils';
 import type { FreightNota, FreightNotaItem, Payment, BankAccount, CompanyProfile, InvoiceAdjustment, Customer } from '@/lib/types';
 import { hasPermission } from '@/lib/rbac';
 export default function NotaDetailPage() {
@@ -304,7 +304,8 @@ export default function NotaDetailPage() {
     if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 200 }} /></div>;
     if (!nota) return <div className="empty-state"><div className="empty-state-title">Nota tidak ditemukan</div></div>;
 
-    const statusConf = INVOICE_DETAIL_STATUS_MAP[nota.status] || { label: nota.status, color: 'secondary' };
+    const displayStatus = deriveReceivableStatus(nota, totalPaid);
+    const statusConf = INVOICE_DETAIL_STATUS_MAP[displayStatus] || { label: displayStatus, color: 'secondary' };
     const displayNotaNumber = formatFreightNotaDisplayNumber(nota, company);
     const billingMode = normalizeFreightNotaBillingMode(nota.billingMode);
     const totalBilledWeightLabel = formatFreightNotaDisplayWeight({
@@ -329,7 +330,7 @@ export default function NotaDetailPage() {
                 </div>
                 </div>
                 <div className="page-actions" style={{ gap: '0.4rem' }}>
-                    {canManageInvoice && nota.status !== 'PAID' && <button className="btn btn-success btn-sm" onClick={() => setShowPayModal(true)}><DollarSign size={14} /> Catat Pembayaran</button>}
+                    {canManageInvoice && displayStatus !== 'PAID' && <button className="btn btn-success btn-sm" onClick={() => setShowPayModal(true)}><DollarSign size={14} /> Catat Pembayaran</button>}
                     {canManageInvoice && grossAmount > totalAdjustmentAmount && <button className="btn btn-secondary btn-sm" onClick={() => setShowAdjustmentModal(true)}>Catat Potongan</button>}
                     {canExportInvoice && <button className="btn btn-secondary btn-sm" onClick={handleExportExcel}><FileDown size={14} /> Excel</button>}
                     {canPrintInvoice && <button className="btn btn-secondary btn-sm" onClick={handlePrint}><Printer size={14} /> Cetak Nota</button>}
@@ -358,7 +359,7 @@ export default function NotaDetailPage() {
                             <div className="detail-item"><div className="detail-label">Total Berat Ditagihkan</div><div className="detail-value">{totalBilledWeightLabel}</div></div>
                         </div>
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">Total Berat Canonical</div><div className="detail-value">{(nota.totalWeightKg || 0).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} kg</div></div>
+                            <div className="detail-item"><div className="detail-label">Total Berat Canonical</div><div className="detail-value">{formatQuantity(nota.totalWeightKg || 0)} kg</div></div>
                             <div className="detail-item"><div className="detail-label">Tagihan Netto</div><div className="detail-value font-semibold">{formatCurrency(netAmount)}</div></div>
                         </div>
                     </div>
@@ -388,7 +389,7 @@ export default function NotaDetailPage() {
                                     <div className={`progress-bar-fill ${paidPercent >= 100 ? 'success' : ''}`} style={{ width: `${paidPercent}%` }} />
                                 </div>
                                 <div style={{ fontSize: '0.72rem', color: 'var(--color-gray-400)', marginBottom: '1rem' }}>{paidPercent.toFixed(0)}% terbayar</div>
-                                {canManageInvoice && nota.status !== 'PAID' && <button className="btn btn-success" style={{ width: '100%' }} onClick={() => setShowPayModal(true)}><DollarSign size={16} /> Catat Pembayaran</button>}
+                                {canManageInvoice && displayStatus !== 'PAID' && <button className="btn btn-success" style={{ width: '100%' }} onClick={() => setShowPayModal(true)}><DollarSign size={16} /> Catat Pembayaran</button>}
                             </div>
                         </div>
 
@@ -478,7 +479,7 @@ export default function NotaDetailPage() {
                                             <td>{it.barang || '-'}</td>
                                     <td>{it.collie ? formatQuantity(it.collie) : '-'}</td>
                                             <td>{formatFreightNotaDisplayWeight({ beratKg: it.beratKg || 0, billingMode, includeCanonical: false })}</td>
-                                            <td>{(it.tarip || 0).toLocaleString('id')}</td>
+                                            <td>{formatQuantity(it.tarip || 0, 0)}</td>
                                             <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatCurrency(it.uangRp)}</td>
                                             <td className="text-muted">{it.ket || '-'}</td>
                                         </tr>

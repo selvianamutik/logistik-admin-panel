@@ -568,8 +568,11 @@ export function buildResolvedDeliveryOrder(deliveryOrder: DeliveryOrder | null, 
         return null;
     }
 
+    const parsedTaripBorongan = parseFormattedNumberish(deliveryOrder.taripBorongan, { maxFractionDigits: 0 });
+
     return {
         ...deliveryOrder,
+        taripBorongan: Number.isFinite(parsedTaripBorongan) ? parsedTaripBorongan : 0,
         customerName: deliveryOrder.customerName || sourceOrder?.customerName,
         receiverName: deliveryOrder.receiverName || sourceOrder?.receiverName,
         receiverPhone: deliveryOrder.receiverPhone || sourceOrder?.receiverPhone,

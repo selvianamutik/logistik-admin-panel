@@ -934,7 +934,7 @@ export default function DODetailPage() {
                                 <div className="detail-item">
                                     <div className="detail-label">Upah Trip per DO</div>
                                     <div className="detail-value font-semibold" style={{ color: doData.taripBorongan ? 'var(--color-primary)' : 'var(--color-gray-400)' }}>
-                                        {doData.taripBorongan ? `Rp ${doData.taripBorongan.toLocaleString('id')}` : 'Belum diisi'}
+                                        {doData.taripBorongan ? formatCurrency(doData.taripBorongan) : 'Belum diisi'}
                                     </div>
                                 </div>
                                 <div className="detail-item">

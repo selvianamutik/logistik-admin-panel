@@ -8,7 +8,7 @@ import CurrencyInput from '@/components/CurrencyInput';
 import { fetchAdminCollectionData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { formatFreightNotaDisplayWeight, normalizeFreightNotaBillingMode } from '@/lib/freight-nota-billing';
-import { formatDate, formatCurrency, formatQuantity, getReceivableNetAmount, PAYMENT_METHOD_MAP } from '@/lib/utils';
+import { deriveReceivableStatus, formatDate, formatCurrency, formatQuantity, getReceivableNetAmount, PAYMENT_METHOD_MAP } from '@/lib/utils';
 import { buildFreightNotaPrintDocument, openBrandedPrint, openPrintWindow, fetchCompanyProfile, formatFreightNotaDisplayNumber, resolveDocumentIssuerProfile } from '@/lib/print';
 import { exportFreightNotaDetail, exportInvoices } from '@/lib/export';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
@@ -23,11 +23,11 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
     PAID: { label: 'Lunas', color: 'success' },
 };
 
-const getNextInvoiceAction = (nota: FreightNota, remainingAmount: number) => {
-    if (nota.status === 'UNPAID') {
+const getNextInvoiceAction = (status: 'UNPAID' | 'PARTIAL' | 'PAID', nota: FreightNota, remainingAmount: number) => {
+    if (status === 'UNPAID') {
         return 'Tagih atau catat penerimaan';
     }
-    if (nota.status === 'PARTIAL') {
+    if (status === 'PARTIAL') {
         return remainingAmount > 0 ? 'Follow up sisa pembayaran nota' : 'Cek alokasi penerimaan';
     }
     return parseFormattedNumberish(nota.totalAdjustmentAmount || 0, { maxFractionDigits: 0 }) > 0
@@ -522,7 +522,10 @@ export default function NotaListPage() {
             openBrandedPrint({
                 title: 'Daftar Nota Ongkos Angkut', company: co, bodyHtml: `
                     <table><thead><tr><th>No. Nota</th><th>Customer</th><th>Tanggal</th><th>Total Collie</th><th>Total Berat Tagih</th><th class="r">Tagihan Netto</th><th>Status</th></tr></thead>
-                    <tbody>${allMatchingNotas.map(n => `<tr><td><div class="b">${formatFreightNotaDisplayNumber(n, co)}</div><div style="font-size:11px;color:#64748b">${n.notaNumber}</div></td><td>${n.customerName}</td><td>${formatDate(n.issueDate)}</td><td>${formatQuantity(n.totalCollie || 0)}</td><td>${formatFreightNotaDisplayWeight({ beratKg: n.totalWeightKg || 0, billingMode: normalizeFreightNotaBillingMode(n.billingMode), includeCanonical: false })}</td><td class="r b">${formatCurrency(getReceivableNetAmount(n))}</td><td>${STATUS_MAP[n.status]?.label || n.status}</td></tr>`).join('')}
+                    <tbody>${allMatchingNotas.map(n => {
+                        const displayStatus = deriveReceivableStatus(n, paymentTotalsByInvoice[n._id] || 0);
+                        return `<tr><td><div class="b">${formatFreightNotaDisplayNumber(n, co)}</div><div style="font-size:11px;color:#64748b">${n.notaNumber}</div></td><td>${n.customerName}</td><td>${formatDate(n.issueDate)}</td><td>${formatQuantity(n.totalCollie || 0)}</td><td>${formatFreightNotaDisplayWeight({ beratKg: n.totalWeightKg || 0, billingMode: normalizeFreightNotaBillingMode(n.billingMode), includeCanonical: false })}</td><td class="r b">${formatCurrency(getReceivableNetAmount(n))}</td><td>${STATUS_MAP[displayStatus]?.label || displayStatus}</td></tr>`;
+                    }).join('')}
                     <tr style="border-top:2px solid #1e293b"><td colspan="5" class="r b">TOTAL</td><td class="r b">${formatCurrency(grandTotal)}</td><td></td></tr></tbody></table>`,
                 targetWindow: printWindow,
             });
@@ -625,6 +628,9 @@ export default function NotaListPage() {
                                 totalInvoices === 0 ? (
                                     <tr><td colSpan={9}><div className="empty-state"><FileText size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada nota</div><div className="empty-state-text">Belum ada nota yang bisa ditampilkan</div></div></td></tr>
                                 ) : items.map(n => (
+                                    (() => {
+                                        const displayStatus = deriveReceivableStatus(n, paymentTotalsByInvoice[n._id] || 0);
+                                        return (
                                     <tr key={n._id}>
                                         <td>
                                             <button
@@ -645,8 +651,8 @@ export default function NotaListPage() {
                                             <div className="font-semibold">{formatCurrency(getReceivableNetAmount(n))}</div>
                                             {parseWholeMoneyLike(n.totalAdjustmentAmount) > 0 && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Bruto {formatCurrency(n.totalAmount)}</div>}
                                         </td>
-                                        <td><span className={`badge badge-${STATUS_MAP[n.status]?.color}`}><span className="badge-dot" /> {STATUS_MAP[n.status]?.label}</span></td>
-                                        <td><span style={{ fontWeight: 500 }}>{getNextInvoiceAction(n, getNotaRemaining(n))}</span></td>
+                                        <td><span className={`badge badge-${STATUS_MAP[displayStatus]?.color}`}><span className="badge-dot" /> {STATUS_MAP[displayStatus]?.label}</span></td>
+                                        <td><span style={{ fontWeight: 500 }}>{getNextInvoiceAction(displayStatus, n, getNotaRemaining(n))}</span></td>
                                         <td>
                                             <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
                                                 <button className="table-action-btn" onClick={() => router.push(`/invoices/${n._id}`)}>Buka</button>
@@ -655,6 +661,8 @@ export default function NotaListPage() {
                                             </div>
                                         </td>
                                     </tr>
+                                        );
+                                    })()
                                 ))}
                         </tbody>
                     </table>
@@ -667,14 +675,17 @@ export default function NotaListPage() {
                                 <div className="mobile-record-subtitle">Belum ada nota yang bisa ditampilkan.</div>
                             </div>
                         ) : items.map(n => (
+                            (() => {
+                                const displayStatus = deriveReceivableStatus(n, paymentTotalsByInvoice[n._id] || 0);
+                                return (
                             <div key={n._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
                                         <div className="mobile-record-title">{formatFreightNotaDisplayNumber(n, company)}</div>
                                         <div className="mobile-record-subtitle">{n.customerName || '-'} | {formatDate(n.issueDate)}</div>
                                     </div>
-                                    <span className={`badge badge-${STATUS_MAP[n.status]?.color}`}>
-                                        <span className="badge-dot" /> {STATUS_MAP[n.status]?.label}
+                                    <span className={`badge badge-${STATUS_MAP[displayStatus]?.color}`}>
+                                        <span className="badge-dot" /> {STATUS_MAP[displayStatus]?.label}
                                     </span>
                                 </div>
                                 <div className="mobile-record-meta">
@@ -696,7 +707,7 @@ export default function NotaListPage() {
                                     </div>
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Tindak Lanjut</span>
-                                        <span className="mobile-record-value">{getNextInvoiceAction(n, getNotaRemaining(n))}</span>
+                                        <span className="mobile-record-value">{getNextInvoiceAction(displayStatus, n, getNotaRemaining(n))}</span>
                                     </div>
                                 </div>
                                 <div className="mobile-record-actions">
@@ -705,6 +716,8 @@ export default function NotaListPage() {
                                     {canPrintInvoices && <button className="btn btn-secondary" onClick={() => void handlePrintNota(n)}><Printer size={13} /> Cetak</button>}
                                 </div>
                             </div>
+                                );
+                            })()
                         ))}
                     </div>
                 )}
