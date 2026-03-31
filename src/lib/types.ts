@@ -506,6 +506,7 @@ export interface FreightNotaItem {
   _type: 'freightNotaItem';
   notaRef: string;
   doRef?: string;
+  deliveryOrderItemRef?: string;
   doNumber?: string;
   vehiclePlate?: string;
   date: string;

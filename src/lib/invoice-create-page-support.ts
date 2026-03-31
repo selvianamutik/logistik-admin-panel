@@ -4,6 +4,7 @@ import { parseFormattedNumberish } from './formatted-number';
 export interface NotaItemRow {
     id: string;
     doRef: string;
+    deliveryOrderItemRef?: string;
     doNumber: string;
     vehiclePlate: string;
     date: string;
@@ -87,30 +88,15 @@ export function getSuggestedNotaDueDate(params: {
     return termDays === null ? null : calculateNotaDueDate(params.issueDate, termDays);
 }
 
-export function buildNotaRowFromDeliveryOrder(params: {
+export function buildNotaRowsFromDeliveryOrder(params: {
     deliveryOrder: DeliveryOrder;
     orders: Order[];
     deliveryOrderItems: DeliveryOrderItem[];
-}): NotaItemRow {
+}): NotaItemRow[] {
     const { deliveryOrder, orders, deliveryOrderItems } = params;
     const relatedOrder = orders.find(order => order._id === deliveryOrder.orderRef);
     const relatedItems = deliveryOrderItems.filter(item => item.deliveryOrderRef === deliveryOrder._id);
-    const descriptions = [...new Set(
-        relatedItems
-            .map(item => item.orderItemDescription?.trim())
-            .filter((value): value is string => Boolean(value))
-    )];
-    const collie = relatedItems.reduce(
-        (sum, item) => sum + parseFormattedNumberish(item.actualQtyKoli ?? item.orderItemQtyKoli ?? 0),
-        0
-    );
-    const beratKg = relatedItems.reduce(
-        (sum, item) => sum + parseFormattedNumberish(item.actualWeightKg ?? item.orderItemWeight ?? 0),
-        0
-    );
-
-    return {
-        id: Math.random().toString(36).slice(2),
+    const baseRow = {
         doRef: deliveryOrder._id,
         doNumber: deliveryOrder.doNumber || '',
         vehiclePlate: deliveryOrder.vehiclePlate || '',
@@ -118,11 +104,27 @@ export function buildNotaRowFromDeliveryOrder(params: {
         noSJ: deliveryOrder.customerDoNumber || '',
         dari: deliveryOrder.pickupAddress || relatedOrder?.pickupAddress || '',
         tujuan: deliveryOrder.receiverAddress || relatedOrder?.receiverAddress || '',
-        barang: descriptions.join(', '),
-        collie,
-        beratKg,
         tarip: 0,
         uangRp: 0,
         ket: '',
     };
+
+    if (relatedItems.length === 0) {
+        return [{
+            id: Math.random().toString(36).slice(2),
+            ...baseRow,
+            barang: '',
+            collie: 0,
+            beratKg: 0,
+        }];
+    }
+
+    return relatedItems.map(item => ({
+        id: Math.random().toString(36).slice(2),
+        ...baseRow,
+        deliveryOrderItemRef: item._id,
+        barang: item.orderItemDescription?.trim() || '',
+        collie: parseFormattedNumberish(item.actualQtyKoli ?? item.orderItemQtyKoli ?? 0),
+        beratKg: parseFormattedNumberish(item.actualWeightKg ?? item.orderItemWeight ?? 0),
+    }));
 }

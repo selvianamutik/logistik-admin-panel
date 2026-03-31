@@ -107,6 +107,40 @@ export function applyCustomerProductToOrderItem(item: OrderItemForm, selectedPro
     };
 }
 
+export function updateOrderItemWeightUnit(item: OrderItemForm, nextUnit: WeightInputUnit): OrderItemForm {
+    if (item.weightInputUnit === nextUnit) {
+        return item;
+    }
+
+    const currentWeightKg =
+        item.weightInputValue > 0
+            ? convertWeightToKg(item.weightInputValue, item.weightInputUnit)
+            : 0;
+
+    return {
+        ...item,
+        weightInputUnit: nextUnit,
+        weightInputValue: currentWeightKg > 0 ? convertKgToWeightInputValue(currentWeightKg, nextUnit) : 0,
+    };
+}
+
+export function updateOrderItemVolumeUnit(item: OrderItemForm, nextUnit: VolumeInputUnit): OrderItemForm {
+    if (item.volumeInputUnit === nextUnit) {
+        return item;
+    }
+
+    const currentVolumeM3 =
+        item.volumeInputValue > 0
+            ? convertVolumeToM3(item.volumeInputValue, item.volumeInputUnit)
+            : 0;
+
+    return {
+        ...item,
+        volumeInputUnit: nextUnit,
+        volumeInputValue: currentVolumeM3 > 0 ? convertM3ToVolumeInputValue(currentVolumeM3, nextUnit) : 0,
+    };
+}
+
 export function applyCustomerRecipientSnapshot(selectedRecipient: CustomerRecipient | undefined) {
     if (!selectedRecipient) {
         return {

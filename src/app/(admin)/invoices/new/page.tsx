@@ -19,7 +19,7 @@ import {
     normalizeFreightNotaBillingMode,
 } from '@/lib/freight-nota-billing';
 import {
-    buildNotaRowFromDeliveryOrder,
+    buildNotaRowsFromDeliveryOrder,
     createEmptyNotaRow,
     getSuggestedNotaDueDate,
     isEmptyNotaRow,
@@ -149,7 +149,7 @@ export default function NewNotaPage() {
             return;
         }
 
-        const nextRow = buildNotaRowFromDeliveryOrder({
+        const nextRows = buildNotaRowsFromDeliveryOrder({
             deliveryOrder,
             orders,
             deliveryOrderItems,
@@ -168,11 +168,15 @@ export default function NewNotaPage() {
         setRows(previous => {
             const emptyIndex = previous.findIndex(isEmptyNotaRow);
             if (emptyIndex === -1) {
-                return [...previous, nextRow];
+                return [...previous, ...nextRows];
             }
 
             const next = [...previous];
-            next[emptyIndex] = { ...nextRow, id: previous[emptyIndex].id };
+            const [firstRow, ...remainingRows] = nextRows;
+            next[emptyIndex] = { ...firstRow, id: previous[emptyIndex].id };
+            if (remainingRows.length > 0) {
+                next.push(...remainingRows);
+            }
             return next;
         });
     };

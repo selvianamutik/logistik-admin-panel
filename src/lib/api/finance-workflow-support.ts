@@ -8,6 +8,7 @@ import {
 
 export type NormalizedFreightNotaRow = {
     doRef?: string;
+    deliveryOrderItemRef?: string;
     doNumber?: string;
     vehiclePlate?: string;
     date: string;
@@ -30,6 +31,7 @@ export type FreightNotaOrderSource = {
 };
 
 export type FreightNotaDeliveryOrderItemSource = {
+    _id?: string;
     deliveryOrderRef?: string;
     orderItemDescription?: string;
     orderItemQtyKoli?: number;

@@ -20,6 +20,8 @@ import {
     sortCustomerPickups,
     sortCustomerRecipients,
     summarizeDraftOrderCargo,
+    updateOrderItemVolumeUnit,
+    updateOrderItemWeightUnit,
     type OrderItemForm,
 } from '@/lib/order-create-page-support';
 import {
@@ -567,7 +569,14 @@ export default function NewOrderPage() {
                                             value={item.weightInputValue}
                                             onValueChange={value => updateItem(idx, 'weightInputValue', value)}
                                         />
-                                        <select className="form-select" value={item.weightInputUnit} onChange={e => updateItem(idx, 'weightInputUnit', e.target.value as WeightInputUnit)} style={{ width: 92 }}>
+                                        <select
+                                            className="form-select"
+                                            value={item.weightInputUnit}
+                                            onChange={e => setItems(prev => prev.map((entry, i) => (
+                                                i === idx ? updateOrderItemWeightUnit(entry, e.target.value as WeightInputUnit) : entry
+                                            )))}
+                                            style={{ width: 92 }}
+                                        >
                                             {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                         </select>
                                     </div>
@@ -581,7 +590,14 @@ export default function NewOrderPage() {
                                             value={item.volumeInputValue}
                                             onValueChange={value => updateItem(idx, 'volumeInputValue', value)}
                                         />
-                                        <select className="form-select" value={item.volumeInputUnit} onChange={e => updateItem(idx, 'volumeInputUnit', e.target.value as VolumeInputUnit)} style={{ width: 92 }}>
+                                        <select
+                                            className="form-select"
+                                            value={item.volumeInputUnit}
+                                            onChange={e => setItems(prev => prev.map((entry, i) => (
+                                                i === idx ? updateOrderItemVolumeUnit(entry, e.target.value as VolumeInputUnit) : entry
+                                            )))}
+                                            style={{ width: 92 }}
+                                        >
                                             {VOLUME_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                         </select>
                                     </div>
