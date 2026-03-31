@@ -7,6 +7,7 @@ import { getSuggestedVehicleTireLayout, resolveTireAssetStatus, resolveTireSlotC
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import type {
     BankAccount,
+    BankTransaction,
     CustomerReceipt,
     DriverBorongan,
     DriverBoronganItem,
@@ -68,6 +69,40 @@ export function applyDerivedDriverVoucherFinancials<T extends {
             driverFeeAmount: summary.driverFeeAmount,
             totalClaimAmount: summary.totalClaimAmount,
             balance: summary.balance,
+        };
+    });
+}
+
+function getSignedBankTransactionDelta(type: BankTransaction['type'] | undefined, amount: unknown) {
+    const numericAmount = parseWholeMoneyLike(amount);
+    if (type === 'DEBIT' || type === 'TRANSFER_OUT') {
+        return -numericAmount;
+    }
+    return numericAmount;
+}
+
+export function applyDerivedBankAccountBalances<
+    T extends {
+        _id: string;
+        initialBalance?: number | string | null;
+        currentBalance?: number | string | null;
+    }
+>(
+    accounts: T[],
+    transactionRows: Array<Pick<BankTransaction, 'bankAccountRef' | 'type' | 'amount'>>
+) {
+    const deltasByAccount = transactionRows.reduce<Record<string, number>>((acc, tx) => {
+        if (!tx.bankAccountRef) return acc;
+        acc[tx.bankAccountRef] = (acc[tx.bankAccountRef] || 0) + getSignedBankTransactionDelta(tx.type, tx.amount);
+        return acc;
+    }, {});
+
+    return accounts.map(account => {
+        const initialBalance = parseFormattedNumberish(account.initialBalance ?? 0, { maxFractionDigits: 0 });
+        return {
+            ...account,
+            initialBalance,
+            currentBalance: initialBalance + (deltasByAccount[account._id] || 0),
         };
     });
 }
@@ -869,27 +904,37 @@ export async function getExpensesSummary(session: ApiSession, search = '') {
 
 export async function getBankAccountsSummary() {
     const client = getSanityClient();
-    const accounts = await client.fetch<Array<Pick<BankAccount, '_id' | 'accountType' | 'systemKey' | 'initialBalance' | 'currentBalance' | 'active'>>>(
-        `*[_type == "bankAccount" && active != false]{
-            _id,
-            accountType,
-            systemKey,
-            initialBalance,
-            currentBalance,
-            active
-        }`
-    );
+    const [accounts, transactionRows] = await Promise.all([
+        client.fetch<Array<Pick<BankAccount, '_id' | 'accountType' | 'systemKey' | 'initialBalance' | 'currentBalance' | 'active'>>>(
+            `*[_type == "bankAccount" && active != false]{
+                _id,
+                accountType,
+                systemKey,
+                initialBalance,
+                currentBalance,
+                active
+            }`
+        ),
+        client.fetch<Array<Pick<BankTransaction, 'bankAccountRef' | 'type' | 'amount'>>>(
+            `*[_type == "bankTransaction" && defined(bankAccountRef)]{
+                bankAccountRef,
+                type,
+                amount
+            }`
+        ),
+    ]);
+    const accountsWithDerivedBalances = applyDerivedBankAccountBalances(accounts, transactionRows);
 
     const isCash = (account: Pick<BankAccount, 'accountType' | 'systemKey'>) =>
         account.accountType === 'CASH' || account.systemKey === 'cash-on-hand';
 
-    const totalBalance = accounts.reduce((sum, account) => sum + parseWholeMoneyLike(account.currentBalance), 0);
-    const totalInitial = accounts.reduce((sum, account) => sum + parseWholeMoneyLike(account.initialBalance), 0);
-    const cashBalance = accounts.filter(isCash).reduce((sum, account) => sum + parseWholeMoneyLike(account.currentBalance), 0);
-    const bankBalance = accounts.filter(account => !isCash(account)).reduce((sum, account) => sum + parseWholeMoneyLike(account.currentBalance), 0);
+    const totalBalance = accountsWithDerivedBalances.reduce((sum, account) => sum + parseWholeMoneyLike(account.currentBalance), 0);
+    const totalInitial = accountsWithDerivedBalances.reduce((sum, account) => sum + parseWholeMoneyLike(account.initialBalance), 0);
+    const cashBalance = accountsWithDerivedBalances.filter(isCash).reduce((sum, account) => sum + parseWholeMoneyLike(account.currentBalance), 0);
+    const bankBalance = accountsWithDerivedBalances.filter(account => !isCash(account)).reduce((sum, account) => sum + parseWholeMoneyLike(account.currentBalance), 0);
 
     return {
-        totalAccounts: accounts.length,
+        totalAccounts: accountsWithDerivedBalances.length,
         totalBalance,
         totalInitial,
         cashBalance,

@@ -63,6 +63,7 @@ import {
     getAuditLogsSummary,
     getBankAccountsSummary,
     getBoronganSummary,
+    applyDerivedBankAccountBalances,
     getCustomerReceiptById,
     getCustomerReceiptList,
     getDriverBoronganById,
@@ -92,7 +93,7 @@ import {
     sanityGetCompanyProfile,
     sanityList,
 } from '@/lib/sanity';
-import type { DriverBorongan, DriverBoronganItem, DriverVoucher, Expense, FreightNota, User, Vehicle } from '@/lib/types';
+import type { BankAccount, BankTransaction, DriverBorongan, DriverBoronganItem, DriverVoucher, Expense, FreightNota, User, Vehicle } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -538,6 +539,18 @@ export async function GET(request: Request) {
                 item = (await deriveCustomerReceiptsForResponse([item as ReceiptResponseShape]))[0] as Record<string, unknown>;
             }
 
+            if (entity === 'bank-accounts') {
+                const txRows = await getSanityClient().fetch<Array<Pick<BankTransaction, 'bankAccountRef' | 'type' | 'amount'>>>(
+                    `*[_type == "bankTransaction" && bankAccountRef == $id]{
+                        bankAccountRef,
+                        type,
+                        amount
+                    }`,
+                    { id }
+                );
+                item = applyDerivedBankAccountBalances([item as unknown as BankAccount], txRows)[0] as unknown as Record<string, unknown>;
+            }
+
             if (entity === 'vehicles' && session.role !== 'OWNER') {
                 item = sanitizeVehicleForRole(item as unknown as Vehicle, session.role) as unknown as Record<string, unknown>;
             }
@@ -744,6 +757,21 @@ export async function GET(request: Request) {
 
         if (entity === 'customer-receipts' && items.length > 0) {
             items = await deriveCustomerReceiptsForResponse(items as ReceiptResponseShape[]) as unknown as Record<string, unknown>[];
+        }
+
+        if (entity === 'bank-accounts' && items.length > 0) {
+            const ids = items
+                .map(item => (typeof item._id === 'string' ? item._id : ''))
+                .filter(Boolean);
+            const txRows = await getSanityClient().fetch<Array<Pick<BankTransaction, 'bankAccountRef' | 'type' | 'amount'>>>(
+                `*[_type == "bankTransaction" && defined(bankAccountRef) && bankAccountRef in $ids]{
+                    bankAccountRef,
+                    type,
+                    amount
+                }`,
+                { ids }
+            );
+            items = applyDerivedBankAccountBalances(items as unknown as BankAccount[], txRows) as unknown as Record<string, unknown>[];
         }
 
         if (entity === 'driver-borongans' && items.length > 0) {
