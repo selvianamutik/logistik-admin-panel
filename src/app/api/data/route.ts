@@ -74,7 +74,6 @@ import {
     getExpensesSummary,
     getFreightNotaById,
     getFreightNotaList,
-    getFreightNotasSummary,
     getDriverVoucherById,
     getListSortClause,
     getVehiclesSummary,
@@ -277,37 +276,6 @@ async function deriveCustomerReceiptsForResponse<T extends ReceiptResponseShape>
     return applyDerivedCustomerReceiptAllocationsLocal(receipts, allocationRows);
 }
 
-async function getDerivedCustomerCreditTotal() {
-    const [receipts, allocationRows] = await Promise.all([
-        getSanityClient().fetch<Array<{
-            _id: string;
-            totalAmount?: number | string | null;
-            allocatedAmount?: number | string | null;
-            unappliedAmount?: number | string | null;
-            allocationCount?: number | string | null;
-        }>>(
-            `*[_type == "customerReceipt"]{
-                _id,
-                totalAmount,
-                allocatedAmount,
-                unappliedAmount,
-                allocationCount
-            }`
-        ),
-        getSanityClient().fetch<Array<{ receiptRef?: string; amount?: unknown }>>(
-            `*[_type == "payment" && defined(receiptRef)]{
-                receiptRef,
-                amount
-            }`
-        ),
-    ]);
-
-    return applyDerivedCustomerReceiptAllocationsLocal(receipts, allocationRows).reduce(
-        (sum, receipt) => sum + parseWholeMoneyLike(receipt.unappliedAmount),
-        0
-    );
-}
-
 async function addAuditLog(
     session: Pick<Session, '_id' | 'name'>,
     action: string,
@@ -450,20 +418,6 @@ export async function GET(request: Request) {
             return jsonNoStore({ data: summary });
         } catch (err) {
             console.error('API GET Driver Borongan DO Ref Summary Error:', err);
-            return jsonNoStore({ error: 'Server error' }, { status: 500 });
-        }
-    }
-
-    if (entity === 'freight-notas-summary') {
-        if (!hasPermission(session.role, 'freightNotas', 'view')) {
-            return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
-        }
-        try {
-            const summary = await getFreightNotasSummary(searchQuery, searchParams.get('status') || '');
-            const customerCreditTotal = await getDerivedCustomerCreditTotal();
-            return jsonNoStore({ data: { ...summary, customerCreditTotal } });
-        } catch (err) {
-            console.error('API GET Freight Nota Summary Error:', err);
             return jsonNoStore({ error: 'Server error' }, { status: 500 });
         }
     }

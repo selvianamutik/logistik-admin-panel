@@ -71,9 +71,32 @@ export default function TiresPage() {
                 filterStatus,
                 sortField: dateSortDir ? 'installDate' : undefined,
                 sortDir: dateSortDir || undefined,
-            }),
+        }),
         [dateSortDir, filterStatus, filterVehicle, page, search]
     );
+
+    const fetchAllMatchingTires = useCallback(async () => {
+        const pageSize = 200;
+        let currentPage = 1;
+        let total = 0;
+        const allItems: TireEvent[] = [];
+
+        do {
+            const res = await fetch(`/api/data?${buildCurrentTiresQuery(currentPage, pageSize)}`);
+            const payload = await res.json();
+            if (!res.ok) {
+                throw new Error(payload.error || 'Gagal memuat data ban');
+            }
+
+            const nextItems = (payload.data || []) as TireEvent[];
+            total = payload.meta?.total || nextItems.length;
+            allItems.push(...nextItems);
+            if (nextItems.length === 0) break;
+            currentPage += 1;
+        } while (allItems.length < total);
+
+        return allItems;
+    }, [buildCurrentTiresQuery]);
 
     const loadData = useCallback(async () => {
         setLoading(true);
@@ -87,27 +110,40 @@ export default function TiresPage() {
                 return payload as { data: T; meta?: { total?: number } };
             };
 
-            const [tirePayload, vehiclePayload, mountedPayload, sparePayload, warehousePayload, loanedPayload] = await Promise.all([
+            const [tirePayload, vehiclePayload, matchingTires] = await Promise.all([
                 fetchEntity<TireEvent[]>(`/api/data?${buildCurrentTiresQuery()}`),
                 fetchAdminCollectionData<Vehicle[]>('/api/data?entity=vehicles', 'Gagal memuat data ban'),
-                fetchEntity<TireEvent[]>('/api/data?entity=tire-events&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'IN_USE' }))),
-                fetchEntity<TireEvent[]>('/api/data?entity=tire-events&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'SPARE' }))),
-                fetchEntity<TireEvent[]>('/api/data?entity=tire-events&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'IN_WAREHOUSE' }))),
-                fetchEntity<TireEvent[]>('/api/data?entity=tire-events&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'LOANED_OUT' }))),
+                fetchAllMatchingTires(),
             ]);
+
+            const nextCounts = matchingTires.reduce(
+                (totals, tire) => {
+                    if (tire.status === 'IN_USE') {
+                        totals.mounted += 1;
+                    } else if (tire.status === 'SPARE') {
+                        totals.spare += 1;
+                    } else if (tire.status === 'IN_WAREHOUSE') {
+                        totals.warehouse += 1;
+                    } else if (tire.status === 'LOANED_OUT') {
+                        totals.loaned += 1;
+                    }
+                    return totals;
+                },
+                { mounted: 0, spare: 0, warehouse: 0, loaned: 0 }
+            );
             setEvents(tirePayload.data || []);
             setFilteredTotalTires(tirePayload.meta?.total || 0);
             setVehicles(vehiclePayload || []);
-            setMountedCount(mountedPayload.meta?.total || 0);
-            setSpareCount(sparePayload.meta?.total || 0);
-            setWarehouseCount(warehousePayload.meta?.total || 0);
-            setLoanedCount(loanedPayload.meta?.total || 0);
+            setMountedCount(nextCounts.mounted);
+            setSpareCount(nextCounts.spare);
+            setWarehouseCount(nextCounts.warehouse);
+            setLoanedCount(nextCounts.loaned);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat data ban');
         } finally {
             setLoading(false);
         }
-    }, [addToast, buildCurrentTiresQuery]);
+    }, [addToast, buildCurrentTiresQuery, fetchAllMatchingTires]);
 
     useEffect(() => {
         void loadData();

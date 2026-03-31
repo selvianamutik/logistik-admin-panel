@@ -56,9 +56,32 @@ export default function IncidentsPage() {
                 statusFilter,
                 sortField: dateSortDir ? 'dateTime' : undefined,
                 sortDir: dateSortDir || undefined,
-            }),
+        }),
         [dateSortDir, page, search, vehicleFilter, statusFilter]
     );
+
+    const fetchAllMatchingIncidents = useCallback(async () => {
+        const pageSize = 200;
+        let currentPage = 1;
+        let total = 0;
+        const allItems: Incident[] = [];
+
+        do {
+            const res = await fetch(`/api/data?${buildCurrentIncidentsQuery(currentPage, pageSize)}`);
+            const payload = await res.json();
+            if (!res.ok) {
+                throw new Error(payload.error || 'Gagal memuat insiden');
+            }
+
+            const nextItems = (payload.data || []) as Incident[];
+            total = payload.meta?.total || nextItems.length;
+            allItems.push(...nextItems);
+            if (nextItems.length === 0) break;
+            currentPage += 1;
+        } while (allItems.length < total);
+
+        return allItems;
+    }, [buildCurrentIncidentsQuery]);
 
     const loadIncidents = useCallback(async () => {
         setLoading(true);
@@ -72,28 +95,40 @@ export default function IncidentsPage() {
                 return payload as { data: T; meta?: { total?: number } };
             };
 
-            const [listPayload, vehiclePayload, doPayload, openPayload, progressPayload, resolvedPayload] = await Promise.all([
+            const [listPayload, vehiclePayload, doPayload, matchingIncidents] = await Promise.all([
                 fetchEntity<Incident[]>(`/api/data?${buildCurrentIncidentsQuery()}`),
                 fetchAdminCollectionData<Vehicle[]>('/api/data?entity=vehicles', 'Gagal memuat insiden'),
                 fetchAdminCollectionData<DeliveryOrder[]>('/api/data?entity=delivery-orders', 'Gagal memuat insiden'),
-                fetchEntity<Incident[]>('/api/data?entity=incidents&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'OPEN' }))),
-                fetchEntity<Incident[]>('/api/data?entity=incidents&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'IN_PROGRESS' }))),
-                fetchEntity<Incident[]>('/api/data?entity=incidents&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'RESOLVED' }))),
+                fetchAllMatchingIncidents(),
             ]);
+
+            const nextCounts = matchingIncidents.reduce(
+                (totals, incident) => {
+                    if (incident.status === 'OPEN') {
+                        totals.open += 1;
+                    } else if (incident.status === 'IN_PROGRESS') {
+                        totals.inProgress += 1;
+                    } else if (incident.status === 'RESOLVED') {
+                        totals.resolved += 1;
+                    }
+                    return totals;
+                },
+                { open: 0, inProgress: 0, resolved: 0 }
+            );
 
             setItems(listPayload.data || []);
             setFilteredTotalIncidents(listPayload.meta?.total || 0);
             setVehicles((vehiclePayload || []).filter(vehicle => vehicle.status !== 'SOLD'));
             setDos(doPayload || []);
-            setOpenIncidentCount(openPayload.meta?.total || 0);
-            setProgressIncidentCount(progressPayload.meta?.total || 0);
-            setResolvedIncidentCount(resolvedPayload.meta?.total || 0);
+            setOpenIncidentCount(nextCounts.open);
+            setProgressIncidentCount(nextCounts.inProgress);
+            setResolvedIncidentCount(nextCounts.resolved);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat insiden');
         } finally {
             setLoading(false);
         }
-    }, [addToast, buildCurrentIncidentsQuery]);
+    }, [addToast, buildCurrentIncidentsQuery, fetchAllMatchingIncidents]);
 
     useEffect(() => {
         void loadIncidents();

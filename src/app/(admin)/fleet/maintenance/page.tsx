@@ -55,9 +55,32 @@ export default function MaintenancePage() {
                 search,
                 vehicleFilter,
                 statusFilter,
-            }),
+        }),
         [page, search, vehicleFilter, statusFilter]
     );
+
+    const fetchAllMatchingMaintenance = useCallback(async () => {
+        const pageSize = 200;
+        let currentPage = 1;
+        let total = 0;
+        const allItems: Maintenance[] = [];
+
+        do {
+            const res = await fetch(`/api/data?${buildCurrentMaintenanceQuery(currentPage, pageSize)}`);
+            const payload = await res.json();
+            if (!res.ok) {
+                throw new Error(payload.error || 'Gagal memuat maintenance');
+            }
+
+            const nextItems = (payload.data || []) as Maintenance[];
+            total = payload.meta?.total || nextItems.length;
+            allItems.push(...nextItems);
+            if (nextItems.length === 0) break;
+            currentPage += 1;
+        } while (allItems.length < total);
+
+        return allItems;
+    }, [buildCurrentMaintenanceQuery]);
 
     const loadMaintenance = useCallback(async () => {
         setLoading(true);
@@ -71,26 +94,38 @@ export default function MaintenancePage() {
                 return payload as { data: T; meta?: { total?: number } };
             };
 
-            const [listPayload, vehiclePayload, scheduledPayload, completedPayload, skippedPayload] = await Promise.all([
+            const [listPayload, vehiclePayload, matchingMaintenance] = await Promise.all([
                 fetchEntity<Maintenance[]>(`/api/data?${buildCurrentMaintenanceQuery()}`),
                 fetchAdminCollectionData<Vehicle[]>('/api/data?entity=vehicles', 'Gagal memuat maintenance'),
-                fetchEntity<Maintenance[]>('/api/data?entity=maintenances&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'SCHEDULED' }))),
-                fetchEntity<Maintenance[]>('/api/data?entity=maintenances&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'DONE' }))),
-                fetchEntity<Maintenance[]>('/api/data?entity=maintenances&countOnly=1&filter=' + encodeURIComponent(JSON.stringify({ status: 'SKIPPED' }))),
+                fetchAllMatchingMaintenance(),
             ]);
+
+            const nextCounts = matchingMaintenance.reduce(
+                (totals, maintenance) => {
+                    if (maintenance.status === 'SCHEDULED') {
+                        totals.scheduled += 1;
+                    } else if (maintenance.status === 'DONE') {
+                        totals.done += 1;
+                    } else if (maintenance.status === 'SKIPPED') {
+                        totals.skipped += 1;
+                    }
+                    return totals;
+                },
+                { scheduled: 0, done: 0, skipped: 0 }
+            );
 
             setItems(listPayload.data || []);
             setFilteredTotalMaintenance(listPayload.meta?.total || 0);
             setVehicles((vehiclePayload || []).filter(vehicle => vehicle.status !== 'SOLD'));
-            setScheduledCount(scheduledPayload.meta?.total || 0);
-            setCompletedCount(completedPayload.meta?.total || 0);
-            setSkippedCount(skippedPayload.meta?.total || 0);
+            setScheduledCount(nextCounts.scheduled);
+            setCompletedCount(nextCounts.done);
+            setSkippedCount(nextCounts.skipped);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat maintenance');
         } finally {
             setLoading(false);
         }
-    }, [addToast, buildCurrentMaintenanceQuery]);
+    }, [addToast, buildCurrentMaintenanceQuery, fetchAllMatchingMaintenance]);
 
     useEffect(() => {
         void loadMaintenance();
