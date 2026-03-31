@@ -25,6 +25,7 @@ import {
   getAccountNextAction,
   getBankPreset,
   isCashAccount,
+  normalizeBankAccountAmount,
   sortBankAccountsForDisplay,
 } from "@/lib/bank-account-page-support";
 import { exportToExcel } from "@/lib/export";
@@ -518,7 +519,8 @@ export default function BankAccountsPage() {
                 ? BANK_PRESETS.CASH
                 : getBankPreset(account.bankName);
               const diff =
-                (account.currentBalance || 0) - (account.initialBalance || 0);
+                normalizeBankAccountAmount(account.currentBalance) -
+                normalizeBankAccountAmount(account.initialBalance);
               const systemCash = isCashAccount(account);
               const showsOnInvoice = invoiceBankAccountRefs.includes(account._id);
               const isDefaultInvoiceAccount =
@@ -629,7 +631,7 @@ export default function BankAccountsPage() {
                         Saldo
                       </div>
                       <div style={{ fontSize: "1.35rem", fontWeight: 700 }}>
-                        {formatBankAccountCurrency(account.currentBalance || 0)}
+                        {formatBankAccountCurrency(account.currentBalance)}
                       </div>
                       <div
                         style={{

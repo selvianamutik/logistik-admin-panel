@@ -35,6 +35,32 @@ const getNextInvoiceAction = (status: 'UNPAID' | 'PARTIAL' | 'PAID', nota: Freig
         : 'Arsip / cetak';
 };
 
+const parseWholeMoneyLike = (value: unknown) =>
+    Math.max(parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 }), 0);
+
+const deriveCustomerReceiptAllocations = (receipts: CustomerReceipt[], receiptPayments: Payment[]) => {
+    const totalsByReceipt = receiptPayments.reduce<Record<string, { allocatedAmount: number; allocationCount: number }>>((acc, payment) => {
+        if (!payment.receiptRef) return acc;
+        const current = acc[payment.receiptRef] || { allocatedAmount: 0, allocationCount: 0 };
+        current.allocatedAmount += parseWholeMoneyLike(payment.amount);
+        current.allocationCount += 1;
+        acc[payment.receiptRef] = current;
+        return acc;
+    }, {});
+
+    return receipts.map(receipt => {
+        const totalAmount = parseWholeMoneyLike(receipt.totalAmount);
+        const derived = totalsByReceipt[receipt._id] || { allocatedAmount: 0, allocationCount: 0 };
+        return {
+            ...receipt,
+            totalAmount,
+            allocatedAmount: derived.allocatedAmount,
+            allocationCount: derived.allocationCount,
+            unappliedAmount: Math.max(totalAmount - derived.allocatedAmount, 0),
+        };
+    });
+};
+
 export default function NotaListPage() {
     const router = useRouter();
     const { user } = useApp();
@@ -128,11 +154,12 @@ export default function NotaListPage() {
             summaryParams.set('status', statusFilter);
         }
 
-        const [notaRes, summaryRes, customerRes, receiptRes, bankRes, companyPayload] = await Promise.all([
+        const [notaRes, summaryRes, customerRes, receiptRes, receiptPaymentRes, bankRes, companyPayload] = await Promise.all([
             fetch(`/api/data?${buildInvoicesQuery()}`),
             fetch(`/api/data?${summaryParams.toString()}`),
             fetchAdminCollectionData<Customer[]>('/api/data?entity=customers', 'Gagal memuat customer'),
             fetchAdminCollectionData<CustomerReceipt[]>('/api/data?entity=customer-receipts', 'Gagal memuat penerimaan customer'),
+            fetchAdminCollectionData<Payment[]>('/api/data?entity=payments&definedFields=receiptRef', 'Gagal memuat alokasi receipt'),
             fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat rekening'),
             fetchCompanyProfile().catch(() => null),
         ]);
@@ -156,6 +183,12 @@ export default function NotaListPage() {
             );
         }
 
+        const derivedReceipts = deriveCustomerReceiptAllocations(receiptRes || [], receiptPaymentRes || []);
+        const derivedCustomerCreditTotal = derivedReceipts.reduce(
+            (sum, receipt) => sum + parseWholeMoneyLike(receipt.unappliedAmount),
+            0
+        );
+
         setItems(notaRows);
         setPayments(paymentRows);
         setTotalInvoices(notaPayload.meta?.total || 0);
@@ -165,10 +198,10 @@ export default function NotaListPage() {
             unpaidCount: summaryPayload.data?.unpaidCount || 0,
             partialCount: summaryPayload.data?.partialCount || 0,
             paidCount: summaryPayload.data?.paidCount || 0,
-            customerCreditTotal: summaryPayload.data?.customerCreditTotal || 0,
+            customerCreditTotal: derivedCustomerCreditTotal,
         });
         setCustomers((customerRes || []).filter(customer => customer.active !== false));
-        setCustomerReceipts(receiptRes || []);
+        setCustomerReceipts(derivedReceipts);
         setBankAccounts((bankRes || []).filter(account => account.active !== false));
         setCompany(companyPayload);
     }, [buildInvoicesQuery, search, statusFilter]);
@@ -186,9 +219,6 @@ export default function NotaListPage() {
     useEffect(() => {
         setPage(1);
     }, [search, statusFilter]);
-
-    const parseWholeMoneyLike = (value: unknown) =>
-        Math.max(parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 }), 0);
 
     const paymentTotalsByInvoice = payments.reduce<Record<string, number>>((acc, payment) => {
         acc[payment.invoiceRef] = (acc[payment.invoiceRef] || 0) + parseWholeMoneyLike(payment.amount);

@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { CheckCircle, Printer, Trash2 } from 'lucide-react';
 import { useApp, useToast } from '../../layout';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
+import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { fetchCompanyProfile, openBrandedPrint, openPrintWindow, resolveDocumentIssuerProfile } from '@/lib/print';
 import { normalizeUserRole } from '@/lib/rbac';
 import type { BankAccount, DriverBorongan, DriverBoronganItem } from '@/lib/types';
@@ -40,6 +41,8 @@ export default function BoronganDetailPage() {
     const [paying, setPaying] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const normalizedRole = user ? normalizeUserRole(user.role) : null;
+    const parseWholeMoneyLike = (value: unknown) =>
+        parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 });
 
     useEffect(() => {
         if (normalizedRole && normalizedRole !== 'OWNER') {
@@ -404,7 +407,7 @@ export default function BoronganDetailPage() {
                                             <td>{it.barang || '-'}</td>
                                             <td>{it.collie ? formatQuantity(it.collie) : '-'}</td>
                                             <td>{formatQuantity(it.beratKg || 0)}</td>
-                                            <td>{formatQuantity(it.tarip || 0)}</td>
+                                        <td>{formatCurrency(it.tarip || 0)}</td>
                                             <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatCurrency(it.uangRp)}</td>
                                             <td className="text-muted">{it.ket || '-'}</td>
                                         </tr>
@@ -461,8 +464,8 @@ export default function BoronganDetailPage() {
                                 <td>{it.barang || '-'}</td>
                                 <td>{it.collie ? formatQuantity(it.collie) : '-'}</td>
                                 <td>{formatQuantity(it.beratKg || 0)}</td>
-                                <td>{formatQuantity(it.tarip || 0)}</td>
-                                <td className="right">{formatQuantity(it.uangRp || 0)}</td>
+                                <td>{formatCurrency(it.tarip || 0)}</td>
+                                <td className="right">{formatCurrency(it.uangRp || 0)}</td>
                                 <td>{it.ket || '-'}</td>
                             </tr>
                         ))}
@@ -471,7 +474,7 @@ export default function BoronganDetailPage() {
                             <td className="bold">{formatQuantity(borong.totalCollie || 0)}</td>
                             <td className="bold">{formatQuantity(borong.totalWeightKg || 0)}</td>
                             <td />
-                            <td className="right bold">{formatQuantity(borong.totalAmount || 0)}</td>
+                            <td className="right bold">{formatCurrency(borong.totalAmount || 0)}</td>
                             <td />
                         </tr>
                     </tbody>
@@ -547,7 +550,7 @@ export default function BoronganDetailPage() {
                                         <option value="">{payMethod === 'CASH' ? '-- Otomatis ke Kas Tunai --' : '-- Tanpa Rekening --'}</option>
                                         {boronganPaymentAccountOptions.map((account) => (
                                             <option key={account._id} value={account._id}>
-                                                {account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''} (Saldo: {formatCurrency(account.currentBalance || 0)})
+                                                {account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''} (Saldo: {formatCurrency(parseWholeMoneyLike(account.currentBalance))})
                                             </option>
                                         ))}
                                     </select>

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { resolveCompanyLogoUrl } from '@/lib/branding';
+import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { getSanityClient, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
 import type { CompanyProfile } from '@/lib/types';
 
@@ -15,6 +16,7 @@ import {
     normalizeNumber,
     normalizeOptionalText,
     normalizeText,
+    readLedgerBalance,
     type ApiSession,
     type BankAccountSummary,
 } from './data-helpers';
@@ -490,10 +492,29 @@ export async function handleBoronganPayment(
         const borongan = await sanityGetById<{
             _id: string;
             _rev?: string;
+            _type?: string;
+            _createdAt?: string;
+            _updatedAt?: string;
             boronganNumber: string;
             driverName: string;
+            driverRef?: string;
+            issuerCompanyAddress?: string;
+            issuerCompanyEmail?: string;
+            issuerCompanyLogoUrl?: string;
+            issuerCompanyName?: string;
+            issuerCompanyPhone?: string;
+            notes?: string;
+            periodEnd?: string;
+            periodStart?: string;
             totalAmount: number;
+            totalCollie?: number;
+            totalWeightKg?: number;
             status: string;
+            paidDate?: string;
+            paidMethod?: string;
+            paidBankRef?: string;
+            paidBankName?: string;
+            paidBankNumber?: string;
         }>(boronganId);
         if (!borongan) {
             return NextResponse.json({ error: 'Borongan tidak ditemukan' }, { status: 404 });
@@ -504,14 +525,34 @@ export async function handleBoronganPayment(
         if (borongan.status === 'PAID') {
             return NextResponse.json({ error: 'Borongan ini sudah dibayar' }, { status: 409 });
         }
-        if (amount !== borongan.totalAmount) {
+        const [boronganItems, existingExpense] = await Promise.all([
+            getSanityClient().fetch<Array<{ collie?: unknown; beratKg?: unknown; uangRp?: unknown }>>(
+                `*[_type == "driverBoronganItem" && boronganRef == $ref]{ collie, beratKg, uangRp }`,
+                { ref: boronganId }
+            ),
+            getSanityClient().fetch<{ _id: string } | null>(
+                `*[_type == "expense" && boronganRef == $ref][0]{ _id }`,
+                { ref: boronganId }
+            ),
+        ]);
+        const derivedTotalAmount = boronganItems.reduce(
+            (sum, item) => sum + Math.max(parseFormattedNumberish(item.uangRp ?? 0, { maxFractionDigits: 0 }), 0),
+            0
+        );
+        const derivedTotalCollie = boronganItems.reduce(
+            (sum, item) => sum + Math.max(parseFormattedNumberish(item.collie ?? 0, { maxFractionDigits: 2 }), 0),
+            0
+        );
+        const derivedTotalWeightKg = boronganItems.reduce(
+            (sum, item) => sum + Math.max(parseFormattedNumberish(item.beratKg ?? 0, { maxFractionDigits: 3 }), 0),
+            0
+        );
+        if (derivedTotalAmount <= 0) {
+            return NextResponse.json({ error: 'Total borongan tidak valid' }, { status: 409 });
+        }
+        if (amount !== derivedTotalAmount) {
             return NextResponse.json({ error: 'Pembayaran borongan harus sama dengan total borongan' }, { status: 400 });
         }
-
-        const existingExpense = await getSanityClient().fetch<{ _id: string } | null>(
-            `*[_type == "expense" && boronganRef == $ref][0]{ _id }`,
-            { ref: boronganId }
-        );
         if (existingExpense) {
             return NextResponse.json({ error: 'Pengeluaran borongan sudah pernah dicatat' }, { status: 409 });
         }
@@ -550,7 +591,7 @@ export async function handleBoronganPayment(
                 categoryRef: 'driver-borongan',
                 categoryName: 'Borongan Supir',
                 date: paidDate,
-                amount,
+                amount: derivedTotalAmount,
                 description: `Upah borongan supir ${borongan.driverName} - ${borongan.boronganNumber}`,
                 note,
                 privacyLevel: 'internal',
@@ -563,6 +604,9 @@ export async function handleBoronganPayment(
             .patch(boronganId, {
                 ifRevisionID: borongan._rev,
                 set: {
+                    totalAmount: derivedTotalAmount,
+                    totalCollie: derivedTotalCollie,
+                    totalWeightKg: derivedTotalWeightKg,
                     status: 'PAID',
                     paidDate,
                     paidMethod: paymentMethod,
@@ -573,7 +617,7 @@ export async function handleBoronganPayment(
             });
 
         if (bankAccount && bankAccountRef) {
-            const newBalance = (bankAccount.currentBalance || 0) - amount;
+            const newBalance = readLedgerBalance(bankAccount.currentBalance) - derivedTotalAmount;
             transaction
                 .create({
                     _id: bankTransactionId,
@@ -582,7 +626,7 @@ export async function handleBoronganPayment(
                     bankAccountName: bankAccount.bankName,
                     bankAccountNumber: bankAccount.accountNumber,
                     type: 'DEBIT',
-                    amount,
+                    amount: derivedTotalAmount,
                     date: paidDate,
                     description: `Pembayaran borongan ${borongan.boronganNumber}`,
                     balanceAfter: newBalance,
@@ -604,15 +648,8 @@ export async function handleBoronganPayment(
                 `Pembayaran borongan dicatat: ${borongan.boronganNumber}`
             );
             return NextResponse.json({
-                data: {
-                    ...borongan,
-                    status: 'PAID',
-                    paidDate,
-                    paidMethod: paymentMethod,
-                    paidBankRef: bankAccountRef,
-                    paidBankName: bankAccount?.bankName,
-                    paidBankNumber: bankAccount?.accountNumber,
-                },
+                success: true,
+                id: boronganId,
                 expenseId,
             });
         } catch (err) {
@@ -889,7 +926,7 @@ export async function handleDriverVoucherCreate(
             return NextResponse.json({ error: 'Revisi rekening sumber tidak tersedia' }, { status: 409 });
         }
 
-        const newBalance = (issueBank.currentBalance || 0) - cashGiven;
+        const newBalance = readLedgerBalance(issueBank.currentBalance) - cashGiven;
         const voucherDoc = {
             _id: voucherId,
             _type: 'driverVoucher',
@@ -1041,7 +1078,7 @@ export async function handleDriverVoucherTopUp(
         );
         const transactionId = crypto.randomUUID();
         const disbursementId = crypto.randomUUID();
-        const nextBankBalance = (bank.currentBalance || 0) - amount;
+        const nextBankBalance = readLedgerBalance(bank.currentBalance) - amount;
 
         try {
             await getSanityClient()
@@ -1400,7 +1437,7 @@ export async function handleDriverVoucherDisbursementDelete(
         if (bank && disbursement.bankAccountRef) {
             transaction.patch(disbursement.bankAccountRef, {
                 ifRevisionID: bank._rev,
-                set: { currentBalance: (bank.currentBalance || 0) + amount },
+                set: { currentBalance: readLedgerBalance(bank.currentBalance) + amount },
             });
         }
         transaction.patch(disbursement.voucherRef, {
@@ -1590,8 +1627,8 @@ export async function handleDriverVoucherSettlement(
             const adjustmentAmount = Math.abs(balance);
             const nextBankBalance =
                 balance > 0
-                    ? (settlementBank.currentBalance || 0) + adjustmentAmount
-                    : (settlementBank.currentBalance || 0) - adjustmentAmount;
+                    ? readLedgerBalance(settlementBank.currentBalance) + adjustmentAmount
+                    : readLedgerBalance(settlementBank.currentBalance) - adjustmentAmount;
             transaction
                 .create({
                     _id: crypto.randomUUID(),
@@ -1722,7 +1759,7 @@ export async function handleDriverVoucherIssueRepair(
         }
 
         const initialAmount = getDriverVoucherInitialCash(voucher);
-        const newBalance = (bank.currentBalance || 0) - initialAmount;
+        const newBalance = readLedgerBalance(bank.currentBalance) - initialAmount;
         const repairTransactionId = crypto.randomUUID();
         try {
             const transaction = getSanityClient()

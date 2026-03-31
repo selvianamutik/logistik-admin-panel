@@ -149,9 +149,10 @@ export default function ReportsPage() {
         _id: accountRef,
         bankName: flow.bankName,
         accountNumber: flow.bankAccountNumber,
-        currentBalance:
+        currentBalance: parseWholeMoneyLike(
           allBankAccounts.find((account) => account._id === accountRef)
-            ?.currentBalance || 0,
+            ?.currentBalance,
+        ),
         accountType: "BANK" as const,
         active: false,
       })),
@@ -1046,7 +1047,7 @@ export default function ReportsPage() {
                     >
                       <span style={{ fontWeight: 600 }}>Saldo</span>
                       <span style={{ fontWeight: 700 }}>
-                        {formatCurrency(account.currentBalance || 0)}
+                        {formatCurrency(parseWholeMoneyLike(account.currentBalance))}
                       </span>
                     </div>
                   </div>

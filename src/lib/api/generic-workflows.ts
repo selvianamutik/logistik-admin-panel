@@ -20,6 +20,7 @@ import {
     normalizeCurrencyNumber,
     normalizeNumber,
     normalizeOptionalText,
+    readLedgerBalance,
     sanitizeUserForClient,
     type ApiSession,
     type BankAccountSummary,
@@ -983,7 +984,7 @@ export async function handleGenericDelete(
             return NextResponse.json({ success: true });
         }
 
-        const currentBalance = typeof existingAccount.currentBalance === 'number' ? existingAccount.currentBalance : 0;
+        const currentBalance = readLedgerBalance(existingAccount.currentBalance);
         if (currentBalance !== 0) {
             return NextResponse.json(
                 { error: 'Rekening dengan saldo berjalan tidak boleh dinonaktifkan. Kosongkan atau transfer dulu saldonya.' },

@@ -53,6 +53,10 @@ export function normalizeCurrencyNumber(value: unknown, options?: FormattedNumbe
     return Number.isInteger(normalized) ? normalized : Number.NaN;
 }
 
+export function readLedgerBalance(value: unknown) {
+    return Math.max(normalizeCurrencyNumber(value ?? 0, { maxFractionDigits: 0 }), 0);
+}
+
 export function assertIsoDate(value: string, label: string) {
     if (!ISO_DATE_RE.test(value)) {
         throw new Error(`${label} tidak valid`);

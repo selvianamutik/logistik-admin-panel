@@ -63,6 +63,10 @@ import {
     getAuditLogsSummary,
     getBankAccountsSummary,
     getBoronganSummary,
+    getCustomerReceiptById,
+    getCustomerReceiptList,
+    getDriverBoronganById,
+    getDriverBoronganList,
     getDriverBoronganDoRefsSummary,
     getCustomersSummary,
     getDashboardSummary,
@@ -75,8 +79,10 @@ import {
     getVehiclesSummary,
     applyDerivedDriverVoucherFinancials,
 } from '@/lib/api/data-query-support';
+import { parseFormattedNumberish } from '@/lib/formatted-number';
 import {
     SANITY_TYPE_MAP,
+    getSanityClient,
     sanityCreate,
     sanityGetAll,
     sanityGetByFilter,
@@ -92,6 +98,14 @@ export const revalidate = 0;
 const OWNER_ONLY_READ_ENTITIES = new Set(['audit-logs', 'driver-borongans', 'driver-borongan-items', 'driver-borogan-items']);
 const OWNER_ONLY_MUTATION_ENTITIES = new Set(['company', 'audit-logs', 'services', 'expense-categories', 'driver-borongans', 'driver-borongan-items', 'driver-borogan-items']);
 const LEGACY_READ_ONLY_ENTITIES = new Set(['invoices', 'invoice-items']);
+type ReceiptResponseShape = Record<string, unknown> & {
+    _id: string;
+    totalAmount?: number | string | null;
+    allocatedAmount?: number | string | null;
+    unappliedAmount?: number | string | null;
+    allocationCount?: number | string | null;
+};
+
 const ENTITY_MODULE_MAP: Partial<Record<keyof typeof SANITY_TYPE_MAP, AppModule>> = {
     customers: 'customers',
     'customer-products': 'customers',
@@ -203,6 +217,91 @@ function forbidModuleAccess(session: Session, entity: string, action: keyof Modu
         return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
     }
     return null;
+}
+
+function parseWholeMoneyLike(value: unknown) {
+    return Math.max(parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 }), 0);
+}
+
+function applyDerivedCustomerReceiptAllocationsLocal<
+    T extends {
+        _id: string;
+        totalAmount?: number | string | null;
+        allocatedAmount?: number | string | null;
+        unappliedAmount?: number | string | null;
+        allocationCount?: number | string | null;
+    }
+>(
+    receipts: T[],
+    allocationRows: Array<{ receiptRef?: string; amount?: unknown }>
+) {
+    const totalsByReceipt = allocationRows.reduce<Record<string, { allocatedAmount: number; allocationCount: number }>>(
+        (acc, row) => {
+            if (!row.receiptRef) return acc;
+            const current = acc[row.receiptRef] || { allocatedAmount: 0, allocationCount: 0 };
+            current.allocatedAmount += parseWholeMoneyLike(row.amount);
+            current.allocationCount += 1;
+            acc[row.receiptRef] = current;
+            return acc;
+        },
+        {}
+    );
+
+    return receipts.map(receipt => {
+        const totalAmount = parseWholeMoneyLike(receipt.totalAmount);
+        const derived = totalsByReceipt[receipt._id] || { allocatedAmount: 0, allocationCount: 0 };
+        return {
+            ...receipt,
+            totalAmount,
+            allocatedAmount: derived.allocatedAmount,
+            unappliedAmount: Math.max(totalAmount - derived.allocatedAmount, 0),
+            allocationCount: derived.allocationCount,
+        };
+    });
+}
+
+async function deriveCustomerReceiptsForResponse<T extends ReceiptResponseShape>(receipts: T[]) {
+    if (receipts.length === 0) return receipts;
+    const ids = receipts.map(receipt => receipt._id).filter(Boolean);
+    const allocationRows = await getSanityClient().fetch<Array<{ receiptRef?: string; amount?: unknown }>>(
+        `*[_type == "payment" && defined(receiptRef) && receiptRef in $ids]{
+            receiptRef,
+            amount
+        }`,
+        { ids }
+    );
+    return applyDerivedCustomerReceiptAllocationsLocal(receipts, allocationRows);
+}
+
+async function getDerivedCustomerCreditTotal() {
+    const [receipts, allocationRows] = await Promise.all([
+        getSanityClient().fetch<Array<{
+            _id: string;
+            totalAmount?: number | string | null;
+            allocatedAmount?: number | string | null;
+            unappliedAmount?: number | string | null;
+            allocationCount?: number | string | null;
+        }>>(
+            `*[_type == "customerReceipt"]{
+                _id,
+                totalAmount,
+                allocatedAmount,
+                unappliedAmount,
+                allocationCount
+            }`
+        ),
+        getSanityClient().fetch<Array<{ receiptRef?: string; amount?: unknown }>>(
+            `*[_type == "payment" && defined(receiptRef)]{
+                receiptRef,
+                amount
+            }`
+        ),
+    ]);
+
+    return applyDerivedCustomerReceiptAllocationsLocal(receipts, allocationRows).reduce(
+        (sum, receipt) => sum + parseWholeMoneyLike(receipt.unappliedAmount),
+        0
+    );
 }
 
 async function addAuditLog(
@@ -370,7 +469,8 @@ export async function GET(request: Request) {
         }
         try {
             const summary = await getFreightNotasSummary(searchQuery, searchParams.get('status') || '');
-            return jsonNoStore({ data: summary });
+            const customerCreditTotal = await getDerivedCustomerCreditTotal();
+            return jsonNoStore({ data: { ...summary, customerCreditTotal } });
         } catch (err) {
             console.error('API GET Freight Nota Summary Error:', err);
             return jsonNoStore({ error: 'Server error' }, { status: 500 });
@@ -416,6 +516,10 @@ export async function GET(request: Request) {
             let item =
                 entity === 'freight-notas'
                     ? await getFreightNotaById(id)
+                    : entity === 'customer-receipts'
+                        ? await getCustomerReceiptById(id)
+                    : entity === 'driver-borongans'
+                        ? await getDriverBoronganById(id)
                     : entity === 'driver-vouchers'
                         ? await getDriverVoucherById(id)
                     : await sanityGetById(id);
@@ -426,6 +530,10 @@ export async function GET(request: Request) {
 
             if (entity === 'users') {
                 item = sanitizeUserForClient(item as unknown as User) as unknown as Record<string, unknown>;
+            }
+
+            if (entity === 'customer-receipts') {
+                item = (await deriveCustomerReceiptsForResponse([item as ReceiptResponseShape]))[0] as Record<string, unknown>;
             }
 
             if (entity === 'vehicles' && session.role !== 'OWNER') {
@@ -517,6 +625,60 @@ export async function GET(request: Request) {
             } catch (error) {
                 return jsonNoStore(
                     { error: error instanceof Error ? error.message : 'Query nota tidak valid' },
+                    { status: 400 }
+                );
+            }
+        } else if (entity === 'customer-receipts') {
+            try {
+                const page = pageParam ? Number.parseInt(pageParam, 10) : 1;
+                const pageSize = pageSizeParam ? Number.parseInt(pageSizeParam, 10) : 10;
+                const searchFields = searchFieldsParam
+                    ? searchFieldsParam.split(',').map(field => field.trim()).filter(Boolean)
+                    : [];
+                const result = await getCustomerReceiptList({
+                    filterObj,
+                    orFilters,
+                    definedFields,
+                    search: searchQuery || undefined,
+                    searchFields,
+                    page: needsPaginatedList && !countOnly ? page : undefined,
+                    pageSize: needsPaginatedList && !countOnly ? pageSize : undefined,
+                    sortField,
+                    sortDir,
+                    countOnly,
+                });
+                items = await deriveCustomerReceiptsForResponse(result.items as unknown as ReceiptResponseShape[]) as unknown as Record<string, unknown>[];
+                totalItems = result.total;
+            } catch (error) {
+                return jsonNoStore(
+                    { error: error instanceof Error ? error.message : 'Query penerimaan customer tidak valid' },
+                    { status: 400 }
+                );
+            }
+        } else if (entity === 'driver-borongans') {
+            try {
+                const page = pageParam ? Number.parseInt(pageParam, 10) : 1;
+                const pageSize = pageSizeParam ? Number.parseInt(pageSizeParam, 10) : 10;
+                const searchFields = searchFieldsParam
+                    ? searchFieldsParam.split(',').map(field => field.trim()).filter(Boolean)
+                    : [];
+                const result = await getDriverBoronganList({
+                    filterObj,
+                    orFilters,
+                    definedFields,
+                    search: searchQuery || undefined,
+                    searchFields,
+                    page: needsPaginatedList && !countOnly ? page : undefined,
+                    pageSize: needsPaginatedList && !countOnly ? pageSize : undefined,
+                    sortField,
+                    sortDir,
+                    countOnly,
+                });
+                items = result.items as unknown as Record<string, unknown>[];
+                totalItems = result.total;
+            } catch (error) {
+                return jsonNoStore(
+                    { error: error instanceof Error ? error.message : 'Query borongan tidak valid' },
                     { status: 400 }
                 );
             }

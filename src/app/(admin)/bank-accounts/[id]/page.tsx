@@ -8,6 +8,7 @@ import PageBackButton from '@/components/PageBackButton';
 import { useApp, useToast } from '../../layout';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import { exportToExcel } from '@/lib/export';
+import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { fetchCompanyProfile, openBrandedPrint, openPrintWindow } from '@/lib/print';
 import type { BankAccount, BankTransaction, CompanyProfile } from '@/lib/types';
 import { hasPermission } from '@/lib/rbac';
@@ -105,6 +106,8 @@ export default function BankAccountDetailPage() {
 
     const fmt = (n: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n);
     const fmtN = (n: number) => new Intl.NumberFormat('id-ID').format(n);
+    const parseWholeMoneyLike = (value: unknown) =>
+        parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 });
     const fmtDate = (d: string) => {
         try {
             return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -123,7 +126,13 @@ export default function BankAccountDetailPage() {
     const handleExportExcel = async () => {
         try {
             await exportToExcel(
-                transactions as unknown as Record<string, unknown>[],
+                transactions.map((tx) => ({
+                    date: tx.date,
+                    type: tx.type,
+                    description: tx.description,
+                    amount: parseWholeMoneyLike(tx.amount),
+                    balanceAfter: parseWholeMoneyLike(tx.balanceAfter),
+                })),
                 [
                     { header: 'Tanggal', key: 'date', width: 15 },
                     { header: 'Tipe', key: 'type', width: 15 },
@@ -155,8 +164,13 @@ export default function BankAccountDetailPage() {
         : [];
     const isInvoiceAccount = invoiceBankAccountRefs.includes(account._id);
     const isDefaultInvoiceAccount = company?.invoiceSettings?.defaultInvoiceBankAccountRef === account._id;
-    const totalIn = transactions.filter(tx => tx.type === 'CREDIT' || tx.type === 'TRANSFER_IN').reduce((sum, tx) => sum + tx.amount, 0);
-    const totalOut = transactions.filter(tx => tx.type === 'DEBIT' || tx.type === 'TRANSFER_OUT').reduce((sum, tx) => sum + tx.amount, 0);
+    const currentBalance = parseWholeMoneyLike(account.currentBalance);
+    const totalIn = transactions
+        .filter(tx => tx.type === 'CREDIT' || tx.type === 'TRANSFER_IN')
+        .reduce((sum, tx) => sum + parseWholeMoneyLike(tx.amount), 0);
+    const totalOut = transactions
+        .filter(tx => tx.type === 'DEBIT' || tx.type === 'TRANSFER_OUT')
+        .reduce((sum, tx) => sum + parseWholeMoneyLike(tx.amount), 0);
 
     const handlePrint = async () => {
         const printWindow = openPrintWindow('Menyiapkan print rekening...');
@@ -170,7 +184,9 @@ export default function BankAccountDetailPage() {
                 ? '<tr><td colspan="5" class="c">Belum ada transaksi</td></tr>'
                 : transactions.map(tx => {
                     const cfg = typeConfig[tx.type] || typeConfig.CREDIT;
-                    return `<tr><td>${fmtDate(tx.date)}</td><td>${cfg.label}</td><td>${tx.description}</td><td class="r ${cfg.sign === '+' ? 's' : 'd'} b">${cfg.sign}${fmtN(tx.amount)}</td><td class="r b">${fmtN(tx.balanceAfter)}</td></tr>`;
+                    const amount = parseWholeMoneyLike(tx.amount);
+                    const balanceAfter = parseWholeMoneyLike(tx.balanceAfter);
+                    return `<tr><td>${fmtDate(tx.date)}</td><td>${cfg.label}</td><td>${tx.description}</td><td class="r ${cfg.sign === '+' ? 's' : 'd'} b">${cfg.sign}${fmtN(amount)}</td><td class="r b">${fmtN(balanceAfter)}</td></tr>`;
                 }).join('');
 
             openBrandedPrint({
@@ -180,7 +196,7 @@ export default function BankAccountDetailPage() {
                 targetWindow: printWindow,
                 bodyHtml: `
                     <div class="stats-row">
-                        <div class="stat-box"><div class="stat-label">Saldo Saat Ini</div><div class="stat-value">${fmtN(account.currentBalance || 0)}</div></div>
+                        <div class="stat-box"><div class="stat-label">Saldo Saat Ini</div><div class="stat-value">${fmtN(currentBalance)}</div></div>
                         <div class="stat-box"><div class="stat-label">Total Masuk</div><div class="stat-value s">${fmtN(totalIn)}</div></div>
                         <div class="stat-box"><div class="stat-label">Total Keluar</div><div class="stat-value d">${fmtN(totalOut)}</div></div>
                     </div>
@@ -227,7 +243,7 @@ export default function BankAccountDetailPage() {
                     <div style={{ position: 'absolute', right: -15, top: -15, width: 80, height: 80, borderRadius: '50%', background: 'rgba(255,255,255,0.08)' }} />
                     <div className="card-body" style={{ padding: '1.1rem', position: 'relative' }}>
                         <div style={{ fontSize: '0.7rem', opacity: 0.8, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>Saldo Saat Ini</div>
-                        <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{fmt(account.currentBalance || 0)}</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{fmt(currentBalance)}</div>
                     </div>
                 </div>
                 <div className="card" style={{ overflow: 'hidden' }}>
@@ -273,6 +289,8 @@ export default function BankAccountDetailPage() {
                             ) : transactions.map(tx => {
                                 const cfg = typeConfig[tx.type] || typeConfig.CREDIT;
                                 const isPositive = tx.type === 'CREDIT' || tx.type === 'TRANSFER_IN';
+                                const amount = parseWholeMoneyLike(tx.amount);
+                                const balanceAfter = parseWholeMoneyLike(tx.balanceAfter);
                                 return (
                                     <tr key={tx._id} style={{ transition: 'background 0.1s' }}
                                         onMouseEnter={event => (event.currentTarget.style.background = 'var(--bg-secondary, #f8fafc)')}
@@ -286,9 +304,9 @@ export default function BankAccountDetailPage() {
                                         </td>
                                         <td>{tx.description}</td>
                                         <td style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'var(--font-mono, monospace)', color: isPositive ? 'var(--success)' : 'var(--danger)', whiteSpace: 'nowrap' }}>
-                                            {cfg.sign}{fmt(tx.amount)}
+                                            {cfg.sign}{fmt(amount)}
                                         </td>
-                                        <td style={{ textAlign: 'right', fontWeight: 600, fontFamily: 'var(--font-mono, monospace)', whiteSpace: 'nowrap' }}>{fmt(tx.balanceAfter)}</td>
+                                        <td style={{ textAlign: 'right', fontWeight: 600, fontFamily: 'var(--font-mono, monospace)', whiteSpace: 'nowrap' }}>{fmt(balanceAfter)}</td>
                                     </tr>
                                 );
                             })}
@@ -303,6 +321,8 @@ export default function BankAccountDetailPage() {
                     ) : transactions.map(tx => {
                         const cfg = typeConfig[tx.type] || typeConfig.CREDIT;
                         const isPositive = tx.type === 'CREDIT' || tx.type === 'TRANSFER_IN';
+                        const amount = parseWholeMoneyLike(tx.amount);
+                        const balanceAfter = parseWholeMoneyLike(tx.balanceAfter);
                         return (
                             <div key={tx._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
@@ -316,12 +336,12 @@ export default function BankAccountDetailPage() {
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Jumlah</span>
                                         <span className="mobile-record-value" style={{ fontWeight: 700, color: isPositive ? 'var(--success)' : 'var(--danger)' }}>
-                                            {cfg.sign}{fmt(tx.amount)}
+                                            {cfg.sign}{fmt(amount)}
                                         </span>
                                     </div>
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Saldo Setelah</span>
-                                        <span className="mobile-record-value">{fmt(tx.balanceAfter)}</span>
+                                        <span className="mobile-record-value">{fmt(balanceAfter)}</span>
                                     </div>
                                 </div>
                             </div>

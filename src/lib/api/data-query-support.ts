@@ -9,6 +9,7 @@ import type {
     BankAccount,
     CustomerReceipt,
     DriverBorongan,
+    DriverBoronganItem,
     DriverVoucher,
     Expense,
     FreightNota,
@@ -67,6 +68,87 @@ export function applyDerivedDriverVoucherFinancials<T extends {
             driverFeeAmount: summary.driverFeeAmount,
             totalClaimAmount: summary.totalClaimAmount,
             balance: summary.balance,
+        };
+    });
+}
+
+export function applyDerivedDriverBoronganTotals<
+    T extends {
+        _id: string;
+        totalAmount?: number | string | null;
+        totalCollie?: number | string | null;
+        totalWeightKg?: number | string | null;
+    }
+>(
+    borongans: T[],
+    boronganItems: Array<Pick<DriverBoronganItem, 'boronganRef' | 'collie' | 'beratKg' | 'uangRp'>>
+) {
+    const totalsByBorongan = boronganItems.reduce<Record<string, { totalAmount: number; totalCollie: number; totalWeightKg: number }>>(
+        (acc, item) => {
+            if (!item.boronganRef) return acc;
+            const current = acc[item.boronganRef] || { totalAmount: 0, totalCollie: 0, totalWeightKg: 0 };
+            current.totalAmount += parseWholeMoneyLike(item.uangRp);
+            current.totalCollie += Math.max(parseFormattedNumberish(item.collie ?? 0, { maxFractionDigits: 2 }), 0);
+            current.totalWeightKg += Math.max(parseFormattedNumberish(item.beratKg ?? 0, { maxFractionDigits: 3 }), 0);
+            acc[item.boronganRef] = current;
+            return acc;
+        },
+        {}
+    );
+
+    return borongans.map(borongan => {
+        const derived = totalsByBorongan[borongan._id];
+        if (!derived) {
+            return {
+                ...borongan,
+                totalAmount: parseWholeMoneyLike(borongan.totalAmount),
+                totalCollie: Math.max(parseFormattedNumberish(borongan.totalCollie ?? 0, { maxFractionDigits: 2 }), 0),
+                totalWeightKg: Math.max(parseFormattedNumberish(borongan.totalWeightKg ?? 0, { maxFractionDigits: 3 }), 0),
+            };
+        }
+        return {
+            ...borongan,
+            totalAmount: derived.totalAmount,
+            totalCollie: derived.totalCollie,
+            totalWeightKg: derived.totalWeightKg,
+        };
+    });
+}
+
+export function applyDerivedCustomerReceiptAllocations<
+    T extends {
+        _id: string;
+        totalAmount?: number | string | null;
+        allocatedAmount?: number | string | null;
+        unappliedAmount?: number | string | null;
+        allocationCount?: number | string | null;
+    }
+>(
+    receipts: T[],
+    allocationRows: Array<Pick<Payment, 'receiptRef' | 'amount'>>
+) {
+    const totalsByReceipt = allocationRows.reduce<Record<string, { allocatedAmount: number; allocationCount: number }>>(
+        (acc, row) => {
+            if (!row.receiptRef) return acc;
+            const current = acc[row.receiptRef] || { allocatedAmount: 0, allocationCount: 0 };
+            current.allocatedAmount += parseWholeMoneyLike(row.amount);
+            current.allocationCount += 1;
+            acc[row.receiptRef] = current;
+            return acc;
+        },
+        {}
+    );
+
+    return receipts.map(receipt => {
+        const totalAmount = parseWholeMoneyLike(receipt.totalAmount);
+        const derived = totalsByReceipt[receipt._id] || { allocatedAmount: 0, allocationCount: 0 };
+        const unappliedAmount = Math.max(totalAmount - derived.allocatedAmount, 0);
+        return {
+            ...receipt,
+            totalAmount,
+            allocatedAmount: derived.allocatedAmount,
+            unappliedAmount,
+            allocationCount: derived.allocationCount,
         };
     });
 }
@@ -232,6 +314,206 @@ export async function getDriverVoucherById(id: string) {
     return applyDerivedDriverVoucherFinancials([voucher])[0];
 }
 
+export async function getDriverBoronganById(id: string) {
+    const client = getSanityClient();
+    const [borongan, items] = await Promise.all([
+        client.fetch<DriverBorongan | null>(
+            `*[_type == "driverBorongan" && _id == $id][0]`,
+            { id }
+        ),
+        client.fetch<Array<Pick<DriverBoronganItem, 'boronganRef' | 'collie' | 'beratKg' | 'uangRp'>>>(
+            `*[_type == "driverBoronganItem" && boronganRef == $id]{ boronganRef, collie, beratKg, uangRp }`,
+            { id }
+        ),
+    ]);
+
+    if (!borongan) return null;
+    return applyDerivedDriverBoronganTotals([borongan], items)[0];
+}
+
+export async function getDriverBoronganList(params: {
+    filterObj?: Record<string, unknown>;
+    orFilters?: Array<{ fields: string[]; value: string | number | boolean }>;
+    definedFields?: string[];
+    search?: string;
+    searchFields?: string[];
+    page?: number;
+    pageSize?: number;
+    sortField?: string;
+    sortDir?: 'asc' | 'desc';
+    countOnly?: boolean;
+}) {
+    const client = getSanityClient();
+    const [docs, itemTotals] = await Promise.all([
+        client.fetch<DriverBorongan[]>(`*[_type == "driverBorongan"]`),
+        client.fetch<Array<Pick<DriverBoronganItem, 'boronganRef' | 'collie' | 'beratKg' | 'uangRp'>>>(
+            `*[_type == "driverBoronganItem"]{ boronganRef, collie, beratKg, uangRp }`
+        ),
+    ]);
+
+    const query = params.search?.trim().toLowerCase() || '';
+    const filterObj = params.filterObj ?? {};
+    const orFilters = params.orFilters ?? [];
+    const definedFields = params.definedFields ?? [];
+    const searchFields = (params.searchFields ?? []).map(field => field.trim()).filter(Boolean);
+    const withDerivedTotals = applyDerivedDriverBoronganTotals(docs, itemTotals);
+
+    let filtered = withDerivedTotals.filter(item => {
+        const matchesSearch =
+            !query ||
+            searchFields.length === 0 ||
+            searchFields.some(field => {
+                const value = (item as unknown as Record<string, unknown>)[field];
+                return typeof value === 'string' && value.toLowerCase().includes(query);
+            });
+        if (!matchesSearch) return false;
+
+        const matchesFilter = Object.entries(filterObj).every(([key, expectedValue]) =>
+            matchesScalarFilter((item as unknown as Record<string, unknown>)[key], expectedValue)
+        );
+        if (!matchesFilter) return false;
+
+        const matchesDefinedFields = definedFields.every(field => {
+            const value = (item as unknown as Record<string, unknown>)[field];
+            return value !== undefined && value !== null && value !== '';
+        });
+        if (!matchesDefinedFields) return false;
+
+        const matchesOrFilters = orFilters.every(orFilter =>
+            orFilter.fields.some(field => matchesScalarFilter((item as unknown as Record<string, unknown>)[field], orFilter.value))
+        );
+
+        return matchesOrFilters;
+    });
+
+    if (params.sortField) {
+        const direction = params.sortDir === 'asc' ? 'asc' : 'desc';
+        const sortField = params.sortField;
+        filtered = [...filtered].sort((left, right) =>
+            compareFreightNotaValues(
+                (left as unknown as Record<string, unknown>)[sortField],
+                (right as unknown as Record<string, unknown>)[sortField],
+                direction
+            )
+        );
+    }
+
+    const total = filtered.length;
+    if (params.countOnly) {
+        return { items: [] as DriverBorongan[], total };
+    }
+
+    if (!params.page || !params.pageSize) {
+        return { items: filtered, total };
+    }
+
+    const offset = Math.max(params.page - 1, 0) * Math.max(params.pageSize, 1);
+    return {
+        items: filtered.slice(offset, offset + params.pageSize),
+        total,
+    };
+}
+
+export async function getCustomerReceiptById(id: string) {
+    const client = getSanityClient();
+    const [receipt, payments] = await Promise.all([
+        client.fetch<CustomerReceipt | null>(
+            `*[_type == "customerReceipt" && _id == $id][0]`,
+            { id }
+        ),
+        client.fetch<Array<Pick<Payment, 'receiptRef' | 'amount'>>>(
+            `*[_type == "payment" && receiptRef == $id]{ receiptRef, amount }`,
+            { id }
+        ),
+    ]);
+
+    if (!receipt) return null;
+    return applyDerivedCustomerReceiptAllocations([receipt], payments)[0];
+}
+
+export async function getCustomerReceiptList(params: {
+    filterObj?: Record<string, unknown>;
+    orFilters?: Array<{ fields: string[]; value: string | number | boolean }>;
+    definedFields?: string[];
+    search?: string;
+    searchFields?: string[];
+    page?: number;
+    pageSize?: number;
+    sortField?: string;
+    sortDir?: 'asc' | 'desc';
+    countOnly?: boolean;
+}) {
+    const client = getSanityClient();
+    const [docs, payments] = await Promise.all([
+        client.fetch<CustomerReceipt[]>(`*[_type == "customerReceipt"]`),
+        client.fetch<Array<Pick<Payment, 'receiptRef' | 'amount'>>>(
+            `*[_type == "payment" && defined(receiptRef)]{ receiptRef, amount }`
+        ),
+    ]);
+
+    const query = params.search?.trim().toLowerCase() || '';
+    const filterObj = params.filterObj ?? {};
+    const orFilters = params.orFilters ?? [];
+    const definedFields = params.definedFields ?? [];
+    const searchFields = (params.searchFields ?? []).map(field => field.trim()).filter(Boolean);
+    const withDerivedAllocations = applyDerivedCustomerReceiptAllocations(docs, payments);
+
+    let filtered = withDerivedAllocations.filter(item => {
+        const matchesSearch =
+            !query ||
+            searchFields.length === 0 ||
+            searchFields.some(field => {
+                const value = (item as unknown as Record<string, unknown>)[field];
+                return typeof value === 'string' && value.toLowerCase().includes(query);
+            });
+        if (!matchesSearch) return false;
+
+        const matchesFilter = Object.entries(filterObj).every(([key, expectedValue]) =>
+            matchesScalarFilter((item as unknown as Record<string, unknown>)[key], expectedValue)
+        );
+        if (!matchesFilter) return false;
+
+        const matchesDefinedFields = definedFields.every(field => {
+            const value = (item as unknown as Record<string, unknown>)[field];
+            return value !== undefined && value !== null && value !== '';
+        });
+        if (!matchesDefinedFields) return false;
+
+        const matchesOrFilters = orFilters.every(orFilter =>
+            orFilter.fields.some(field => matchesScalarFilter((item as unknown as Record<string, unknown>)[field], orFilter.value))
+        );
+
+        return matchesOrFilters;
+    });
+
+    if (params.sortField) {
+        const direction = params.sortDir === 'asc' ? 'asc' : 'desc';
+        const sortField = params.sortField;
+        filtered = [...filtered].sort((left, right) =>
+            compareFreightNotaValues(
+                (left as unknown as Record<string, unknown>)[sortField],
+                (right as unknown as Record<string, unknown>)[sortField],
+                direction
+            )
+        );
+    }
+
+    const total = filtered.length;
+    if (params.countOnly) {
+        return { items: [] as CustomerReceipt[], total };
+    }
+
+    if (!params.page || !params.pageSize) {
+        return { items: filtered, total };
+    }
+
+    const offset = Math.max(params.page - 1, 0) * Math.max(params.pageSize, 1);
+    return {
+        items: filtered.slice(offset, offset + params.pageSize),
+        total,
+    };
+}
+
 export type DashboardSummary = {
     orderStats: { total: number; open: number; partial: number; complete: number; onHold: number };
     doStats: { total: number; onDelivery: number };
@@ -294,6 +576,7 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
         unpaidNotas,
         notaPayments,
         unpaidBorongans,
+        unpaidBoronganItems,
         openVouchers,
         fleetStats,
         recentOrders,
@@ -323,7 +606,25 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
             )
             : Promise.resolve([]),
         canSeeBorongan
-            ? client.fetch<Array<{ totalAmount?: number }>>(`*[_type == "driverBorongan" && status != "PAID"]{ totalAmount }`)
+            ? client.fetch<Array<Pick<DriverBorongan, '_id' | 'status' | 'totalAmount' | 'totalCollie' | 'totalWeightKg'>>>(
+                `*[_type == "driverBorongan" && status != "PAID"]{
+                    _id,
+                    status,
+                    totalAmount,
+                    totalCollie,
+                    totalWeightKg
+                }`
+            )
+            : Promise.resolve([]),
+        canSeeBorongan
+            ? client.fetch<Array<Pick<DriverBoronganItem, 'boronganRef' | 'collie' | 'beratKg' | 'uangRp'>>>(
+                `*[_type == "driverBoronganItem" && boronganRef in *[_type == "driverBorongan" && status != "PAID"]._id]{
+                    boronganRef,
+                    collie,
+                    beratKg,
+                    uangRp
+                }`
+            )
             : Promise.resolve([]),
         canViewTripCash
             ? client.fetch<Array<{ cashGiven?: number; totalIssuedAmount?: number }>>(
@@ -361,11 +662,12 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
     const notaPaymentTotals = getFreightNotaPaymentTotals(notaPayments);
     const derivedUnpaidNotas = applyDerivedFreightNotaStatus(unpaidNotas, notaPaymentTotals).filter(nota => nota.status !== 'PAID');
     const recentNotasWithDerivedStatus = applyDerivedFreightNotaStatus(recentNotas, notaPaymentTotals);
+    const unpaidBorongansWithDerivedTotals = applyDerivedDriverBoronganTotals(unpaidBorongans, unpaidBoronganItems);
     const notaOutstanding = derivedUnpaidNotas.reduce((sum, nota) => {
         const paidAmount = notaPaymentTotals[nota._id] || 0;
         return sum + Math.max(getReceivableNetAmount(nota) - paidAmount, 0);
     }, 0);
-    const boronganOutstanding = unpaidBorongans.reduce(
+    const boronganOutstanding = unpaidBorongansWithDerivedTotals.reduce(
         (sum, borongan) => sum + parseWholeMoneyLike(borongan.totalAmount),
         0
     );
@@ -383,7 +685,7 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
             totalOutstanding: canViewInvoices && canSeeFinancialTotals ? notaOutstanding : 0,
         },
         boronganStats: {
-            unpaid: canSeeBorongan ? unpaidBorongans.length : 0,
+            unpaid: canSeeBorongan ? unpaidBorongansWithDerivedTotals.length : 0,
             totalOutstanding: canSeeBorongan ? boronganOutstanding : 0,
         },
         voucherStats: {
@@ -604,18 +906,30 @@ export async function getAuditLogsSummary() {
 
 export async function getBoronganSummary(search = '', status = '') {
     const client = getSanityClient();
-    const items = await client.fetch<Array<Pick<DriverBorongan, '_id' | 'boronganNumber' | 'driverName' | 'status' | 'totalAmount'>>>(
-        `*[_type == "driverBorongan"]{
-            _id,
-            boronganNumber,
-            driverName,
-            status,
-            totalAmount
-        }`
-    );
+    const [borongans, boronganItems] = await Promise.all([
+        client.fetch<Array<Pick<DriverBorongan, '_id' | 'boronganNumber' | 'driverName' | 'status' | 'totalAmount' | 'totalCollie' | 'totalWeightKg'>>>(
+            `*[_type == "driverBorongan"]{
+                _id,
+                boronganNumber,
+                driverName,
+                status,
+                totalAmount,
+                totalCollie,
+                totalWeightKg
+            }`
+        ),
+        client.fetch<Array<Pick<DriverBoronganItem, 'boronganRef' | 'collie' | 'beratKg' | 'uangRp'>>>(
+            `*[_type == "driverBoronganItem"]{
+                boronganRef,
+                collie,
+                beratKg,
+                uangRp
+            }`
+        ),
+    ]);
 
     const query = search.trim().toLowerCase();
-    const filtered = items.filter(item => {
+    const filtered = applyDerivedDriverBoronganTotals(borongans, boronganItems).filter(item => {
         const matchesSearch = !query ||
             item.boronganNumber?.toLowerCase().includes(query) ||
             item.driverName?.toLowerCase().includes(query);
@@ -681,21 +995,32 @@ export async function getFreightNotasSummary(search = '', status = ''): Promise<
                 netAmount
             }`
         ),
-        client.fetch<Array<Pick<Payment, 'invoiceRef' | 'amount'>>>(
+        client.fetch<Array<Pick<Payment, 'invoiceRef' | 'receiptRef' | 'amount'>>>(
             `*[_type == "payment" && defined(invoiceRef)]{
                 invoiceRef,
+                receiptRef,
                 amount
             }`
         ),
-        client.fetch<Array<Pick<CustomerReceipt, 'unappliedAmount'>>>(
-            `*[_type == "customerReceipt" && defined(unappliedAmount) && unappliedAmount > 0]{
-                unappliedAmount
+        client.fetch<Array<Pick<CustomerReceipt, '_id' | 'totalAmount' | 'allocatedAmount' | 'unappliedAmount' | 'allocationCount'>>>(
+            `*[_type == "customerReceipt"]{
+                _id,
+                totalAmount,
+                allocatedAmount,
+                unappliedAmount,
+                allocationCount
             }`
         ),
     ]);
 
     const paymentTotalsByInvoice = getFreightNotaPaymentTotals(paymentRows);
     const notasWithDerivedStatus = applyDerivedFreightNotaStatus(notaRows, paymentTotalsByInvoice);
+    const receiptAllocations = paymentRows.flatMap(payment =>
+        payment.receiptRef
+            ? [{ receiptRef: payment.receiptRef, amount: payment.amount }]
+            : []
+    );
+    const receiptsWithDerivedAllocations = applyDerivedCustomerReceiptAllocations(receiptRows, receiptAllocations);
     const filteredNotas = notasWithDerivedStatus.filter(nota => {
         const matchesSearch = matchesFreightNotaSearch(nota, search);
         const matchesStatus = !status || nota.status === status;
@@ -711,7 +1036,7 @@ export async function getFreightNotasSummary(search = '', status = ''): Promise<
         unpaidCount: notasWithDerivedStatus.filter(nota => nota.status === 'UNPAID').length,
         partialCount: notasWithDerivedStatus.filter(nota => nota.status === 'PARTIAL').length,
         paidCount: notasWithDerivedStatus.filter(nota => nota.status === 'PAID').length,
-        customerCreditTotal: receiptRows.reduce(
+        customerCreditTotal: receiptsWithDerivedAllocations.reduce(
             (sum, receipt) => sum + parseWholeMoneyLike(receipt.unappliedAmount),
             0
         ),

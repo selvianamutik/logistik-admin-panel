@@ -17,6 +17,7 @@ import {
     normalizeNumber,
     normalizeOptionalText,
     normalizeText,
+    readLedgerBalance,
     type ApiSession,
     type BankAccountSummary,
 } from './data-helpers';
@@ -369,7 +370,7 @@ export async function handlePaymentCreate(
             });
 
         if (bankAcc) {
-            const nextBankBalance = (bankAcc.currentBalance || 0) + amount;
+            const nextBankBalance = readLedgerBalance(bankAcc.currentBalance) + amount;
             transaction
                 .create({
                     _id: bankTransactionId,
@@ -609,7 +610,7 @@ export async function handleCustomerReceiptCreate(
             });
 
         if (bankAcc) {
-            const nextBankBalance = (bankAcc.currentBalance || 0) + totalAmount;
+            const nextBankBalance = readLedgerBalance(bankAcc.currentBalance) + totalAmount;
             transaction
                 .create({
                     _id: bankTransactionId,
@@ -906,8 +907,8 @@ export async function handleBankTransfer(
             return NextResponse.json({ error: 'Revisi rekening tidak tersedia' }, { status: 409 });
         }
 
-        const fromBalance = (fromAcc.currentBalance || 0) - amount;
-        const toBalance = (toAcc.currentBalance || 0) + amount;
+        const fromBalance = readLedgerBalance(fromAcc.currentBalance) - amount;
+        const toBalance = readLedgerBalance(toAcc.currentBalance) + amount;
         const transaction = getSanityClient()
             .transaction()
             .create({
@@ -1053,7 +1054,7 @@ export async function handleExpenseCreate(
         }
 
         const expenseId = crypto.randomUUID();
-        const newBalance = (bankAcc.currentBalance || 0) - amount;
+        const newBalance = readLedgerBalance(bankAcc.currentBalance) - amount;
         const expenseDoc = {
             _id: expenseId,
             ...expenseDocBase,

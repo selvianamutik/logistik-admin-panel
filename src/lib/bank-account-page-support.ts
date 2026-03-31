@@ -1,4 +1,5 @@
 import { DEFAULT_PAGE_SIZE } from './pagination';
+import { parseFormattedNumberish } from './formatted-number';
 import type { BankAccount } from './types';
 
 export type BankAccountFormState = {
@@ -62,6 +63,10 @@ export function isCashAccount(account: Pick<BankAccount, "accountType" | "system
   return account.accountType === "CASH" || account.systemKey === "cash-on-hand";
 }
 
+export function normalizeBankAccountAmount(value: unknown) {
+  return parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 });
+}
+
 export function getBankPreset(bankName: string) {
   const key = Object.keys(BANK_PRESETS).find(
     (candidate) =>
@@ -71,12 +76,13 @@ export function getBankPreset(bankName: string) {
   return BANK_PRESETS[key || "OTHER"];
 }
 
-export function formatBankAccountCurrency(amount: number) {
+export function formatBankAccountCurrency(amount: number | string | undefined | null) {
+  const numeric = normalizeBankAccountAmount(amount);
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
     currency: "IDR",
     minimumFractionDigits: 0,
-  }).format(amount);
+  }).format(numeric);
 }
 
 export function buildBankAccountsQuery(params: {
@@ -114,12 +120,12 @@ export function createDefaultBankTransferForm(): BankTransferFormState {
 
 export function getAccountNextAction(account: BankAccount) {
   if (isCashAccount(account)) {
-    return account.currentBalance > 0
+    return normalizeBankAccountAmount(account.currentBalance) > 0
       ? "Siap dipakai untuk operasional harian"
       : "Cek perlu isi saldo kas";
   }
 
-  if ((account.currentBalance || 0) <= 0) {
+  if (normalizeBankAccountAmount(account.currentBalance) <= 0) {
     return "Cek saldo / mutasi rekening";
   }
 
@@ -141,8 +147,8 @@ export function buildBankAccountExportRows(accounts: BankAccount[]) {
     bankName: account.bankName,
     accountNumber: account.accountNumber,
     accountHolder: account.accountHolder,
-    initialBalance: account.initialBalance,
-    currentBalance: account.currentBalance,
+    initialBalance: normalizeBankAccountAmount(account.initialBalance),
+    currentBalance: normalizeBankAccountAmount(account.currentBalance),
   }));
 }
 
@@ -166,11 +172,13 @@ export function buildBankAccountPrintHtml(params: {
       <tbody>
         ${accounts
           .map((account) => {
+            const initialBalance = normalizeBankAccountAmount(account.initialBalance);
+            const currentBalance = normalizeBankAccountAmount(account.currentBalance);
             const delta =
-              (account.currentBalance || 0) -
-              (account.initialBalance || 0);
+              currentBalance -
+              initialBalance;
             const accountType = isCashAccount(account) ? "Kas Tunai" : "Bank";
-            return `<tr><td>${accountType}</td><td class="b">${account.bankName}</td><td>${account.accountNumber}</td><td>${account.accountHolder}</td><td class="r">${fmtN(account.initialBalance || 0)}</td><td class="r b">${fmtN(account.currentBalance || 0)}</td><td class="r ${delta >= 0 ? "s" : "d"}">${delta >= 0 ? "+" : ""}${fmtN(delta)}</td></tr>`;
+            return `<tr><td>${accountType}</td><td class="b">${account.bankName}</td><td>${account.accountNumber}</td><td>${account.accountHolder}</td><td class="r">${fmtN(initialBalance)}</td><td class="r b">${fmtN(currentBalance)}</td><td class="r ${delta >= 0 ? "s" : "d"}">${delta >= 0 ? "+" : ""}${fmtN(delta)}</td></tr>`;
           })
           .join("")}
         <tr style="background:#f8fafc;font-weight:700"><td colspan="4">TOTAL</td><td class="r">${fmtN(totalInitial)}</td><td class="r">${fmtN(totalBalance)}</td><td class="r ${change >= 0 ? "s" : "d"}">${change >= 0 ? "+" : ""}${fmtN(change)}</td></tr>

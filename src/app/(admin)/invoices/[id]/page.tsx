@@ -479,7 +479,7 @@ export default function NotaDetailPage() {
                                             <td>{it.barang || '-'}</td>
                                     <td>{it.collie ? formatQuantity(it.collie) : '-'}</td>
                                             <td>{formatFreightNotaDisplayWeight({ beratKg: it.beratKg || 0, billingMode, includeCanonical: false })}</td>
-                                            <td>{formatQuantity(it.tarip || 0, 0)}</td>
+                                            <td>{formatCurrency(it.tarip || 0)}</td>
                                             <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatCurrency(it.uangRp)}</td>
                                             <td className="text-muted">{it.ket || '-'}</td>
                                         </tr>
