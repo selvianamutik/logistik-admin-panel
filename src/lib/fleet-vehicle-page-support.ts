@@ -1,5 +1,6 @@
 import { formatDate, formatQuantity, VEHICLE_STATUS_MAP } from './utils';
 import { DEFAULT_PAGE_SIZE } from './pagination';
+import { getBusinessCalendarDateParts } from './business-date';
 import type { Service, Vehicle, VehicleStatus } from './types';
 
 export type VehicleTireSummary = {
@@ -26,12 +27,16 @@ export type VehicleForm = {
     lastOdometerAt: string;
 };
 
+function getCurrentBusinessYear() {
+    return Number(getBusinessCalendarDateParts()?.year || new Date().getFullYear());
+}
+
 export const EMPTY_VEHICLE_FORM: VehicleForm = {
     unitCode: '',
     plateNumber: '',
     vehicleType: 'Truck',
     brandModel: '',
-    year: new Date().getFullYear(),
+    year: getCurrentBusinessYear(),
     capacityKg: 0,
     capacityVolume: 0,
     serviceRef: '',
@@ -171,7 +176,7 @@ export function mapVehicleToForm(vehicle: Vehicle): VehicleForm {
         plateNumber: vehicle.plateNumber || '',
         vehicleType: vehicle.vehicleType || 'Truck',
         brandModel: vehicle.brandModel || '',
-        year: vehicle.year || new Date().getFullYear(),
+        year: vehicle.year || getCurrentBusinessYear(),
         capacityKg: vehicle.capacityKg || 0,
         capacityVolume: vehicle.capacityVolume || 0,
         serviceRef: vehicle.serviceRef || '',

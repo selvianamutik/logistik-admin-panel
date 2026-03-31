@@ -1,5 +1,5 @@
 import { getSanityClient, sanityGetById } from '@/lib/sanity';
-import { getBusinessDateValue } from '@/lib/business-date';
+import { getBusinessCalendarDateParts, getBusinessDateValue } from '@/lib/business-date';
 import {
     buildTirePlacementLabel,
     formatTireSlotLabel,
@@ -50,6 +50,10 @@ const VEHICLE_STATUS_VALUES = new Set(['ACTIVE', 'IN_SERVICE', 'OUT_OF_SERVICE',
 
 function hasOwnKey(value: Record<string, unknown>, key: string) {
     return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function getCurrentBusinessYear() {
+    return Number(getBusinessCalendarDateParts()?.year || new Date().getFullYear());
 }
 
 function normalizeOptionalNonNegativeNumber(value: unknown, label: string) {
@@ -359,7 +363,7 @@ export async function normalizeVehiclePayload(
 
     if (!partial || hasOwnKey(data, 'year')) {
         const year = normalizeNumber(data.year);
-        const maxYear = new Date().getFullYear() + 1;
+        const maxYear = getCurrentBusinessYear() + 1;
         if (!Number.isInteger(year) || year < 1900 || year > maxYear) {
             throw new Error('Tahun kendaraan tidak valid');
         }

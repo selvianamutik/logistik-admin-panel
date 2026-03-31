@@ -12,7 +12,10 @@ import {
 import { useToast } from "../layout";
 import { openBrandedPrint } from "@/lib/print";
 import { fetchAdminData, fetchAllAdminCollectionData } from "@/lib/api/admin-client";
-import { formatBusinessDate } from "@/lib/business-date";
+import {
+  formatBusinessDate,
+  getBusinessCalendarDateParts,
+} from "@/lib/business-date";
 import {
   buildCashflowExportRows,
   buildPeriodLabel,
@@ -55,9 +58,18 @@ export default function ReportsPage() {
   const [company, setCompany] = useState<CompanyProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const now = new Date();
-  const [month, setMonth] = useState(now.getMonth());
-  const [year, setYear] = useState(now.getFullYear());
+  const businessToday = getBusinessCalendarDateParts() || {
+    year: String(new Date().getFullYear()),
+    month: String(new Date().getMonth() + 1).padStart(2, "0"),
+    day: "01",
+  };
+  const defaultBusinessYear = Number(businessToday.year);
+  const defaultBusinessMonthIndex = Math.max(
+    Number(businessToday.month) - 1,
+    0,
+  );
+  const [month, setMonth] = useState(defaultBusinessMonthIndex);
+  const [year, setYear] = useState(defaultBusinessYear);
   const [periodMode, setPeriodMode] = useState<ReportPeriodMode>("month");
   const monthNames = [
     "Januari",
@@ -342,7 +354,7 @@ export default function ReportsPage() {
                 type="number"
                 value={year}
                 onChange={(event) =>
-                  setYear(Number(event.target.value) || now.getFullYear())
+                  setYear(Number(event.target.value) || defaultBusinessYear)
                 }
               />
               <button
@@ -1185,7 +1197,7 @@ export default function ReportsPage() {
                         <div>
                           <div className="mobile-record-title">{bankName}</div>
                           <div className="mobile-record-subtitle">
-                            {formatDate(item.date)} • {item.description}
+                            {formatDate(item.date)} | {item.description}
                           </div>
                         </div>
                         <span
