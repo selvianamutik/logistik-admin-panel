@@ -166,15 +166,40 @@ export function getDriverVoucherIssuedAmount(value: {
     return 0;
 }
 
+export function getDriverVoucherFinancialSummary(value: {
+    initialCashGiven?: number | string | null;
+    cashGiven?: number | string | null;
+    totalIssuedAmount?: number | string | null;
+    totalSpent?: number | string | null;
+    driverFeeAmount?: number | string | null;
+}) {
+    const initialCashGiven = getDriverVoucherInitialCash(value);
+    const totalIssuedAmount = getDriverVoucherIssuedAmount(value);
+    const totalSpent = Math.max(parseFormattedNumberish(value.totalSpent ?? 0, { maxFractionDigits: 0 }), 0);
+    const driverFeeAmount = Math.max(parseFormattedNumberish(value.driverFeeAmount ?? 0, { maxFractionDigits: 0 }), 0);
+    const topUpAmount = Math.max(totalIssuedAmount - initialCashGiven, 0);
+    const operationalBalance = totalIssuedAmount - totalSpent;
+    const totalClaimAmount = totalSpent + driverFeeAmount;
+    const balance = totalIssuedAmount - totalClaimAmount;
+
+    return {
+        initialCashGiven,
+        totalIssuedAmount,
+        totalSpent,
+        driverFeeAmount,
+        topUpAmount,
+        operationalBalance,
+        totalClaimAmount,
+        balance,
+    };
+}
+
 export function getDriverVoucherTopUpAmount(value: {
     initialCashGiven?: number | string | null;
     totalIssuedAmount?: number | string | null;
     cashGiven?: number | string | null;
 }) {
-    return Math.max(
-        getDriverVoucherIssuedAmount(value) - getDriverVoucherInitialCash(value),
-        0,
-    );
+    return getDriverVoucherFinancialSummary(value).topUpAmount;
 }
 
 export function getDriverVoucherOperationalBalance(value: {
@@ -183,9 +208,7 @@ export function getDriverVoucherOperationalBalance(value: {
     cashGiven?: number | string | null;
     totalSpent?: number | string | null;
 }) {
-    const totalIssuedAmount = getDriverVoucherIssuedAmount(value);
-    const totalSpent = Math.max(parseFormattedNumberish(value.totalSpent ?? 0, { maxFractionDigits: 0 }), 0);
-    return totalIssuedAmount - totalSpent;
+    return getDriverVoucherFinancialSummary(value).operationalBalance;
 }
 
 // ── Status labels & colors ──

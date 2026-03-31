@@ -23,8 +23,7 @@ import {
 import {
   formatCurrency,
   formatDate,
-  getDriverVoucherIssuedAmount,
-  getDriverVoucherOperationalBalance,
+  getDriverVoucherFinancialSummary,
 } from "@/lib/utils";
 import { exportToExcel } from "@/lib/export";
 import { parseFormattedNumberish } from "@/lib/formatted-number";
@@ -603,14 +602,14 @@ export default function ReportsPage() {
                       </tr>
                     ) : (
                       openDriverVouchers.map((item) => {
-                        const totalSpent = parseWholeMoneyLike(item.totalSpent);
-                        const driverFeeAmount = parseWholeMoneyLike(item.driverFeeAmount);
-                        const balance = parseFormattedNumberish(item.balance ?? 0, { maxFractionDigits: 0 });
-                        const totalClaimAmount =
-                          parseWholeMoneyLike(item.totalClaimAmount) ||
-                          totalSpent + driverFeeAmount;
-                        const operationalBalance =
-                          getDriverVoucherOperationalBalance(item);
+                        const {
+                          totalIssuedAmount,
+                          totalSpent,
+                          driverFeeAmount,
+                          totalClaimAmount,
+                          operationalBalance,
+                          balance,
+                        } = getDriverVoucherFinancialSummary(item);
                         return (
                           <tr key={item._id}>
                             <td style={{ fontWeight: 600 }}>{item.bonNumber}</td>
@@ -618,7 +617,7 @@ export default function ReportsPage() {
                             <td>{item.driverName || "-"}</td>
                             <td>{item.issueBankName || "-"}</td>
                             <td style={{ textAlign: "right", fontWeight: 600 }}>
-                              {formatCurrency(getDriverVoucherIssuedAmount(item))}
+                              {formatCurrency(totalIssuedAmount)}
                             </td>
                             <td style={{ textAlign: "right" }}>
                               {formatCurrency(totalSpent)}
@@ -672,14 +671,14 @@ export default function ReportsPage() {
                   </div>
                 ) : (
                   openDriverVouchers.map((item) => {
-                    const totalSpent = parseWholeMoneyLike(item.totalSpent);
-                    const driverFeeAmount = parseWholeMoneyLike(item.driverFeeAmount);
-                    const balance = parseFormattedNumberish(item.balance ?? 0, { maxFractionDigits: 0 });
-                    const totalClaimAmount =
-                      parseWholeMoneyLike(item.totalClaimAmount) ||
-                      totalSpent + driverFeeAmount;
-                    const operationalBalance =
-                      getDriverVoucherOperationalBalance(item);
+                    const {
+                      totalIssuedAmount,
+                      totalSpent,
+                      driverFeeAmount,
+                      totalClaimAmount,
+                      operationalBalance,
+                      balance,
+                    } = getDriverVoucherFinancialSummary(item);
                     return (
                       <div key={item._id} className="mobile-record-card">
                         <div className="mobile-record-header">
@@ -703,7 +702,7 @@ export default function ReportsPage() {
                           <div className="mobile-record-kv">
                             <span className="mobile-record-label">Total Diberikan</span>
                             <span className="mobile-record-value">
-                              {formatCurrency(getDriverVoucherIssuedAmount(item))}
+                              {formatCurrency(totalIssuedAmount)}
                             </span>
                           </div>
                           <div className="mobile-record-kv">

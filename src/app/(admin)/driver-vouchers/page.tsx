@@ -5,8 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Eye, Plus, Search, Receipt, Printer } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 
-import { formatDate, formatCurrency, getDriverVoucherIssuedAmount, getDriverVoucherOperationalBalance, getDriverVoucherTopUpAmount } from '@/lib/utils';
-import { parseFormattedNumberish } from '@/lib/formatted-number';
+import { formatDate, formatCurrency, getDriverVoucherFinancialSummary } from '@/lib/utils';
 import { openBrandedPrint, openPrintWindow, fetchCompanyProfile } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { DriverVoucher } from '@/lib/types';
@@ -20,7 +19,7 @@ const STATUS_MAP: Record<string, { label: string; cls: string }> = {
 };
 
 const getNextVoucherAction = (voucher: DriverVoucher) => {
-    const balance = parseFormattedNumberish(voucher.balance ?? 0, { maxFractionDigits: 0 });
+    const { balance } = getDriverVoucherFinancialSummary(voucher);
     if (voucher.status === 'DRAFT') {
         return 'Lengkapi lalu terbitkan';
     }
@@ -47,10 +46,6 @@ export default function DriverVouchersPage() {
     const [page, setPage] = useState(1);
     const [totalItems, setTotalItems] = useState(0);
     const [queueCounts, setQueueCounts] = useState({ issued: 0, draft: 0, settled: 0 });
-    const parseWholeMoneyLike = useCallback(
-        (value: unknown) => Math.max(parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 }), 0),
-        []
-    );
     const canCreateVoucher = user ? hasPermission(user.role, 'driverVouchers', 'create') : false;
     const canPrintVoucher = user ? hasPermission(user.role, 'driverVouchers', 'print') : false;
 
@@ -182,20 +177,24 @@ export default function DriverVouchersPage() {
                                             </thead>
                                             <tbody>
                                                 ${printableVouchers.map(v => {
-                                                    const totalSpent = parseWholeMoneyLike(v.totalSpent);
-                                                    const driverFeeAmount = parseWholeMoneyLike(v.driverFeeAmount);
-                                                    const totalClaimAmount = parseWholeMoneyLike(v.totalClaimAmount) || (totalSpent + driverFeeAmount);
-                                                    const initialCashGiven = parseWholeMoneyLike(v.initialCashGiven) || parseWholeMoneyLike(v.cashGiven);
-                                                    const operationalBalance = getDriverVoucherOperationalBalance(v);
-                                                    const balance = parseFormattedNumberish(v.balance ?? 0, { maxFractionDigits: 0 });
+                                                    const {
+                                                        totalSpent,
+                                                        driverFeeAmount,
+                                                        totalClaimAmount,
+                                                        initialCashGiven,
+                                                        topUpAmount,
+                                                        totalIssuedAmount,
+                                                        operationalBalance,
+                                                        balance,
+                                                    } = getDriverVoucherFinancialSummary(v);
                                                     return `<tr>
                                                         <td class="b">${v.bonNumber}</td>
                                                         <td>${v.driverName || '-'}</td>
                                                         <td>${formatDate(v.issuedDate)}</td>
                                                         <td>${v.doNumber || '-'}</td>
                                                         <td class="r">${formatCurrency(initialCashGiven)}</td>
-                                                        <td class="r">${formatCurrency(getDriverVoucherTopUpAmount(v))}</td>
-                                                        <td class="r">${formatCurrency(getDriverVoucherIssuedAmount(v))}</td>
+                                                        <td class="r">${formatCurrency(topUpAmount)}</td>
+                                                        <td class="r">${formatCurrency(totalIssuedAmount)}</td>
                                                         <td class="r">${formatCurrency(totalSpent)}</td>
                                                         <td class="r">${formatCurrency(driverFeeAmount)}</td>
                                                         <td class="r">${formatCurrency(totalClaimAmount)}</td>
@@ -312,14 +311,16 @@ export default function DriverVouchersPage() {
                             ) : (
                                 items.map(v => {
                                     const status = STATUS_MAP[v.status] || { label: v.status, cls: 'badge-gray' };
-                                    const totalSpent = parseWholeMoneyLike(v.totalSpent);
-                                    const driverFeeAmount = parseWholeMoneyLike(v.driverFeeAmount);
-                                    const totalClaimAmount = parseWholeMoneyLike(v.totalClaimAmount) || (totalSpent + driverFeeAmount);
-                                    const initialCashGiven = parseWholeMoneyLike(v.initialCashGiven) || parseWholeMoneyLike(v.cashGiven);
-                                    const topUpAmount = getDriverVoucherTopUpAmount(v);
-                                    const totalIssuedAmount = getDriverVoucherIssuedAmount(v);
-                                    const operationalBalance = getDriverVoucherOperationalBalance(v);
-                                    const balance = parseFormattedNumberish(v.balance ?? 0, { maxFractionDigits: 0 });
+                                    const {
+                                        totalSpent,
+                                        driverFeeAmount,
+                                        totalClaimAmount,
+                                        initialCashGiven,
+                                        topUpAmount,
+                                        totalIssuedAmount,
+                                        operationalBalance,
+                                        balance,
+                                    } = getDriverVoucherFinancialSummary(v);
 
                                     return (
                                         <tr key={v._id}>
@@ -391,14 +392,16 @@ export default function DriverVouchersPage() {
                             </div>
                         ) : items.map(v => {
                             const status = STATUS_MAP[v.status] || { label: v.status, cls: 'badge-gray' };
-                            const totalSpent = parseWholeMoneyLike(v.totalSpent);
-                            const driverFeeAmount = parseWholeMoneyLike(v.driverFeeAmount);
-                            const totalClaimAmount = parseWholeMoneyLike(v.totalClaimAmount) || (totalSpent + driverFeeAmount);
-                            const initialCashGiven = parseWholeMoneyLike(v.initialCashGiven) || parseWholeMoneyLike(v.cashGiven);
-                            const topUpAmount = getDriverVoucherTopUpAmount(v);
-                            const totalIssuedAmount = getDriverVoucherIssuedAmount(v);
-                            const operationalBalance = getDriverVoucherOperationalBalance(v);
-                            const balance = parseFormattedNumberish(v.balance ?? 0, { maxFractionDigits: 0 });
+                            const {
+                                totalSpent,
+                                driverFeeAmount,
+                                totalClaimAmount,
+                                initialCashGiven,
+                                topUpAmount,
+                                totalIssuedAmount,
+                                operationalBalance,
+                                balance,
+                            } = getDriverVoucherFinancialSummary(v);
 
                             return (
                                 <div key={v._id} className="mobile-record-card">

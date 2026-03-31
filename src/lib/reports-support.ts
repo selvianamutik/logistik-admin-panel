@@ -8,7 +8,7 @@ import type {
 } from './types';
 import { parseFormattedNumberish } from './formatted-number';
 import {
-    getDriverVoucherIssuedAmount,
+    getDriverVoucherFinancialSummary,
     getReceivableRemainingAmount,
 } from './utils';
 
@@ -128,32 +128,27 @@ export function buildReportsSnapshot(params: {
         .filter(item => item.status !== 'SETTLED' && inPeriod(item.issuedDate))
         .sort((a, b) => b.issuedDate.localeCompare(a.issuedDate));
     const openVoucherCash = openDriverVouchers.reduce(
-        (sum, item) => sum + getDriverVoucherIssuedAmount(item),
+        (sum, item) => sum + getDriverVoucherFinancialSummary(item).totalIssuedAmount,
         0
     );
     const openVoucherOperationalSpent = openDriverVouchers.reduce(
-        (sum, item) => sum + parseWholeMoneyLike(item.totalSpent),
+        (sum, item) => sum + getDriverVoucherFinancialSummary(item).totalSpent,
         0
     );
     const openVoucherDriverFees = openDriverVouchers.reduce(
-        (sum, item) => sum + parseWholeMoneyLike(item.driverFeeAmount),
+        (sum, item) => sum + getDriverVoucherFinancialSummary(item).driverFeeAmount,
         0
     );
     const openVoucherClaims = openDriverVouchers.reduce(
-        (sum, item) =>
-            sum +
-            (
-                parseWholeMoneyLike(item.totalClaimAmount)
-                || parseWholeMoneyLike(item.totalSpent) + parseWholeMoneyLike(item.driverFeeAmount)
-            ),
+        (sum, item) => sum + getDriverVoucherFinancialSummary(item).totalClaimAmount,
         0
     );
     const openVoucherReturn = openDriverVouchers.reduce(
-        (sum, item) => sum + Math.max(parseWholeMoneyLike(item.balance), 0),
+        (sum, item) => sum + Math.max(getDriverVoucherFinancialSummary(item).balance, 0),
         0
     );
     const openVoucherShortage = openDriverVouchers.reduce(
-        (sum, item) => sum + Math.abs(Math.min(parseFormattedNumberish(item.balance ?? 0, { maxFractionDigits: 0 }), 0)),
+        (sum, item) => sum + Math.abs(Math.min(getDriverVoucherFinancialSummary(item).balance, 0)),
         0
     );
     const expenseByCategory = filteredExpenses.reduce<Record<string, number>>(

@@ -16,13 +16,10 @@ import {
     formatCurrency,
     formatDate,
     formatDateTime,
+    getDriverVoucherFinancialSummary,
     formatInternalDeliveryOrderNumber,
     formatShipperDeliveryOrderNumber,
-    getDriverVoucherIssuedAmount,
-    getDriverVoucherOperationalBalance,
-    getDriverVoucherTopUpAmount,
 } from '@/lib/utils';
-import { parseFormattedNumberish } from '@/lib/formatted-number';
 
 export default function DriverDetailPage() {
     const params = useParams();
@@ -79,17 +76,13 @@ export default function DriverDetailPage() {
         [deliveryOrders]
     );
     const unsettledVoucherCount = useMemo(() => vouchers.filter(item => item.status !== 'SETTLED').length, [vouchers]);
-    const parseWholeMoneyLike = useCallback(
-        (value: unknown) => Math.max(parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 }), 0),
-        []
-    );
     const totalOperationalSpent = useMemo(
-        () => vouchers.reduce((sum, item) => sum + parseWholeMoneyLike(item.totalSpent), 0),
-        [parseWholeMoneyLike, vouchers]
+        () => vouchers.reduce((sum, item) => sum + getDriverVoucherFinancialSummary(item).totalSpent, 0),
+        [vouchers]
     );
     const totalDriverFee = useMemo(
-        () => vouchers.reduce((sum, item) => sum + parseWholeMoneyLike(item.driverFeeAmount), 0),
-        [parseWholeMoneyLike, vouchers]
+        () => vouchers.reduce((sum, item) => sum + getDriverVoucherFinancialSummary(item).driverFeeAmount, 0),
+        [vouchers]
     );
 
     if (loading) {
@@ -277,11 +270,13 @@ export default function DriverDetailPage() {
                                             <tr><td colSpan={9} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada riwayat uang jalan untuk supir ini</td></tr>
                                         ) : vouchers.map(item => {
                                             const statusConfig = DRIVER_VOUCHER_STATUS_MAP[item.status] || DRIVER_VOUCHER_STATUS_MAP.DRAFT;
-                                            const issuedAmount = getDriverVoucherIssuedAmount(item);
-                                            const operationalSpent = parseWholeMoneyLike(item.totalSpent);
-                                            const operationalBalance = getDriverVoucherOperationalBalance(item);
-                                            const driverFeeAmount = parseWholeMoneyLike(item.driverFeeAmount);
-                                            const balance = parseFormattedNumberish(item.balance ?? 0, { maxFractionDigits: 0 });
+                                            const {
+                                                totalIssuedAmount,
+                                                totalSpent,
+                                                operationalBalance,
+                                                driverFeeAmount,
+                                                balance,
+                                            } = getDriverVoucherFinancialSummary(item);
                                             return (
                                                 <tr key={item._id}>
                                                     <td>
@@ -293,8 +288,8 @@ export default function DriverDetailPage() {
                                                     <td>{formatDate(item.issuedDate)}</td>
                                                     <td>{item.doNumber || '-'}</td>
                                                     <td>{item.vehiclePlate || '-'}</td>
-                                                    <td>{formatCurrency(issuedAmount)}</td>
-                                                    <td>{formatCurrency(operationalSpent)}</td>
+                                                    <td>{formatCurrency(totalIssuedAmount)}</td>
+                                                    <td>{formatCurrency(totalSpent)}</td>
                                                     <td>{formatCurrency(driverFeeAmount)}</td>
                                                     <td>
                                                         <div>{formatCurrency(balance)}</div>
@@ -312,9 +307,13 @@ export default function DriverDetailPage() {
                                     <div className="mobile-record-card"><div className="mobile-record-title">Belum ada riwayat uang jalan untuk supir ini</div></div>
                                 ) : vouchers.map(item => {
                                     const statusConfig = DRIVER_VOUCHER_STATUS_MAP[item.status] || DRIVER_VOUCHER_STATUS_MAP.DRAFT;
-                                    const totalSpent = parseWholeMoneyLike(item.totalSpent);
-                                    const driverFeeAmount = parseWholeMoneyLike(item.driverFeeAmount);
-                                    const balance = parseFormattedNumberish(item.balance ?? 0, { maxFractionDigits: 0 });
+                                    const {
+                                        totalIssuedAmount,
+                                        totalSpent,
+                                        driverFeeAmount,
+                                        balance,
+                                        topUpAmount,
+                                    } = getDriverVoucherFinancialSummary(item);
                                     return (
                                         <div key={item._id} className="mobile-record-card">
                                             <div className="mobile-record-header">
@@ -331,7 +330,7 @@ export default function DriverDetailPage() {
                                                 </div>
                                                 <div className="mobile-record-kv">
                                                     <span className="mobile-record-label">Uang Jalan</span>
-                                                    <span className="mobile-record-value">{formatCurrency(getDriverVoucherIssuedAmount(item))}</span>
+                                                    <span className="mobile-record-value">{formatCurrency(totalIssuedAmount)}</span>
                                                 </div>
                                                 <div className="mobile-record-kv">
                                                     <span className="mobile-record-label">Biaya Jalan</span>
@@ -347,7 +346,7 @@ export default function DriverDetailPage() {
                                                 </div>
                                                 <div className="mobile-record-kv">
                                                     <span className="mobile-record-label">Top Up</span>
-                                                    <span className="mobile-record-value">{formatCurrency(getDriverVoucherTopUpAmount(item))}</span>
+                                                    <span className="mobile-record-value">{formatCurrency(topUpAmount)}</span>
                                                 </div>
                                             </div>
                                             <div className="mobile-record-actions">

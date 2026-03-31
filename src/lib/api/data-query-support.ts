@@ -9,13 +9,14 @@ import type {
     BankAccount,
     CustomerReceipt,
     DriverBorongan,
+    DriverVoucher,
     Expense,
     FreightNota,
     Payment,
     TireEvent,
     Vehicle,
 } from '@/lib/types';
-import { deriveReceivableStatus, getDriverVoucherIssuedAmount, getReceivableNetAmount, getReceivableRemainingAmount } from '@/lib/utils';
+import { deriveReceivableStatus, getDriverVoucherFinancialSummary, getDriverVoucherIssuedAmount, getReceivableNetAmount, getReceivableRemainingAmount } from '@/lib/utils';
 
 function parseWholeMoneyLike(value: unknown) {
     return Math.max(parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 }), 0);
@@ -45,6 +46,29 @@ function applyDerivedFreightNotaStatus<T extends {
         ...nota,
         status: deriveReceivableStatus(nota, paymentTotalsByInvoice[nota._id] || 0),
     }));
+}
+
+export function applyDerivedDriverVoucherFinancials<T extends {
+    initialCashGiven?: number | string | null;
+    cashGiven?: number | string | null;
+    totalIssuedAmount?: number | string | null;
+    totalSpent?: number | string | null;
+    driverFeeAmount?: number | string | null;
+    totalClaimAmount?: number | string | null;
+    balance?: number | string | null;
+}>(vouchers: T[]) {
+    return vouchers.map(voucher => {
+        const summary = getDriverVoucherFinancialSummary(voucher);
+        return {
+            ...voucher,
+            initialCashGiven: summary.initialCashGiven,
+            totalIssuedAmount: summary.totalIssuedAmount,
+            totalSpent: summary.totalSpent,
+            driverFeeAmount: summary.driverFeeAmount,
+            totalClaimAmount: summary.totalClaimAmount,
+            balance: summary.balance,
+        };
+    });
 }
 
 function matchesScalarFilter(actualValue: unknown, expectedValue: unknown) {
@@ -196,6 +220,16 @@ export async function getFreightNotaById(id: string) {
     if (!nota) return null;
     const paymentTotalsByInvoice = getFreightNotaPaymentTotals(paymentRows);
     return applyDerivedFreightNotaStatus([nota], paymentTotalsByInvoice)[0];
+}
+
+export async function getDriverVoucherById(id: string) {
+    const client = getSanityClient();
+    const voucher = await client.fetch<DriverVoucher | null>(
+        `*[_type == "driverVoucher" && _id == $id][0]`,
+        { id }
+    );
+    if (!voucher) return null;
+    return applyDerivedDriverVoucherFinancials([voucher])[0];
 }
 
 export type DashboardSummary = {

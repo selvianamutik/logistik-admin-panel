@@ -70,8 +70,10 @@ import {
     getFreightNotaById,
     getFreightNotaList,
     getFreightNotasSummary,
+    getDriverVoucherById,
     getListSortClause,
     getVehiclesSummary,
+    applyDerivedDriverVoucherFinancials,
 } from '@/lib/api/data-query-support';
 import {
     SANITY_TYPE_MAP,
@@ -82,7 +84,7 @@ import {
     sanityGetCompanyProfile,
     sanityList,
 } from '@/lib/sanity';
-import type { Expense, User, Vehicle } from '@/lib/types';
+import type { DriverVoucher, Expense, User, Vehicle } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -414,6 +416,8 @@ export async function GET(request: Request) {
             let item =
                 entity === 'freight-notas'
                     ? await getFreightNotaById(id)
+                    : entity === 'driver-vouchers'
+                        ? await getDriverVoucherById(id)
                     : await sanityGetById(id);
             if (!item) return jsonNoStore({ error: 'Not found' }, { status: 404 });
             if ((item as { _type?: string })._type !== docType) {
@@ -553,6 +557,10 @@ export async function GET(request: Request) {
 
         if (entity === 'users') {
             items = items.map(item => sanitizeUserForClient(item as unknown as User) as unknown as Record<string, unknown>);
+        }
+
+        if (entity === 'driver-vouchers') {
+            items = applyDerivedDriverVoucherFinancials(items as unknown as DriverVoucher[]) as unknown as Record<string, unknown>[];
         }
 
         if (entity === 'expenses') {
