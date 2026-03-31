@@ -11,6 +11,8 @@ import type {
     CustomerReceipt,
     DriverBorongan,
     DriverBoronganItem,
+    DriverVoucherDisbursement,
+    DriverVoucherItem,
     DriverVoucher,
     Expense,
     FreightNota,
@@ -52,6 +54,7 @@ export function applyDerivedFreightNotaStatus<T extends {
 
 export function applyDerivedDriverVoucherFinancials<T extends {
     initialCashGiven?: number | string | null;
+    topUpCount?: number | string | null;
     cashGiven?: number | string | null;
     totalIssuedAmount?: number | string | null;
     totalSpent?: number | string | null;
@@ -65,6 +68,78 @@ export function applyDerivedDriverVoucherFinancials<T extends {
             ...voucher,
             initialCashGiven: summary.initialCashGiven,
             totalIssuedAmount: summary.totalIssuedAmount,
+            totalSpent: summary.totalSpent,
+            driverFeeAmount: summary.driverFeeAmount,
+            totalClaimAmount: summary.totalClaimAmount,
+            balance: summary.balance,
+        };
+    });
+}
+
+export function applyDerivedDriverVoucherLedger<
+    T extends {
+        _id: string;
+        initialCashGiven?: number | string | null;
+        topUpCount?: number | string | null;
+        cashGiven?: number | string | null;
+        totalIssuedAmount?: number | string | null;
+        totalSpent?: number | string | null;
+        driverFeeAmount?: number | string | null;
+        totalClaimAmount?: number | string | null;
+        balance?: number | string | null;
+    }
+>(
+    vouchers: T[],
+    disbursementRows: Array<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>,
+    itemRows: Array<Pick<DriverVoucherItem, 'voucherRef' | 'amount'>>
+) {
+    const disbursementTotalsByVoucher = disbursementRows.reduce<Record<string, { initialCashGiven: number; totalIssuedAmount: number; topUpCount: number }>>(
+        (acc, row) => {
+            if (!row.voucherRef) return acc;
+            const current = acc[row.voucherRef] || { initialCashGiven: 0, totalIssuedAmount: 0, topUpCount: 0 };
+            const amount = parseWholeMoneyLike(row.amount);
+            current.totalIssuedAmount += amount;
+            if (row.kind === 'INITIAL') {
+                current.initialCashGiven += amount;
+            }
+            if (row.kind === 'TOP_UP' && amount > 0) {
+                current.topUpCount += 1;
+            }
+            acc[row.voucherRef] = current;
+            return acc;
+        },
+        {}
+    );
+
+    const spentByVoucher = itemRows.reduce<Record<string, number>>((acc, row) => {
+        if (!row.voucherRef) return acc;
+        acc[row.voucherRef] = (acc[row.voucherRef] || 0) + parseWholeMoneyLike(row.amount);
+        return acc;
+    }, {});
+
+    return vouchers.map(voucher => {
+        const fallback = getDriverVoucherFinancialSummary(voucher);
+        const derivedDisbursement = disbursementTotalsByVoucher[voucher._id];
+        const derivedTotalSpent = spentByVoucher[voucher._id];
+        const initialCashGiven = derivedDisbursement ? derivedDisbursement.initialCashGiven : fallback.initialCashGiven;
+        const totalIssuedAmount = derivedDisbursement ? derivedDisbursement.totalIssuedAmount : fallback.totalIssuedAmount;
+        const totalSpent = derivedTotalSpent !== undefined ? derivedTotalSpent : fallback.totalSpent;
+        const topUpCount = derivedDisbursement ? derivedDisbursement.topUpCount : Math.max(parseFormattedNumberish(voucher.topUpCount ?? 0, { maxFractionDigits: 0 }), 0);
+        const driverFeeAmount = Math.max(parseFormattedNumberish(voucher.driverFeeAmount ?? fallback.driverFeeAmount, { maxFractionDigits: 0 }), 0);
+        const summary = getDriverVoucherFinancialSummary({
+            initialCashGiven,
+            cashGiven: initialCashGiven,
+            totalIssuedAmount,
+            totalSpent,
+            driverFeeAmount,
+        });
+
+        return {
+            ...voucher,
+            cashGiven: initialCashGiven,
+            initialCashGiven,
+            totalIssuedAmount: summary.totalIssuedAmount,
+            topUpCount,
             totalSpent: summary.totalSpent,
             driverFeeAmount: summary.driverFeeAmount,
             totalClaimAmount: summary.totalClaimAmount,
@@ -352,12 +427,22 @@ export async function getFreightNotaById(id: string) {
 
 export async function getDriverVoucherById(id: string) {
     const client = getSanityClient();
-    const voucher = await client.fetch<DriverVoucher | null>(
-        `*[_type == "driverVoucher" && _id == $id][0]`,
-        { id }
-    );
+    const [voucher, disbursements, items] = await Promise.all([
+        client.fetch<DriverVoucher | null>(
+            `*[_type == "driverVoucher" && _id == $id][0]`,
+            { id }
+        ),
+        client.fetch<Array<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>>(
+            `*[_type == "driverVoucherDisbursement" && voucherRef == $id]{ voucherRef, amount, kind }`,
+            { id }
+        ),
+        client.fetch<Array<Pick<DriverVoucherItem, 'voucherRef' | 'amount'>>>(
+            `*[_type == "driverVoucherItem" && voucherRef == $id]{ voucherRef, amount }`,
+            { id }
+        ),
+    ]);
     if (!voucher) return null;
-    return applyDerivedDriverVoucherFinancials([voucher])[0];
+    return applyDerivedDriverVoucherLedger([voucher], disbursements, items)[0];
 }
 
 export async function getDriverBoronganById(id: string) {
@@ -624,6 +709,8 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
         unpaidBorongans,
         unpaidBoronganItems,
         openVouchers,
+        openVoucherDisbursements,
+        openVoucherItems,
         fleetStats,
         recentOrders,
         recentNotas,
@@ -673,8 +760,35 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
             )
             : Promise.resolve([]),
         canViewTripCash
-            ? client.fetch<Array<{ cashGiven?: number; totalIssuedAmount?: number }>>(
-                `*[_type == "driverVoucher" && status != "SETTLED"]{ cashGiven, totalIssuedAmount }`
+            ? client.fetch<Array<Pick<DriverVoucher, '_id' | 'cashGiven' | 'initialCashGiven' | 'topUpCount' | 'totalIssuedAmount' | 'totalSpent' | 'driverFeeAmount' | 'totalClaimAmount' | 'balance'>>>(
+                `*[_type == "driverVoucher" && status != "SETTLED"]{
+                    _id,
+                    cashGiven,
+                    initialCashGiven,
+                    topUpCount,
+                    totalIssuedAmount,
+                    totalSpent,
+                    driverFeeAmount,
+                    totalClaimAmount,
+                    balance
+                }`
+            )
+            : Promise.resolve([]),
+        canViewTripCash
+            ? client.fetch<Array<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>>(
+                `*[_type == "driverVoucherDisbursement" && voucherRef in *[_type == "driverVoucher" && status != "SETTLED"]._id]{
+                    voucherRef,
+                    amount,
+                    kind
+                }`
+            )
+            : Promise.resolve([]),
+        canViewTripCash
+            ? client.fetch<Array<Pick<DriverVoucherItem, 'voucherRef' | 'amount'>>>(
+                `*[_type == "driverVoucherItem" && voucherRef in *[_type == "driverVoucher" && status != "SETTLED"]._id]{
+                    voucherRef,
+                    amount
+                }`
             )
             : Promise.resolve([]),
         canViewFleet
@@ -709,6 +823,7 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
     const derivedUnpaidNotas = applyDerivedFreightNotaStatus(unpaidNotas, notaPaymentTotals).filter(nota => nota.status !== 'PAID');
     const recentNotasWithDerivedStatus = applyDerivedFreightNotaStatus(recentNotas, notaPaymentTotals);
     const unpaidBorongansWithDerivedTotals = applyDerivedDriverBoronganTotals(unpaidBorongans, unpaidBoronganItems);
+    const openVouchersWithDerivedFinancials = applyDerivedDriverVoucherLedger(openVouchers, openVoucherDisbursements, openVoucherItems);
     const notaOutstanding = derivedUnpaidNotas.reduce((sum, nota) => {
         const paidAmount = notaPaymentTotals[nota._id] || 0;
         return sum + Math.max(getReceivableNetAmount(nota) - paidAmount, 0);
@@ -717,7 +832,7 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
         (sum, borongan) => sum + parseWholeMoneyLike(borongan.totalAmount),
         0
     );
-    const voucherIssued = openVouchers.reduce(
+    const voucherIssued = openVouchersWithDerivedFinancials.reduce(
         (sum, voucher) => sum + getDriverVoucherIssuedAmount(voucher),
         0
     );
@@ -735,7 +850,7 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
             totalOutstanding: canSeeBorongan ? boronganOutstanding : 0,
         },
         voucherStats: {
-            unsettled: canViewTripCash ? openVouchers.length : 0,
+            unsettled: canViewTripCash ? openVouchersWithDerivedFinancials.length : 0,
             totalIssued: canViewTripCash && canSeeFinancialTotals ? voucherIssued : 0,
         },
         fleetStats,

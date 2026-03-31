@@ -79,8 +79,8 @@ import {
     getListSortClause,
     getVehiclesSummary,
     applyDerivedDriverBoronganTotals,
+    applyDerivedDriverVoucherLedger,
     applyDerivedFreightNotaStatus,
-    applyDerivedDriverVoucherFinancials,
 } from '@/lib/api/data-query-support';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import {
@@ -93,7 +93,7 @@ import {
     sanityGetCompanyProfile,
     sanityList,
 } from '@/lib/sanity';
-import type { BankAccount, BankTransaction, DriverBorongan, DriverBoronganItem, DriverVoucher, Expense, FreightNota, User, Vehicle } from '@/lib/types';
+import type { BankAccount, BankTransaction, DriverBorongan, DriverBoronganItem, DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem, Expense, FreightNota, User, Vehicle } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -802,7 +802,27 @@ export async function GET(request: Request) {
         }
 
         if (entity === 'driver-vouchers') {
-            items = applyDerivedDriverVoucherFinancials(items as unknown as DriverVoucher[]) as unknown as Record<string, unknown>[];
+            const ids = items
+                .map(item => (typeof item._id === 'string' ? item._id : ''))
+                .filter(Boolean);
+            const [disbursementRows, itemRows] = await Promise.all([
+                getSanityClient().fetch<Array<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>>(
+                    `*[_type == "driverVoucherDisbursement" && defined(voucherRef) && voucherRef in $ids]{
+                        voucherRef,
+                        amount,
+                        kind
+                    }`,
+                    { ids }
+                ),
+                getSanityClient().fetch<Array<Pick<DriverVoucherItem, 'voucherRef' | 'amount'>>>(
+                    `*[_type == "driverVoucherItem" && defined(voucherRef) && voucherRef in $ids]{
+                        voucherRef,
+                        amount
+                    }`,
+                    { ids }
+                ),
+            ]);
+            items = applyDerivedDriverVoucherLedger(items as unknown as DriverVoucher[], disbursementRows, itemRows) as unknown as Record<string, unknown>[];
         }
 
         if (entity === 'expenses') {
