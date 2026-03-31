@@ -80,33 +80,49 @@ export default function CustomersPage() {
     const loadCustomers = useCallback(async () => {
         setLoading(true);
         try {
-            const listRes = await fetch(`/api/data?${buildCustomersQuery()}`);
+            const [listRes, matchingCustomers] = await Promise.all([
+                fetch(`/api/data?${buildCustomersQuery()}`),
+                fetchAllMatchingCustomers(),
+            ]);
             const listPayload = await listRes.json();
             if (!listRes.ok) {
                 throw new Error(listPayload.error || 'Gagal memuat customer');
             }
 
             const customers = (listPayload.data || []) as Customer[];
-            const idsParam = customers.map(customer => customer._id).join(',');
+            const idsParam = matchingCustomers.map(customer => customer._id).join(',');
             const summaryRes = await fetch(`/api/data?entity=customers-summary${idsParam ? `&ids=${encodeURIComponent(idsParam)}` : ''}`);
             const summaryPayload = await summaryRes.json();
             if (!summaryRes.ok) {
                 throw new Error(summaryPayload.error || 'Gagal memuat ringkasan customer');
             }
 
+            const nextProductCounts = (summaryPayload.data?.productCounts || {}) as Record<string, number>;
+            const nextCustomersWithCustomPrefix = matchingCustomers.reduce((sum, customer) => (
+                customer.deliveryOrderPrefix &&
+                customer.deliveryOrderPrefix.trim() !== '' &&
+                customer.deliveryOrderPrefix !== 'SJ'
+                    ? sum + 1
+                    : sum
+            ), 0);
+            const nextCustomersNeedingCatalog = matchingCustomers.reduce((sum, customer) => (
+                (nextProductCounts[customer._id] || 0) === 0 ? sum + 1 : sum
+            ), 0);
+            const nextTotalProducts = Object.values(nextProductCounts).reduce<number>((sum, count) => sum + count, 0);
+
             setItems(customers);
             setFilteredTotalCustomers(listPayload.meta?.total || 0);
-            setCustomerProductCounts(summaryPayload.data?.productCounts || {});
-            setTotalCustomers(summaryPayload.data?.totalCustomers || 0);
-            setTotalProducts(summaryPayload.data?.totalProducts || 0);
-            setCustomersNeedingCatalog(summaryPayload.data?.customersNeedingCatalog || 0);
-            setCustomersWithCustomPrefix(summaryPayload.data?.customersWithCustomPrefix || 0);
+            setCustomerProductCounts(nextProductCounts);
+            setTotalCustomers(matchingCustomers.length);
+            setTotalProducts(nextTotalProducts);
+            setCustomersNeedingCatalog(nextCustomersNeedingCatalog);
+            setCustomersWithCustomPrefix(nextCustomersWithCustomPrefix);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat customer');
         } finally {
             setLoading(false);
         }
-    }, [addToast, buildCustomersQuery]);
+    }, [addToast, buildCustomersQuery, fetchAllMatchingCustomers]);
 
     useEffect(() => {
         void loadCustomers();

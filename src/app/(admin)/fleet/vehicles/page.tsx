@@ -86,9 +86,10 @@ export default function VehiclesPage() {
     const loadVehicles = useCallback(async () => {
         setLoading(true);
         try {
-            const [listRes, serviceRes] = await Promise.all([
+            const [listRes, serviceRes, matchingVehicles] = await Promise.all([
                 fetch(`/api/data?${buildCurrentVehiclesQuery()}`),
                 fetchAdminCollectionData<Service[]>('/api/data?entity=services', 'Gagal memuat kategori armada'),
+                fetchAllMatchingVehicles(),
             ]);
             const listPayload = await listRes.json();
 
@@ -97,26 +98,34 @@ export default function VehiclesPage() {
             }
 
             const vehicles = (listPayload.data || []) as Vehicle[];
-            const idsParam = vehicles.map(vehicle => vehicle._id).join(',');
+            const matchingVehicleIds = matchingVehicles.map(vehicle => vehicle._id);
+            const idsParam = matchingVehicleIds.join(',');
             const summaryRes = await fetch(`/api/data?entity=vehicles-summary${idsParam ? `&ids=${encodeURIComponent(idsParam)}` : ''}`);
             const summaryPayload = await summaryRes.json();
             if (!summaryRes.ok) {
                 throw new Error(summaryPayload.error || 'Gagal memuat ringkasan kendaraan');
             }
 
+            const nextTireSummaryByVehicle = summaryPayload.data?.tireSummaries || {};
+            const nextActiveVehicleCount = matchingVehicles.filter(vehicle => vehicle.status === 'ACTIVE').length;
+            const nextIncompleteTireCount = matchingVehicles.reduce((sum, vehicle) => {
+                const summary = nextTireSummaryByVehicle[vehicle._id];
+                return sum + (summary?.missing > 0 ? 1 : 0);
+            }, 0);
+
             setItems(vehicles);
             setServices(serviceRes || []);
             setFilteredTotalVehicles(listPayload.meta?.total || 0);
-            setActiveVehicleCount(summaryPayload.data?.activeVehicleCount || 0);
-            setIncompleteTireCount(summaryPayload.data?.incompleteTireCount || 0);
-            setNonOperationalCount(summaryPayload.data?.nonOperationalCount || 0);
-            setTireSummaryByVehicle(summaryPayload.data?.tireSummaries || {});
+            setActiveVehicleCount(nextActiveVehicleCount);
+            setIncompleteTireCount(nextIncompleteTireCount);
+            setNonOperationalCount(Math.max(matchingVehicles.length - nextActiveVehicleCount, 0));
+            setTireSummaryByVehicle(nextTireSummaryByVehicle);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat data kendaraan');
         } finally {
             setLoading(false);
         }
-    }, [addToast, buildCurrentVehiclesQuery]);
+    }, [addToast, buildCurrentVehiclesQuery, fetchAllMatchingVehicles]);
 
     useEffect(() => {
         void loadVehicles();
