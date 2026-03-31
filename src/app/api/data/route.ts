@@ -130,6 +130,7 @@ const ENTITY_MODULE_MAP: Partial<Record<keyof typeof SANITY_TYPE_MAP, AppModule>
     vehicles: 'vehicles',
     maintenances: 'maintenance',
     'tire-events': 'tires',
+    'tire-history-logs': 'tires',
     incidents: 'incidents',
     'incident-action-logs': 'incidents',
     'bank-accounts': 'bankAccounts',

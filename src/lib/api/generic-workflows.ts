@@ -10,6 +10,12 @@ import {
     sanityGetNextNumber,
     sanityUpdate,
 } from '@/lib/sanity';
+import {
+    resolveTireAssetStatus,
+    resolveTireHolderType,
+    resolveTirePlacementLabel,
+    resolveTireSlotCode,
+} from '@/lib/tire-slots';
 import type { CompanyProfile, User } from '@/lib/types';
 
 import {
@@ -326,6 +332,7 @@ function isWorkflowManagedCreateEntity(entity: string) {
         entity === 'driver-voucher-disbursements' ||
         entity === 'incidents' ||
         entity === 'incident-action-logs' ||
+        entity === 'tire-history-logs' ||
         entity === 'audit-logs'
     );
 }
@@ -346,6 +353,7 @@ function isWorkflowManagedUpdateEntity(entity: string) {
         entity === 'driver-voucher-disbursements' ||
         entity === 'incidents' ||
         entity === 'incident-action-logs' ||
+        entity === 'tire-history-logs' ||
         entity === 'audit-logs'
     );
 }
@@ -355,6 +363,7 @@ function isWorkflowManagedDeleteEntity(entity: string) {
         entity === 'driver-vouchers' ||
         entity === 'incidents' ||
         entity === 'incident-action-logs' ||
+        entity === 'tire-history-logs' ||
         entity === 'delivery-orders' ||
         entity === 'delivery-order-items' ||
         entity === 'order-items' ||
@@ -383,6 +392,91 @@ function buildCreateSummary(newDoc: Record<string, unknown>, fallbackId: string)
     );
 }
 
+type TireHistorySnapshot = {
+    holderType?: string;
+    status?: string;
+    vehicleRef?: string;
+    vehiclePlate?: string;
+    slotCode?: string;
+    placementLabel?: string;
+};
+
+function buildTireHistorySnapshot(doc: Record<string, unknown>): TireHistorySnapshot {
+    return {
+        holderType: resolveTireHolderType(doc),
+        status: resolveTireAssetStatus(doc),
+        vehicleRef: extractRefId(doc.vehicleRef) || undefined,
+        vehiclePlate: normalizeOptionalText(doc.vehiclePlate),
+        slotCode: resolveTireSlotCode({
+            slotCode: normalizeOptionalText(doc.slotCode),
+            posisi: normalizeOptionalText(doc.posisi),
+        }),
+        placementLabel: resolveTirePlacementLabel(doc),
+    };
+}
+
+function deriveTireHistoryAction(previous: TireHistorySnapshot | null, next: TireHistorySnapshot) {
+    if (!previous) return 'CREATED';
+    if (previous.status !== 'SCRAPPED' && next.status === 'SCRAPPED') return 'SCRAPPED';
+    if (previous.placementLabel !== next.placementLabel) return 'MOVED';
+    if (previous.status !== next.status) return 'STATUS_CHANGED';
+    return 'UPDATED';
+}
+
+function buildTireHistoryNote(actionType: string, previous: TireHistorySnapshot | null, next: TireHistorySnapshot) {
+    if (actionType === 'CREATED') {
+        return `Ban dicatat dengan lokasi awal ${next.placementLabel || '-'}`;
+    }
+    if (actionType === 'SCRAPPED') {
+        return `Ban diafkirkan dari ${previous?.placementLabel || '-'} ke ${next.placementLabel || '-'}`;
+    }
+    if (actionType === 'MOVED') {
+        return `Ban dipindahkan dari ${previous?.placementLabel || '-'} ke ${next.placementLabel || '-'}`;
+    }
+    if (actionType === 'STATUS_CHANGED') {
+        return `Status ban berubah dari ${previous?.status || '-'} ke ${next.status || '-'}`;
+    }
+    return `Data ban diperbarui di ${next.placementLabel || '-'}`;
+}
+
+function buildTireHistoryLogDoc(params: {
+    tireEventRef: string;
+    tireCode: string;
+    tireBrand?: string;
+    tireSize?: string;
+    previous: TireHistorySnapshot | null;
+    next: TireHistorySnapshot;
+    session: Pick<ApiSession, '_id' | 'name'>;
+    note?: string;
+}) {
+    const actionType = deriveTireHistoryAction(params.previous, params.next);
+    return {
+        _id: crypto.randomUUID(),
+        _type: 'tireHistoryLog',
+        tireEventRef: params.tireEventRef,
+        tireCode: params.tireCode,
+        tireBrand: params.tireBrand,
+        tireSize: params.tireSize,
+        actionType,
+        timestamp: new Date().toISOString(),
+        actorUserRef: params.session._id,
+        actorUserName: params.session.name,
+        note: params.note || buildTireHistoryNote(actionType, params.previous, params.next),
+        fromHolderType: params.previous?.holderType,
+        fromStatus: params.previous?.status,
+        fromVehicleRef: params.previous?.vehicleRef,
+        fromVehiclePlate: params.previous?.vehiclePlate,
+        fromSlotCode: params.previous?.slotCode,
+        fromPlacementLabel: params.previous?.placementLabel,
+        toHolderType: params.next.holderType,
+        toStatus: params.next.status,
+        toVehicleRef: params.next.vehicleRef,
+        toVehiclePlate: params.next.vehiclePlate,
+        toSlotCode: params.next.slotCode,
+        toPlacementLabel: params.next.placementLabel,
+    };
+}
+
 export async function handleGenericUpdate(
     session: ApiSession,
     entity: string,
@@ -399,6 +493,10 @@ export async function handleGenericUpdate(
 
     if (isProtectedLedgerEntity(entity)) {
         return NextResponse.json({ error: 'Entri keuangan yang sudah terposting tidak boleh diubah lewat API umum' }, { status: 409 });
+    }
+
+    if (entity === 'tire-history-logs') {
+        return NextResponse.json({ error: 'Riwayat ban dibuat otomatis oleh sistem dan tidak boleh diubah manual' }, { status: 409 });
     }
 
     if (isWorkflowManagedUpdateEntity(entity)) {
@@ -731,7 +829,23 @@ export async function handleGenericUpdate(
             return NextResponse.json({ error: 'Catatan ban tidak ditemukan' }, { status: 404 });
         }
         const normalizedTireUpdates = await normalizeTireEventPayload({ ...existingTire, ...updates }, id);
-        const updated = await sanityUpdate(id, normalizedTireUpdates);
+        const nextTireDoc = { ...existingTire, ...normalizedTireUpdates };
+        const historyLogDoc = buildTireHistoryLogDoc({
+            tireEventRef: id,
+            tireCode: normalizeOptionalText(nextTireDoc.tireCode) || id,
+            tireBrand: normalizeOptionalText(nextTireDoc.tireBrand),
+            tireSize: normalizeOptionalText(nextTireDoc.tireSize),
+            previous: buildTireHistorySnapshot(existingTire),
+            next: buildTireHistorySnapshot(nextTireDoc),
+            session,
+            note: normalizeOptionalText(normalizedTireUpdates.notes),
+        });
+        await getSanityClient()
+            .transaction()
+            .patch(id, { set: normalizedTireUpdates })
+            .create(historyLogDoc)
+            .commit();
+        const updated = await sanityGetById<Record<string, unknown>>(id);
         await addAuditLog(
             session,
             'UPDATE',
@@ -855,6 +969,10 @@ export async function handleGenericDelete(
         return NextResponse.json({ error: 'Entri keuangan yang sudah terposting tidak boleh dihapus lewat API umum' }, { status: 409 });
     }
 
+    if (entity === 'tire-history-logs') {
+        return NextResponse.json({ error: 'Riwayat ban tidak boleh dihapus langsung karena histori aset harus tetap utuh' }, { status: 409 });
+    }
+
     if (isWorkflowManagedDeleteEntity(entity)) {
         return NextResponse.json({ error: 'Dokumen turunan workflow tidak boleh dihapus langsung lewat API umum' }, { status: 409 });
     }
@@ -940,6 +1058,15 @@ export async function handleGenericDelete(
         return NextResponse.json(
             {
                 error: 'Ban tidak boleh dihapus langsung karena histori aset harus tetap utuh. Edit lokasi atau status ban untuk memindahkan ke slot lain, gudang, pinjam keluar, atau afkir.',
+            },
+            { status: 409 }
+        );
+    }
+
+    if (entity === 'tire-history-logs') {
+        return NextResponse.json(
+            {
+                error: 'Riwayat ban tidak boleh dihapus langsung karena histori aset harus tetap utuh.',
             },
             { status: 409 }
         );
@@ -1045,6 +1172,10 @@ export async function handleGenericCreate(
 
     if (isWorkflowManagedCreateEntity(entity)) {
         return NextResponse.json({ error: 'Dokumen ini harus dibuat lewat workflow server yang sesuai' }, { status: 409 });
+    }
+
+    if (entity === 'tire-history-logs') {
+        return NextResponse.json({ error: 'Riwayat ban dibuat otomatis oleh sistem dan tidak boleh dibuat manual' }, { status: 409 });
     }
 
     const newDoc: { _type: string; [key: string]: unknown } = { _type: docType };
@@ -1239,6 +1370,40 @@ export async function handleGenericCreate(
 
     if (shouldMergeRawCreatePayload) {
         Object.assign(newDoc, data);
+    }
+
+    if (entity === 'tire-events') {
+        const newId = crypto.randomUUID();
+        const createdTireDoc: { _id: string; _type: string; [key: string]: unknown } = { _id: newId, ...newDoc };
+        const historyLogDoc = buildTireHistoryLogDoc({
+            tireEventRef: newId,
+            tireCode: normalizeOptionalText(createdTireDoc.tireCode) || newId,
+            tireBrand: normalizeOptionalText(createdTireDoc.tireBrand),
+            tireSize: normalizeOptionalText(createdTireDoc.tireSize),
+            previous: null,
+            next: buildTireHistorySnapshot(createdTireDoc),
+            session,
+            note: normalizeOptionalText(createdTireDoc.notes),
+        });
+
+        await getSanityClient()
+            .transaction()
+            .create(createdTireDoc)
+            .create(historyLogDoc)
+            .commit();
+
+        await addAuditLog(
+            session,
+            'CREATE',
+            entity,
+            newId,
+            `Create ban ${(newDoc as Record<string, unknown>).tireCode}: ${(newDoc as Record<string, unknown>).posisi} (${(newDoc as Record<string, unknown>).status})`
+        );
+
+        return NextResponse.json({
+            data: createdTireDoc,
+            id: newId,
+        });
     }
 
     const created = await sanityCreate(newDoc);

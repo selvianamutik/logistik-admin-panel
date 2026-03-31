@@ -777,6 +777,39 @@ export interface TireEvent {
   notes?: string;
 }
 
+export type TireHistoryActionType =
+  | 'CREATED'
+  | 'MOVED'
+  | 'STATUS_CHANGED'
+  | 'SCRAPPED'
+  | 'UPDATED';
+
+export interface TireHistoryLog {
+  _id: string;
+  _type: 'tireHistoryLog';
+  tireEventRef: string;
+  tireCode: string;
+  tireBrand?: string;
+  tireSize?: string;
+  actionType: TireHistoryActionType;
+  timestamp: string;
+  actorUserRef?: string;
+  actorUserName?: string;
+  note?: string;
+  fromHolderType?: TireHolderType;
+  fromStatus?: TireAssetStatus;
+  fromVehicleRef?: string;
+  fromVehiclePlate?: string;
+  fromSlotCode?: string;
+  fromPlacementLabel?: string;
+  toHolderType?: TireHolderType;
+  toStatus?: TireAssetStatus;
+  toVehicleRef?: string;
+  toVehiclePlate?: string;
+  toSlotCode?: string;
+  toPlacementLabel?: string;
+}
+
 // ── Incident ──
 export type IncidentType = 'BLOWOUT_TIRE' | 'ENGINE_TROUBLE' | 'ACCIDENT_MINOR' | 'ACCIDENT_MAJOR' | 'OTHER';
 export type Urgency = 'LOW' | 'MEDIUM' | 'HIGH';

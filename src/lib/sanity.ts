@@ -206,6 +206,7 @@ export const SANITY_TYPE_MAP: Record<string, string> = {
     vehicles: 'vehicle',
     maintenances: 'maintenance',
     'tire-events': 'tireEvent',
+    'tire-history-logs': 'tireHistoryLog',
     incidents: 'incident',
     'incident-action-logs': 'incidentActionLog',
     'audit-logs': 'auditLog',

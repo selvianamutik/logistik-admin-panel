@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useApp, useToast } from '../../../layout';
-import { Car, Wrench, AlertTriangle, Truck, Edit, Plus, Disc3, Warehouse, ExternalLink, Save } from 'lucide-react';
+import { Car, Wrench, AlertTriangle, Truck, Edit, Plus, Disc3, Warehouse, ExternalLink, Save, History } from 'lucide-react';
 import {
     VEHICLE_STATUS_MAP,
     MAINTENANCE_STATUS_MAP,
@@ -11,6 +11,7 @@ import {
     DO_STATUS_MAP,
     TIRE_ASSET_STATUS_MAP,
     formatDate,
+    formatDateTime,
     formatCurrency,
     formatShipperDeliveryOrderNumber,
     formatInternalDeliveryOrderNumber,
@@ -20,7 +21,7 @@ import {
     formatTireSlotLabel,
     resolveTireSlotCode,
 } from '@/lib/tire-slots';
-import type { Vehicle, Maintenance, Incident, DeliveryOrder, TireEvent, Expense } from '@/lib/types';
+import type { Vehicle, Maintenance, Incident, DeliveryOrder, TireEvent, TireHistoryLog, Expense } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { hasPermission } from '@/lib/rbac';
@@ -32,6 +33,7 @@ import {
     type VehicleTireFormState,
     VEHICLE_TIRE_TYPE_OPTIONS,
 } from '@/lib/vehicle-detail-page-support';
+import { getTireHistoryActionColor, getTireHistoryActionLabel } from '@/lib/tire-history';
 
 export default function VehicleDetailPage() {
     const params = useParams();
@@ -53,6 +55,9 @@ export default function VehicleDetailPage() {
     const [tireForm, setTireForm] = useState<VehicleTireFormState>(createDefaultVehicleTireForm());
     const [editingTire, setEditingTire] = useState<TireEvent | null>(null);
     const [savingTire, setSavingTire] = useState(false);
+    const [slotHistoryCode, setSlotHistoryCode] = useState<string | null>(null);
+    const [slotHistoryRows, setSlotHistoryRows] = useState<TireHistoryLog[]>([]);
+    const [loadingSlotHistory, setLoadingSlotHistory] = useState(false);
     const isOwner = user?.role === 'OWNER';
     const canManageVehicle = user ? hasPermission(user.role, 'vehicles', 'update') : false;
     const canCreateMaintenance = user ? hasPermission(user.role, 'maintenance', 'create') : false;
@@ -134,7 +139,6 @@ export default function VehicleDetailPage() {
         tireForm,
         editingTire,
     });
-
     const updateTireForm = <K extends keyof VehicleTireFormState>(key: K, value: VehicleTireFormState[K]) => {
         setTireForm(prev => ({ ...prev, [key]: value }));
     };
@@ -178,6 +182,30 @@ export default function VehicleDetailPage() {
             notes: event.notes || '',
         });
         setShowTireModal(true);
+    };
+
+    const openTireHistory = async (slotCode: string) => {
+        setSlotHistoryCode(slotCode);
+        setSlotHistoryRows([]);
+        setLoadingSlotHistory(true);
+        try {
+            const orFilters = encodeURIComponent(JSON.stringify([
+                { fields: ['fromVehicleRef', 'toVehicleRef'], value: vehicle._id },
+            ]));
+            const rows = await fetchAllAdminCollectionData<TireHistoryLog>(
+                `/api/data?entity=tire-history-logs&orFilters=${orFilters}`,
+                'Gagal memuat riwayat ban'
+            );
+            const filteredRows = (rows || []).filter(log => (
+                (log.fromVehicleRef === vehicle._id && log.fromSlotCode === slotCode) ||
+                (log.toVehicleRef === vehicle._id && log.toSlotCode === slotCode)
+            ));
+            setSlotHistoryRows(filteredRows);
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat riwayat ban');
+        } finally {
+            setLoadingSlotHistory(false);
+        }
     };
 
     const handleRegisteredTireChange = (registeredTireId: string) => {
@@ -294,11 +322,14 @@ export default function VehicleDetailPage() {
                         <div className="text-muted text-sm">{event.tireType} • dicatat {formatDate(event.installDate)}</div>
                     </div>
                     <div className="text-muted text-sm">{event.notes || 'Belum ada catatan tambahan.'}</div>
-                    {canManageTires && <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                        <button className="btn btn-secondary" type="button" onClick={() => openEditTire(event)}>
-                            <Edit size={14} /> Edit Ban
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <button className="btn btn-secondary" type="button" onClick={() => openTireHistory(slotCode)}>
+                            <History size={14} /> Riwayat
                         </button>
-                    </div>}
+                        {canManageTires && <button className="btn btn-secondary" type="button" onClick={() => openEditTire(event)}>
+                            <Edit size={14} /> Edit Ban
+                        </button>}
+                    </div>
                 </>
             ) : (
                 <>
@@ -735,6 +766,65 @@ export default function VehicleDetailPage() {
                                     <Save size={16} /> {savingTire ? 'Menyimpan...' : editingTire ? 'Simpan Perubahan' : 'Pasang Ban'}
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {slotHistoryCode && (
+                <div className="modal-overlay" onClick={() => { if (!loadingSlotHistory) setSlotHistoryCode(null); }}>
+                    <div className="modal modal-lg" onClick={event => event.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Riwayat Slot {slotHistoryCode} - {vehicle.plateNumber}</h3>
+                            <button className="modal-close" onClick={() => setSlotHistoryCode(null)}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <div style={{ marginBottom: '1rem', color: 'var(--color-gray-600)' }}>
+                                Menampilkan histori khusus untuk slot {slotHistoryCode} pada kendaraan ini, jadi tiap slot punya riwayatnya sendiri.
+                            </div>
+                            <div style={{ display: 'grid', gap: '0.85rem' }}>
+                                {loadingSlotHistory ? (
+                                    [1, 2, 3].map(item => <div key={item} className="skeleton skeleton-card" style={{ height: 72 }} />)
+                                ) : slotHistoryRows.length === 0 ? (
+                                    <div className="empty-state">
+                                        <div className="empty-state-title">Belum ada histori untuk slot ini</div>
+                                        <div className="empty-state-text">Histori akan muncul setelah ada ban yang pernah masuk atau keluar dari slot {slotHistoryCode}.</div>
+                                    </div>
+                                ) : slotHistoryRows.map(log => {
+                                    const enteredSlot = log.toVehicleRef === vehicle._id && log.toSlotCode === slotHistoryCode;
+                                    const leftSlot = log.fromVehicleRef === vehicle._id && log.fromSlotCode === slotHistoryCode;
+                                    const movementLabel =
+                                        enteredSlot && leftSlot
+                                            ? `Update di slot ${slotHistoryCode}`
+                                            : enteredSlot
+                                                ? `Masuk ke slot ${slotHistoryCode}`
+                                                : `Keluar dari slot ${slotHistoryCode}`;
+
+                                    return (
+                                    <div key={log._id} style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.85rem', padding: '0.95rem 1rem', background: 'var(--color-gray-50)' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'flex-start', marginBottom: '0.4rem', flexWrap: 'wrap' }}>
+                                            <div>
+                                                <div className="font-medium">{log.tireCode || '-'}</div>
+                                                <div className="text-muted text-sm">{log.tireBrand || '-'} | {log.tireSize || '-'}</div>
+                                            </div>
+                                            <span className={`badge badge-${getTireHistoryActionColor(log.actionType)}`}>
+                                                <span className="badge-dot" /> {getTireHistoryActionLabel(log.actionType)}
+                                            </span>
+                                        </div>
+                                        <div className="text-muted text-sm" style={{ marginBottom: '0.25rem' }}>{movementLabel}</div>
+                                        <div className="text-muted text-sm" style={{ marginBottom: '0.25rem' }}>{formatDateTime(log.timestamp)}</div>
+                                        <div className="text-muted text-sm" style={{ marginBottom: '0.25rem' }}>
+                                            Dari: {log.fromPlacementLabel || '-'}
+                                        </div>
+                                        <div className="text-muted text-sm" style={{ marginBottom: '0.25rem' }}>
+                                            Ke: {log.toPlacementLabel || '-'}
+                                        </div>
+                                        <div className="text-muted text-sm">{log.note || '-'}</div>
+                                    </div>
+                                )})}
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setSlotHistoryCode(null)}>Tutup</button>
                         </div>
                     </div>
                 </div>

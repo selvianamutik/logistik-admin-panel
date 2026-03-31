@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useApp, useToast } from '../../layout';
-import { Plus, Search, Disc3, CheckCircle, Warehouse, ExternalLink } from 'lucide-react';
+import { Plus, Search, Disc3, CheckCircle, Warehouse, ExternalLink, History } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import {
@@ -12,6 +12,7 @@ import {
     getSelectableTireVehicles,
     resolveFleetTireEvents,
     TIRE_TYPES,
+    type ResolvedFleetTireEvent,
     type TireFormState,
 } from '@/lib/fleet-asset-page-support';
 import { formatDate, TIRE_ASSET_STATUS_MAP } from '@/lib/utils';
@@ -24,8 +25,10 @@ import {
     type TireAssetStatus,
     type TireHolderType,
 } from '@/lib/tire-slots';
-import type { TireEvent, Vehicle } from '@/lib/types';
+import { getTireHistoryActionColor, getTireHistoryActionLabel, getTireHistoryTransitionLabel } from '@/lib/tire-history';
+import type { TireEvent, TireHistoryLog, Vehicle } from '@/lib/types';
 import { hasPermission } from '@/lib/rbac';
+import { formatDateTime } from '@/lib/utils';
 
 export default function TiresPage() {
     const { user } = useApp();
@@ -46,6 +49,9 @@ export default function TiresPage() {
     const [editTarget, setEditTarget] = useState<TireEvent | null>(null);
     const [saving, setSaving] = useState(false);
     const [form, setForm] = useState<TireFormState>(createDefaultTireForm());
+    const [historyTarget, setHistoryTarget] = useState<ResolvedFleetTireEvent | null>(null);
+    const [historyRows, setHistoryRows] = useState<TireHistoryLog[]>([]);
+    const [loadingHistory, setLoadingHistory] = useState(false);
     const canCreateTires = user ? hasPermission(user.role, 'tires', 'create') : false;
     const canManageTires = user ? hasPermission(user.role, 'tires', 'update') : false;
 
@@ -138,6 +144,24 @@ export default function TiresPage() {
             externalPlateNumber: event.externalPlateNumber || '',
         });
         setShowModal(true);
+    };
+
+    const openHistory = async (event: ResolvedFleetTireEvent) => {
+        setHistoryTarget(event);
+        setHistoryRows([]);
+        setLoadingHistory(true);
+        try {
+            const filter = encodeURIComponent(JSON.stringify({ tireEventRef: event._id }));
+            const rows = await fetchAdminCollectionData<TireHistoryLog[]>(
+                `/api/data?entity=tire-history-logs&filter=${filter}`,
+                'Gagal memuat riwayat ban'
+            );
+            setHistoryRows(rows || []);
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal memuat riwayat ban');
+        } finally {
+            setLoadingHistory(false);
+        }
     };
 
     const updateForm = <K extends keyof TireFormState>(key: K, value: TireFormState[K]) => {
@@ -282,7 +306,12 @@ export default function TiresPage() {
                                         <td className="text-muted">{formatDate(event.installDate)}</td>
                                         <td className="text-muted">{event.notes || '-'}</td>
                                         <td>
-                                            {canManageTires && <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => openEdit(event)}>Edit</button>}
+                                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                                <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => openHistory(event)}>
+                                                    <History size={13} /> Riwayat
+                                                </button>
+                                                {canManageTires && <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => openEdit(event)}>Edit</button>}
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}
@@ -329,6 +358,7 @@ export default function TiresPage() {
                                     )}
                                 </div>
                                 <div className="mobile-record-actions">
+                                    <button className="btn btn-secondary" onClick={() => openHistory(event)}>Riwayat</button>
                                     {canManageTires && <button className="btn btn-secondary" onClick={() => openEdit(event)}>Edit</button>}
                                 </div>
                             </div>
@@ -484,6 +514,47 @@ export default function TiresPage() {
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setShowModal(false)} disabled={saving}>Batal</button>
                             <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'Menyimpan...' : 'Simpan'}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {historyTarget && (
+                <div className="modal-overlay" onClick={() => { if (!loadingHistory) setHistoryTarget(null); }}>
+                    <div className="modal modal-lg" onClick={event => event.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Riwayat Ban {historyTarget.tireCodeLabel}</h3>
+                            <button className="modal-close" onClick={() => setHistoryTarget(null)}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <div style={{ marginBottom: '1rem', color: 'var(--color-gray-600)' }}>
+                                {historyTarget.tireBrand} | {historyTarget.tireSize} | {historyTarget.placementLabel}
+                            </div>
+                            <div style={{ display: 'grid', gap: '0.85rem' }}>
+                                {loadingHistory ? (
+                                    [1, 2, 3].map(item => <div key={item} className="skeleton skeleton-card" style={{ height: 72 }} />)
+                                ) : historyRows.length === 0 ? (
+                                    <div className="empty-state">
+                                        <div className="empty-state-title">Belum ada riwayat ban</div>
+                                        <div className="empty-state-text">Riwayat akan tercatat otomatis saat ban dibuat atau dipindahkan.</div>
+                                    </div>
+                                ) : historyRows.map(log => (
+                                    <div key={log._id} style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.85rem', padding: '0.95rem 1rem', background: 'var(--color-gray-50)' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'flex-start', marginBottom: '0.4rem', flexWrap: 'wrap' }}>
+                                            <span className={`badge badge-${getTireHistoryActionColor(log.actionType)}`}>
+                                                <span className="badge-dot" /> {getTireHistoryActionLabel(log.actionType)}
+                                            </span>
+                                            <div className="text-muted text-sm">{formatDateTime(log.timestamp)}</div>
+                                        </div>
+                                        <div className="font-medium" style={{ marginBottom: '0.25rem' }}>{getTireHistoryTransitionLabel(log)}</div>
+                                        <div className="text-muted text-sm" style={{ marginBottom: '0.25rem' }}>{log.note || '-'}</div>
+                                        <div className="text-muted text-sm">Oleh: {log.actorUserName || '-'}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setHistoryTarget(null)}>Tutup</button>
                         </div>
                     </div>
                 </div>
