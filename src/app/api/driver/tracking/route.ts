@@ -6,7 +6,7 @@ import {
     toSpeedKph,
 } from '@/lib/api/driver-portal';
 import { extractRefId } from '@/lib/api/data-helpers';
-import { ensureSameOriginRequest, jsonNoStore } from '@/lib/api/request-security';
+import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
 import { handleDeliveryOrderStatusUpdate } from '@/lib/api/order-workflows';
 import { getSanityClient, sanityCreate, sanityGetById, sanityUpdate } from '@/lib/sanity';
 import type { DeliveryOrder, Driver } from '@/lib/types';
@@ -131,14 +131,18 @@ export async function POST(request: Request) {
     }
 
     try {
-        const body = await request.json() as {
+        const parsedBody = await parseJsonBody<{
             action?: 'start' | 'heartbeat' | 'pause' | 'resume' | 'stop' | 'rollback-start';
             deliveryOrderRef?: string;
             latitude?: number;
             longitude?: number;
             accuracyM?: number;
             speedMps?: number;
-        };
+        }>(request);
+        if ('error' in parsedBody) {
+            return parsedBody.error;
+        }
+        const body = parsedBody.data;
 
         const action = body.action;
         const deliveryOrderRef = typeof body.deliveryOrderRef === 'string' ? body.deliveryOrderRef : '';

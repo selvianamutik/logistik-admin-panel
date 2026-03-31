@@ -2,7 +2,7 @@ import { createSession, hashPassword, isPasswordHashMigrated, verifyPassword } f
 import { writeAuditLog } from '@/lib/api/data-helpers';
 import { getDriverAppContext, sanitizeDriverForMobile } from '@/lib/api/driver-portal';
 import { clearFailedAttempts, getRequestIp, recordLoginAttempt } from '@/lib/api/rate-limit';
-import { jsonNoStore } from '@/lib/api/request-security';
+import { jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
 import { sanityGetById, sanityUpdate, getSanityClient } from '@/lib/sanity';
 import type { Driver, User } from '@/lib/types';
 
@@ -27,7 +27,11 @@ function tooManyAttemptsResponse(retryAfterSeconds: number) {
 
 export async function POST(request: Request) {
     try {
-        const { email, password } = await request.json() as { email?: string; password?: string };
+        const parsedBody = await parseJsonBody<{ email?: string; password?: string }>(request);
+        if ('error' in parsedBody) {
+            return parsedBody.error;
+        }
+        const { email, password } = parsedBody.data;
         const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
         const rateLimitKey = buildLoginRateLimitKey(request, normalizedEmail || 'unknown');
 

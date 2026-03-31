@@ -1,7 +1,7 @@
 import { hashPassword } from '@/lib/auth';
 import { sanitizeUserForClient } from '@/lib/api/data-helpers';
 import { requireInternalSession } from '@/lib/api/driver-portal';
-import { ensureSameOriginRequest, jsonNoStore } from '@/lib/api/request-security';
+import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
 import { getSanityClient, sanityCreate, sanityGetById, sanityUpdate } from '@/lib/sanity';
 import type { Driver, User } from '@/lib/types';
 
@@ -185,7 +185,7 @@ export async function POST(request: Request) {
     }
 
     try {
-        const body = await request.json() as {
+        const parsedBody = await parseJsonBody<{
             action?: string;
             id?: string;
             driverRef?: string;
@@ -193,7 +193,11 @@ export async function POST(request: Request) {
             email?: string;
             password?: string;
             active?: boolean;
-        };
+        }>(request);
+        if ('error' in parsedBody) {
+            return parsedBody.error;
+        }
+        const body = parsedBody.data;
 
         const action = body.action === 'update' ? 'update' : 'create';
         const driverRef = normalizeText(body.driverRef);

@@ -99,3 +99,13 @@ export function applyPrivateNoStoreHeaders(response: NextResponse) {
 export function jsonNoStore(body: unknown, init?: ResponseInit) {
     return applyPrivateNoStoreHeaders(NextResponse.json(body, init));
 }
+
+export async function parseJsonBody<T>(request: Request) {
+    try {
+        return { data: await request.json() as T } as const;
+    } catch {
+        return {
+            error: jsonNoStore({ error: 'Payload JSON tidak valid' }, { status: 400 }),
+        } as const;
+    }
+}

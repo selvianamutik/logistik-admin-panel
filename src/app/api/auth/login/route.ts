@@ -6,7 +6,7 @@ import { getSanityClient, sanityGetById, sanityUpdate } from '@/lib/sanity';
 import { verifyPassword, createSession, hashPassword, isPasswordHashMigrated, setSessionCookie } from '@/lib/auth';
 import { writeAuditLog } from '@/lib/api/data-helpers';
 import { clearFailedAttempts, getRequestIp, recordLoginAttempt } from '@/lib/api/rate-limit';
-import { ensureSameOriginRequest, jsonNoStore } from '@/lib/api/request-security';
+import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
 import { DRIVER_SESSION_COOKIE, SESSION_COOKIE } from '@/lib/session';
 import type { Driver, User } from '@/lib/types';
 
@@ -36,11 +36,15 @@ export async function POST(request: Request) {
         const originError = ensureSameOriginRequest(request);
         if (originError) return originError;
 
-        const body = await request.json() as {
+        const parsedBody = await parseJsonBody<{
             email?: unknown;
             password?: unknown;
             scope?: unknown;
-        };
+        }>(request);
+        if ('error' in parsedBody) {
+            return parsedBody.error;
+        }
+        const body = parsedBody.data;
 
         const { email, password, scope } = body;
         const loginScope = scope === 'DRIVER' ? 'DRIVER' : 'ADMIN';

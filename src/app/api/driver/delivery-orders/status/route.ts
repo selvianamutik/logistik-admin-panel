@@ -4,7 +4,7 @@ import {
     handleDeliveryOrderDriverStatusRequest,
     handleDeliveryOrderStatusUpdate,
 } from '@/lib/api/order-workflows';
-import { ensureSameOriginRequest, jsonNoStore } from '@/lib/api/request-security';
+import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
 import { sanityCreate, sanityGetById } from '@/lib/sanity';
 import type { DeliveryOrder } from '@/lib/types';
 
@@ -43,11 +43,15 @@ export async function POST(request: Request) {
     }
 
     try {
-        const body = await request.json() as {
+        const parsedBody = await parseJsonBody<{
             id?: string;
             status?: string;
             note?: string;
-        };
+        }>(request);
+        if ('error' in parsedBody) {
+            return parsedBody.error;
+        }
+        const body = parsedBody.data;
 
         const id = typeof body.id === 'string' ? body.id : '';
         const status = typeof body.status === 'string' ? body.status : '';

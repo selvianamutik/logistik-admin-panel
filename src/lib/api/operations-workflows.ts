@@ -5,6 +5,7 @@ import { getSanityClient, sanityDelete, sanityGetById, sanityGetNextNumber, sani
 import type { Driver, User } from '@/lib/types';
 
 import {
+    assertIsoDateTime,
     type ApiSession,
 } from './data-helpers';
 import {
@@ -149,8 +150,13 @@ export async function handleIncidentCreate(
         typeof data.dateTime === 'string' && data.dateTime
             ? data.dateTime
             : timestamp.slice(0, 16);
-    if (Number.isNaN(new Date(incidentDateTime).getTime())) {
-        return NextResponse.json({ error: 'Waktu insiden tidak valid' }, { status: 400 });
+    try {
+        assertIsoDateTime(incidentDateTime, 'Waktu insiden');
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Waktu insiden tidak valid' },
+            { status: 400 }
+        );
     }
     const incidentDoc = {
         _id: incidentId,

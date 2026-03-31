@@ -27,6 +27,7 @@ export type BankAccountSummary = {
 
 export const CASH_ACCOUNT_SYSTEM_KEY = 'cash-on-hand';
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const ISO_DATE_TIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})?$/;
 
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -59,6 +60,12 @@ export function readLedgerBalance(value: unknown) {
 
 export function assertIsoDate(value: string, label: string) {
     if (!ISO_DATE_RE.test(value)) {
+        throw new Error(`${label} tidak valid`);
+    }
+}
+
+export function assertIsoDateTime(value: string, label: string) {
+    if (!ISO_DATE_TIME_RE.test(value)) {
         throw new Error(`${label} tidak valid`);
     }
 }

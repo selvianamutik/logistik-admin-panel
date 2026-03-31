@@ -11,7 +11,7 @@ import {
     sanitizeUserForClient,
     type ApiSession as Session,
 } from '@/lib/api/data-helpers';
-import { ensureSameOriginRequest, jsonNoStore } from '@/lib/api/request-security';
+import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
 import {
     handleBoronganPayment,
     handleDriverVoucherCreate,
@@ -789,15 +789,24 @@ export async function POST(request: Request) {
     }
 
     try {
-        const body = await request.json();
+        const parsedBody = await parseJsonBody<{
+            entity?: unknown;
+            action?: unknown;
+            data?: unknown;
+        }>(request);
+        if ('error' in parsedBody) {
+            return parsedBody.error;
+        }
+        const body = parsedBody.data;
+        const rawData = isPlainObject(body.data) ? body.data as Record<string, unknown> : {};
         const entity = typeof body.entity === 'string' ? body.entity : null;
         const action =
             typeof body.action === 'string'
                 ? body.action
-                : typeof body.data?.action === 'string'
-                    ? body.data.action
+                : typeof rawData.action === 'string'
+                    ? rawData.action
                     : undefined;
-        const data = isPlainObject(body.data) ? body.data : {};
+        const data = rawData;
 
         if (!validateEntity(entity)) {
             return jsonNoStore({ error: 'Invalid entity type' }, { status: 400 });
