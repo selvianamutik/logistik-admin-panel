@@ -24,6 +24,16 @@ type AuditLogFn = (
 
 const MANAGEABLE_USER_ROLES = ['OWNER', 'OPERASIONAL', 'FINANCE', 'ARMADA', 'DRIVER'] as const;
 
+function extractRefId(value: unknown) {
+    if (typeof value === 'string') {
+        return value;
+    }
+    if (value && typeof value === 'object' && '_ref' in value && typeof (value as { _ref?: unknown })._ref === 'string') {
+        return (value as { _ref: string })._ref;
+    }
+    return '';
+}
+
 function parseStrictInvoiceNumber(
     value: unknown,
     label: string,
@@ -294,6 +304,40 @@ export async function handleInvoiceCreate(
     const customerName = normalizeOptionalText(data.customerName);
     const masterResi = normalizeOptionalText(data.masterResi);
     const notes = normalizeOptionalText(data.notes);
+
+    const orderDoc = orderRef
+        ? await sanityGetById<{ _id: string; customerRef?: unknown; masterResi?: string }>(orderRef)
+        : null;
+    if (orderRef && !orderDoc) {
+        return NextResponse.json({ error: 'Order invoice tidak ditemukan' }, { status: 404 });
+    }
+
+    const deliveryOrderDoc = doRef
+        ? await sanityGetById<{ _id: string; orderRef?: unknown; customerRef?: unknown; doNumber?: string }>(doRef)
+        : null;
+    if (doRef && !deliveryOrderDoc) {
+        return NextResponse.json({ error: 'Surat jalan invoice tidak ditemukan' }, { status: 404 });
+    }
+
+    if (customerRef && !(await sanityGetById<{ _id: string; name?: string }>(customerRef))) {
+        return NextResponse.json({ error: 'Customer invoice tidak ditemukan' }, { status: 404 });
+    }
+
+    const orderCustomerRef = extractRefId(orderDoc?.customerRef);
+    const doOrderRef = extractRefId(deliveryOrderDoc?.orderRef);
+    const doCustomerRef = extractRefId(deliveryOrderDoc?.customerRef);
+    if (orderRef && doOrderRef && doOrderRef !== orderRef) {
+        return NextResponse.json({ error: 'Surat jalan tidak berasal dari order invoice yang dipilih' }, { status: 400 });
+    }
+    if (customerRef && orderCustomerRef && orderCustomerRef !== customerRef) {
+        return NextResponse.json({ error: 'Customer invoice tidak cocok dengan order yang dipilih' }, { status: 400 });
+    }
+    if (customerRef && doCustomerRef && doCustomerRef !== customerRef) {
+        return NextResponse.json({ error: 'Customer invoice tidak cocok dengan surat jalan yang dipilih' }, { status: 400 });
+    }
+    if (orderCustomerRef && doCustomerRef && orderCustomerRef !== doCustomerRef) {
+        return NextResponse.json({ error: 'Order dan surat jalan invoice tidak berasal dari customer yang sama' }, { status: 400 });
+    }
 
     const invoiceId = crypto.randomUUID();
     const invoiceNumber = await sanityGetNextNumber('invoice', issueDate);
