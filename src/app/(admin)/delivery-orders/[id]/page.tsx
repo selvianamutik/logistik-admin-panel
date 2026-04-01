@@ -43,7 +43,7 @@ import {
     WEIGHT_INPUT_UNIT_OPTIONS,
 } from '@/lib/measurement';
 import { generateDOPdf } from '@/lib/pdf/doTemplate';
-import { hasPermission, normalizeUserRole } from '@/lib/rbac';
+import { hasPageAccess, hasPermission, normalizeUserRole } from '@/lib/rbac';
 import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
 import type { Customer, DeliveryOrder, DeliveryOrderItem, TrackingLog, CompanyProfile, Order, Driver, DriverVoucher, TripRouteRate, Vehicle } from '@/lib/types';
 
@@ -100,6 +100,7 @@ export default function DODetailPage() {
     const canExportDeliveryOrder = user ? hasPermission(user.role, 'deliveryOrders', 'export') : false;
     const canPrintDeliveryOrder = user ? hasPermission(user.role, 'deliveryOrders', 'print') : false;
     const canViewCustomerDetails = user ? hasPermission(user.role, 'customers', 'view') : false;
+    const canOpenSourceOrderPage = user ? hasPageAccess(user.role, 'orders') : false;
     const canAssignTripResources = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL' || normalizedRole === 'ARMADA';
     const canEditShipperReference = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL' || normalizedRole === 'FINANCE';
     const canReviewDriverRequest = canManageDeliveryStatus;
@@ -787,7 +788,7 @@ export default function DODetailPage() {
                             <div className="detail-item"><div className="detail-label">Kendaraan</div><div className="detail-value">{doData.vehiclePlate || '-'}</div></div>
                         </div>
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">Master Resi</div><div className="detail-value"><Link href={`/orders/${doData.orderRef}`}>{doData.masterResi}</Link></div></div>
+                            <div className="detail-item"><div className="detail-label">Master Resi</div><div className="detail-value">{canOpenSourceOrderPage ? <Link href={`/orders/${doData.orderRef}`}>{doData.masterResi}</Link> : doData.masterResi}</div></div>
                             <div className="detail-item"><div className="detail-label">Customer</div><div className="detail-value">{doData.customerName || '-'}</div></div>
                         </div>
                         <div className="detail-row">
