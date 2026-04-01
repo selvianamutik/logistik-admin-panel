@@ -25,7 +25,7 @@ import type { TripRouteRate } from '@/lib/types';
 const CUSTOMER_DO_PREFIX_RE = /^[A-Z0-9][A-Z0-9-]{0,7}$/;
 const CUSTOMER_PRODUCT_CODE_RE = /^[A-Z0-9][A-Z0-9-]{0,19}$/;
 
-function parseStrictCustomerProductNumber(
+function parseStrictNumericInput(
     value: unknown,
     label: string,
     options?: { allowDecimal?: boolean; maxFractionDigits?: number }
@@ -111,7 +111,11 @@ export function normalizeCustomerPayload(data: Record<string, unknown>, existing
     }
 
     if (Object.prototype.hasOwnProperty.call(data, 'defaultPaymentTerm') || !existing) {
-        const defaultPaymentTerm = normalizeNumber(data.defaultPaymentTerm);
+        const defaultPaymentTerm = parseStrictNumericInput(
+            data.defaultPaymentTerm,
+            'Termin pembayaran customer tidak valid',
+            { allowDecimal: false, maxFractionDigits: 0 }
+        );
         if (!Number.isFinite(defaultPaymentTerm) || defaultPaymentTerm < 0) {
             throw new Error('Termin pembayaran customer tidak valid');
         }
@@ -181,7 +185,11 @@ export function normalizeBankAccountPayload(data: Record<string, unknown>, exist
     }
 
     if (Object.prototype.hasOwnProperty.call(data, 'initialBalance') || !existing) {
-        const initialBalance = normalizeCurrencyNumber(data.initialBalance);
+        const initialBalance = parseStrictNumericInput(
+            data.initialBalance,
+            'Saldo awal rekening / kas tidak valid',
+            { allowDecimal: false, maxFractionDigits: 0 }
+        );
         if (!Number.isFinite(initialBalance) || initialBalance < 0) {
             throw new Error('Saldo awal rekening / kas tidak valid');
         }
@@ -251,7 +259,7 @@ export async function normalizeCustomerProductPayload(data: Record<string, unkno
     const defaultQtyRaw =
         hasDefaultQtyKoli || !existing
             ? hasDefaultQtyKoli
-                ? parseStrictCustomerProductNumber(data.defaultQtyKoli ?? 1, 'Default koli barang customer tidak valid', {
+                ? parseStrictNumericInput(data.defaultQtyKoli ?? 1, 'Default koli barang customer tidak valid', {
                     allowDecimal: false,
                     maxFractionDigits: 0,
                 })
@@ -283,7 +291,7 @@ export async function normalizeCustomerProductPayload(data: Record<string, unkno
     const defaultWeightInputValue =
         hasDefaultWeightValue || !existing
             ? hasDefaultWeightValue
-                ? parseStrictCustomerProductNumber(
+                ? parseStrictNumericInput(
                     data.defaultWeightInputValue ?? data.defaultWeight ?? 0,
                     'Default berat barang customer tidak valid',
                     { maxFractionDigits: weightInputUnit === 'TON' ? 3 : 2 }
@@ -325,7 +333,7 @@ export async function normalizeCustomerProductPayload(data: Record<string, unkno
     const defaultVolumeInputValue =
         hasDefaultVolumeValue || !existing
             ? hasDefaultVolumeValue
-                ? parseStrictCustomerProductNumber(
+                ? parseStrictNumericInput(
                     data.defaultVolumeInputValue ?? data.defaultVolume ?? 0,
                     'Default volume barang customer tidak valid',
                     {
