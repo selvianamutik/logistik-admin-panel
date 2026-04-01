@@ -226,6 +226,20 @@ function parseWholeMoneyLike(value: unknown) {
     return Math.max(parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 }), 0);
 }
 
+function enforceExpensePrivacyFilter(
+    session: Session,
+    filterObj?: Record<string, unknown>
+) {
+    if (normalizeUserRole(session.role) === 'OWNER') {
+        return filterObj;
+    }
+
+    return {
+        ...(filterObj || {}),
+        privacyLevel: 'internal',
+    };
+}
+
 function applyDerivedCustomerReceiptAllocationsLocal<
     T extends {
         _id: string;
@@ -473,6 +487,14 @@ export async function GET(request: Request) {
                 return jsonNoStore({ error: 'Not found' }, { status: 404 });
             }
 
+            if (entity === 'expenses') {
+                const visibleExpense = filterExpensesByRole([item as unknown as Expense], session.role)[0];
+                if (!visibleExpense) {
+                    return jsonNoStore({ error: 'Not found' }, { status: 404 });
+                }
+                item = visibleExpense as unknown as Record<string, unknown>;
+            }
+
             if (entity === 'users') {
                 item = sanitizeUserForClient(item as unknown as User) as unknown as Record<string, unknown>;
             }
@@ -514,6 +536,10 @@ export async function GET(request: Request) {
                     { status: 400 }
                 );
             }
+        }
+
+        if (entity === 'expenses') {
+            filterObj = enforceExpensePrivacyFilter(session, filterObj);
         }
 
         if (orFiltersParam) {
