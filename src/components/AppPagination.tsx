@@ -50,10 +50,11 @@ export default function AppPagination({
                     <button
                         type="button"
                         className="pagination-btn"
+                        aria-label="Halaman sebelumnya"
                         disabled={currentPage <= 1}
                         onClick={() => onPageChange(currentPage - 1)}
                     >
-                        ‹
+                        &lt;
                     </button>
                     {pageNumbers.map(pageNumber => (
                         <button
@@ -68,10 +69,11 @@ export default function AppPagination({
                     <button
                         type="button"
                         className="pagination-btn"
+                        aria-label="Halaman berikutnya"
                         disabled={currentPage >= totalPages}
                         onClick={() => onPageChange(currentPage + 1)}
                     >
-                        ›
+                        &gt;
                     </button>
                 </div>
             )}

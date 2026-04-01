@@ -1,5 +1,5 @@
 import type { ApiSession } from '@/lib/api/data-helpers';
-import { getBusinessDateValue } from '@/lib/business-date';
+import { getBusinessCalendarDateParts, getBusinessDateValue } from '@/lib/business-date';
 import { filterExpensesByRole, hasPageAccess, hasPermission } from '@/lib/rbac';
 import {
     getSanityClient,
@@ -1244,15 +1244,23 @@ export async function getBankAccountsSummary() {
 export async function getAuditLogsSummary() {
     const client = getSanityClient();
     const today = getBusinessDateValue();
-    const [totalLogs, todayLogs, loginLogs, mutationLogs] = await Promise.all([
-        client.fetch<number>(`count(*[_type == "auditLog"])`),
-        client.fetch<number>(`count(*[_type == "auditLog" && (coalesce(timestamp, _createdAt)[0..9] == $today)])`, { today }),
-        client.fetch<number>(`count(*[_type == "auditLog" && (action == "LOGIN" || action == "LOGOUT")])`),
-        client.fetch<number>(`count(*[_type == "auditLog" && action in ["CREATE", "UPDATE", "DELETE"]])`),
-    ]);
+    const logs = await client.fetch<Array<{ timestamp?: string; _createdAt?: string; action?: string }>>(
+        `*[_type == "auditLog"]{
+            timestamp,
+            _createdAt,
+            action
+        }`
+    );
+
+    const todayLogs = logs.filter(log => {
+        const businessDate = getBusinessCalendarDateParts(log.timestamp || log._createdAt || '');
+        return businessDate ? `${businessDate.year}-${businessDate.month}-${businessDate.day}` === today : false;
+    }).length;
+    const loginLogs = logs.filter(log => log.action === 'LOGIN' || log.action === 'LOGOUT').length;
+    const mutationLogs = logs.filter(log => log.action === 'CREATE' || log.action === 'UPDATE' || log.action === 'DELETE').length;
 
     return {
-        totalLogs,
+        totalLogs: logs.length,
         todayLogs,
         loginLogs,
         mutationLogs,
