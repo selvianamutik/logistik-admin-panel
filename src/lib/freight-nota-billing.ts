@@ -19,8 +19,33 @@ export const FREIGHT_NOTA_BILLING_MODE_OPTIONS: Array<{
     },
 ];
 
+export function isFreightNotaBillingMode(value: unknown): value is FreightNotaBillingMode {
+    return value === 'PER_KG' || value === 'PER_TON';
+}
+
 export function normalizeFreightNotaBillingMode(value: unknown): FreightNotaBillingMode {
     return value === 'PER_TON' ? 'PER_TON' : 'PER_KG';
+}
+
+export function resolveFreightNotaBillingModeInput(
+    value: unknown,
+    label: string,
+    options?: { defaultMode?: FreightNotaBillingMode; allowEmpty?: boolean }
+): FreightNotaBillingMode {
+    const normalized =
+        typeof value === 'string'
+            ? value.trim().toUpperCase()
+            : '';
+    if (!normalized) {
+        if (options?.allowEmpty) {
+            return options?.defaultMode || 'PER_KG';
+        }
+        throw new Error(`${label} tidak valid`);
+    }
+    if (!isFreightNotaBillingMode(normalized)) {
+        throw new Error(`${label} tidak valid`);
+    }
+    return normalized;
 }
 
 export function getFreightNotaBillingModeLabel(mode: FreightNotaBillingMode) {

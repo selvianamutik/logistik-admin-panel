@@ -2,7 +2,11 @@ import { NextResponse } from 'next/server';
 
 import { addDaysToDateValue, getBusinessDateValue } from '@/lib/business-date';
 import { resolveCompanyLogoUrl } from '@/lib/branding';
-import { calculateFreightNotaRowAmount, normalizeFreightNotaBillingMode } from '@/lib/freight-nota-billing';
+import {
+    calculateFreightNotaRowAmount,
+    normalizeFreightNotaBillingMode,
+    resolveFreightNotaBillingModeInput,
+} from '@/lib/freight-nota-billing';
 import { getSanityClient, sanityCreate, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
 import { buildFreightNotaDisplayNumberFromParts } from '@/lib/nota-numbering';
 import type { FreightNotaInstructionAccount, InvoiceAdjustmentKind, Payment, PaymentMethod } from '@/lib/types';
@@ -1135,7 +1139,10 @@ export async function handleFreightNotaCreate(
     data: Record<string, unknown>,
     addAuditLog: AuditLogFn
 ) {
-    let billingMode = normalizeFreightNotaBillingMode(data.billingMode);
+    let billingMode = resolveFreightNotaBillingModeInput(data.billingMode, 'Basis billing nota', {
+        defaultMode: 'PER_KG',
+        allowEmpty: !Object.prototype.hasOwnProperty.call(data, 'billingMode'),
+    });
     let resolvedCustomerRef = normalizeOptionalText(data.customerRef);
     const customerName = normalizeText(data.customerName);
 
