@@ -375,14 +375,22 @@ export default function BankAccountsPage() {
     }
     try {
       const printableAccounts = await fetchAllAccounts();
+      const printableTotalBalance = printableAccounts.reduce(
+        (sum, account) => sum + normalizeBankAccountAmount(account.currentBalance),
+        0,
+      );
+      const printableTotalInitial = printableAccounts.reduce(
+        (sum, account) => sum + normalizeBankAccountAmount(account.initialBalance),
+        0,
+      );
       openBrandedPrint({
         title: "Laporan Rekening dan Kas",
         company,
         targetWindow: printWindow,
         bodyHtml: buildBankAccountPrintHtml({
           accounts: printableAccounts,
-          totalBalance,
-          totalInitial,
+          totalBalance: printableTotalBalance,
+          totalInitial: printableTotalInitial,
         }),
       });
     } catch (error) {

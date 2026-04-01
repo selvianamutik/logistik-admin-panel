@@ -8,6 +8,7 @@ import SortableTableHeader, { type SortDirection } from '@/components/SortableTa
 import CurrencyInput from '@/components/CurrencyInput';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
+import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import { exportExpenses } from '@/lib/export';
 import { openBrandedPrint, openPrintWindow, fetchCompanyProfile } from '@/lib/print';
@@ -225,6 +226,10 @@ export default function ExpensesPage() {
                         try {
                             const company = await fetchCompanyProfile().catch(() => null);
                             const printableExpenses = await fetchAllMatchingExpenses();
+                            const printableGrandTotal = printableExpenses.reduce(
+                                (sum, expense) => sum + Math.max(parseFormattedNumberish(expense.amount ?? 0, { maxFractionDigits: 0 }), 0),
+                                0,
+                            );
                             const describeExpense = (expense: Expense) => {
                                 const vehicleLabel =
                                     expense.relatedVehiclePlate ||
@@ -247,7 +252,7 @@ export default function ExpensesPage() {
                                 title: 'Daftar Pengeluaran', company, targetWindow: printWindow, bodyHtml: `
                                 <table><thead><tr><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th class="r">Jumlah</th></tr></thead>
                                 <tbody>${printableExpenses.map(expense => `<tr><td>${formatDate(expense.date)}</td><td class="b">${expense.categoryName || '-'}</td><td>${describeExpense(expense)}</td><td class="r b">${formatCurrency(expense.amount)}</td></tr>`).join('')}
-                                <tr style="border-top:2px solid #1e293b"><td colspan="3" class="r b">TOTAL</td><td class="r b">${formatCurrency(grandTotal)}</td></tr></tbody></table>`
+                                <tr style="border-top:2px solid #1e293b"><td colspan="3" class="r b">TOTAL</td><td class="r b">${formatCurrency(printableGrandTotal)}</td></tr></tbody></table>`
                             });
                         } catch (error) {
                             try {
