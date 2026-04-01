@@ -8,6 +8,7 @@ import type { CompanyProfile } from '@/lib/types';
 
 import {
     assertIsoDate,
+    computeLedgerDebitBalance,
     ensureCashAccount,
     extractRefId,
     getLedgerAccount,
@@ -657,6 +658,15 @@ export async function handleBoronganPayment(
         if (bankAccount && !bankAccount._rev) {
             return NextResponse.json({ error: 'Revisi rekening tidak tersedia' }, { status: 409 });
         }
+        if (bankAccount) {
+            const { startingBalance, nextBalance } = computeLedgerDebitBalance(bankAccount.currentBalance, derivedTotalAmount);
+            if (nextBalance < 0) {
+                return NextResponse.json(
+                    { error: `Saldo ${bankAccount.bankName} tidak cukup untuk pembayaran borongan. Saldo tersedia ${startingBalance}` },
+                    { status: 409 }
+                );
+            }
+        }
 
         const bankAccountRef = bankAccount?._id;
         const transaction = getSanityClient()
@@ -693,7 +703,7 @@ export async function handleBoronganPayment(
             });
 
         if (bankAccount && bankAccountRef) {
-            const newBalance = readLedgerBalance(bankAccount.currentBalance) - derivedTotalAmount;
+            const { nextBalance: newBalance } = computeLedgerDebitBalance(bankAccount.currentBalance, derivedTotalAmount);
             transaction
                 .create({
                     _id: bankTransactionId,
@@ -1005,7 +1015,13 @@ export async function handleDriverVoucherCreate(
             return NextResponse.json({ error: 'Revisi rekening sumber tidak tersedia' }, { status: 409 });
         }
 
-        const newBalance = readLedgerBalance(issueBank.currentBalance) - cashGiven;
+        const { startingBalance: issueStartingBalance, nextBalance: newBalance } = computeLedgerDebitBalance(issueBank.currentBalance, cashGiven);
+        if (newBalance < 0) {
+            return NextResponse.json(
+                { error: `Saldo ${issueBank.bankName} tidak cukup untuk pencairan bon. Saldo tersedia ${issueStartingBalance}` },
+                { status: 409 }
+            );
+        }
         const voucherDoc = {
             _id: voucherId,
             _type: 'driverVoucher',
@@ -1160,7 +1176,13 @@ export async function handleDriverVoucherTopUp(
         );
         const transactionId = crypto.randomUUID();
         const disbursementId = crypto.randomUUID();
-        const nextBankBalance = readLedgerBalance(bank.currentBalance) - amount;
+        const { startingBalance: bankStartingBalance, nextBalance: nextBankBalance } = computeLedgerDebitBalance(bank.currentBalance, amount);
+        if (nextBankBalance < 0) {
+            return NextResponse.json(
+                { error: `Saldo ${bank.bankName} tidak cukup untuk tambahan bon. Saldo tersedia ${bankStartingBalance}` },
+                { status: 409 }
+            );
+        }
 
         try {
             await getSanityClient()
@@ -1720,7 +1742,14 @@ export async function handleDriverVoucherSettlement(
             const nextBankBalance =
                 balance > 0
                     ? readLedgerBalance(settlementBank.currentBalance) + adjustmentAmount
-                    : readLedgerBalance(settlementBank.currentBalance) - adjustmentAmount;
+                    : computeLedgerDebitBalance(settlementBank.currentBalance, adjustmentAmount).nextBalance;
+            if (balance < 0 && nextBankBalance < 0) {
+                const { startingBalance } = computeLedgerDebitBalance(settlementBank.currentBalance, adjustmentAmount);
+                return NextResponse.json(
+                    { error: `Saldo ${settlementBank.bankName} tidak cukup untuk settlement bon. Saldo tersedia ${startingBalance}` },
+                    { status: 409 }
+                );
+            }
             transaction
                 .create({
                     _id: crypto.randomUUID(),
@@ -1851,7 +1880,13 @@ export async function handleDriverVoucherIssueRepair(
         }
 
         const initialAmount = getDriverVoucherInitialCash(voucher);
-        const newBalance = readLedgerBalance(bank.currentBalance) - initialAmount;
+        const { startingBalance: repairStartingBalance, nextBalance: newBalance } = computeLedgerDebitBalance(bank.currentBalance, initialAmount);
+        if (newBalance < 0) {
+            return NextResponse.json(
+                { error: `Saldo ${bank.bankName} tidak cukup untuk rekonsiliasi pencairan bon. Saldo tersedia ${repairStartingBalance}` },
+                { status: 409 }
+            );
+        }
         const repairTransactionId = crypto.randomUUID();
         try {
             const transaction = getSanityClient()

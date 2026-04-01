@@ -65,6 +65,14 @@ export function readLedgerBalance(value: unknown) {
     return Math.max(normalizeCurrencyNumber(value ?? 0, { maxFractionDigits: 0 }), 0);
 }
 
+export function computeLedgerDebitBalance(currentBalance: unknown, amount: number) {
+    const startingBalance = readLedgerBalance(currentBalance);
+    return {
+        startingBalance,
+        nextBalance: startingBalance - amount,
+    };
+}
+
 export function assertIsoDate(value: string, label: string) {
     if (!ISO_DATE_RE.test(value)) {
         throw new Error(`${label} tidak valid`);

@@ -13,6 +13,7 @@ import type { FreightNotaInstructionAccount, InvoiceAdjustmentKind, Payment, Pay
 
 import {
     assertIsoDate,
+    computeLedgerDebitBalance,
     ensureCashAccount,
     extractRefId,
     getLedgerAccount,
@@ -968,7 +969,13 @@ export async function handleBankTransfer(
             return NextResponse.json({ error: 'Revisi rekening tidak tersedia' }, { status: 409 });
         }
 
-        const fromBalance = readLedgerBalance(fromAcc.currentBalance) - amount;
+        const { startingBalance: fromStartingBalance, nextBalance: fromBalance } = computeLedgerDebitBalance(fromAcc.currentBalance, amount);
+        if (fromBalance < 0) {
+            return NextResponse.json(
+                { error: `Saldo ${fromAcc.bankName} tidak cukup untuk transfer. Saldo tersedia ${fromStartingBalance}` },
+                { status: 409 }
+            );
+        }
         const toBalance = readLedgerBalance(toAcc.currentBalance) + amount;
         const transaction = getSanityClient()
             .transaction()
@@ -1206,7 +1213,13 @@ export async function handleExpenseCreate(
         }
 
         const expenseId = crypto.randomUUID();
-        const newBalance = readLedgerBalance(bankAcc.currentBalance) - amount;
+        const { startingBalance, nextBalance: newBalance } = computeLedgerDebitBalance(bankAcc.currentBalance, amount);
+        if (newBalance < 0) {
+            return NextResponse.json(
+                { error: `Saldo ${bankAcc.bankName} tidak cukup untuk pengeluaran. Saldo tersedia ${startingBalance}` },
+                { status: 409 }
+            );
+        }
         const expenseDoc = {
             _id: expenseId,
             ...expenseDocBase,
