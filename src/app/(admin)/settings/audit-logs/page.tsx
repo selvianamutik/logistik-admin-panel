@@ -6,24 +6,11 @@ import AppPagination from '@/components/AppPagination';
 import { getBusinessCalendarDateParts, getBusinessDateValue } from '@/lib/business-date';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { AuditLog } from '@/lib/types';
+import { formatDateTime } from '@/lib/utils';
 import { useToast } from '../../layout';
 
 function formatAuditDateTime(dateStr: string | undefined) {
-    if (!dateStr) return '-';
-    try {
-        return `${new Intl.DateTimeFormat('id-ID', {
-            timeZone: 'Asia/Jakarta',
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: false,
-        }).format(new Date(dateStr)).replace(/\./g, ':')} WIB`;
-    } catch {
-        return dateStr;
-    }
+    return formatDateTime(dateStr);
 }
 
 export default function AuditLogsPage() {
