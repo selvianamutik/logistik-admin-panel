@@ -1059,9 +1059,12 @@ export async function handleExpenseCreate(
         return expenseDateError;
     }
 
-    const category = await sanityGetById<{ _id: string; name?: string }>(categoryRef);
+    const category = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(categoryRef);
     if (!category) {
         return NextResponse.json({ error: 'Kategori pengeluaran tidak ditemukan' }, { status: 404 });
+    }
+    if (category.active === false) {
+        return NextResponse.json({ error: 'Kategori pengeluaran tidak aktif' }, { status: 409 });
     }
 
     let relatedVehicleRef =
