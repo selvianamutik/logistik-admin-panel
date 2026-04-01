@@ -7,7 +7,7 @@ import {
 } from '@/lib/sanity';
 import { parseFormattedNumberish, type FormattedNumberParseOptions } from '@/lib/formatted-number';
 import { normalizeUserRole } from '@/lib/rbac';
-import type { CompanyProfile, User } from '@/lib/types';
+import type { CompanyProfile, PaymentMethod, User } from '@/lib/types';
 
 export type ApiSession = { _id: string; name: string; role: User['role'] };
 export type PublicUser = Omit<User, 'passwordHash'>;
@@ -26,6 +26,7 @@ export type BankAccountSummary = {
 };
 
 export const CASH_ACCOUNT_SYSTEM_KEY = 'cash-on-hand';
+export const PAYMENT_METHOD_SET = new Set<PaymentMethod>(['TRANSFER', 'CASH', 'OTHER']);
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ISO_DATE_TIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})?$/;
 
@@ -52,6 +53,12 @@ export function normalizeCurrencyNumber(value: unknown, options?: FormattedNumbe
         return normalized;
     }
     return Number.isInteger(normalized) ? normalized : Number.NaN;
+}
+
+export function normalizePaymentMethod(value: unknown) {
+    return typeof value === 'string' && PAYMENT_METHOD_SET.has(value as PaymentMethod)
+        ? value as PaymentMethod
+        : undefined;
 }
 
 export function readLedgerBalance(value: unknown) {

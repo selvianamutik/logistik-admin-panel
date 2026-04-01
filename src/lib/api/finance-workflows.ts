@@ -17,6 +17,7 @@ import {
     normalizeCurrencyNumber,
     normalizeNumber,
     normalizeOptionalText,
+    normalizePaymentMethod,
     normalizeText,
     readLedgerBalance,
     type ApiSession,
@@ -293,7 +294,10 @@ export async function handlePaymentCreate(
         return NextResponse.json({ error: 'Referensi tagihan wajib diisi' }, { status: 400 });
     }
 
-    const paymentMethod = typeof data.method === 'string' ? data.method as PaymentMethod : 'CASH';
+    const paymentMethod = normalizePaymentMethod(data.method);
+    if (!paymentMethod) {
+        return NextResponse.json({ error: 'Metode pembayaran tidak valid' }, { status: 400 });
+    }
     const selectedAccountRef =
         typeof data.bankAccountRef === 'string' && data.bankAccountRef ? data.bankAccountRef : undefined;
     if (paymentMethod === 'TRANSFER' && !selectedAccountRef) {
@@ -454,7 +458,10 @@ export async function handleCustomerReceiptCreate(
         typeof data.date === 'string' && data.date ? data.date : getBusinessDateValue();
     assertIsoDate(receiptDate, 'Tanggal penerimaan');
 
-    const paymentMethod = typeof data.method === 'string' ? data.method as PaymentMethod : 'TRANSFER';
+    const paymentMethod = normalizePaymentMethod(data.method);
+    if (!paymentMethod) {
+        return NextResponse.json({ error: 'Metode penerimaan tidak valid' }, { status: 400 });
+    }
     const selectedAccountRef =
         typeof data.bankAccountRef === 'string' && data.bankAccountRef ? data.bankAccountRef : undefined;
     if (paymentMethod === 'TRANSFER' && !selectedAccountRef) {

@@ -502,7 +502,11 @@ export async function normalizeMaintenanceCreatePayload(data: Record<string, unk
         throw new Error('Kendaraan dan tipe maintenance wajib diisi');
     }
 
-    const scheduleType = data.scheduleType === 'ODOMETER' ? 'ODOMETER' : 'DATE';
+    const rawScheduleType = normalizeText(data.scheduleType).toUpperCase();
+    if (rawScheduleType !== 'DATE' && rawScheduleType !== 'ODOMETER') {
+        throw new Error('Tipe jadwal maintenance tidak valid');
+    }
+    const scheduleType = rawScheduleType as 'DATE' | 'ODOMETER';
     const notes = typeof data.notes === 'string' && data.notes.trim() ? data.notes.trim() : undefined;
     const vehicle = await sanityGetById<{ _id: string; plateNumber?: string; status?: string }>(vehicleRef);
     if (!vehicle) {

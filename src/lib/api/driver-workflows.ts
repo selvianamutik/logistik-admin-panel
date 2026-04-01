@@ -16,6 +16,7 @@ import {
     normalizeCurrencyNumber,
     normalizeNumber,
     normalizeOptionalText,
+    normalizePaymentMethod,
     normalizeText,
     readLedgerBalance,
     type ApiSession,
@@ -473,7 +474,10 @@ export async function handleBoronganPayment(
         return NextResponse.json({ error: 'Nominal pembayaran borongan tidak valid' }, { status: 400 });
     }
 
-    const paymentMethod = typeof data.paymentMethod === 'string' ? data.paymentMethod : 'CASH';
+    const paymentMethod = normalizePaymentMethod(data.paymentMethod);
+    if (!paymentMethod) {
+        return NextResponse.json({ error: 'Metode pembayaran borongan tidak valid' }, { status: 400 });
+    }
     const selectedAccountRef =
         typeof data.bankAccountRef === 'string' && data.bankAccountRef ? data.bankAccountRef : undefined;
     if (paymentMethod === 'TRANSFER' && !selectedAccountRef) {
