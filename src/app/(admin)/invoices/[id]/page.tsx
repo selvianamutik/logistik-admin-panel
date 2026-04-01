@@ -11,7 +11,6 @@ import { fetchAdminCollectionData, fetchAdminData, fetchAllAdminCollectionData }
 import { getBusinessDateValue } from '@/lib/business-date';
 import {
     formatFreightNotaDisplayWeight,
-    getFreightNotaBillingModeLabel,
     getFreightNotaRateColumnLabel,
     getFreightNotaWeightColumnLabel,
     normalizeFreightNotaBillingMode,
@@ -453,12 +452,12 @@ export default function NotaDetailPage() {
                             <div className="detail-item"><div className="detail-label">Total Collie</div><div className="detail-value">{formatQuantity(nota.totalCollie || 0)}</div></div>
                         </div>
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">Basis Billing</div><div className="detail-value">{getFreightNotaBillingModeLabel(billingMode)}</div></div>
                             <div className="detail-item"><div className="detail-label">Total Berat Ditagihkan</div><div className="detail-value">{totalBilledWeightLabel}</div></div>
+                            <div className="detail-item"><div className="detail-label">Total Berat Canonical</div><div className="detail-value">{formatQuantity(nota.totalWeightKg || 0)} kg</div></div>
                         </div>
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">Total Berat Canonical</div><div className="detail-value">{formatQuantity(nota.totalWeightKg || 0)} kg</div></div>
                             <div className="detail-item"><div className="detail-label">Tagihan Final</div><div className="detail-value font-semibold">{formatCurrency(netAmount)}</div></div>
+                            <div className="detail-item"><div className="detail-label">{creditAmount > 0 ? 'Kelebihan Bayar' : 'Sisa Piutang'}</div><div className="detail-value font-semibold">{formatCurrency(creditAmount > 0 ? creditAmount : remaining)}</div></div>
                         </div>
                     </div>
                 </div>

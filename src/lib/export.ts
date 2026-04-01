@@ -8,7 +8,6 @@ import { resolveCompanyLogoUrl } from './branding';
 import { formatBusinessDateTime, getBusinessDateValue } from './business-date';
 import {
     formatFreightNotaDisplayWeight,
-    getFreightNotaBillingModeLabel,
     getFreightNotaRateColumnLabel,
     getFreightNotaWeightColumnLabel,
     normalizeFreightNotaBillingMode,
@@ -464,12 +463,6 @@ export async function exportInvoices(invoices: Record<string, unknown>[]) {
             { header: 'Customer', key: 'customerName', width: 28 },
             { header: 'Tanggal', key: 'issueDate', width: 18, formatter: (value) => fmtDate(String(value || '')) },
             { header: 'Jatuh Tempo', key: 'dueDate', width: 18, formatter: (value) => value ? fmtDate(String(value)) : '-' },
-            {
-                header: 'Basis Billing',
-                key: 'billingMode',
-                width: 16,
-                formatter: (value) => getFreightNotaBillingModeLabel(normalizeFreightNotaBillingMode(value)),
-            },
             { header: 'Total Collie', key: 'totalCollie', width: 14 },
             {
                 header: 'Total Berat Tagih',
@@ -482,7 +475,7 @@ export async function exportInvoices(invoices: Record<string, unknown>[]) {
                 }),
             },
             { header: 'Total Berat (Kg)', key: 'totalWeightKg', width: 16 },
-            { header: 'Tagihan Netto', key: 'netAmount', width: 18 },
+            { header: 'Tagihan Final', key: 'netAmount', width: 18 },
             { header: 'Status', key: 'status', width: 14 },
         ],
         `nota-ongkos-${getBusinessDateValue()}`,
@@ -634,7 +627,7 @@ export async function exportFreightNotaDetail(
         .map(buildInvoiceInstructionAccountText);
     const extraNote = [nota.footerNote || resolvedCompany?.invoiceSettings?.footerNote, nota.notes].filter(Boolean).join(' ');
 
-    rows.push(['', '', issuerProfile.name, '', '', `PERINCIAN ONGKOS ANGKUT NO.${displayNumber}`, '', '', '', '', 'TGL.', fmtDate(nota.issueDate)]);
+    rows.push(['', '', issuerProfile.name, '', '', `PERINCIAN ONGKOS ANGKUT NO.${displayNumber}`, '', '', '', '', 'TGL CETAK', timestampLabel()]);
     merges.push({ startRow: 1, startCol: 3, endRow: 1, endCol: 5 });
     merges.push({ startRow: 1, startCol: 6, endRow: 1, endCol: 10 });
 
@@ -719,8 +712,6 @@ export async function exportFreightNotaDetail(
     }
 
     rows.push([`NO. SISTEM : ${nota.notaNumber}`]);
-    merges.push({ startRow: rows.length, startCol: 1, endRow: rows.length, endCol: totalColumns });
-    rows.push([`BASIS BILLING : ${getFreightNotaBillingModeLabel(billingMode)}`]);
     merges.push({ startRow: rows.length, startCol: 1, endRow: rows.length, endCol: totalColumns });
 
     const workbook = new ExcelJS.Workbook();
