@@ -98,23 +98,71 @@ export function sanitizeUserForClient(user: User): PublicUser {
     };
 }
 
+function normalizeCompanyTermDays(value: unknown, fallback: number) {
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed || !/[0-9]/.test(trimmed) || /[a-z]/i.test(trimmed)) {
+            return fallback;
+        }
+    }
+
+    const normalized = normalizeNumber(value, { allowDecimal: false, maxFractionDigits: 0 });
+    if (!Number.isFinite(normalized) || normalized < 0) {
+        return fallback;
+    }
+    return Math.floor(normalized);
+}
+
+function normalizeCompanyInvoiceMode(value: unknown, fallback: 'DO' | 'ORDER' = 'DO') {
+    const normalized = normalizeOptionalText(value)?.toUpperCase();
+    return normalized === 'DO' || normalized === 'ORDER' ? normalized : fallback;
+}
+
+function normalizeCompanyDateFormat(value: unknown, fallback = 'DD/MM/YYYY') {
+    const normalized = normalizeOptionalText(value);
+    return normalized === 'DD/MM/YYYY' || normalized === 'dd/MM/yyyy' ? normalized : fallback;
+}
+
 export function sanitizeCompanyProfileForRole(
     company: CompanyProfile,
     role: User['role']
 ): CompanyProfile {
+    const normalizedDefaultTermDays = normalizeCompanyTermDays(company.invoiceSettings?.defaultTermDays, 14);
+    const normalizedDueDateDays = normalizeCompanyTermDays(company.invoiceSettings?.dueDateDays, normalizedDefaultTermDays);
+    const normalizedInvoiceMode = normalizeCompanyInvoiceMode(company.invoiceSettings?.invoiceMode, 'DO');
+    const normalizedDocumentShowContact =
+        typeof company.documentSettings?.showContact === 'boolean'
+            ? company.documentSettings.showContact
+            : true;
+    const normalizedDocumentDateFormat = normalizeCompanyDateFormat(company.documentSettings?.dateFormat);
+    const normalizedCompany: CompanyProfile = {
+        ...company,
+        invoiceSettings: {
+            ...company.invoiceSettings,
+            defaultTermDays: normalizedDefaultTermDays,
+            dueDateDays: normalizedDueDateDays,
+            invoiceMode: normalizedInvoiceMode,
+        },
+        documentSettings: {
+            ...company.documentSettings,
+            showContact: normalizedDocumentShowContact,
+            dateFormat: normalizedDocumentDateFormat,
+        },
+    };
+
     if (role === 'OWNER') {
-        return company;
+        return normalizedCompany;
     }
 
     const normalizedRole = normalizeUserRole(role);
     const canSeeInvoiceFinanceContext = normalizedRole === 'OPERASIONAL' || normalizedRole === 'FINANCE';
 
     return {
-        ...company,
-        npwp: canSeeInvoiceFinanceContext ? company.npwp : undefined,
-        bankName: canSeeInvoiceFinanceContext ? company.bankName : undefined,
-        bankAccount: canSeeInvoiceFinanceContext ? company.bankAccount : undefined,
-        bankHolder: canSeeInvoiceFinanceContext ? company.bankHolder : undefined,
+        ...normalizedCompany,
+        npwp: canSeeInvoiceFinanceContext ? normalizedCompany.npwp : undefined,
+        bankName: canSeeInvoiceFinanceContext ? normalizedCompany.bankName : undefined,
+        bankAccount: canSeeInvoiceFinanceContext ? normalizedCompany.bankAccount : undefined,
+        bankHolder: canSeeInvoiceFinanceContext ? normalizedCompany.bankHolder : undefined,
         headerStampUrl: undefined,
         signatureStampUrl: undefined,
         numberingSettings: {
@@ -130,7 +178,7 @@ export function sanitizeCompanyProfileForRole(
             notaPrefix: undefined,
             notaCounter: undefined,
             notaPeriod: undefined,
-            notaSeriesCode: canSeeInvoiceFinanceContext ? company.numberingSettings?.notaSeriesCode : undefined,
+            notaSeriesCode: canSeeInvoiceFinanceContext ? normalizedCompany.numberingSettings?.notaSeriesCode : undefined,
             receiptPrefix: undefined,
             receiptCounter: undefined,
             receiptPeriod: undefined,
@@ -145,23 +193,23 @@ export function sanitizeCompanyProfileForRole(
             incidentPeriod: undefined,
         },
         invoiceSettings: {
-            defaultTermDays: canSeeInvoiceFinanceContext ? company.invoiceSettings?.defaultTermDays ?? 14 : 0,
-            dueDateDays: canSeeInvoiceFinanceContext ? company.invoiceSettings?.dueDateDays ?? company.invoiceSettings?.defaultTermDays ?? 14 : 0,
-            footerNote: canSeeInvoiceFinanceContext ? company.invoiceSettings?.footerNote || '' : '',
-            invoiceMode: canSeeInvoiceFinanceContext ? company.invoiceSettings?.invoiceMode || 'DO' : 'DO',
+            defaultTermDays: canSeeInvoiceFinanceContext ? normalizedDefaultTermDays : 0,
+            dueDateDays: canSeeInvoiceFinanceContext ? normalizedDueDateDays : 0,
+            footerNote: canSeeInvoiceFinanceContext ? normalizedCompany.invoiceSettings?.footerNote || '' : '',
+            invoiceMode: canSeeInvoiceFinanceContext ? normalizedInvoiceMode : 'DO',
             invoiceBankAccountRefs: canSeeInvoiceFinanceContext
-                ? Array.isArray(company.invoiceSettings?.invoiceBankAccountRefs)
-                    ? company.invoiceSettings.invoiceBankAccountRefs.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+                ? Array.isArray(normalizedCompany.invoiceSettings?.invoiceBankAccountRefs)
+                    ? normalizedCompany.invoiceSettings.invoiceBankAccountRefs.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
                     : []
                 : [],
             defaultInvoiceBankAccountRef: canSeeInvoiceFinanceContext &&
-                typeof company.invoiceSettings?.defaultInvoiceBankAccountRef === 'string'
-                ? company.invoiceSettings.defaultInvoiceBankAccountRef
+                typeof normalizedCompany.invoiceSettings?.defaultInvoiceBankAccountRef === 'string'
+                ? normalizedCompany.invoiceSettings.defaultInvoiceBankAccountRef
                 : undefined,
         },
         documentSettings: {
-            showContact: company.documentSettings?.showContact ?? true,
-            dateFormat: company.documentSettings?.dateFormat || 'DD/MM/YYYY',
+            showContact: normalizedDocumentShowContact,
+            dateFormat: normalizedDocumentDateFormat,
         },
     };
 }
