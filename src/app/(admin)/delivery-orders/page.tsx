@@ -25,7 +25,7 @@ import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import type { DeliveryOrder, Service } from '@/lib/types';
 import { useApp, useToast } from '../layout';
-import { hasPermission } from '@/lib/rbac';
+import { hasPageAccess, hasPermission } from '@/lib/rbac';
 
 export default function DeliveryOrdersPage() {
     const router = useRouter();
@@ -49,6 +49,7 @@ export default function DeliveryOrdersPage() {
     const canViewServices = user ? hasPermission(user.role, 'services', 'view') : false;
     const canExportDeliveryOrders = user ? hasPermission(user.role, 'deliveryOrders', 'export') : false;
     const canPrintDeliveryOrders = user ? hasPermission(user.role, 'deliveryOrders', 'print') : false;
+    const canOpenSourceOrderPage = user ? hasPageAccess(user.role, 'orders') : false;
 
     useEffect(() => {
         setPage(1);
@@ -254,7 +255,7 @@ export default function DeliveryOrdersPage() {
                                     <tr key={d._id}>
                                         <td>{d.customerDoNumber ? <Link href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{formatShipperDeliveryOrderNumber(d)}</Link> : <span className="text-muted">-</span>}</td>
                                         <td className="font-mono text-muted"><Link href={`/delivery-orders/${d._id}`} style={{ color: 'inherit' }}>{d.doNumber}</Link></td>
-                                        <td><Link href={`/orders/${d.orderRef}`} className="text-muted">{d.masterResi}</Link></td>
+                                        <td>{canOpenSourceOrderPage ? <Link href={`/orders/${d.orderRef}`} className="text-muted">{d.masterResi}</Link> : <span className="text-muted">{d.masterResi}</span>}</td>
                                         <td>{d.customerName}</td>
                                         <td>
                                             <div>{getDeliveryOrderServiceLabel(d, services)}</div>
