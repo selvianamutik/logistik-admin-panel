@@ -13,7 +13,7 @@ import { formatDate, formatCurrency, getReceivableNetAmount } from '@/lib/utils'
 import { formatCargoSummary, VOLUME_INPUT_UNIT_OPTIONS, WEIGHT_INPUT_UNIT_OPTIONS, type VolumeInputUnit, type WeightInputUnit } from '@/lib/measurement';
 import type { Customer, CustomerPickupLocation, CustomerProduct, CustomerRecipient, Order, FreightNota } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
-import { hasPermission } from '@/lib/rbac';
+import { hasPageAccess, hasPermission } from '@/lib/rbac';
 
 type CustomerProductForm = {
     code: string;
@@ -118,6 +118,7 @@ export default function CustomerDetailPage() {
     const [productForm, setProductForm] = useState<CustomerProductForm>(DEFAULT_PRODUCT_FORM);
     const [recipientForm, setRecipientForm] = useState<CustomerRecipientForm>(DEFAULT_RECIPIENT_FORM);
     const [pickupForm, setPickupForm] = useState<CustomerPickupForm>(DEFAULT_PICKUP_FORM);
+    const canOpenCustomerOrderHistory = user ? hasPageAccess(user.role, 'orders') : false;
 
     useEffect(() => {
         const loadCustomerDetail = async () => {
@@ -128,7 +129,9 @@ export default function CustomerDetailPage() {
                     fetchAllAdminCollectionData<CustomerProduct>(`/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data customer'),
                     fetchAllAdminCollectionData<CustomerRecipient>(`/api/data?entity=customer-recipients&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data customer'),
                     fetchAllAdminCollectionData<CustomerPickupLocation>(`/api/data?entity=customer-pickups&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data customer'),
-                    fetchAllAdminCollectionData<Order>(`/api/data?entity=orders&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data customer'),
+                    canOpenCustomerOrderHistory
+                        ? fetchAllAdminCollectionData<Order>(`/api/data?entity=orders&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data customer')
+                        : Promise.resolve([] as Order[]),
                     fetchAllAdminCollectionData<FreightNota>(`/api/data?entity=freight-notas&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data customer'),
                 ]);
 
@@ -158,7 +161,7 @@ export default function CustomerDetailPage() {
         };
 
         void loadCustomerDetail();
-    }, [addToast, customerId]);
+    }, [addToast, canOpenCustomerOrderHistory, customerId]);
 
     const openNewProduct = () => {
         setEditProduct(null);
@@ -546,10 +549,15 @@ export default function CustomerDetailPage() {
                     <div className="card-header"><span className="card-header-title">Ringkasan Kerja</span></div>
                     <div className="card-body">
                         <div className="responsive-stat-grid">
-                            <div className="kpi-card"><div className="kpi-icon" style={{ background: 'var(--color-primary-light)' }}><Package size={20} /></div><div className="kpi-value">{activeOrderCount}</div><div className="kpi-label">Order Aktif</div></div>
+                            {canOpenCustomerOrderHistory && <div className="kpi-card"><div className="kpi-icon" style={{ background: 'var(--color-primary-light)' }}><Package size={20} /></div><div className="kpi-value">{activeOrderCount}</div><div className="kpi-label">Order Aktif</div></div>}
                             <div className="kpi-card"><div className="kpi-icon" style={{ background: 'var(--color-success-light)' }}><DollarSign size={20} /></div><div className="kpi-value">{activeNotaCount}</div><div className="kpi-label">Nota Belum Lunas</div></div>
                             <div className="kpi-card"><div className="kpi-icon" style={{ background: 'var(--color-warning-light)' }}><Package size={20} /></div><div className="kpi-value">{customerProducts.length}</div><div className="kpi-label">Master Barang</div></div>
                         </div>
+                        {!canOpenCustomerOrderHistory && (
+                            <div style={{ marginTop: '0.85rem', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                                Riwayat order customer hanya ditampilkan untuk role yang punya akses halaman order.
+                            </div>
+                        )}
                         <div style={{ marginTop: '0.85rem', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
                             Total nilai nota customer ini saat ini: <strong style={{ color: 'var(--color-gray-800)' }}>{formatCurrency(totalNotaNetAmount)}</strong>
                         </div>
@@ -849,50 +857,59 @@ export default function CustomerDetailPage() {
                 </div>
             </CollapsibleCard>
 
-            <CollapsibleCard title={`Order Terbaru (${orders.length})`}>
-                <div className="table-wrapper table-desktop-only">
-                    <table>
-                        <thead><tr><th>Resi</th><th>Penerima</th><th>Status</th><th>Tanggal</th></tr></thead>
-                        <tbody>
-                            {orders.length === 0 ? <tr><td colSpan={4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada order</td></tr> :
-                                orders.slice(0, 10).map(o => (
-                                    <tr key={o._id}>
-                                        <td><Link href={`/orders/${o._id}`} style={{ color: 'var(--color-primary)' }}>{o.masterResi}</Link></td>
-                                        <td>{o.receiverName}</td>
-                                        <td>{o.status}</td>
-                                        <td className="text-muted">{formatDate(o.createdAt)}</td>
-                                    </tr>
-                                ))}
-                        </tbody>
-                    </table>
-                </div>
-                <div className="mobile-record-list">
-                    {orders.length === 0 ? (
-                        <div className="mobile-record-card">
-                            <div className="mobile-record-title">Belum ada order</div>
-                            <div className="mobile-record-subtitle">Customer ini belum punya order yang tercatat.</div>
+            <CollapsibleCard title={canOpenCustomerOrderHistory ? `Order Terbaru (${orders.length})` : 'Order Terbaru'}>
+                {canOpenCustomerOrderHistory ? (
+                    <>
+                        <div className="table-wrapper table-desktop-only">
+                            <table>
+                                <thead><tr><th>Resi</th><th>Penerima</th><th>Status</th><th>Tanggal</th></tr></thead>
+                                <tbody>
+                                    {orders.length === 0 ? <tr><td colSpan={4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada order</td></tr> :
+                                        orders.slice(0, 10).map(o => (
+                                            <tr key={o._id}>
+                                                <td><Link href={`/orders/${o._id}`} style={{ color: 'var(--color-primary)' }}>{o.masterResi}</Link></td>
+                                                <td>{o.receiverName}</td>
+                                                <td>{o.status}</td>
+                                                <td className="text-muted">{formatDate(o.createdAt)}</td>
+                                            </tr>
+                                        ))}
+                                </tbody>
+                            </table>
                         </div>
-                    ) : orders.slice(0, 10).map(order => (
-                        <div key={order._id} className="mobile-record-card">
-                            <div className="mobile-record-header">
-                                <div>
-                                    <div className="mobile-record-title">{order.masterResi}</div>
-                                    <div className="mobile-record-subtitle">{order.receiverName}</div>
+                        <div className="mobile-record-list">
+                            {orders.length === 0 ? (
+                                <div className="mobile-record-card">
+                                    <div className="mobile-record-title">Belum ada order</div>
+                                    <div className="mobile-record-subtitle">Customer ini belum punya order yang tercatat.</div>
                                 </div>
-                                <span className="badge badge-info">{order.status}</span>
-                            </div>
-                            <div className="mobile-record-meta">
-                                <div className="mobile-record-kv">
-                                    <span className="mobile-record-label">Tanggal</span>
-                                    <span className="mobile-record-value">{formatDate(order.createdAt)}</span>
+                            ) : orders.slice(0, 10).map(order => (
+                                <div key={order._id} className="mobile-record-card">
+                                    <div className="mobile-record-header">
+                                        <div>
+                                            <div className="mobile-record-title">{order.masterResi}</div>
+                                            <div className="mobile-record-subtitle">{order.receiverName}</div>
+                                        </div>
+                                        <span className="badge badge-info">{order.status}</span>
+                                    </div>
+                                    <div className="mobile-record-meta">
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Tanggal</span>
+                                            <span className="mobile-record-value">{formatDate(order.createdAt)}</span>
+                                        </div>
+                                    </div>
+                                    <div className="mobile-record-actions">
+                                        <Link href={`/orders/${order._id}`} className="btn btn-secondary">Lihat Order</Link>
+                                    </div>
                                 </div>
-                            </div>
-                            <div className="mobile-record-actions">
-                                <Link href={`/orders/${order._id}`} className="btn btn-secondary">Lihat Order</Link>
-                            </div>
+                            ))}
                         </div>
-                    ))}
-                </div>
+                    </>
+                ) : (
+                    <div className="mobile-record-card">
+                        <div className="mobile-record-title">Riwayat order tidak ditampilkan</div>
+                        <div className="mobile-record-subtitle">Role Anda tidak punya akses ke halaman order, jadi detail order customer disembunyikan di sini.</div>
+                    </div>
+                )}
             </CollapsibleCard>
 
             <CollapsibleCard title={`Nota Ongkos (${notas.length})`}>
