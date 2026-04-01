@@ -1064,7 +1064,7 @@ export async function handleExpenseCreate(
         return NextResponse.json({ error: 'Kategori pengeluaran tidak ditemukan' }, { status: 404 });
     }
 
-    const relatedVehicleRef =
+    let relatedVehicleRef =
         typeof data.relatedVehicleRef === 'string' && data.relatedVehicleRef ? data.relatedVehicleRef : undefined;
     let relatedVehiclePlate: string | undefined;
     if (relatedVehicleRef) {
@@ -1078,18 +1078,38 @@ export async function handleExpenseCreate(
     const relatedIncidentRef =
         typeof data.relatedIncidentRef === 'string' && data.relatedIncidentRef ? data.relatedIncidentRef : undefined;
     if (relatedIncidentRef) {
-        const incident = await sanityGetById<{ _id: string }>(relatedIncidentRef);
+        const incident = await sanityGetById<{ _id: string; vehicleRef?: string; vehiclePlate?: string }>(relatedIncidentRef);
         if (!incident) {
             return NextResponse.json({ error: 'Insiden terkait pengeluaran tidak ditemukan' }, { status: 404 });
+        }
+        if (incident.vehicleRef) {
+            if (relatedVehicleRef && incident.vehicleRef !== relatedVehicleRef) {
+                return NextResponse.json(
+                    { error: 'Kendaraan pengeluaran tidak cocok dengan kendaraan pada insiden terkait' },
+                    { status: 409 }
+                );
+            }
+            relatedVehicleRef = incident.vehicleRef;
+            relatedVehiclePlate = incident.vehiclePlate || relatedVehiclePlate;
         }
     }
 
     const relatedMaintenanceRef =
         typeof data.relatedMaintenanceRef === 'string' && data.relatedMaintenanceRef ? data.relatedMaintenanceRef : undefined;
     if (relatedMaintenanceRef) {
-        const maintenance = await sanityGetById<{ _id: string }>(relatedMaintenanceRef);
+        const maintenance = await sanityGetById<{ _id: string; vehicleRef?: string; vehiclePlate?: string }>(relatedMaintenanceRef);
         if (!maintenance) {
             return NextResponse.json({ error: 'Maintenance terkait pengeluaran tidak ditemukan' }, { status: 404 });
+        }
+        if (maintenance.vehicleRef) {
+            if (relatedVehicleRef && maintenance.vehicleRef !== relatedVehicleRef) {
+                return NextResponse.json(
+                    { error: 'Kendaraan pengeluaran tidak cocok dengan kendaraan pada maintenance terkait' },
+                    { status: 409 }
+                );
+            }
+            relatedVehicleRef = maintenance.vehicleRef;
+            relatedVehiclePlate = maintenance.vehiclePlate || relatedVehiclePlate;
         }
     }
 
@@ -1105,9 +1125,19 @@ export async function handleExpenseCreate(
     const voucherRef =
         typeof data.voucherRef === 'string' && data.voucherRef ? data.voucherRef : undefined;
     if (voucherRef) {
-        const voucher = await sanityGetById<{ _id: string }>(voucherRef);
+        const voucher = await sanityGetById<{ _id: string; vehicleRef?: string; vehiclePlate?: string }>(voucherRef);
         if (!voucher) {
             return NextResponse.json({ error: 'Bon trip terkait pengeluaran tidak ditemukan' }, { status: 404 });
+        }
+        if (voucher.vehicleRef) {
+            if (relatedVehicleRef && voucher.vehicleRef !== relatedVehicleRef) {
+                return NextResponse.json(
+                    { error: 'Kendaraan pengeluaran tidak cocok dengan kendaraan pada bon trip terkait' },
+                    { status: 409 }
+                );
+            }
+            relatedVehicleRef = voucher.vehicleRef;
+            relatedVehiclePlate = voucher.vehiclePlate || relatedVehiclePlate;
         }
     }
 
