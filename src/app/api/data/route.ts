@@ -235,6 +235,43 @@ function parseWholeMoneyLike(value: unknown) {
     return Math.max(parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 }), 0);
 }
 
+function normalizeAuditActorRole(value: unknown) {
+    return value === 'OWNER' || value === 'OPERASIONAL' || value === 'FINANCE' || value === 'ARMADA' || value === 'DRIVER' || value === 'ADMIN'
+        ? value
+        : undefined;
+}
+
+function inferAuditActorRoleFromIdentity(actorUserRef: unknown, actorUserEmail: unknown, entityRef?: unknown) {
+    const ref = typeof actorUserRef === 'string'
+        ? actorUserRef.trim().toLowerCase()
+        : typeof entityRef === 'string'
+            ? entityRef.trim().toLowerCase()
+            : '';
+    const email = typeof actorUserEmail === 'string' ? actorUserEmail.trim().toLowerCase() : '';
+    const identity = `${ref} ${email}`;
+
+    if (identity.includes('user-owner-') || email.startsWith('owner@')) return 'OWNER';
+    if (identity.includes('user-admin-') || email.startsWith('admin@')) return 'OPERASIONAL';
+    if (identity.includes('user-finance-') || email.startsWith('finance@')) return 'FINANCE';
+    if (identity.includes('user-armada-') || email.startsWith('armada@')) return 'ARMADA';
+    if (identity.includes('user-driver-') || email.startsWith('driver.')) return 'DRIVER';
+    return undefined;
+}
+
+function inferAuditActorEmailFromRef(actorUserRef: unknown, entityRef?: unknown) {
+    const ref = typeof actorUserRef === 'string'
+        ? actorUserRef.trim().toLowerCase()
+        : typeof entityRef === 'string'
+            ? entityRef.trim().toLowerCase()
+            : '';
+
+    if (ref.includes('user-owner-')) return 'owner@company.local';
+    if (ref.includes('user-admin-')) return 'admin@company.local';
+    if (ref.includes('user-finance-')) return 'finance@company.local';
+    if (ref.includes('user-armada-')) return 'armada@company.local';
+    return undefined;
+}
+
 function enforceExpensePrivacyFilter(
     session: Session,
     filterObj?: Record<string, unknown>
@@ -1020,6 +1057,18 @@ export async function GET(request: Request) {
                     (typeof right._createdAt === 'string' && right._createdAt) ||
                     '';
                 return rightTime.localeCompare(leftTime);
+            }).map(item => {
+                const actorUserEmail =
+                    (typeof item.actorUserEmail === 'string' && item.actorUserEmail.trim())
+                    || inferAuditActorEmailFromRef(item.actorUserRef, item.entityRef);
+                const actorUserRole =
+                    normalizeAuditActorRole(item.actorUserRole)
+                    || inferAuditActorRoleFromIdentity(item.actorUserRef, actorUserEmail, item.entityRef);
+                return {
+                    ...item,
+                    actorUserEmail,
+                    actorUserRole,
+                };
             });
         }
 

@@ -32,9 +32,43 @@ const ROLE_LABELS: Record<UserRole, string> = {
     ADMIN: 'Admin',
 };
 
+function inferActorRole(log: AuditLog): UserRole | undefined {
+    const actorRef = typeof log.actorUserRef === 'string'
+        ? log.actorUserRef.trim().toLowerCase()
+        : typeof log.entityRef === 'string'
+            ? log.entityRef.trim().toLowerCase()
+            : '';
+    const actorEmail = typeof log.actorUserEmail === 'string' ? log.actorUserEmail.trim().toLowerCase() : '';
+    const identity = `${actorRef} ${actorEmail}`;
+
+    if (identity.includes('user-owner-') || actorEmail.startsWith('owner@')) return 'OWNER';
+    if (identity.includes('user-admin-') || actorEmail.startsWith('admin@')) return 'OPERASIONAL';
+    if (identity.includes('user-finance-') || actorEmail.startsWith('finance@')) return 'FINANCE';
+    if (identity.includes('user-armada-') || actorEmail.startsWith('armada@')) return 'ARMADA';
+    if (identity.includes('user-driver-') || actorEmail.startsWith('driver.')) return 'DRIVER';
+    return undefined;
+}
+
+function applyAuditLogActorFallback(log: AuditLog): AuditLog {
+    if (log.actorUserRole) {
+        return log;
+    }
+
+    const inferredRole = inferActorRole(log);
+    if (!inferredRole) {
+        return log;
+    }
+
+    return {
+        ...log,
+        actorUserRole: inferredRole,
+    };
+}
+
 function getActorRoleLabel(log: AuditLog) {
-    if (log.actorUserRole && ROLE_LABELS[log.actorUserRole]) {
-        return ROLE_LABELS[log.actorUserRole];
+    const resolvedRole = log.actorUserRole || inferActorRole(log);
+    if (resolvedRole && ROLE_LABELS[resolvedRole]) {
+        return ROLE_LABELS[resolvedRole];
     }
     return 'Role tidak tercatat';
 }
@@ -89,7 +123,7 @@ export default function AuditLogsPage() {
                     throw new Error(summaryPayload.error || 'Gagal memuat ringkasan audit log');
                 }
 
-                setLogs(listPayload.data || []);
+                setLogs(((listPayload.data || []) as AuditLog[]).map(applyAuditLogActorFallback));
                 setFilteredTotalLogs(listPayload.meta?.total || 0);
                 setTotalLogs(summaryPayload.data?.totalLogs || 0);
                 setLoginLogs(summaryPayload.data?.loginLogs || 0);

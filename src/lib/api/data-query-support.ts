@@ -30,12 +30,53 @@ import type {
     Payment,
     TireEvent,
     AuditLog,
+    UserRole,
     Vehicle,
 } from '@/lib/types';
 import { getDriverVoucherFinancialSummary, getDriverVoucherIssuedAmount, getReceivableNetAmount } from '@/lib/utils';
 
 function parseWholeMoneyLike(value: unknown) {
     return Math.max(parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 }), 0);
+}
+
+function normalizeAuditActorRole(value: unknown): UserRole | undefined {
+    return value === 'OWNER' || value === 'OPERASIONAL' || value === 'FINANCE' || value === 'ARMADA' || value === 'DRIVER' || value === 'ADMIN'
+        ? value
+        : undefined;
+}
+
+function inferAuditActorRoleFromIdentity(input: {
+    actorUserRef?: unknown;
+    actorUserEmail?: unknown;
+    entityRef?: unknown;
+}) {
+    const ref = typeof input.actorUserRef === 'string'
+        ? input.actorUserRef.trim().toLowerCase()
+        : typeof input.entityRef === 'string'
+            ? input.entityRef.trim().toLowerCase()
+            : '';
+    const email = typeof input.actorUserEmail === 'string' ? input.actorUserEmail.trim().toLowerCase() : '';
+    const identity = `${ref} ${email}`;
+
+    if (identity.includes('user-owner-') || email.startsWith('owner@')) return 'OWNER' satisfies UserRole;
+    if (identity.includes('user-admin-') || email.startsWith('admin@')) return 'OPERASIONAL' satisfies UserRole;
+    if (identity.includes('user-finance-') || email.startsWith('finance@')) return 'FINANCE' satisfies UserRole;
+    if (identity.includes('user-armada-') || email.startsWith('armada@')) return 'ARMADA' satisfies UserRole;
+    if (identity.includes('user-driver-') || email.startsWith('driver.')) return 'DRIVER' satisfies UserRole;
+    return undefined;
+}
+
+function inferAuditActorEmailFromRef(actorUserRef: unknown, entityRef?: unknown) {
+    const ref = typeof actorUserRef === 'string'
+        ? actorUserRef.trim().toLowerCase()
+        : typeof entityRef === 'string'
+            ? entityRef.trim().toLowerCase()
+            : '';
+    if (ref.includes('user-owner-')) return 'owner@company.local';
+    if (ref.includes('user-admin-')) return 'admin@company.local';
+    if (ref.includes('user-finance-')) return 'finance@company.local';
+    if (ref.includes('user-armada-')) return 'armada@company.local';
+    return undefined;
 }
 
 export type AuditLogPeriod = 'today' | 'yesterday' | 'last7days' | 'thisMonth' | 'thisYear' | 'all';
@@ -104,7 +145,12 @@ async function getFilteredAuditLogs(params: {
     period?: string | null;
 }) {
     const client = getSanityClient();
-    const rawLogs = await client.fetch<Array<AuditLog & { _createdAt?: string }>>(`*[_type == "auditLog"]`);
+    const [rawLogs, users] = await Promise.all([
+        client.fetch<Array<AuditLog & { _createdAt?: string }>>(`*[_type == "auditLog"]`),
+        client.fetch<Array<{ _id: string; name?: string; email?: string; role?: string }>>(
+            `*[_type == "user"]{ _id, name, email, role }`
+        ),
+    ]);
     const search = params.search?.trim().toLowerCase() || '';
     const searchFields = (params.searchFields ?? []).map(field => field.trim()).filter(Boolean);
     const searchableFields = searchFields.length > 0
@@ -112,8 +158,28 @@ async function getFilteredAuditLogs(params: {
         : ['changesSummary', 'actorUserName', 'actorUserRole', 'actorUserEmail', 'actorUserRef', 'entityType', 'entityRef', 'action'];
     const today = getBusinessDateValue();
     const period = normalizeAuditLogPeriod(params.period);
+    const usersById = new Map(users.map(user => [user._id, user]));
 
-    const filtered = rawLogs.filter(log => {
+    const normalizedLogs = rawLogs.map(log => {
+        const actor = log.actorUserRef ? usersById.get(log.actorUserRef) : undefined;
+        const actorEmail = log.actorUserEmail || actor?.email || inferAuditActorEmailFromRef(log.actorUserRef, log.entityRef);
+        const actorRole =
+            normalizeAuditActorRole(log.actorUserRole)
+            || normalizeAuditActorRole(actor?.role)
+            || inferAuditActorRoleFromIdentity({
+                actorUserRef: log.actorUserRef,
+                actorUserEmail: actorEmail,
+                entityRef: log.entityRef,
+            });
+        return {
+            ...log,
+            actorUserName: log.actorUserName || actor?.name,
+            actorUserEmail: actorEmail,
+            actorUserRole: actorRole,
+        };
+    });
+
+    const filtered = normalizedLogs.filter(log => {
         if (!matchesAuditLogPeriod(log, period, today)) {
             return false;
         }

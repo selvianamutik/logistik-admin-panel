@@ -1,7 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import Image from 'next/image';
 import { AlertCircle, Eye, EyeOff, Loader2, Smartphone } from 'lucide-react';
+import { DEFAULT_COMPANY_LOGO_URL } from '@/lib/branding';
 
 export default function DriverLoginPage() {
     const [email, setEmail] = useState('');
@@ -55,8 +57,33 @@ export default function DriverLoginPage() {
         <main className="login-page driver-login-page">
             <div className="login-card">
                 <div className="login-header">
-                    <div className="login-logo" style={{ display: 'grid', placeItems: 'center' }}>
-                        <Smartphone size={22} />
+                    <div className="login-logo login-logo--image" style={{ position: 'relative' }}>
+                        <Image
+                            src={DEFAULT_COMPANY_LOGO_URL}
+                            alt="Logo Gading Mas Surya"
+                            width={56}
+                            height={56}
+                            className="login-logo-image"
+                            priority
+                        />
+                        <span
+                            aria-hidden="true"
+                            style={{
+                                position: 'absolute',
+                                right: -6,
+                                bottom: -6,
+                                width: 22,
+                                height: 22,
+                                borderRadius: '999px',
+                                background: 'var(--color-primary)',
+                                color: '#fff',
+                                display: 'grid',
+                                placeItems: 'center',
+                                boxShadow: '0 0 0 2px #fff',
+                            }}
+                        >
+                            <Smartphone size={12} />
+                        </span>
                     </div>
                     <h1 className="login-title">Aplikasi Driver</h1>
                     <p className="login-subtitle">Masuk dari HP untuk update pengiriman dan kirim lokasi live</p>
