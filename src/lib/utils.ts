@@ -4,6 +4,7 @@
 
 import { format, parseISO } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
+import { formatBusinessDate } from './business-date';
 import { parseFormattedNumberish } from './formatted-number';
 
 const JAKARTA_TIME_ZONE = 'Asia/Jakarta';
@@ -12,6 +13,13 @@ const JAKARTA_TIME_ZONE = 'Asia/Jakarta';
 export function formatDate(dateStr: string | undefined, fmt: string = 'dd/MM/yyyy'): string {
     if (!dateStr) return '-';
     try {
+        if (fmt === 'dd/MM/yyyy') {
+            return formatBusinessDate(dateStr, 'id-ID', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+            });
+        }
         return format(parseISO(dateStr), fmt, { locale: localeId });
     } catch {
         return dateStr;
