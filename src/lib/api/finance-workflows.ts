@@ -1048,6 +1048,42 @@ export async function handleExpenseCreate(
         relatedVehiclePlate = vehicle.plateNumber;
     }
 
+    const relatedIncidentRef =
+        typeof data.relatedIncidentRef === 'string' && data.relatedIncidentRef ? data.relatedIncidentRef : undefined;
+    if (relatedIncidentRef) {
+        const incident = await sanityGetById<{ _id: string }>(relatedIncidentRef);
+        if (!incident) {
+            return NextResponse.json({ error: 'Insiden terkait pengeluaran tidak ditemukan' }, { status: 404 });
+        }
+    }
+
+    const relatedMaintenanceRef =
+        typeof data.relatedMaintenanceRef === 'string' && data.relatedMaintenanceRef ? data.relatedMaintenanceRef : undefined;
+    if (relatedMaintenanceRef) {
+        const maintenance = await sanityGetById<{ _id: string }>(relatedMaintenanceRef);
+        if (!maintenance) {
+            return NextResponse.json({ error: 'Maintenance terkait pengeluaran tidak ditemukan' }, { status: 404 });
+        }
+    }
+
+    const boronganRef =
+        typeof data.boronganRef === 'string' && data.boronganRef ? data.boronganRef : undefined;
+    if (boronganRef) {
+        const borongan = await sanityGetById<{ _id: string }>(boronganRef);
+        if (!borongan) {
+            return NextResponse.json({ error: 'Slip borongan terkait pengeluaran tidak ditemukan' }, { status: 404 });
+        }
+    }
+
+    const voucherRef =
+        typeof data.voucherRef === 'string' && data.voucherRef ? data.voucherRef : undefined;
+    if (voucherRef) {
+        const voucher = await sanityGetById<{ _id: string }>(voucherRef);
+        if (!voucher) {
+            return NextResponse.json({ error: 'Bon trip terkait pengeluaran tidak ditemukan' }, { status: 404 });
+        }
+    }
+
     const hasPrivacyLevel = Object.prototype.hasOwnProperty.call(data, 'privacyLevel');
     const rawPrivacyLevel = normalizeOptionalText(data.privacyLevel);
     if (hasPrivacyLevel && rawPrivacyLevel && rawPrivacyLevel !== 'ownerOnly' && rawPrivacyLevel !== 'internal') {
@@ -1077,10 +1113,10 @@ export async function handleExpenseCreate(
         privacyLevel,
         relatedVehicleRef,
         relatedVehiclePlate,
-        relatedIncidentRef: typeof data.relatedIncidentRef === 'string' ? data.relatedIncidentRef : undefined,
-        relatedMaintenanceRef: typeof data.relatedMaintenanceRef === 'string' ? data.relatedMaintenanceRef : undefined,
-        boronganRef: typeof data.boronganRef === 'string' ? data.boronganRef : undefined,
-        voucherRef: typeof data.voucherRef === 'string' ? data.voucherRef : undefined,
+        relatedIncidentRef,
+        relatedMaintenanceRef,
+        boronganRef,
+        voucherRef,
     };
     const selectedAccountRef =
         typeof data.bankAccountRef === 'string' && data.bankAccountRef ? data.bankAccountRef : undefined;
