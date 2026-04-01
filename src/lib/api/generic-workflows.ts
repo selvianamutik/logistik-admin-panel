@@ -17,7 +17,7 @@ import {
     resolveTirePlacementLabel,
     resolveTireSlotCode,
 } from '@/lib/tire-slots';
-import type { CompanyProfile, User } from '@/lib/types';
+import type { BankTransaction, CompanyProfile, User } from '@/lib/types';
 
 import {
     assertIsoDate,
@@ -32,6 +32,7 @@ import {
     type ApiSession,
     type BankAccountSummary,
 } from './data-helpers';
+import { applyDerivedBankAccountBalances } from './data-query-support';
 import {
     normalizeBankAccountPayload,
     normalizeCustomerPayload,
@@ -1230,7 +1231,16 @@ export async function handleGenericDelete(
             return NextResponse.json({ success: true });
         }
 
-        const currentBalance = readLedgerBalance(existingAccount.currentBalance);
+        const transactionRows = await getSanityClient().fetch<Array<Pick<BankTransaction, 'bankAccountRef' | 'type' | 'amount'>>>(
+            `*[_type == "bankTransaction" && bankAccountRef == $ref]{
+                bankAccountRef,
+                type,
+                amount
+            }`,
+            { ref: id }
+        );
+        const [derivedAccount] = applyDerivedBankAccountBalances([existingAccount], transactionRows);
+        const currentBalance = readLedgerBalance(derivedAccount?.currentBalance);
         if (currentBalance !== 0) {
             return NextResponse.json(
                 { error: 'Rekening dengan saldo berjalan tidak boleh dinonaktifkan. Kosongkan atau transfer dulu saldonya.' },
