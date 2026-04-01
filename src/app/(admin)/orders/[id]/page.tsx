@@ -119,9 +119,9 @@ export default function OrderDetailPage() {
 
             setOrder(orderData);
             setItems(itemData || []);
-            setDos(deliveryOrders || []);
+            setDos([...(deliveryOrders || [])].sort((a, b) => `${b.date || ''}-${b._id}`.localeCompare(`${a.date || ''}-${a._id}`)));
             setDoItems(deliveryOrderItems);
-            setNotas(orderNotas || []);
+            setNotas([...(orderNotas || [])].sort((a, b) => `${b.issueDate || ''}-${b._id}`.localeCompare(`${a.issueDate || ''}-${a._id}`)));
             setShipperReferenceFormat((customerData?.deliveryOrderPrefix || 'SJ').toUpperCase());
             setTripRouteRates((tripRateData || []).filter(rate => rate.active !== false));
             const { busyVehicleIds: nextBusyVehicleIds, busyDriverIds: nextBusyDriverIds } = buildBusyAssignmentIds(activeDeliveryOrders || []);

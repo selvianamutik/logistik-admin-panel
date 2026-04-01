@@ -1,6 +1,6 @@
 "use client";
 
-import type { InputHTMLAttributes } from "react";
+import { useEffect, useState, type InputHTMLAttributes } from "react";
 import {
   formatFormattedNumberValue,
   parseFormattedNumberInput,
@@ -31,6 +31,20 @@ export default function FormattedNumberInput({
   ...props
 }: FormattedNumberInputProps) {
   const supportsFraction = allowDecimal && maxFractionDigits > 0;
+  const formattedValue = formatFormattedNumberValue(
+    value,
+    supportsFraction,
+    maxFractionDigits,
+    zeroAsEmpty,
+  );
+  const [draftValue, setDraftValue] = useState(formattedValue);
+  const [isFocused, setIsFocused] = useState(false);
+
+  useEffect(() => {
+    if (!isFocused) {
+      setDraftValue(formattedValue);
+    }
+  }, [formattedValue, isFocused]);
 
   return (
     <input
@@ -41,13 +55,14 @@ export default function FormattedNumberInput({
       className={["form-input", "currency-input", className]
         .filter(Boolean)
         .join(" ")}
-      value={formatFormattedNumberValue(
-        value,
-        supportsFraction,
-        maxFractionDigits,
-        zeroAsEmpty,
-      )}
+      value={isFocused ? draftValue : formattedValue}
+      onFocus={(event) => {
+        setIsFocused(true);
+        setDraftValue(event.target.value || formattedValue);
+        props.onFocus?.(event);
+      }}
       onChange={(event) => {
+        setDraftValue(event.target.value);
         onValueChange(
           parseFormattedNumberInput(
             event.target.value,
@@ -55,6 +70,22 @@ export default function FormattedNumberInput({
             maxFractionDigits,
           ),
         );
+      }}
+      onBlur={(event) => {
+        setIsFocused(false);
+        setDraftValue(
+          formatFormattedNumberValue(
+            parseFormattedNumberInput(
+              event.target.value,
+              supportsFraction,
+              maxFractionDigits,
+            ),
+            supportsFraction,
+            maxFractionDigits,
+            zeroAsEmpty,
+          ),
+        );
+        props.onBlur?.(event);
       }}
     />
   );

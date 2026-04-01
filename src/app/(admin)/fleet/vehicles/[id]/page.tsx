@@ -88,12 +88,12 @@ export default function VehicleDetailPage() {
             ]);
 
             setVehicle(vehicleData);
-            setMaints(maintenanceRows || []);
-            setIncidents(incidentRows || []);
-            setDos(doRows || []);
+            setMaints([...(maintenanceRows || [])].sort((a, b) => `${b.plannedDate || ''}-${b._id}`.localeCompare(`${a.plannedDate || ''}-${a._id}`)));
+            setIncidents([...(incidentRows || [])].sort((a, b) => `${b.dateTime || ''}-${b._id}`.localeCompare(`${a.dateTime || ''}-${a._id}`)));
+            setDos([...(doRows || [])].sort((a, b) => `${b.date || ''}-${b._id}`.localeCompare(`${a.date || ''}-${a._id}`)));
             setTireEvents(tireRows || []);
             setAllTireEvents(allTireRows || []);
-            setExpenses(expenseRows || []);
+            setExpenses([...(expenseRows || [])].sort((a, b) => `${b.date || ''}-${b._id}`.localeCompare(`${a.date || ''}-${a._id}`)));
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail kendaraan');
         } finally {

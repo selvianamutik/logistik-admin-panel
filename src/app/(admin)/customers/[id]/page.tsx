@@ -139,8 +139,8 @@ export default function CustomerDetailPage() {
                 setCustomerProducts(productRows || []);
                 setCustomerRecipients(recipientRows || []);
                 setCustomerPickups(pickupRows || []);
-                setOrders(customerOrders || []);
-                setNotas(customerNotas || []);
+                setOrders([...(customerOrders || [])].sort((a, b) => `${b.createdAt || ''}-${b._id}`.localeCompare(`${a.createdAt || ''}-${a._id}`)));
+                setNotas([...(customerNotas || [])].sort((a, b) => `${b.dueDate || b.issueDate || ''}-${b._id}`.localeCompare(`${a.dueDate || a.issueDate || ''}-${a._id}`)));
                 if (cust) {
                     setForm({
                         name: cust.name,

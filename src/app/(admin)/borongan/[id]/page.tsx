@@ -73,7 +73,7 @@ export default function BoronganDetailPage() {
             ]);
 
             setBorong(boronganData);
-            setItems(boronganItems || []);
+            setItems([...(boronganItems || [])].sort((a, b) => `${b.date || ''}-${b._id}`.localeCompare(`${a.date || ''}-${a._id}`)));
             setBankAccounts((accounts || []).filter((account) => account.active !== false));
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat slip borongan');

@@ -79,8 +79,8 @@ export default function NotaDetailPage() {
             }
 
             setNota(notaData);
-            setItems(notaItems || []);
-            setPayments(paymentRows || []);
+            setItems([...(notaItems || [])].sort((a, b) => `${b.date || ''}-${b._id}`.localeCompare(`${a.date || ''}-${a._id}`)));
+            setPayments([...(paymentRows || [])].sort((a, b) => `${b.date || ''}-${b._id}`.localeCompare(`${a.date || ''}-${a._id}`)));
             setAdjustments(sortInvoiceAdjustments(adjustmentRows || []));
             setBankAccounts((accounts || []).filter(account => account.active !== false));
             setCompany(companyData);

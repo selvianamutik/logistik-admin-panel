@@ -45,7 +45,11 @@ export function createDefaultDriverVoucherTopUpForm(issueBankRef = ''): DriverVo
 }
 
 export function sortDriverVoucherDisbursements(disbursements: DriverVoucherDisbursement[]) {
-    return [...disbursements].sort((a, b) => `${a.date}-${a.kind}`.localeCompare(`${b.date}-${b.kind}`));
+    return [...disbursements].sort((a, b) => `${b.date}-${b.kind}`.localeCompare(`${a.date}-${a.kind}`));
+}
+
+export function sortDriverVoucherItems(items: DriverVoucherItem[]) {
+    return [...items].sort((a, b) => `${b.expenseDate || ''}-${b._id}`.localeCompare(`${a.expenseDate || ''}-${a._id}`));
 }
 
 export function buildDriverVoucherDetailSummary(voucher: DriverVoucher | null, items: DriverVoucherItem[]) {

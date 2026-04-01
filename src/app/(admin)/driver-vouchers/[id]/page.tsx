@@ -15,6 +15,7 @@ import {
     createDefaultDriverVoucherItemForm,
     createDefaultDriverVoucherTopUpForm,
     DRIVER_VOUCHER_EXPENSE_CATEGORIES,
+    sortDriverVoucherItems,
     sortDriverVoucherDisbursements,
 } from '@/lib/driver-voucher-detail-support';
 import { useApp, useToast } from '../../layout';
@@ -62,7 +63,7 @@ export default function DriverVoucherDetailPage() {
                 fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat detail uang jalan trip'),
             ]);
             setVoucher(voucherData || null);
-            setItems(voucherItems || []);
+            setItems(sortDriverVoucherItems(voucherItems || []));
             setDisbursements(sortDriverVoucherDisbursements(voucherDisbursements || []));
             setBankAccounts((accounts || []).filter((account) => account.active !== false));
             setIssueBankRepairRef(voucherData?.issueBankRef || '');
@@ -134,7 +135,7 @@ export default function DriverVoucherDetailPage() {
                 addToast('error', result.error || 'Gagal menambah item');
                 return;
             }
-            setItems(prev => [...prev, result.data].sort((a, b) => (a.expenseDate || '').localeCompare(b.expenseDate || '')));
+            setItems(prev => sortDriverVoucherItems([...prev, result.data]));
             if (result.voucher) {
                 setVoucher(result.voucher);
             }
