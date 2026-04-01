@@ -1,5 +1,6 @@
 export const BUSINESS_TIME_ZONE = 'Asia/Jakarta';
 const DATE_VALUE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const DATE_TIME_LOCAL_VALUE_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;
 
 type DatePartMap = {
     year: string;
@@ -11,6 +12,8 @@ type DatePartMap = {
 };
 
 export type BusinessCalendarDateParts = Pick<DatePartMap, 'year' | 'month' | 'day'>;
+
+type BusinessCalendarDateTimeParts = DatePartMap;
 
 export function parseBusinessDateValue(value: string): BusinessCalendarDateParts | null {
     const match = DATE_VALUE_RE.exec(value.trim());
@@ -25,6 +28,22 @@ export function parseBusinessDateValue(value: string): BusinessCalendarDateParts
     };
 }
 
+function parseBusinessDateTimeLocalValue(value: string): BusinessCalendarDateTimeParts | null {
+    const match = DATE_TIME_LOCAL_VALUE_RE.exec(value.trim());
+    if (!match) {
+        return null;
+    }
+
+    return {
+        year: match[1],
+        month: match[2],
+        day: match[3],
+        hour: match[4],
+        minute: match[5],
+        second: match[6] || '00',
+    };
+}
+
 export function getBusinessCalendarDateParts(
     value: Date | string = new Date(),
     timeZone: string = BUSINESS_TIME_ZONE,
@@ -33,6 +52,15 @@ export function getBusinessCalendarDateParts(
         const parsedDateValue = parseBusinessDateValue(value);
         if (parsedDateValue) {
             return parsedDateValue;
+        }
+
+        const parsedDateTimeLocalValue = parseBusinessDateTimeLocalValue(value);
+        if (parsedDateTimeLocalValue) {
+            return {
+                year: parsedDateTimeLocalValue.year,
+                month: parsedDateTimeLocalValue.month,
+                day: parsedDateTimeLocalValue.day,
+            };
         }
     }
 
@@ -105,6 +133,23 @@ export function formatBusinessDate(
             timeZone: 'UTC',
             ...options,
         }).format(dateOnly);
+    }
+
+    const parsedDateTimeLocalValue =
+        typeof value === 'string' ? parseBusinessDateTimeLocalValue(value) : null;
+    if (parsedDateTimeLocalValue) {
+        const dateTimeLocal = new Date(Date.UTC(
+            Number(parsedDateTimeLocalValue.year),
+            Number(parsedDateTimeLocalValue.month) - 1,
+            Number(parsedDateTimeLocalValue.day),
+            Number(parsedDateTimeLocalValue.hour),
+            Number(parsedDateTimeLocalValue.minute),
+            Number(parsedDateTimeLocalValue.second),
+        ));
+        return new Intl.DateTimeFormat(locale, {
+            timeZone: 'UTC',
+            ...options,
+        }).format(dateTimeLocal);
     }
 
     const date = value instanceof Date ? value : new Date(value);
