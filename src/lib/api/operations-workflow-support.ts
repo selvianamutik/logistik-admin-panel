@@ -47,6 +47,9 @@ export type NormalizedTireEventPayload = {
 
 const SERVICE_CODE_RE = /^[A-Z0-9][A-Z0-9-]{1,11}$/;
 const VEHICLE_STATUS_VALUES = new Set(['ACTIVE', 'IN_SERVICE', 'OUT_OF_SERVICE', 'SOLD']);
+const TIRE_HOLDER_TYPES = new Set(['INTERNAL_VEHICLE', 'EXTERNAL_VEHICLE', 'WAREHOUSE']);
+const TIRE_EVENT_STATUSES = new Set(['IN_USE', 'SPARE', 'IN_WAREHOUSE', 'LOANED_OUT', 'SCRAPPED']);
+const TIRE_TYPES = new Set(['Tubeless', 'Tube Type', 'Solid']);
 
 function hasOwnKey(value: Record<string, unknown>, key: string) {
     return Object.prototype.hasOwnProperty.call(value, key);
@@ -555,16 +558,13 @@ export async function normalizeTireEventPayload(
 ): Promise<NormalizedTireEventPayload> {
     const tireCode = normalizeText(data.tireCode).toUpperCase().replace(/\s+/g, '-');
     const holderType =
-        data.holderType === 'EXTERNAL_VEHICLE' || data.holderType === 'WAREHOUSE'
-            ? data.holderType
-            : 'INTERNAL_VEHICLE';
+        typeof data.holderType === 'string' && TIRE_HOLDER_TYPES.has(data.holderType)
+            ? data.holderType as NormalizedTireEventPayload['holderType']
+            : undefined;
     const rawStatus = normalizeText(data.status).toUpperCase();
-    const status =
-        rawStatus === 'IN_WAREHOUSE' ||
-        rawStatus === 'LOANED_OUT' ||
-        rawStatus === 'SCRAPPED'
-            ? rawStatus
-            : 'IN_USE';
+    const status = TIRE_EVENT_STATUSES.has(rawStatus)
+        ? rawStatus as NormalizedTireEventPayload['status']
+        : undefined;
     const vehicleRef = normalizeOptionalText(data.vehicleRef);
     const slotCode = normalizeOptionalText(data.slotCode) ? normalizeTireSlotCode(String(data.slotCode)) : '';
     const slotLabel = slotCode ? formatTireSlotLabel(slotCode) : '';
@@ -576,10 +576,21 @@ export async function normalizeTireEventPayload(
     const externalPartyName = normalizeOptionalText(data.externalPartyName);
     const externalPlateNumber = normalizeOptionalText(data.externalPlateNumber)?.toUpperCase();
     const tireType =
-        data.tireType === 'Tube Type' || data.tireType === 'Solid' ? data.tireType : 'Tubeless';
+        typeof data.tireType === 'string' && TIRE_TYPES.has(data.tireType)
+            ? data.tireType as NormalizedTireEventPayload['tireType']
+            : undefined;
 
     if (!tireCode || !tireBrand || !tireSize || !installDate) {
         throw new Error('Kode ban, merk, ukuran, dan tanggal pencatatan wajib diisi');
+    }
+    if (!holderType) {
+        throw new Error('Lokasi/holder ban tidak valid');
+    }
+    if (!status) {
+        throw new Error('Status ban tidak valid');
+    }
+    if (!tireType) {
+        throw new Error('Jenis ban tidak valid');
     }
 
     assertIsoDate(installDate, 'Tanggal pencatatan ban');

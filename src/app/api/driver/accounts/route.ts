@@ -199,11 +199,18 @@ export async function POST(request: Request) {
         }
         const body = parsedBody.data;
 
-        const action = body.action === 'update' ? 'update' : 'create';
+        const action =
+            body.action === 'create' || body.action === 'update'
+                ? body.action
+                : '';
         const driverRef = normalizeText(body.driverRef);
         const name = normalizeText(body.name);
         const email = normalizeText(body.email).toLowerCase();
         const password = typeof body.password === 'string' ? body.password.trim() : '';
+
+        if (!action) {
+            return jsonNoStore({ error: 'Aksi akun driver tidak valid' }, { status: 400 });
+        }
 
         if (!driverRef || !name || !email) {
             return jsonNoStore({ error: 'Nama, email, dan supir wajib diisi' }, { status: 400 });
