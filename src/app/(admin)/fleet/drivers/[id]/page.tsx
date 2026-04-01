@@ -9,7 +9,7 @@ import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { buildDriverAccountMap, isDriverAccountActive, type DriverMobileAccount } from '@/lib/fleet-asset-page-support';
 import { DRIVER_VOUCHER_STATUS_MAP } from '@/lib/driver-voucher-detail-support';
-import { hasPermission } from '@/lib/rbac';
+import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import type { DeliveryOrder, Driver, DriverVoucher } from '@/lib/types';
 import {
     DO_STATUS_MAP,
@@ -34,6 +34,10 @@ export default function DriverDetailPage() {
 
     const canViewDriverAccounts = user ? (user.role === 'OWNER' || user.role === 'ARMADA') : false;
     const canViewDriverVouchers = user ? hasPermission(user.role, 'driverVouchers', 'view') : false;
+    const canOpenCustomerPage = user ? hasPageAccess(user.role, 'customers') : false;
+    const canOpenDeliveryOrderPage = user ? hasPageAccess(user.role, 'deliveryOrders') : false;
+    const canOpenDriverVoucherPage = user ? hasPageAccess(user.role, 'driverVouchers') : false;
+    const canOpenVehiclePage = user ? hasPageAccess(user.role, 'vehicles') : false;
 
     const loadDriverDetail = useCallback(async () => {
         setLoading(true);
@@ -144,7 +148,7 @@ export default function DriverDetailPage() {
                         <div>
                             <div className="detail-row"><div className="detail-item"><div className="detail-label">Status Supir</div><div className="detail-value">{driver.active !== false ? 'Aktif' : 'Non-aktif'}</div></div><div className="detail-item"><div className="detail-label">No. SIM</div><div className="detail-value">{driver.licenseNumber || '-'}</div></div></div>
                             <div className="detail-row"><div className="detail-item"><div className="detail-label">SIM Berlaku Sampai</div><div className="detail-value">{driver.simExpiry ? formatDate(driver.simExpiry) : '-'}</div></div><div className="detail-item"><div className="detail-label">No. KTP</div><div className="detail-value">{driver.ktpNumber || '-'}</div></div></div>
-                            <div className="detail-row"><div className="detail-item"><div className="detail-label">Alamat</div><div className="detail-value">{driver.address || '-'}</div></div><div className="detail-item"><div className="detail-label">Trip Aktif</div><div className="detail-value">{activeTrip ? formatInternalDeliveryOrderNumber(activeTrip) : '-'}</div></div></div>
+                            <div className="detail-row"><div className="detail-item"><div className="detail-label">Alamat</div><div className="detail-value">{driver.address || '-'}</div></div><div className="detail-item"><div className="detail-label">Trip Aktif</div><div className="detail-value">{activeTrip ? (canOpenDeliveryOrderPage ? <Link href={`/delivery-orders/${activeTrip._id}`}>{formatInternalDeliveryOrderNumber(activeTrip)}</Link> : formatInternalDeliveryOrderNumber(activeTrip)) : '-'}</div></div></div>
                         </div>
                         <div>
                             <div style={{ padding: '0.9rem 1rem', borderRadius: '0.8rem', border: '1px solid var(--color-gray-200)', background: 'var(--color-gray-50)' }}>
@@ -205,8 +209,8 @@ export default function DriverDetailPage() {
                                             {item.customerDoNumber && <div className="text-muted text-sm font-mono">{formatShipperDeliveryOrderNumber(item)}</div>}
                                         </td>
                                         <td>{formatDate(item.date)}</td>
-                                        <td>{item.customerName || '-'}</td>
-                                        <td>{item.vehiclePlate || '-'}</td>
+                                        <td>{canOpenCustomerPage && item.customerRef ? <Link href={`/customers/${item.customerRef}`} style={{ color: 'var(--color-primary)' }}>{item.customerName || '-'}</Link> : (item.customerName || '-')}</td>
+                                        <td>{canOpenVehiclePage && item.vehicleRef ? <Link href={`/fleet/vehicles/${item.vehicleRef}`} style={{ color: 'var(--color-primary)' }}>{item.vehiclePlate || '-'}</Link> : (item.vehiclePlate || '-')}</td>
                                         <td><span className={`badge badge-${DO_STATUS_MAP[item.status]?.color || 'gray'}`}>{DO_STATUS_MAP[item.status]?.label || item.status}</span></td>
                                     </tr>
                                 ))}
@@ -286,8 +290,8 @@ export default function DriverDetailPage() {
                                                         <div className="text-muted text-sm">{item.route || '-'}</div>
                                                     </td>
                                                     <td>{formatDate(item.issuedDate)}</td>
-                                                    <td>{item.doNumber || '-'}</td>
-                                                    <td>{item.vehiclePlate || '-'}</td>
+                                                    <td>{canOpenDeliveryOrderPage && item.deliveryOrderRef ? <Link href={`/delivery-orders/${item.deliveryOrderRef}`} style={{ color: 'var(--color-primary)' }}>{item.doNumber || '-'}</Link> : (item.doNumber || '-')}</td>
+                                                    <td>{canOpenVehiclePage && item.vehicleRef ? <Link href={`/fleet/vehicles/${item.vehicleRef}`} style={{ color: 'var(--color-primary)' }}>{item.vehiclePlate || '-'}</Link> : (item.vehiclePlate || '-')}</td>
                                                     <td>{formatCurrency(totalIssuedAmount)}</td>
                                                     <td>{formatCurrency(totalSpent)}</td>
                                                     <td>{formatCurrency(driverFeeAmount)}</td>
@@ -318,7 +322,7 @@ export default function DriverDetailPage() {
                                         <div key={item._id} className="mobile-record-card">
                                             <div className="mobile-record-header">
                                                 <div>
-                                                    <div className="mobile-record-title">{item.bonNumber}</div>
+                                                    <div className="mobile-record-title">{canOpenDriverVoucherPage ? <Link href={`/driver-vouchers/${item._id}`} style={{ color: 'inherit', textDecoration: 'none' }}>{item.bonNumber}</Link> : item.bonNumber}</div>
                                                     <div className="mobile-record-subtitle">{formatDate(item.issuedDate)} | {item.doNumber || '-'}</div>
                                                 </div>
                                                 <span className={`badge ${statusConfig.cls}`}>{statusConfig.label}</span>
@@ -326,7 +330,7 @@ export default function DriverDetailPage() {
                                             <div className="mobile-record-meta">
                                                 <div className="mobile-record-kv">
                                                     <span className="mobile-record-label">Kendaraan</span>
-                                                    <span className="mobile-record-value">{item.vehiclePlate || '-'}</span>
+                                                    <span className="mobile-record-value">{canOpenVehiclePage && item.vehicleRef ? <Link href={`/fleet/vehicles/${item.vehicleRef}`} style={{ color: 'var(--color-primary)' }}>{item.vehiclePlate || '-'}</Link> : (item.vehiclePlate || '-')}</span>
                                                 </div>
                                                 <div className="mobile-record-kv">
                                                     <span className="mobile-record-label">Uang Jalan</span>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { CheckCircle, Printer, Trash2 } from 'lucide-react';
 import { useApp, useToast } from '../../layout';
@@ -8,7 +9,7 @@ import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { fetchCompanyProfile, openBrandedPrint, openPrintWindow, resolveDocumentIssuerProfile } from '@/lib/print';
-import { normalizeUserRole } from '@/lib/rbac';
+import { hasPageAccess, normalizeUserRole } from '@/lib/rbac';
 import type { BankAccount, DriverBorongan, DriverBoronganItem } from '@/lib/types';
 import { formatCurrency, formatDate, formatQuantity } from '@/lib/utils';
 import PageBackButton from '@/components/PageBackButton';
@@ -42,6 +43,8 @@ export default function BoronganDetailPage() {
     const [paying, setPaying] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const normalizedRole = user ? normalizeUserRole(user.role) : null;
+    const canOpenDeliveryOrderPage = user ? hasPageAccess(user.role, 'deliveryOrders') : false;
+    const canOpenDriverPage = user ? hasPageAccess(user.role, 'drivers') : false;
     const parseWholeMoneyLike = (value: unknown) =>
         parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 });
 
@@ -279,7 +282,7 @@ export default function BoronganDetailPage() {
                             </div>
                             <div className="detail-item">
                                 <div className="detail-label">Supir</div>
-                                <div className="detail-value font-semibold">{borong.driverName}</div>
+                                <div className="detail-value font-semibold">{canOpenDriverPage && borong.driverRef ? <Link href={`/fleet/drivers/${borong.driverRef}`}>{borong.driverName}</Link> : borong.driverName}</div>
                             </div>
                         </div>
                         <div className="detail-row">
@@ -403,7 +406,7 @@ export default function BoronganDetailPage() {
                                         <tr key={it._id}>
                                             <td className="font-mono">{it.vehiclePlate || '-'}</td>
                                             <td className="text-muted">{formatDate(it.date)}</td>
-                                            <td>{it.noSJ || '-'}</td>
+                                            <td>{canOpenDeliveryOrderPage && it.doRef ? <Link href={`/delivery-orders/${it.doRef}`} style={{ color: 'var(--color-primary)' }}>{it.noSJ || '-'}</Link> : (it.noSJ || '-')}</td>
                                             <td>{it.tujuan}</td>
                                             <td>{it.barang || '-'}</td>
                                             <td>{it.collie ? formatQuantity(it.collie) : '-'}</td>
@@ -460,7 +463,7 @@ export default function BoronganDetailPage() {
                             <tr key={idx}>
                                 <td className="bold">{it.vehiclePlate || '-'}</td>
                                 <td>{formatDate(it.date)}</td>
-                                <td>{it.noSJ || '-'}</td>
+                                <td>{canOpenDeliveryOrderPage && it.doRef ? <Link href={`/delivery-orders/${it.doRef}`} style={{ color: 'inherit', textDecoration: 'none' }}>{it.noSJ || '-'}</Link> : (it.noSJ || '-')}</td>
                                 <td>{it.tujuan}</td>
                                 <td>{it.barang || '-'}</td>
                                 <td>{it.collie ? formatQuantity(it.collie) : '-'}</td>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useApp, useToast } from '../../../layout';
 import { Car, Wrench, AlertTriangle, Truck, Edit, Plus, Disc3, Warehouse, ExternalLink, Save, History } from 'lucide-react';
@@ -24,7 +25,7 @@ import {
 import type { Vehicle, Maintenance, Incident, DeliveryOrder, TireEvent, TireHistoryLog, Expense } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
-import { hasPermission } from '@/lib/rbac';
+import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import {
     buildVehicleTireDetailState,
     createDefaultVehicleTireForm,
@@ -64,6 +65,8 @@ export default function VehicleDetailPage() {
     const canCreateIncident = user ? hasPermission(user.role, 'incidents', 'create') : false;
     const canManageTires = user ? hasPermission(user.role, 'tires', 'update') : false;
     const canViewVehicleExpenses = user ? hasPermission(user.role, 'expenses', 'view') : false;
+    const canOpenCustomerPage = user ? hasPageAccess(user.role, 'customers') : false;
+    const canOpenDeliveryOrderPage = user ? hasPageAccess(user.role, 'deliveryOrders') : false;
     const vehicleTabs = getVehicleTabs(isOwner);
 
     const loadVehicleDetail = useCallback(async () => {
@@ -393,7 +396,9 @@ export default function VehicleDetailPage() {
                                     <div style={{ marginBottom: '1rem', padding: '0.9rem 1rem', borderRadius: '0.8rem', border: '1px solid var(--color-primary-soft)', background: 'var(--color-primary-surface)' }}>
                                         <div className="text-muted text-sm">Trip Aktif Kendaraan</div>
                                         <div className="font-medium" style={{ marginTop: '0.2rem' }}>
-                                            {formatInternalDeliveryOrderNumber(activeDeliveryOrder)} - {activeDeliveryOrder.customerName}
+                                            {canOpenDeliveryOrderPage ? <Link href={`/delivery-orders/${activeDeliveryOrder._id}`}>{formatInternalDeliveryOrderNumber(activeDeliveryOrder)}</Link> : formatInternalDeliveryOrderNumber(activeDeliveryOrder)}
+                                            {' - '}
+                                            {canOpenCustomerPage && activeDeliveryOrder.customerRef ? <Link href={`/customers/${activeDeliveryOrder.customerRef}`}>{activeDeliveryOrder.customerName}</Link> : activeDeliveryOrder.customerName}
                                         </div>
                                         {activeDeliveryOrder.customerDoNumber && (
                                             <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>

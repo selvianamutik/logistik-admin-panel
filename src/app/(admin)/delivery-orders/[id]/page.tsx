@@ -119,7 +119,10 @@ export default function DODetailPage() {
     const canExportDeliveryOrder = user ? hasPermission(user.role, 'deliveryOrders', 'export') : false;
     const canPrintDeliveryOrder = user ? hasPermission(user.role, 'deliveryOrders', 'print') : false;
     const canViewCustomerDetails = user ? hasPermission(user.role, 'customers', 'view') : false;
+    const canOpenCustomerPage = user ? hasPageAccess(user.role, 'customers') : false;
     const canOpenSourceOrderPage = user ? hasPageAccess(user.role, 'orders') : false;
+    const canOpenDriverPage = user ? hasPageAccess(user.role, 'drivers') : false;
+    const canOpenVehiclePage = user ? hasPageAccess(user.role, 'vehicles') : false;
     const canViewTripCash = user ? hasPermission(user.role, 'driverVouchers', 'view') : false;
     const canCreateTripCash = user ? hasPermission(user.role, 'driverVouchers', 'create') : false;
     const canOpenTripCashPage = user ? hasPageAccess(user.role, 'driverVouchers') : false;
@@ -925,7 +928,9 @@ export default function DODetailPage() {
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                                     <div>
                                         <div className="detail-label">Bon Terkait</div>
-                                        <div className="detail-value font-mono">{linkedVoucher.bonNumber}</div>
+                                        <div className="detail-value font-mono">
+                                            {canOpenTripCashPage ? <Link href={`/driver-vouchers/${linkedVoucher._id}`}>{linkedVoucher.bonNumber}</Link> : linkedVoucher.bonNumber}
+                                        </div>
                                     </div>
                                     {linkedVoucherStatusMeta && (
                                         <span className={`badge ${linkedVoucherStatusMeta.cls}`}>{linkedVoucherStatusMeta.label}</span>
@@ -1034,14 +1039,14 @@ export default function DODetailPage() {
                         </div>
                         <div className="detail-row">
                             <div className="detail-item"><div className="detail-label">No. DO Internal</div><div className="detail-value font-mono">{doData.doNumber}</div></div>
-                            <div className="detail-item"><div className="detail-label">Kendaraan</div><div className="detail-value">{doData.vehiclePlate || '-'}</div></div>
+                            <div className="detail-item"><div className="detail-label">Kendaraan</div><div className="detail-value">{canOpenVehiclePage && doData.vehicleRef ? <Link href={`/fleet/vehicles/${doData.vehicleRef}`}>{doData.vehiclePlate || '-'}</Link> : (doData.vehiclePlate || '-')}</div></div>
                         </div>
                         <div className="detail-row">
                             <div className="detail-item"><div className="detail-label">Master Resi</div><div className="detail-value">{canOpenSourceOrderPage ? <Link href={`/orders/${doData.orderRef}`}>{doData.masterResi}</Link> : doData.masterResi}</div></div>
-                            <div className="detail-item"><div className="detail-label">Customer</div><div className="detail-value">{doData.customerName || '-'}</div></div>
+                            <div className="detail-item"><div className="detail-label">Customer</div><div className="detail-value">{canOpenCustomerPage && doData.customerRef ? <Link href={`/customers/${doData.customerRef}`}>{doData.customerName || '-'}</Link> : (doData.customerName || '-')}</div></div>
                         </div>
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">Driver</div><div className="detail-value">{doData.driverName || '-'}</div></div>
+                            <div className="detail-item"><div className="detail-label">Driver</div><div className="detail-value">{canOpenDriverPage && doData.driverRef ? <Link href={`/fleet/drivers/${doData.driverRef}`}>{doData.driverName || '-'}</Link> : (doData.driverName || '-')}</div></div>
                             <div className="detail-item"><div className="detail-label">Telepon Penerima</div><div className="detail-value">{doData.receiverPhone || '-'}</div></div>
                         </div>
                         <div className="detail-row">

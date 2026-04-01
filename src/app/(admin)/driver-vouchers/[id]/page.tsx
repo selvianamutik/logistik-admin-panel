@@ -50,6 +50,8 @@ export default function DriverVoucherDetailPage() {
     const [issueBankRepairRef, setIssueBankRepairRef] = useState('');
     const normalizedRole = user ? normalizeUserRole(user.role) : null;
     const canOpenDeliveryOrderPage = user ? hasPageAccess(user.role, 'deliveryOrders') : false;
+    const canOpenDriverPage = user ? hasPageAccess(user.role, 'drivers') : false;
+    const canOpenVehiclePage = user ? hasPageAccess(user.role, 'vehicles') : false;
     const canManageVoucherItems = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL';
     const canTopUpVoucher = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL';
     const canSettleVoucher = normalizedRole === 'OWNER' || normalizedRole === 'FINANCE';
@@ -489,9 +491,9 @@ export default function DriverVoucherDetailPage() {
             <CollapsibleCard title="Informasi Trip">
                 <div className="card-body">
                     <div className="detail-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-4)' }}>
-                        <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>SUPIR</div><div className="font-medium">{voucher.driverName || '-'}</div></div>
-                        <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>NO. DO INTERNAL</div><div>{voucher.doNumber || '-'}</div></div>
-                        <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>KENDARAAN</div><div>{voucher.vehiclePlate || '-'}</div></div>
+                        <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>SUPIR</div><div className="font-medium">{canOpenDriverPage && voucher.driverRef ? <Link href={`/fleet/drivers/${voucher.driverRef}`}>{voucher.driverName || '-'}</Link> : (voucher.driverName || '-')}</div></div>
+                        <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>NO. DO INTERNAL</div><div>{canOpenDeliveryOrderPage && voucher.deliveryOrderRef ? <Link href={`/delivery-orders/${voucher.deliveryOrderRef}`}>{voucher.doNumber || '-'}</Link> : (voucher.doNumber || '-')}</div></div>
+                        <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>KENDARAAN</div><div>{canOpenVehiclePage && voucher.vehicleRef ? <Link href={`/fleet/vehicles/${voucher.vehicleRef}`}>{voucher.vehiclePlate || '-'}</Link> : (voucher.vehiclePlate || '-')}</div></div>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>RUTE</div><div>{voucher.route || '-'}</div></div>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>UANG JALAN AWAL</div><div>{formatCurrency(initialCashGiven)}</div></div>
                         <div><div className="text-muted" style={{ fontSize: '0.72rem', marginBottom: 2 }}>TOTAL UANG DIBERIKAN</div><div>{formatCurrency(totalIssuedAmount)}</div></div>

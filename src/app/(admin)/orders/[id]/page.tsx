@@ -41,7 +41,7 @@ import {
 import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
 import type { Customer, Order, OrderItem, DeliveryOrder, DeliveryOrderItem, Driver, FreightNota, FreightNotaItem, TripRouteRate, Vehicle } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
-import { hasPermission } from '@/lib/rbac';
+import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import { useApp } from '../../layout';
 
 export default function OrderDetailPage() {
@@ -87,6 +87,8 @@ export default function OrderDetailPage() {
     const [holdLocation, setHoldLocation] = useState('');
     const [savingHold, setSavingHold] = useState(false);
     const canCreateInvoice = user ? hasPermission(user.role, 'freightNotas', 'create') : false;
+    const canOpenCustomerPage = user ? hasPageAccess(user.role, 'customers') : false;
+    const canOpenVehiclePage = user ? hasPageAccess(user.role, 'vehicles') : false;
 
     const loadOrderDetail = useCallback(async () => {
         setLoading(true);
@@ -579,7 +581,7 @@ export default function OrderDetailPage() {
                             <div className="detail-item"><div className="detail-label">Tanggal</div><div className="detail-value">{formatDate(order.createdAt)}</div></div>
                         </div>
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">Customer / Pengirim / Penagih</div><div className="detail-value">{order.customerName}</div></div>
+                            <div className="detail-item"><div className="detail-label">Customer / Pengirim / Penagih</div><div className="detail-value">{canOpenCustomerPage && order.customerRef ? <Link href={`/customers/${order.customerRef}`}>{order.customerName}</Link> : order.customerName}</div></div>
                             <div className="detail-item"><div className="detail-label">Kategori Truk / Armada</div><div className="detail-value">{order.serviceName || '-'}</div></div>
                         </div>
                         <div className="mt-2"><div className="detail-label">Alamat Pickup</div><div className="detail-value">{order.pickupAddress || '-'}</div></div>
@@ -737,7 +739,7 @@ export default function OrderDetailPage() {
                                 <tr key={d._id}>
                                     <td><Link href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{formatInternalDeliveryOrderNumber(d)}</Link>{d.customerDoNumber && <div className="text-muted text-sm font-mono">{formatShipperDeliveryOrderNumber(d)}</div>}</td>
                                     <td>{formatDate(d.date)}</td>
-                                    <td>{d.vehiclePlate || '-'}</td>
+                                    <td>{canOpenVehiclePage && d.vehicleRef ? <Link href={`/fleet/vehicles/${d.vehicleRef}`} style={{ color: 'var(--color-primary)' }}>{d.vehiclePlate || '-'}</Link> : (d.vehiclePlate || '-')}</td>
                                     <td>
                                         <div className="font-medium">
                                             {formatCargoSummary(
