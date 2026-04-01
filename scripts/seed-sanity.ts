@@ -27,6 +27,10 @@ const client = createClient({
 const OWNER_PASSWORD_HASH = '$2b$10$gmQQXBYsr6av5en3FKDsRuW/ZiOXB6hOqzD2EXmGWICdq2EADL2YW';
 const INTERNAL_PASSWORD_HASH = '$2b$10$RTJAvsAXXjPgBPdE/rXYqeQM6mn7lJG7qK8u/wML.qZZ2Bg7SB4Be';
 const DRIVER_PASSWORD_HASH = '$2b$10$O9./WCIZQXNxhcLle.E9n.eJh35t9ej64F8sx9b2wKkCn93sTLmh.';
+const OWNER_USER_NAME = 'Raka Prasetya';
+const OPERASIONAL_USER_NAME = 'Dimas Wicaksono';
+const FINANCE_USER_NAME = 'Nadia Puspita';
+const ARMADA_USER_NAME = 'Yoga Saputra';
 
 const documents: SeedDoc[] = [];
 
@@ -271,7 +275,7 @@ function buildSeedDocuments() {
         {
             _id: 'user-owner-001',
             _type: 'user',
-            name: 'Owner Utama',
+            name: OWNER_USER_NAME,
             email: 'owner@company.local',
             role: 'OWNER',
             passwordHash: OWNER_PASSWORD_HASH,
@@ -282,7 +286,7 @@ function buildSeedDocuments() {
         {
             _id: 'user-admin-001',
             _type: 'user',
-            name: 'Admin Operasional',
+            name: OPERASIONAL_USER_NAME,
             email: 'admin@company.local',
             role: 'OPERASIONAL',
             passwordHash: INTERNAL_PASSWORD_HASH,
@@ -293,7 +297,7 @@ function buildSeedDocuments() {
         {
             _id: 'user-finance-001',
             _type: 'user',
-            name: 'Finance Utama',
+            name: FINANCE_USER_NAME,
             email: 'finance@company.local',
             role: 'FINANCE',
             passwordHash: INTERNAL_PASSWORD_HASH,
@@ -304,7 +308,7 @@ function buildSeedDocuments() {
         {
             _id: 'user-armada-001',
             _type: 'user',
-            name: 'PIC Armada',
+            name: ARMADA_USER_NAME,
             email: 'armada@company.local',
             role: 'ARMADA',
             passwordHash: INTERNAL_PASSWORD_HASH,
@@ -1499,7 +1503,7 @@ function buildSeedDocuments() {
             podNote: 'Diterima oleh plant supervisor.',
             cargoFinalizedAt: '2026-03-04T08:45:00Z',
             cargoFinalizedBy: 'user-admin-001',
-            cargoFinalizedByName: 'Admin Operasional',
+            cargoFinalizedByName: OPERASIONAL_USER_NAME,
             actualDropPoints: [
                 {
                     _key: 'do-002-drop-1',
@@ -1794,7 +1798,7 @@ function buildSeedDocuments() {
             podNote: 'Barang diterima gudang distribusi tanpa selisih.',
             cargoFinalizedAt: '2026-03-06T07:45:00Z',
             cargoFinalizedBy: 'user-admin-001',
-            cargoFinalizedByName: 'Admin Operasional',
+            cargoFinalizedByName: OPERASIONAL_USER_NAME,
             actualDropPoints: [
                 {
                     _key: 'do-009-drop-1',
@@ -1911,7 +1915,7 @@ function buildSeedDocuments() {
             podNote: 'Diterima sebagian 50 koli. Sisa 50 koli menunggu slot gudang kosong.',
             cargoFinalizedAt: '2026-03-08T15:20:00Z',
             cargoFinalizedBy: 'user-admin-001',
-            cargoFinalizedByName: 'Admin Operasional',
+            cargoFinalizedByName: OPERASIONAL_USER_NAME,
             actualDropPoints: [
                 {
                     _key: 'do-011-drop-1',
@@ -1970,30 +1974,30 @@ function buildSeedDocuments() {
     );
 
     push(
-        { _id: 'tl-001', _type: 'trackingLog', refType: 'DO', refRef: 'do-001', status: 'CREATED', note: 'Surat jalan dibuat.', timestamp: '2026-03-03T00:45:00Z', userRef: 'user-admin-001', userName: 'Admin Operasional', source: 'ADMIN_PANEL' },
+        { _id: 'tl-001', _type: 'trackingLog', refType: 'DO', refRef: 'do-001', status: 'CREATED', note: 'Surat jalan dibuat.', timestamp: '2026-03-03T00:45:00Z', userRef: 'user-admin-001', userName: OPERASIONAL_USER_NAME, source: 'ADMIN_PANEL' },
         { _id: 'tl-002', _type: 'trackingLog', refType: 'DO', refRef: 'do-001', status: 'ON_DELIVERY', note: 'Armada berangkat dari gudang.', timestamp: '2026-03-03T01:20:00Z', userRef: 'user-driver-001', userName: 'Driver Agus', latitude: -7.4553, longitude: 112.7178, accuracyM: 8, speedKph: 35, source: 'DRIVER_APP' },
-        { _id: 'tl-003', _type: 'trackingLog', refType: 'DO', refRef: 'do-001', status: 'DELIVERED', note: 'POD diterima customer.', timestamp: '2026-03-03T10:30:00Z', userRef: 'user-admin-001', userName: 'Admin Operasional', source: 'ADMIN_PANEL' },
-        { _id: 'tl-004', _type: 'trackingLog', refType: 'DO', refRef: 'do-002', status: 'CREATED', note: 'DO batch pertama dibuat.', timestamp: '2026-03-04T00:30:00Z', userRef: 'user-admin-001', userName: 'Admin Operasional', source: 'ADMIN_PANEL' },
-        { _id: 'tl-005', _type: 'trackingLog', refType: 'DO', refRef: 'do-002', status: 'DELIVERED', note: 'Batch pertama diterima pabrik.', timestamp: '2026-03-04T08:45:00Z', userRef: 'user-admin-001', userName: 'Admin Operasional', source: 'ADMIN_PANEL' },
-        { _id: 'tl-006', _type: 'trackingLog', refType: 'DO', refRef: 'do-003', status: 'CREATED', note: 'DO express dibuat.', timestamp: '2026-03-14T00:40:00Z', userRef: 'user-admin-001', userName: 'Admin Operasional', source: 'ADMIN_PANEL' },
+        { _id: 'tl-003', _type: 'trackingLog', refType: 'DO', refRef: 'do-001', status: 'DELIVERED', note: 'POD diterima customer.', timestamp: '2026-03-03T10:30:00Z', userRef: 'user-admin-001', userName: OPERASIONAL_USER_NAME, source: 'ADMIN_PANEL' },
+        { _id: 'tl-004', _type: 'trackingLog', refType: 'DO', refRef: 'do-002', status: 'CREATED', note: 'DO batch pertama dibuat.', timestamp: '2026-03-04T00:30:00Z', userRef: 'user-admin-001', userName: OPERASIONAL_USER_NAME, source: 'ADMIN_PANEL' },
+        { _id: 'tl-005', _type: 'trackingLog', refType: 'DO', refRef: 'do-002', status: 'DELIVERED', note: 'Batch pertama diterima pabrik.', timestamp: '2026-03-04T08:45:00Z', userRef: 'user-admin-001', userName: OPERASIONAL_USER_NAME, source: 'ADMIN_PANEL' },
+        { _id: 'tl-006', _type: 'trackingLog', refType: 'DO', refRef: 'do-003', status: 'CREATED', note: 'DO express dibuat.', timestamp: '2026-03-14T00:40:00Z', userRef: 'user-admin-001', userName: OPERASIONAL_USER_NAME, source: 'ADMIN_PANEL' },
         { _id: 'tl-007', _type: 'trackingLog', refType: 'DO', refRef: 'do-003', status: 'HEADING_TO_PICKUP', note: 'Driver menuju lokasi pickup.', timestamp: '2026-03-14T01:00:00Z', userRef: 'user-driver-001', userName: 'Driver Agus', latitude: -7.2892, longitude: 112.7344, accuracyM: 7, speedKph: 28, source: 'DRIVER_APP' },
         { _id: 'tl-008', _type: 'trackingLog', refType: 'DO', refRef: 'do-003', status: 'ON_DELIVERY', note: 'Armada memasuki Tol Mojokerto.', timestamp: '2026-03-16T09:15:00Z', userRef: 'user-driver-001', userName: 'Driver Agus', latitude: -7.4721, longitude: 112.4412, accuracyM: 6, speedKph: 44, source: 'DRIVER_APP' },
-        { _id: 'tl-009', _type: 'trackingLog', refType: 'DO', refRef: 'do-004', status: 'CREATED', note: 'DO Pasuruan dibuat.', timestamp: '2026-03-15T00:20:00Z', userRef: 'user-admin-001', userName: 'Admin Operasional', source: 'ADMIN_PANEL' },
+        { _id: 'tl-009', _type: 'trackingLog', refType: 'DO', refRef: 'do-004', status: 'CREATED', note: 'DO Pasuruan dibuat.', timestamp: '2026-03-15T00:20:00Z', userRef: 'user-admin-001', userName: OPERASIONAL_USER_NAME, source: 'ADMIN_PANEL' },
         { _id: 'tl-010', _type: 'trackingLog', refType: 'DO', refRef: 'do-004', status: 'ON_DELIVERY', note: 'Armada berangkat menuju Pasuruan.', timestamp: '2026-03-15T02:00:00Z', userRef: 'user-driver-002', userName: 'Driver Budi', latitude: -7.5335, longitude: 112.7075, accuracyM: 7, speedKph: 38, source: 'DRIVER_APP' },
         { _id: 'tl-011', _type: 'trackingLog', refType: 'DO', refRef: 'do-004', status: 'ARRIVED', note: 'Armada sudah tiba dan antre bongkar.', timestamp: '2026-03-16T08:10:00Z', userRef: 'user-driver-002', userName: 'Driver Budi', latitude: -7.6451, longitude: 112.9077, accuracyM: 10, speedKph: 0, source: 'DRIVER_APP' },
-        { _id: 'tl-012', _type: 'trackingLog', refType: 'DO', refRef: 'do-005', status: 'CREATED', note: 'DO Jombang dibuat, armada dan supir belum ditentukan.', timestamp: '2026-03-16T06:20:00Z', userRef: 'user-admin-001', userName: 'Admin Operasional', source: 'ADMIN_PANEL' },
-        { _id: 'tl-013', _type: 'trackingLog', refType: 'DO', refRef: 'do-006', status: 'CREATED', note: 'DO Kediri dibuat.', timestamp: '2026-03-05T00:25:00Z', userRef: 'user-admin-001', userName: 'Admin Operasional', source: 'ADMIN_PANEL' },
-        { _id: 'tl-014', _type: 'trackingLog', refType: 'DO', refRef: 'do-006', status: 'DELIVERED', note: 'POD Kediri selesai.', timestamp: '2026-03-05T08:30:00Z', userRef: 'user-admin-001', userName: 'Admin Operasional', source: 'ADMIN_PANEL' },
-        { _id: 'tl-015', _type: 'trackingLog', refType: 'DO', refRef: 'do-007', status: 'CREATED', note: 'DO FTL dibuat.', timestamp: '2026-03-13T01:20:00Z', userRef: 'user-owner-001', userName: 'Owner Utama', source: 'ADMIN_PANEL' },
-        { _id: 'tl-016', _type: 'trackingLog', refType: 'DO', refRef: 'do-007', status: 'CANCELLED', note: 'DO dibatalkan oleh customer.', timestamp: '2026-03-13T02:15:00Z', userRef: 'user-owner-001', userName: 'Owner Utama', source: 'ADMIN_PANEL' },
-        { _id: 'tl-017', _type: 'trackingLog', refType: 'DO', refRef: 'do-008', status: 'CREATED', note: 'DO Kediri cepat dibuat.', timestamp: '2026-03-16T00:45:00Z', userRef: 'user-admin-001', userName: 'Admin Operasional', source: 'ADMIN_PANEL' },
+        { _id: 'tl-012', _type: 'trackingLog', refType: 'DO', refRef: 'do-005', status: 'CREATED', note: 'DO Jombang dibuat, armada dan supir belum ditentukan.', timestamp: '2026-03-16T06:20:00Z', userRef: 'user-admin-001', userName: OPERASIONAL_USER_NAME, source: 'ADMIN_PANEL' },
+        { _id: 'tl-013', _type: 'trackingLog', refType: 'DO', refRef: 'do-006', status: 'CREATED', note: 'DO Kediri dibuat.', timestamp: '2026-03-05T00:25:00Z', userRef: 'user-admin-001', userName: OPERASIONAL_USER_NAME, source: 'ADMIN_PANEL' },
+        { _id: 'tl-014', _type: 'trackingLog', refType: 'DO', refRef: 'do-006', status: 'DELIVERED', note: 'POD Kediri selesai.', timestamp: '2026-03-05T08:30:00Z', userRef: 'user-admin-001', userName: OPERASIONAL_USER_NAME, source: 'ADMIN_PANEL' },
+        { _id: 'tl-015', _type: 'trackingLog', refType: 'DO', refRef: 'do-007', status: 'CREATED', note: 'DO FTL dibuat.', timestamp: '2026-03-13T01:20:00Z', userRef: 'user-owner-001', userName: OWNER_USER_NAME, source: 'ADMIN_PANEL' },
+        { _id: 'tl-016', _type: 'trackingLog', refType: 'DO', refRef: 'do-007', status: 'CANCELLED', note: 'DO dibatalkan oleh customer.', timestamp: '2026-03-13T02:15:00Z', userRef: 'user-owner-001', userName: OWNER_USER_NAME, source: 'ADMIN_PANEL' },
+        { _id: 'tl-017', _type: 'trackingLog', refType: 'DO', refRef: 'do-008', status: 'CREATED', note: 'DO Kediri cepat dibuat.', timestamp: '2026-03-16T00:45:00Z', userRef: 'user-admin-001', userName: OPERASIONAL_USER_NAME, source: 'ADMIN_PANEL' },
         { _id: 'tl-018', _type: 'trackingLog', refType: 'DO', refRef: 'do-008', status: 'HEADING_TO_PICKUP', note: 'Driver bergerak menuju pickup Gresik.', timestamp: '2026-03-16T01:30:00Z', userRef: 'user-driver-003', userName: 'Driver Catur', latitude: -7.3982, longitude: 112.6451, accuracyM: 9, speedKph: 33, source: 'DRIVER_APP' },
-        { _id: 'tl-019', _type: 'trackingLog', refType: 'DO', refRef: 'do-009', status: 'CREATED', note: 'DO demo nota gabungan pertama dibuat.', timestamp: '2026-03-06T00:35:00Z', userRef: 'user-admin-001', userName: 'Admin Operasional', source: 'ADMIN_PANEL' },
-        { _id: 'tl-020', _type: 'trackingLog', refType: 'DO', refRef: 'do-009', status: 'DELIVERED', note: 'Trip pertama selesai dan POD lengkap.', timestamp: '2026-03-06T07:45:00Z', userRef: 'user-admin-001', userName: 'Admin Operasional', source: 'ADMIN_PANEL' },
-        { _id: 'tl-021', _type: 'trackingLog', refType: 'DO', refRef: 'do-010', status: 'CREATED', note: 'DO demo nota gabungan kedua dibuat.', timestamp: '2026-03-07T00:20:00Z', userRef: 'user-admin-001', userName: 'Admin Operasional', source: 'ADMIN_PANEL' },
-        { _id: 'tl-022', _type: 'trackingLog', refType: 'DO', refRef: 'do-010', status: 'DELIVERED', note: 'Trip kedua selesai dan siap ditagihkan bersama.', timestamp: '2026-03-07T06:35:00Z', userRef: 'user-admin-001', userName: 'Admin Operasional', source: 'ADMIN_PANEL' },
-        { _id: 'tl-023', _type: 'trackingLog', refType: 'DO', refRef: 'do-011', status: 'CREATED', note: 'DO parsial quantity dibuat untuk 50 koli pertama.', timestamp: '2026-03-08T00:40:00Z', userRef: 'user-admin-001', userName: 'Admin Operasional', source: 'ADMIN_PANEL' },
-        { _id: 'tl-024', _type: 'trackingLog', refType: 'DO', refRef: 'do-011', status: 'DELIVERED', note: '50 koli pertama diterima, sisa 50 koli ditahan di gudang transit Bekasi.', timestamp: '2026-03-08T15:20:00Z', userRef: 'user-admin-001', userName: 'Admin Operasional', source: 'ADMIN_PANEL' },
+        { _id: 'tl-019', _type: 'trackingLog', refType: 'DO', refRef: 'do-009', status: 'CREATED', note: 'DO demo nota gabungan pertama dibuat.', timestamp: '2026-03-06T00:35:00Z', userRef: 'user-admin-001', userName: OPERASIONAL_USER_NAME, source: 'ADMIN_PANEL' },
+        { _id: 'tl-020', _type: 'trackingLog', refType: 'DO', refRef: 'do-009', status: 'DELIVERED', note: 'Trip pertama selesai dan POD lengkap.', timestamp: '2026-03-06T07:45:00Z', userRef: 'user-admin-001', userName: OPERASIONAL_USER_NAME, source: 'ADMIN_PANEL' },
+        { _id: 'tl-021', _type: 'trackingLog', refType: 'DO', refRef: 'do-010', status: 'CREATED', note: 'DO demo nota gabungan kedua dibuat.', timestamp: '2026-03-07T00:20:00Z', userRef: 'user-admin-001', userName: OPERASIONAL_USER_NAME, source: 'ADMIN_PANEL' },
+        { _id: 'tl-022', _type: 'trackingLog', refType: 'DO', refRef: 'do-010', status: 'DELIVERED', note: 'Trip kedua selesai dan siap ditagihkan bersama.', timestamp: '2026-03-07T06:35:00Z', userRef: 'user-admin-001', userName: OPERASIONAL_USER_NAME, source: 'ADMIN_PANEL' },
+        { _id: 'tl-023', _type: 'trackingLog', refType: 'DO', refRef: 'do-011', status: 'CREATED', note: 'DO parsial quantity dibuat untuk 50 koli pertama.', timestamp: '2026-03-08T00:40:00Z', userRef: 'user-admin-001', userName: OPERASIONAL_USER_NAME, source: 'ADMIN_PANEL' },
+        { _id: 'tl-024', _type: 'trackingLog', refType: 'DO', refRef: 'do-011', status: 'DELIVERED', note: '50 koli pertama diterima, sisa 50 koli ditahan di gudang transit Bekasi.', timestamp: '2026-03-08T15:20:00Z', userRef: 'user-admin-001', userName: OPERASIONAL_USER_NAME, source: 'ADMIN_PANEL' },
         { _id: 'tl-025', _type: 'trackingLog', refType: 'DO', refRef: 'do-004', status: 'DELIVERED', note: 'Driver mengajukan selesai dan menunggu approval admin.', timestamp: '2026-03-16T09:45:00Z', userRef: 'user-driver-002', userName: 'Driver Budi', latitude: -7.6451, longitude: 112.9077, accuracyM: 10, speedKph: 0, source: 'DRIVER_APP' },
     );
 
@@ -2362,7 +2366,7 @@ function buildSeedDocuments() {
             status: 'APPROVED',
             note: 'Klaim 2 roll rusak saat bongkar di Kediri.',
             createdBy: 'user-admin-001',
-            createdByName: 'Admin Operasional',
+            createdByName: OPERASIONAL_USER_NAME,
         }
     );
 
@@ -2462,7 +2466,7 @@ function buildSeedDocuments() {
             status: 'SETTLED',
             notes: 'Kasbon perjalanan Surabaya - Kediri, termasuk upah supir saat settlement.',
             settledDate: '2026-03-06',
-            settledBy: 'Admin Operasional',
+            settledBy: OPERASIONAL_USER_NAME,
             settlementBankRef: 'bank-bca-001',
             settlementBankName: 'BCA',
         },
@@ -2503,7 +2507,7 @@ function buildSeedDocuments() {
             bankAccountNumber: '1234500012',
             bankTransactionRef: 'btx-004',
             createdBy: 'user-admin-001',
-            createdByName: 'Admin Operasional',
+            createdByName: OPERASIONAL_USER_NAME,
         },
         {
             _id: 'vdisb-002',
@@ -2517,7 +2521,7 @@ function buildSeedDocuments() {
             bankAccountNumber: 'CASH',
             bankTransactionRef: 'btx-009',
             createdBy: 'user-admin-001',
-            createdByName: 'Admin Operasional',
+            createdByName: OPERASIONAL_USER_NAME,
         },
         {
             _id: 'vdisb-003',
@@ -2532,7 +2536,7 @@ function buildSeedDocuments() {
             bankTransactionRef: 'btx-015',
             note: 'Tambahan uang jalan untuk parkir, konsumsi, dan kebutuhan lapangan.',
             createdBy: 'user-admin-001',
-            createdByName: 'Admin Operasional',
+            createdByName: OPERASIONAL_USER_NAME,
         },
         {
             _id: 'vitem-001',
@@ -2922,7 +2926,7 @@ function buildSeedDocuments() {
             description: 'Ban belakang kiri pecah saat menuju Mojokerto, armada berhenti di bahu jalan.',
             status: 'OPEN',
             assignedToUserRef: 'user-admin-001',
-            assignedToUserName: 'Admin Operasional',
+            assignedToUserName: OPERASIONAL_USER_NAME,
         },
         {
             _id: 'incident-002',
@@ -2942,7 +2946,7 @@ function buildSeedDocuments() {
             description: 'Indikator temperatur mesin naik saat menunggu bongkar.',
             status: 'IN_PROGRESS',
             assignedToUserRef: 'user-admin-001',
-            assignedToUserName: 'Admin Operasional',
+            assignedToUserName: OPERASIONAL_USER_NAME,
         },
         {
             _id: 'incident-003',
@@ -2962,7 +2966,7 @@ function buildSeedDocuments() {
             description: 'Spion kanan tersenggol saat antre bongkar.',
             status: 'RESOLVED',
             assignedToUserRef: 'user-owner-001',
-            assignedToUserName: 'Owner Utama',
+            assignedToUserName: OWNER_USER_NAME,
         },
         {
             _id: 'incident-004',
@@ -2980,7 +2984,7 @@ function buildSeedDocuments() {
             description: 'Unit non-operasional dicatat mengalami kebocoran radiator.',
             status: 'CLOSED',
             assignedToUserRef: 'user-owner-001',
-            assignedToUserName: 'Owner Utama',
+            assignedToUserName: OWNER_USER_NAME,
         },
         {
             _id: 'ial-001',
@@ -2989,7 +2993,7 @@ function buildSeedDocuments() {
             timestamp: '2026-03-16T09:25:00Z',
             note: 'Dispatcher menerima laporan dan meminta driver berhenti aman.',
             userRef: 'user-admin-001',
-            userName: 'Admin Operasional',
+            userName: OPERASIONAL_USER_NAME,
         },
         {
             _id: 'ial-002',
@@ -2998,7 +3002,7 @@ function buildSeedDocuments() {
             timestamp: '2026-03-16T06:55:00Z',
             note: 'Bengkel rekanan dihubungi untuk pengecekan kipas radiator.',
             userRef: 'user-admin-001',
-            userName: 'Admin Operasional',
+            userName: OPERASIONAL_USER_NAME,
         },
         {
             _id: 'ial-003',
@@ -3007,7 +3011,7 @@ function buildSeedDocuments() {
             timestamp: '2026-03-16T07:30:00Z',
             note: 'Mekanik onsite menuju lokasi bongkar Pasuruan.',
             userRef: 'user-owner-001',
-            userName: 'Owner Utama',
+            userName: OWNER_USER_NAME,
         },
         {
             _id: 'ial-004',
@@ -3016,7 +3020,7 @@ function buildSeedDocuments() {
             timestamp: '2026-03-04T07:10:00Z',
             note: 'Spion diganti dan unit dinyatakan lanjut operasi.',
             userRef: 'user-admin-001',
-            userName: 'Admin Operasional',
+            userName: OPERASIONAL_USER_NAME,
         },
         {
             _id: 'ial-005',
@@ -3025,7 +3029,7 @@ function buildSeedDocuments() {
             timestamp: '2026-03-09T05:45:00Z',
             note: 'Unit diparkirkan dan pekerjaan ditutup sambil menunggu keputusan perbaikan.',
             userRef: 'user-owner-001',
-            userName: 'Owner Utama',
+            userName: OWNER_USER_NAME,
         }
     );
 
@@ -3034,7 +3038,9 @@ function buildSeedDocuments() {
             _id: 'audit-001',
             _type: 'auditLog',
             actorUserRef: 'user-owner-001',
-            actorUserName: 'Owner Utama',
+            actorUserName: OWNER_USER_NAME,
+            actorUserEmail: 'owner@company.local',
+            actorUserRole: 'OWNER',
             action: 'LOGIN',
             entityType: 'session',
             entityRef: 'owner-session-20260316',
@@ -3045,7 +3051,9 @@ function buildSeedDocuments() {
             _id: 'audit-002',
             _type: 'auditLog',
             actorUserRef: 'user-admin-001',
-            actorUserName: 'Admin Operasional',
+            actorUserName: OPERASIONAL_USER_NAME,
+            actorUserEmail: 'admin@company.local',
+            actorUserRole: 'OPERASIONAL',
             action: 'CREATE',
             entityType: 'delivery-orders',
             entityRef: 'do-008',
@@ -3056,7 +3064,9 @@ function buildSeedDocuments() {
             _id: 'audit-003',
             _type: 'auditLog',
             actorUserRef: 'user-admin-001',
-            actorUserName: 'Admin Operasional',
+            actorUserName: OPERASIONAL_USER_NAME,
+            actorUserEmail: 'admin@company.local',
+            actorUserRole: 'OPERASIONAL',
             action: 'CREATE',
             entityType: 'freight-notas',
             entityRef: 'nota-003',
@@ -3067,7 +3077,9 @@ function buildSeedDocuments() {
             _id: 'audit-004',
             _type: 'auditLog',
             actorUserRef: 'user-admin-001',
-            actorUserName: 'Admin Operasional',
+            actorUserName: OPERASIONAL_USER_NAME,
+            actorUserEmail: 'admin@company.local',
+            actorUserRole: 'OPERASIONAL',
             action: 'CREATE',
             entityType: 'payments',
             entityRef: 'pay-001',
@@ -3078,7 +3090,9 @@ function buildSeedDocuments() {
             _id: 'audit-005',
             _type: 'auditLog',
             actorUserRef: 'user-admin-001',
-            actorUserName: 'Admin Operasional',
+            actorUserName: OPERASIONAL_USER_NAME,
+            actorUserEmail: 'admin@company.local',
+            actorUserRole: 'OPERASIONAL',
             action: 'CREATE',
             entityType: 'driver-borongans',
             entityRef: 'bor-001',
@@ -3089,7 +3103,9 @@ function buildSeedDocuments() {
             _id: 'audit-006',
             _type: 'auditLog',
             actorUserRef: 'user-admin-001',
-            actorUserName: 'Admin Operasional',
+            actorUserName: OPERASIONAL_USER_NAME,
+            actorUserEmail: 'admin@company.local',
+            actorUserRole: 'OPERASIONAL',
             action: 'UPDATE',
             entityType: 'driver-vouchers',
             entityRef: 'voucher-001',
@@ -3100,7 +3116,9 @@ function buildSeedDocuments() {
             _id: 'audit-007',
             _type: 'auditLog',
             actorUserRef: 'user-owner-001',
-            actorUserName: 'Owner Utama',
+            actorUserName: OWNER_USER_NAME,
+            actorUserEmail: 'owner@company.local',
+            actorUserRole: 'OWNER',
             action: 'UPDATE',
             entityType: 'incidents',
             entityRef: 'incident-003',
@@ -3111,7 +3129,9 @@ function buildSeedDocuments() {
             _id: 'audit-008',
             _type: 'auditLog',
             actorUserRef: 'user-owner-001',
-            actorUserName: 'Owner Utama',
+            actorUserName: OWNER_USER_NAME,
+            actorUserEmail: 'owner@company.local',
+            actorUserRole: 'OWNER',
             action: 'UPDATE',
             entityType: 'company',
             entityRef: 'company-001',
@@ -3122,7 +3142,9 @@ function buildSeedDocuments() {
             _id: 'audit-009',
             _type: 'auditLog',
             actorUserRef: 'user-admin-001',
-            actorUserName: 'Admin Operasional',
+            actorUserName: OPERASIONAL_USER_NAME,
+            actorUserEmail: 'admin@company.local',
+            actorUserRole: 'OPERASIONAL',
             action: 'CREATE',
             entityType: 'customer-receipts',
             entityRef: 'rcv-001',
@@ -3133,7 +3155,9 @@ function buildSeedDocuments() {
             _id: 'audit-010',
             _type: 'auditLog',
             actorUserRef: 'user-admin-001',
-            actorUserName: 'Admin Operasional',
+            actorUserName: OPERASIONAL_USER_NAME,
+            actorUserEmail: 'admin@company.local',
+            actorUserRole: 'OPERASIONAL',
             action: 'CREATE',
             entityType: 'invoice-adjustments',
             entityRef: 'adj-001',
@@ -3315,3 +3339,4 @@ seed().catch((error) => {
     console.error(error);
     process.exitCode = 1;
 });
+

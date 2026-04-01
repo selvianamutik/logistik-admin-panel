@@ -1790,6 +1790,17 @@ tbody td {
   margin: 0 auto var(--space-4);
 }
 
+.login-logo--image {
+  background: rgba(15, 118, 110, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(15, 118, 110, 0.12);
+}
+
+.login-logo-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
 .login-title {
   font-size: var(--font-size-xl);
   font-weight: 700;

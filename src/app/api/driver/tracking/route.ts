@@ -11,12 +11,14 @@ import { handleDeliveryOrderStatusUpdate } from '@/lib/api/order-workflows';
 import { getSanityClient, sanityCreate, sanityGetById, sanityUpdate } from '@/lib/sanity';
 import type { DeliveryOrder, Driver } from '@/lib/types';
 
-async function addAuditLog(actor: { _id: string; name: string }, action: string, entityRef: string, summary: string) {
+async function addAuditLog(actor: { _id: string; name: string; email?: string; role?: string }, action: string, entityRef: string, summary: string) {
     try {
         await sanityCreate({
             _type: 'auditLog',
             actorUserRef: actor._id,
             actorUserName: actor.name,
+            actorUserEmail: actor.email,
+            actorUserRole: actor.role,
             action,
             entityType: 'driverTracking',
             entityRef,

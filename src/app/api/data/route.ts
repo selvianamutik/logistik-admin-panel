@@ -63,6 +63,7 @@ import {
     type ModulePermissions,
 } from '@/lib/rbac';
 import {
+    getAuditLogList,
     getAuditLogsSummary,
     getBankAccountsSummary,
     applyDerivedBankAccountBalances,
@@ -299,7 +300,7 @@ async function deriveCustomerReceiptsForResponse<T extends ReceiptResponseShape>
 }
 
 async function addAuditLog(
-    session: Pick<Session, '_id' | 'name'>,
+    session: Pick<Session, '_id' | 'name'> & Partial<Pick<Session, 'email' | 'role'>>,
     action: string,
     entityType: string,
     entityRef: string,
@@ -310,6 +311,8 @@ async function addAuditLog(
             _type: 'auditLog',
             actorUserRef: session._id,
             actorUserName: session.name,
+            actorUserEmail: session.email,
+            actorUserRole: session.role,
             action,
             entityType,
             entityRef,
@@ -344,6 +347,7 @@ export async function GET(request: Request) {
     const sortPreset = searchParams.get('sortPreset');
     const orFiltersParam = searchParams.get('orFilters');
     const definedFieldsParam = searchParams.get('definedFields');
+    const periodParam = searchParams.get('period');
 
     if (entity === 'dashboard-summary') {
         if (!hasPermission(session.role, 'dashboard', 'view')) {
@@ -423,7 +427,14 @@ export async function GET(request: Request) {
             return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
         }
         try {
-            const summary = await getAuditLogsSummary();
+            const searchFields = searchFieldsParam
+                ? searchFieldsParam.split(',').map(field => field.trim()).filter(Boolean)
+                : [];
+            const summary = await getAuditLogsSummary({
+                search: searchQuery || undefined,
+                searchFields,
+                period: periodParam,
+            });
             return jsonNoStore({ data: summary });
         } catch (err) {
             console.error('API GET Audit Summary Error:', err);
@@ -712,7 +723,32 @@ export async function GET(request: Request) {
             Boolean(sortField) ||
             Boolean(sortDir);
 
-        if (entity === 'freight-notas') {
+        if (entity === 'audit-logs') {
+            try {
+                const page = pageParam ? Number.parseInt(pageParam, 10) : 1;
+                const pageSize = pageSizeParam ? Number.parseInt(pageSizeParam, 10) : 10;
+                const searchFields = searchFieldsParam
+                    ? searchFieldsParam.split(',').map(field => field.trim()).filter(Boolean)
+                    : [];
+                const result = await getAuditLogList({
+                    search: searchQuery || undefined,
+                    searchFields,
+                    page: needsPaginatedList && !countOnly ? page : undefined,
+                    pageSize: needsPaginatedList && !countOnly ? pageSize : undefined,
+                    sortField,
+                    sortDir,
+                    period: periodParam,
+                    countOnly,
+                });
+                items = result.items as unknown as Record<string, unknown>[];
+                totalItems = result.total;
+            } catch (error) {
+                return jsonNoStore(
+                    { error: error instanceof Error ? error.message : 'Query audit log tidak valid' },
+                    { status: 400 }
+                );
+            }
+        } else if (entity === 'freight-notas') {
             try {
                 const page = pageParam ? Number.parseInt(pageParam, 10) : 1;
                 const pageSize = pageSizeParam ? Number.parseInt(pageSizeParam, 10) : 10;

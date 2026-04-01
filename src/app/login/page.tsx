@@ -1,7 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import Image from 'next/image';
 import { Eye, EyeOff, AlertCircle, Loader2 } from 'lucide-react';
+import { DEFAULT_COMPANY_LOGO_URL } from '@/lib/branding';
 
 export default function LoginPage() {
     const [email, setEmail] = useState('');
@@ -51,7 +53,16 @@ export default function LoginPage() {
         <main className="login-page">
             <div className="login-card">
                 <div className="login-header">
-                    <div className="login-logo">G</div>
+                    <div className="login-logo login-logo--image">
+                        <Image
+                            src={DEFAULT_COMPANY_LOGO_URL}
+                            alt="Logo Gading Mas Surya"
+                            width={56}
+                            height={56}
+                            className="login-logo-image"
+                            priority
+                        />
+                    </div>
                     <h1 className="login-title">Gading Mas Surya</h1>
                     <p className="login-subtitle">Panel Administrasi Internal</p>
                 </div>

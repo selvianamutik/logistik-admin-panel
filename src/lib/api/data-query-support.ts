@@ -1,5 +1,5 @@
 import type { ApiSession } from '@/lib/api/data-helpers';
-import { getBusinessCalendarDateParts, getBusinessDateValue } from '@/lib/business-date';
+import { addDaysToDateValue, getBusinessCalendarDateParts, getBusinessDateValue } from '@/lib/business-date';
 import { filterExpensesByRole, hasPageAccess, hasPermission } from '@/lib/rbac';
 import {
     getSanityClient,
@@ -29,12 +29,162 @@ import type {
     FreightNota,
     Payment,
     TireEvent,
+    AuditLog,
     Vehicle,
 } from '@/lib/types';
 import { getDriverVoucherFinancialSummary, getDriverVoucherIssuedAmount, getReceivableNetAmount } from '@/lib/utils';
 
 function parseWholeMoneyLike(value: unknown) {
     return Math.max(parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 }), 0);
+}
+
+export type AuditLogPeriod = 'today' | 'yesterday' | 'last7days' | 'thisMonth' | 'thisYear' | 'all';
+
+function normalizeAuditLogPeriod(value?: string | null): AuditLogPeriod {
+    if (
+        value === 'today' ||
+        value === 'yesterday' ||
+        value === 'last7days' ||
+        value === 'thisMonth' ||
+        value === 'thisYear' ||
+        value === 'all'
+    ) {
+        return value;
+    }
+    return 'today';
+}
+
+function getAuditLogBusinessDateValue(log: Pick<AuditLog, 'timestamp' | '_createdAt'>) {
+    const parts = getBusinessCalendarDateParts(log.timestamp || log._createdAt || '');
+    return parts ? `${parts.year}-${parts.month}-${parts.day}` : '';
+}
+
+function matchesAuditLogPeriod(
+    log: Pick<AuditLog, 'timestamp' | '_createdAt'>,
+    period: AuditLogPeriod,
+    today: string
+) {
+    if (period === 'all') return true;
+
+    const businessDate = getAuditLogBusinessDateValue(log);
+    if (!businessDate) return false;
+
+    if (period === 'today') return businessDate === today;
+    if (period === 'yesterday') return businessDate === addDaysToDateValue(today, -1);
+    if (period === 'last7days') return businessDate >= addDaysToDateValue(today, -6) && businessDate <= today;
+    if (period === 'thisMonth') return businessDate.slice(0, 7) === today.slice(0, 7);
+    if (period === 'thisYear') return businessDate.slice(0, 4) === today.slice(0, 4);
+    return true;
+}
+
+function sortAuditLogs(logs: AuditLog[], sortField?: string, sortDir?: 'asc' | 'desc') {
+    const field = sortField?.trim() || 'timestamp';
+    const direction = sortDir === 'asc' ? 'asc' : 'desc';
+    const multiplier = direction === 'asc' ? 1 : -1;
+
+    return [...logs].sort((left, right) => {
+        const leftValue = (left as unknown as Record<string, unknown>)[field];
+        const rightValue = (right as unknown as Record<string, unknown>)[field];
+
+        if (typeof leftValue === 'string' && typeof rightValue === 'string') {
+            return leftValue.localeCompare(rightValue) * multiplier;
+        }
+
+        const fallbackLeft = (left.timestamp || left._createdAt || '');
+        const fallbackRight = (right.timestamp || right._createdAt || '');
+        return fallbackLeft.localeCompare(fallbackRight) * multiplier;
+    });
+}
+
+async function getFilteredAuditLogs(params: {
+    search?: string;
+    searchFields?: string[];
+    sortField?: string;
+    sortDir?: 'asc' | 'desc';
+    period?: string | null;
+}) {
+    const client = getSanityClient();
+    const rawLogs = await client.fetch<Array<AuditLog & { _createdAt?: string }>>(`*[_type == "auditLog"]`);
+    const search = params.search?.trim().toLowerCase() || '';
+    const searchFields = (params.searchFields ?? []).map(field => field.trim()).filter(Boolean);
+    const searchableFields = searchFields.length > 0
+        ? searchFields
+        : ['changesSummary', 'actorUserName', 'actorUserRole', 'actorUserEmail', 'actorUserRef', 'entityType', 'entityRef', 'action'];
+    const today = getBusinessDateValue();
+    const period = normalizeAuditLogPeriod(params.period);
+
+    const filtered = rawLogs.filter(log => {
+        if (!matchesAuditLogPeriod(log, period, today)) {
+            return false;
+        }
+
+        if (!search) {
+            return true;
+        }
+
+        return searchableFields.some(field => {
+            const value = (log as unknown as Record<string, unknown>)[field];
+            return typeof value === 'string' && value.toLowerCase().includes(search);
+        });
+    });
+
+    return sortAuditLogs(filtered, params.sortField, params.sortDir);
+}
+
+export async function getAuditLogList(params: {
+    search?: string;
+    searchFields?: string[];
+    page?: number;
+    pageSize?: number;
+    sortField?: string;
+    sortDir?: 'asc' | 'desc';
+    period?: string | null;
+    countOnly?: boolean;
+}) {
+    const filtered = await getFilteredAuditLogs(params);
+    const total = filtered.length;
+
+    if (params.countOnly) {
+        return { items: [] as AuditLog[], total };
+    }
+
+    if (!params.page || !params.pageSize) {
+        return { items: filtered, total };
+    }
+
+    const offset = Math.max(params.page - 1, 0) * Math.max(params.pageSize, 1);
+    return {
+        items: filtered.slice(offset, offset + params.pageSize),
+        total,
+    };
+}
+
+export async function getAuditLogsSummary(params?: {
+    search?: string;
+    searchFields?: string[];
+    period?: string | null;
+}) {
+    const logs = await getFilteredAuditLogs({
+        search: params?.search,
+        searchFields: params?.searchFields,
+        period: params?.period,
+    });
+
+    const loginLogs = logs.filter(log => log.action === 'LOGIN' || log.action === 'LOGOUT').length;
+    const mutationLogs = logs.filter(log => log.action === 'CREATE' || log.action === 'UPDATE' || log.action === 'DELETE').length;
+    const actorCount = new Set(
+        logs
+            .map(log => log.actorUserRef || log.actorUserName || '')
+            .filter(Boolean)
+    ).size;
+
+    return {
+        totalLogs: logs.length,
+        loginLogs,
+        mutationLogs,
+        actorCount,
+        period: normalizeAuditLogPeriod(params?.period),
+    };
 }
 
 export function applyDerivedFreightNotaStatus<T extends {
@@ -1448,32 +1598,6 @@ export async function getBankAccountsSummary() {
         totalInitial,
         cashBalance,
         bankBalance,
-    };
-}
-
-export async function getAuditLogsSummary() {
-    const client = getSanityClient();
-    const today = getBusinessDateValue();
-    const logs = await client.fetch<Array<{ timestamp?: string; _createdAt?: string; action?: string }>>(
-        `*[_type == "auditLog"]{
-            timestamp,
-            _createdAt,
-            action
-        }`
-    );
-
-    const todayLogs = logs.filter(log => {
-        const businessDate = getBusinessCalendarDateParts(log.timestamp || log._createdAt || '');
-        return businessDate ? `${businessDate.year}-${businessDate.month}-${businessDate.day}` === today : false;
-    }).length;
-    const loginLogs = logs.filter(log => log.action === 'LOGIN' || log.action === 'LOGOUT').length;
-    const mutationLogs = logs.filter(log => log.action === 'CREATE' || log.action === 'UPDATE' || log.action === 'DELETE').length;
-
-    return {
-        totalLogs: logs.length,
-        todayLogs,
-        loginLogs,
-        mutationLogs,
     };
 }
 

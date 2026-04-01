@@ -9,9 +9,9 @@ import { parseFormattedNumberish, type FormattedNumberParseOptions } from '@/lib
 import { normalizeUserRole } from '@/lib/rbac';
 import type { CompanyProfile, PaymentMethod, User } from '@/lib/types';
 
-export type ApiSession = { _id: string; name: string; role: User['role'] };
+export type ApiSession = { _id: string; name: string; email?: string; role: User['role'] };
 export type PublicUser = Omit<User, 'passwordHash'>;
-export type AuditLogActor = Pick<ApiSession, '_id' | 'name'>;
+export type AuditLogActor = Pick<ApiSession, '_id' | 'name'> & Partial<Pick<ApiSession, 'email' | 'role'>>;
 
 export type BankAccountSummary = {
     _id: string;
@@ -297,6 +297,8 @@ export async function writeAuditLog(
             _type: 'auditLog',
             actorUserRef: actor._id,
             actorUserName: actor.name,
+            actorUserEmail: normalizeOptionalText(actor.email),
+            actorUserRole: actor.role ? normalizeUserRole(actor.role) : undefined,
             action,
             entityType,
             entityRef,

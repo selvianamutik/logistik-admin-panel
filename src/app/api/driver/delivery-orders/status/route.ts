@@ -11,12 +11,14 @@ import type { DeliveryOrder } from '@/lib/types';
 const DRIVER_ALLOWED_STATUS_UPDATES = new Set(['HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED']);
 const DRIVER_APPROVAL_REQUEST_STATUSES = new Set(['DELIVERED']);
 
-async function addAuditLog(actor: { _id: string; name: string }, action: string, entityRef: string, summary: string) {
+async function addAuditLog(actor: { _id: string; name: string; email?: string; role?: string }, action: string, entityRef: string, summary: string) {
     try {
         await sanityCreate({
             _type: 'auditLog',
             actorUserRef: actor._id,
             actorUserName: actor.name,
+            actorUserEmail: actor.email,
+            actorUserRole: actor.role,
             action,
             entityType: 'delivery-orders',
             entityRef,

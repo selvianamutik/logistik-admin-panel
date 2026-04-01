@@ -8,12 +8,14 @@ import type { Driver, User } from '@/lib/types';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-async function addAuditLog(actor: { _id: string; name: string }, action: string, entityRef: string, summary: string) {
+async function addAuditLog(actor: { _id: string; name: string; email?: string; role?: string }, action: string, entityRef: string, summary: string) {
     try {
         await sanityCreate({
             _type: 'auditLog',
             actorUserRef: actor._id,
             actorUserName: actor.name,
+            actorUserEmail: actor.email,
+            actorUserRole: actor.role,
             action,
             entityType: 'driverMobileAccess',
             entityRef,

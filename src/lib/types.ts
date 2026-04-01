@@ -919,6 +919,8 @@ export interface AuditLog {
   _createdAt?: string;
   actorUserRef: string;
   actorUserName?: string;
+  actorUserEmail?: string;
+  actorUserRole?: UserRole;
   action: string;
   entityType: string;
   entityRef?: string;

@@ -95,7 +95,7 @@ export async function POST(request: Request) {
         });
         const appContext = await getDriverAppContext();
         await writeAuditLog(
-            { _id: user._id, name: user.name },
+            { _id: user._id, name: user.name, email: user.email, role: user.role },
             'LOGIN',
             'driver-mobile-auth',
             user._id,

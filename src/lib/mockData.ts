@@ -52,7 +52,7 @@ const seedData: DataStore = {
         {
             _id: 'user-owner-001',
             _type: 'user',
-            name: 'Owner Utama',
+            name: 'Raka Prasetya',
             email: 'owner@company.local',
             role: 'OWNER',
             passwordHash: OWNER_PASSWORD_HASH,
@@ -243,15 +243,15 @@ const seedData: DataStore = {
     trackingLogs: [
         {
             _id: 'tl-001', _type: 'trackingLog', refType: 'DO', refRef: 'do-001',
-            status: 'CREATED', note: 'Surat jalan dibuat', timestamp: '2026-02-21T08:00:00Z', userName: 'Owner Utama'
+            status: 'CREATED', note: 'Surat jalan dibuat', timestamp: '2026-02-21T08:00:00Z', userName: 'Raka Prasetya'
         },
         {
             _id: 'tl-002', _type: 'trackingLog', refType: 'DO', refRef: 'do-001',
-            status: 'ON_DELIVERY', note: 'Kendaraan berangkat dari gudang Jakarta', locationText: 'Gudang Jakarta Utara', timestamp: '2026-02-21T10:00:00Z', userName: 'Owner Utama'
+            status: 'ON_DELIVERY', note: 'Kendaraan berangkat dari gudang Jakarta', locationText: 'Gudang Jakarta Utara', timestamp: '2026-02-21T10:00:00Z', userName: 'Raka Prasetya'
         },
         {
             _id: 'tl-003', _type: 'trackingLog', refType: 'DO', refRef: 'do-001',
-            status: 'DELIVERED', note: 'Barang diterima oleh Andi Kusuma', locationText: 'Semarang', timestamp: '2026-02-22T14:00:00Z', userName: 'Owner Utama'
+            status: 'DELIVERED', note: 'Barang diterima oleh Andi Kusuma', locationText: 'Semarang', timestamp: '2026-02-22T14:00:00Z', userName: 'Raka Prasetya'
         }
     ],
 
@@ -416,36 +416,36 @@ const seedData: DataStore = {
             description: 'Ban depan kiri meletus saat di tol Cikampek. Kendaraan berhasil menepi dengan aman. Tidak ada cedera. Ban diganti dengan ban cadangan, kemudian dilanjutkan ke Semarang. Ban baru dipasang keesokan harinya.',
             status: 'RESOLVED',
             assignedToUserRef: 'user-owner-001',
-            assignedToUserName: 'Owner Utama'
+            assignedToUserName: 'Raka Prasetya'
         }
     ],
 
     incidentActionLogs: [
         {
             _id: 'ial-001', _type: 'incidentActionLog', incidentRef: 'inc-001',
-            timestamp: '2026-02-22T16:30:00Z', note: 'Laporan insiden diterima: ban depan kiri meletus di tol', userName: 'Owner Utama'
+            timestamp: '2026-02-22T16:30:00Z', note: 'Laporan insiden diterima: ban depan kiri meletus di tol', userName: 'Raka Prasetya'
         },
         {
             _id: 'ial-002', _type: 'incidentActionLog', incidentRef: 'inc-001',
-            timestamp: '2026-02-22T17:00:00Z', note: 'Driver mengganti ban cadangan, perjalanan dilanjutkan', userName: 'Owner Utama'
+            timestamp: '2026-02-22T17:00:00Z', note: 'Driver mengganti ban cadangan, perjalanan dilanjutkan', userName: 'Raka Prasetya'
         },
         {
             _id: 'ial-003', _type: 'incidentActionLog', incidentRef: 'inc-001',
-            timestamp: '2026-02-23T09:00:00Z', note: 'Ban baru Bridgestone dipasang. Insiden selesai ditangani.', userName: 'Owner Utama'
+            timestamp: '2026-02-23T09:00:00Z', note: 'Ban baru Bridgestone dipasang. Insiden selesai ditangani.', userName: 'Raka Prasetya'
         }
     ],
 
     auditLogs: [
         {
-            _id: 'al-001', _type: 'auditLog', actorUserRef: 'user-owner-001', actorUserName: 'Owner Utama',
+            _id: 'al-001', _type: 'auditLog', actorUserRef: 'user-owner-001', actorUserName: 'Raka Prasetya', actorUserEmail: 'owner@company.local', actorUserRole: 'OWNER',
             action: 'LOGIN', entityType: 'auth', changesSummary: 'Login berhasil', timestamp: '2026-02-20T07:50:00Z'
         },
         {
-            _id: 'al-002', _type: 'auditLog', actorUserRef: 'user-owner-001', actorUserName: 'Owner Utama',
+            _id: 'al-002', _type: 'auditLog', actorUserRef: 'user-owner-001', actorUserName: 'Raka Prasetya', actorUserEmail: 'owner@company.local', actorUserRole: 'OWNER',
             action: 'CREATE', entityType: 'order', entityRef: 'order-001', changesSummary: 'Order R-202602-0001 dibuat untuk PT Maju Sejahtera', timestamp: '2026-02-20T08:00:00Z'
         },
         {
-            _id: 'al-003', _type: 'auditLog', actorUserRef: 'user-owner-001', actorUserName: 'Owner Utama',
+            _id: 'al-003', _type: 'auditLog', actorUserRef: 'user-owner-001', actorUserName: 'Raka Prasetya', actorUserEmail: 'owner@company.local', actorUserRole: 'OWNER',
             action: 'CREATE', entityType: 'deliveryOrder', entityRef: 'do-001', changesSummary: 'DO-202602-0001 dibuat untuk order R-202602-0001', timestamp: '2026-02-21T08:00:00Z'
         }
     ]
@@ -557,3 +557,5 @@ export function getNextNumber(type: 'resi' | 'do' | 'invoice' | 'incident'): str
 
     return `${prefix}-2026${monthYear.slice(0, 2)}-${counter.toString().padStart(4, '0')}`;
 }
+
+

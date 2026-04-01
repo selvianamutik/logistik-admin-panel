@@ -138,7 +138,7 @@ export async function POST(request: Request) {
             loginScope === 'DRIVER' ? DRIVER_SESSION_COOKIE : SESSION_COOKIE
         );
         await writeAuditLog(
-            { _id: user._id, name: user.name },
+            { _id: user._id, name: user.name, email: user.email, role: user.role },
             'LOGIN',
             loginScope === 'DRIVER' ? 'driver-web-auth' : 'admin-web-auth',
             user._id,
