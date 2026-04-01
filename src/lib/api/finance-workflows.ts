@@ -958,7 +958,7 @@ export async function handleBankTransfer(
         return transferDateError;
     }
 
-    const transferId = `transfer-${Date.now()}`;
+    const transferId = `transfer-${crypto.randomUUID()}`;
     for (let attempt = 0; attempt < 3; attempt += 1) {
         const fromAcc = await getLedgerAccount(fromAccountRef);
         const toAcc = await getLedgerAccount(toAccountRef);
