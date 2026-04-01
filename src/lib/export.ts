@@ -5,7 +5,7 @@
 
 import ExcelJS from 'exceljs';
 import { resolveCompanyLogoUrl } from './branding';
-import { getBusinessDateValue } from './business-date';
+import { formatBusinessDateTime, getBusinessDateValue } from './business-date';
 import {
     formatFreightNotaDisplayWeight,
     getFreightNotaBillingModeLabel,
@@ -78,13 +78,14 @@ function sanitizeSheetName(name: string) {
 }
 
 function timestampLabel() {
-    return new Intl.DateTimeFormat('id-ID', {
+    return formatBusinessDateTime(new Date(), 'id-ID', {
         day: '2-digit',
         month: 'long',
         year: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
-    }).format(new Date());
+        second: undefined,
+    }).replace(/\./g, ':');
 }
 
 function textValue(value: ExportValue) {

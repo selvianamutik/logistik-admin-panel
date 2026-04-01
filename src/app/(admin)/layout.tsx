@@ -176,9 +176,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 if (companyRes?.ok && co.data) {
                     setCompany(co.data);
                     if (co.data.themeColor) applyTheme(co.data.themeColor);
-                    if (co.data.name) {
-                        document.title = `${getRoleWorkspaceLabel(session.user?.role)} - ${co.data.name}`;
-                    }
                 }
             } catch {
                 router.push('/login');
@@ -214,6 +211,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             tabletQuery.removeEventListener('change', syncViewport);
         };
     }, [router, applyTheme]);
+
+    useEffect(() => {
+        if (!user || !company?.name) {
+            return;
+        }
+
+        document.title = `${getRoleWorkspaceLabel(user.role)} - ${company.name}`;
+    }, [company?.name, pathname, user]);
 
     useEffect(() => {
         const reloadKey = `__chunk_reload__:${pathname}`;
