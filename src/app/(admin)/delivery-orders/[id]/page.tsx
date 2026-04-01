@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useApp, useToast } from '../../layout';
-import { Printer, FileDown, Truck, Upload, Save, MapPin, Radio, Edit } from 'lucide-react';
+import { Printer, FileDown, Truck, Upload, Save, MapPin, Radio, Edit, Wallet } from 'lucide-react';
 import CurrencyInput from '@/components/CurrencyInput';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
@@ -36,7 +36,16 @@ import {
     type ActualDropDraft,
 } from '@/lib/delivery-order-detail-support';
 import { fetchCompanyProfile, openBrandedPrint, openPrintWindow, resolveDocumentIssuerProfile } from '@/lib/print';
-import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatCurrency, formatDate, formatDateTime, formatInternalDeliveryOrderNumber, formatShipperDeliveryOrderNumber } from '@/lib/utils';
+import {
+    DO_ACTUAL_DROP_TYPE_MAP,
+    DO_STATUS_MAP,
+    formatCurrency,
+    formatDate,
+    formatDateTime,
+    formatInternalDeliveryOrderNumber,
+    formatShipperDeliveryOrderNumber,
+    getDriverVoucherFinancialSummary,
+} from '@/lib/utils';
 import {
     formatCargoSummary,
     VOLUME_INPUT_UNIT_OPTIONS,
@@ -46,6 +55,14 @@ import { generateDOPdf } from '@/lib/pdf/doTemplate';
 import { hasPageAccess, hasPermission, normalizeUserRole } from '@/lib/rbac';
 import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
 import type { Customer, DeliveryOrder, DeliveryOrderItem, TrackingLog, CompanyProfile, Order, Driver, DriverVoucher, TripRouteRate, Vehicle } from '@/lib/types';
+
+type DeliveryOrderTripCashLink = {
+    hasVoucher: true;
+    voucherId: string;
+    bonNumber: string;
+    status: DriverVoucher['status'];
+    issuedDate?: string;
+};
 
 export default function DODetailPage() {
     const params = useParams();
@@ -81,6 +98,8 @@ export default function DODetailPage() {
     const [tripRouteRateRef, setTripRouteRateRef] = useState('');
     const [tripOriginArea, setTripOriginArea] = useState('');
     const [tripDestinationArea, setTripDestinationArea] = useState('');
+    const [linkedVoucher, setLinkedVoucher] = useState<DriverVoucher | null>(null);
+    const [linkedTripCashLink, setLinkedTripCashLink] = useState<DeliveryOrderTripCashLink | null>(null);
     const [linkedVoucherBonNumber, setLinkedVoucherBonNumber] = useState('');
     const [updatingStatus, setUpdatingStatus] = useState(false);
     const [savingPOD, setSavingPOD] = useState(false);
@@ -101,6 +120,9 @@ export default function DODetailPage() {
     const canPrintDeliveryOrder = user ? hasPermission(user.role, 'deliveryOrders', 'print') : false;
     const canViewCustomerDetails = user ? hasPermission(user.role, 'customers', 'view') : false;
     const canOpenSourceOrderPage = user ? hasPageAccess(user.role, 'orders') : false;
+    const canViewTripCash = user ? hasPermission(user.role, 'driverVouchers', 'view') : false;
+    const canCreateTripCash = user ? hasPermission(user.role, 'driverVouchers', 'create') : false;
+    const canOpenTripCashPage = user ? hasPageAccess(user.role, 'driverVouchers') : false;
     const canAssignTripResources = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL' || normalizedRole === 'ARMADA';
     const canEditShipperReference = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL' || normalizedRole === 'FINANCE';
     const canReviewDriverRequest = canManageDeliveryStatus;
@@ -163,7 +185,7 @@ export default function DODetailPage() {
 
         try {
             const deliveryOrder = await fetchAdminData<DeliveryOrder | null>(`/api/data?entity=delivery-orders&id=${doId}`, 'Gagal memuat detail surat jalan');
-            const [itemRows, logRows, sourceOrder, customerData, tripRateRows, linkedVoucherRows] = await Promise.all([
+            const [itemRows, logRows, sourceOrder, customerData, tripRateRows, linkedVoucherRows, tripCashLink] = await Promise.all([
                 fetchAllAdminCollectionData<DeliveryOrderItem>(`/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: doId }))}`, 'Gagal memuat detail surat jalan'),
                 fetchAllAdminCollectionData<TrackingLog>(`/api/data?entity=tracking-logs&filter=${encodeURIComponent(JSON.stringify({ refRef: doId, refType: 'DO' }))}`, 'Gagal memuat detail surat jalan'),
                 deliveryOrder?.orderRef
@@ -175,9 +197,13 @@ export default function DODetailPage() {
                 canManageTripFee
                     ? fetchAdminCollectionData<TripRouteRate[]>(`/api/data?entity=trip-route-rates&filter=${encodeURIComponent(JSON.stringify({ active: true }))}`, 'Gagal memuat detail surat jalan')
                     : Promise.resolve([] as TripRouteRate[]),
-                canManageTripFee
+                (canViewTripCash || canCreateTripCash || canManageTripFee)
                     ? fetchAdminCollectionData<DriverVoucher[]>(`/api/data?entity=driver-vouchers&pageSize=1&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: doId }))}`, 'Gagal memuat detail surat jalan')
                     : Promise.resolve([] as DriverVoucher[]),
+                fetchAdminData<DeliveryOrderTripCashLink | null>(
+                    `/api/data?entity=delivery-order-trip-cash-link&deliveryOrderRef=${encodeURIComponent(doId)}`,
+                    'Gagal memuat detail surat jalan'
+                ),
             ]);
 
             const resolvedDeliveryOrder = buildResolvedDeliveryOrder(deliveryOrder, sourceOrder);
@@ -185,7 +211,9 @@ export default function DODetailPage() {
             setDoData(resolvedDeliveryOrder);
             setShipperReferenceFormat((customerData?.deliveryOrderPrefix || 'SJ').toUpperCase());
             setTripRouteRates((tripRateRows || []).filter(rate => rate.active !== false));
-            setLinkedVoucherBonNumber(linkedVoucherRows?.[0]?.bonNumber || '');
+            setLinkedVoucher(linkedVoucherRows?.[0] || null);
+            setLinkedTripCashLink(tripCashLink || null);
+            setLinkedVoucherBonNumber(linkedVoucherRows?.[0]?.bonNumber || tripCashLink?.bonNumber || '');
             if (!editingTaripRef.current) {
                 setTaripBorongan(resolvedDeliveryOrder?.taripBorongan || 0);
                 setKeteranganBorongan(resolvedDeliveryOrder?.keteranganBorongan || '');
@@ -202,7 +230,7 @@ export default function DODetailPage() {
                 setLoading(false);
             }
         }
-    }, [addToast, canManageTripFee, canViewCustomerDetails, doId]);
+    }, [addToast, canCreateTripCash, canManageTripFee, canViewCustomerDetails, canViewTripCash, doId]);
 
     const loadTripResources = useCallback(async () => {
         setLoadingTripResources(true);
@@ -239,6 +267,16 @@ export default function DODetailPage() {
         const normalizedFormat = shipperReferenceFormat.trim().toUpperCase() || 'SJ';
         setShipperReferenceValue(doData?.customerDoNumber || (normalizedFormat !== 'SJ' ? normalizedFormat : ''));
         setShowShipperReferenceModal(true);
+    };
+
+    const openTripFeeEditor = () => {
+        if (!canManageTripFee || linkedVoucherBonNumber) return;
+        setEditingTarip(true);
+        if (typeof window !== 'undefined') {
+            window.requestAnimationFrame(() => {
+                document.getElementById('delivery-order-trip-fee-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
+        }
     };
 
     const openStatusModal = (requestedStatus?: string, fromDriverRequest: boolean = false) => {
@@ -637,6 +675,38 @@ export default function DODetailPage() {
     const hasShipperReference = Boolean(doData.customerDoNumber?.trim());
     const normalizedShipperReferenceFormat = shipperReferenceFormat.trim().toUpperCase() || 'SJ';
     const shipperReferenceExample = `${normalizedShipperReferenceFormat}/27032026/001`;
+    const linkedVoucherSummary = linkedVoucher ? getDriverVoucherFinancialSummary(linkedVoucher) : null;
+    const linkedTripCashVoucherId = linkedVoucher?._id || linkedTripCashLink?.voucherId || '';
+    const linkedTripCashBonNumber = linkedVoucher?.bonNumber || linkedTripCashLink?.bonNumber || linkedVoucherBonNumber;
+    const linkedTripCashIssuedDate = linkedVoucher?.issuedDate || linkedTripCashLink?.issuedDate || '';
+    const linkedTripCashStatus = linkedVoucher?.status || linkedTripCashLink?.status || null;
+    const hasLinkedTripCash = Boolean(linkedTripCashVoucherId || linkedTripCashBonNumber);
+    const linkedVoucherStatusMeta = linkedTripCashStatus
+        ? ({
+            DRAFT: { label: 'Draft', cls: 'badge-gray' },
+            ISSUED: { label: 'Belum Diselesaikan', cls: 'badge-info' },
+            SETTLED: { label: 'Selesai', cls: 'badge-success' },
+        }[linkedTripCashStatus || 'DRAFT'])
+        : null;
+    const voucherIssueBlockingReasons = [
+        !doData.driverRef ? 'supir trip belum diisi' : null,
+        !doData.vehicleRef && !doData.vehiclePlate ? 'kendaraan trip belum diisi' : null,
+        !doData.taripBorongan || doData.taripBorongan <= 0 ? 'upah trip belum diisi di Surat Jalan' : null,
+        !['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED', 'DELIVERED'].includes(doData.status)
+            ? 'status Surat Jalan tidak bisa diterbitkan ke uang jalan trip'
+            : null,
+    ].filter((value): value is string => Boolean(value));
+    const canIssueVoucherFromDo =
+        canCreateTripCash &&
+        !hasLinkedTripCash &&
+        voucherIssueBlockingReasons.length === 0;
+    const canShowTripManager =
+        canAssignTripResources ||
+        canEditShipperReference ||
+        canManageTripFee ||
+        canCreateTripCash ||
+        canOpenTripCashPage ||
+        (canManageDeliveryStatus && nextStatuses.includes('CANCELLED'));
     const {
         actualCargoTotals,
         autoActualDropDraft,
@@ -670,7 +740,17 @@ export default function DODetailPage() {
                     </div>
                 </div>
                 <div className="page-actions">
-                    {doData.status === 'CREATED' && canAssignTripResources && (
+                    {linkedTripCashVoucherId && canOpenTripCashPage && (
+                        <Link className="btn btn-secondary" href={`/driver-vouchers/${linkedTripCashVoucherId}`}>
+                            <Wallet size={16} /> Buka Uang Jalan
+                        </Link>
+                    )}
+                    {!hasLinkedTripCash && canIssueVoucherFromDo && (
+                        <Link className="btn btn-secondary" href={`/driver-vouchers/new?deliveryOrderRef=${encodeURIComponent(doData._id)}`}>
+                            <Wallet size={16} /> Terbitkan Uang Jalan
+                        </Link>
+                    )}
+                    {doData.status === 'CREATED' && canAssignTripResources && !hasLinkedTripCash && (
                         <button className="btn btn-secondary" onClick={() => void openTripResourcesModal()}>
                             <Truck size={16} /> {tripResourceActionLabel}
                         </button>
@@ -764,6 +844,175 @@ export default function DODetailPage() {
                                 <div className="text-muted text-sm">Menunggu review owner / operasional.</div>
                             )}
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {canShowTripManager && (
+                <div className="card" style={{ marginBottom: 'var(--space-4)' }}>
+                    <div className="card-header">
+                        <span className="card-header-title">Kelola Trip dari Surat Jalan</span>
+                    </div>
+                    <div className="card-body" style={{ display: 'grid', gap: '0.85rem' }}>
+                        <div className="text-muted text-sm">
+                            Surat Jalan adalah anchor trip. Armada, SJ pengirim, upah trip, dan uang jalan dikelola dari sini.
+                            Hard delete sengaja tidak dibuka agar histori tracking, bon, dan dokumen turunannya tetap utuh. Untuk membatalkan trip, gunakan workflow status.
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            {doData.status === 'CREATED' && canAssignTripResources && !hasLinkedTripCash && (
+                                <button className="btn btn-secondary btn-sm" onClick={() => void openTripResourcesModal()}>
+                                    <Truck size={14} /> {tripResourceActionLabel}
+                                </button>
+                            )}
+                            {canEditShipperReference && (
+                                <button className="btn btn-secondary btn-sm" onClick={openShipperReferenceModal}>
+                                    <Edit size={14} /> {hasShipperReference ? 'Edit SJ Pengirim' : 'Isi SJ Pengirim'}
+                                </button>
+                            )}
+                            {canManageTripFee && !hasLinkedTripCash && !editingTarip && (
+                                <button className="btn btn-secondary btn-sm" onClick={openTripFeeEditor}>
+                                    <Edit size={14} /> {doData.taripBorongan ? 'Edit Upah Trip' : 'Isi Upah Trip'}
+                                </button>
+                            )}
+                            {linkedTripCashVoucherId && canOpenTripCashPage && (
+                                <Link className="btn btn-secondary btn-sm" href={`/driver-vouchers/${linkedTripCashVoucherId}`}>
+                                    <Wallet size={14} /> Buka Uang Jalan
+                                </Link>
+                            )}
+                            {!hasLinkedTripCash && canIssueVoucherFromDo && (
+                                <Link className="btn btn-primary btn-sm" href={`/driver-vouchers/new?deliveryOrderRef=${encodeURIComponent(doData._id)}`}>
+                                    <Wallet size={14} /> Terbitkan Uang Jalan
+                                </Link>
+                            )}
+                            {canManageDeliveryStatus && nextStatuses.includes('CANCELLED') && (
+                                <button className="btn btn-secondary btn-sm" onClick={() => openStatusModal('CANCELLED')}>
+                                    Batalkan Surat Jalan
+                                </button>
+                            )}
+                        </div>
+                        {!hasLinkedTripCash && canCreateTripCash && voucherIssueBlockingReasons.length > 0 && (
+                            <div className="text-muted text-sm">
+                                Uang jalan trip belum bisa diterbitkan: {voucherIssueBlockingReasons.join('; ')}.
+                            </div>
+                        )}
+                        {linkedTripCashBonNumber && (
+                            <div className="text-muted text-sm">
+                                Surat jalan ini sudah terhubung ke uang jalan trip {linkedTripCashBonNumber}. Armada trip dan upah trip dikunci supaya settlement tidak berubah diam-diam.
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {(canViewTripCash || canCreateTripCash || hasLinkedTripCash) && (
+                <div className="card" style={{ marginBottom: 'var(--space-4)' }}>
+                    <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                        <span className="card-header-title">Uang Jalan Trip</span>
+                        {linkedTripCashVoucherId && canOpenTripCashPage && (
+                            <Link className="btn btn-secondary btn-sm" href={`/driver-vouchers/${linkedTripCashVoucherId}`}>
+                                <Wallet size={14} /> Buka Detail Bon
+                            </Link>
+                        )}
+                        {!hasLinkedTripCash && canIssueVoucherFromDo && (
+                            <Link className="btn btn-primary btn-sm" href={`/driver-vouchers/new?deliveryOrderRef=${encodeURIComponent(doData._id)}`}>
+                                <Wallet size={14} /> Terbitkan Uang Jalan
+                            </Link>
+                        )}
+                    </div>
+                    <div className="card-body">
+                        {linkedVoucher && linkedVoucherSummary ? (
+                            <div style={{ display: 'grid', gap: '0.85rem' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                    <div>
+                                        <div className="detail-label">Bon Terkait</div>
+                                        <div className="detail-value font-mono">{linkedVoucher.bonNumber}</div>
+                                    </div>
+                                    {linkedVoucherStatusMeta && (
+                                        <span className={`badge ${linkedVoucherStatusMeta.cls}`}>{linkedVoucherStatusMeta.label}</span>
+                                    )}
+                                </div>
+                                <div className="detail-row">
+                                    <div className="detail-item">
+                                        <div className="detail-label">Tanggal Bon</div>
+                                        <div className="detail-value">{formatDate(linkedVoucher.issuedDate)}</div>
+                                    </div>
+                                    <div className="detail-item">
+                                        <div className="detail-label">Sumber Dana</div>
+                                        <div className="detail-value">{linkedVoucher.issueBankName || '-'}</div>
+                                    </div>
+                                </div>
+                                <div className="detail-row">
+                                    <div className="detail-item">
+                                        <div className="detail-label">Uang Jalan Awal</div>
+                                        <div className="detail-value">{formatCurrency(linkedVoucherSummary.initialCashGiven)}</div>
+                                    </div>
+                                    <div className="detail-item">
+                                        <div className="detail-label">Top Up Uang Jalan</div>
+                                        <div className="detail-value">{formatCurrency(linkedVoucherSummary.topUpAmount)}</div>
+                                    </div>
+                                </div>
+                                <div className="detail-row">
+                                    <div className="detail-item">
+                                        <div className="detail-label">Biaya Perjalanan</div>
+                                        <div className="detail-value">{formatCurrency(linkedVoucherSummary.totalSpent)}</div>
+                                    </div>
+                                    <div className="detail-item">
+                                        <div className="detail-label">Upah Trip Snapshot DO</div>
+                                        <div className="detail-value">{formatCurrency(linkedVoucherSummary.driverFeeAmount)}</div>
+                                    </div>
+                                </div>
+                                <div className="detail-row">
+                                    <div className="detail-item">
+                                        <div className="detail-label">Total Uang Diberikan</div>
+                                        <div className="detail-value">{formatCurrency(linkedVoucherSummary.totalIssuedAmount)}</div>
+                                    </div>
+                                    <div className="detail-item">
+                                        <div className="detail-label">Net Settlement Akhir</div>
+                                        <div className="detail-value">{formatCurrency(linkedVoucherSummary.balance)}</div>
+                                    </div>
+                                </div>
+                                <div className="text-muted text-sm">
+                                    Bon ini melekat ke Surat Jalan ini. Detail biaya perjalanan, top up, dan settlement akhir dibuka dari modul Uang Jalan Trip.
+                                </div>
+                            </div>
+                        ) : hasLinkedTripCash ? (
+                            <div style={{ display: 'grid', gap: '0.85rem' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                    <div>
+                                        <div className="detail-label">Bon Terkait</div>
+                                        <div className="detail-value font-mono">{linkedTripCashBonNumber || '-'}</div>
+                                    </div>
+                                    {linkedVoucherStatusMeta && (
+                                        <span className={`badge ${linkedVoucherStatusMeta.cls}`}>{linkedVoucherStatusMeta.label}</span>
+                                    )}
+                                </div>
+                                <div className="detail-row">
+                                    <div className="detail-item">
+                                        <div className="detail-label">Tanggal Bon</div>
+                                        <div className="detail-value">{formatDate(linkedTripCashIssuedDate)}</div>
+                                    </div>
+                                    <div className="detail-item">
+                                        <div className="detail-label">Akses Detail Bon</div>
+                                        <div className="detail-value">{canOpenTripCashPage ? 'Tersedia' : 'Role ini hanya melihat keterkaitan DO dengan bon'}</div>
+                                    </div>
+                                </div>
+                                <div className="text-muted text-sm">
+                                    Surat Jalan ini sudah punya uang jalan trip. Detail nominal, biaya perjalanan, top up, dan settlement akhir hanya dibuka dari modul Uang Jalan Trip oleh role yang memang berwenang.
+                                </div>
+                            </div>
+                        ) : (
+                            <div style={{ display: 'grid', gap: '0.75rem' }}>
+                                <div className="detail-value">Belum ada uang jalan trip yang terbit untuk Surat Jalan ini.</div>
+                                <div className="text-muted text-sm">
+                                    Setelah trip siap jalan, terbitkan uang jalan dari Surat Jalan ini agar bon, biaya perjalanan, upah trip, dan settlement akhir tetap terkunci ke DO yang benar.
+                                </div>
+                                {canCreateTripCash && voucherIssueBlockingReasons.length > 0 && (
+                                    <div className="text-muted text-sm">
+                                        Yang masih perlu dilengkapi: {voucherIssueBlockingReasons.join('; ')}.
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
@@ -951,6 +1200,7 @@ export default function DODetailPage() {
                     )}
             </CollapsibleCard>
 
+            <div id="delivery-order-trip-fee-card">
             <CollapsibleCard title="Upah Trip Driver" defaultOpen={!doData.taripBorongan}>
                     {!editingTarip ? (
                         <div>
@@ -965,9 +1215,9 @@ export default function DODetailPage() {
                                     <div className="detail-label">Keterangan</div>
                                     <div className="detail-value">{doData.keteranganBorongan || '-'}</div>
                                 </div>
-                                {canManageTripFee && !linkedVoucherBonNumber && (
+                                {canManageTripFee && !hasLinkedTripCash && (
                                     <div className="detail-item" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end' }}>
-                                        <button className="btn btn-secondary btn-sm" onClick={() => setEditingTarip(true)}>
+                                        <button className="btn btn-secondary btn-sm" onClick={openTripFeeEditor}>
                                             <Edit size={14} /> {doData.taripBorongan ? 'Edit Upah' : 'Isi Upah'}
                                         </button>
                                     </div>
@@ -993,9 +1243,9 @@ export default function DODetailPage() {
                                     </div>
                                 </div>
                             </div>
-                            {linkedVoucherBonNumber && (
+                            {linkedTripCashBonNumber && (
                                 <div className="text-muted text-sm" style={{ marginTop: '0.75rem' }}>
-                                    Upah trip sudah terkunci karena DO ini sudah punya uang jalan trip {linkedVoucherBonNumber}. Untuk menjaga settlement tetap konsisten, nominal dan master rute tidak bisa diubah lagi dari DO.
+                                    Upah trip sudah terkunci karena DO ini sudah punya uang jalan trip {linkedTripCashBonNumber}. Untuk menjaga settlement tetap konsisten, nominal dan master rute tidak bisa diubah lagi dari DO.
                                 </div>
                             )}
                         </div>
@@ -1077,6 +1327,7 @@ export default function DODetailPage() {
                         </div>
                     )}
             </CollapsibleCard>
+            </div>
 
             {/* Items */}
             <div className="card">

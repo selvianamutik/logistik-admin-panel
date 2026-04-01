@@ -493,6 +493,55 @@ export async function getDriverVoucherById(id: string) {
     return applyDerivedDriverVoucherLedger([voucher], disbursements, items)[0];
 }
 
+export async function getDeliveryOrderTripCashLink(deliveryOrderRef: string) {
+    const client = getSanityClient();
+    const voucher = await client.fetch<DriverVoucher | null>(
+        `*[_type == "driverVoucher" && deliveryOrderRef == $deliveryOrderRef] | order(issuedDate desc, _createdAt desc)[0]{
+            _id,
+            bonNumber,
+            deliveryOrderRef,
+            issuedDate,
+            cashGiven,
+            initialCashGiven,
+            totalIssuedAmount,
+            topUpCount,
+            driverFeeAmount,
+            totalClaimAmount,
+            totalSpent,
+            balance,
+            status,
+            settledDate,
+            settledBy,
+            settlementBankRef,
+            settlementBankName
+        }`,
+        { deliveryOrderRef }
+    );
+
+    if (!voucher) return null;
+
+    const [disbursements, items] = await Promise.all([
+        client.fetch<Array<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>>(
+            `*[_type == "driverVoucherDisbursement" && voucherRef == $id]{ voucherRef, amount, kind }`,
+            { id: voucher._id }
+        ),
+        client.fetch<Array<Pick<DriverVoucherItem, 'voucherRef' | 'amount'>>>(
+            `*[_type == "driverVoucherItem" && voucherRef == $id]{ voucherRef, amount }`,
+            { id: voucher._id }
+        ),
+    ]);
+
+    const derivedVoucher = applyDerivedDriverVoucherLedger([voucher], disbursements, items)[0];
+
+    return {
+        hasVoucher: true,
+        voucherId: derivedVoucher._id,
+        bonNumber: derivedVoucher.bonNumber,
+        status: derivedVoucher.status,
+        issuedDate: derivedVoucher.issuedDate,
+    };
+}
+
 function matchesDriverVoucherFilter(
     voucher: Record<string, unknown>,
     filterObj: Record<string, unknown>,

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
+import Link from 'next/link';
 import { CheckCircle, Plus, Printer, Save, Trash2, X } from 'lucide-react';
 
 import CollapsibleCard from '@/components/CollapsibleCard';
@@ -20,7 +21,7 @@ import {
 } from '@/lib/driver-voucher-detail-support';
 import { useApp, useToast } from '../../layout';
 import { fetchCompanyProfile, openBrandedPrint, openPrintWindow, resolveDocumentIssuerProfile } from '@/lib/print';
-import { normalizeUserRole } from '@/lib/rbac';
+import { hasPageAccess, normalizeUserRole } from '@/lib/rbac';
 import type { BankAccount, DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem } from '@/lib/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
 
@@ -48,6 +49,7 @@ export default function DriverVoucherDetailPage() {
     const [settlementBankRef, setSettlementBankRef] = useState('');
     const [issueBankRepairRef, setIssueBankRepairRef] = useState('');
     const normalizedRole = user ? normalizeUserRole(user.role) : null;
+    const canOpenDeliveryOrderPage = user ? hasPageAccess(user.role, 'deliveryOrders') : false;
     const canManageVoucherItems = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL';
     const canTopUpVoucher = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL';
     const canSettleVoucher = normalizedRole === 'OWNER' || normalizedRole === 'FINANCE';
@@ -411,6 +413,11 @@ export default function DriverVoucherDetailPage() {
                     </div>
                 </div>
                 <div className="page-actions">
+                    {voucher.deliveryOrderRef && canOpenDeliveryOrderPage && (
+                        <Link className="btn btn-secondary btn-sm" href={`/delivery-orders/${voucher.deliveryOrderRef}`}>
+                            Buka Surat Jalan
+                        </Link>
+                    )}
                     {!isSettled && canTopUpVoucher && <button className="btn btn-secondary btn-sm" onClick={openTopUpModal}><Plus size={15} /> Tambah Uang Jalan</button>}
                     {!isSettled && canSettleVoucher && (items.length > 0 || driverFeeAmount > 0) && <button className="btn btn-primary" onClick={openSettleModal}><CheckCircle size={16} /> Selesaikan Trip</button>}
                     <button className="btn btn-secondary btn-sm" onClick={handlePrint}><Printer size={15} /> Print</button>
