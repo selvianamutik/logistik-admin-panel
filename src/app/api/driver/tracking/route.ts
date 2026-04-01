@@ -205,6 +205,29 @@ export async function POST(request: Request) {
                 };
 
         if (action === 'start' || action === 'resume') {
+            const currentTrackingState = deliveryOrder.trackingState || 'STOPPED';
+
+            if (action === 'start') {
+                if (currentTrackingState === 'ACTIVE') {
+                    return jsonNoStore({ error: 'Tracking sudah aktif untuk DO ini' }, { status: 409 });
+                }
+                if (currentTrackingState === 'PAUSED') {
+                    return jsonNoStore({ error: 'Tracking sedang dijeda. Gunakan lanjutkan tracking, bukan mulai baru.' }, { status: 409 });
+                }
+            }
+
+            if (action === 'resume' && currentTrackingState !== 'PAUSED') {
+                return jsonNoStore(
+                    {
+                        error:
+                            currentTrackingState === 'ACTIVE'
+                                ? 'Tracking sudah aktif untuk DO ini'
+                                : 'Tracking tidak sedang dijeda',
+                    },
+                    { status: 409 }
+                );
+            }
+
             const otherActiveDo = await getSanityClient().fetch<{ _id: string; doNumber?: string } | null>(
                 `*[
                     _type == "deliveryOrder" &&
