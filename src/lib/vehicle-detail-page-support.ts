@@ -78,7 +78,8 @@ export function buildVehicleTireDetailState(params: {
     const layout = getSuggestedVehicleTireLayout(
         vehicle.vehicleType,
         vehicle.serviceName,
-        internalUnitTires.map(row => row.slotCode || '').filter(Boolean)
+        internalUnitTires.map(row => row.slotCode || '').filter(Boolean),
+        vehicle.tireLayoutConfig
     );
     const tireBySlot = new Map(internalUnitTires.map(row => [row.slotCode || '', row]));
     const mountedSlots = layout.roadSlots.map(slotCode => ({ slotCode, event: tireBySlot.get(slotCode) }));
@@ -86,7 +87,7 @@ export function buildVehicleTireDetailState(params: {
     const filledSlotCount = [...mountedSlots, ...spareSlots].filter(slot => Boolean(slot.event)).length;
     const emptySlotCount = layout.allSlots.length - filledSlotCount;
     const externalAuditTires = normalizedTireRows.filter(
-        row => !row.slotCode || !layout.allSlots.includes(row.slotCode as (typeof layout.allSlots)[number])
+        row => !row.slotCode || !layout.allSlots.includes(row.slotCode)
     );
     const selectedRegisteredTire = normalizedAllTireRows.find(row => row._id === tireForm.registeredTireId);
     const tireSelectionLocked = Boolean(editingTire || selectedRegisteredTire);

@@ -12,6 +12,8 @@ import {
     sanityUpdate,
 } from '@/lib/sanity';
 import {
+    buildDefaultTireLayoutConfig,
+    normalizeTireLayoutConfig,
     resolveTireAssetStatus,
     resolveTireHolderType,
     resolveTirePlacementLabel,
@@ -1051,6 +1053,25 @@ export async function handleGenericUpdate(
     }
 
     await addAuditLog(session, 'UPDATE', entity, id, `Updated ${entity}: ${JSON.stringify(normalizedUpdates).slice(0, 200)}`);
+
+    if (entity === 'services') {
+        const updatedService = updated as { _id?: string; name?: string; tireLayoutConfig?: Record<string, unknown> };
+        if (updatedService._id) {
+            const relatedVehicles = await getSanityClient().fetch<Array<{ _id: string; vehicleType?: string }>>(
+                `*[_type == "vehicle" && (serviceRef == $ref || serviceRef._ref == $ref)]{ _id, vehicleType }`,
+                { ref: updatedService._id }
+            );
+            await Promise.all(
+                relatedVehicles.map(vehicle => sanityUpdate(vehicle._id, {
+                    serviceName: updatedService.name || '',
+                    tireLayoutConfig: normalizeTireLayoutConfig(
+                        updatedService.tireLayoutConfig,
+                        buildDefaultTireLayoutConfig(vehicle.vehicleType || '', updatedService.name || '')
+                    ),
+                }))
+            );
+        }
+    }
 
     if (entity === 'order-items' && typeof normalizedUpdates.status === 'string') {
         const orderItem = updated as { orderRef?: unknown };

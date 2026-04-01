@@ -195,7 +195,8 @@ export default function TiresPage() {
         const layout = getSuggestedVehicleTireLayout(
             selectedVehicle.vehicleType,
             selectedVehicle.serviceName,
-            vehicleTires.map(event => event.slotCode || '').filter(Boolean)
+            vehicleTires.map(event => event.slotCode || '').filter(Boolean),
+            selectedVehicle.tireLayoutConfig
         );
         const occupiedSlots = new Set(
             vehicleTires

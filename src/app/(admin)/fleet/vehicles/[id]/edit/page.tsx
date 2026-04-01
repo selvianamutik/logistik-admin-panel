@@ -15,6 +15,7 @@ import {
     mapVehicleToForm,
     type VehicleForm,
 } from '@/lib/fleet-vehicle-page-support';
+import { buildDefaultTireLayoutConfig, buildTireSlotCodesFromLayoutConfig, formatTireSlotLabel, normalizeTireLayoutConfig } from '@/lib/tire-slots';
 import { useApp, useToast } from '../../../../layout';
 import { VEHICLE_STATUS_MAP } from '@/lib/utils';
 import type { Service, Vehicle, VehicleStatus } from '@/lib/types';
@@ -31,6 +32,10 @@ export default function VehicleEditPage() {
     const isOwner = user?.role === 'OWNER';
     const vehicleId = params.id as string;
     const vehicleSections = getVehicleSections(vehicleId, isOwner);
+    const selectedService = services.find(service => service._id === form.serviceRef) || null;
+    const selectedServiceLayout = selectedService
+        ? buildTireSlotCodesFromLayoutConfig(normalizeTireLayoutConfig(selectedService.tireLayoutConfig, buildDefaultTireLayoutConfig(form.vehicleType, selectedService.name)))
+        : null;
 
     useEffect(() => {
         const loadVehicle = async () => {
@@ -159,6 +164,16 @@ export default function VehicleEditPage() {
                                 </div>
                                 <div className="form-group"><label className="form-label">Base / Lokasi</label><input className="form-input" value={form.base} onChange={e => setForm({ ...form, base: e.target.value })} /></div>
                             </div>
+                            {selectedServiceLayout && (
+                                <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.85rem', padding: '0.85rem 1rem', background: 'var(--color-gray-50)', marginBottom: '0.75rem' }}>
+                                    <div className="font-medium" style={{ marginBottom: '0.35rem' }}>Preview Slot Ban {selectedService?.name}</div>
+                                    <div style={{ display: 'grid', gap: '0.2rem', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                                        {selectedServiceLayout.allSlots.map(slotCode => (
+                                            <div key={slotCode}><span className="font-mono">{slotCode}</span> - {formatTireSlotLabel(slotCode)}</div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                             <div className="form-row">
                                 <div className="form-group"><label className="form-label">Status</label>
                                     <select className="form-select" value={form.status} onChange={e => setForm({ ...form, status: e.target.value as VehicleStatus })}>

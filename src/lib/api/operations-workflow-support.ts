@@ -1,9 +1,11 @@
 import { getSanityClient, sanityGetById } from '@/lib/sanity';
 import { getBusinessCalendarDateParts, getBusinessDateValue } from '@/lib/business-date';
 import {
+    buildDefaultTireLayoutConfig,
     buildTirePlacementLabel,
     formatTireSlotLabel,
     isKnownInternalTireSlotCode,
+    normalizeTireLayoutConfig,
     normalizeTireSlotCode,
 } from '@/lib/tire-slots';
 
@@ -215,6 +217,12 @@ export async function normalizeServicePayload(
         next.description = normalizeText(data.description);
     }
 
+    if (!partial || hasOwnKey(data, 'tireLayoutConfig')) {
+        next.tireLayoutConfig = normalizeTireLayoutConfig(
+            (data.tireLayoutConfig as Record<string, unknown> | undefined) || undefined
+        );
+    }
+
     if (!partial || hasOwnKey(data, 'active')) {
         if (data.active !== undefined && typeof data.active !== 'boolean') {
             throw new Error('Status kategori truk/armada tidak valid');
@@ -329,7 +337,7 @@ export async function normalizeVehiclePayload(
     const partial = options?.partial === true;
     const next: Record<string, unknown> = {};
     const existingVehicle = options?.excludeId
-        ? await sanityGetById<{ _id: string; lastOdometer?: number; serviceRef?: string; unitCode?: string }>(options.excludeId)
+        ? await sanityGetById<{ _id: string; lastOdometer?: number; serviceRef?: string; unitCode?: string; vehicleType?: string }>(options.excludeId)
         : null;
 
     if (options?.excludeId && !existingVehicle) {
@@ -391,7 +399,7 @@ export async function normalizeVehiclePayload(
         if (!serviceRef) {
             throw new Error('Kategori armada kendaraan wajib dipilih');
         }
-        const service = await sanityGetById<{ _id: string; name?: string; code?: string; active?: boolean }>(serviceRef);
+        const service = await sanityGetById<{ _id: string; name?: string; code?: string; active?: boolean; tireLayoutConfig?: Record<string, unknown> }>(serviceRef);
         if (!service) {
             throw new Error('Kategori armada tidak ditemukan');
         }
@@ -403,6 +411,11 @@ export async function normalizeVehiclePayload(
             throw new Error('Kategori armada belum punya kode yang valid');
         }
         resolvedServiceCode = serviceCode;
+        const resolvedVehicleType = normalizeText(String(next.vehicleType ?? existingVehicle?.vehicleType ?? ''));
+        next.tireLayoutConfig = normalizeTireLayoutConfig(
+            service.tireLayoutConfig,
+            buildDefaultTireLayoutConfig(resolvedVehicleType, service.name || '')
+        );
         if (!partial || hasOwnKey(data, 'serviceRef')) {
             next.serviceRef = serviceRef;
             next.serviceName = service.name || '';

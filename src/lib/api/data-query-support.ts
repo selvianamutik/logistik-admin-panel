@@ -1292,7 +1292,7 @@ type VehicleTireSummary = {
 };
 
 function buildVehicleTireSummary(
-    vehicle: Pick<Vehicle, '_id' | 'vehicleType' | 'serviceName'>,
+    vehicle: Pick<Vehicle, '_id' | 'vehicleType' | 'serviceName' | 'tireLayoutConfig'>,
     tireEvents: Array<Pick<TireEvent, 'vehicleRef' | 'status' | 'holderType' | 'slotCode' | 'posisi' | 'vehiclePlate' | 'externalPartyName' | 'externalPlateNumber'>>
 ): VehicleTireSummary {
     const activeSlotCodes = Array.from(
@@ -1303,7 +1303,7 @@ function buildVehicleTireSummary(
                 .filter(Boolean)
         )
     );
-    const layout = getSuggestedVehicleTireLayout(vehicle.vehicleType, vehicle.serviceName, activeSlotCodes);
+    const layout = getSuggestedVehicleTireLayout(vehicle.vehicleType, vehicle.serviceName, activeSlotCodes, vehicle.tireLayoutConfig);
     const filled = activeSlotCodes.length;
     const expected = layout.allSlots.length;
     return {
@@ -1316,8 +1316,8 @@ function buildVehicleTireSummary(
 export async function getVehiclesSummary(ids: string[] = []) {
     const client = getSanityClient();
     const [vehicles, tireEvents] = await Promise.all([
-        client.fetch<Array<Pick<Vehicle, '_id' | 'status' | 'vehicleType' | 'serviceName'>>>(
-            `*[_type == "vehicle"]{ _id, status, vehicleType, serviceName }`
+        client.fetch<Array<Pick<Vehicle, '_id' | 'status' | 'vehicleType' | 'serviceName' | 'tireLayoutConfig'>>>(
+            `*[_type == "vehicle"]{ _id, status, vehicleType, serviceName, tireLayoutConfig }`
         ),
         client.fetch<Array<Pick<TireEvent, 'vehicleRef' | 'status' | 'holderType' | 'slotCode' | 'posisi' | 'vehiclePlate' | 'externalPartyName' | 'externalPlateNumber'>>>(
             `*[_type == "tireEvent" && defined(vehicleRef)]{

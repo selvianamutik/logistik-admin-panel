@@ -6,6 +6,12 @@
 import type { VolumeInputUnit, WeightInputUnit } from './measurement';
 
 export type UserRole = 'OWNER' | 'OPERASIONAL' | 'FINANCE' | 'ARMADA' | 'DRIVER' | 'ADMIN';
+export type TireAxleLayoutMode = 'NONE' | 'SINGLE' | 'DUAL';
+
+export interface TireLayoutConfig {
+  axleLayouts: TireAxleLayoutMode[];
+  spareCount: number;
+}
 
 export interface User {
   _id: string;
@@ -170,6 +176,7 @@ export interface Service {
   code: string;
   name: string;
   description: string;
+  tireLayoutConfig?: TireLayoutConfig;
   active: boolean;
 }
 
@@ -767,6 +774,7 @@ export interface Vehicle {
   capacityVolume?: number;
   serviceRef?: string;
   serviceName?: string;
+  tireLayoutConfig?: TireLayoutConfig;
   chassisNumber?: string;   // ownerOnly
   engineNumber?: string;    // ownerOnly
   status: VehicleStatus;

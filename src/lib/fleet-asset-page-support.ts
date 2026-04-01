@@ -236,7 +236,8 @@ export function getSelectableInternalTireSlotOptions(params: {
     const layout = getSuggestedVehicleTireLayout(
         vehicle.vehicleType,
         vehicle.serviceName,
-        normalizedVehicleTires.map(event => event.slotCode || '').filter(Boolean)
+        normalizedVehicleTires.map(event => event.slotCode || '').filter(Boolean),
+        vehicle.tireLayoutConfig
     );
     const slotCodes = layout.allSlots.slice().sort(compareTireSlotCodes);
     const occupiedBySlot = new Map(

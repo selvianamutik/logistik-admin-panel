@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Edit, MapPin, Plus, Save, X } from 'lucide-react';
+import { Edit, MapPin, Plus, Save, Trash2, X } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import CurrencyInput from '@/components/CurrencyInput';
 import { useApp, useToast } from '../layout';
@@ -24,6 +24,8 @@ export default function TripRouteRatesPage() {
     const [showModal, setShowModal] = useState(false);
     const [editItem, setEditItem] = useState<TripRouteRate | null>(null);
     const [saving, setSaving] = useState(false);
+    const [deleteId, setDeleteId] = useState<string | null>(null);
+    const [deletingId, setDeletingId] = useState<string | null>(null);
     const [form, setForm] = useState({
         originArea: '',
         destinationArea: '',
@@ -35,6 +37,7 @@ export default function TripRouteRatesPage() {
 
     const canCreateTripRate = user ? hasPermission(user.role, 'tripRouteRates', 'create') : false;
     const canUpdateTripRate = user ? hasPermission(user.role, 'tripRouteRates', 'update') : false;
+    const canDeleteTripRate = user ? hasPermission(user.role, 'tripRouteRates', 'delete') : false;
 
     const loadTripRouteRates = useCallback(async () => {
         setLoading(true);
@@ -145,6 +148,39 @@ export default function TripRouteRatesPage() {
         }
     };
 
+    const handleDelete = async (id: string) => {
+        if (!canDeleteTripRate) {
+            addToast('error', 'Anda tidak punya izin menghapus biaya rute trip');
+            return;
+        }
+        setDeletingId(id);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entity: 'trip-route-rates', action: 'delete', data: { id } }),
+            });
+            const payload = await res.json();
+            if (!res.ok) {
+                addToast('error', payload.error || 'Gagal menghapus biaya rute trip');
+                setDeleteId(null);
+                return;
+            }
+            if (page > 1 && items.length === 1) {
+                setPage(current => Math.max(1, current - 1));
+            } else {
+                await loadTripRouteRates();
+            }
+            setDeleteId(null);
+            addToast('success', 'Biaya rute trip dihapus');
+        } catch {
+            addToast('error', 'Gagal menghapus biaya rute trip');
+            setDeleteId(null);
+        } finally {
+            setDeletingId(current => current === id ? null : current);
+        }
+    };
+
     return (
         <div>
             <div className="page-header">
@@ -225,10 +261,19 @@ export default function TripRouteRatesPage() {
                                             </span>
                                         </td>
                                         <td>
-                                            {canUpdateTripRate ? (
-                                                <button className="table-action-btn" onClick={() => openEdit(item)}>
-                                                    <Edit size={14} /> Edit
-                                                </button>
+                                            {canUpdateTripRate || canDeleteTripRate ? (
+                                                <div className="table-actions">
+                                                    {canUpdateTripRate && (
+                                                        <button className="table-action-btn" onClick={() => openEdit(item)}>
+                                                            <Edit size={14} /> Edit
+                                                        </button>
+                                                    )}
+                                                    {canDeleteTripRate && (
+                                                        <button className="table-action-btn danger" onClick={() => setDeleteId(item._id)}>
+                                                            <Trash2 size={14} /> Hapus
+                                                        </button>
+                                                    )}
+                                                </div>
                                             ) : (
                                                 <span className="text-muted">Lihat saja</span>
                                             )}
@@ -346,6 +391,24 @@ export default function TripRouteRatesPage() {
                             <button className="btn btn-secondary" onClick={() => setShowModal(false)} disabled={saving}>Batal</button>
                             <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
                                 <Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {canDeleteTripRate && deleteId && (
+                <div className="modal-overlay" onClick={() => { if (deletingId !== deleteId) setDeleteId(null); }}>
+                    <div className="modal" onClick={event => event.stopPropagation()} style={{ maxWidth: 420 }}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Hapus Biaya Rute Trip?</h3>
+                        </div>
+                        <div className="modal-body">
+                            <p>Rule biaya rute trip akan dihapus permanen. Jika sudah dipakai di surat jalan, sistem akan menolak penghapusan ini.</p>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setDeleteId(null)} disabled={deletingId === deleteId}>Batal</button>
+                            <button className="btn btn-danger" onClick={() => handleDelete(deleteId)} disabled={deletingId === deleteId}>
+                                <Trash2 size={16} /> {deletingId === deleteId ? 'Menghapus...' : 'Hapus'}
                             </button>
                         </div>
                     </div>
