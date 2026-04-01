@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { resolveCompanyLogoUrl } from '@/lib/branding';
+import { getBusinessCalendarDateParts, getBusinessDateTimeLocalValue } from '@/lib/business-date';
 import { getSanityClient, sanityDelete, sanityGetById, sanityGetNextNumber, sanityUpdate } from '@/lib/sanity';
 import type { Driver, User } from '@/lib/types';
 
@@ -148,7 +149,7 @@ export async function handleIncidentCreate(
     const incidentDateTime =
         typeof data.dateTime === 'string' && data.dateTime
             ? data.dateTime
-            : timestamp.slice(0, 16);
+            : getBusinessDateTimeLocalValue();
     try {
         assertIsoDateTime(incidentDateTime, 'Waktu insiden');
     } catch (error) {
@@ -157,7 +158,11 @@ export async function handleIncidentCreate(
             { status: 400 }
         );
     }
-    const incidentNumber = await sanityGetNextNumber('incident', incidentDateTime.slice(0, 10));
+    const incidentDateParts = getBusinessCalendarDateParts(incidentDateTime);
+    const incidentBusinessDate = incidentDateParts
+        ? `${incidentDateParts.year}-${incidentDateParts.month}-${incidentDateParts.day}`
+        : incidentDateTime.slice(0, 10);
+    const incidentNumber = await sanityGetNextNumber('incident', incidentBusinessDate);
     const incidentDoc = {
         _id: incidentId,
         _type: 'incident',
