@@ -75,6 +75,31 @@ type DriverBoronganOrderSource = {
     receiverAddress?: string;
 };
 
+function parseOptionalStrictBoronganRowNumber(
+    value: unknown,
+    label: string,
+    options?: { allowDecimal?: boolean; maxFractionDigits?: number }
+) {
+    if (value === undefined || value === null) {
+        return 0;
+    }
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed) {
+            return 0;
+        }
+        if (!/[0-9]/.test(trimmed) || /[a-z]/i.test(trimmed)) {
+            throw new Error(label);
+        }
+    }
+
+    const normalized = normalizeNumber(value, options);
+    if (!Number.isFinite(normalized)) {
+        throw new Error(label);
+    }
+    return normalized;
+}
+
 export async function handleDriverBoronganCreate(
     session: ApiSession,
     data: Record<string, unknown>,
@@ -101,7 +126,11 @@ export async function handleDriverBoronganCreate(
             const tujuan = normalizeText(row.tujuan);
             const beratKg = normalizeNumber(row.beratKg);
             const tarip = normalizeCurrencyNumber(row.tarip);
-            const collie = normalizeNumber(row.collie ?? 0);
+            const collie = parseOptionalStrictBoronganRowNumber(
+                row.collie,
+                'Collie pada baris borongan tidak valid',
+                { maxFractionDigits: 2 }
+            );
 
             if ((!date || !noSJ || !tujuan) && !doRef) {
                 throw new Error('Baris borongan wajib punya tanggal, nomor SJ, dan tujuan');
