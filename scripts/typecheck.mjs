@@ -1,8 +1,9 @@
-import { existsSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const ROUTE_TYPES_PATH = path.join(process.cwd(), '.next', 'types', 'routes.d.ts');
+const TSCONFIG_BUILD_INFO_PATH = path.join(process.cwd(), 'tsconfig.tsbuildinfo');
 
 function run(command, args) {
   return spawnSync(command, args, {
@@ -51,5 +52,7 @@ if (!typegenResult || typegenResult.status !== 0 || !existsSync(ROUTE_TYPES_PATH
   process.exit(typegenResult?.status ?? 1);
 }
 
-const tscResult = run('tsc', ['--noEmit']);
+rmSync(TSCONFIG_BUILD_INFO_PATH, { force: true });
+
+const tscResult = run('tsc', ['--noEmit', '--incremental', 'false']);
 process.exit(tscResult.status ?? 1);
