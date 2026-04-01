@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useRef } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useToast } from '../../layout';
 import { Save } from 'lucide-react';
 import CurrencyInput from '@/components/CurrencyInput';
@@ -14,6 +14,7 @@ import { formatCurrency } from '@/lib/utils';
 
 export default function NewDriverVoucherPage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const { addToast } = useToast();
     const [drivers, setDrivers] = useState<Driver[]>([]);
     const [dos, setDos] = useState<DeliveryOrder[]>([]);
@@ -23,8 +24,10 @@ export default function NewDriverVoucherPage() {
     const [usedBoronganDoRefs, setUsedBoronganDoRefs] = useState<string[]>([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const prefilledDeliveryOrderRef = searchParams.get('deliveryOrderRef') || '';
+    const appliedPrefillRef = useRef(false);
     const [form, setForm] = useState({
-        deliveryOrderRef: '',
+        deliveryOrderRef: prefilledDeliveryOrderRef,
         issueBankRef: '',
         issuedDate: getBusinessDateValue(),
         cashGiven: 0,
@@ -73,9 +76,51 @@ export default function NewDriverVoucherPage() {
         )
         .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
-    const selectedDo = eligibleDos.find((deliveryOrder) => deliveryOrder._id === form.deliveryOrderRef)
-        || dos.find((deliveryOrder) => deliveryOrder._id === form.deliveryOrderRef)
-        || null;
+    useEffect(() => {
+        if (loading || appliedPrefillRef.current || !prefilledDeliveryOrderRef) {
+            return;
+        }
+
+        appliedPrefillRef.current = true;
+
+        const matchedEligibleDo = eligibleDos.find(deliveryOrder => deliveryOrder._id === prefilledDeliveryOrderRef);
+        if (matchedEligibleDo) {
+            return;
+        }
+
+        const matchedDo = dos.find(deliveryOrder => deliveryOrder._id === prefilledDeliveryOrderRef);
+        if (!matchedDo) {
+            addToast('error', 'Surat jalan yang dipilih tidak ditemukan atau sudah tidak bisa dipakai');
+            return;
+        }
+
+        const blockingReasons = [
+            usedVoucherDoRefs.includes(prefilledDeliveryOrderRef) ? 'DO ini sudah punya uang jalan trip' : null,
+            usedBoronganDoRefs.includes(prefilledDeliveryOrderRef) ? 'DO ini sudah masuk arsip borongan' : null,
+            !matchedDo.driverRef ? 'supir trip belum diisi' : null,
+            !matchedDo.vehicleRef && !matchedDo.vehiclePlate ? 'kendaraan trip belum diisi' : null,
+        ].filter((value): value is string => Boolean(value));
+
+        addToast(
+            'error',
+            blockingReasons.length > 0
+                ? `Surat jalan ini belum bisa dipakai: ${blockingReasons.join('; ')}`
+                : 'Surat jalan ini belum bisa dipakai untuk uang jalan trip'
+        );
+    }, [
+        addToast,
+        dos,
+        eligibleDos,
+        loading,
+        prefilledDeliveryOrderRef,
+        usedBoronganDoRefs,
+        usedVoucherDoRefs,
+    ]);
+
+    const selectedDeliveryOrderRef = eligibleDos.some(deliveryOrder => deliveryOrder._id === form.deliveryOrderRef)
+        ? form.deliveryOrderRef
+        : '';
+    const selectedDo = eligibleDos.find((deliveryOrder) => deliveryOrder._id === form.deliveryOrderRef) || null;
     const selectedOrder = selectedDo?.orderRef
         ? orders.find((order) => order._id === selectedDo.orderRef)
         : null;
@@ -165,7 +210,7 @@ export default function NewDriverVoucherPage() {
                             <label className="form-label">DO Internal / Trip <span className="required">*</span></label>
                             <select
                                 className="form-select"
-                                value={form.deliveryOrderRef}
+                                value={selectedDeliveryOrderRef}
                                 onChange={e => {
                                     const deliveryOrderRef = e.target.value;
                                     setForm(previous => ({

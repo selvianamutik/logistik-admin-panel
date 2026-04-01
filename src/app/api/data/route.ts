@@ -68,6 +68,7 @@ import {
     getDriverBoronganById,
     getDriverBoronganList,
     getDriverBoronganDoRefsSummary,
+    getDeliveryOrderTripCashLink,
     getDriverVoucherList,
     getCustomersSummary,
     getDashboardSummary,
@@ -432,6 +433,23 @@ export async function GET(request: Request) {
             return jsonNoStore({ data: summary });
         } catch (err) {
             console.error('API GET Driver Borongan DO Ref Summary Error:', err);
+            return jsonNoStore({ error: 'Server error' }, { status: 500 });
+        }
+    }
+
+    if (entity === 'delivery-order-trip-cash-link') {
+        if (!hasPermission(session.role, 'deliveryOrders', 'view')) {
+            return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
+        }
+        const deliveryOrderRef = searchParams.get('deliveryOrderRef')?.trim();
+        if (!deliveryOrderRef) {
+            return jsonNoStore({ error: 'Delivery order ref wajib diisi' }, { status: 400 });
+        }
+        try {
+            const summary = await getDeliveryOrderTripCashLink(deliveryOrderRef);
+            return jsonNoStore({ data: summary });
+        } catch (err) {
+            console.error('API GET Delivery Order Trip Cash Link Error:', err);
             return jsonNoStore({ error: 'Server error' }, { status: 500 });
         }
     }
