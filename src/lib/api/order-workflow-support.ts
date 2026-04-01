@@ -24,6 +24,16 @@ import {
     normalizeText,
 } from './data-helpers';
 
+function readOptionalBooleanInput(value: unknown, label: string) {
+    if (value === undefined) {
+        return undefined;
+    }
+    if (typeof value !== 'boolean') {
+        throw new Error(label);
+    }
+    return value;
+}
+
 export type OrderItemStatusSummary = {
     status?: string;
     qtyKoli?: number;
@@ -516,7 +526,8 @@ export function normalizeDeliveryOrderSelections(data: Record<string, unknown>, 
                     weightInputUnit: weightInputValue > 0 ? weightInputUnit : undefined,
                     volumeInputValue: volumeInputValue > 0 ? volumeInputValue : undefined,
                     volumeInputUnit: volumeInputValue > 0 ? volumeInputUnit : undefined,
-                    holdRemaining: Boolean(item.holdRemaining),
+                    holdRemaining:
+                        readOptionalBooleanInput(item.holdRemaining, 'Status hold sisa muatan tidak valid') ?? false,
                     holdReason: normalizeOptionalText(item.holdReason),
                     holdLocation: normalizeOptionalText(item.holdLocation),
                 };

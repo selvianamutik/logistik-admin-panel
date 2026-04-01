@@ -24,6 +24,32 @@ type AuditLogFn = (
 
 const MANAGEABLE_USER_ROLES = ['OWNER', 'OPERASIONAL', 'FINANCE', 'ARMADA', 'DRIVER'] as const;
 
+function parseStrictInvoiceNumber(
+    value: unknown,
+    label: string,
+    options?: { allowDecimal?: boolean; maxFractionDigits?: number }
+) {
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed || !/[0-9]/.test(trimmed) || /[a-z]/i.test(trimmed)) {
+            throw new Error(label);
+        }
+        if (options?.allowDecimal === false) {
+            const groupedIntegerPattern = /^-?\d{1,3}(?:[.,]\d{3})*$/;
+            const plainIntegerPattern = /^-?\d+$/;
+            if (!groupedIntegerPattern.test(trimmed) && !plainIntegerPattern.test(trimmed)) {
+                throw new Error(label);
+            }
+        }
+    }
+
+    const normalized = normalizeNumber(value, options);
+    if (!Number.isFinite(normalized)) {
+        throw new Error(label);
+    }
+    return normalized;
+}
+
 async function validateDriverAccountLink(driverRef: unknown, excludeUserId?: string) {
     const normalizedDriverRef = normalizeText(driverRef);
     if (!normalizedDriverRef) {
@@ -256,8 +282,12 @@ export async function handleInvoiceCreate(
         );
     }
 
-    const mode =
-        typeof data.mode === 'string' && (data.mode === 'ORDER' || data.mode === 'DO') ? data.mode : 'ORDER';
+    const hasMode = Object.prototype.hasOwnProperty.call(data, 'mode');
+    const modeValue = typeof data.mode === 'string' ? data.mode : '';
+    if (hasMode && modeValue !== 'ORDER' && modeValue !== 'DO') {
+        return NextResponse.json({ error: 'Mode invoice tidak valid' }, { status: 400 });
+    }
+    const mode = modeValue === 'DO' ? 'DO' : 'ORDER';
     const orderRef = normalizeOptionalText(data.orderRef);
     const doRef = normalizeOptionalText(data.doRef);
     const customerRef = normalizeOptionalText(data.customerRef);
@@ -299,13 +329,31 @@ export async function handleInvoiceCreate(
     }
 
     const transaction = getSanityClient().transaction().create(invoiceDoc);
+    let itemSubtotalTotal = 0;
     for (const item of items) {
-        const subtotal = normalizeCurrencyNumber(item.subtotal);
-        const qty = normalizeNumber(item.qty);
-        const price = normalizeCurrencyNumber(item.price);
-        if (!Number.isFinite(subtotal) || !Number.isFinite(qty) || !Number.isFinite(price)) {
+        let subtotal: number;
+        let qty: number;
+        let price: number;
+        try {
+            subtotal = parseStrictInvoiceNumber(item.subtotal, 'Subtotal item invoice tidak valid', {
+                allowDecimal: false,
+                maxFractionDigits: 0,
+            });
+            qty = parseStrictInvoiceNumber(item.qty, 'Qty item invoice tidak valid');
+            price = parseStrictInvoiceNumber(item.price, 'Harga item invoice tidak valid', {
+                allowDecimal: false,
+                maxFractionDigits: 0,
+            });
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Ada item invoice yang tidak valid' },
+                { status: 400 }
+            );
+        }
+        if (subtotal <= 0 || qty <= 0 || price < 0) {
             return NextResponse.json({ error: 'Ada item invoice yang tidak valid' }, { status: 400 });
         }
+        itemSubtotalTotal += subtotal;
 
         transaction.create({
             _id: crypto.randomUUID(),
@@ -316,6 +364,9 @@ export async function handleInvoiceCreate(
             price,
             subtotal,
         });
+    }
+    if (itemSubtotalTotal !== totalAmount) {
+        return NextResponse.json({ error: 'Total invoice harus sama dengan jumlah subtotal item' }, { status: 400 });
     }
 
     await transaction.commit();

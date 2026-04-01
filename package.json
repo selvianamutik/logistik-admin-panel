@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "node -e \"require('fs').rmSync('.next', { recursive: true, force: true })\" && next build --webpack",
-    "build:turbopack": "node -e \"require('fs').rmSync('.next', { recursive: true, force: true })\" && next build",
+    "build": "node scripts/clean-next.mjs && next build --webpack",
+    "build:turbopack": "node scripts/clean-next.mjs && next build",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "node scripts/typecheck.mjs",

@@ -936,12 +936,19 @@ export async function handleDeliveryOrderStatusUpdate(
         }
     }
 
-    const actualCargoByDoItemId =
-        status === 'DELIVERED' ? normalizeDeliveryOrderActualCargoInputs(data, doItems) : new Map<string, NormalizedActualCargoInput>();
-    const actualDropPoints =
-        status === 'DELIVERED'
-            ? normalizeDeliveryActualDropPoints(data, deliveryOrder, actualCargoByDoItemId)
-            : undefined;
+    let actualCargoByDoItemId = new Map<string, NormalizedActualCargoInput>();
+    let actualDropPoints: ReturnType<typeof normalizeDeliveryActualDropPoints> | undefined;
+    if (status === 'DELIVERED') {
+        try {
+            actualCargoByDoItemId = normalizeDeliveryOrderActualCargoInputs(data, doItems);
+            actualDropPoints = normalizeDeliveryActualDropPoints(data, deliveryOrder, actualCargoByDoItemId);
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Muatan aktual surat jalan tidak valid' },
+                { status: 400 }
+            );
+        }
+    }
 
     const timestamp = new Date().toISOString();
     const shouldStopTracking = status === 'DELIVERED' || status === 'CANCELLED';
@@ -1641,7 +1648,15 @@ export async function handleDeliveryOrderCreate(
         return NextResponse.json({ error: 'Sebagian item order tidak ditemukan' }, { status: 404 });
     }
 
-    const normalizedSelections = normalizeDeliveryOrderSelections(data, selectedItems);
+    let normalizedSelections: ReturnType<typeof normalizeDeliveryOrderSelections>;
+    try {
+        normalizedSelections = normalizeDeliveryOrderSelections(data, selectedItems);
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Item surat jalan tidak valid' },
+            { status: 400 }
+        );
+    }
     if (normalizedSelections.length === 0) {
         return NextResponse.json({ error: 'Pilih minimal 1 item untuk surat jalan' }, { status: 400 });
     }
