@@ -17,7 +17,7 @@ export function buildInvoiceDetailSummary(params: {
     payments: Payment[];
     adjustments: InvoiceAdjustment[];
 }) {
-    const totalPaid = params.payments.reduce(
+    const totalPaidRaw = params.payments.reduce(
         (sum, payment) => sum + parseFormattedNumberish(payment.amount || 0, { maxFractionDigits: 0 }),
         0
     );
@@ -29,12 +29,22 @@ export function buildInvoiceDetailSummary(params: {
                 .filter(item => item.status === 'APPROVED')
                 .reduce((sum, item) => sum + parseFormattedNumberish(item.amount || 0, { maxFractionDigits: 0 }), 0);
     const netAmount = params.nota ? getReceivableNetAmount(params.nota) : 0;
+    const refundedOverpaymentAmount = parseFormattedNumberish(params.nota?.refundedOverpaymentAmount || 0, { maxFractionDigits: 0 });
+    const totalPaid =
+        params.nota?.totalPaidEffective !== undefined && params.nota?.totalPaidEffective !== null
+            ? parseFormattedNumberish(params.nota.totalPaidEffective, { maxFractionDigits: 0 })
+            : Math.max(totalPaidRaw - refundedOverpaymentAmount, 0);
     const remaining = Math.max(netAmount - totalPaid, 0);
-    const creditAmount = Math.max(totalPaid - netAmount, 0);
+    const creditAmount =
+        params.nota?.openOverpaymentAmount !== undefined && params.nota?.openOverpaymentAmount !== null
+            ? parseFormattedNumberish(params.nota.openOverpaymentAmount, { maxFractionDigits: 0 })
+            : Math.max(totalPaid - netAmount, 0);
     const paidPercent = netAmount > 0 ? Math.min(100, (Math.min(totalPaid, netAmount) / netAmount) * 100) : totalPaid > 0 ? 100 : 0;
 
     return {
+        totalPaidRaw,
         totalPaid,
+        refundedOverpaymentAmount,
         grossAmount,
         totalAdjustmentAmount,
         netAmount,

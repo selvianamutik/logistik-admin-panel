@@ -22,10 +22,13 @@ import {
 } from '@/lib/api/driver-workflows';
 import {
     handleBankTransfer,
+    handleCustomerOverpaymentRefund,
     handleCustomerReceiptCreate,
     handleExpenseCreate,
     handleFreightNotaCreate,
     handleInvoiceAdjustmentCreate,
+    handleInvoiceAdjustmentDelete,
+    handleInvoiceAdjustmentUpdate,
     handleInvoiceAdjustmentVoid,
     handlePaymentCreate,
 } from '@/lib/api/finance-workflows';
@@ -65,6 +68,8 @@ import {
     applyDerivedBankAccountBalances,
     getCustomerReceiptById,
     getCustomerReceiptList,
+    getCustomerOverpaymentById,
+    getCustomerOverpaymentList,
     getDriverBoronganById,
     getDriverBoronganList,
     getDriverBoronganDoRefsSummary,
@@ -82,6 +87,7 @@ import {
     applyDerivedDriverVoucherLedger,
     applyDerivedFreightNotaStatus,
 } from '@/lib/api/data-query-support';
+import { getCustomerOverpaymentRefundTotals } from '@/lib/customer-overpayments';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import {
     SANITY_TYPE_MAP,
@@ -93,7 +99,7 @@ import {
     sanityGetCompanyProfile,
     sanityList,
 } from '@/lib/sanity';
-import type { BankAccount, BankTransaction, DriverBorongan, DriverBoronganItem, DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem, Expense, FreightNota, User, Vehicle } from '@/lib/types';
+import type { BankAccount, BankTransaction, CustomerOverpaymentRefund, DriverBorongan, DriverBoronganItem, DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem, Expense, FreightNota, User, Vehicle } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -125,6 +131,7 @@ const ENTITY_MODULE_MAP: Partial<Record<keyof typeof SANITY_TYPE_MAP, AppModule>
     'tracking-logs': 'deliveryOrders',
     payments: 'freightNotas',
     'customer-receipts': 'freightNotas',
+    'customer-overpayment-refunds': 'freightNotas',
     'invoice-adjustments': 'freightNotas',
     expenses: 'expenses',
     vehicles: 'vehicles',
@@ -454,6 +461,110 @@ export async function GET(request: Request) {
         }
     }
 
+    if (entity === 'customer-overpayments') {
+        if (!hasPermission(session.role, 'freightNotas', 'view')) {
+            return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
+        }
+        try {
+            let customerOverpaymentFilterObj: Record<string, unknown> | undefined;
+            let customerOverpaymentOrFilters: Array<{ fields: string[]; value: string | number | boolean }> = [];
+            let customerOverpaymentDefinedFields: string[] = [];
+
+            if (filter) {
+                try {
+                    customerOverpaymentFilterObj = JSON.parse(filter) as Record<string, unknown>;
+                } catch (error) {
+                    return jsonNoStore(
+                        { error: error instanceof Error ? error.message : 'Filter query tidak valid' },
+                        { status: 400 }
+                    );
+                }
+            }
+
+            if (orFiltersParam) {
+                try {
+                    const parsed = JSON.parse(orFiltersParam) as unknown;
+                    if (!Array.isArray(parsed)) {
+                        throw new Error('Or filter query tidak valid');
+                    }
+                    customerOverpaymentOrFilters = parsed
+                        .filter((item): item is { fields: string[]; value: string | number | boolean } => (
+                            typeof item === 'object' &&
+                            item !== null &&
+                            Array.isArray((item as { fields?: unknown }).fields) &&
+                            ((item as { value?: unknown }).value === undefined
+                                || ['string', 'number', 'boolean'].includes(typeof (item as { value?: unknown }).value))
+                        ))
+                        .map(item => ({
+                            fields: item.fields.map(field => String(field).trim()).filter(Boolean),
+                            value: item.value as string | number | boolean,
+                        }))
+                        .filter(item => item.fields.length > 0);
+                } catch (error) {
+                    return jsonNoStore(
+                        { error: error instanceof Error ? error.message : 'Or filter query tidak valid' },
+                        { status: 400 }
+                    );
+                }
+            }
+
+            if (definedFieldsParam) {
+                customerOverpaymentDefinedFields = definedFieldsParam
+                    .split(',')
+                    .map(field => field.trim())
+                    .filter(Boolean);
+            }
+
+            if (id) {
+                const item = await getCustomerOverpaymentById(id);
+                if (!item) {
+                    return jsonNoStore({ error: 'Not found' }, { status: 404 });
+                }
+                return jsonNoStore({ data: item });
+            }
+
+            const page = pageParam ? Number.parseInt(pageParam, 10) : 1;
+            const pageSize = pageSizeParam ? Number.parseInt(pageSizeParam, 10) : 10;
+            const searchFields = searchFieldsParam
+                ? searchFieldsParam.split(',').map(field => field.trim()).filter(Boolean)
+                : [];
+            const result = await getCustomerOverpaymentList({
+                filterObj: customerOverpaymentFilterObj,
+                orFilters: customerOverpaymentOrFilters,
+                definedFields: customerOverpaymentDefinedFields,
+                search: searchQuery || undefined,
+                searchFields,
+                page: pageParam || pageSizeParam ? page : undefined,
+                pageSize: pageParam || pageSizeParam ? pageSize : undefined,
+                sortField,
+                sortDir,
+                sortPreset,
+                countOnly,
+            });
+            if (countOnly) {
+                return jsonNoStore({
+                    data: [],
+                    meta: {
+                        page,
+                        pageSize,
+                        total: result.total,
+                    },
+                });
+            }
+            return jsonNoStore({
+                data: result.items,
+                meta: {
+                    page,
+                    pageSize,
+                    total: result.total,
+                },
+            });
+        } catch (err) {
+            console.error('API GET Customer Overpayment Error:', err);
+            return jsonNoStore({ error: 'Server error' }, { status: 500 });
+        }
+    }
+
     if (!validateEntity(entity)) {
         return jsonNoStore({ error: 'Invalid entity type' }, { status: 400 });
     }
@@ -754,19 +865,34 @@ export async function GET(request: Request) {
             const ids = items
                 .map(item => (typeof item._id === 'string' ? item._id : ''))
                 .filter(Boolean);
-            const paymentRows = await getSanityClient().fetch<Array<{ invoiceRef?: string; amount?: unknown }>>(
-                `*[_type == "payment" && defined(invoiceRef) && invoiceRef in $ids]{
-                    invoiceRef,
-                    amount
-                }`,
-                { ids }
-            );
+            const [paymentRows, refundRows] = await Promise.all([
+                getSanityClient().fetch<Array<{ invoiceRef?: string; amount?: unknown }>>(
+                    `*[_type == "payment" && defined(invoiceRef) && invoiceRef in $ids]{
+                        invoiceRef,
+                        amount
+                    }`,
+                    { ids }
+                ),
+                getSanityClient().fetch<Array<Pick<CustomerOverpaymentRefund, 'sourceType' | 'sourceInvoiceRef' | 'amount'>>>(
+                    `*[_type == "customerOverpaymentRefund" && sourceType == "INVOICE_OVERPAID" && sourceInvoiceRef in $ids]{
+                        sourceType,
+                        sourceInvoiceRef,
+                        amount
+                    }`,
+                    { ids }
+                ),
+            ]);
             const paymentTotalsByInvoice = paymentRows.reduce<Record<string, number>>((acc, payment) => {
                 if (!payment.invoiceRef) return acc;
                 acc[payment.invoiceRef] = (acc[payment.invoiceRef] || 0) + parseWholeMoneyLike(payment.amount);
                 return acc;
             }, {});
-            items = applyDerivedFreightNotaStatus(items as unknown as FreightNota[], paymentTotalsByInvoice) as unknown as Record<string, unknown>[];
+            const { invoiceRefundsByRef } = getCustomerOverpaymentRefundTotals(refundRows);
+            items = applyDerivedFreightNotaStatus(
+                items as unknown as FreightNota[],
+                paymentTotalsByInvoice,
+                invoiceRefundsByRef
+            ) as unknown as Record<string, unknown>[];
         }
 
         if (entity === 'customer-receipts' && items.length > 0) {
@@ -959,14 +1085,6 @@ export async function POST(request: Request) {
 
         const docType = SANITY_TYPE_MAP[entity];
 
-        if (action === 'update') {
-            return await handleGenericUpdate(session, entity, data, addAuditLog);
-        }
-
-        if (action === 'delete') {
-            return await handleGenericDelete(session, entity, data, addAuditLog);
-        }
-
         if (entity === 'driver-borongans' && action === 'mark-paid') {
             return await handleBoronganPayment(session, data, addAuditLog);
         }
@@ -1054,12 +1172,32 @@ export async function POST(request: Request) {
             return await handleCustomerReceiptCreate(session, data, addAuditLog);
         }
 
+        if (entity === 'customer-overpayment-refunds') {
+            return await handleCustomerOverpaymentRefund(session, data, addAuditLog);
+        }
+
+        if (entity === 'invoice-adjustments' && action === 'update') {
+            return await handleInvoiceAdjustmentUpdate(session, data, addAuditLog);
+        }
+
+        if (entity === 'invoice-adjustments' && action === 'delete') {
+            return await handleInvoiceAdjustmentDelete(session, data, addAuditLog);
+        }
+
         if (entity === 'invoice-adjustments' && action === 'void') {
             return await handleInvoiceAdjustmentVoid(session, data, addAuditLog);
         }
 
         if (entity === 'invoice-adjustments') {
             return await handleInvoiceAdjustmentCreate(session, data, addAuditLog);
+        }
+
+        if (action === 'update') {
+            return await handleGenericUpdate(session, entity, data, addAuditLog);
+        }
+
+        if (action === 'delete') {
+            return await handleGenericDelete(session, entity, data, addAuditLog);
         }
 
         if (entity === 'expenses') {

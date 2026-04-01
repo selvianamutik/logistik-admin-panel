@@ -35,6 +35,7 @@ const RESET_TYPES = [
     'invoice',
     'payment',
     'customerReceipt',
+    'customerOverpaymentRefund',
     'income',
     'expense',
     'maintenance',

@@ -14,7 +14,7 @@ import { deriveReceivableStatus, formatDate, formatCurrency, formatQuantity, get
 import { buildFreightNotaPrintDocument, openBrandedPrint, openPrintWindow, fetchCompanyProfile, formatFreightNotaDisplayNumber, resolveDocumentIssuerProfile } from '@/lib/print';
 import { exportFreightNotaDetail, exportInvoices } from '@/lib/export';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
-import type { BankAccount, CompanyProfile, Customer, CustomerReceipt, FreightNota, FreightNotaItem, Payment } from '@/lib/types';
+import type { BankAccount, CompanyProfile, Customer, CustomerOverpayment, FreightNota, FreightNotaItem, Payment } from '@/lib/types';
 import { hasPermission } from '@/lib/rbac';
 
 import { useApp, useToast } from '../layout';
@@ -40,29 +40,6 @@ const getNextInvoiceAction = (status: 'UNPAID' | 'PARTIAL' | 'PAID', nota: Freig
 const parseWholeMoneyLike = (value: unknown) =>
     Math.max(parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 }), 0);
 
-const deriveCustomerReceiptAllocations = (receipts: CustomerReceipt[], receiptPayments: Payment[]) => {
-    const totalsByReceipt = receiptPayments.reduce<Record<string, { allocatedAmount: number; allocationCount: number }>>((acc, payment) => {
-        if (!payment.receiptRef) return acc;
-        const current = acc[payment.receiptRef] || { allocatedAmount: 0, allocationCount: 0 };
-        current.allocatedAmount += parseWholeMoneyLike(payment.amount);
-        current.allocationCount += 1;
-        acc[payment.receiptRef] = current;
-        return acc;
-    }, {});
-
-    return receipts.map(receipt => {
-        const totalAmount = parseWholeMoneyLike(receipt.totalAmount);
-        const derived = totalsByReceipt[receipt._id] || { allocatedAmount: 0, allocationCount: 0 };
-        return {
-            ...receipt,
-            totalAmount,
-            allocatedAmount: derived.allocatedAmount,
-            allocationCount: derived.allocationCount,
-            unappliedAmount: Math.max(totalAmount - derived.allocatedAmount, 0),
-        };
-    });
-};
-
 export default function NotaListPage() {
     const router = useRouter();
     const { user } = useApp();
@@ -70,7 +47,8 @@ export default function NotaListPage() {
     const [items, setItems] = useState<FreightNota[]>([]);
     const [payments, setPayments] = useState<Payment[]>([]);
     const [customers, setCustomers] = useState<Customer[]>([]);
-    const [customerReceipts, setCustomerReceipts] = useState<CustomerReceipt[]>([]);
+    const [overpayments, setOverpayments] = useState<CustomerOverpayment[]>([]);
+    const [queueOverpayments, setQueueOverpayments] = useState<CustomerOverpayment[]>([]);
     const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
     const [company, setCompany] = useState<CompanyProfile | null>(null);
     const [loading, setLoading] = useState(true);
@@ -84,7 +62,7 @@ export default function NotaListPage() {
         unpaidCount: 0,
         partialCount: 0,
         paidCount: 0,
-        customerCreditTotal: 0,
+        overpaymentTotal: 0,
     });
     const [showReceiptModal, setShowReceiptModal] = useState(false);
     const [receiving, setReceiving] = useState(false);
@@ -99,10 +77,18 @@ export default function NotaListPage() {
     const [receiptOpenPayments, setReceiptOpenPayments] = useState<Payment[]>([]);
     const [receiptNotesLoading, setReceiptNotesLoading] = useState(false);
     const [dateSortDir, setDateSortDir] = useState<SortDirection | null>(null);
+    const [showRefundModal, setShowRefundModal] = useState(false);
+    const [refunding, setRefunding] = useState(false);
+    const [refundTarget, setRefundTarget] = useState<CustomerOverpayment | null>(null);
+    const [refundDate, setRefundDate] = useState(getBusinessDateValue());
+    const [refundAmount, setRefundAmount] = useState(0);
+    const [refundBankRef, setRefundBankRef] = useState('');
+    const [refundNote, setRefundNote] = useState('');
     const canCreateInvoice = user ? hasPermission(user.role, 'freightNotas', 'create') : false;
     const canCreateReceipt = user ? hasPermission(user.role, 'freightNotas', 'update') : false;
     const canExportInvoices = user ? hasPermission(user.role, 'freightNotas', 'export') : false;
     const canPrintInvoices = user ? hasPermission(user.role, 'freightNotas', 'print') : false;
+    const canManageOverpayments = canCreateReceipt;
 
     const buildInvoicesQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
         const params = new URLSearchParams({
@@ -155,12 +141,11 @@ export default function NotaListPage() {
 
     const reloadData = useCallback(async () => {
         setLoading(true);
-        const [notaRes, matchingNotas, customerRes, receiptRes, receiptPaymentRes, bankRes, companyPayload] = await Promise.all([
+        const [notaRes, matchingNotas, customerRes, overpaymentRes, bankRes, companyPayload] = await Promise.all([
             fetch(`/api/data?${buildInvoicesQuery()}`),
             fetchAllMatchingInvoices(),
             fetchAdminCollectionData<Customer[]>('/api/data?entity=customers', 'Gagal memuat customer'),
-            fetchAdminCollectionData<CustomerReceipt[]>('/api/data?entity=customer-receipts', 'Gagal memuat penerimaan customer'),
-            fetchAdminCollectionData<Payment[]>('/api/data?entity=payments&definedFields=receiptRef', 'Gagal memuat alokasi receipt'),
+            fetchAllAdminCollectionData<CustomerOverpayment>('/api/data?entity=customer-overpayments&sortPreset=work-queue', 'Gagal memuat kelebihan bayar customer'),
             fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat rekening'),
             fetchCompanyProfile().catch(() => null),
         ]);
@@ -170,12 +155,12 @@ export default function NotaListPage() {
         if (!notaRes.ok) throw new Error(notaPayload.error || 'Gagal memuat nota ongkos');
 
         const notaRows = (notaPayload.data || []) as FreightNota[];
-        const matchingNotaIds = matchingNotas.map(nota => nota._id).filter(Boolean);
+        const matchingNotaIdList = matchingNotas.map(nota => nota._id).filter(Boolean);
         let matchingPaymentRows: Payment[] = [];
 
-        if (matchingNotaIds.length > 0) {
+        if (matchingNotaIdList.length > 0) {
             matchingPaymentRows = await fetchAdminCollectionData<Payment[]>(
-                `/api/data?entity=payments&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: matchingNotaIds }))}`,
+                `/api/data?entity=payments&filter=${encodeURIComponent(JSON.stringify({ invoiceRef: matchingNotaIdList }))}`,
                 'Gagal memuat pembayaran nota'
             );
         }
@@ -186,7 +171,6 @@ export default function NotaListPage() {
             return acc;
         }, {});
 
-        const derivedReceipts = deriveCustomerReceiptAllocations(receiptRes || [], receiptPaymentRes || []);
         const matchingCustomerRefs = new Set(
             matchingNotas
                 .map(nota => nota.customerRef)
@@ -197,20 +181,11 @@ export default function NotaListPage() {
                 .map(nota => nota.customerName)
                 .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
         );
-        const derivedCustomerCreditTotal = derivedReceipts.reduce((sum, receipt) => {
-            const matchesCustomer =
-                matchingCustomerRefs.size === 0 && matchingCustomerNames.size === 0
-                    ? false
-                    : matchingCustomerRefs.has(receipt.customerRef || '') ||
-                      matchingCustomerNames.has(receipt.customerName || '');
-            if (!matchesCustomer) {
-                return sum;
-            }
-            return sum + parseWholeMoneyLike(receipt.unappliedAmount);
-        }, 0);
+        const getEffectivePaidAmount = (nota: FreightNota) =>
+            parseWholeMoneyLike(nota.totalPaidEffective ?? matchingPaymentTotals[nota._id] ?? 0);
         const derivedSummary = matchingNotas.reduce(
             (acc, nota) => {
-                const paidAmount = matchingPaymentTotals[nota._id] || 0;
+                const paidAmount = getEffectivePaidAmount(nota);
                 const derivedStatus = deriveReceivableStatus(nota, paidAmount);
                 acc.filteredNetTotal += getReceivableNetAmount(nota);
                 acc.filteredOutstandingTotal += Math.max(getReceivableNetAmount(nota) - paidAmount, 0);
@@ -227,16 +202,31 @@ export default function NotaListPage() {
                 paidCount: 0,
             }
         );
+        const matchingNotaIds = new Set(
+            matchingNotas.map(nota => nota._id).filter((value): value is string => Boolean(value))
+        );
+        const matchingOverpayments = (overpaymentRes || []).filter(item => {
+            if (matchingNotaIds.has(item.sourceInvoiceRef || '')) return true;
+            return (
+                matchingCustomerRefs.has(item.customerRef || '')
+                || matchingCustomerNames.has(item.customerName || '')
+            );
+        });
+        const derivedOverpaymentTotal = matchingOverpayments.reduce((sum, item) => {
+            if (item.status !== 'OPEN') return sum;
+            return sum + parseWholeMoneyLike(item.remainingAmount);
+        }, 0);
 
         setItems(notaRows);
         setPayments(paymentRows);
         setTotalInvoices(notaPayload.meta?.total || 0);
         setSummary({
             ...derivedSummary,
-            customerCreditTotal: derivedCustomerCreditTotal,
+            overpaymentTotal: derivedOverpaymentTotal,
         });
         setCustomers((customerRes || []).filter(customer => customer.active !== false));
-        setCustomerReceipts(derivedReceipts);
+        setOverpayments(overpaymentRes || []);
+        setQueueOverpayments(matchingOverpayments);
         setBankAccounts((bankRes || []).filter(account => account.active !== false));
         setCompany(companyPayload);
     }, [buildInvoicesQuery, fetchAllMatchingInvoices]);
@@ -260,8 +250,14 @@ export default function NotaListPage() {
         return acc;
     }, {});
 
+    const getNotaEffectivePaid = (nota: FreightNota) =>
+        parseWholeMoneyLike(nota.totalPaidEffective ?? paymentTotalsByInvoice[nota._id] ?? 0);
+
     const getNotaRemaining = (nota: FreightNota) =>
-        Math.max(getReceivableNetAmount(nota) - (paymentTotalsByInvoice[nota._id] || 0), 0);
+        Math.max(getReceivableNetAmount(nota) - getNotaEffectivePaid(nota), 0);
+
+    const allOpenOverpayments = overpayments.filter(item => item.status === 'OPEN' && parseWholeMoneyLike(item.remainingAmount) > 0);
+    const openOverpayments = queueOverpayments.filter(item => item.status === 'OPEN' && parseWholeMoneyLike(item.remainingAmount) > 0);
 
     const receiptCustomerOptions = Array.from(
         customers.reduce<Map<string, { ref: string; name: string }>>((map, customer) => {
@@ -290,21 +286,21 @@ export default function NotaListPage() {
 
     const totalAllocated = Object.values(receiptAllocations).reduce((sum, amount) => sum + amount, 0);
     const unappliedReceiptAmount = Math.max(receiptAmount - totalAllocated, 0);
-    const customerCreditByRef = customerReceipts.reduce<Record<string, number>>((acc, receipt) => {
-        const key = receipt.customerRef || receipt.customerName;
+    const customerOverpaymentByRef = allOpenOverpayments.reduce<Record<string, number>>((acc, entry) => {
+        const key = entry.customerRef || entry.customerName;
         if (!key) return acc;
-        const unappliedAmount = parseWholeMoneyLike(receipt.unappliedAmount);
-        if (unappliedAmount <= 0) return acc;
-        acc[key] = (acc[key] || 0) + unappliedAmount;
+        const remainingAmount = parseWholeMoneyLike(entry.remainingAmount);
+        if (remainingAmount <= 0) return acc;
+        acc[key] = (acc[key] || 0) + remainingAmount;
         return acc;
     }, {});
-    const selectedCustomerStoredCredit = customerCreditByRef[receiptCustomerRef] || 0;
+    const selectedCustomerStoredOverpayment = customerOverpaymentByRef[receiptCustomerRef] || 0;
     const selectedCustomerOpenTotal = receiptOpenNotaItems.reduce((sum, item) => sum + item.remainingAmount, 0);
     const receiptOpenCount = receiptOpenNotaItems.length;
     const receiptPrimaryLabel = receiptOpenCount === 0
-        ? 'Simpan Kredit Customer'
+        ? 'Simpan Kelebihan Bayar'
         : unappliedReceiptAmount > 0
-            ? 'Simpan Penerimaan & Kredit'
+            ? 'Simpan Penerimaan & Kelebihan Bayar'
             : 'Simpan Penerimaan';
     const receiptAccountOptions = receiptMethod === 'TRANSFER'
         ? bankAccounts.filter(account => account.accountType !== 'CASH')
@@ -422,6 +418,21 @@ export default function NotaListPage() {
         setShowReceiptModal(true);
     };
 
+    const resetRefundModal = () => {
+        setRefundTarget(null);
+        setRefundDate(getBusinessDateValue());
+        setRefundAmount(0);
+        setRefundBankRef('');
+        setRefundNote('');
+    };
+
+    const openRefundModal = (target: CustomerOverpayment) => {
+        resetRefundModal();
+        setRefundTarget(target);
+        setRefundAmount(parseWholeMoneyLike(target.remainingAmount));
+        setShowRefundModal(true);
+    };
+
     const updateReceiptAllocation = (notaId: string, amount: number) => {
         setReceiptAllocations(prev => {
             const next = { ...prev };
@@ -486,7 +497,7 @@ export default function NotaListPage() {
             addToast(
                 'success',
                 unappliedAmount > 0
-                    ? `Penerimaan customer berhasil dicatat. Kredit customer tersimpan ${formatCurrency(unappliedAmount)}`
+                    ? `Penerimaan customer berhasil dicatat. Kelebihan bayar tersimpan ${formatCurrency(unappliedAmount)}`
                     : 'Penerimaan customer berhasil dicatat'
             );
             setShowReceiptModal(false);
@@ -498,6 +509,60 @@ export default function NotaListPage() {
         } finally {
             setLoading(false);
             setReceiving(false);
+        }
+    };
+
+    const handleConfirmOverpaymentRefund = async () => {
+        if (!refundTarget) {
+            addToast('error', 'Data kelebihan bayar tidak tersedia');
+            return;
+        }
+        if (refundAmount <= 0) {
+            addToast('error', 'Nominal refund harus lebih dari 0');
+            return;
+        }
+        if (refundAmount > parseWholeMoneyLike(refundTarget.remainingAmount)) {
+            addToast('error', 'Nominal refund melebihi kelebihan bayar yang masih terbuka');
+            return;
+        }
+        if (!refundBankRef) {
+            addToast('error', 'Pilih rekening atau kas sumber refund');
+            return;
+        }
+
+        setRefunding(true);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'customer-overpayment-refunds',
+                    data: {
+                        sourceType: refundTarget.sourceType,
+                        sourceReceiptRef: refundTarget.sourceReceiptRef,
+                        sourceInvoiceRef: refundTarget.sourceInvoiceRef,
+                        date: refundDate,
+                        amount: refundAmount,
+                        bankAccountRef: refundBankRef,
+                        note: refundNote,
+                    },
+                }),
+            });
+            const payload = await res.json();
+            if (!res.ok) {
+                addToast('error', payload.error || 'Gagal mengonfirmasi refund kelebihan bayar');
+                return;
+            }
+            addToast('success', 'Refund kelebihan bayar berhasil dikonfirmasi');
+            setShowRefundModal(false);
+            resetRefundModal();
+            setLoading(true);
+            await reloadData();
+        } catch (error) {
+            addToast('error', error instanceof Error ? error.message : 'Gagal mengonfirmasi refund kelebihan bayar');
+        } finally {
+            setLoading(false);
+            setRefunding(false);
         }
     };
 
@@ -586,9 +651,9 @@ export default function NotaListPage() {
             const grandTotal = allMatchingNotas.reduce((sum, nota) => sum + getReceivableNetAmount(nota), 0);
             openBrandedPrint({
                 title: 'Daftar Nota Ongkos Angkut', company: co, bodyHtml: `
-                    <table><thead><tr><th>No. Nota</th><th>Customer</th><th>Tanggal</th><th>Total Collie</th><th>Total Berat Tagih</th><th class="r">Tagihan Netto</th><th>Status</th></tr></thead>
+                    <table><thead><tr><th>No. Nota</th><th>Customer</th><th>Tanggal</th><th>Total Collie</th><th>Total Berat Tagih</th><th class="r">Tagihan Final</th><th>Status</th></tr></thead>
                     <tbody>${allMatchingNotas.map(n => {
-                        const displayStatus = deriveReceivableStatus(n, paymentTotalsByInvoice[n._id] || 0);
+                        const displayStatus = deriveReceivableStatus(n, getNotaEffectivePaid(n));
                         return `<tr><td><div class="b">${formatFreightNotaDisplayNumber(n, co)}</div><div style="font-size:11px;color:#64748b">${n.notaNumber}</div></td><td>${n.customerName}</td><td>${formatDate(n.issueDate)}</td><td>${formatQuantity(n.totalCollie || 0)}</td><td>${formatFreightNotaDisplayWeight({ beratKg: n.totalWeightKg || 0, billingMode: normalizeFreightNotaBillingMode(n.billingMode), includeCanonical: false })}</td><td class="r b">${formatCurrency(getReceivableNetAmount(n))}</td><td>${STATUS_MAP[displayStatus]?.label || displayStatus}</td></tr>`;
                     }).join('')}
                     <tr style="border-top:2px solid #1e293b"><td colspan="5" class="r b">TOTAL</td><td class="r b">${formatCurrency(grandTotal)}</td><td></td></tr></tbody></table>`,
@@ -669,11 +734,68 @@ export default function NotaListPage() {
                 <div className="kpi-card">
                     <div className="kpi-icon info"><Receipt size={20} /></div>
                     <div className="kpi-content">
-                        <div className="kpi-label">Kredit Customer</div>
-                        <div className="kpi-value" style={{ fontSize: '1.05rem' }}>{formatCurrency(summary.customerCreditTotal)}</div>
+                        <div className="kpi-label">Kelebihan Bayar</div>
+                        <div className="kpi-value" style={{ fontSize: '1.05rem' }}>{formatCurrency(summary.overpaymentTotal)}</div>
                     </div>
                 </div>
             </div>
+
+            {canManageOverpayments && (
+                <div className="card" style={{ marginBottom: '1.25rem' }}>
+                    <div className="card-header">
+                        <span className="card-header-title">Tindak Lanjut Kelebihan Bayar</span>
+                    </div>
+                    <div className="card-body">
+                        {openOverpayments.length === 0 ? (
+                            <div className="empty-state" style={{ padding: '1rem 0' }}>
+                                <div className="empty-state-title">Tidak ada kelebihan bayar terbuka</div>
+                                <div className="empty-state-text">Queue ini otomatis menangkap sisa penerimaan customer dan nota yang menjadi overpaid setelah klaim/potongan.</div>
+                            </div>
+                        ) : (
+                            <div className="table-wrapper" style={{ overflowX: 'auto' }}>
+                                <table style={{ minWidth: 760 }}>
+                                    <thead>
+                                        <tr>
+                                            <th>Sumber</th>
+                                            <th>Customer</th>
+                                            <th>Terdeteksi</th>
+                                            <th>Status</th>
+                                            <th>Nominal Terbuka</th>
+                                            <th>Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {openOverpayments.map(item => (
+                                            <tr key={item._id}>
+                                                <td>
+                                                    <div className="font-semibold">{item.sourceLabel}</div>
+                                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{item.sourceDescription}</div>
+                                                </td>
+                                                <td>{item.customerName}</td>
+                                                <td>{formatDate(item.detectedDate)}</td>
+                                                <td><span className="badge badge-warning"><span className="badge-dot" /> Belum Ditindaklanjuti</span></td>
+                                                <td>
+                                                    <div className="font-semibold" style={{ color: 'var(--color-warning)' }}>{formatCurrency(item.remainingAmount)}</div>
+                                                    {parseWholeMoneyLike(item.refundedAmount) > 0 && (
+                                                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                                                            Sudah refund {formatCurrency(item.refundedAmount)}
+                                                        </div>
+                                                    )}
+                                                </td>
+                                                <td>
+                                                    <button className="table-action-btn" onClick={() => openRefundModal(item)}>
+                                                        Konfirmasi Transfer Balik
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
 
             <div className="table-container">
                 <div className="table-toolbar">
@@ -687,14 +809,14 @@ export default function NotaListPage() {
                 </div>
                 <div className="table-wrapper table-desktop-only">
                     <table>
-                        <thead><tr><th>No. Nota</th><th>Customer</th><th><SortableTableHeader label="Tanggal" direction={dateSortDir} onToggle={() => setDateSortDir(current => current === 'desc' ? 'asc' : 'desc')} /></th><th>Total Collie</th><th>Total Berat Tagih</th><th>Tagihan Netto</th><th>Status</th><th>Tindak Lanjut</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>No. Nota</th><th>Customer</th><th><SortableTableHeader label="Tanggal" direction={dateSortDir} onToggle={() => setDateSortDir(current => current === 'desc' ? 'asc' : 'desc')} /></th><th>Total Collie</th><th>Total Berat Tagih</th><th>Tagihan Final</th><th>Status</th><th>Tindak Lanjut</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 totalInvoices === 0 ? (
                                     <tr><td colSpan={9}><div className="empty-state"><FileText size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada nota</div><div className="empty-state-text">Belum ada nota yang bisa ditampilkan</div></div></td></tr>
                                 ) : items.map(n => (
                                     (() => {
-                                        const displayStatus = deriveReceivableStatus(n, paymentTotalsByInvoice[n._id] || 0);
+                                        const displayStatus = deriveReceivableStatus(n, getNotaEffectivePaid(n));
                                         return (
                                     <tr key={n._id}>
                                         <td>
@@ -714,7 +836,8 @@ export default function NotaListPage() {
                                         <td>{formatFreightNotaDisplayWeight({ beratKg: n.totalWeightKg || 0, billingMode: normalizeFreightNotaBillingMode(n.billingMode), includeCanonical: false })}</td>
                                         <td>
                                             <div className="font-semibold">{formatCurrency(getReceivableNetAmount(n))}</div>
-                                            {parseWholeMoneyLike(n.totalAdjustmentAmount) > 0 && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Bruto {formatCurrency(n.totalAmount)}</div>}
+                                            {parseWholeMoneyLike(n.totalAdjustmentAmount) > 0 && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Tagihan Awal {formatCurrency(n.totalAmount)}</div>}
+                                            {parseWholeMoneyLike(n.openOverpaymentAmount) > 0 && <div style={{ fontSize: '0.72rem', color: 'var(--color-warning)' }}>Kelebihan Bayar {formatCurrency(n.openOverpaymentAmount)}</div>}
                                         </td>
                                         <td><span className={`badge badge-${STATUS_MAP[displayStatus]?.color}`}><span className="badge-dot" /> {STATUS_MAP[displayStatus]?.label}</span></td>
                                         <td><span style={{ fontWeight: 500 }}>{getNextInvoiceAction(displayStatus, n, getNotaRemaining(n))}</span></td>
@@ -741,7 +864,7 @@ export default function NotaListPage() {
                             </div>
                         ) : items.map(n => (
                             (() => {
-                                const displayStatus = deriveReceivableStatus(n, paymentTotalsByInvoice[n._id] || 0);
+                                const displayStatus = deriveReceivableStatus(n, getNotaEffectivePaid(n));
                                 return (
                             <div key={n._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
@@ -767,7 +890,7 @@ export default function NotaListPage() {
                                         <span className="mobile-record-value">{formatFreightNotaDisplayWeight({ beratKg: n.totalWeightKg || 0, billingMode: normalizeFreightNotaBillingMode(n.billingMode), includeCanonical: false })}</span>
                                     </div>
                                     <div className="mobile-record-kv">
-                                        <span className="mobile-record-label">Tagihan Netto</span>
+                                        <span className="mobile-record-label">Tagihan Final</span>
                                         <span className="mobile-record-value" style={{ fontWeight: 700 }}>{formatCurrency(getReceivableNetAmount(n))}</span>
                                     </div>
                                     <div className="mobile-record-kv">
@@ -800,6 +923,53 @@ export default function NotaListPage() {
                     />
                 )}
             </div>
+            {canManageOverpayments && showRefundModal && refundTarget && (
+                <div className="modal-overlay" onClick={() => { if (!refunding) setShowRefundModal(false); }}>
+                    <div className="modal" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Konfirmasi Transfer Balik Kelebihan Bayar</h3>
+                            <button className="modal-close" onClick={() => setShowRefundModal(false)} disabled={refunding}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.85rem 1rem', marginBottom: '1rem', display: 'grid', gap: '0.35rem' }}>
+                                <div><strong>{refundTarget.sourceLabel}</strong></div>
+                                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{refundTarget.customerName}</div>
+                                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{refundTarget.sourceDescription}</div>
+                                <div style={{ fontSize: '0.8rem' }}>Nominal terbuka: <strong>{formatCurrency(refundTarget.remainingAmount)}</strong></div>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Tanggal Transfer Balik</label>
+                                <input type="date" className="form-input" value={refundDate} onChange={e => setRefundDate(e.target.value)} disabled={refunding} />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Nominal Refund (Rp)</label>
+                                <CurrencyInput value={refundAmount} onValueChange={value => setRefundAmount(value)} disabled={refunding} placeholder="Ketik nominal refund" />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Rekening / Kas Sumber</label>
+                                <select className="form-select" value={refundBankRef} onChange={e => setRefundBankRef(e.target.value)} disabled={refunding}>
+                                    <option value="">-- Pilih rekening atau kas --</option>
+                                    {bankAccounts.map(account => (
+                                        <option key={account._id} value={account._id}>
+                                            {account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Catatan</label>
+                                <textarea className="form-textarea" rows={2} value={refundNote} onChange={e => setRefundNote(e.target.value)} disabled={refunding} placeholder="Contoh: Transfer balik ke rekening customer sesuai konfirmasi 1 April 2026" />
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setShowRefundModal(false)} disabled={refunding}>Batal</button>
+                            <button className="btn btn-warning" onClick={() => void handleConfirmOverpaymentRefund()} disabled={refunding}>
+                                {refunding ? 'Memproses...' : 'Konfirmasi Transfer Balik'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
             {canCreateReceipt && showReceiptModal && (
                 <div className="modal-overlay" onClick={() => { if (!receiving) setShowReceiptModal(false); }}>
                     <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 980 }}>
@@ -865,7 +1035,7 @@ export default function NotaListPage() {
                             <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--color-gray-600)', marginBottom: '1rem' }}>
                                 {receiptMethod === 'CASH'
                                     ? 'Penerimaan tunai selalu diposting ke akun Kas Tunai. Jika uangnya nanti disetor ke bank, catat transfer kas ke rekening secara terpisah.'
-                                    : 'Satu penerimaan customer mewakili satu uang masuk nyata di bank/kas. Penerimaan ini bisa dialokasikan ke beberapa nota customer yang sama. Jika ada sisa yang belum dialokasikan, sistem menyimpannya sebagai kredit customer.'}
+                                    : 'Satu penerimaan customer mewakili satu uang masuk nyata di bank/kas. Penerimaan ini bisa dialokasikan ke beberapa nota customer yang sama. Jika ada sisa yang belum dialokasikan, sistem menyimpannya sebagai kelebihan bayar customer.'}
                             </div>
                             {receiptCustomerRef && (
                                 <div style={{ background: 'var(--color-primary-50)', border: '1px solid var(--color-primary-100)', borderRadius: '0.75rem', padding: '0.9rem 1rem', marginBottom: '1rem' }}>
@@ -879,8 +1049,8 @@ export default function NotaListPage() {
                                             <div style={{ fontWeight: 700 }}>{formatCurrency(selectedCustomerOpenTotal)}</div>
                                         </div>
                                         <div>
-                                            <div style={{ color: 'var(--text-muted)' }}>Kredit Customer Tersimpan</div>
-                                            <div style={{ fontWeight: 700 }}>{formatCurrency(selectedCustomerStoredCredit)}</div>
+                                            <div style={{ color: 'var(--text-muted)' }}>Kelebihan Bayar Belum Selesai</div>
+                                            <div style={{ fontWeight: 700 }}>{formatCurrency(selectedCustomerStoredOverpayment)}</div>
                                         </div>
                                         <div>
                                             <div style={{ color: 'var(--text-muted)' }}>Belum Dialokasikan dari Penerimaan Ini</div>
@@ -902,7 +1072,7 @@ export default function NotaListPage() {
                             {!receiptCustomerRef ? (
                                 <div className="empty-state">
                                     <div className="empty-state-title">Pilih customer</div>
-                                    <div className="empty-state-text">Daftar nota terbuka dan kredit customer akan muncul setelah customer dipilih.</div>
+                                    <div className="empty-state-text">Daftar nota terbuka dan kelebihan bayar customer akan muncul setelah customer dipilih.</div>
                                 </div>
                             ) : receiptNotesLoading ? (
                                 <div className="empty-state">
@@ -912,7 +1082,7 @@ export default function NotaListPage() {
                             ) : receiptOpenNotaItems.length === 0 ? (
                                 <div className="empty-state">
                                     <div className="empty-state-title">Tidak ada nota terbuka</div>
-                                    <div className="empty-state-text">Customer ini tidak punya sisa tagihan netto. Kamu tetap bisa menyimpan penerimaan ini sebagai kredit customer.</div>
+                                    <div className="empty-state-text">Customer ini tidak punya sisa tagihan final. Kamu tetap bisa menyimpan penerimaan ini sebagai kelebihan bayar.</div>
                                 </div>
                             ) : hasSingleOpenNota && singleOpenNota ? (
                                 <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)' }}>
@@ -921,7 +1091,7 @@ export default function NotaListPage() {
                                         <div>Nota: <strong>{formatFreightNotaDisplayNumber(singleOpenNota.nota, company)}</strong></div>
                                         <div>No. Nota Internal: {singleOpenNota.nota.notaNumber}</div>
                                         <div>Sisa tagihan: <strong>{formatCurrency(singleOpenNota.remainingAmount)}</strong></div>
-                                        <div>Penerimaan yang kamu isi di atas akan langsung dialokasikan ke nota ini sampai penuh. Jika nominalnya lebih besar, sisanya otomatis menjadi kredit customer.</div>
+                                        <div>Penerimaan yang kamu isi di atas akan langsung dialokasikan ke nota ini sampai penuh. Jika nominalnya lebih besar, sisanya otomatis menjadi kelebihan bayar.</div>
                                     </div>
                                 </div>
                             ) : (
@@ -955,7 +1125,7 @@ export default function NotaListPage() {
                                     {totalAllocated - receiptAmount > 0.00001
                                         ? 'Total alokasi melebihi total penerimaan'
                                         : unappliedReceiptAmount > 0
-                                            ? `Belum dialokasikan / kredit customer: ${formatCurrency(unappliedReceiptAmount)}`
+                                            ? `Belum dialokasikan / kelebihan bayar: ${formatCurrency(unappliedReceiptAmount)}`
                                             : 'Total alokasi sudah cocok dengan penerimaan'}
                                 </div>
                             </div>

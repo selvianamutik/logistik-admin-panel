@@ -198,6 +198,7 @@ export const SANITY_TYPE_MAP: Record<string, string> = {
     'invoice-items': 'invoiceItem',
     payments: 'payment',
     'customer-receipts': 'customerReceipt',
+    'customer-overpayment-refunds': 'customerOverpaymentRefund',
     'invoice-adjustments': 'invoiceAdjustment',
     incomes: 'income',
     expenses: 'expense',

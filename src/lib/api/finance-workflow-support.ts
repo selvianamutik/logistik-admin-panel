@@ -66,7 +66,9 @@ export type ReceivableSnapshot = {
     grossAmount: number;
     totalAdjustmentAmount: number;
     netAmount: number;
+    paidBeforeRefund: number;
     totalPaid: number;
+    refundedOverpaymentAmount: number;
     remainingAmount: number;
     creditAmount: number;
     customerRef?: string;
@@ -155,16 +157,18 @@ export function buildReceivablePatch(
 export function computeReceivableSnapshot(
     doc: ReceivableDoc,
     allPayments: Payment[],
-    approvedAdjustments: InvoiceAdjustmentDoc[]
+    approvedAdjustments: InvoiceAdjustmentDoc[],
+    refundedOverpaymentAmount: number = 0
 ): ReceivableSnapshot {
     const grossAmount = roundCurrencyAmount(doc.totalAmount || 0);
-    const totalPaid = roundCurrencyAmount(
+    const paidBeforeRefund = roundCurrencyAmount(
         allPayments.reduce((sum, item) => sum + normalizeNumber(item.amount || 0), 0)
     );
     const totalAdjustmentAmount = roundCurrencyAmount(
         approvedAdjustments.reduce((sum, item) => sum + normalizeNumber(item.amount || 0), 0)
     );
     const netAmount = roundCurrencyAmount(Math.max(grossAmount - totalAdjustmentAmount, 0));
+    const totalPaid = roundCurrencyAmount(Math.max(paidBeforeRefund - roundCurrencyAmount(refundedOverpaymentAmount), 0));
     const customerRef =
         typeof doc.customerRef === 'string'
             ? doc.customerRef
@@ -182,7 +186,9 @@ export function computeReceivableSnapshot(
         grossAmount,
         totalAdjustmentAmount,
         netAmount,
+        paidBeforeRefund,
         totalPaid,
+        refundedOverpaymentAmount: roundCurrencyAmount(refundedOverpaymentAmount),
         remainingAmount: roundCurrencyAmount(Math.max(netAmount - totalPaid, 0)),
         creditAmount: roundCurrencyAmount(Math.max(totalPaid - netAmount, 0)),
         customerRef,

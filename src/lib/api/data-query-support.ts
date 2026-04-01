@@ -6,9 +6,19 @@ import {
 } from '@/lib/sanity';
 import { getSuggestedVehicleTireLayout, resolveTireAssetStatus, resolveTireSlotCode } from '@/lib/tire-slots';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
+import {
+    applyDerivedCustomerReceiptOverpaymentState,
+    applyDerivedFreightNotaReceivableState,
+    buildCustomerOverpaymentCases,
+    getCustomerOverpaymentRefundTotals,
+    getFreightNotaPaymentTotals,
+    sortCustomerOverpaymentCases,
+} from '@/lib/customer-overpayments';
 import type {
     BankAccount,
     BankTransaction,
+    CustomerOverpayment,
+    CustomerOverpaymentRefund,
     CustomerReceipt,
     DriverBorongan,
     DriverBoronganItem,
@@ -21,18 +31,10 @@ import type {
     TireEvent,
     Vehicle,
 } from '@/lib/types';
-import { deriveReceivableStatus, getDriverVoucherFinancialSummary, getDriverVoucherIssuedAmount, getReceivableNetAmount } from '@/lib/utils';
+import { getDriverVoucherFinancialSummary, getDriverVoucherIssuedAmount, getReceivableNetAmount } from '@/lib/utils';
 
 function parseWholeMoneyLike(value: unknown) {
     return Math.max(parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 }), 0);
-}
-
-function getFreightNotaPaymentTotals(paymentRows: Array<{ invoiceRef?: string; amount?: unknown }>) {
-    return paymentRows.reduce<Record<string, number>>((acc, payment) => {
-        if (!payment.invoiceRef) return acc;
-        acc[payment.invoiceRef] = (acc[payment.invoiceRef] || 0) + parseWholeMoneyLike(payment.amount);
-        return acc;
-    }, {});
 }
 
 export function applyDerivedFreightNotaStatus<T extends {
@@ -45,12 +47,10 @@ export function applyDerivedFreightNotaStatus<T extends {
     _createdAt?: string;
 }>(
     notas: T[],
-    paymentTotalsByInvoice: Record<string, number>
+    paymentTotalsByInvoice: Record<string, number>,
+    invoiceRefundsByRef: Record<string, number> = {}
 ) {
-    return notas.map(nota => ({
-        ...nota,
-        status: deriveReceivableStatus(nota, paymentTotalsByInvoice[nota._id] || 0),
-    }));
+    return applyDerivedFreightNotaReceivableState(notas, paymentTotalsByInvoice, invoiceRefundsByRef);
 }
 
 export function applyDerivedDriverVoucherFinancials<T extends {
@@ -395,18 +395,26 @@ export async function getFreightNotaList(params: {
     countOnly?: boolean;
 }) {
     const client = getSanityClient();
-    const [notaRows, paymentRows] = await Promise.all([
+    const [notaRows, paymentRows, refundRows] = await Promise.all([
         client.fetch<Array<FreightNota & { _createdAt?: string }>>(`*[_type == "freightNota"]`),
         client.fetch<Array<{ invoiceRef?: string; amount?: unknown }>>(`*[_type == "payment" && defined(invoiceRef)]{ invoiceRef, amount }`),
+        client.fetch<Array<Pick<CustomerOverpaymentRefund, 'sourceType' | 'sourceInvoiceRef' | 'amount'>>>(
+            `*[_type == "customerOverpaymentRefund" && sourceType == "INVOICE_OVERPAID"]{
+                sourceType,
+                sourceInvoiceRef,
+                amount
+            }`
+        ),
     ]);
 
     const paymentTotalsByInvoice = getFreightNotaPaymentTotals(paymentRows);
+    const { invoiceRefundsByRef } = getCustomerOverpaymentRefundTotals(refundRows);
     const search = params.search?.trim().toLowerCase() || '';
     const filterObj = params.filterObj ?? {};
     const orFilters = params.orFilters ?? [];
     const definedFields = params.definedFields ?? [];
     const searchFields = (params.searchFields ?? []).map(field => field.trim()).filter(Boolean);
-    const withDerivedStatus = applyDerivedFreightNotaStatus(notaRows, paymentTotalsByInvoice);
+    const withDerivedStatus = applyDerivedFreightNotaStatus(notaRows, paymentTotalsByInvoice, invoiceRefundsByRef);
 
     let filtered = withDerivedStatus.filter(nota =>
             matchesFreightNotaFilter(
@@ -457,7 +465,7 @@ export async function getFreightNotaList(params: {
 
 export async function getFreightNotaById(id: string) {
     const client = getSanityClient();
-    const [nota, paymentRows] = await Promise.all([
+    const [nota, paymentRows, refundRows] = await Promise.all([
         client.fetch<(FreightNota & { _createdAt?: string }) | null>(
             `*[_type == "freightNota" && _id == $id][0]`,
             { id }
@@ -466,11 +474,20 @@ export async function getFreightNotaById(id: string) {
             `*[_type == "payment" && invoiceRef == $id]{ invoiceRef, amount }`,
             { id }
         ),
+        client.fetch<Array<Pick<CustomerOverpaymentRefund, 'sourceType' | 'sourceInvoiceRef' | 'amount'>>>(
+            `*[_type == "customerOverpaymentRefund" && sourceType == "INVOICE_OVERPAID" && sourceInvoiceRef == $id]{
+                sourceType,
+                sourceInvoiceRef,
+                amount
+            }`,
+            { id }
+        ),
     ]);
 
     if (!nota) return null;
     const paymentTotalsByInvoice = getFreightNotaPaymentTotals(paymentRows);
-    return applyDerivedFreightNotaStatus([nota], paymentTotalsByInvoice)[0];
+    const { invoiceRefundsByRef } = getCustomerOverpaymentRefundTotals(refundRows);
+    return applyDerivedFreightNotaStatus([nota], paymentTotalsByInvoice, invoiceRefundsByRef)[0];
 }
 
 export async function getDriverVoucherById(id: string) {
@@ -768,7 +785,7 @@ export async function getDriverBoronganList(params: {
 
 export async function getCustomerReceiptById(id: string) {
     const client = getSanityClient();
-    const [receipt, payments] = await Promise.all([
+    const [receipt, payments, refundRows] = await Promise.all([
         client.fetch<CustomerReceipt | null>(
             `*[_type == "customerReceipt" && _id == $id][0]`,
             { id }
@@ -777,10 +794,22 @@ export async function getCustomerReceiptById(id: string) {
             `*[_type == "payment" && receiptRef == $id]{ receiptRef, amount }`,
             { id }
         ),
+        client.fetch<Array<Pick<CustomerOverpaymentRefund, 'sourceType' | 'sourceReceiptRef' | 'amount'>>>(
+            `*[_type == "customerOverpaymentRefund" && sourceType == "RECEIPT_UNAPPLIED" && sourceReceiptRef == $id]{
+                sourceType,
+                sourceReceiptRef,
+                amount
+            }`,
+            { id }
+        ),
     ]);
 
     if (!receipt) return null;
-    return applyDerivedCustomerReceiptAllocations([receipt], payments)[0];
+    const { receiptRefundsByRef } = getCustomerOverpaymentRefundTotals(refundRows);
+    return applyDerivedCustomerReceiptOverpaymentState(
+        applyDerivedCustomerReceiptAllocations([receipt], payments),
+        receiptRefundsByRef
+    )[0];
 }
 
 export async function getCustomerReceiptList(params: {
@@ -796,10 +825,17 @@ export async function getCustomerReceiptList(params: {
     countOnly?: boolean;
 }) {
     const client = getSanityClient();
-    const [docs, payments] = await Promise.all([
+    const [docs, payments, refundRows] = await Promise.all([
         client.fetch<CustomerReceipt[]>(`*[_type == "customerReceipt"]`),
         client.fetch<Array<Pick<Payment, 'receiptRef' | 'amount'>>>(
             `*[_type == "payment" && defined(receiptRef)]{ receiptRef, amount }`
+        ),
+        client.fetch<Array<Pick<CustomerOverpaymentRefund, 'sourceType' | 'sourceReceiptRef' | 'amount'>>>(
+            `*[_type == "customerOverpaymentRefund" && sourceType == "RECEIPT_UNAPPLIED"]{
+                sourceType,
+                sourceReceiptRef,
+                amount
+            }`
         ),
     ]);
 
@@ -808,7 +844,11 @@ export async function getCustomerReceiptList(params: {
     const orFilters = params.orFilters ?? [];
     const definedFields = params.definedFields ?? [];
     const searchFields = (params.searchFields ?? []).map(field => field.trim()).filter(Boolean);
-    const withDerivedAllocations = applyDerivedCustomerReceiptAllocations(docs, payments);
+    const { receiptRefundsByRef } = getCustomerOverpaymentRefundTotals(refundRows);
+    const withDerivedAllocations = applyDerivedCustomerReceiptOverpaymentState(
+        applyDerivedCustomerReceiptAllocations(docs, payments),
+        receiptRefundsByRef
+    );
 
     let filtered = withDerivedAllocations.filter(item => {
         const matchesSearch =
@@ -853,6 +893,127 @@ export async function getCustomerReceiptList(params: {
     const total = filtered.length;
     if (params.countOnly) {
         return { items: [] as CustomerReceipt[], total };
+    }
+
+    if (!params.page || !params.pageSize) {
+        return { items: filtered, total };
+    }
+
+    const offset = Math.max(params.page - 1, 0) * Math.max(params.pageSize, 1);
+    return {
+        items: filtered.slice(offset, offset + params.pageSize),
+        total,
+    };
+}
+
+export async function getCustomerOverpaymentById(id: string) {
+    const client = getSanityClient();
+    const [receipts, notas, payments, refunds] = await Promise.all([
+        client.fetch<CustomerReceipt[]>(`*[_type == "customerReceipt"]`),
+        client.fetch<FreightNota[]>(`*[_type == "freightNota"]`),
+        client.fetch<Array<Pick<Payment, 'invoiceRef' | 'receiptRef' | 'amount'>>>(
+            `*[_type == "payment"]{ invoiceRef, receiptRef, amount }`
+        ),
+        client.fetch<CustomerOverpaymentRefund[]>(
+            `*[_type == "customerOverpaymentRefund"]`
+        ),
+    ]);
+
+    const paymentTotalsByInvoice = getFreightNotaPaymentTotals(payments);
+    const { receiptRefundsByRef, invoiceRefundsByRef } = getCustomerOverpaymentRefundTotals(refunds);
+    const receiptRows = applyDerivedCustomerReceiptOverpaymentState(
+        applyDerivedCustomerReceiptAllocations(receipts, payments),
+        receiptRefundsByRef
+    );
+    const notaRows = applyDerivedFreightNotaReceivableState(notas, paymentTotalsByInvoice, invoiceRefundsByRef);
+    const item = buildCustomerOverpaymentCases({
+        receipts: receiptRows,
+        notas: notaRows,
+        paymentTotalsByInvoice,
+        receiptRefundsByRef,
+        invoiceRefundsByRef,
+    }).find(entry => entry._id === id);
+
+    return item || null;
+}
+
+export async function getCustomerOverpaymentList(params: {
+    filterObj?: Record<string, unknown>;
+    orFilters?: Array<{ fields: string[]; value: string | number | boolean }>;
+    definedFields?: string[];
+    search?: string;
+    searchFields?: string[];
+    page?: number;
+    pageSize?: number;
+    sortField?: string;
+    sortDir?: 'asc' | 'desc';
+    sortPreset?: string | null;
+    countOnly?: boolean;
+}) {
+    const client = getSanityClient();
+    const [receipts, notas, payments, refunds] = await Promise.all([
+        client.fetch<CustomerReceipt[]>(`*[_type == "customerReceipt"]`),
+        client.fetch<FreightNota[]>(`*[_type == "freightNota"]`),
+        client.fetch<Array<Pick<Payment, 'invoiceRef' | 'receiptRef' | 'amount'>>>(
+            `*[_type == "payment"]{ invoiceRef, receiptRef, amount }`
+        ),
+        client.fetch<CustomerOverpaymentRefund[]>(`*[_type == "customerOverpaymentRefund"]`),
+    ]);
+
+    const query = params.search?.trim().toLowerCase() || '';
+    const filterObj = params.filterObj ?? {};
+    const orFilters = params.orFilters ?? [];
+    const definedFields = params.definedFields ?? [];
+    const searchFields = (params.searchFields ?? []).map(field => field.trim()).filter(Boolean);
+    const paymentTotalsByInvoice = getFreightNotaPaymentTotals(payments);
+    const { receiptRefundsByRef, invoiceRefundsByRef } = getCustomerOverpaymentRefundTotals(refunds);
+    const receiptRows = applyDerivedCustomerReceiptOverpaymentState(
+        applyDerivedCustomerReceiptAllocations(receipts, payments),
+        receiptRefundsByRef
+    );
+    const notaRows = applyDerivedFreightNotaReceivableState(notas, paymentTotalsByInvoice, invoiceRefundsByRef);
+    const cases = buildCustomerOverpaymentCases({
+        receipts: receiptRows,
+        notas: notaRows,
+        paymentTotalsByInvoice,
+        receiptRefundsByRef,
+        invoiceRefundsByRef,
+    });
+
+    const searchableFields = searchFields.length > 0
+        ? searchFields
+        : ['customerName', 'sourceLabel', 'sourceDescription', 'sourceInvoiceNumber', 'sourceReceiptNumber'];
+
+    let filtered = cases.filter(item => {
+        const matchesSearch =
+            !query ||
+            searchableFields.some(field => {
+                const value = (item as unknown as Record<string, unknown>)[field];
+                return typeof value === 'string' && value.toLowerCase().includes(query);
+            });
+        if (!matchesSearch) return false;
+
+        const matchesFilter = Object.entries(filterObj).every(([key, expectedValue]) =>
+            matchesScalarFilter((item as unknown as Record<string, unknown>)[key], expectedValue)
+        );
+        if (!matchesFilter) return false;
+
+        const matchesDefinedFields = definedFields.every(field => {
+            const value = (item as unknown as Record<string, unknown>)[field];
+            return value !== undefined && value !== null && value !== '';
+        });
+        if (!matchesDefinedFields) return false;
+
+        return orFilters.every(orFilter =>
+            orFilter.fields.some(field => matchesScalarFilter((item as unknown as Record<string, unknown>)[field], orFilter.value))
+        );
+    });
+
+    filtered = sortCustomerOverpaymentCases(filtered, params.sortField, params.sortDir, params.sortPreset);
+
+    const total = filtered.length;
+    if (params.countOnly) {
+        return { items: [] as CustomerOverpayment[], total };
     }
 
     if (!params.page || !params.pageSize) {

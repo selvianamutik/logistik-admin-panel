@@ -397,6 +397,7 @@ function isProtectedLedgerEntity(entity: string) {
     return (
         entity === 'payments' ||
         entity === 'customer-receipts' ||
+        entity === 'customer-overpayment-refunds' ||
         entity === 'invoice-adjustments' ||
         entity === 'incomes' ||
         entity === 'expenses' ||
@@ -420,6 +421,7 @@ function isWorkflowManagedCreateEntity(entity: string) {
         entity === 'driver-borongan-items' ||
         entity === 'payments' ||
         entity === 'customer-receipts' ||
+        entity === 'customer-overpayment-refunds' ||
         entity === 'invoice-adjustments' ||
         entity === 'incomes' ||
         entity === 'expenses' ||
@@ -440,6 +442,7 @@ function isWorkflowManagedUpdateEntity(entity: string) {
         entity === 'order-items' ||
         entity === 'delivery-order-items' ||
         entity === 'tracking-logs' ||
+        entity === 'customer-overpayment-refunds' ||
         entity === 'driver-vouchers' ||
         entity === 'freight-notas' ||
         entity === 'freight-nota-items' ||
@@ -469,6 +472,7 @@ function isWorkflowManagedDeleteEntity(entity: string) {
         entity === 'driver-borogan-items' ||
         entity === 'driver-borongan-items' ||
         entity === 'tracking-logs'
+        || entity === 'customer-overpayment-refunds'
     );
 }
 

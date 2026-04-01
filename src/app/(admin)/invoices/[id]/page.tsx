@@ -44,8 +44,10 @@ export default function NotaDetailPage() {
     const [loading, setLoading] = useState(true);
     const [showPayModal, setShowPayModal] = useState(false);
     const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
+    const [showRefundModal, setShowRefundModal] = useState(false);
     const [paying, setPaying] = useState(false);
     const [adjusting, setAdjusting] = useState(false);
+    const [refunding, setRefunding] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [voidingAdjustmentId, setVoidingAdjustmentId] = useState<string | null>(null);
     const [payAmount, setPayAmount] = useState(0);
@@ -57,6 +59,11 @@ export default function NotaDetailPage() {
     const [adjustKind, setAdjustKind] = useState('DAMAGE_CLAIM');
     const [adjustDate, setAdjustDate] = useState(getBusinessDateValue());
     const [adjustNote, setAdjustNote] = useState('');
+    const [editingAdjustmentId, setEditingAdjustmentId] = useState<string | null>(null);
+    const [refundDate, setRefundDate] = useState(getBusinessDateValue());
+    const [refundAmount, setRefundAmount] = useState(0);
+    const [refundBankRef, setRefundBankRef] = useState('');
+    const [refundNote, setRefundNote] = useState('');
 
     const loadNotaDetail = useCallback(async () => {
         setLoading(true);
@@ -97,7 +104,9 @@ export default function NotaDetailPage() {
     }, [loadNotaDetail]);
 
     const {
+        totalPaidRaw,
         totalPaid,
+        refundedOverpaymentAmount,
         grossAmount,
         totalAdjustmentAmount,
         netAmount,
@@ -110,6 +119,7 @@ export default function NotaDetailPage() {
     const canDeleteInvoice = user ? hasPermission(user.role, 'freightNotas', 'delete') : false;
     const canExportInvoice = user ? hasPermission(user.role, 'freightNotas', 'export') : false;
     const canPrintInvoice = user ? hasPermission(user.role, 'freightNotas', 'print') : false;
+    const canManageOverpaymentRefund = canManageInvoice;
     const paymentAccountOptions = payMethod === 'TRANSFER'
         ? bankAccounts.filter(account => account.accountType !== 'CASH')
         : payMethod === 'CASH'
@@ -127,6 +137,40 @@ export default function NotaDetailPage() {
             setPayBankRef('');
         }
     }, [bankAccounts, payBankRef, payMethod]);
+
+    const resetAdjustmentForm = () => {
+        setEditingAdjustmentId(null);
+        setAdjustAmount(0);
+        setAdjustKind('DAMAGE_CLAIM');
+        setAdjustDate(getBusinessDateValue());
+        setAdjustNote('');
+    };
+
+    const openCreateAdjustmentModal = () => {
+        resetAdjustmentForm();
+        setShowAdjustmentModal(true);
+    };
+
+    const openEditAdjustmentModal = (adjustment: InvoiceAdjustment) => {
+        setEditingAdjustmentId(adjustment._id);
+        setAdjustAmount(Number(adjustment.amount) || 0);
+        setAdjustKind(adjustment.kind || 'DAMAGE_CLAIM');
+        setAdjustDate(adjustment.date || getBusinessDateValue());
+        setAdjustNote(adjustment.note || '');
+        setShowAdjustmentModal(true);
+    };
+
+    const resetRefundForm = () => {
+        setRefundDate(getBusinessDateValue());
+        setRefundAmount(Math.max(creditAmount, 0));
+        setRefundBankRef('');
+        setRefundNote('');
+    };
+
+    const openRefundOverpaymentModal = () => {
+        resetRefundForm();
+        setShowRefundModal(true);
+    };
 
     const handleAddPayment = async () => {
         if (payAmount <= 0) { addToast('error', 'Nominal harus lebih dari 0'); return; }
@@ -159,12 +203,16 @@ export default function NotaDetailPage() {
         }
     };
 
-    const handleAddAdjustment = async () => {
+    const handleSaveAdjustment = async () => {
         if (adjustAmount <= 0) {
             addToast('error', 'Nominal potongan tagihan harus lebih dari 0');
             return;
         }
-        if (adjustAmount > Math.max(grossAmount - totalAdjustmentAmount, 0)) {
+        const adjustmentBeingEdited = adjustments.find(item => item._id === editingAdjustmentId) || null;
+        const adjustmentBaseAmount = adjustmentBeingEdited && adjustmentBeingEdited.status !== 'VOID'
+            ? Number(adjustmentBeingEdited.amount) || 0
+            : 0;
+        if ((totalAdjustmentAmount - adjustmentBaseAmount + adjustAmount) > Math.max(grossAmount, 0)) {
             addToast('error', 'Potongan melebihi sisa nilai bruto tagihan');
             return;
         }
@@ -176,7 +224,9 @@ export default function NotaDetailPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     entity: 'invoice-adjustments',
+                    action: editingAdjustmentId ? 'update' : undefined,
                     data: {
+                        id: editingAdjustmentId || undefined,
                         invoiceRef: nota?._id,
                         date: adjustDate,
                         amount: adjustAmount,
@@ -187,25 +237,23 @@ export default function NotaDetailPage() {
             });
             const result = await res.json();
             if (!res.ok) {
-                addToast('error', result.error || 'Gagal mencatat potongan tagihan');
+                addToast('error', result.error || 'Gagal menyimpan potongan tagihan');
                 return;
             }
-            addToast('success', 'Potongan tagihan berhasil dicatat');
+            addToast('success', editingAdjustmentId ? 'Potongan tagihan berhasil diperbarui' : 'Potongan tagihan berhasil dicatat');
             setShowAdjustmentModal(false);
-            setAdjustAmount(0);
-            setAdjustKind('DAMAGE_CLAIM');
-            setAdjustNote('');
+            resetAdjustmentForm();
             await loadNotaDetail();
         } catch {
-            addToast('error', 'Gagal mencatat potongan tagihan');
+            addToast('error', 'Gagal menyimpan potongan tagihan');
         } finally {
             setAdjusting(false);
         }
     };
 
-    const handleVoidAdjustment = async (adjustmentId: string) => {
+    const handleDeleteAdjustment = async (adjustmentId: string) => {
         if (voidingAdjustmentId) return;
-        if (!confirm('Void potongan tagihan ini?')) return;
+        if (!confirm('Hapus potongan tagihan ini? Riwayatnya akan tetap tersimpan di audit log.')) return;
         setVoidingAdjustmentId(adjustmentId);
         try {
             const res = await fetch('/api/data', {
@@ -213,21 +261,69 @@ export default function NotaDetailPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     entity: 'invoice-adjustments',
-                    action: 'void',
+                    action: 'delete',
                     data: { id: adjustmentId },
                 }),
             });
             const result = await res.json();
             if (!res.ok) {
-                addToast('error', result.error || 'Gagal void potongan tagihan');
+                addToast('error', result.error || 'Gagal menghapus potongan tagihan');
                 return;
             }
-            addToast('success', 'Potongan tagihan di-void');
+            addToast('success', 'Potongan tagihan dihapus');
             await loadNotaDetail();
         } catch {
-            addToast('error', 'Gagal void potongan tagihan');
+            addToast('error', 'Gagal menghapus potongan tagihan');
         } finally {
             setVoidingAdjustmentId(current => current === adjustmentId ? null : current);
+        }
+    };
+
+    const handleConfirmOverpaymentRefund = async () => {
+        if (!nota) return;
+        if (refundAmount <= 0) {
+            addToast('error', 'Nominal refund harus lebih dari 0');
+            return;
+        }
+        if (refundAmount > creditAmount) {
+            addToast('error', 'Nominal refund melebihi kelebihan bayar yang masih terbuka');
+            return;
+        }
+        if (!refundBankRef) {
+            addToast('error', 'Pilih rekening atau kas sumber refund');
+            return;
+        }
+
+        setRefunding(true);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'customer-overpayment-refunds',
+                    data: {
+                        sourceType: 'INVOICE_OVERPAID',
+                        sourceInvoiceRef: nota._id,
+                        date: refundDate,
+                        amount: refundAmount,
+                        bankAccountRef: refundBankRef,
+                        note: refundNote,
+                    },
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal mengonfirmasi refund kelebihan bayar');
+                return;
+            }
+            addToast('success', 'Refund kelebihan bayar berhasil dikonfirmasi');
+            setShowRefundModal(false);
+            resetRefundForm();
+            await loadNotaDetail();
+        } catch {
+            addToast('error', 'Gagal mengonfirmasi refund kelebihan bayar');
+        } finally {
+            setRefunding(false);
         }
     };
 
@@ -332,7 +428,8 @@ export default function NotaDetailPage() {
                 </div>
                 <div className="page-actions" style={{ gap: '0.4rem' }}>
                     {canManageInvoice && displayStatus !== 'PAID' && <button className="btn btn-success btn-sm" onClick={() => setShowPayModal(true)}><DollarSign size={14} /> Catat Pembayaran</button>}
-                    {canManageInvoice && grossAmount > totalAdjustmentAmount && <button className="btn btn-secondary btn-sm" onClick={() => setShowAdjustmentModal(true)}>Catat Potongan</button>}
+                    {canManageInvoice && grossAmount > totalAdjustmentAmount && <button className="btn btn-secondary btn-sm" onClick={openCreateAdjustmentModal}>Catat Klaim / Potongan</button>}
+                    {canManageOverpaymentRefund && creditAmount > 0 && <button className="btn btn-warning btn-sm" onClick={openRefundOverpaymentModal}>Konfirmasi Transfer Balik</button>}
                     {canExportInvoice && <button className="btn btn-secondary btn-sm" onClick={handleExportExcel}><FileDown size={14} /> Excel</button>}
                     {canPrintInvoice && <button className="btn btn-secondary btn-sm" onClick={handlePrint}><Printer size={14} /> Cetak Nota</button>}
                     {canDeleteInvoice && <button className="btn btn-secondary btn-sm" onClick={handleDelete} disabled={deleting}><Trash2 size={14} /></button>}
@@ -361,7 +458,7 @@ export default function NotaDetailPage() {
                         </div>
                         <div className="detail-row">
                             <div className="detail-item"><div className="detail-label">Total Berat Canonical</div><div className="detail-value">{formatQuantity(nota.totalWeightKg || 0)} kg</div></div>
-                            <div className="detail-item"><div className="detail-label">Tagihan Netto</div><div className="detail-value font-semibold">{formatCurrency(netAmount)}</div></div>
+                            <div className="detail-item"><div className="detail-label">Tagihan Final</div><div className="detail-value font-semibold">{formatCurrency(netAmount)}</div></div>
                         </div>
                     </div>
                 </div>
@@ -371,19 +468,23 @@ export default function NotaDetailPage() {
                     <div style={{ display: 'grid', gap: 'var(--space-4)' }}>
                         <div className="card" style={{ overflow: 'hidden' }}>
                             <div style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, #7c3aed 100%)', color: '#fff', padding: '1.25rem' }}>
-                                <div style={{ fontSize: '0.72rem', opacity: 0.8, textTransform: 'uppercase', marginBottom: '0.25rem' }}>Tagihan Netto</div>
+                                <div style={{ fontSize: '0.72rem', opacity: 0.8, textTransform: 'uppercase', marginBottom: '0.25rem' }}>Tagihan Final</div>
                                 <div style={{ fontSize: '1.75rem', fontWeight: 700 }}>{formatCurrency(netAmount)}</div>
                                 {totalAdjustmentAmount > 0 && (
                                     <div style={{ fontSize: '0.78rem', opacity: 0.85, marginTop: '0.25rem' }}>
-                                        Bruto {formatCurrency(grossAmount)} | Potongan {formatCurrency(totalAdjustmentAmount)}
+                                        Tagihan Awal {formatCurrency(grossAmount)} | Potongan {formatCurrency(totalAdjustmentAmount)}
                                     </div>
                                 )}
                             </div>
                             <div className="card-body">
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.75rem', marginBottom: '0.75rem' }}>
-                                    <div><div style={{ fontSize: '0.7rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Bruto</div><div style={{ fontSize: '1rem', fontWeight: 700 }}>{formatCurrency(grossAmount)}</div></div>
+                                    <div><div style={{ fontSize: '0.7rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Tagihan Awal</div><div style={{ fontSize: '1rem', fontWeight: 700 }}>{formatCurrency(grossAmount)}</div></div>
                                     <div style={{ textAlign: 'right' }}><div style={{ fontSize: '0.7rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Potongan</div><div style={{ fontSize: '1rem', fontWeight: 700, color: totalAdjustmentAmount > 0 ? 'var(--color-warning)' : 'var(--color-gray-600)' }}>-{formatCurrency(totalAdjustmentAmount)}</div></div>
-                                    <div><div style={{ fontSize: '0.7rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Sudah Dibayar</div><div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-success)' }}>{formatCurrency(totalPaid)}</div></div>
+                                    <div>
+                                        <div style={{ fontSize: '0.7rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Sudah Dibayar</div>
+                                        <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-success)' }}>{formatCurrency(totalPaid)}</div>
+                                        {refundedOverpaymentAmount > 0 && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Masuk awal {formatCurrency(totalPaidRaw)} • Refund {formatCurrency(refundedOverpaymentAmount)}</div>}
+                                    </div>
                                     <div style={{ textAlign: 'right' }}><div style={{ fontSize: '0.7rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>{creditAmount > 0 ? 'Kelebihan Bayar' : 'Sisa'}</div><div style={{ fontSize: '1.1rem', fontWeight: 700, color: creditAmount > 0 ? 'var(--color-primary)' : remaining > 0 ? 'var(--color-danger)' : 'var(--color-success)' }}>{formatCurrency(creditAmount > 0 ? creditAmount : remaining)}</div></div>
                                 </div>
                                 <div className="progress-bar" style={{ marginBottom: '0.5rem' }}>
@@ -433,7 +534,7 @@ export default function NotaDetailPage() {
                             </div>
                         </CollapsibleCard>
 
-                        <CollapsibleCard title="Riwayat Potongan Tagihan" defaultOpen={adjustments.length > 0}>
+                        <CollapsibleCard title="Riwayat Klaim / Potongan" defaultOpen={adjustments.length > 0}>
                             <div style={{ padding: adjustments.length === 0 ? '2rem 1.5rem' : 0 }}>
                                 {adjustments.length === 0 ? (
                                     <div style={{ textAlign: 'center', color: 'var(--color-gray-400)' }}>
@@ -444,17 +545,23 @@ export default function NotaDetailPage() {
                                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
                                             <div style={{ fontSize: '0.82rem', fontWeight: 600 }}>{formatDate(adjustment.date)}</div>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                                <span className={`badge badge-${adjustment.status === 'VOID' ? 'secondary' : 'warning'}`}><span className="badge-dot" /> {adjustment.status === 'VOID' ? 'Void' : 'Disetujui'}</span>
+                                                <span className={`badge badge-${adjustment.status === 'VOID' ? 'secondary' : 'warning'}`}><span className="badge-dot" /> {adjustment.status === 'VOID' ? 'Dihapus' : 'Disetujui'}</span>
                                                 <span style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--color-warning)' }}>-{formatCurrency(adjustment.amount)}</span>
                                             </div>
                                         </div>
                                         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', fontSize: '0.72rem', color: 'var(--color-gray-400)' }}>
                                             <span>{INVOICE_ADJUSTMENT_KIND_MAP[adjustment.kind] || adjustment.kind}</span>
                                             {adjustment.note && <span>| {adjustment.note}</span>}
+                                            {adjustment.editedAt && <span>| Diedit {formatDate(adjustment.editedAt)}</span>}
                                         </div>
                                         {adjustment.status !== 'VOID' && (
                                             <div style={{ marginTop: '0.5rem' }}>
-                                                {canManageInvoice && <button className="table-action-btn" onClick={() => void handleVoidAdjustment(adjustment._id)} disabled={voidingAdjustmentId === adjustment._id}>{voidingAdjustmentId === adjustment._id ? 'Memproses...' : 'Void'}</button>}
+                                                {canManageInvoice && (
+                                                    <>
+                                                        <button className="table-action-btn" onClick={() => openEditAdjustmentModal(adjustment)} disabled={Boolean(voidingAdjustmentId)}>Edit</button>
+                                                        <button className="table-action-btn" onClick={() => void handleDeleteAdjustment(adjustment._id)} disabled={voidingAdjustmentId === adjustment._id}>{voidingAdjustmentId === adjustment._id ? 'Memproses...' : 'Hapus'}</button>
+                                                    </>
+                                                )}
                                             </div>
                                         )}
                                     </div>
@@ -554,10 +661,10 @@ export default function NotaDetailPage() {
             {canManageInvoice && showAdjustmentModal && (
                 <div className="modal-overlay" onClick={() => { if (!adjusting) setShowAdjustmentModal(false); }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header"><h3 className="modal-title">Catat Potongan Tagihan</h3><button className="modal-close" onClick={() => setShowAdjustmentModal(false)} disabled={adjusting}>&times;</button></div>
+                        <div className="modal-header"><h3 className="modal-title">{editingAdjustmentId ? 'Edit Klaim / Potongan' : 'Catat Klaim / Potongan'}</h3><button className="modal-close" onClick={() => setShowAdjustmentModal(false)} disabled={adjusting}>&times;</button></div>
                         <div className="modal-body">
                             <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.75rem' }}>
-                                <div><div style={{ fontSize: '0.68rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Bruto</div><div style={{ fontSize: '1rem', fontWeight: 700 }}>{formatCurrency(grossAmount)}</div></div>
+                                <div><div style={{ fontSize: '0.68rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Tagihan Awal</div><div style={{ fontSize: '1rem', fontWeight: 700 }}>{formatCurrency(grossAmount)}</div></div>
                                 <div style={{ textAlign: 'right' }}><div style={{ fontSize: '0.68rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Sisa Nilai Bisa Dipotong</div><div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--color-warning)' }}>{formatCurrency(Math.max(grossAmount - totalAdjustmentAmount, 0))}</div></div>
                             </div>
                             <div className="form-group"><label className="form-label">Tanggal</label><input type="date" className="form-input" value={adjustDate} onChange={e => setAdjustDate(e.target.value)} disabled={adjusting} /></div>
@@ -570,13 +677,42 @@ export default function NotaDetailPage() {
                                 <div className="form-group"><label className="form-label">Nominal (Rp)</label><CurrencyInput value={adjustAmount} onValueChange={value => setAdjustAmount(value)} disabled={adjusting} placeholder="Ketik nominal potongan" /></div>
                             </div>
                             <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--color-gray-600)', marginBottom: '1rem' }}>
-                                Potongan tagihan akan mengurangi nilai netto nota. Ini bukan pembayaran masuk dan tidak membuat mutasi kas/bank.
+                                Klaim / potongan akan mengurangi tagihan final nota. Ini bukan pembayaran masuk dan tidak membuat mutasi kas/bank.
                             </div>
                             <div className="form-group"><label className="form-label">Catatan</label><textarea className="form-textarea" rows={2} value={adjustNote} onChange={e => setAdjustNote(e.target.value)} disabled={adjusting} placeholder="Contoh: Klaim 2 dus pecah saat bongkar" /></div>
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setShowAdjustmentModal(false)} disabled={adjusting}>Batal</button>
-                            <button className="btn btn-warning" onClick={handleAddAdjustment} disabled={adjusting}>{adjusting ? 'Menyimpan...' : 'Simpan Potongan Tagihan'}</button>
+                            <button className="btn btn-warning" onClick={handleSaveAdjustment} disabled={adjusting}>{adjusting ? 'Menyimpan...' : editingAdjustmentId ? 'Simpan Perubahan' : 'Simpan Klaim / Potongan'}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {canManageOverpaymentRefund && showRefundModal && (
+                <div className="modal-overlay" onClick={() => { if (!refunding) setShowRefundModal(false); }}>
+                    <div className="modal" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header"><h3 className="modal-title">Konfirmasi Transfer Balik Kelebihan Bayar</h3><button className="modal-close" onClick={() => setShowRefundModal(false)} disabled={refunding}>&times;</button></div>
+                        <div className="modal-body">
+                            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.85rem 1rem', marginBottom: '1rem', display: 'grid', gap: '0.35rem' }}>
+                                <div><strong>{displayNotaNumber}</strong></div>
+                                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{nota.customerName}</div>
+                                <div style={{ fontSize: '0.8rem' }}>Kelebihan bayar terbuka: <strong>{formatCurrency(creditAmount)}</strong></div>
+                                {refundedOverpaymentAmount > 0 && <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Sudah pernah ditransfer balik: {formatCurrency(refundedOverpaymentAmount)}</div>}
+                            </div>
+                            <div className="form-group"><label className="form-label">Tanggal Transfer Balik</label><input type="date" className="form-input" value={refundDate} onChange={e => setRefundDate(e.target.value)} disabled={refunding} /></div>
+                            <div className="form-group"><label className="form-label">Nominal Refund (Rp)</label><CurrencyInput value={refundAmount} onValueChange={value => setRefundAmount(value)} disabled={refunding} placeholder="Ketik nominal refund" /></div>
+                            <div className="form-group">
+                                <label className="form-label">Rekening / Kas Sumber</label>
+                                <select className="form-select" value={refundBankRef} onChange={e => setRefundBankRef(e.target.value)} disabled={refunding}>
+                                    <option value="">-- Pilih rekening atau kas --</option>
+                                    {bankAccounts.map(account => <option key={account._id} value={account._id}>{account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''}</option>)}
+                                </select>
+                            </div>
+                            <div className="form-group"><label className="form-label">Catatan</label><textarea className="form-textarea" rows={2} value={refundNote} onChange={e => setRefundNote(e.target.value)} disabled={refunding} placeholder="Contoh: Refund ke rekening customer sesuai konfirmasi finance" /></div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setShowRefundModal(false)} disabled={refunding}>Batal</button>
+                            <button className="btn btn-warning" onClick={handleConfirmOverpaymentRefund} disabled={refunding}>{refunding ? 'Memproses...' : 'Konfirmasi Transfer Balik'}</button>
                         </div>
                     </div>
                 </div>

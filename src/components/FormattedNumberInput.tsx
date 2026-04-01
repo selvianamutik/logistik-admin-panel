@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type InputHTMLAttributes } from "react";
+import { useState, type InputHTMLAttributes } from "react";
 import {
   formatFormattedNumberValue,
   parseFormattedNumberInput,
@@ -39,12 +39,6 @@ export default function FormattedNumberInput({
   );
   const [draftValue, setDraftValue] = useState(formattedValue);
   const [isFocused, setIsFocused] = useState(false);
-
-  useEffect(() => {
-    if (!isFocused) {
-      setDraftValue(formattedValue);
-    }
-  }, [formattedValue, isFocused]);
 
   return (
     <input

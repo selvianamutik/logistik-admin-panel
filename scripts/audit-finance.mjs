@@ -93,6 +93,7 @@ async function main() {
         "freightNotas": *[_type == "freightNota"]{ _id, notaNumber, totalAmount, totalAdjustmentAmount, netAmount, status },
         "payments": *[_type == "payment"]{ _id, invoiceRef, receiptRef, amount, date },
         "customerReceipts": *[_type == "customerReceipt"]{ _id, receiptNumber, totalAmount, unappliedAmount, allocationCount, customerRef, customerName, method, bankAccountRef },
+        "customerOverpaymentRefunds": *[_type == "customerOverpaymentRefund"]{ _id, sourceType, sourceReceiptRef, sourceInvoiceRef, amount, date, bankAccountRef },
         "invoiceAdjustments": *[_type == "invoiceAdjustment"]{ _id, invoiceRef, amount, status },
         "borongans": *[_type == "driverBorongan"]{ _id, boronganNumber, totalAmount, status },
         "driverBoronganItems": *[_type == "driverBoronganItem"]{ _id, boronganRef, doRef, doNumber },
@@ -121,7 +122,7 @@ async function main() {
         "bankAccounts": *[_type == "bankAccount"]{ _id, bankName, initialBalance, currentBalance, active },
         "bankTransactions": *[_type == "bankTransaction"]{
             _id, bankAccountRef, type, amount, balanceAfter,
-            relatedPaymentRef, relatedExpenseRef, relatedTransferRef, relatedVoucherRef
+            relatedPaymentRef, relatedExpenseRef, relatedTransferRef, relatedVoucherRef, relatedOverpaymentRefundRef
         }
     }`);
 
@@ -131,6 +132,14 @@ async function main() {
     const receiptPaymentGroups = groupBy(
         data.payments.filter(payment => payment.receiptRef),
         payment => payment.receiptRef
+    );
+    const receiptRefundGroups = groupBy(
+        data.customerOverpaymentRefunds.filter(item => item.sourceType === 'RECEIPT_UNAPPLIED' && item.sourceReceiptRef),
+        item => item.sourceReceiptRef
+    );
+    const invoiceRefundGroups = groupBy(
+        data.customerOverpaymentRefunds.filter(item => item.sourceType === 'INVOICE_OVERPAID' && item.sourceInvoiceRef),
+        item => item.sourceInvoiceRef
     );
     const adjustmentGroups = groupBy(
         data.invoiceAdjustments.filter(item => item.status === 'APPROVED'),
@@ -150,15 +159,17 @@ async function main() {
 
     for (const receipt of data.customerReceipts) {
         const allocations = receiptPaymentGroups.get(receipt._id) || [];
+        const refunds = receiptRefundGroups.get(receipt._id) || [];
         const allocatedTotal = sum(allocations, item => parseWholeMoneyLike(item.amount));
-        const unappliedAmount = parseWholeMoneyLike(receipt.unappliedAmount);
-        const resolvedTotal = allocatedTotal + unappliedAmount;
-        if (allocations.length === 0 && unappliedAmount === 0) {
+        const rawUnappliedAmount = parseWholeMoneyLike(receipt.unappliedAmount);
+        const refundedAmount = sum(refunds, item => parseWholeMoneyLike(item.amount));
+        const resolvedTotal = allocatedTotal + rawUnappliedAmount;
+        if (allocations.length === 0 && rawUnappliedAmount === 0) {
             receivableFindings.push(`Receipt ${receipt.receiptNumber || receipt._id} tidak punya alokasi payment`);
         }
         if (resolvedTotal !== parseWholeMoneyLike(receipt.totalAmount)) {
             receivableFindings.push(
-                `Receipt ${receipt.receiptNumber || receipt._id} total ${fmtCurrency(receipt.totalAmount)} tidak cocok dengan alokasi ${fmtCurrency(allocatedTotal)} + kredit ${fmtCurrency(unappliedAmount)}`
+                `Receipt ${receipt.receiptNumber || receipt._id} total ${fmtCurrency(receipt.totalAmount)} tidak cocok dengan alokasi ${fmtCurrency(allocatedTotal)} + kelebihan bayar ${fmtCurrency(rawUnappliedAmount)}`
             );
         }
         if ((receipt.allocationCount || 0) !== allocations.length) {
@@ -167,9 +178,10 @@ async function main() {
         if (receipt.method === 'TRANSFER' && !receipt.bankAccountRef) {
             receivableFindings.push(`Receipt ${receipt.receiptNumber || receipt._id} transfer tanpa rekening bank`);
         }
-        if (unappliedAmount > 0) {
+        const openOverpaymentAmount = Math.max(rawUnappliedAmount - refundedAmount, 0);
+        if (openOverpaymentAmount > 0) {
             customerCreditNotes.push(
-                `Receipt ${receipt.receiptNumber || receipt._id} masih menyisakan kredit customer ${fmtCurrency(unappliedAmount)}`
+                `Receipt ${receipt.receiptNumber || receipt._id} masih menyisakan kelebihan bayar ${fmtCurrency(openOverpaymentAmount)}`
             );
         }
     }
@@ -177,7 +189,10 @@ async function main() {
     for (const doc of receivableDocs) {
         const docPayments = paymentGroups.get(doc._id) || [];
         const docAdjustments = adjustmentGroups.get(doc._id) || [];
-        const totalPaid = sum(docPayments, item => parseWholeMoneyLike(item.amount));
+        const docRefunds = invoiceRefundGroups.get(doc._id) || [];
+        const totalPaidRaw = sum(docPayments, item => parseWholeMoneyLike(item.amount));
+        const refundedAmount = sum(docRefunds, item => parseWholeMoneyLike(item.amount));
+        const totalPaid = Math.max(totalPaidRaw - refundedAmount, 0);
         const totalAdjustment = sum(docAdjustments, item => parseWholeMoneyLike(item.amount));
         const expectedNet = Math.max(parseWholeMoneyLike(doc.totalAmount) - totalAdjustment, 0);
         const storedAdjustment = parseWholeMoneyLike(doc.totalAdjustmentAmount);
@@ -190,8 +205,8 @@ async function main() {
         if (storedNet !== expectedNet) {
             receivableFindings.push(`${doc.kind} ${doc.label} netAmount ${fmtCurrency(doc.netAmount)} tidak cocok dengan netto ${fmtCurrency(expectedNet)}`);
         }
-        if (totalPaid > expectedNet) {
-            customerCreditNotes.push(`${doc.kind} ${doc.label} punya kelebihan bayar ${fmtCurrency(totalPaid - expectedNet)}`);
+        if (totalPaidRaw > expectedNet) {
+            customerCreditNotes.push(`${doc.kind} ${doc.label} punya kelebihan bayar ${fmtCurrency(Math.max(totalPaidRaw - expectedNet - refundedAmount, 0))}`);
         }
         if (doc.status !== expectedStatus) {
             receivableFindings.push(`${doc.kind} ${doc.label} status ${doc.status} tidak cocok dengan pembayaran netto (${expectedStatus})`);

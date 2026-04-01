@@ -9,7 +9,13 @@ import {
 } from '@/lib/freight-nota-billing';
 import { getSanityClient, sanityCreate, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
 import { buildFreightNotaDisplayNumberFromParts } from '@/lib/nota-numbering';
-import type { FreightNotaInstructionAccount, InvoiceAdjustmentKind, Payment, PaymentMethod } from '@/lib/types';
+import type {
+    CustomerOverpaymentRefund,
+    FreightNotaInstructionAccount,
+    InvoiceAdjustmentKind,
+    Payment,
+    PaymentMethod,
+} from '@/lib/types';
 
 import {
     assertIsoDate,
@@ -74,6 +80,14 @@ function normalizeFreightNotaAmount(value: number) {
         return 0;
     }
     return Math.round(value);
+}
+
+function normalizeWholeMoneyAmount(value: unknown) {
+    const normalized = normalizeNumber(value);
+    if (!Number.isFinite(normalized) || normalized <= 0) {
+        return 0;
+    }
+    return Math.round(normalized);
 }
 
 function parseOptionalStrictNotaRowNumber(
@@ -271,7 +285,7 @@ async function loadReceivableSnapshot(invoiceRef: string) {
         return { error: NextResponse.json({ error: 'Total tagihan tidak valid' }, { status: 400 }) };
     }
 
-    const [allPayments, approvedAdjustments] = await Promise.all([
+    const [allPayments, approvedAdjustments, overpaymentRefunds] = await Promise.all([
         getSanityClient().fetch<Payment[]>(
             `*[_type == "payment" && invoiceRef == $ref]`,
             { ref: invoiceRef }
@@ -280,9 +294,84 @@ async function loadReceivableSnapshot(invoiceRef: string) {
             `*[_type == "invoiceAdjustment" && invoiceRef == $ref && status == "APPROVED"]`,
             { ref: invoiceRef }
         ),
+        getSanityClient().fetch<Array<Pick<CustomerOverpaymentRefund, 'amount'>>>(
+            `*[_type == "customerOverpaymentRefund" && sourceType == "INVOICE_OVERPAID" && sourceInvoiceRef == $ref]{
+                amount
+            }`,
+            { ref: invoiceRef }
+        ),
     ]);
 
-    return computeReceivableSnapshot(doc, allPayments, approvedAdjustments);
+    return computeReceivableSnapshot(
+        doc,
+        allPayments,
+        approvedAdjustments,
+        overpaymentRefunds.reduce((sum, item) => sum + normalizeWholeMoneyAmount(item.amount), 0)
+    );
+}
+
+async function loadReceiptOverpaymentSnapshot(receiptRef: string) {
+    const receipt = await sanityGetById<{
+        _id: string;
+        _rev?: string;
+        _type?: string;
+        receiptNumber?: string;
+        customerRef?: string;
+        customerName?: string;
+        totalAmount?: unknown;
+        date?: string;
+    }>(receiptRef);
+    if (!receipt || receipt._id !== receiptRef || receipt._type !== 'customerReceipt') {
+        return { error: NextResponse.json({ error: 'Penerimaan customer tidak ditemukan' }, { status: 404 }) };
+    }
+
+    const [receiptPayments, refunds] = await Promise.all([
+        getSanityClient().fetch<Array<Pick<Payment, 'amount'>>>(
+            `*[_type == "payment" && receiptRef == $ref]{ amount }`,
+            { ref: receiptRef }
+        ),
+        getSanityClient().fetch<Array<Pick<CustomerOverpaymentRefund, 'amount'>>>(
+            `*[_type == "customerOverpaymentRefund" && sourceType == "RECEIPT_UNAPPLIED" && sourceReceiptRef == $ref]{
+                amount
+            }`,
+            { ref: receiptRef }
+        ),
+    ]);
+
+    const totalAmount = normalizeWholeMoneyAmount(receipt.totalAmount);
+    const allocatedAmount = receiptPayments.reduce((sum, item) => sum + normalizeWholeMoneyAmount(item.amount), 0);
+    const rawOverpaymentAmount = Math.max(totalAmount - allocatedAmount, 0);
+    const refundedOverpaymentAmount = Math.min(
+        refunds.reduce((sum, item) => sum + normalizeWholeMoneyAmount(item.amount), 0),
+        rawOverpaymentAmount
+    );
+    const openOverpaymentAmount = Math.max(rawOverpaymentAmount - refundedOverpaymentAmount, 0);
+
+    return {
+        receipt,
+        totalAmount,
+        allocatedAmount,
+        rawOverpaymentAmount,
+        refundedOverpaymentAmount,
+        openOverpaymentAmount,
+    };
+}
+
+function validateAdjustmentChangeAgainstRefunds(
+    snapshot: ReceivableSnapshot,
+    nextAdjustmentAmount: number
+) {
+    const nextNetAmount = Math.max(snapshot.grossAmount - nextAdjustmentAmount, 0);
+    const nextRawOverpaymentAmount = Math.max(snapshot.paidBeforeRefund - nextNetAmount, 0);
+    if (snapshot.refundedOverpaymentAmount > nextRawOverpaymentAmount) {
+        return NextResponse.json(
+            {
+                error: 'Potongan tidak bisa dikurangi karena kelebihan bayar dari nota ini sudah dikonfirmasi transfer balik. Batalkan refund terkait dulu jika memang perlu.',
+            },
+            { status: 409 }
+        );
+    }
+    return null;
 }
 
 async function resolveReceiptBankAccount(method: PaymentMethod, selectedAccountRef?: string) {
@@ -873,10 +962,128 @@ export async function handleInvoiceAdjustmentCreate(
     );
 }
 
-export async function handleInvoiceAdjustmentVoid(
+export async function handleInvoiceAdjustmentUpdate(
     session: ApiSession,
     data: Record<string, unknown>,
     addAuditLog: AuditLogFn
+) {
+    const adjustmentId = typeof data.id === 'string' ? data.id : '';
+    if (!adjustmentId) {
+        return NextResponse.json({ error: 'Adjustment tidak valid' }, { status: 400 });
+    }
+
+    const adjustment = await sanityGetById<InvoiceAdjustmentDoc & {
+        kind?: string;
+        note?: string;
+        date?: string;
+        customerName?: string;
+    }>(adjustmentId);
+    if (!adjustment || adjustment._id !== adjustmentId) {
+        return NextResponse.json({ error: 'Adjustment tidak ditemukan' }, { status: 404 });
+    }
+    if (adjustment.status === 'VOID') {
+        return NextResponse.json({ error: 'Adjustment yang sudah dihapus/void tidak bisa diedit' }, { status: 409 });
+    }
+
+    const invoiceRef = normalizeText(adjustment.invoiceRef);
+    if (!invoiceRef) {
+        return NextResponse.json({ error: 'Referensi nota pada adjustment tidak valid' }, { status: 409 });
+    }
+
+    const amount = normalizeCurrencyNumber(data.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+        return NextResponse.json({ error: 'Nominal klaim/potongan tidak valid' }, { status: 400 });
+    }
+
+    const date = typeof data.date === 'string' && data.date ? data.date : adjustment.date || getBusinessDateValue();
+    const adjustmentDateError = validateIsoDateOrResponse(date, 'Tanggal klaim/potongan', 'Tanggal klaim/potongan tidak valid');
+    if (adjustmentDateError) {
+        return adjustmentDateError;
+    }
+
+    const kind = typeof data.kind === 'string' ? data.kind as InvoiceAdjustmentKind : adjustment.kind as InvoiceAdjustmentKind;
+    if (!INVOICE_ADJUSTMENT_KIND_SET.has(kind)) {
+        return NextResponse.json({ error: 'Jenis klaim/potongan tidak valid' }, { status: 400 });
+    }
+
+    const note = normalizeOptionalText(data.note);
+    const previousAmount = normalizeWholeMoneyAmount(adjustment.amount);
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        const snapshot = await loadReceivableSnapshot(invoiceRef);
+        if ('error' in snapshot) return snapshot.error;
+        if (!snapshot.doc._rev || !adjustment._rev) {
+            return NextResponse.json({ error: 'Revisi adjustment/tagihan tidak tersedia' }, { status: 409 });
+        }
+
+        const nextAdjustmentAmount = Math.max(snapshot.totalAdjustmentAmount - previousAmount + amount, 0);
+        if (nextAdjustmentAmount > snapshot.grossAmount) {
+            return NextResponse.json(
+                { error: `Total potongan melebihi nilai bruto tagihan (${snapshot.grossAmount})` },
+                { status: 400 }
+            );
+        }
+
+        const refundConflict = validateAdjustmentChangeAgainstRefunds(snapshot, nextAdjustmentAmount);
+        if (refundConflict) {
+            return refundConflict;
+        }
+
+        const transaction = getSanityClient()
+            .transaction()
+            .patch(adjustmentId, {
+                ifRevisionID: adjustment._rev,
+                set: {
+                    date,
+                    amount,
+                    kind,
+                    note,
+                    editedAt: new Date().toISOString(),
+                    editedBy: session._id,
+                    editedByName: session.name,
+                },
+                unset: note ? [] : ['note'],
+            })
+            .patch(invoiceRef, {
+                ifRevisionID: snapshot.doc._rev,
+                set: buildReceivablePatch(snapshot, snapshot.totalPaid, nextAdjustmentAmount),
+            });
+
+        try {
+            await transaction.commit();
+            await addAuditLog(
+                session,
+                'UPDATE',
+                'invoice-adjustments',
+                adjustmentId,
+                `Potongan/klaim ${adjustmentId} diperbarui untuk ${snapshot.label}`
+            );
+            return NextResponse.json({ success: true, id: adjustmentId });
+        } catch (err) {
+            if (!isMutationConflictError(err)) {
+                throw err;
+            }
+            if (attempt === 2) {
+                return NextResponse.json(
+                    { error: 'Klaim/potongan berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+        }
+    }
+
+    return NextResponse.json(
+        { error: 'Klaim/potongan berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+        { status: 409 }
+    );
+}
+
+async function finalizeInvoiceAdjustmentDelete(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn,
+    auditAction: 'UPDATE' | 'DELETE',
+    auditVerb: string
 ) {
     const adjustmentId = typeof data.id === 'string' ? data.id : '';
     if (!adjustmentId) {
@@ -891,7 +1098,7 @@ export async function handleInvoiceAdjustmentVoid(
         return NextResponse.json({ error: 'Adjustment tidak ditemukan' }, { status: 404 });
     }
     if (adjustment.status === 'VOID') {
-        return NextResponse.json({ error: 'Adjustment sudah void' }, { status: 409 });
+        return NextResponse.json({ error: 'Adjustment sudah dihapus/void' }, { status: 409 });
     }
 
     const invoiceRef = normalizeText(adjustment.invoiceRef);
@@ -906,6 +1113,11 @@ export async function handleInvoiceAdjustmentVoid(
     }
 
     const nextAdjustmentAmount = Math.max(snapshot.totalAdjustmentAmount - normalizeNumber(adjustment.amount || 0), 0);
+    const refundConflict = validateAdjustmentChangeAgainstRefunds(snapshot, nextAdjustmentAmount);
+    if (refundConflict) {
+        return refundConflict;
+    }
+
     await getSanityClient()
         .transaction()
         .patch(adjustmentId, {
@@ -925,12 +1137,216 @@ export async function handleInvoiceAdjustmentVoid(
 
     await addAuditLog(
         session,
-        'UPDATE',
+        auditAction,
         'invoice-adjustments',
         adjustmentId,
-        `Adjustment ${adjustmentId} di-void untuk ${snapshot.label}`
+        `Adjustment ${adjustmentId} ${auditVerb} untuk ${snapshot.label}`
     );
     return NextResponse.json({ success: true });
+}
+
+export async function handleInvoiceAdjustmentVoid(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    return finalizeInvoiceAdjustmentDelete(session, data, addAuditLog, 'UPDATE', 'di-void');
+}
+
+export async function handleInvoiceAdjustmentDelete(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    return finalizeInvoiceAdjustmentDelete(session, data, addAuditLog, 'DELETE', 'dihapus');
+}
+
+export async function handleCustomerOverpaymentRefund(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const sourceType =
+        data.sourceType === 'RECEIPT_UNAPPLIED' || data.sourceType === 'INVOICE_OVERPAID'
+            ? data.sourceType
+            : null;
+    if (!sourceType) {
+        return NextResponse.json({ error: 'Sumber kelebihan bayar tidak valid' }, { status: 400 });
+    }
+
+    const amount = normalizeCurrencyNumber(data.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+        return NextResponse.json({ error: 'Nominal refund kelebihan bayar tidak valid' }, { status: 400 });
+    }
+
+    const refundDate =
+        typeof data.date === 'string' && data.date ? data.date : getBusinessDateValue();
+    const refundDateError = validateIsoDateOrResponse(refundDate, 'Tanggal refund kelebihan bayar', 'Tanggal refund kelebihan bayar tidak valid');
+    if (refundDateError) {
+        return refundDateError;
+    }
+
+    const bankAccountRef = typeof data.bankAccountRef === 'string' ? data.bankAccountRef : '';
+    if (!bankAccountRef) {
+        return NextResponse.json({ error: 'Rekening atau kas sumber refund wajib dipilih' }, { status: 400 });
+    }
+
+    const bankAcc = await getLedgerAccount(bankAccountRef);
+    if (!bankAcc) {
+        return NextResponse.json({ error: 'Rekening atau kas sumber refund tidak ditemukan' }, { status: 404 });
+    }
+    if (!bankAcc._rev) {
+        return NextResponse.json({ error: 'Revisi rekening tidak tersedia' }, { status: 409 });
+    }
+
+    const note = normalizeOptionalText(data.note);
+
+    let customerRef: string | undefined;
+    let customerName = '-';
+    let sourceReceiptRef: string | undefined;
+    let sourceReceiptNumber: string | undefined;
+    let sourceInvoiceRef: string | undefined;
+    let sourceInvoiceNumber: string | undefined;
+    let openRefundableAmount = 0;
+    let invoicePatch:
+        | {
+            invoiceRef: string;
+            invoiceRev: string;
+            nextTotalPaid: number;
+            totalAdjustmentAmount: number;
+            snapshot: ReceivableSnapshot;
+        }
+        | undefined;
+
+    if (sourceType === 'RECEIPT_UNAPPLIED') {
+        const receiptRef = typeof data.sourceReceiptRef === 'string' ? data.sourceReceiptRef : '';
+        if (!receiptRef) {
+            return NextResponse.json({ error: 'Referensi penerimaan customer wajib diisi' }, { status: 400 });
+        }
+
+        const receiptSnapshot = await loadReceiptOverpaymentSnapshot(receiptRef);
+        if ('error' in receiptSnapshot) return receiptSnapshot.error;
+
+        sourceReceiptRef = receiptSnapshot.receipt._id;
+        sourceReceiptNumber = normalizeOptionalText(receiptSnapshot.receipt.receiptNumber);
+        customerRef = normalizeOptionalText(receiptSnapshot.receipt.customerRef) || undefined;
+        customerName = normalizeText(receiptSnapshot.receipt.customerName) || '-';
+        openRefundableAmount = receiptSnapshot.openOverpaymentAmount;
+    } else {
+        const invoiceRef = typeof data.sourceInvoiceRef === 'string' ? data.sourceInvoiceRef : '';
+        if (!invoiceRef) {
+            return NextResponse.json({ error: 'Referensi nota wajib diisi' }, { status: 400 });
+        }
+
+        const snapshot = await loadReceivableSnapshot(invoiceRef);
+        if ('error' in snapshot) return snapshot.error;
+        if (snapshot.doc._type !== 'freightNota') {
+            return NextResponse.json(
+                { error: 'Refund kelebihan bayar aktif hanya didukung untuk nota ongkos' },
+                { status: 409 }
+            );
+        }
+        if (!snapshot.doc._rev) {
+            return NextResponse.json({ error: 'Revisi dokumen tagihan tidak tersedia' }, { status: 409 });
+        }
+
+        sourceInvoiceRef = invoiceRef;
+        sourceInvoiceNumber = normalizeOptionalText(snapshot.doc.notaNumber);
+        customerRef = snapshot.customerRef;
+        customerName = snapshot.customerName;
+        openRefundableAmount = snapshot.creditAmount;
+        invoicePatch = {
+            invoiceRef,
+            invoiceRev: snapshot.doc._rev,
+            nextTotalPaid: Math.max(snapshot.totalPaid - amount, 0),
+            totalAdjustmentAmount: snapshot.totalAdjustmentAmount,
+            snapshot,
+        };
+    }
+
+    if (openRefundableAmount <= 0) {
+        return NextResponse.json({ error: 'Tidak ada kelebihan bayar terbuka untuk ditransfer balik' }, { status: 409 });
+    }
+    if (amount > openRefundableAmount) {
+        return NextResponse.json(
+            { error: `Nominal refund melebihi kelebihan bayar terbuka (${openRefundableAmount})` },
+            { status: 400 }
+        );
+    }
+
+    const { startingBalance, nextBalance } = computeLedgerDebitBalance(bankAcc.currentBalance, amount);
+    if (nextBalance < 0) {
+        return NextResponse.json(
+            { error: `Saldo ${bankAcc.bankName} tidak cukup untuk refund. Saldo tersedia ${startingBalance}` },
+            { status: 409 }
+        );
+    }
+
+    const refundId = crypto.randomUUID();
+    const bankTransactionId = crypto.randomUUID();
+    const transaction = getSanityClient()
+        .transaction()
+        .create({
+            _id: refundId,
+            _type: 'customerOverpaymentRefund',
+            sourceType,
+            sourceReceiptRef,
+            sourceReceiptNumber,
+            sourceInvoiceRef,
+            sourceInvoiceNumber,
+            customerRef,
+            customerName,
+            date: refundDate,
+            amount,
+            bankAccountRef: bankAcc._id,
+            bankAccountName: bankAcc.bankName,
+            bankAccountNumber: bankAcc.accountNumber,
+            bankTransactionRef: bankTransactionId,
+            note,
+            createdBy: session._id,
+            createdByName: session.name,
+        })
+        .create({
+            _id: bankTransactionId,
+            _type: 'bankTransaction',
+            bankAccountRef: bankAcc._id,
+            bankAccountName: bankAcc.bankName,
+            bankAccountNumber: bankAcc.accountNumber,
+            type: 'DEBIT',
+            amount,
+            date: refundDate,
+            description:
+                sourceType === 'RECEIPT_UNAPPLIED'
+                    ? `Refund kelebihan bayar customer ${sourceReceiptNumber || sourceReceiptRef || ''}`.trim()
+                    : `Refund kelebihan bayar nota ${sourceInvoiceNumber || sourceInvoiceRef || ''}`.trim(),
+            balanceAfter: nextBalance,
+            relatedOverpaymentRefundRef: refundId,
+        })
+        .patch(bankAcc._id, {
+            ifRevisionID: bankAcc._rev,
+            set: { currentBalance: nextBalance },
+        });
+
+    if (invoicePatch) {
+        transaction.patch(invoicePatch.invoiceRef, {
+            ifRevisionID: invoicePatch.invoiceRev,
+            set: buildReceivablePatch(
+                invoicePatch.snapshot,
+                invoicePatch.nextTotalPaid,
+                invoicePatch.totalAdjustmentAmount
+            ),
+        });
+    }
+
+    await transaction.commit();
+    await addAuditLog(
+        session,
+        'CREATE',
+        'customer-overpayment-refunds',
+        refundId,
+        `Refund kelebihan bayar ${amount} dikonfirmasi untuk ${sourceType === 'RECEIPT_UNAPPLIED' ? sourceReceiptNumber || sourceReceiptRef : sourceInvoiceNumber || sourceInvoiceRef}`
+    );
+    return NextResponse.json({ success: true, id: refundId });
 }
 
 export async function handleBankTransfer(

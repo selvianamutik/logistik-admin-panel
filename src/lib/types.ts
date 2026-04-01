@@ -492,6 +492,9 @@ export interface FreightNota {
   totalAmount: number;
   totalAdjustmentAmount?: number;
   netAmount?: number;
+  totalPaidEffective?: number;
+  refundedOverpaymentAmount?: number;
+  openOverpaymentAmount?: number;
   totalCollie: number;
   totalWeightKg: number;
   billingMode?: FreightNotaBillingMode;
@@ -628,6 +631,9 @@ export interface CustomerReceipt {
   totalAmount: number;
   allocatedAmount?: number;
   unappliedAmount?: number;
+  refundedOverpaymentAmount?: number;
+  openOverpaymentAmount?: number;
+  overpaymentStatus?: CustomerOverpaymentStatus;
   allocationCount: number;
   method: PaymentMethod;
   bankAccountRef?: string;
@@ -658,9 +664,55 @@ export interface InvoiceAdjustment {
   note?: string;
   createdBy?: string;
   createdByName?: string;
+  editedAt?: string;
+  editedBy?: string;
+  editedByName?: string;
   voidedAt?: string;
   voidedBy?: string;
   voidedByName?: string;
+}
+
+export type CustomerOverpaymentSourceType = 'RECEIPT_UNAPPLIED' | 'INVOICE_OVERPAID';
+export type CustomerOverpaymentStatus = 'OPEN' | 'REFUNDED';
+
+export interface CustomerOverpayment {
+  _id: string;
+  _type: 'customerOverpayment';
+  sourceType: CustomerOverpaymentSourceType;
+  status: CustomerOverpaymentStatus;
+  customerRef?: string;
+  customerName: string;
+  sourceReceiptRef?: string;
+  sourceReceiptNumber?: string;
+  sourceInvoiceRef?: string;
+  sourceInvoiceNumber?: string;
+  detectedDate: string;
+  amount: number;
+  refundedAmount: number;
+  remainingAmount: number;
+  sourceLabel: string;
+  sourceDescription: string;
+}
+
+export interface CustomerOverpaymentRefund {
+  _id: string;
+  _type: 'customerOverpaymentRefund';
+  sourceType: CustomerOverpaymentSourceType;
+  sourceReceiptRef?: string;
+  sourceReceiptNumber?: string;
+  sourceInvoiceRef?: string;
+  sourceInvoiceNumber?: string;
+  customerRef?: string;
+  customerName?: string;
+  date: string;
+  amount: number;
+  bankAccountRef: string;
+  bankAccountName?: string;
+  bankAccountNumber?: string;
+  bankTransactionRef?: string;
+  note?: string;
+  createdBy?: string;
+  createdByName?: string;
 }
 
 // ── Income ──
@@ -900,6 +952,7 @@ export interface BankTransaction {
   relatedExpenseRef?: string;
   relatedTransferRef?: string;
   relatedVoucherRef?: string;
+  relatedOverpaymentRefundRef?: string;
   _createdAt?: string;
 }
 

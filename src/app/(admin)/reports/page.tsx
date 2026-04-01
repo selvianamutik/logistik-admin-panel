@@ -35,6 +35,7 @@ import type {
   BankAccount,
   BankTransaction,
   CompanyProfile,
+  CustomerOverpaymentRefund,
   DriverVoucher,
   Expense,
   FreightNota,
@@ -47,6 +48,7 @@ export default function ReportsPage() {
   const { addToast } = useToast();
   const [tab, setTab] = useState<Tab>("pnl");
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [overpaymentRefunds, setOverpaymentRefunds] = useState<CustomerOverpaymentRefund[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [freightNotas, setFreightNotas] = useState<FreightNota[]>([]);
   const [driverVouchers, setDriverVouchers] = useState<DriverVoucher[]>([]);
@@ -89,9 +91,10 @@ export default function ReportsPage() {
   useEffect(() => {
     async function loadReportData() {
       try {
-        const [pay, exp, nota, vouchers, banks, txs, companyProfile] =
+        const [pay, refunds, exp, nota, vouchers, banks, txs, companyProfile] =
           await Promise.all([
             fetchAllAdminCollectionData<Payment>("/api/data?entity=payments", "Gagal memuat payments"),
+            fetchAllAdminCollectionData<CustomerOverpaymentRefund>("/api/data?entity=customer-overpayment-refunds", "Gagal memuat refund kelebihan bayar"),
             fetchAllAdminCollectionData<Expense>("/api/data?entity=expenses", "Gagal memuat expenses"),
             fetchAllAdminCollectionData<FreightNota>("/api/data?entity=freight-notas", "Gagal memuat freight-notas"),
             fetchAllAdminCollectionData<DriverVoucher>("/api/data?entity=driver-vouchers", "Gagal memuat driver-vouchers"),
@@ -100,6 +103,7 @@ export default function ReportsPage() {
             fetchAdminData<CompanyProfile | null>("/api/data?entity=company", "Gagal memuat company").catch(() => null),
           ]);
         setPayments(pay || []);
+        setOverpaymentRefunds(refunds || []);
         setExpenses(exp || []);
         setFreightNotas(nota || []);
         setDriverVouchers(vouchers || []);
@@ -124,6 +128,7 @@ export default function ReportsPage() {
   const periodLabel = buildPeriodLabel(periodMode, month, year, monthNames);
   const {
     filteredPayments,
+    filteredOverpaymentRefunds,
     filteredExpenses,
     sortedFilteredBankTx,
     totalRevenue,
@@ -142,6 +147,7 @@ export default function ReportsPage() {
     cashFlowByBank,
   } = buildReportsSnapshot({
     payments,
+    overpaymentRefunds,
     expenses,
     freightNotas,
     driverVouchers,
@@ -189,7 +195,7 @@ export default function ReportsPage() {
   const handleExportExcel = async () => {
     try {
       if (tab === "pnl") {
-        const rows = buildProfitLossExportRows(filteredPayments, filteredExpenses);
+        const rows = buildProfitLossExportRows(filteredPayments, filteredExpenses, filteredOverpaymentRefunds);
         await exportToExcel(
           rows as unknown as Record<string, unknown>[],
           [
@@ -237,7 +243,7 @@ export default function ReportsPage() {
         subtitle: periodLabel,
         company,
         bodyHtml: isPnl
-          ? `<div class="stats-row"><div class="stat-box"><div class="stat-label">Pendapatan</div><div class="stat-value s">${fmtN(totalRevenue)}</div></div><div class="stat-box"><div class="stat-label">Pengeluaran</div><div class="stat-value d">${fmtN(totalExpense)}</div></div><div class="stat-box"><div class="stat-label">Laba/Rugi Bersih</div><div class="stat-value ${netProfit >= 0 ? "s" : "d"}">${netProfit >= 0 ? "+" : ""}${fmtN(netProfit)}</div></div></div><table><thead><tr><th>Kategori</th><th class="r">Jumlah</th><th class="r">%</th></tr></thead><tbody><tr class="b"><td>PENDAPATAN</td><td class="r s">${fmtN(totalRevenue)}</td><td class="r">100%</td></tr><tr><td style="padding-left:1.5rem">Pembayaran customer (${filteredPayments.length}x)</td><td class="r">${fmtN(totalRevenue)}</td><td class="r">100%</td></tr><tr class="b" style="border-top:2px solid #e2e8f0"><td>PENGELUARAN</td><td class="r d">${fmtN(totalExpense)}</td><td class="r">100%</td></tr>${sortedCategories.map(([cat, amt]) => `<tr><td style="padding-left:1.5rem">${cat}</td><td class="r">${fmtN(amt)}</td><td class="r">${totalExpense > 0 ? ((amt / totalExpense) * 100).toFixed(1) : 0}%</td></tr>`).join("")}<tr class="b" style="border-top:2px solid #1e293b"><td>LABA / RUGI BERSIH</td><td class="r ${netProfit >= 0 ? "s" : "d"}">${netProfit >= 0 ? "+" : ""}${fmtN(netProfit)}</td><td></td></tr></tbody></table>`
+          ? `<div class="stats-row"><div class="stat-box"><div class="stat-label">Pendapatan</div><div class="stat-value s">${fmtN(totalRevenue)}</div></div><div class="stat-box"><div class="stat-label">Pengeluaran</div><div class="stat-value d">${fmtN(totalExpense)}</div></div><div class="stat-box"><div class="stat-label">Laba/Rugi Bersih</div><div class="stat-value ${netProfit >= 0 ? "s" : "d"}">${netProfit >= 0 ? "+" : ""}${fmtN(netProfit)}</div></div></div><table><thead><tr><th>Kategori</th><th class="r">Jumlah</th><th class="r">%</th></tr></thead><tbody><tr class="b"><td>PENDAPATAN</td><td class="r s">${fmtN(totalRevenue)}</td><td class="r">100%</td></tr><tr><td style="padding-left:1.5rem">Pembayaran customer (${filteredPayments.length}x)</td><td class="r">${fmtN(filteredPayments.reduce((sum, item) => sum + parseWholeMoneyLike(item.amount), 0))}</td><td class="r">-</td></tr>${filteredOverpaymentRefunds.length > 0 ? `<tr><td style="padding-left:1.5rem">Refund kelebihan bayar (${filteredOverpaymentRefunds.length}x)</td><td class="r d">-${fmtN(filteredOverpaymentRefunds.reduce((sum, item) => sum + parseWholeMoneyLike(item.amount), 0))}</td><td class="r">-</td></tr>` : ""}<tr class="b" style="border-top:2px solid #e2e8f0"><td>PENGELUARAN</td><td class="r d">${fmtN(totalExpense)}</td><td class="r">100%</td></tr>${sortedCategories.map(([cat, amt]) => `<tr><td style="padding-left:1.5rem">${cat}</td><td class="r">${fmtN(amt)}</td><td class="r">${totalExpense > 0 ? ((amt / totalExpense) * 100).toFixed(1) : 0}%</td></tr>`).join("")}<tr class="b" style="border-top:2px solid #1e293b"><td>LABA / RUGI BERSIH</td><td class="r ${netProfit >= 0 ? "s" : "d"}">${netProfit >= 0 ? "+" : ""}${fmtN(netProfit)}</td><td></td></tr></tbody></table>`
           : `<div class="stats-row">${Object.entries(cashFlowByBank)
               .map(
                 ([, value]) =>
