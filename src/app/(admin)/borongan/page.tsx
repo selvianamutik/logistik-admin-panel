@@ -56,20 +56,28 @@ export default function BoronganListPage() {
         return params.toString();
     }, [page, search, statusFilter]);
 
-    const buildBoronganSummaryQuery = useCallback(() => {
-        const params = new URLSearchParams({
-            entity: 'driver-borongans',
-        });
-        if (search.trim()) {
-            params.set('q', search.trim());
-            params.set('searchFields', 'boronganNumber,driverName');
-        }
-        if (statusFilter) {
-            params.set('filter', JSON.stringify({ status: statusFilter }));
-            params.set('status', statusFilter);
-        }
-        return params.toString();
-    }, [search, statusFilter]);
+    const fetchAllMatchingBorongans = useCallback(async () => {
+        const pageSize = 200;
+        let currentPage = 1;
+        let total = 0;
+        const allItems: DriverBorongan[] = [];
+
+        do {
+            const res = await fetch(`/api/data?${buildBoronganQuery(currentPage, pageSize)}`);
+            const payload = await res.json();
+            if (!res.ok) {
+                throw new Error(payload.error || 'Gagal memuat slip borongan');
+            }
+
+            const nextItems = (payload.data || []) as DriverBorongan[];
+            total = payload.meta?.total || nextItems.length;
+            allItems.push(...nextItems);
+            if (nextItems.length === 0) break;
+            currentPage += 1;
+        } while (allItems.length < total);
+
+        return allItems;
+    }, [buildBoronganQuery]);
 
     useEffect(() => {
         const loadBorongan = async () => {
@@ -79,26 +87,19 @@ export default function BoronganListPage() {
             }
             setLoading(true);
             try {
-                const [listRes, summaryRes] = await Promise.all([
+                const [listRes, matchingBorongans] = await Promise.all([
                     fetch(`/api/data?${buildBoronganQuery()}`),
-                    fetch(`/api/data?${buildBoronganSummaryQuery()}`),
+                    fetchAllMatchingBorongans(),
                 ]);
-                const [listPayload, summaryPayload] = await Promise.all([
-                    listRes.json(),
-                    summaryRes.json(),
-                ]);
+                const listPayload = await listRes.json();
                 if (!listRes.ok) {
                     throw new Error(listPayload.error || 'Gagal memuat slip borongan');
                 }
-                if (!summaryRes.ok) {
-                    throw new Error(summaryPayload.error || 'Gagal memuat ringkasan slip borongan');
-                }
-                const summaryItems = Array.isArray(summaryPayload.data) ? summaryPayload.data as DriverBorongan[] : [];
                 setItems(listPayload.data || []);
                 setFilteredTotalBorongans(listPayload.meta?.total || 0);
-                setTotalUpah(summaryItems.reduce((sum, item) => sum + Math.max(parseFormattedNumberish(item.totalAmount ?? 0, { maxFractionDigits: 0 }), 0), 0));
-                setUnpaidCount(summaryItems.filter(item => item.status === 'UNPAID').length);
-                setPaidCount(summaryItems.filter(item => item.status === 'PAID').length);
+                setTotalUpah(matchingBorongans.reduce((sum, item) => sum + Math.max(parseFormattedNumberish(item.totalAmount ?? 0, { maxFractionDigits: 0 }), 0), 0));
+                setUnpaidCount(matchingBorongans.filter(item => item.status === 'UNPAID').length);
+                setPaidCount(matchingBorongans.filter(item => item.status === 'PAID').length);
             } catch (error) {
                 addToast('error', error instanceof Error ? error.message : 'Gagal memuat slip borongan');
             } finally {
@@ -107,7 +108,7 @@ export default function BoronganListPage() {
         };
 
         void loadBorongan();
-    }, [addToast, buildBoronganQuery, buildBoronganSummaryQuery, normalizedRole, search, statusFilter]);
+    }, [addToast, buildBoronganQuery, fetchAllMatchingBorongans, normalizedRole, search, statusFilter]);
 
     useEffect(() => {
         setPage(1);
