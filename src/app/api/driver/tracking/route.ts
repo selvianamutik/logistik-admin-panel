@@ -380,6 +380,13 @@ export async function POST(request: Request) {
                 trackingState: 'PAUSED',
                 ...locationPatch,
             });
+
+            try {
+                await releaseDriverTrackingLockIfOwned(auth.driver._id, deliveryOrderRef, now);
+            } catch (error) {
+                console.warn('Failed to release driver tracking lock after pause', error);
+            }
+
             return jsonNoStore({ data: updated });
         }
 
