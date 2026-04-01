@@ -25,6 +25,32 @@ import type { TripRouteRate } from '@/lib/types';
 const CUSTOMER_DO_PREFIX_RE = /^[A-Z0-9][A-Z0-9-]{0,7}$/;
 const CUSTOMER_PRODUCT_CODE_RE = /^[A-Z0-9][A-Z0-9-]{0,19}$/;
 
+function parseStrictCustomerProductNumber(
+    value: unknown,
+    label: string,
+    options?: { allowDecimal?: boolean; maxFractionDigits?: number }
+) {
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed || !/[0-9]/.test(trimmed) || /[a-z]/i.test(trimmed)) {
+            throw new Error(label);
+        }
+        if (options?.allowDecimal === false) {
+            const groupedIntegerPattern = /^-?\d{1,3}(?:[.,]\d{3})*$/;
+            const plainIntegerPattern = /^-?\d+$/;
+            if (!groupedIntegerPattern.test(trimmed) && !plainIntegerPattern.test(trimmed)) {
+                throw new Error(label);
+            }
+        }
+    }
+
+    const normalized = normalizeNumber(value, options);
+    if (!Number.isFinite(normalized)) {
+        throw new Error(label);
+    }
+    return normalized;
+}
+
 export function normalizeCustomerDoPrefix(value: unknown) {
     const prefix = normalizeOptionalText(value)
         ?.toUpperCase()
@@ -221,33 +247,50 @@ export async function normalizeCustomerProductPayload(data: Record<string, unkno
         Object.prototype.hasOwnProperty.call(data, 'description') || !existing
             ? normalizeOptionalText(data.description)
             : normalizeOptionalText(existing?.description);
+    const hasDefaultQtyKoli = Object.prototype.hasOwnProperty.call(data, 'defaultQtyKoli');
     const defaultQtyRaw =
-        Object.prototype.hasOwnProperty.call(data, 'defaultQtyKoli') || !existing
-            ? normalizeNumber(data.defaultQtyKoli ?? 1)
+        hasDefaultQtyKoli || !existing
+            ? hasDefaultQtyKoli
+                ? parseStrictCustomerProductNumber(data.defaultQtyKoli ?? 1, 'Default koli barang customer tidak valid', {
+                    allowDecimal: false,
+                    maxFractionDigits: 0,
+                })
+                : normalizeNumber(data.defaultQtyKoli ?? 1)
             : normalizeNumber(existing?.defaultQtyKoli ?? 1);
     if (!Number.isFinite(defaultQtyRaw) || defaultQtyRaw < 0) {
         throw new Error('Default koli barang customer tidak valid');
     }
 
+    const hasDefaultWeightInputUnit = Object.prototype.hasOwnProperty.call(data, 'defaultWeightInputUnit');
     const requestedWeightInputUnit = normalizeText(
-        Object.prototype.hasOwnProperty.call(data, 'defaultWeightInputUnit')
+        hasDefaultWeightInputUnit
             ? data.defaultWeightInputUnit
             : ''
     ).toUpperCase();
+    if (hasDefaultWeightInputUnit && !requestedWeightInputUnit) {
+        throw new Error('Satuan default berat barang customer tidak valid');
+    }
     if (requestedWeightInputUnit && !isWeightInputUnit(requestedWeightInputUnit)) {
         throw new Error('Satuan default berat barang customer tidak valid');
     }
     const weightInputUnit: WeightInputUnit =
-        Object.prototype.hasOwnProperty.call(data, 'defaultWeightInputUnit')
-            ? (requestedWeightInputUnit as WeightInputUnit || 'KG')
+        hasDefaultWeightInputUnit
+            ? requestedWeightInputUnit as WeightInputUnit
             : readWeightInputUnit(existing?.defaultWeightInputUnit, 'KG');
+    const hasDefaultWeightValue =
+        Object.prototype.hasOwnProperty.call(data, 'defaultWeightInputValue')
+        || Object.prototype.hasOwnProperty.call(data, 'defaultWeight');
     const defaultWeightInputValue =
-        Object.prototype.hasOwnProperty.call(data, 'defaultWeightInputValue') ||
-        Object.prototype.hasOwnProperty.call(data, 'defaultWeight') ||
-        !existing
-            ? normalizeNumber(data.defaultWeightInputValue ?? data.defaultWeight ?? 0, {
-                maxFractionDigits: weightInputUnit === 'TON' ? 3 : 2,
-            })
+        hasDefaultWeightValue || !existing
+            ? hasDefaultWeightValue
+                ? parseStrictCustomerProductNumber(
+                    data.defaultWeightInputValue ?? data.defaultWeight ?? 0,
+                    'Default berat barang customer tidak valid',
+                    { maxFractionDigits: weightInputUnit === 'TON' ? 3 : 2 }
+                )
+                : normalizeNumber(data.defaultWeightInputValue ?? data.defaultWeight ?? 0, {
+                    maxFractionDigits: weightInputUnit === 'TON' ? 3 : 2,
+                })
             : normalizeNumber(
                 existing?.defaultWeightInputValue ??
                 convertKgToWeightInputValue(normalizeNumber(existing?.defaultWeight ?? 0), weightInputUnit),
@@ -260,25 +303,39 @@ export async function normalizeCustomerProductPayload(data: Record<string, unkno
     }
     const defaultWeight = defaultWeightInputValue > 0 ? convertWeightToKg(defaultWeightInputValue, weightInputUnit) : undefined;
 
+    const hasDefaultVolumeInputUnit = Object.prototype.hasOwnProperty.call(data, 'defaultVolumeInputUnit');
     const requestedVolumeInputUnit = normalizeText(
-        Object.prototype.hasOwnProperty.call(data, 'defaultVolumeInputUnit')
+        hasDefaultVolumeInputUnit
             ? data.defaultVolumeInputUnit
             : ''
     ).toUpperCase();
+    if (hasDefaultVolumeInputUnit && !requestedVolumeInputUnit) {
+        throw new Error('Satuan default volume barang customer tidak valid');
+    }
     if (requestedVolumeInputUnit && !isVolumeInputUnit(requestedVolumeInputUnit)) {
         throw new Error('Satuan default volume barang customer tidak valid');
     }
     const volumeInputUnit: VolumeInputUnit =
-        Object.prototype.hasOwnProperty.call(data, 'defaultVolumeInputUnit')
-            ? (requestedVolumeInputUnit as VolumeInputUnit || 'M3')
+        hasDefaultVolumeInputUnit
+            ? requestedVolumeInputUnit as VolumeInputUnit
             : readVolumeInputUnit(existing?.defaultVolumeInputUnit, 'M3');
+    const hasDefaultVolumeValue =
+        Object.prototype.hasOwnProperty.call(data, 'defaultVolumeInputValue')
+        || Object.prototype.hasOwnProperty.call(data, 'defaultVolume');
     const defaultVolumeInputValue =
-        Object.prototype.hasOwnProperty.call(data, 'defaultVolumeInputValue') ||
-        Object.prototype.hasOwnProperty.call(data, 'defaultVolume') ||
-        !existing
-            ? normalizeNumber(data.defaultVolumeInputValue ?? data.defaultVolume ?? 0, {
-                maxFractionDigits: volumeInputUnit === 'LITER' ? 0 : 3,
-            })
+        hasDefaultVolumeValue || !existing
+            ? hasDefaultVolumeValue
+                ? parseStrictCustomerProductNumber(
+                    data.defaultVolumeInputValue ?? data.defaultVolume ?? 0,
+                    'Default volume barang customer tidak valid',
+                    {
+                        allowDecimal: volumeInputUnit !== 'LITER',
+                        maxFractionDigits: volumeInputUnit === 'LITER' ? 0 : 3,
+                    }
+                )
+                : normalizeNumber(data.defaultVolumeInputValue ?? data.defaultVolume ?? 0, {
+                    maxFractionDigits: volumeInputUnit === 'LITER' ? 0 : 3,
+                })
             : normalizeNumber(
                 existing?.defaultVolumeInputValue ??
                 convertM3ToVolumeInputValue(normalizeNumber(existing?.defaultVolume ?? 0), volumeInputUnit),

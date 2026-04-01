@@ -1103,7 +1103,12 @@ export default function CustomerDetailPage() {
                                     <div className="form-group">
                                         <label className="form-label">Default Berat</label>
                                         <div style={{ display: 'flex', gap: 8 }}>
-                                        <FormattedNumberInput min={0} maxFractionDigits={2} value={productForm.defaultWeightInputValue} onValueChange={value => setProductForm(prev => ({ ...prev, defaultWeightInputValue: value }))} />
+                                        <FormattedNumberInput
+                                            min={0}
+                                            maxFractionDigits={productForm.defaultWeightInputUnit === 'TON' ? 3 : 2}
+                                            value={productForm.defaultWeightInputValue}
+                                            onValueChange={value => setProductForm(prev => ({ ...prev, defaultWeightInputValue: value }))}
+                                        />
                                         <select className="form-select" value={productForm.defaultWeightInputUnit} onChange={e => setProductForm(prev => ({ ...prev, defaultWeightInputUnit: e.target.value as WeightInputUnit }))} style={{ width: 100 }}>
                                             {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                         </select>
@@ -1112,7 +1117,13 @@ export default function CustomerDetailPage() {
                                     <div className="form-group">
                                         <label className="form-label">Default Volume</label>
                                         <div style={{ display: 'flex', gap: 8 }}>
-                                        <FormattedNumberInput min={0} maxFractionDigits={2} value={productForm.defaultVolumeInputValue} onValueChange={value => setProductForm(prev => ({ ...prev, defaultVolumeInputValue: value }))} />
+                                        <FormattedNumberInput
+                                            min={0}
+                                            allowDecimal={productForm.defaultVolumeInputUnit !== 'LITER'}
+                                            maxFractionDigits={productForm.defaultVolumeInputUnit === 'LITER' ? 0 : 3}
+                                            value={productForm.defaultVolumeInputValue}
+                                            onValueChange={value => setProductForm(prev => ({ ...prev, defaultVolumeInputValue: value }))}
+                                        />
                                         <select className="form-select" value={productForm.defaultVolumeInputUnit} onChange={e => setProductForm(prev => ({ ...prev, defaultVolumeInputUnit: e.target.value as VolumeInputUnit }))} style={{ width: 100 }}>
                                             {VOLUME_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                                         </select>
