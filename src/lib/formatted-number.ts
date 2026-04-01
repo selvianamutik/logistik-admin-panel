@@ -98,12 +98,14 @@ export function parseFormattedNumberInput(
   allowDecimal: boolean,
   maxFractionDigits: number,
 ) {
+  const isNegative = /^\s*-/.test(rawValue);
   const cleaned = rawValue.replace(/[^\d,.\s]/g, "").trim();
   if (!cleaned) return 0;
 
   const supportsFraction = allowDecimal && maxFractionDigits > 0;
   if (!supportsFraction) {
-    return parseIntegerLikeInput(cleaned);
+    const parsed = parseIntegerLikeInput(cleaned);
+    return isNegative && parsed !== 0 ? -parsed : parsed;
   }
 
   const commaCount = (cleaned.match(/,/g) || []).length;
@@ -113,11 +115,12 @@ export function parseFormattedNumberInput(
     const lastComma = cleaned.lastIndexOf(",");
     const lastDot = cleaned.lastIndexOf(".");
     const decimalIndex = Math.max(lastComma, lastDot);
-    return parseDecimalParts(
+    const parsed = parseDecimalParts(
       cleaned.slice(0, decimalIndex),
       cleaned.slice(decimalIndex + 1),
       maxFractionDigits,
     );
+    return isNegative && parsed !== 0 ? -parsed : parsed;
   }
 
   const activeSeparator = commaCount > 0 ? "," : dotCount > 0 ? "." : null;
@@ -132,22 +135,24 @@ export function parseFormattedNumberInput(
         fractionPart.length > 0 &&
         fractionPart.length <= maxFractionDigits
       ) {
-        return parseDecimalParts(left, right, maxFractionDigits);
+        const parsed = parseDecimalParts(left, right, maxFractionDigits);
+        return isNegative && parsed !== 0 ? -parsed : parsed;
       }
 
       if (fractionPart.length === 0) {
         const digits = left.replace(/\D/g, "");
-        return digits ? Number(digits.replace(/^0+(?=\d)/, "")) : 0;
+        const parsed = digits ? Number(digits.replace(/^0+(?=\d)/, "")) : 0;
+        return isNegative && parsed !== 0 ? -parsed : parsed;
       }
 
       const grouped = parseGroupedDigits(parts);
       if (grouped !== null) {
-        return grouped;
+        return isNegative && grouped !== 0 ? -grouped : grouped;
       }
     } else if (parts.length > 2) {
       const grouped = parseGroupedDigits(parts);
       if (grouped !== null) {
-        return grouped;
+        return isNegative && grouped !== 0 ? -grouped : grouped;
       }
 
       const left = parts.slice(0, -1).join(activeSeparator);
@@ -157,13 +162,15 @@ export function parseFormattedNumberInput(
         fractionPart.length > 0 &&
         fractionPart.length <= maxFractionDigits
       ) {
-        return parseDecimalParts(left, right, maxFractionDigits);
+        const parsed = parseDecimalParts(left, right, maxFractionDigits);
+        return isNegative && parsed !== 0 ? -parsed : parsed;
       }
     }
   }
 
   const digits = cleaned.replace(/\D/g, "");
-  return digits ? Number(digits.replace(/^0+(?=\d)/, "")) : 0;
+  const parsed = digits ? Number(digits.replace(/^0+(?=\d)/, "")) : 0;
+  return isNegative && parsed !== 0 ? -parsed : parsed;
 }
 
 export function parseFormattedNumberish(
