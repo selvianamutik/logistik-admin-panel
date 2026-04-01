@@ -171,6 +171,22 @@ async function sanitizeCompanyInvoiceSettings(
     if (hasInvoiceMode && (!rawInvoiceMode || (rawInvoiceMode !== 'DO' && rawInvoiceMode !== 'ORDER'))) {
         throw new Error('Mode invoice/nota perusahaan tidak valid');
     }
+    const hasDefaultTermDays = Object.prototype.hasOwnProperty.call(invoiceSettings, 'defaultTermDays');
+    const rawDefaultTermDays = normalizeNumber(invoiceSettings.defaultTermDays);
+    if (hasDefaultTermDays && (!Number.isFinite(rawDefaultTermDays) || rawDefaultTermDays < 0)) {
+        throw new Error('Termin default nota tidak valid');
+    }
+    const hasDueDateDays = Object.prototype.hasOwnProperty.call(invoiceSettings, 'dueDateDays');
+    const rawDueDateDays = normalizeNumber(invoiceSettings.dueDateDays);
+    if (hasDueDateDays && (!Number.isFinite(rawDueDateDays) || rawDueDateDays < 0)) {
+        throw new Error('Jatuh tempo default nota tidak valid');
+    }
+    if (
+        Object.prototype.hasOwnProperty.call(documentSettingsInput, 'showContact')
+        && typeof documentSettingsInput.showContact !== 'boolean'
+    ) {
+        throw new Error('Pengaturan tampilkan kontak dokumen tidak valid');
+    }
 
     return {
         name: normalizeOptionalText(input.name) || normalizeOptionalText(existingCompany?.name) || 'Gading Mas Surya',
@@ -217,14 +233,12 @@ async function sanitizeCompanyInvoiceSettings(
             incidentPeriod: normalizeOptionalText(numberingInput.incidentPeriod) || normalizeOptionalText(existingNumbering.incidentPeriod),
         },
         invoiceSettings: {
-            defaultTermDays: sanitizeCompanyCounter(
-                invoiceSettings.defaultTermDays,
-                sanitizeCompanyCounter(existingInvoiceSettings.defaultTermDays, 30),
-            ),
-            dueDateDays: sanitizeCompanyCounter(
-                invoiceSettings.dueDateDays,
-                sanitizeCompanyCounter(existingInvoiceSettings.dueDateDays, 14),
-            ),
+            defaultTermDays: hasDefaultTermDays
+                ? Math.floor(rawDefaultTermDays)
+                : sanitizeCompanyCounter(existingInvoiceSettings.defaultTermDays, 30),
+            dueDateDays: hasDueDateDays
+                ? Math.floor(rawDueDateDays)
+                : sanitizeCompanyCounter(existingInvoiceSettings.dueDateDays, 14),
             footerNote: normalizeOptionalText(invoiceSettings.footerNote) || normalizeOptionalText(existingInvoiceSettings.footerNote) || '',
             invoiceMode:
                 rawInvoiceMode === 'DO' || rawInvoiceMode === 'ORDER'
