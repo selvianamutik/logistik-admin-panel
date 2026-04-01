@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -9,9 +10,15 @@ import {
   Landmark,
   Printer,
 } from "lucide-react";
-import { useToast } from "../layout";
+import { useApp, useToast } from "../layout";
 import { openBrandedPrint } from "@/lib/print";
 import { fetchAdminData, fetchAllAdminCollectionData } from "@/lib/api/admin-client";
+import {
+  buildExpenseLookup,
+  buildPaymentLookup,
+  buildRefundLookup,
+  resolveBankTransactionSourceLink,
+} from "@/lib/bank-transaction-links";
 import {
   formatBusinessDate,
   getBusinessCalendarDateParts,
@@ -41,10 +48,12 @@ import type {
   FreightNota,
   Payment,
 } from "@/lib/types";
+import { hasPageAccess } from "@/lib/rbac";
 
 type Tab = "pnl" | "cashflow";
 
 export default function ReportsPage() {
+  const { user } = useApp();
   const { addToast } = useToast();
   const [tab, setTab] = useState<Tab>("pnl");
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -59,6 +68,12 @@ export default function ReportsPage() {
   );
   const [company, setCompany] = useState<CompanyProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const canOpenBankAccounts = user ? hasPageAccess(user.role, "bankAccounts") : false;
+  const canOpenInvoices = user ? hasPageAccess(user.role, "invoices") : false;
+  const canOpenDriverVouchers = user ? hasPageAccess(user.role, "driverVouchers") : false;
+  const canOpenDriverBorongans = user ? hasPageAccess(user.role, "driverBorongans") : false;
+  const canOpenVehicles = user ? hasPageAccess(user.role, "vehicles") : false;
+  const canOpenIncidents = user ? hasPageAccess(user.role, "incidents") : false;
 
   const businessToday = getBusinessCalendarDateParts() || {
     year: String(new Date().getFullYear()),
@@ -157,6 +172,16 @@ export default function ReportsPage() {
     month,
     year,
   });
+  const paymentsById = useMemo(() => buildPaymentLookup(payments), [payments]);
+  const refundsById = useMemo(
+    () => buildRefundLookup(overpaymentRefunds),
+    [overpaymentRefunds],
+  );
+  const expensesById = useMemo(() => buildExpenseLookup(expenses), [expenses]);
+  const invoiceIdsWithPages = useMemo(
+    () => new Set(freightNotas.map((nota) => nota._id)),
+    [freightNotas],
+  );
   const fmtN = (n: number) => new Intl.NumberFormat("id-ID").format(n);
   const parseWholeMoneyLike = (value: unknown) =>
     Math.max(parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 }), 0);
@@ -1124,6 +1149,20 @@ export default function ReportsPage() {
                       );
                       const amount = parseWholeMoneyLike(item.amount);
                       const balanceAfter = parseWholeMoneyLike(item.balanceAfter);
+                      const sourceLink = resolveBankTransactionSourceLink({
+                        transaction: item,
+                        paymentsById,
+                        refundsById,
+                        expensesById,
+                        invoiceIdsWithPages,
+                        permissions: {
+                          canOpenInvoices,
+                          canOpenDriverVouchers,
+                          canOpenDriverBorongans,
+                          canOpenVehicles,
+                          canOpenIncidents,
+                        },
+                      });
                       return (
                         <tr key={item._id}>
                           <td
@@ -1135,7 +1174,13 @@ export default function ReportsPage() {
                             {formatDate(item.date)}
                           </td>
                           <td style={{ fontWeight: 600, fontSize: "0.82rem" }}>
-                            {bankName}
+                            {canOpenBankAccounts ? (
+                              <Link href={`/bank-accounts/${item.bankAccountRef}`} style={{ color: "var(--color-primary)" }}>
+                                {bankName}
+                              </Link>
+                            ) : (
+                              bankName
+                            )}
                           </td>
                           <td>
                             <span
@@ -1146,7 +1191,14 @@ export default function ReportsPage() {
                             </span>
                           </td>
                           <td style={{ fontSize: "0.82rem" }}>
-                            {item.description}
+                            <div>{item.description}</div>
+                            {sourceLink && (
+                              <div style={{ marginTop: "0.2rem" }}>
+                                <Link href={sourceLink.href} style={{ fontSize: "0.72rem", fontWeight: 600, color: "var(--color-primary)" }}>
+                                  {sourceLink.label}
+                                </Link>
+                              </div>
+                            )}
                           </td>
                           <td
                             style={{
@@ -1197,14 +1249,43 @@ export default function ReportsPage() {
                   );
                   const amount = parseWholeMoneyLike(item.amount);
                   const balanceAfter = parseWholeMoneyLike(item.balanceAfter);
+                  const sourceLink = resolveBankTransactionSourceLink({
+                    transaction: item,
+                    paymentsById,
+                    refundsById,
+                    expensesById,
+                    invoiceIdsWithPages,
+                    permissions: {
+                      canOpenInvoices,
+                      canOpenDriverVouchers,
+                      canOpenDriverBorongans,
+                      canOpenVehicles,
+                      canOpenIncidents,
+                    },
+                  });
                   return (
                     <div key={item._id} className="mobile-record-card">
                       <div className="mobile-record-header">
                         <div>
-                          <div className="mobile-record-title">{bankName}</div>
+                          <div className="mobile-record-title">
+                            {canOpenBankAccounts ? (
+                              <Link href={`/bank-accounts/${item.bankAccountRef}`} style={{ color: "var(--color-primary)" }}>
+                                {bankName}
+                              </Link>
+                            ) : (
+                              bankName
+                            )}
+                          </div>
                           <div className="mobile-record-subtitle">
                             {formatDate(item.date)} | {item.description}
                           </div>
+                          {sourceLink && (
+                            <div style={{ marginTop: "0.2rem" }}>
+                              <Link href={sourceLink.href} style={{ fontSize: "0.72rem", fontWeight: 600, color: "var(--color-primary)" }}>
+                                {sourceLink.label}
+                              </Link>
+                            </div>
+                          )}
                         </div>
                         <span
                           className={`badge badge-${isIn ? "success" : "danger"}`}

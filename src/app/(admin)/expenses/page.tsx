@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useToast, useApp } from '../layout';
 import { Plus, Search, Wallet, Save, X, FileDown, Printer } from 'lucide-react';
@@ -14,7 +15,7 @@ import { exportExpenses } from '@/lib/export';
 import { openBrandedPrint, openPrintWindow, fetchCompanyProfile } from '@/lib/print';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { BankAccount, Expense, ExpenseCategory, Vehicle } from '@/lib/types';
-import { hasPermission } from '@/lib/rbac';
+import { hasPageAccess, hasPermission } from '@/lib/rbac';
 
 type ExpenseCategoryTotal = {
     name: string;
@@ -54,6 +55,8 @@ export default function ExpensesPage() {
     const isOwner = user?.role === 'OWNER';
     const canExportExpenses = user ? hasPermission(user.role, 'expenses', 'export') : false;
     const canPrintExpenses = user ? hasPermission(user.role, 'expenses', 'print') : false;
+    const canOpenVehiclePage = user ? hasPageAccess(user.role, 'vehicles') : false;
+    const canOpenBankAccountPage = user ? hasPageAccess(user.role, 'bankAccounts') : false;
     const vehicleMap = useMemo(() => new Map(vehicles.map(vehicle => [vehicle._id, vehicle])), [vehicles]);
     const accountMap = useMemo(() => new Map(bankAccounts.map(account => [account._id, account])), [bankAccounts]);
 
@@ -319,7 +322,14 @@ export default function ExpensesPage() {
                                                 <div>{expense.note || expense.description}</div>
                                                 {expense.relatedVehiclePlate && (
                                                     <div style={{ fontSize: '0.72rem', color: 'var(--color-text-secondary)', marginTop: '0.2rem' }}>
-                                                        kendaraan {expense.relatedVehiclePlate}
+                                                        kendaraan{' '}
+                                                        {expense.relatedVehicleRef && canOpenVehiclePage ? (
+                                                            <Link href={`/fleet/vehicles/${expense.relatedVehicleRef}`} style={{ color: 'var(--color-primary)', fontWeight: 600 }}>
+                                                                {expense.relatedVehiclePlate}
+                                                            </Link>
+                                                        ) : (
+                                                            expense.relatedVehiclePlate
+                                                        )}
                                                     </div>
                                                 )}
                                                 {(() => {
@@ -331,7 +341,14 @@ export default function ExpensesPage() {
                                                             : '';
                                                     return accountLabel ? (
                                                         <div style={{ fontSize: '0.72rem', color: 'var(--color-text-secondary)', marginTop: '0.2rem' }}>
-                                                            via {accountLabel}
+                                                            via{' '}
+                                                            {expense.bankAccountRef && canOpenBankAccountPage ? (
+                                                                <Link href={`/bank-accounts/${expense.bankAccountRef}`} style={{ color: 'var(--color-primary)', fontWeight: 600 }}>
+                                                                    {accountLabel}
+                                                                </Link>
+                                                            ) : (
+                                                                accountLabel
+                                                            )}
                                                         </div>
                                                     ) : null;
                                                 })()}
@@ -385,13 +402,29 @@ export default function ExpensesPage() {
                                             {expense.relatedVehiclePlate && (
                                                 <div className="mobile-record-kv">
                                                     <span className="mobile-record-label">Kendaraan</span>
-                                                    <span className="mobile-record-value">{expense.relatedVehiclePlate}</span>
+                                                    <span className="mobile-record-value">
+                                                        {expense.relatedVehicleRef && canOpenVehiclePage ? (
+                                                            <Link href={`/fleet/vehicles/${expense.relatedVehicleRef}`} style={{ color: 'var(--color-primary)', fontWeight: 600 }}>
+                                                                {expense.relatedVehiclePlate}
+                                                            </Link>
+                                                        ) : (
+                                                            expense.relatedVehiclePlate
+                                                        )}
+                                                    </span>
                                                 </div>
                                             )}
                                             {accountLabel && (
                                                 <div className="mobile-record-kv">
                                                     <span className="mobile-record-label">Dibayar dari</span>
-                                                    <span className="mobile-record-value">{accountLabel}</span>
+                                                    <span className="mobile-record-value">
+                                                        {expense.bankAccountRef && canOpenBankAccountPage ? (
+                                                            <Link href={`/bank-accounts/${expense.bankAccountRef}`} style={{ color: 'var(--color-primary)', fontWeight: 600 }}>
+                                                                {accountLabel}
+                                                            </Link>
+                                                        ) : (
+                                                            accountLabel
+                                                        )}
+                                                    </span>
                                                 </div>
                                             )}
                                         </div>

@@ -1,18 +1,25 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import Link from 'next/link';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useParams } from 'next/navigation';
 import { ArrowRightLeft, FileDown, Printer, TrendingDown, TrendingUp } from 'lucide-react';
 
 import PageBackButton from '@/components/PageBackButton';
 import { useApp, useToast } from '../../layout';
-import { fetchAdminCollectionData } from '@/lib/api/admin-client';
+import { fetchAdminCollectionData, fetchAdminData } from '@/lib/api/admin-client';
 import { formatBusinessDate, getBusinessDateValue } from '@/lib/business-date';
+import {
+    buildExpenseLookup,
+    buildPaymentLookup,
+    buildRefundLookup,
+    resolveBankTransactionSourceLink,
+} from '@/lib/bank-transaction-links';
 import { exportToExcel } from '@/lib/export';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { fetchCompanyProfile, openBrandedPrint, openPrintWindow } from '@/lib/print';
-import type { BankAccount, BankTransaction, CompanyProfile } from '@/lib/types';
-import { hasPermission } from '@/lib/rbac';
+import type { BankAccount, BankTransaction, CompanyProfile, CustomerOverpaymentRefund, Expense, FreightNota, Payment } from '@/lib/types';
+import { hasPageAccess, hasPermission } from '@/lib/rbac';
 
 const BANK_LOGOS: Record<string, { logo: string; color: string; gradient: string }> = {
     CASH: { color: '#14532d', gradient: 'linear-gradient(135deg, #14532d 0%, #16a34a 100%)', logo: '' },
@@ -60,10 +67,24 @@ export default function BankAccountDetailPage() {
     const accountId = params.id as string;
     const [account, setAccount] = useState<BankAccount | null>(null);
     const [transactions, setTransactions] = useState<BankTransaction[]>([]);
+    const [relatedPayments, setRelatedPayments] = useState<Array<Pick<Payment, '_id' | 'invoiceRef' | 'receiptNumber'>>>([]);
+    const [relatedRefunds, setRelatedRefunds] = useState<Array<Pick<CustomerOverpaymentRefund, '_id' | 'sourceInvoiceRef' | 'sourceReceiptRef' | 'sourceType'>>>([]);
+    const [relatedExpenses, setRelatedExpenses] = useState<Array<Pick<Expense, '_id' | 'voucherRef' | 'boronganRef' | 'relatedVehicleRef' | 'relatedIncidentRef'>>>([]);
+    const [relatedFreightNotas, setRelatedFreightNotas] = useState<Array<Pick<FreightNota, '_id'>>>([]);
     const [company, setCompany] = useState<CompanyProfile | null>(null);
     const [loading, setLoading] = useState(true);
     const canExportBankAccount = user ? hasPermission(user.role, 'bankAccounts', 'export') : false;
     const canPrintBankAccount = user ? hasPermission(user.role, 'bankAccounts', 'print') : false;
+    const canOpenInvoices = user ? hasPageAccess(user.role, 'invoices') : false;
+    const canOpenDriverVouchers = user ? hasPageAccess(user.role, 'driverVouchers') : false;
+    const canOpenDriverBorongans = user ? hasPageAccess(user.role, 'driverBorongans') : false;
+    const canOpenVehicles = user ? hasPageAccess(user.role, 'vehicles') : false;
+    const canOpenIncidents = user ? hasPageAccess(user.role, 'incidents') : false;
+
+    const paymentsById = useMemo(() => buildPaymentLookup(relatedPayments), [relatedPayments]);
+    const refundsById = useMemo(() => buildRefundLookup(relatedRefunds), [relatedRefunds]);
+    const expensesById = useMemo(() => buildExpenseLookup(relatedExpenses), [relatedExpenses]);
+    const invoiceIdsWithPages = useMemo(() => new Set(relatedFreightNotas.map(nota => nota._id)), [relatedFreightNotas]);
 
     useEffect(() => {
         const fetchEntity = async <T,>(url: string) => {
@@ -73,6 +94,20 @@ export default function BankAccountDetailPage() {
                 throw new Error(result.error || 'Gagal memuat detail rekening');
             }
             return result.data as T;
+        };
+
+        const fetchEntityByIds = async <T extends { _id: string }>(entity: string, ids: string[]) => {
+            const uniqueIds = Array.from(new Set(ids.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)));
+            if (uniqueIds.length === 0) {
+                return [] as T[];
+            }
+
+            const rows = await Promise.all(
+                uniqueIds.map(id =>
+                    fetchAdminData<T | null>(`/api/data?entity=${entity}&id=${id}`, `Gagal memuat relasi ${entity}`).catch(() => null)
+                )
+            );
+            return rows.filter((row) => Boolean(row?._id)) as T[];
         };
 
         const loadAccountDetail = async () => {
@@ -86,6 +121,25 @@ export default function BankAccountDetailPage() {
                     ),
                     fetchCompanyProfile().catch(() => null),
                 ]);
+                const paymentRows = await fetchEntityByIds<Pick<Payment, '_id' | 'invoiceRef' | 'receiptNumber'>>(
+                    'payments',
+                    (transactionData || []).map(transaction => transaction.relatedPaymentRef || '')
+                );
+                const refundRows = await fetchEntityByIds<Pick<CustomerOverpaymentRefund, '_id' | 'sourceInvoiceRef' | 'sourceReceiptRef' | 'sourceType'>>(
+                    'customer-overpayment-refunds',
+                    (transactionData || []).map(transaction => transaction.relatedOverpaymentRefundRef || '')
+                );
+                const expenseRows = await fetchEntityByIds<Pick<Expense, '_id' | 'voucherRef' | 'boronganRef' | 'relatedVehicleRef' | 'relatedIncidentRef'>>(
+                    'expenses',
+                    (transactionData || []).map(transaction => transaction.relatedExpenseRef || '')
+                );
+                const freightNotaRows = await fetchEntityByIds<Pick<FreightNota, '_id'>>(
+                    'freight-notas',
+                    [
+                        ...paymentRows.map(payment => payment.invoiceRef || ''),
+                        ...refundRows.map(refund => refund.sourceInvoiceRef || ''),
+                    ].filter(id => /^nota-/i.test(id))
+                );
                 setAccount(accountData);
                 setTransactions(
                     (transactionData || []).sort(
@@ -94,6 +148,10 @@ export default function BankAccountDetailPage() {
                         new Date(a.date || a._createdAt || '').getTime()
                     )
                 );
+                setRelatedPayments(paymentRows);
+                setRelatedRefunds(refundRows);
+                setRelatedExpenses(expenseRows);
+                setRelatedFreightNotas(freightNotaRows);
                 setCompany(companyData || null);
             } catch (error) {
                 addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail rekening');
@@ -292,6 +350,20 @@ export default function BankAccountDetailPage() {
                                 const isPositive = tx.type === 'CREDIT' || tx.type === 'TRANSFER_IN';
                                 const amount = parseWholeMoneyLike(tx.amount);
                                 const balanceAfter = parseWholeMoneyLike(tx.balanceAfter);
+                                const sourceLink = resolveBankTransactionSourceLink({
+                                    transaction: tx,
+                                    paymentsById,
+                                    refundsById,
+                                    expensesById,
+                                    invoiceIdsWithPages,
+                                    permissions: {
+                                        canOpenInvoices,
+                                        canOpenDriverVouchers,
+                                        canOpenDriverBorongans,
+                                        canOpenVehicles,
+                                        canOpenIncidents,
+                                    },
+                                });
                                 return (
                                     <tr key={tx._id} style={{ transition: 'background 0.1s' }}
                                         onMouseEnter={event => (event.currentTarget.style.background = 'var(--bg-secondary, #f8fafc)')}
@@ -303,7 +375,16 @@ export default function BankAccountDetailPage() {
                                                 <span className={`badge ${cfg.badge}`} style={{ fontSize: '0.68rem' }}>{cfg.label}</span>
                                             </div>
                                         </td>
-                                        <td>{tx.description}</td>
+                                        <td>
+                                            <div>{tx.description}</div>
+                                            {sourceLink && (
+                                                <div style={{ marginTop: '0.2rem' }}>
+                                                    <Link href={sourceLink.href} style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--color-primary)' }}>
+                                                        {sourceLink.label}
+                                                    </Link>
+                                                </div>
+                                            )}
+                                        </td>
                                         <td style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'var(--font-mono, monospace)', color: isPositive ? 'var(--success)' : 'var(--danger)', whiteSpace: 'nowrap' }}>
                                             {cfg.sign}{fmt(amount)}
                                         </td>
@@ -324,12 +405,33 @@ export default function BankAccountDetailPage() {
                         const isPositive = tx.type === 'CREDIT' || tx.type === 'TRANSFER_IN';
                         const amount = parseWholeMoneyLike(tx.amount);
                         const balanceAfter = parseWholeMoneyLike(tx.balanceAfter);
+                        const sourceLink = resolveBankTransactionSourceLink({
+                            transaction: tx,
+                            paymentsById,
+                            refundsById,
+                            expensesById,
+                            invoiceIdsWithPages,
+                            permissions: {
+                                canOpenInvoices,
+                                canOpenDriverVouchers,
+                                canOpenDriverBorongans,
+                                canOpenVehicles,
+                                canOpenIncidents,
+                            },
+                        });
                         return (
                             <div key={tx._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
                                         <div className="mobile-record-title">{cfg.label}</div>
                                         <div className="mobile-record-subtitle">{fmtDate(tx.date)} | {tx.description}</div>
+                                        {sourceLink && (
+                                            <div style={{ marginTop: '0.2rem' }}>
+                                                <Link href={sourceLink.href} style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--color-primary)' }}>
+                                                    {sourceLink.label}
+                                                </Link>
+                                            </div>
+                                        )}
                                     </div>
                                     <span className={`badge ${cfg.badge}`}>{cfg.label}</span>
                                 </div>

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useApp, useToast } from '../../layout';
@@ -26,7 +27,7 @@ import { buildFreightNotaPrintDocument, fetchCompanyProfile, formatFreightNotaDi
 import { exportFreightNotaDetail } from '@/lib/export';
 import { deriveReceivableStatus, formatDate, formatCurrency, formatQuantity, INVOICE_ADJUSTMENT_KIND_MAP, PAYMENT_METHOD_MAP } from '@/lib/utils';
 import type { FreightNota, FreightNotaItem, Payment, BankAccount, CompanyProfile, InvoiceAdjustment, Customer } from '@/lib/types';
-import { hasPermission } from '@/lib/rbac';
+import { hasPageAccess, hasPermission } from '@/lib/rbac';
 export default function NotaDetailPage() {
     const params = useParams();
     const router = useRouter();
@@ -119,6 +120,7 @@ export default function NotaDetailPage() {
     const canExportInvoice = user ? hasPermission(user.role, 'freightNotas', 'export') : false;
     const canPrintInvoice = user ? hasPermission(user.role, 'freightNotas', 'print') : false;
     const canManageOverpaymentRefund = canManageInvoice;
+    const canOpenBankAccounts = user ? hasPageAccess(user.role, 'bankAccounts') : false;
     const paymentAccountOptions = payMethod === 'TRANSFER'
         ? bankAccounts.filter(account => account.accountType !== 'CASH')
         : payMethod === 'CASH'
@@ -523,7 +525,18 @@ export default function NotaDetailPage() {
                                         <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.72rem', color: 'var(--color-gray-400)' }}>
                                             <span className={`badge badge-${p.method === 'CASH' ? 'warning' : 'info'}`} style={{ fontSize: '0.62rem' }}>{PAYMENT_METHOD_MAP[p.method] || p.method}</span>
                                             {p.receiptNumber && <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>Penerimaan {p.receiptNumber}</span>}
-                                            {accountLabel && <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Landmark size={10} /> {accountLabel}</span>}
+                                            {accountLabel && (
+                                                <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                                                    <Landmark size={10} />
+                                                    {p.bankAccountRef && canOpenBankAccounts ? (
+                                                        <Link href={`/bank-accounts/${p.bankAccountRef}`} style={{ color: 'var(--color-primary)', fontWeight: 600 }}>
+                                                            {accountLabel}
+                                                        </Link>
+                                                    ) : (
+                                                        accountLabel
+                                                    )}
+                                                </span>
+                                            )}
                                             {p.note && <span>| {p.note}</span>}
                                         </div>
                                     </div>
