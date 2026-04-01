@@ -2,7 +2,12 @@ import { existsSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-const ROUTE_TYPES_PATH = path.join(process.cwd(), '.next', 'types', 'routes.d.ts');
+const NEXT_TYPES_DIR = path.join(process.cwd(), '.next', 'types');
+const REQUIRED_TYPE_PATHS = [
+  path.join(NEXT_TYPES_DIR, 'routes.d.ts'),
+  path.join(NEXT_TYPES_DIR, 'cache-life.d.ts'),
+  path.join(NEXT_TYPES_DIR, 'validator.ts'),
+];
 const TSCONFIG_BUILD_INFO_PATH = path.join(process.cwd(), 'tsconfig.tsbuildinfo');
 
 function run(command, args) {
@@ -12,11 +17,11 @@ function run(command, args) {
   });
 }
 
-function waitForRouteTypes(timeoutMs = 5000, pollMs = 100) {
+function waitForTypeArtifacts(timeoutMs = 5000, pollMs = 100) {
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
-    if (existsSync(ROUTE_TYPES_PATH)) {
+    if (REQUIRED_TYPE_PATHS.every(filePath => existsSync(filePath))) {
       return true;
     }
 
@@ -26,16 +31,17 @@ function waitForRouteTypes(timeoutMs = 5000, pollMs = 100) {
     }
   }
 
-  return existsSync(ROUTE_TYPES_PATH);
+  return REQUIRED_TYPE_PATHS.every(filePath => existsSync(filePath));
 }
 
 function runTypegenWithRetry(maxAttempts = 3) {
   let lastResult = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    rmSync(NEXT_TYPES_DIR, { recursive: true, force: true });
     const result = run('npx', ['next', 'typegen']);
     lastResult = result;
-    if (result.status === 0 && waitForRouteTypes()) {
+    if (result.status === 0 && waitForTypeArtifacts()) {
       return result;
     }
 
@@ -48,7 +54,7 @@ function runTypegenWithRetry(maxAttempts = 3) {
 }
 
 const typegenResult = runTypegenWithRetry();
-if (!typegenResult || typegenResult.status !== 0 || !existsSync(ROUTE_TYPES_PATH)) {
+if (!typegenResult || typegenResult.status !== 0 || !REQUIRED_TYPE_PATHS.every(filePath => existsSync(filePath))) {
   process.exit(typegenResult?.status ?? 1);
 }
 
