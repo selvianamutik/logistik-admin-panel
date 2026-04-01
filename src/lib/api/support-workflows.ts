@@ -434,8 +434,8 @@ export async function handleCustomerDelete(
     }
 
     const relatedOrder = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "order" && customerRef == $ref][0]{ _id }`,
-        { ref: id }
+        `*[_type == "order" && ((customerRef == $ref || customerRef._ref == $ref) || lower(coalesce(customerName, "")) == $customerName)][0]{ _id }`,
+        { ref: id, customerName: (customer.name || '').toLowerCase() }
     );
     if (relatedOrder) {
         return NextResponse.json({ error: 'Customer yang sudah dipakai pada order tidak boleh dihapus' }, { status: 409 });
@@ -450,16 +450,16 @@ export async function handleCustomerDelete(
     }
 
     const relatedFreightNota = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "freightNota" && customerRef == $ref][0]{ _id }`,
-        { ref: id }
+        `*[_type == "freightNota" && ((customerRef == $ref || customerRef._ref == $ref) || lower(coalesce(customerName, "")) == $customerName)][0]{ _id }`,
+        { ref: id, customerName: (customer.name || '').toLowerCase() }
     );
     if (relatedFreightNota) {
         return NextResponse.json({ error: 'Customer yang sudah dipakai pada nota tidak boleh dihapus' }, { status: 409 });
     }
 
     const relatedInvoice = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "invoice" && customerRef == $ref][0]{ _id }`,
-        { ref: id }
+        `*[_type == "invoice" && ((customerRef == $ref || customerRef._ref == $ref) || lower(coalesce(customerName, "")) == $customerName)][0]{ _id }`,
+        { ref: id, customerName: (customer.name || '').toLowerCase() }
     );
     if (relatedInvoice) {
         return NextResponse.json({ error: 'Customer yang sudah dipakai pada invoice tidak boleh dihapus' }, { status: 409 });
@@ -490,8 +490,8 @@ export async function handleCustomerDelete(
     }
 
     const relatedCustomerReceipt = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "customerReceipt" && customerRef == $ref][0]{ _id }`,
-        { ref: id }
+        `*[_type == "customerReceipt" && ((customerRef == $ref || customerRef._ref == $ref) || lower(coalesce(customerName, "")) == $customerName)][0]{ _id }`,
+        { ref: id, customerName: (customer.name || '').toLowerCase() }
     );
     if (relatedCustomerReceipt) {
         return NextResponse.json({ error: 'Customer yang sudah dipakai pada penerimaan tidak boleh dihapus' }, { status: 409 });
