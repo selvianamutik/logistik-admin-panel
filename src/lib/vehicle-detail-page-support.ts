@@ -74,7 +74,7 @@ export function buildVehicleTireDetailState(params: {
     const normalizedAllTireRows = allTireEvents
         .map(normalizeVehicleTireRow)
         .sort((left, right) => left.tireCodeLabel.localeCompare(right.tireCodeLabel, 'id-ID'));
-    const internalUnitTires = normalizedTireRows.filter(row => Boolean(row.slotCode) && ['IN_USE', 'SPARE'].includes(row.status));
+    const internalUnitTires = normalizedTireRows.filter(row => Boolean(row.slotCode) && row.status === 'IN_USE');
     const layout = getSuggestedVehicleTireLayout(
         vehicle.vehicleType,
         vehicle.serviceName,
@@ -97,7 +97,7 @@ export function buildVehicleTireDetailState(params: {
         if (row.status === 'SCRAPPED') {
             return false;
         }
-        if (row.holderType === 'INTERNAL_VEHICLE' && ['IN_USE', 'SPARE'].includes(row.status)) {
+        if (row.holderType === 'INTERNAL_VEHICLE' && row.status === 'IN_USE') {
             return false;
         }
         return true;

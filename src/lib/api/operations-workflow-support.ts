@@ -560,7 +560,6 @@ export async function normalizeTireEventPayload(
             : 'INTERNAL_VEHICLE';
     const rawStatus = normalizeText(data.status).toUpperCase();
     const status =
-        rawStatus === 'SPARE' ||
         rawStatus === 'IN_WAREHOUSE' ||
         rawStatus === 'LOANED_OUT' ||
         rawStatus === 'SCRAPPED'
@@ -603,8 +602,8 @@ export async function normalizeTireEventPayload(
     }
 
     if (holderType === 'INTERNAL_VEHICLE') {
-        if (!['IN_USE', 'SPARE'].includes(status)) {
-            throw new Error('Ban internal hanya boleh berstatus terpasang atau serep');
+        if (status !== 'IN_USE') {
+            throw new Error('Ban internal hanya boleh berstatus terpasang');
         }
         if (!vehicleRef) {
             throw new Error('Kendaraan wajib dipilih untuk ban internal');
@@ -614,13 +613,6 @@ export async function normalizeTireEventPayload(
         }
         if (!isKnownInternalTireSlotCode(slotCode)) {
             throw new Error('Kode slot ban tidak valid');
-        }
-        const isSpareSlot = slotCode.startsWith('SP');
-        if (status === 'SPARE' && !isSpareSlot) {
-            throw new Error('Ban serep wajib memakai slot SP');
-        }
-        if (status === 'IN_USE' && isSpareSlot) {
-            throw new Error('Ban terpasang tidak boleh memakai slot serep');
         }
         const vehicle = await sanityGetById<{ _id: string; plateNumber?: string; status?: string }>(vehicleRef);
         if (!vehicle) {
@@ -632,32 +624,30 @@ export async function normalizeTireEventPayload(
         }
         normalizedVehiclePlate = vehicle.plateNumber;
 
-        if (status !== 'SCRAPPED') {
-            const activeTires = await getSanityClient().fetch<Array<{
-                _id: string;
-                slotCode?: string;
-                holderType?: string;
-                status?: string;
-                vehicleRef?: string;
-            }>>(
-                `*[
-                    _type == "tireEvent" &&
-                    vehicleRef == $vehicleRef &&
-                    holderType == "INTERNAL_VEHICLE" &&
-                    status in ["IN_USE", "SPARE"]
-                ]{
-                    _id,
-                    slotCode,
-                    holderType,
-                    status,
-                    vehicleRef
-                }`,
-                { vehicleRef }
-            );
-            const activeDuplicate = activeTires.find(item => item._id !== excludeId && normalizeTireSlotCode(item.slotCode || '') === slotCode);
-            if (activeDuplicate) {
-                throw new Error('Slot ban ini masih dipakai ban lain pada kendaraan yang sama');
-            }
+        const activeTires = await getSanityClient().fetch<Array<{
+            _id: string;
+            slotCode?: string;
+            holderType?: string;
+            status?: string;
+            vehicleRef?: string;
+        }>>(
+            `*[
+                _type == "tireEvent" &&
+                vehicleRef == $vehicleRef &&
+                holderType == "INTERNAL_VEHICLE" &&
+                status == "IN_USE"
+            ]{
+                _id,
+                slotCode,
+                holderType,
+                status,
+                vehicleRef
+            }`,
+            { vehicleRef }
+        );
+        const activeDuplicate = activeTires.find(item => item._id !== excludeId && normalizeTireSlotCode(item.slotCode || '') === slotCode);
+        if (activeDuplicate) {
+            throw new Error('Slot ban ini masih dipakai ban lain pada kendaraan yang sama');
         }
     } else if (holderType === 'EXTERNAL_VEHICLE') {
         if (status !== 'LOANED_OUT') {

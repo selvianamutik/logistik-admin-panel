@@ -9,7 +9,6 @@ export const TIRE_HOLDER_TYPE_OPTIONS: Array<{ value: TireHolderType; label: str
 
 export const TIRE_STATUS_OPTIONS: Array<{ value: TireAssetStatus; label: string }> = [
   { value: 'IN_USE', label: 'Terpasang' },
-  { value: 'SPARE', label: 'Serep' },
   { value: 'IN_WAREHOUSE', label: 'Di Gudang' },
   { value: 'LOANED_OUT', label: 'Dipinjam Keluar' },
   { value: 'SCRAPPED', label: 'Afkir / Rusak Berat' },
@@ -191,7 +190,6 @@ export function resolveTireAssetStatus(input: {
   externalPlateNumber?: string;
 }): TireAssetStatus {
   if (
-    input.status === 'SPARE' ||
     input.status === 'IN_WAREHOUSE' ||
     input.status === 'LOANED_OUT' ||
     input.status === 'SCRAPPED'
@@ -207,16 +205,6 @@ export function resolveTireAssetStatus(input: {
     return 'IN_WAREHOUSE';
   }
 
-  const slotCode = resolveTireSlotCode(input);
-  if (slotCode?.startsWith('SP')) {
-    return 'SPARE';
-  }
-
-  const normalizedPosisi = input.posisi?.trim().toUpperCase() || '';
-  if (normalizedPosisi === 'SPARE') {
-    return 'SPARE';
-  }
-
   return 'IN_USE';
 }
 
@@ -230,9 +218,6 @@ export function buildTirePlacementLabel(input: {
 }) {
   const slotLabel = input.slotCode ? formatTireSlotLabel(input.slotCode) : undefined;
   if (input.holderType === 'INTERNAL_VEHICLE') {
-    if (input.status === 'SPARE') {
-      return `${input.vehiclePlate || 'Kendaraan internal'} - ${slotLabel || 'Serep'}`;
-    }
     return `${input.vehiclePlate || 'Kendaraan internal'} - ${slotLabel || 'Posisi tidak diketahui'}`;
   }
   if (input.holderType === 'EXTERNAL_VEHICLE') {

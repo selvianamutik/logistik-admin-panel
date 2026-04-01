@@ -1088,7 +1088,7 @@ function buildVehicleTireSummary(
     const activeSlotCodes = Array.from(
         new Set(
             tireEvents
-                .filter(event => event.vehicleRef === vehicle._id && ['IN_USE', 'SPARE'].includes(resolveTireAssetStatus(event)))
+                .filter(event => event.vehicleRef === vehicle._id && resolveTireAssetStatus(event) === 'IN_USE')
                 .map(event => resolveTireSlotCode(event) || '')
                 .filter(Boolean)
         )

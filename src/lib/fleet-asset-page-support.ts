@@ -1,8 +1,10 @@
 import { getBusinessDateValue } from './business-date';
 import { DEFAULT_PAGE_SIZE } from './pagination';
 import {
+    compareTireSlotCodes,
     formatTireSlotLabel,
     INTERNAL_TIRE_SLOT_CODES,
+    getSuggestedVehicleTireLayout,
     resolveTireAssetStatus,
     resolveTireHolderType,
     resolveTirePlacementLabel,
@@ -36,6 +38,20 @@ export type ResolvedFleetTireEvent = TireEvent & {
     slotCode?: string;
     slotLabel?: string;
     placementLabel: string;
+};
+
+export type TireVehicleCategoryOption = {
+    value: string;
+    label: string;
+    vehicleCount: number;
+};
+
+export type TireSlotOption = {
+    value: string;
+    label: string;
+    occupied: boolean;
+    occupiedBy?: string;
+    disabled: boolean;
 };
 
 export const TIRE_TYPES = ['Tubeless', 'Tube Type', 'Solid'] as const;
@@ -149,8 +165,96 @@ export function getSelectableTireVehicles(vehicles: Vehicle[], editTarget: TireE
     return vehicles.filter(vehicle => vehicle.status !== 'SOLD' || vehicle._id === editTarget?.vehicleRef);
 }
 
-export function getSelectableInternalTireSlots(status: TireAssetStatus) {
-    return INTERNAL_TIRE_SLOT_CODES.filter(code => (status === 'SPARE' ? code.startsWith('SP') : !code.startsWith('SP')));
+export function getSelectableInternalTireSlots() {
+    return INTERNAL_TIRE_SLOT_CODES.slice();
+}
+
+export function getTireVehicleCategoryValue(vehicle: Pick<Vehicle, '_id' | 'serviceRef' | 'serviceName' | 'vehicleType'>) {
+    if (vehicle.serviceRef?.trim()) {
+        return `service:${vehicle.serviceRef.trim()}`;
+    }
+    if (vehicle.serviceName?.trim()) {
+        return `service-name:${vehicle.serviceName.trim().toLowerCase()}`;
+    }
+    if (vehicle.vehicleType?.trim()) {
+        return `vehicle-type:${vehicle.vehicleType.trim().toLowerCase()}`;
+    }
+    return 'uncategorized';
+}
+
+export function getTireVehicleCategoryLabel(vehicle: Pick<Vehicle, 'serviceName' | 'vehicleType'>) {
+    return vehicle.serviceName?.trim() || vehicle.vehicleType?.trim() || 'Tanpa kategori';
+}
+
+export function getSelectableTireVehicleCategories(vehicles: Vehicle[], editTarget: TireEvent | null): TireVehicleCategoryOption[] {
+    const selectableVehicles = getSelectableTireVehicles(vehicles, editTarget);
+    const categoryMap = new Map<string, TireVehicleCategoryOption>();
+
+    selectableVehicles.forEach(vehicle => {
+        const value = getTireVehicleCategoryValue(vehicle);
+        const existing = categoryMap.get(value);
+        if (existing) {
+            existing.vehicleCount += 1;
+            return;
+        }
+        categoryMap.set(value, {
+            value,
+            label: getTireVehicleCategoryLabel(vehicle),
+            vehicleCount: 1,
+        });
+    });
+
+    return Array.from(categoryMap.values()).sort((left, right) => left.label.localeCompare(right.label, 'id-ID'));
+}
+
+export function getSelectableTireVehiclesByCategory(
+    vehicles: Vehicle[],
+    editTarget: TireEvent | null,
+    categoryValue?: string
+) {
+    return getSelectableTireVehicles(vehicles, editTarget)
+        .filter(vehicle => !categoryValue || getTireVehicleCategoryValue(vehicle) === categoryValue)
+        .sort((left, right) => left.plateNumber.localeCompare(right.plateNumber, 'id-ID'));
+}
+
+export function getSelectableInternalTireSlotOptions(params: {
+    vehicle: Vehicle | null;
+    tireEvents: TireEvent[];
+    editTargetId?: string | null;
+}) {
+    const { vehicle, tireEvents, editTargetId } = params;
+    if (!vehicle) {
+        return [];
+    }
+
+    const normalizedVehicleTires = resolveFleetTireEvents(tireEvents).filter(event =>
+        event.vehicleRef === vehicle._id &&
+        event.holderType === 'INTERNAL_VEHICLE' &&
+        event.status === 'IN_USE' &&
+        Boolean(event.slotCode)
+    );
+    const layout = getSuggestedVehicleTireLayout(
+        vehicle.vehicleType,
+        vehicle.serviceName,
+        normalizedVehicleTires.map(event => event.slotCode || '').filter(Boolean)
+    );
+    const slotCodes = layout.allSlots.slice().sort(compareTireSlotCodes);
+    const occupiedBySlot = new Map(
+        normalizedVehicleTires
+            .filter(event => event._id !== editTargetId)
+            .map(event => [event.slotCode || '', event])
+    );
+
+    return slotCodes.map(slotCode => {
+        const occupiedEvent = occupiedBySlot.get(slotCode);
+        return {
+            value: slotCode,
+            label: `${slotCode} - ${formatTireSlotLabel(slotCode)}${occupiedEvent ? ` | Terisi ${occupiedEvent.tireCodeLabel}` : ' | Kosong'}`,
+            occupied: Boolean(occupiedEvent),
+            occupiedBy: occupiedEvent?.tireCodeLabel,
+            disabled: Boolean(occupiedEvent),
+        };
+    });
 }
 
 export function resolveFleetTireEvents(events: TireEvent[]): ResolvedFleetTireEvent[] {

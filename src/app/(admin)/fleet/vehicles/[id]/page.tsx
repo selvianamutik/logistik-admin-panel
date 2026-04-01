@@ -255,7 +255,7 @@ export default function VehicleDetailPage() {
         const payload = {
             tireCode: tireForm.tireCode.trim().toUpperCase().replace(/\s+/g, '-'),
             holderType: 'INTERNAL_VEHICLE',
-            status: normalizedSlotCode.startsWith('SP') ? 'SPARE' : 'IN_USE',
+            status: 'IN_USE',
             vehicleRef: vehicle._id,
             slotCode: normalizedSlotCode,
             tireType: tireForm.tireType,
