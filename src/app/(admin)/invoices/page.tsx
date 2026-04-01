@@ -187,10 +187,27 @@ export default function NotaListPage() {
         }, {});
 
         const derivedReceipts = deriveCustomerReceiptAllocations(receiptRes || [], receiptPaymentRes || []);
-        const derivedCustomerCreditTotal = derivedReceipts.reduce(
-            (sum, receipt) => sum + parseWholeMoneyLike(receipt.unappliedAmount),
-            0
+        const matchingCustomerRefs = new Set(
+            matchingNotas
+                .map(nota => nota.customerRef)
+                .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
         );
+        const matchingCustomerNames = new Set(
+            matchingNotas
+                .map(nota => nota.customerName)
+                .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+        );
+        const derivedCustomerCreditTotal = derivedReceipts.reduce((sum, receipt) => {
+            const matchesCustomer =
+                matchingCustomerRefs.size === 0 && matchingCustomerNames.size === 0
+                    ? false
+                    : matchingCustomerRefs.has(receipt.customerRef || '') ||
+                      matchingCustomerNames.has(receipt.customerName || '');
+            if (!matchesCustomer) {
+                return sum;
+            }
+            return sum + parseWholeMoneyLike(receipt.unappliedAmount);
+        }, 0);
         const derivedSummary = matchingNotas.reduce(
             (acc, nota) => {
                 const paidAmount = matchingPaymentTotals[nota._id] || 0;
