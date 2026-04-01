@@ -390,8 +390,8 @@ export async function handleDriverDelete(
     }
 
     const relatedDriverUser = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "user" && role == "DRIVER" && driverRef == $ref][0]{ _id }`,
-        { ref: id }
+        `*[_type == "user" && role == "DRIVER" && ((driverRef == $ref || driverRef._ref == $ref) || lower(coalesce(driverName, "")) == $driverName)][0]{ _id }`,
+        { ref: id, driverName: (driver.name || '').toLowerCase() }
     );
     if (relatedDriverUser) {
         return NextResponse.json({ error: 'Supir yang masih punya akun mobile tidak boleh dihapus' }, { status: 409 });
