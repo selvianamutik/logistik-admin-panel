@@ -604,8 +604,8 @@ export async function handleVehicleDelete(
     }
 
     const relatedExpense = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "expense" && (relatedVehicleRef == $ref || relatedVehicleRef._ref == $ref)][0]{ _id }`,
-        { ref: id }
+        `*[_type == "expense" && ((relatedVehicleRef == $ref || relatedVehicleRef._ref == $ref) || lower(coalesce(relatedVehiclePlate, "")) == $plate)][0]{ _id }`,
+        { ref: id, plate: (vehicle.plateNumber || '').toLowerCase() }
     );
     if (relatedExpense) {
         return NextResponse.json({ error: 'Kendaraan yang sudah dipakai pada pengeluaran tidak boleh dihapus' }, { status: 409 });
