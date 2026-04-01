@@ -131,6 +131,9 @@ export async function handleIncidentCreate(
         if (!driver) {
             return NextResponse.json({ error: 'Supir insiden tidak ditemukan' }, { status: 404 });
         }
+        if (driver.active === false) {
+            return NextResponse.json({ error: 'Supir insiden tidak aktif' }, { status: 409 });
+        }
         driverName = driver.name || driverName;
     }
 

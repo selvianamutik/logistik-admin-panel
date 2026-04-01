@@ -649,7 +649,14 @@ export async function handleGenericUpdate(
             if (!podReceiverName || !podReceivedDate) {
                 return NextResponse.json({ error: 'Nama penerima dan tanggal terima POD wajib diisi' }, { status: 400 });
             }
-            assertIsoDate(podReceivedDate, 'Tanggal terima POD');
+            try {
+                assertIsoDate(podReceivedDate, 'Tanggal terima POD');
+            } catch (error) {
+                return NextResponse.json(
+                    { error: error instanceof Error ? error.message : 'Tanggal terima POD tidak valid' },
+                    { status: 400 }
+                );
+            }
 
             updates.podReceiverName = podReceiverName;
             updates.podReceivedDate = podReceivedDate;

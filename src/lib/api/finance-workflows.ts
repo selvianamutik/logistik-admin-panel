@@ -56,6 +56,18 @@ type ReceiptCustomerSource = {
     active?: boolean;
 };
 
+function validateIsoDateOrResponse(dateValue: string, label: string, fallbackMessage: string) {
+    try {
+        assertIsoDate(dateValue, label);
+        return null;
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : fallbackMessage },
+            { status: 400 }
+        );
+    }
+}
+
 function normalizeFreightNotaAmount(value: number) {
     if (!Number.isFinite(value) || value <= 0) {
         return 0;
@@ -335,7 +347,10 @@ export async function handlePaymentCreate(
 
     const paymentDate =
         typeof data.date === 'string' && data.date ? data.date : getBusinessDateValue();
-    assertIsoDate(paymentDate, 'Tanggal pembayaran');
+    const paymentDateError = validateIsoDateOrResponse(paymentDate, 'Tanggal pembayaran', 'Tanggal pembayaran tidak valid');
+    if (paymentDateError) {
+        return paymentDateError;
+    }
 
     const paymentId = crypto.randomUUID();
     const incomeId = crypto.randomUUID();
@@ -485,7 +500,10 @@ export async function handleCustomerReceiptCreate(
 
     const receiptDate =
         typeof data.date === 'string' && data.date ? data.date : getBusinessDateValue();
-    assertIsoDate(receiptDate, 'Tanggal penerimaan');
+    const receiptDateError = validateIsoDateOrResponse(receiptDate, 'Tanggal penerimaan', 'Tanggal penerimaan tidak valid');
+    if (receiptDateError) {
+        return receiptDateError;
+    }
 
     const paymentMethod = normalizePaymentMethod(data.method);
     if (!paymentMethod) {
@@ -776,7 +794,10 @@ export async function handleInvoiceAdjustmentCreate(
     }
 
     const date = typeof data.date === 'string' && data.date ? data.date : getBusinessDateValue();
-    assertIsoDate(date, 'Tanggal klaim/potongan');
+    const adjustmentDateError = validateIsoDateOrResponse(date, 'Tanggal klaim/potongan', 'Tanggal klaim/potongan tidak valid');
+    if (adjustmentDateError) {
+        return adjustmentDateError;
+    }
 
     const kind = typeof data.kind === 'string' ? data.kind as InvoiceAdjustmentKind : 'OTHER';
     if (!INVOICE_ADJUSTMENT_KIND_SET.has(kind)) {
@@ -931,7 +952,10 @@ export async function handleBankTransfer(
         typeof data.date === 'string' && data.date
             ? data.date
             : getBusinessDateValue();
-    assertIsoDate(transferDate, 'Tanggal transfer');
+    const transferDateError = validateIsoDateOrResponse(transferDate, 'Tanggal transfer', 'Tanggal transfer tidak valid');
+    if (transferDateError) {
+        return transferDateError;
+    }
 
     const transferId = `transfer-${Date.now()}`;
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -1030,7 +1054,10 @@ export async function handleExpenseCreate(
 
     const expenseDate =
         typeof data.date === 'string' && data.date ? data.date : getBusinessDateValue();
-    assertIsoDate(expenseDate, 'Tanggal pengeluaran');
+    const expenseDateError = validateIsoDateOrResponse(expenseDate, 'Tanggal pengeluaran', 'Tanggal pengeluaran tidak valid');
+    if (expenseDateError) {
+        return expenseDateError;
+    }
 
     const category = await sanityGetById<{ _id: string; name?: string }>(categoryRef);
     if (!category) {
@@ -1208,59 +1235,67 @@ export async function handleFreightNotaCreate(
     const customerName = normalizeText(data.customerName);
 
     const rawRows = Array.isArray(data.items) ? data.items : Array.isArray(data.rows) ? data.rows : [];
-    const rows = rawRows
-        .filter(isPlainObject)
-        .filter(row => !isFreightNotaRowEmpty(row))
-        .map<NormalizedFreightNotaRow>(row => {
-            const date = normalizeText(row.date);
-            const doRef = normalizeOptionalText(row.doRef);
-            const deliveryOrderItemRef = normalizeOptionalText(row.deliveryOrderItemRef);
-            const doNumber = normalizeOptionalText(row.doNumber);
-            const noSJ = normalizeText(row.noSJ);
-            const tujuan = normalizeText(row.tujuan);
-            const dari = normalizeText(row.dari);
-            const beratKg = normalizeNumber(row.beratKg);
-            const tarip = normalizeCurrencyNumber(row.tarip);
-            const collie = parseOptionalStrictNotaRowNumber(
-                row.collie,
-                'Collie pada baris nota tidak valid',
-                { maxFractionDigits: 2 }
-            );
+    let rows: NormalizedFreightNotaRow[];
+    try {
+        rows = rawRows
+            .filter(isPlainObject)
+            .filter(row => !isFreightNotaRowEmpty(row))
+            .map<NormalizedFreightNotaRow>(row => {
+                const date = normalizeText(row.date);
+                const doRef = normalizeOptionalText(row.doRef);
+                const deliveryOrderItemRef = normalizeOptionalText(row.deliveryOrderItemRef);
+                const doNumber = normalizeOptionalText(row.doNumber);
+                const noSJ = normalizeText(row.noSJ);
+                const tujuan = normalizeText(row.tujuan);
+                const dari = normalizeText(row.dari);
+                const beratKg = normalizeNumber(row.beratKg);
+                const tarip = normalizeCurrencyNumber(row.tarip);
+                const collie = parseOptionalStrictNotaRowNumber(
+                    row.collie,
+                    'Collie pada baris nota tidak valid',
+                    { maxFractionDigits: 2 }
+                );
 
-            if (date) {
-                assertIsoDate(date, 'Tanggal baris nota');
-            }
+                if (date) {
+                    assertIsoDate(date, 'Tanggal baris nota');
+                }
 
-            if ((!date || !noSJ || !tujuan) && !doRef) {
-                throw new Error('Baris nota wajib punya tanggal, nomor SJ, dan tujuan');
-            }
-            if ((!Number.isFinite(beratKg) || beratKg <= 0) && !doRef) {
-                throw new Error('Berat pada baris nota harus lebih besar dari 0');
-            }
-            if (!Number.isFinite(tarip) || tarip <= 0) {
-                throw new Error('Tarif nota pada baris harus lebih besar dari 0');
-            }
-            if (!Number.isFinite(collie) || collie < 0) {
-                throw new Error('Collie pada baris nota tidak valid');
-            }
+                if ((!date || !noSJ || !tujuan) && !doRef) {
+                    throw new Error('Baris nota wajib punya tanggal, nomor SJ, dan tujuan');
+                }
+                if ((!Number.isFinite(beratKg) || beratKg <= 0) && !doRef) {
+                    throw new Error('Berat pada baris nota harus lebih besar dari 0');
+                }
+                if (!Number.isFinite(tarip) || tarip <= 0) {
+                    throw new Error('Tarif nota pada baris harus lebih besar dari 0');
+                }
+                if (!Number.isFinite(collie) || collie < 0) {
+                    throw new Error('Collie pada baris nota tidak valid');
+                }
 
-            return {
-                doRef,
-                deliveryOrderItemRef,
-                doNumber,
-                vehiclePlate: normalizeOptionalText(row.vehiclePlate),
-                date,
-                noSJ,
-                dari,
-                tujuan,
-                barang: normalizeOptionalText(row.barang),
-                collie: collie > 0 ? collie : undefined,
-                beratKg,
-                tarip,
-                uangRp: normalizeFreightNotaAmount(calculateFreightNotaRowAmount({ beratKg, tarip, billingMode })),
-                ket: normalizeOptionalText(row.ket),
-            };
-        });
+                return {
+                    doRef,
+                    deliveryOrderItemRef,
+                    doNumber,
+                    vehiclePlate: normalizeOptionalText(row.vehiclePlate),
+                    date,
+                    noSJ,
+                    dari,
+                    tujuan,
+                    barang: normalizeOptionalText(row.barang),
+                    collie: collie > 0 ? collie : undefined,
+                    beratKg,
+                    tarip,
+                    uangRp: normalizeFreightNotaAmount(calculateFreightNotaRowAmount({ beratKg, tarip, billingMode })),
+                    ket: normalizeOptionalText(row.ket),
+                };
+            });
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Baris nota tidak valid' },
+            { status: 400 }
+        );
+    }
 
     if (rows.length === 0) {
         return NextResponse.json({ error: 'Minimal 1 baris nota wajib diisi' }, { status: 400 });
@@ -1477,7 +1512,10 @@ export async function handleFreightNotaCreate(
     }
 
     const issueDate = normalizeText(data.issueDate) || getBusinessDateValue();
-    assertIsoDate(issueDate, 'Tanggal nota');
+    const issueDateError = validateIsoDateOrResponse(issueDate, 'Tanggal nota', 'Tanggal nota tidak valid');
+    if (issueDateError) {
+        return issueDateError;
+    }
     const customerDerivedFromDo = Boolean(inferredCustomerRef && inferredCustomerRef === resolvedCustomerRef && deliveryOrders.length > 0);
     let finalCustomerName = customerName;
     let finalCustomerAddress = normalizeOptionalText(data.customerAddress);
@@ -1555,7 +1593,14 @@ export async function handleFreightNotaCreate(
     );
     let resolvedDueDate = normalizeOptionalText(data.dueDate);
     if (resolvedDueDate) {
-        assertIsoDate(resolvedDueDate, 'Tanggal jatuh tempo nota');
+        const dueDateError = validateIsoDateOrResponse(
+            resolvedDueDate,
+            'Tanggal jatuh tempo nota',
+            'Tanggal jatuh tempo nota tidak valid'
+        );
+        if (dueDateError) {
+            return dueDateError;
+        }
     }
     if (!resolvedDueDate) {
         let termDays = customerTermDays;

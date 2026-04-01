@@ -75,6 +75,18 @@ type DriverBoronganOrderSource = {
     receiverAddress?: string;
 };
 
+function validateIsoDateOrResponse(dateValue: string, label: string, fallbackMessage: string) {
+    try {
+        assertIsoDate(dateValue, label);
+        return null;
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : fallbackMessage },
+            { status: 400 }
+        );
+    }
+}
+
 function parseOptionalStrictBoronganRowNumber(
     value: unknown,
     label: string,
@@ -109,57 +121,84 @@ export async function handleDriverBoronganCreate(
     const driverName = normalizeText(data.driverName);
 
     const periodStart = normalizeText(data.periodStart) || getBusinessDateValue();
+    const periodStartError = validateIsoDateOrResponse(
+        periodStart,
+        'Periode mulai borongan',
+        'Periode mulai borongan tidak valid'
+    );
+    if (periodStartError) {
+        return periodStartError;
+    }
     const periodEnd = normalizeText(data.periodEnd) || periodStart;
+    const periodEndError = validateIsoDateOrResponse(
+        periodEnd,
+        'Periode akhir borongan',
+        'Periode akhir borongan tidak valid'
+    );
+    if (periodEndError) {
+        return periodEndError;
+    }
     if (periodEnd < periodStart) {
         return NextResponse.json({ error: 'Periode akhir borongan tidak boleh sebelum periode mulai' }, { status: 400 });
     }
 
     const rawRows = Array.isArray(data.items) ? data.items : Array.isArray(data.rows) ? data.rows : [];
-    const rows = rawRows
-        .filter(isPlainObject)
-        .filter(row => !isDriverBoronganRowEmpty(row))
-        .map<NormalizedDriverBoronganRow>(row => {
-            const date = normalizeText(row.date);
-            const doRef = normalizeOptionalText(row.doRef);
-            const doNumber = normalizeOptionalText(row.doNumber);
-            const noSJ = normalizeText(row.noSJ);
-            const tujuan = normalizeText(row.tujuan);
-            const beratKg = normalizeNumber(row.beratKg);
-            const tarip = normalizeCurrencyNumber(row.tarip);
-            const collie = parseOptionalStrictBoronganRowNumber(
-                row.collie,
-                'Collie pada baris borongan tidak valid',
-                { maxFractionDigits: 2 }
-            );
+    let rows: NormalizedDriverBoronganRow[];
+    try {
+        rows = rawRows
+            .filter(isPlainObject)
+            .filter(row => !isDriverBoronganRowEmpty(row))
+            .map<NormalizedDriverBoronganRow>(row => {
+                const date = normalizeText(row.date);
+                const doRef = normalizeOptionalText(row.doRef);
+                const doNumber = normalizeOptionalText(row.doNumber);
+                const noSJ = normalizeText(row.noSJ);
+                const tujuan = normalizeText(row.tujuan);
+                const beratKg = normalizeNumber(row.beratKg);
+                const tarip = normalizeCurrencyNumber(row.tarip);
+                const collie = parseOptionalStrictBoronganRowNumber(
+                    row.collie,
+                    'Collie pada baris borongan tidak valid',
+                    { maxFractionDigits: 2 }
+                );
 
-            if ((!date || !noSJ || !tujuan) && !doRef) {
-                throw new Error('Baris borongan wajib punya tanggal, nomor SJ, dan tujuan');
-            }
-            if (!Number.isFinite(beratKg) || beratKg < 0) {
-                throw new Error('Berat pada baris borongan tidak valid');
-            }
-            if ((!Number.isFinite(tarip) || tarip <= 0) && !doRef) {
-                throw new Error('Tarif borongan pada baris harus lebih besar dari 0');
-            }
-            if (!Number.isFinite(collie) || collie < 0) {
-                throw new Error('Collie pada baris borongan tidak valid');
-            }
+                if (date) {
+                    assertIsoDate(date, 'Tanggal pada baris borongan');
+                }
+                if ((!date || !noSJ || !tujuan) && !doRef) {
+                    throw new Error('Baris borongan wajib punya tanggal, nomor SJ, dan tujuan');
+                }
+                if (!Number.isFinite(beratKg) || beratKg < 0) {
+                    throw new Error('Berat pada baris borongan tidak valid');
+                }
+                if ((!Number.isFinite(tarip) || tarip <= 0) && !doRef) {
+                    throw new Error('Tarif borongan pada baris harus lebih besar dari 0');
+                }
+                if (!Number.isFinite(collie) || collie < 0) {
+                    throw new Error('Collie pada baris borongan tidak valid');
+                }
 
-            return {
-                doRef,
-                doNumber,
-                vehiclePlate: normalizeOptionalText(row.vehiclePlate),
-                date,
-                noSJ,
-                tujuan,
-                barang: normalizeOptionalText(row.barang),
-                collie: collie > 0 ? collie : undefined,
-                beratKg,
-                tarip,
-                uangRp: tarip,
-                ket: normalizeOptionalText(row.ket),
-            };
-        });
+                return {
+                    doRef,
+                    doNumber,
+                    vehiclePlate: normalizeOptionalText(row.vehiclePlate),
+                    date,
+                    noSJ,
+                    tujuan,
+                    barang: normalizeOptionalText(row.barang),
+                    collie: collie > 0 ? collie : undefined,
+                    beratKg,
+                    tarip,
+                    uangRp: tarip,
+                    ket: normalizeOptionalText(row.ket),
+                };
+            });
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Baris borongan tidak valid' },
+            { status: 400 }
+        );
+    }
 
     if (rows.length === 0) {
         return NextResponse.json({ error: 'Minimal 1 baris borongan wajib diisi' }, { status: 400 });
@@ -517,7 +556,10 @@ export async function handleBoronganPayment(
         typeof data.date === 'string' && data.date
             ? data.date
             : getBusinessDateValue();
-    assertIsoDate(paidDate, 'Tanggal pembayaran');
+    const paidDateError = validateIsoDateOrResponse(paidDate, 'Tanggal pembayaran', 'Tanggal pembayaran tidak valid');
+    if (paidDateError) {
+        return paidDateError;
+    }
     const note = typeof data.note === 'string' && data.note.trim() ? data.note.trim() : undefined;
     const expenseId = crypto.randomUUID();
     const bankTransactionId = crypto.randomUUID();
@@ -788,7 +830,10 @@ export async function handleDriverVoucherCreate(
         typeof data.issuedDate === 'string' && data.issuedDate
             ? data.issuedDate
             : getBusinessDateValue();
-    assertIsoDate(issueDate, 'Tanggal bon');
+    const issueDateError = validateIsoDateOrResponse(issueDate, 'Tanggal bon', 'Tanggal bon tidak valid');
+    if (issueDateError) {
+        return issueDateError;
+    }
 
     const requestedDriverFeeAmount = normalizeCurrencyNumber(data.driverFeeAmount ?? 0);
     if (!Number.isFinite(requestedDriverFeeAmount) || requestedDriverFeeAmount < 0) {
@@ -1081,7 +1126,10 @@ export async function handleDriverVoucherTopUp(
         typeof data.date === 'string' && data.date
             ? data.date
             : getBusinessDateValue();
-    assertIsoDate(topUpDate, 'Tanggal tambahan bon');
+    const topUpDateError = validateIsoDateOrResponse(topUpDate, 'Tanggal tambahan bon', 'Tanggal tambahan bon tidak valid');
+    if (topUpDateError) {
+        return topUpDateError;
+    }
 
     const note = normalizeOptionalText(data.note);
 
@@ -1236,7 +1284,14 @@ export async function handleDriverVoucherItemCreate(
         typeof data.expenseDate === 'string' && data.expenseDate
             ? data.expenseDate
             : getBusinessDateValue();
-    assertIsoDate(expenseDate, 'Tanggal biaya perjalanan');
+    const expenseDateError = validateIsoDateOrResponse(
+        expenseDate,
+        'Tanggal biaya perjalanan',
+        'Tanggal biaya perjalanan tidak valid'
+    );
+    if (expenseDateError) {
+        return expenseDateError;
+    }
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
         const state = await getDriverVoucherState(voucherRef);
@@ -1543,7 +1598,10 @@ export async function handleDriverVoucherSettlement(
         typeof data.date === 'string' && data.date
             ? data.date
             : getBusinessDateValue();
-    assertIsoDate(settledDate, 'Tanggal settlement');
+    const settledDateError = validateIsoDateOrResponse(settledDate, 'Tanggal settlement', 'Tanggal settlement tidak valid');
+    if (settledDateError) {
+        return settledDateError;
+    }
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
         const state = await getDriverVoucherState(voucherId);
