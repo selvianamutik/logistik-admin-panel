@@ -37,6 +37,8 @@ const INCIDENT_STATUS_TRANSITIONS: Record<string, string[]> = {
     RESOLVED: ['CLOSED'],
     CLOSED: [],
 };
+const ALLOWED_INCIDENT_TYPES = new Set(['BLOWOUT_TIRE', 'ENGINE_TROUBLE', 'ACCIDENT_MINOR', 'ACCIDENT_MAJOR', 'OTHER']);
+const ALLOWED_INCIDENT_URGENCY = new Set(['LOW', 'MEDIUM', 'HIGH']);
 
 export async function handleIncidentCreate(
     session: ApiSession,
@@ -45,16 +47,13 @@ export async function handleIncidentCreate(
 ) {
     const description = typeof data.description === 'string' ? data.description.trim() : '';
     const incidentType =
-        data.incidentType === 'BLOWOUT_TIRE' ||
-        data.incidentType === 'ENGINE_TROUBLE' ||
-        data.incidentType === 'ACCIDENT_MINOR' ||
-        data.incidentType === 'ACCIDENT_MAJOR'
+        typeof data.incidentType === 'string' && ALLOWED_INCIDENT_TYPES.has(data.incidentType)
             ? data.incidentType
-            : 'OTHER';
+            : '';
     const urgency =
-        data.urgency === 'LOW' || data.urgency === 'HIGH'
+        typeof data.urgency === 'string' && ALLOWED_INCIDENT_URGENCY.has(data.urgency)
             ? data.urgency
-            : 'MEDIUM';
+            : '';
     const locationText =
         typeof data.locationText === 'string' && data.locationText.trim()
             ? data.locationText.trim()
@@ -80,6 +79,12 @@ export async function handleIncidentCreate(
             : undefined;
     if (!description) {
         return NextResponse.json({ error: 'Deskripsi insiden wajib diisi' }, { status: 400 });
+    }
+    if (!incidentType) {
+        return NextResponse.json({ error: 'Tipe insiden tidak valid' }, { status: 400 });
+    }
+    if (!urgency) {
+        return NextResponse.json({ error: 'Level urgensi insiden tidak valid' }, { status: 400 });
     }
     if (relatedDeliveryOrderRef) {
         const deliveryOrder = await sanityGetById<{
