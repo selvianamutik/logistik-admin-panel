@@ -116,6 +116,42 @@ function sanitizeCompanyCounter(value: unknown, fallback = 0) {
     return Math.floor(normalized);
 }
 
+function parseCompanyWholeNumberInput(value: unknown) {
+    if (typeof value === 'number') {
+        if (!Number.isFinite(value) || value < 0 || !Number.isInteger(value)) {
+            return null;
+        }
+        return value;
+    }
+
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed || !/[0-9]/.test(trimmed) || /[a-z]/i.test(trimmed)) {
+            return null;
+        }
+
+        const groupedIntegerPattern = /^-?\d{1,3}(?:[.,]\d{3})*$/;
+        const plainIntegerPattern = /^-?\d+$/;
+        if (!groupedIntegerPattern.test(trimmed) && !plainIntegerPattern.test(trimmed)) {
+            return null;
+        }
+    }
+
+    const normalized = normalizeNumber(value, { allowDecimal: false, maxFractionDigits: 0 });
+    if (!Number.isFinite(normalized) || normalized < 0 || !Number.isInteger(normalized)) {
+        return null;
+    }
+    return Math.floor(normalized);
+}
+
+function normalizeCompanyDateFormatInput(value: unknown) {
+    const normalized = normalizeOptionalText(value);
+    if (!normalized) {
+        return undefined;
+    }
+    return normalized === 'DD/MM/YYYY' || normalized === 'dd/MM/yyyy' ? normalized : null;
+}
+
 function sanitizeCompanyThemeColor(value: unknown, fallback?: string) {
     const normalized = normalizeOptionalText(value);
     if (!normalized) {
@@ -142,10 +178,17 @@ async function sanitizeCompanyInvoiceSettings(
     const documentSettingsInput = isPlainObject(input.documentSettings)
         ? input.documentSettings as Record<string, unknown>
         : {};
-
-    const rawSelectedRefs = Array.isArray(invoiceSettings.invoiceBankAccountRefs)
-        ? invoiceSettings.invoiceBankAccountRefs
-        : [];
+    const hasInvoiceBankAccountRefs = Object.prototype.hasOwnProperty.call(invoiceSettings, 'invoiceBankAccountRefs');
+    if (hasInvoiceBankAccountRefs && !Array.isArray(invoiceSettings.invoiceBankAccountRefs)) {
+        throw new Error('Daftar rekening instruksi nota tidak valid');
+    }
+    const rawSelectedRefs = hasInvoiceBankAccountRefs
+        ? Array.isArray(invoiceSettings.invoiceBankAccountRefs)
+            ? invoiceSettings.invoiceBankAccountRefs
+            : []
+        : Array.isArray(existingInvoiceSettings.invoiceBankAccountRefs)
+            ? existingInvoiceSettings.invoiceBankAccountRefs
+            : [];
     const selectedRefs = rawSelectedRefs.filter(
         (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
     );
@@ -158,9 +201,19 @@ async function sanitizeCompanyInvoiceSettings(
         : [];
     const validRefSet = new Set(validRows.map(row => row._id));
     const invoiceBankAccountRefs = uniqueRefs.filter(ref => validRefSet.has(ref));
+    const hasDefaultInvoiceBankAccountRef = Object.prototype.hasOwnProperty.call(invoiceSettings, 'defaultInvoiceBankAccountRef');
+    if (
+        hasDefaultInvoiceBankAccountRef
+        && invoiceSettings.defaultInvoiceBankAccountRef !== undefined
+        && typeof invoiceSettings.defaultInvoiceBankAccountRef !== 'string'
+    ) {
+        throw new Error('Rekening default instruksi nota tidak valid');
+    }
     const requestedDefaultRef =
         typeof invoiceSettings.defaultInvoiceBankAccountRef === 'string'
             ? invoiceSettings.defaultInvoiceBankAccountRef
+            : !hasDefaultInvoiceBankAccountRef && typeof existingInvoiceSettings.defaultInvoiceBankAccountRef === 'string'
+                ? existingInvoiceSettings.defaultInvoiceBankAccountRef
             : undefined;
     const defaultInvoiceBankAccountRef =
         requestedDefaultRef && invoiceBankAccountRefs.includes(requestedDefaultRef)
@@ -172,20 +225,47 @@ async function sanitizeCompanyInvoiceSettings(
         throw new Error('Mode invoice/nota perusahaan tidak valid');
     }
     const hasDefaultTermDays = Object.prototype.hasOwnProperty.call(invoiceSettings, 'defaultTermDays');
-    const rawDefaultTermDays = normalizeNumber(invoiceSettings.defaultTermDays);
-    if (hasDefaultTermDays && (!Number.isFinite(rawDefaultTermDays) || rawDefaultTermDays < 0)) {
+    const rawDefaultTermDays = parseCompanyWholeNumberInput(invoiceSettings.defaultTermDays);
+    if (hasDefaultTermDays && rawDefaultTermDays === null) {
         throw new Error('Termin default nota tidak valid');
     }
     const hasDueDateDays = Object.prototype.hasOwnProperty.call(invoiceSettings, 'dueDateDays');
-    const rawDueDateDays = normalizeNumber(invoiceSettings.dueDateDays);
-    if (hasDueDateDays && (!Number.isFinite(rawDueDateDays) || rawDueDateDays < 0)) {
+    const rawDueDateDays = parseCompanyWholeNumberInput(invoiceSettings.dueDateDays);
+    if (hasDueDateDays && rawDueDateDays === null) {
         throw new Error('Jatuh tempo default nota tidak valid');
+    }
+    const nextDefaultTermDays = hasDefaultTermDays
+        ? rawDefaultTermDays ?? 0
+        : sanitizeCompanyCounter(existingInvoiceSettings.defaultTermDays, 30);
+    const nextDueDateDays = hasDueDateDays
+        ? rawDueDateDays ?? 0
+        : sanitizeCompanyCounter(existingInvoiceSettings.dueDateDays, 14);
+    const counterConfigs = [
+        ['resiCounter', 'Counter nomor resi tidak valid'],
+        ['doCounter', 'Counter nomor surat jalan tidak valid'],
+        ['invoiceCounter', 'Counter nomor invoice tidak valid'],
+        ['notaCounter', 'Counter nomor nota tidak valid'],
+        ['receiptCounter', 'Counter nomor receipt tidak valid'],
+        ['boronganCounter', 'Counter nomor borongan tidak valid'],
+        ['bonCounter', 'Counter nomor bon tidak valid'],
+        ['incidentCounter', 'Counter nomor insiden tidak valid'],
+    ] as const;
+    for (const [field, errorMessage] of counterConfigs) {
+        if (Object.prototype.hasOwnProperty.call(numberingInput, field) && parseCompanyWholeNumberInput(numberingInput[field]) === null) {
+            throw new Error(errorMessage);
+        }
     }
     if (
         Object.prototype.hasOwnProperty.call(documentSettingsInput, 'showContact')
         && typeof documentSettingsInput.showContact !== 'boolean'
     ) {
         throw new Error('Pengaturan tampilkan kontak dokumen tidak valid');
+    }
+    if (
+        Object.prototype.hasOwnProperty.call(documentSettingsInput, 'dateFormat')
+        && normalizeCompanyDateFormatInput(documentSettingsInput.dateFormat) === null
+    ) {
+        throw new Error('Format tanggal dokumen tidak valid');
     }
 
     return {
@@ -233,12 +313,8 @@ async function sanitizeCompanyInvoiceSettings(
             incidentPeriod: normalizeOptionalText(numberingInput.incidentPeriod) || normalizeOptionalText(existingNumbering.incidentPeriod),
         },
         invoiceSettings: {
-            defaultTermDays: hasDefaultTermDays
-                ? Math.floor(rawDefaultTermDays)
-                : sanitizeCompanyCounter(existingInvoiceSettings.defaultTermDays, 30),
-            dueDateDays: hasDueDateDays
-                ? Math.floor(rawDueDateDays)
-                : sanitizeCompanyCounter(existingInvoiceSettings.dueDateDays, 14),
+            defaultTermDays: Math.floor(nextDefaultTermDays),
+            dueDateDays: Math.floor(nextDueDateDays),
             footerNote: normalizeOptionalText(invoiceSettings.footerNote) || normalizeOptionalText(existingInvoiceSettings.footerNote) || '',
             invoiceMode:
                 rawInvoiceMode === 'DO' || rawInvoiceMode === 'ORDER'
@@ -257,8 +333,8 @@ async function sanitizeCompanyInvoiceSettings(
                         ? existingDocumentSettings.showContact
                         : true,
             dateFormat:
-                normalizeOptionalText(documentSettingsInput.dateFormat)
-                || normalizeOptionalText(existingDocumentSettings.dateFormat)
+                normalizeCompanyDateFormatInput(documentSettingsInput.dateFormat)
+                || normalizeCompanyDateFormatInput(existingDocumentSettings.dateFormat)
                 || 'DD/MM/YYYY',
         },
     };
