@@ -1019,7 +1019,18 @@ export async function handleExpenseCreate(
         relatedVehiclePlate = vehicle.plateNumber;
     }
 
-    const requestedPrivacyLevel = data.privacyLevel === 'ownerOnly' ? 'ownerOnly' : 'internal';
+    const hasPrivacyLevel = Object.prototype.hasOwnProperty.call(data, 'privacyLevel');
+    const rawPrivacyLevel = normalizeOptionalText(data.privacyLevel);
+    if (hasPrivacyLevel && rawPrivacyLevel && rawPrivacyLevel !== 'ownerOnly' && rawPrivacyLevel !== 'internal') {
+        return NextResponse.json({ error: 'Level privasi pengeluaran tidak valid' }, { status: 400 });
+    }
+    if (hasPrivacyLevel && !rawPrivacyLevel) {
+        return NextResponse.json({ error: 'Level privasi pengeluaran tidak valid' }, { status: 400 });
+    }
+    const requestedPrivacyLevel =
+        rawPrivacyLevel === 'ownerOnly'
+            ? 'ownerOnly'
+            : 'internal';
     if (requestedPrivacyLevel === 'ownerOnly' && session.role !== 'OWNER') {
         return NextResponse.json({ error: 'Hanya OWNER yang boleh membuat pengeluaran owner-only' }, { status: 403 });
     }

@@ -429,7 +429,11 @@ export async function normalizeVehiclePayload(
     }
 
     if (!partial || hasOwnKey(data, 'status')) {
-        const status = normalizeText(data.status) || 'ACTIVE';
+        const rawStatus = normalizeText(data.status);
+        const status = rawStatus || 'ACTIVE';
+        if (hasOwnKey(data, 'status') && !rawStatus) {
+            throw new Error('Status kendaraan tidak valid');
+        }
         if (!VEHICLE_STATUS_VALUES.has(status)) {
             throw new Error('Status kendaraan tidak valid');
         }
