@@ -166,6 +166,11 @@ async function sanitizeCompanyInvoiceSettings(
         requestedDefaultRef && invoiceBankAccountRefs.includes(requestedDefaultRef)
             ? requestedDefaultRef
             : invoiceBankAccountRefs[0];
+    const hasInvoiceMode = Object.prototype.hasOwnProperty.call(invoiceSettings, 'invoiceMode');
+    const rawInvoiceMode = normalizeOptionalText(invoiceSettings.invoiceMode)?.toUpperCase();
+    if (hasInvoiceMode && (!rawInvoiceMode || (rawInvoiceMode !== 'DO' && rawInvoiceMode !== 'ORDER'))) {
+        throw new Error('Mode invoice/nota perusahaan tidak valid');
+    }
 
     return {
         name: normalizeOptionalText(input.name) || normalizeOptionalText(existingCompany?.name) || 'Gading Mas Surya',
@@ -222,8 +227,8 @@ async function sanitizeCompanyInvoiceSettings(
             ),
             footerNote: normalizeOptionalText(invoiceSettings.footerNote) || normalizeOptionalText(existingInvoiceSettings.footerNote) || '',
             invoiceMode:
-                invoiceSettings.invoiceMode === 'DO' || invoiceSettings.invoiceMode === 'ORDER'
-                    ? invoiceSettings.invoiceMode
+                rawInvoiceMode === 'DO' || rawInvoiceMode === 'ORDER'
+                    ? rawInvoiceMode
                     : existingInvoiceSettings.invoiceMode === 'DO'
                         ? 'DO'
                         : 'ORDER',
@@ -887,6 +892,22 @@ export async function handleGenericUpdate(
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Data rekening / kas tidak valid' },
+                { status: 400 }
+            );
+        }
+    }
+
+    if (entity === 'company') {
+        const existingCompany = await sanityGetCompanyProfile();
+        if (!existingCompany?._id || existingCompany._id !== id) {
+            return NextResponse.json({ error: 'Profil perusahaan tidak ditemukan' }, { status: 404 });
+        }
+
+        try {
+            sanitizedEntityUpdates = await sanitizeCompanyInvoiceSettings(updates, existingCompany);
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Data perusahaan tidak valid' },
                 { status: 400 }
             );
         }
