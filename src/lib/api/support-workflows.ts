@@ -441,6 +441,14 @@ export async function handleCustomerDelete(
         return NextResponse.json({ error: 'Customer yang sudah dipakai pada order tidak boleh dihapus' }, { status: 409 });
     }
 
+    const relatedDeliveryOrder = await getSanityClient().fetch<{ _id: string } | null>(
+        `*[_type == "deliveryOrder" && ((customerRef == $ref || customerRef._ref == $ref) || lower(coalesce(customerName, "")) == $customerName)][0]{ _id }`,
+        { ref: id, customerName: (customer.name || '').toLowerCase() }
+    );
+    if (relatedDeliveryOrder) {
+        return NextResponse.json({ error: 'Customer yang sudah dipakai pada surat jalan tidak boleh dihapus' }, { status: 409 });
+    }
+
     const relatedFreightNota = await getSanityClient().fetch<{ _id: string } | null>(
         `*[_type == "freightNota" && customerRef == $ref][0]{ _id }`,
         { ref: id }
