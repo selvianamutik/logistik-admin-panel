@@ -127,19 +127,30 @@ export async function recordLoginAttempt(key: string, limit: number, windowMs: n
     for (let attemptIndex = 0; attemptIndex < MAX_MUTATION_RETRIES; attemptIndex += 1) {
         const now = Date.now();
         const localBucket = readLocalRateLimitBucket(docId, now);
-        const bucket = localBucket
+        const persistedBucket = await getRateLimitBucket(docId);
+        const persistedResetAt = getBucketResetAt(persistedBucket);
+        const persistedCount = getBucketCount(persistedBucket);
+        const mergedResetAt = Math.max(persistedResetAt, localBucket?.resetAt ?? 0);
+        const bucketCount =
+            mergedResetAt > now
+                ? Math.max(persistedCount, localBucket?.count ?? 0)
+                : persistedCount;
+        const bucket = persistedBucket
             ? ({
-                _id: docId,
-                _type: RATE_LIMIT_DOC_TYPE,
-                count: localBucket.count,
-                resetAt: localBucket.resetAt,
+                ...persistedBucket,
+                count: bucketCount,
+                resetAt: mergedResetAt > 0 ? mergedResetAt : persistedResetAt,
             } satisfies PersistedRateLimitBucket)
-            : await getRateLimitBucket(docId);
-        const resetAt = getBucketResetAt(bucket);
-        const bucketRevision =
-            bucket && '_rev' in bucket && typeof bucket._rev === 'string'
-                ? bucket._rev
-                : undefined;
+            : localBucket
+                ? ({
+                    _id: docId,
+                    _type: RATE_LIMIT_DOC_TYPE,
+                    count: localBucket.count,
+                    resetAt: localBucket.resetAt,
+                } satisfies PersistedRateLimitBucket)
+                : null;
+        const resetAt = bucket && mergedResetAt > 0 ? mergedResetAt : getBucketResetAt(bucket);
+        const bucketRevision = typeof persistedBucket?._rev === 'string' ? persistedBucket._rev : undefined;
 
         if (!bucket || resetAt <= now) {
             const freshBucket = {
@@ -174,7 +185,6 @@ export async function recordLoginAttempt(key: string, limit: number, windowMs: n
         }
 
         const nextCount = getBucketCount(bucket) + 1;
-        if (!bucketRevision && !localBucket) continue;
         try {
             if (bucketRevision) {
                 await getSanityClient()
