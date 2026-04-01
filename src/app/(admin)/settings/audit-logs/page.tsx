@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Search, ScrollText } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
-import { getBusinessDateValue } from '@/lib/business-date';
+import { getBusinessCalendarDateParts, getBusinessDateValue } from '@/lib/business-date';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { AuditLog } from '@/lib/types';
 import { useToast } from '../../layout';
@@ -90,7 +90,10 @@ export default function AuditLogsPage() {
                 }
 
                 const today = getBusinessDateValue();
-                const nextTodayLogs = matchingLogs.filter(log => (log.timestamp || log._createdAt || '').slice(0, 10) === today).length;
+                const nextTodayLogs = matchingLogs.filter(log => {
+                    const businessDate = getBusinessCalendarDateParts(log.timestamp || log._createdAt || '');
+                    return businessDate ? `${businessDate.year}-${businessDate.month}-${businessDate.day}` === today : false;
+                }).length;
                 const nextLoginLogs = matchingLogs.filter(log => log.action === 'LOGIN' || log.action === 'LOGOUT').length;
                 const nextMutationLogs = matchingLogs.filter(log => log.action === 'CREATE' || log.action === 'UPDATE' || log.action === 'DELETE').length;
 
