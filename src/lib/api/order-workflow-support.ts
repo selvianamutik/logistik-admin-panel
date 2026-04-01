@@ -671,9 +671,15 @@ export function summarizeActualCargoInputs(actualCargoByDoItemId: Map<string, No
     };
 }
 
-export function normalizeDeliveryDropType(value: unknown): DeliveryActualDropType {
-    const normalized = normalizeText(value).toUpperCase() as DeliveryActualDropType;
-    return DELIVERY_ACTUAL_DROP_TYPES.has(normalized) ? normalized : 'DROP';
+export function normalizeDeliveryDropType(value: unknown, label = 'Tipe titik drop'): DeliveryActualDropType {
+    const normalized = normalizeText(value).toUpperCase();
+    if (!normalized) {
+        return 'DROP';
+    }
+    if (!DELIVERY_ACTUAL_DROP_TYPES.has(normalized as DeliveryActualDropType)) {
+        throw new Error(`${label} tidak valid`);
+    }
+    return normalized as DeliveryActualDropType;
 }
 
 export function buildDefaultActualDropPoint(
@@ -765,7 +771,7 @@ export function normalizeDeliveryActualDropPoints(
         normalized.push({
             _key: crypto.randomUUID(),
             sequence: index + 1,
-            stopType: normalizeDeliveryDropType(rawPoint.stopType),
+            stopType: normalizeDeliveryDropType(rawPoint.stopType, `Tipe titik drop #${index + 1}`),
             locationName: locationName || locationAddress || `Titik drop ${index + 1}`,
             locationAddress,
             qtyKoli: qtyKoli > 0 ? qtyKoli : undefined,
