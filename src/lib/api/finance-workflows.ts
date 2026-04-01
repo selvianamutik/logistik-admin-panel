@@ -90,6 +90,29 @@ function normalizeWholeMoneyAmount(value: unknown) {
     return Math.round(normalized);
 }
 
+function formatAuditMoney(amount: number) {
+    return `Rp ${Math.round(amount).toLocaleString('id-ID')}`;
+}
+
+function buildExpenseAuditSummary(input: {
+    amount: number;
+    categoryName?: string;
+    bankName?: string;
+    note?: string;
+    description?: string;
+}) {
+    const contextLabel = normalizeOptionalText(input.note) || normalizeOptionalText(input.description);
+    const summary = [
+        `Pengeluaran ${formatAuditMoney(input.amount)}`,
+        input.categoryName ? `untuk ${input.categoryName}` : '',
+        input.bankName ? `via ${input.bankName}` : 'tanpa rekening',
+    ]
+        .filter(Boolean)
+        .join(' ');
+
+    return contextLabel ? `${summary} - ${contextLabel}` : summary;
+}
+
 function parseOptionalStrictNotaRowNumber(
     value: unknown,
     label: string,
@@ -1457,6 +1480,7 @@ export async function handleBankTransfer(
     if (transferDateError) {
         return transferDateError;
     }
+    const transferDescription = normalizeOptionalText(data.description);
 
     const transferId = `transfer-${crypto.randomUUID()}`;
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -1521,7 +1545,9 @@ export async function handleBankTransfer(
                 'CREATE',
                 'bank-transactions',
                 transferId,
-                `Transfer ${amount} dari ${fromAcc.bankName} ke ${toAcc.bankName}`
+                transferDescription
+                    ? `Transfer ${formatAuditMoney(amount)} dari ${fromAcc.bankName} ke ${toAcc.bankName} - ${transferDescription}`
+                    : `Transfer ${formatAuditMoney(amount)} dari ${fromAcc.bankName} ke ${toAcc.bankName}`
             );
             return NextResponse.json({ success: true, transferId });
         } catch (err) {
@@ -1676,14 +1702,16 @@ export async function handleExpenseCreate(
     }
     const privacyLevel = requestedPrivacyLevel;
 
+    const expenseNote = normalizeOptionalText(data.note);
+    const expenseDescription = normalizeOptionalText(data.description);
     const expenseDocBase: { _type: 'expense'; [key: string]: unknown } = {
         _type: 'expense',
         categoryRef,
         categoryName: category.name,
         date: expenseDate,
         amount,
-        note: normalizeOptionalText(data.note),
-        description: normalizeOptionalText(data.description),
+        note: expenseNote,
+        description: expenseDescription,
         receiptUrl: normalizeOptionalText(data.receiptUrl),
         privacyLevel,
         relatedVehicleRef,
@@ -1695,11 +1723,18 @@ export async function handleExpenseCreate(
     };
     const selectedAccountRef =
         typeof data.bankAccountRef === 'string' && data.bankAccountRef ? data.bankAccountRef : undefined;
+    const expenseAuditSummary = buildExpenseAuditSummary({
+        amount,
+        categoryName: category.name,
+        bankName: undefined,
+        note: expenseNote,
+        description: expenseDescription,
+    });
 
     if (!selectedAccountRef) {
         const created = await sanityCreate(expenseDocBase);
         const expenseId = (created as Record<string, unknown>)._id as string;
-        await addAuditLog(session, 'CREATE', 'expenses', expenseId, `Created expenses: ${expenseId}`);
+        await addAuditLog(session, 'CREATE', 'expenses', expenseId, expenseAuditSummary);
         return NextResponse.json({ data: created, id: expenseId });
     }
 
@@ -1727,6 +1762,13 @@ export async function handleExpenseCreate(
             bankAccountName: bankAcc.bankName,
             bankAccountNumber: bankAcc.accountNumber,
         };
+        const expenseAuditSummaryWithBank = buildExpenseAuditSummary({
+            amount,
+            categoryName: category.name,
+            bankName: bankAcc.bankName,
+            note: expenseNote,
+            description: expenseDescription,
+        });
 
         const transaction = getSanityClient()
             .transaction()
@@ -1754,7 +1796,7 @@ export async function handleExpenseCreate(
 
         try {
             await transaction.commit();
-            await addAuditLog(session, 'CREATE', 'expenses', expenseId, `Created expenses: ${expenseId}`);
+            await addAuditLog(session, 'CREATE', 'expenses', expenseId, expenseAuditSummaryWithBank);
             return NextResponse.json({ data: expenseDoc, id: expenseId });
         } catch (err) {
             if (!isMutationConflictError(err)) {
