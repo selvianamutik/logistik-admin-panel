@@ -6,6 +6,10 @@ import {
     convertM3ToVolumeInputValue,
     convertVolumeToM3,
     convertWeightToKg,
+    isVolumeInputUnit,
+    isWeightInputUnit,
+    readVolumeInputUnit,
+    readWeightInputUnit,
     type VolumeInputUnit,
     type WeightInputUnit,
 } from '@/lib/measurement';
@@ -214,6 +218,28 @@ export function normalizeCustomerDoPrefix(value: unknown) {
     return prefix || 'SJ';
 }
 
+export function resolvePayloadWeightInputUnit(value: unknown, label: string): WeightInputUnit {
+    const normalized = normalizeText(value).toUpperCase();
+    if (!normalized) {
+        return 'KG';
+    }
+    if (!isWeightInputUnit(normalized)) {
+        throw new Error(`${label} tidak valid`);
+    }
+    return normalized;
+}
+
+export function resolvePayloadVolumeInputUnit(value: unknown, label: string): VolumeInputUnit {
+    const normalized = normalizeText(value).toUpperCase();
+    if (!normalized) {
+        return 'M3';
+    }
+    if (!isVolumeInputUnit(normalized)) {
+        throw new Error(`${label} tidak valid`);
+    }
+    return normalized;
+}
+
 export function buildDriverRequestedTrackingStatus(status: string) {
     return `DRIVER_REQUESTED_${status}`;
 }
@@ -307,9 +333,8 @@ export async function normalizeOrderItemsInput(customerRef: string, rawItems: un
         .map<NormalizedOrderItemInput>(item => {
             const description = normalizeOptionalText(item.description) || '';
             const customerProductRef = normalizeOptionalText(item.customerProductRef);
-            const weightInputUnit: WeightInputUnit = item.weightInputUnit === 'TON' ? 'TON' : 'KG';
-            const volumeInputUnit: VolumeInputUnit =
-                item.volumeInputUnit === 'LITER' || item.volumeInputUnit === 'KL' ? item.volumeInputUnit : 'M3';
+            const weightInputUnit = resolvePayloadWeightInputUnit(item.weightInputUnit, 'Satuan berat item order');
+            const volumeInputUnit = resolvePayloadVolumeInputUnit(item.volumeInputUnit, 'Satuan volume item order');
             const qtyKoli = normalizeNumber(item.qtyKoli);
             const rawWeightInputValue = normalizeNumber(item.weightInputValue ?? item.weight ?? 0, {
                 maxFractionDigits: weightInputUnit === 'TON' ? 3 : 2,
@@ -399,7 +424,7 @@ export async function normalizeOrderItemsInput(customerRef: string, rawItems: un
                 item.qtyKoli = normalizeNumber(customerProduct.defaultQtyKoli ?? 0);
             }
             if (!item.weightInputValue || item.weightInputValue <= 0) {
-                const productWeightUnit = customerProduct.defaultWeightInputUnit === 'TON' ? 'TON' : 'KG';
+                const productWeightUnit = readWeightInputUnit(customerProduct.defaultWeightInputUnit, 'KG');
                 const productWeightInputValue =
                     normalizeNumber(customerProduct.defaultWeightInputValue, {
                         maxFractionDigits: productWeightUnit === 'TON' ? 3 : 2,
@@ -412,12 +437,7 @@ export async function normalizeOrderItemsInput(customerRef: string, rawItems: un
                 item.weightInputUnit = productWeightInputValue > 0 ? productWeightUnit : undefined;
             }
             if (!item.volumeInputValue || item.volumeInputValue <= 0) {
-                const productVolumeUnit =
-                    customerProduct.defaultVolumeInputUnit === 'LITER'
-                        ? 'LITER'
-                        : customerProduct.defaultVolumeInputUnit === 'KL'
-                            ? 'KL'
-                            : 'M3';
+                const productVolumeUnit = readVolumeInputUnit(customerProduct.defaultVolumeInputUnit, 'M3');
                 const productVolumeInputValue =
                     normalizeNumber(customerProduct.defaultVolumeInputValue, {
                         maxFractionDigits: productVolumeUnit === 'LITER' ? 0 : 3,
@@ -481,13 +501,8 @@ export function normalizeDeliveryOrderSelections(data: Record<string, unknown>, 
         const selections = rawSelections
             .filter(isPlainObject)
             .map<DeliveryOrderItemSelection>(item => {
-                const weightInputUnit: WeightInputUnit = item.weightInputUnit === 'TON' ? 'TON' : 'KG';
-                const volumeInputUnit: VolumeInputUnit =
-                    item.volumeInputUnit === 'LITER'
-                        ? 'LITER'
-                        : item.volumeInputUnit === 'KL'
-                            ? 'KL'
-                            : 'M3';
+                const weightInputUnit = resolvePayloadWeightInputUnit(item.weightInputUnit, 'Satuan berat kirim');
+                const volumeInputUnit = resolvePayloadVolumeInputUnit(item.volumeInputUnit, 'Satuan volume kirim');
                 const weightInputValue = roundQuantity(normalizeNumber(item.weightInputValue, {
                     maxFractionDigits: weightInputUnit === 'TON' ? 3 : 2,
                 }), weightInputUnit === 'TON' ? 3 : 2);
@@ -590,16 +605,14 @@ export function normalizeDeliveryOrderActualCargoInputs(
         const plannedVolumeM3 = roundQuantity(normalizeNumber(item.orderItemVolumeM3 ?? 0), 3);
 
         const rawItem = providedActuals.get(item._id);
-        const weightInputUnit: WeightInputUnit =
-            rawItem?.actualWeightInputUnit === 'TON'
-                ? 'TON'
-                : item.actualWeightInputUnit || item.orderItemWeightInputUnit || 'KG';
-        const volumeInputUnit: VolumeInputUnit =
-            rawItem?.actualVolumeInputUnit === 'LITER'
-                ? 'LITER'
-                : rawItem?.actualVolumeInputUnit === 'KL'
-                    ? 'KL'
-                    : item.actualVolumeInputUnit || item.orderItemVolumeInputUnit || 'M3';
+        const weightInputUnit =
+            rawItem && Object.prototype.hasOwnProperty.call(rawItem, 'actualWeightInputUnit')
+                ? resolvePayloadWeightInputUnit(rawItem.actualWeightInputUnit, 'Satuan berat aktual DO')
+                : readWeightInputUnit(item.actualWeightInputUnit || item.orderItemWeightInputUnit, 'KG');
+        const volumeInputUnit =
+            rawItem && Object.prototype.hasOwnProperty.call(rawItem, 'actualVolumeInputUnit')
+                ? resolvePayloadVolumeInputUnit(rawItem.actualVolumeInputUnit, 'Satuan volume aktual DO')
+                : readVolumeInputUnit(item.actualVolumeInputUnit || item.orderItemVolumeInputUnit, 'M3');
 
         const actualQtyKoli = roundQuantity(
             normalizeNumber(rawItem?.actualQtyKoli ?? item.actualQtyKoli ?? plannedQtyKoli)
@@ -716,15 +729,14 @@ export function normalizeDeliveryActualDropPoints(
         const locationAddress = normalizeOptionalText(rawPoint.locationAddress);
         const note = normalizeOptionalText(rawPoint.note);
         const qtyKoli = roundQuantity(normalizeNumber(rawPoint.qtyKoli));
-        const weightInputUnit: WeightInputUnit = rawPoint.weightInputUnit === 'TON' ? 'TON' : 'KG';
+        const weightInputUnit = resolvePayloadWeightInputUnit(rawPoint.weightInputUnit, `Satuan berat titik drop #${index + 1}`);
         const rawWeightInputValue = roundQuantity(
             normalizeNumber(rawPoint.weightInputValue ?? rawPoint.weightKg ?? 0, {
                 maxFractionDigits: weightInputUnit === 'TON' ? 3 : 2,
             }),
             weightInputUnit === 'TON' ? 3 : 2
         );
-        const volumeInputUnit: VolumeInputUnit =
-            rawPoint.volumeInputUnit === 'LITER' || rawPoint.volumeInputUnit === 'KL' ? rawPoint.volumeInputUnit : 'M3';
+        const volumeInputUnit = resolvePayloadVolumeInputUnit(rawPoint.volumeInputUnit, `Satuan volume titik drop #${index + 1}`);
         const rawVolumeInputValue = roundQuantity(
             normalizeNumber(rawPoint.volumeInputValue ?? rawPoint.volumeM3 ?? 0, {
                 maxFractionDigits: volumeInputUnit === 'LITER' ? 0 : 3,

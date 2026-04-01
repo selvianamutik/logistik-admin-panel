@@ -3,6 +3,10 @@ import {
     convertM3ToVolumeInputValue,
     convertVolumeToM3,
     convertWeightToKg,
+    isVolumeInputUnit,
+    isWeightInputUnit,
+    readVolumeInputUnit,
+    readWeightInputUnit,
     type VolumeInputUnit,
     type WeightInputUnit,
 } from '@/lib/measurement';
@@ -223,12 +227,18 @@ export async function normalizeCustomerProductPayload(data: Record<string, unkno
         throw new Error('Default koli barang customer tidak valid');
     }
 
-    const weightInputUnit: WeightInputUnit =
-        (Object.prototype.hasOwnProperty.call(data, 'defaultWeightInputUnit')
+    const requestedWeightInputUnit = normalizeText(
+        Object.prototype.hasOwnProperty.call(data, 'defaultWeightInputUnit')
             ? data.defaultWeightInputUnit
-            : existing?.defaultWeightInputUnit) === 'TON'
-            ? 'TON'
-            : 'KG';
+            : ''
+    ).toUpperCase();
+    if (requestedWeightInputUnit && !isWeightInputUnit(requestedWeightInputUnit)) {
+        throw new Error('Satuan default berat barang customer tidak valid');
+    }
+    const weightInputUnit: WeightInputUnit =
+        Object.prototype.hasOwnProperty.call(data, 'defaultWeightInputUnit')
+            ? (requestedWeightInputUnit as WeightInputUnit || 'KG')
+            : readWeightInputUnit(existing?.defaultWeightInputUnit, 'KG');
     const defaultWeightInputValue =
         Object.prototype.hasOwnProperty.call(data, 'defaultWeightInputValue') ||
         Object.prototype.hasOwnProperty.call(data, 'defaultWeight') ||
@@ -248,16 +258,18 @@ export async function normalizeCustomerProductPayload(data: Record<string, unkno
     }
     const defaultWeight = defaultWeightInputValue > 0 ? convertWeightToKg(defaultWeightInputValue, weightInputUnit) : undefined;
 
-    const volumeInputUnit: VolumeInputUnit =
-        (Object.prototype.hasOwnProperty.call(data, 'defaultVolumeInputUnit')
+    const requestedVolumeInputUnit = normalizeText(
+        Object.prototype.hasOwnProperty.call(data, 'defaultVolumeInputUnit')
             ? data.defaultVolumeInputUnit
-            : existing?.defaultVolumeInputUnit) === 'LITER'
-            ? 'LITER'
-            : (Object.prototype.hasOwnProperty.call(data, 'defaultVolumeInputUnit')
-                ? data.defaultVolumeInputUnit
-                : existing?.defaultVolumeInputUnit) === 'KL'
-                ? 'KL'
-                : 'M3';
+            : ''
+    ).toUpperCase();
+    if (requestedVolumeInputUnit && !isVolumeInputUnit(requestedVolumeInputUnit)) {
+        throw new Error('Satuan default volume barang customer tidak valid');
+    }
+    const volumeInputUnit: VolumeInputUnit =
+        Object.prototype.hasOwnProperty.call(data, 'defaultVolumeInputUnit')
+            ? (requestedVolumeInputUnit as VolumeInputUnit || 'M3')
+            : readVolumeInputUnit(existing?.defaultVolumeInputUnit, 'M3');
     const defaultVolumeInputValue =
         Object.prototype.hasOwnProperty.call(data, 'defaultVolumeInputValue') ||
         Object.prototype.hasOwnProperty.call(data, 'defaultVolume') ||

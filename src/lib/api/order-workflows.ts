@@ -40,6 +40,8 @@ import {
     normalizeDeliveryActualDropPoints,
     normalizeDeliveryOrderActualCargoInputs,
     normalizeDeliveryOrderSelections,
+    resolvePayloadVolumeInputUnit,
+    resolvePayloadWeightInputUnit,
     resolveOrderPartyData,
     resolveOrderPickupData,
     resolveOrderRecipientData,
@@ -133,16 +135,20 @@ export async function handleOrderItemHoldSet(
 ) {
     const id = typeof data.id === 'string' ? data.id : '';
     const holdQtyKoli = normalizeNumber(data.holdQtyKoli);
-    const holdWeightInputUnit: WeightInputUnit = data.holdWeightInputUnit === 'TON' ? 'TON' : 'KG';
+    let holdWeightInputUnit: WeightInputUnit;
+    let holdVolumeInputUnit: VolumeInputUnit;
+    try {
+        holdWeightInputUnit = resolvePayloadWeightInputUnit(data.holdWeightInputUnit, 'Satuan berat hold');
+        holdVolumeInputUnit = resolvePayloadVolumeInputUnit(data.holdVolumeInputUnit, 'Satuan volume hold');
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Satuan hold tidak valid' },
+            { status: 400 }
+        );
+    }
     const holdWeightInputValue = roundQuantity(normalizeNumber(data.holdWeightInputValue, {
         maxFractionDigits: holdWeightInputUnit === 'TON' ? 3 : 2,
     }), holdWeightInputUnit === 'TON' ? 3 : 2);
-    const holdVolumeInputUnit: VolumeInputUnit =
-        data.holdVolumeInputUnit === 'LITER'
-            ? 'LITER'
-            : data.holdVolumeInputUnit === 'KL'
-                ? 'KL'
-                : 'M3';
     const holdVolumeInputValue = roundQuantity(normalizeNumber(data.holdVolumeInputValue, {
         maxFractionDigits: holdVolumeInputUnit === 'LITER' ? 0 : 3,
     }), holdVolumeInputUnit === 'LITER' ? 0 : 3);
@@ -680,7 +686,17 @@ export async function handleOrderTargetRevision(
             );
         }
 
-        const weightInputUnit: WeightInputUnit = rawItem.weightInputUnit === 'TON' ? 'TON' : 'KG';
+        let weightInputUnit: WeightInputUnit;
+        let volumeInputUnit: VolumeInputUnit;
+        try {
+            weightInputUnit = resolvePayloadWeightInputUnit(rawItem.weightInputUnit, `Satuan berat target ${existingItem.description || 'item order'}`);
+            volumeInputUnit = resolvePayloadVolumeInputUnit(rawItem.volumeInputUnit, `Satuan volume target ${existingItem.description || 'item order'}`);
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : `Satuan item ${existingItem.description || 'item order'} tidak valid` },
+                { status: 400 }
+            );
+        }
         const weightInputValue = roundQuantity(normalizeNumber(rawItem.weightInputValue, {
             maxFractionDigits: weightInputUnit === 'TON' ? 3 : 2,
         }), weightInputUnit === 'TON' ? 3 : 2);
@@ -692,12 +708,6 @@ export async function handleOrderTargetRevision(
         }
         const weight = roundQuantity(convertWeightToKg(weightInputValue, weightInputUnit));
 
-        const volumeInputUnit: VolumeInputUnit =
-            rawItem.volumeInputUnit === 'LITER'
-                ? 'LITER'
-                : rawItem.volumeInputUnit === 'KL'
-                    ? 'KL'
-                    : 'M3';
         const volumeInputValue = roundQuantity(normalizeNumber(rawItem.volumeInputValue, {
             maxFractionDigits: volumeInputUnit === 'LITER' ? 0 : 3,
         }), volumeInputUnit === 'LITER' ? 0 : 3);

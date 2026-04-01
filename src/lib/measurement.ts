@@ -14,6 +14,22 @@ export const VOLUME_INPUT_UNIT_OPTIONS: Array<{ value: VolumeInputUnit; label: s
   { value: 'KL', label: 'KL' },
 ];
 
+export function isWeightInputUnit(value: unknown): value is WeightInputUnit {
+  return value === 'KG' || value === 'TON';
+}
+
+export function isVolumeInputUnit(value: unknown): value is VolumeInputUnit {
+  return value === 'M3' || value === 'LITER' || value === 'KL';
+}
+
+export function readWeightInputUnit(value: unknown, fallback: WeightInputUnit = 'KG'): WeightInputUnit {
+  return isWeightInputUnit(value) ? value : fallback;
+}
+
+export function readVolumeInputUnit(value: unknown, fallback: VolumeInputUnit = 'M3'): VolumeInputUnit {
+  return isVolumeInputUnit(value) ? value : fallback;
+}
+
 function formatNumber(value: number, options?: Intl.NumberFormatOptions) {
   return new Intl.NumberFormat('id-ID', {
     minimumFractionDigits: 0,
