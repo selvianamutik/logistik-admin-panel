@@ -1080,6 +1080,20 @@ export async function handleExpenseCreate(
 
     const relatedIncidentRef =
         typeof data.relatedIncidentRef === 'string' && data.relatedIncidentRef ? data.relatedIncidentRef : undefined;
+    const relatedMaintenanceRef =
+        typeof data.relatedMaintenanceRef === 'string' && data.relatedMaintenanceRef ? data.relatedMaintenanceRef : undefined;
+    const boronganRef =
+        typeof data.boronganRef === 'string' && data.boronganRef ? data.boronganRef : undefined;
+    const voucherRef =
+        typeof data.voucherRef === 'string' && data.voucherRef ? data.voucherRef : undefined;
+    const linkedWorkflowRefs = [relatedIncidentRef, relatedMaintenanceRef, boronganRef, voucherRef].filter(Boolean);
+    if (linkedWorkflowRefs.length > 1) {
+        return NextResponse.json(
+            { error: 'Pengeluaran hanya boleh dikaitkan ke satu workflow: insiden, maintenance, slip borongan, atau bon trip' },
+            { status: 409 }
+        );
+    }
+
     if (relatedIncidentRef) {
         const incident = await sanityGetById<{ _id: string; vehicleRef?: string; vehiclePlate?: string }>(relatedIncidentRef);
         if (!incident) {
@@ -1097,8 +1111,6 @@ export async function handleExpenseCreate(
         }
     }
 
-    const relatedMaintenanceRef =
-        typeof data.relatedMaintenanceRef === 'string' && data.relatedMaintenanceRef ? data.relatedMaintenanceRef : undefined;
     if (relatedMaintenanceRef) {
         const maintenance = await sanityGetById<{ _id: string; vehicleRef?: string; vehiclePlate?: string }>(relatedMaintenanceRef);
         if (!maintenance) {
@@ -1116,8 +1128,6 @@ export async function handleExpenseCreate(
         }
     }
 
-    const boronganRef =
-        typeof data.boronganRef === 'string' && data.boronganRef ? data.boronganRef : undefined;
     if (boronganRef) {
         const borongan = await sanityGetById<{ _id: string }>(boronganRef);
         if (!borongan) {
@@ -1125,8 +1135,6 @@ export async function handleExpenseCreate(
         }
     }
 
-    const voucherRef =
-        typeof data.voucherRef === 'string' && data.voucherRef ? data.voucherRef : undefined;
     if (voucherRef) {
         const voucher = await sanityGetById<{ _id: string; vehicleRef?: string; vehiclePlate?: string }>(voucherRef);
         if (!voucher) {
