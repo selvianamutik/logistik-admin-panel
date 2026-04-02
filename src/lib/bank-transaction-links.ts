@@ -28,7 +28,7 @@ export function buildRefundLookup(
   refunds: Array<
     Pick<
       CustomerOverpaymentRefund,
-      "_id" | "sourceInvoiceRef" | "sourceReceiptRef" | "sourceType"
+      "_id" | "sourceInvoiceRef" | "sourceReceiptRef" | "sourceReceiptNumber" | "sourceType"
     >
   >,
 ) {
@@ -59,7 +59,7 @@ export function resolveBankTransactionSourceLink(params: {
     string,
     Pick<
       CustomerOverpaymentRefund,
-      "_id" | "sourceInvoiceRef" | "sourceReceiptRef" | "sourceType"
+      "_id" | "sourceInvoiceRef" | "sourceReceiptRef" | "sourceReceiptNumber" | "sourceType"
     >
   >;
   expensesById?: Map<
@@ -113,6 +113,15 @@ export function resolveBankTransactionSourceLink(params: {
       return {
         href: `/invoices/${refund.sourceInvoiceRef}`,
         label: "Buka Nota Sumber Refund",
+      };
+    }
+    if (refund?.sourceReceiptRef && permissions?.canOpenInvoices) {
+      const query = encodeURIComponent(
+        refund.sourceReceiptNumber || refund.sourceReceiptRef,
+      );
+      return {
+        href: `/invoices?q=${query}`,
+        label: "Buka Kelebihan Bayar Customer",
       };
     }
   }

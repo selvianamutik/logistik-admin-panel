@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Search, Plus, FileText, Printer, FileDown, Receipt } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
@@ -42,6 +42,7 @@ const parseWholeMoneyLike = (value: unknown) =>
 
 export default function NotaListPage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const { user } = useApp();
     const { addToast } = useToast();
     const [items, setItems] = useState<FreightNota[]>([]);
@@ -52,7 +53,7 @@ export default function NotaListPage() {
     const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
     const [company, setCompany] = useState<CompanyProfile | null>(null);
     const [loading, setLoading] = useState(true);
-    const [search, setSearch] = useState('');
+    const [search, setSearch] = useState(searchParams.get('q') || '');
     const [statusFilter, setStatusFilter] = useState('');
     const [page, setPage] = useState(1);
     const [totalInvoices, setTotalInvoices] = useState(0);
@@ -139,6 +140,11 @@ export default function NotaListPage() {
         return allItems;
     }, [buildInvoicesQuery]);
 
+    useEffect(() => {
+        const nextSearch = searchParams.get('q') || '';
+        setSearch(current => (current === nextSearch ? current : nextSearch));
+    }, [searchParams]);
+
     const reloadData = useCallback(async () => {
         setLoading(true);
         const [notaRes, matchingNotas, customerRes, overpaymentRes, bankRes, companyPayload] = await Promise.all([
@@ -205,7 +211,20 @@ export default function NotaListPage() {
         const matchingNotaIds = new Set(
             matchingNotas.map(nota => nota._id).filter((value): value is string => Boolean(value))
         );
+        const normalizedSearch = search.trim().toLowerCase();
+        const matchesOverpaymentSearch = (item: CustomerOverpayment) => {
+            if (!normalizedSearch) return true;
+            return [
+                item.customerName,
+                item.sourceLabel,
+                item.sourceDescription,
+                item.sourceInvoiceNumber,
+                item.sourceReceiptNumber,
+            ].some(value => typeof value === 'string' && value.toLowerCase().includes(normalizedSearch));
+        };
         const matchingOverpayments = (overpaymentRes || []).filter(item => {
+            if (!matchesOverpaymentSearch(item)) return false;
+            if (normalizedSearch) return true;
             if (matchingNotaIds.has(item.sourceInvoiceRef || '')) return true;
             return (
                 matchingCustomerRefs.has(item.customerRef || '')
@@ -229,7 +248,7 @@ export default function NotaListPage() {
         setQueueOverpayments(matchingOverpayments);
         setBankAccounts((bankRes || []).filter(account => account.active !== false));
         setCompany(companyPayload);
-    }, [buildInvoicesQuery, fetchAllMatchingInvoices]);
+    }, [buildInvoicesQuery, fetchAllMatchingInvoices, search]);
 
     useEffect(() => {
         reloadData()
@@ -800,7 +819,7 @@ export default function NotaListPage() {
             <div className="table-container">
                 <div className="table-toolbar">
                     <div className="table-toolbar-left">
-                        <div className="table-search"><Search size={16} className="table-search-icon" /><input placeholder="Cari nota, customer..." value={search} onChange={e => setSearch(e.target.value)} /></div>
+                        <div className="table-search"><Search size={16} className="table-search-icon" /><input placeholder="Cari nota, customer, receipt..." value={search} onChange={e => setSearch(e.target.value)} /></div>
                         <select className="form-select" style={{ width: 'auto', minWidth: 140 }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
                             <option value="">Semua Status</option>
                             {Object.entries(STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
