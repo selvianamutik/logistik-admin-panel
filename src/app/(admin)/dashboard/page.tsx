@@ -338,7 +338,7 @@ export default function DashboardPage() {
                                     {canSeeFinancialTotals && (
                                         <div className="mobile-record-meta">
                                             <div className="mobile-record-kv">
-                                                <span className="mobile-record-label">Tagihan Netto</span>
+                                                <span className="mobile-record-label">Tagihan Final</span>
                                                 <span className="mobile-record-value">{formatCurrency(getDashboardNotaNetAmount(nota))}</span>
                                             </div>
                                         </div>

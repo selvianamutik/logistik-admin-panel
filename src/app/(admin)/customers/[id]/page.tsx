@@ -945,7 +945,7 @@ export default function CustomerDetailPage() {
                             </div>
                             <div className="mobile-record-meta">
                                 <div className="mobile-record-kv">
-                                    <span className="mobile-record-label">Tagihan Netto</span>
+                                    <span className="mobile-record-label">Tagihan Final</span>
                                     <span className="mobile-record-value">{formatCurrency(getReceivableNetAmount(nota))}</span>
                                 </div>
                             </div>

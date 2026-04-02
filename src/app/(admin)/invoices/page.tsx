@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Search, Plus, FileText, Printer, FileDown, Receipt } from 'lucide-react';
@@ -15,7 +16,7 @@ import { buildFreightNotaPrintDocument, openBrandedPrint, openPrintWindow, fetch
 import { exportFreightNotaDetail, exportInvoices } from '@/lib/export';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { BankAccount, CompanyProfile, Customer, CustomerOverpayment, FreightNota, FreightNotaItem, Payment } from '@/lib/types';
-import { hasPermission } from '@/lib/rbac';
+import { hasPageAccess, hasPermission } from '@/lib/rbac';
 
 import { useApp, useToast } from '../layout';
 
@@ -90,6 +91,7 @@ export default function NotaListPage() {
     const canExportInvoices = user ? hasPermission(user.role, 'freightNotas', 'export') : false;
     const canPrintInvoices = user ? hasPermission(user.role, 'freightNotas', 'print') : false;
     const canManageOverpayments = canCreateReceipt;
+    const canOpenCustomers = user ? hasPageAccess(user.role, 'customers') : false;
 
     const buildInvoicesQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
         const params = new URLSearchParams({
@@ -326,6 +328,17 @@ export default function NotaListPage() {
         : receiptMethod === 'CASH'
             ? []
             : bankAccounts;
+
+    const getOverpaymentSourceHref = useCallback((item: CustomerOverpayment) => {
+        if (item.sourceType === 'INVOICE_OVERPAID' && item.sourceInvoiceRef) {
+            return `/invoices/${item.sourceInvoiceRef}`;
+        }
+        const receiptKey = item.sourceReceiptNumber || item.sourceReceiptRef;
+        if (item.sourceType === 'RECEIPT_UNAPPLIED' && receiptKey) {
+            return `/invoices?q=${encodeURIComponent(receiptKey)}`;
+        }
+        return null;
+    }, []);
 
     useEffect(() => {
         if (!showReceiptModal || !receiptCustomerRef) {
@@ -787,10 +800,26 @@ export default function NotaListPage() {
                                         {openOverpayments.map(item => (
                                             <tr key={item._id}>
                                                 <td>
-                                                    <div className="font-semibold">{item.sourceLabel}</div>
+                                                    <div className="font-semibold">
+                                                        {(() => {
+                                                            const sourceHref = getOverpaymentSourceHref(item);
+                                                            if (!sourceHref) return item.sourceLabel;
+                                                            return (
+                                                                <Link href={sourceHref} style={{ color: 'var(--color-primary)', fontWeight: 700 }}>
+                                                                    {item.sourceLabel}
+                                                                </Link>
+                                                            );
+                                                        })()}
+                                                    </div>
                                                     <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{item.sourceDescription}</div>
                                                 </td>
-                                                <td>{item.customerName}</td>
+                                                <td>
+                                                    {item.customerRef && canOpenCustomers ? (
+                                                        <Link href={`/customers/${item.customerRef}`} style={{ color: 'var(--color-primary)', fontWeight: 600 }}>
+                                                            {item.customerName}
+                                                        </Link>
+                                                    ) : item.customerName}
+                                                </td>
                                                 <td>{formatDate(item.detectedDate)}</td>
                                                 <td><span className="badge badge-warning"><span className="badge-dot" /> Belum Ditindaklanjuti</span></td>
                                                 <td>
@@ -936,7 +965,7 @@ export default function NotaListPage() {
                         onPageChange={setPage}
                         info={({ startIndex, endIndex, totalItems }) => (
                             <>
-                                Menampilkan {startIndex}-{endIndex} dari {totalItems} nota. Urutan dimulai dari tagihan yang paling perlu ditindaklanjuti. Total netto terfilter: <strong style={{ color: 'var(--color-danger)' }}>{formatCurrency(grandTotal)}</strong>
+                                Menampilkan {startIndex}-{endIndex} dari {totalItems} nota. Urutan dimulai dari tagihan yang paling perlu ditindaklanjuti. Total tagihan final terfilter: <strong style={{ color: 'var(--color-danger)' }}>{formatCurrency(grandTotal)}</strong>
                             </>
                         )}
                     />
@@ -1116,7 +1145,7 @@ export default function NotaListPage() {
                             ) : (
                                 <div className="table-wrapper" style={{ overflowX: 'auto' }}>
                                     <table style={{ minWidth: 720 }}>
-                                        <thead><tr><th>No. Nota</th><th>Tgl</th><th>Netto</th><th>Sudah Dibayar</th><th>Sisa</th><th>Alokasi Penerimaan</th></tr></thead>
+                                        <thead><tr><th>No. Nota</th><th>Tgl</th><th>Tagihan Final</th><th>Sudah Dibayar</th><th>Sisa</th><th>Alokasi Penerimaan</th></tr></thead>
                                         <tbody>
                                             {receiptOpenNotaItems.map(item => (
                                                 <tr key={item.nota._id}>
