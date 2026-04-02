@@ -1428,12 +1428,18 @@ export async function handleCustomerOverpaymentRefund(
 
         try {
             await transaction.commit();
+            const refundSourceLabel =
+                sourceType === 'RECEIPT_UNAPPLIED'
+                    ? sourceReceiptNumber || sourceReceiptRef || 'penerimaan customer'
+                    : sourceInvoiceNumber || sourceInvoiceRef || 'nota';
             await addAuditLog(
                 session,
                 'CREATE',
                 'customer-overpayment-refunds',
                 refundId,
-                `Refund kelebihan bayar ${amount} dikonfirmasi untuk ${sourceType === 'RECEIPT_UNAPPLIED' ? sourceReceiptNumber || sourceReceiptRef : sourceInvoiceNumber || sourceInvoiceRef}`
+                note
+                    ? `Refund kelebihan bayar ${formatAuditMoney(amount)} untuk ${refundSourceLabel} via ${bankAcc.bankName} - ${note}`
+                    : `Refund kelebihan bayar ${formatAuditMoney(amount)} untuk ${refundSourceLabel} via ${bankAcc.bankName}`
             );
             return NextResponse.json({ success: true, id: refundId });
         } catch (error) {
