@@ -272,7 +272,7 @@ async function sanitizeCompanyInvoiceSettings(
     }
 
     return {
-        name: normalizeOptionalText(input.name) || normalizeOptionalText(existingCompany?.name) || 'Gading Mas Surya',
+        name: normalizeOptionalText(input.name) || normalizeOptionalText(existingCompany?.name) || 'PT Gading Mas Surya',
         address: normalizeOptionalText(input.address) || normalizeOptionalText(existingCompany?.address) || '-',
         phone: normalizeOptionalText(input.phone) || normalizeOptionalText(existingCompany?.phone) || '-',
         email: normalizeOptionalText(input.email) || normalizeOptionalText(existingCompany?.email) || '-',

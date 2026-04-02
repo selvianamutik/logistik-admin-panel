@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
 export const metadata: Metadata = {
-    title: 'Portal Driver - Gading Mas Surya',
+    title: 'Portal Driver - PT Gading Mas Surya',
     description: 'Portal driver untuk update pengiriman, lokasi live, dan status trip.',
 };
 

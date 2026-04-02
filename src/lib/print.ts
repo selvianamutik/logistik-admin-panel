@@ -50,7 +50,7 @@ export function resolveDocumentIssuerProfile(
     }
 
     return {
-        name: resolvedName || 'Gading Mas Surya',
+        name: resolvedName || 'PT Gading Mas Surya',
         address: resolvedAddress || '-',
         phone: resolvedPhone || '-',
         email: resolvedEmail || '-',
@@ -183,7 +183,7 @@ export function openBrandedPrint(opts: {
     } = opts;
     void _targetWindow;
 
-    const companyName = company?.name || 'Gading Mas Surya';
+    const companyName = company?.name || 'PT Gading Mas Surya';
     const companyLogo = resolveCompanyLogoUrl(company);
     const printDate = formatBusinessDate(new Date(), 'id-ID', {
         day: '2-digit',
@@ -305,7 +305,7 @@ export function resolveFreightNotaIssuerProfile(
     const resolvedIssuer = resolveDocumentIssuerProfile(nota, company);
 
     return {
-        name: resolvedIssuer?.name || 'Gading Mas Surya',
+        name: resolvedIssuer?.name || 'PT Gading Mas Surya',
         address: resolvedIssuer?.address || '',
         phone: resolvedIssuer?.phone || '',
         email: resolvedIssuer?.email || '',

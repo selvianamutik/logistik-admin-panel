@@ -60,7 +60,7 @@ export default function DriverLoginPage() {
                     <div className="login-logo login-logo--image" style={{ position: 'relative' }}>
                         <Image
                             src={DEFAULT_COMPANY_LOGO_URL}
-                            alt="Logo Gading Mas Surya"
+                            alt="Logo PT Gading Mas Surya"
                             width={56}
                             height={56}
                             className="login-logo-image"

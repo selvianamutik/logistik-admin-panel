@@ -1,4 +1,4 @@
-# Gading Mas Surya - Admin Panel
+# PT Gading Mas Surya - Admin Panel
 
 Sistem manajemen logistik berbasis web untuk operasional pengiriman, penagihan, kas/bank, armada, dan tracking driver.
 
@@ -58,7 +58,7 @@ Dataset demo saat ini mencakup kondisi:
 - maintenance, insiden, tracking log, mutasi rekening, kas tunai, dan laporan
 
 Profil perusahaan demo:
-- Nama: `Gading Mas Surya`
+- Nama: `PT Gading Mas Surya`
 - Alamat: `JL. KEMANTREN 08 - KEC. TULANGAN, KAB. SIDOARJO - JATIM - INDONESIA`
 - Telepon: `(031) 8853000`
 - Email: `gadingmassurya@gmail.com`

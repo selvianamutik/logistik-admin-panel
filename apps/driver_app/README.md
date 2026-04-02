@@ -1,6 +1,6 @@
 # GMS Driver
 
-App driver untuk operasional Gading Mas Surya.
+App driver untuk operasional PT Gading Mas Surya.
 
 ## Android Release Signing
 

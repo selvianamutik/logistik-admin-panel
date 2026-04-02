@@ -278,7 +278,7 @@ export async function exportToExcel(
 
     const title = options.title || sheetName;
     if (options.showCompanyHeader !== false) {
-        addMergedRow(company?.name || 'Gading Mas Surya');
+        addMergedRow(company?.name || 'PT Gading Mas Surya');
     }
     addMergedRow(title);
     if (options.subtitle) addMergedRow(options.subtitle);
@@ -341,8 +341,8 @@ export async function exportToExcel(
     }
 
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = company?.name || 'Gading Mas Surya';
-    workbook.company = company?.name || 'Gading Mas Surya';
+    workbook.creator = company?.name || 'PT Gading Mas Surya';
+    workbook.company = company?.name || 'PT Gading Mas Surya';
     workbook.created = new Date();
     workbook.modified = new Date();
     workbook.subject = options.subtitle || sheetName;
