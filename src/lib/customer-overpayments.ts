@@ -122,6 +122,7 @@ export function buildCustomerOverpaymentCases(params: {
     paymentTotalsByInvoice: Record<string, number>;
     invoiceRefundsByRef: Record<string, number>;
     receiptRefundsByRef: Record<string, number>;
+    invoiceDetectedDatesByRef?: Record<string, string>;
 }) {
     const receiptCases = params.receipts.reduce<CustomerOverpayment[]>((acc, receipt) => {
             const rawAmount = parseWholeMoneyLike(receipt.unappliedAmount);
@@ -163,7 +164,7 @@ export function buildCustomerOverpaymentCases(params: {
                 customerName: nota.customerName || '-',
                 sourceInvoiceRef: nota._id,
                 sourceInvoiceNumber: nota.notaNumber,
-                detectedDate: nota.issueDate || '',
+                detectedDate: params.invoiceDetectedDatesByRef?.[nota._id] || nota.issueDate || '',
                 amount: rawOverpaymentAmount,
                 refundedAmount,
                 remainingAmount,
