@@ -22,6 +22,7 @@ export type TireFormState = {
     status: TireAssetStatus;
     vehicleRef: string;
     slotCode: string;
+    linkedWarehouseItemRef: string;
     tireType: 'Tubeless' | 'Tube Type' | 'Solid';
     tireBrand: string;
     tireSize: string;
@@ -63,6 +64,7 @@ export function createDefaultTireForm(): TireFormState {
         status: 'IN_USE',
         vehicleRef: '',
         slotCode: '1L',
+        linkedWarehouseItemRef: '',
         tireType: 'Tubeless',
         tireBrand: '',
         tireSize: '',
@@ -132,7 +134,7 @@ export function buildTiresQuery(params: {
 
     if (params.search?.trim()) {
         query.set('q', params.search.trim());
-        query.set('searchFields', 'tireCode,tireBrand,tireSize,vehiclePlate,notes,externalPartyName,externalPlateNumber,slotCode,slotLabel,posisi');
+        query.set('searchFields', 'tireCode,tireBrand,tireSize,vehiclePlate,notes,externalPartyName,externalPlateNumber,slotCode,slotLabel,posisi,linkedWarehouseItemCode,linkedWarehouseItemName,sourcePurchaseNumber');
     }
 
     const filterObj: Record<string, string> = {};

@@ -366,7 +366,7 @@ export function buildTirePlacementLabel(input: {
     const target = input.externalPartyName || input.externalPlateNumber || 'Pihak luar';
     return input.externalPlateNumber ? `${target} (${input.externalPlateNumber})` : target;
   }
-  return 'Gudang / stok';
+  return 'Gudang Ban';
 }
 
 export function resolveTirePlacementLabel(input: {

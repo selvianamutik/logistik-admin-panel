@@ -3,6 +3,7 @@ import type {
   CustomerOverpaymentRefund,
   Expense,
   Payment,
+  Purchase,
 } from "./types";
 
 export type BankTransactionSourceLink = {
@@ -16,6 +17,7 @@ type TransactionLinkPermissions = {
   canOpenDriverBorongans?: boolean;
   canOpenVehicles?: boolean;
   canOpenIncidents?: boolean;
+  canOpenPurchases?: boolean;
 };
 
 export function buildPaymentLookup(
@@ -46,6 +48,12 @@ export function buildExpenseLookup(
   return new Map(expenses.map((expense) => [expense._id, expense]));
 }
 
+export function buildPurchaseLookup(
+  purchases: Array<Pick<Purchase, "_id" | "purchaseNumber" | "supplierName">>,
+) {
+  return new Map(purchases.map((purchase) => [purchase._id, purchase]));
+}
+
 export function resolveBankTransactionSourceLink(params: {
   transaction: Pick<
     BankTransaction,
@@ -53,6 +61,7 @@ export function resolveBankTransactionSourceLink(params: {
     | "relatedExpenseRef"
     | "relatedVoucherRef"
     | "relatedOverpaymentRefundRef"
+    | "relatedPurchaseRef"
   >;
   paymentsById?: Map<string, Pick<Payment, "_id" | "invoiceRef" | "receiptNumber">>;
   refundsById?: Map<
@@ -69,6 +78,10 @@ export function resolveBankTransactionSourceLink(params: {
       "_id" | "voucherRef" | "boronganRef" | "relatedVehicleRef" | "relatedIncidentRef"
     >
   >;
+  purchasesById?: Map<
+    string,
+    Pick<Purchase, "_id" | "purchaseNumber" | "supplierName">
+  >;
   invoiceIdsWithPages?: Set<string>;
   permissions?: TransactionLinkPermissions;
 }): BankTransactionSourceLink | null {
@@ -77,6 +90,7 @@ export function resolveBankTransactionSourceLink(params: {
     paymentsById,
     refundsById,
     expensesById,
+    purchasesById,
     invoiceIdsWithPages,
     permissions,
   } = params;
@@ -130,6 +144,20 @@ export function resolveBankTransactionSourceLink(params: {
     return {
       href: `/driver-vouchers/${transaction.relatedVoucherRef}`,
       label: "Buka Uang Jalan Trip",
+    };
+  }
+
+  if (
+    transaction.relatedPurchaseRef &&
+    purchasesById?.has(transaction.relatedPurchaseRef) &&
+    permissions?.canOpenPurchases
+  ) {
+    const purchase = purchasesById.get(transaction.relatedPurchaseRef);
+    return {
+      href: `/inventory/purchases/${transaction.relatedPurchaseRef}`,
+      label: purchase?.purchaseNumber
+        ? `Buka ${purchase.purchaseNumber}`
+        : "Buka Pembelian Supplier",
     };
   }
 

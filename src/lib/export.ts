@@ -6,6 +6,7 @@
 import ExcelJS from 'exceljs';
 import { resolveCompanyLogoUrl } from './branding';
 import { formatBusinessDateTime, getBusinessDateValue } from './business-date';
+import { EMPLOYEE_ATTENDANCE_STATUS_LABELS } from './employee-attendance';
 import {
     formatFreightNotaDisplayWeight,
     getFreightNotaRateColumnLabel,
@@ -23,7 +24,7 @@ import {
     resolveInvoiceInstructionAccounts,
     type InvoiceInstructionAccount,
 } from './print';
-import type { CompanyProfile, FreightNota, FreightNotaItem } from './types';
+import type { CompanyProfile, EmployeeAttendanceRecord, FreightNota, FreightNotaItem } from './types';
 import { parseFormattedNumberish } from './formatted-number';
 import { getReceivableNetAmount } from './utils';
 
@@ -56,6 +57,35 @@ interface ExportOptions {
     emptyMessage?: string;
     showCompanyHeader?: boolean;
     includeRowCount?: boolean;
+}
+
+interface EmployeeAttendanceExportSummary {
+    periodLabel: string;
+    startDate: string;
+    endDate: string;
+    activeEmployeeCount: number;
+    recordedEmployeeCount: number;
+    unrecordedEmployeeCount: number;
+    totalRecords: number;
+    presentCount: number;
+    permissionCount: number;
+    sickCount: number;
+    leaveCount: number;
+    absentCount: number;
+    offCount: number;
+    pendingEmployees: Array<{
+        employeeCode?: string;
+        name?: string;
+        division?: string;
+        position?: string;
+    }>;
+}
+
+interface EmployeeAttendanceExportFilters {
+    search?: string;
+    statusLabel?: string;
+    employeeLabel?: string;
+    anchorDate?: string;
 }
 
 interface MergeRange {
@@ -251,6 +281,77 @@ async function addCompanyLogoToWorksheet(
     return true;
 }
 
+function applyAttendanceSectionHeading(
+    worksheet: ExcelJS.Worksheet,
+    rowNumber: number,
+    totalColumns: number,
+    label: string,
+) {
+    worksheet.mergeCells(rowNumber, 1, rowNumber, totalColumns);
+    const cell = worksheet.getRow(rowNumber).getCell(1);
+    cell.value = label;
+    cell.font = { bold: true, size: 12, color: { argb: 'FF1F2937' } };
+    cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFEFF6FF' },
+    };
+    cell.alignment = { vertical: 'middle', horizontal: 'left' };
+    worksheet.getRow(rowNumber).height = 22;
+}
+
+function applyAttendanceTableHeaderStyle(row: ExcelJS.Row) {
+    row.font = { bold: true, color: { argb: 'FF111827' } };
+    row.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    row.eachCell((cell) => {
+        cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFE5E7EB' },
+        };
+        cell.border = {
+            top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+            left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+            bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+            right: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+        };
+    });
+}
+
+function applyAttendanceBodyBorder(row: ExcelJS.Row) {
+    row.eachCell((cell) => {
+        cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+        };
+        cell.alignment = { vertical: 'top', wrapText: true };
+    });
+}
+
+function applyAttendanceKeyValueStyle(labelCell: ExcelJS.Cell, valueCell: ExcelJS.Cell) {
+    labelCell.font = { bold: true, color: { argb: 'FF374151' } };
+    labelCell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFF9FAFB' },
+    };
+    labelCell.border = {
+        top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+        left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+        bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+        right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+    };
+    valueCell.border = {
+        top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+        left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+        bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+        right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+    };
+    valueCell.alignment = { vertical: 'middle', wrapText: true };
+}
+
 export async function exportToExcel(
     data: Record<string, unknown>[],
     columns: ExportColumn[],
@@ -390,6 +491,221 @@ export async function exportToExcel(
             assignCellValue(worksheet, totalRowIndex, colIndex, value, column);
         });
     }
+
+    await downloadWorkbook(workbook, filename);
+}
+
+export async function exportEmployeeAttendanceReport(input: {
+    records: EmployeeAttendanceRecord[];
+    summary: EmployeeAttendanceExportSummary;
+    filters: EmployeeAttendanceExportFilters;
+    filename?: string;
+    company?: CompanyProfile | null;
+}) {
+    const company = input.company ?? await fetchCompanyProfile();
+    const workbook = new ExcelJS.Workbook();
+    const filename = input.filename || `absensi-${getBusinessDateValue()}`;
+    const rangeLabel = input.summary.startDate === input.summary.endDate
+        ? fmtDate(input.summary.startDate)
+        : `${fmtDate(input.summary.startDate)} s/d ${fmtDate(input.summary.endDate)}`;
+    const searchLabel = input.filters.search?.trim() || '-';
+    const statusLabel = input.filters.statusLabel || 'Semua Status';
+    const employeeLabel = input.filters.employeeLabel || 'Semua Karyawan';
+    const anchorLabel = input.filters.anchorDate ? fmtDate(input.filters.anchorDate) : fmtDate(getBusinessDateValue());
+
+    workbook.creator = company?.name || 'PT Gading Mas Surya';
+    workbook.company = company?.name || 'PT Gading Mas Surya';
+    workbook.created = new Date();
+    workbook.modified = new Date();
+    workbook.subject = `Laporan Absensi ${input.summary.periodLabel}`;
+    workbook.title = `Absensi ${input.summary.periodLabel}`;
+
+    const summarySheet = workbook.addWorksheet(sanitizeSheetName('Ringkasan Absensi'));
+    summarySheet.columns = [
+        { width: 24 },
+        { width: 26 },
+        { width: 24 },
+        { width: 26 },
+    ];
+
+    summarySheet.mergeCells('A1:D1');
+    summarySheet.getCell('A1').value = company?.name || 'PT Gading Mas Surya';
+    summarySheet.getCell('A1').font = { bold: true, size: 16, color: { argb: 'FF111827' } };
+
+    summarySheet.mergeCells('A2:D2');
+    summarySheet.getCell('A2').value = 'Laporan Absensi Karyawan';
+    summarySheet.getCell('A2').font = { bold: true, size: 13, color: { argb: 'FF1F2937' } };
+
+    summarySheet.mergeCells('A3:D3');
+    summarySheet.getCell('A3').value = `Diekspor: ${timestampLabel()}`;
+    summarySheet.getCell('A3').font = { italic: true, size: 10, color: { argb: 'FF6B7280' } };
+
+    await addCompanyLogoToWorksheet(workbook, summarySheet, company, {
+        col: 3.1,
+        row: 0.15,
+        width: 124,
+        height: 54,
+    });
+
+    applyAttendanceSectionHeading(summarySheet, 5, 4, 'Filter dan Periode');
+    const filterRows: Array<[string, ExportValue, string, ExportValue]> = [
+        ['Periode', input.summary.periodLabel, 'Tanggal Acuan', anchorLabel],
+        ['Rentang Tanggal', rangeLabel, 'Status', statusLabel],
+        ['Karyawan', employeeLabel, 'Pencarian', searchLabel],
+    ];
+
+    let currentRow = 6;
+    filterRows.forEach(([labelA, valueA, labelB, valueB]) => {
+        summarySheet.getCell(`A${currentRow}`).value = labelA;
+        summarySheet.getCell(`B${currentRow}`).value = valueA;
+        summarySheet.getCell(`C${currentRow}`).value = labelB;
+        summarySheet.getCell(`D${currentRow}`).value = valueB;
+        applyAttendanceKeyValueStyle(summarySheet.getCell(`A${currentRow}`), summarySheet.getCell(`B${currentRow}`));
+        applyAttendanceKeyValueStyle(summarySheet.getCell(`C${currentRow}`), summarySheet.getCell(`D${currentRow}`));
+        currentRow += 1;
+    });
+
+    currentRow += 1;
+    applyAttendanceSectionHeading(summarySheet, currentRow, 4, 'Rekap Periode');
+    currentRow += 1;
+    const recapRows: Array<[string, number, string, number]> = [
+        ['Karyawan Aktif', input.summary.activeEmployeeCount, 'Tercatat', input.summary.recordedEmployeeCount],
+        ['Belum Tercatat', input.summary.unrecordedEmployeeCount, 'Total Record', input.summary.totalRecords],
+        ['Hadir', input.summary.presentCount, 'Izin', input.summary.permissionCount],
+        ['Sakit', input.summary.sickCount, 'Cuti', input.summary.leaveCount],
+        ['Alpha', input.summary.absentCount, 'Libur', input.summary.offCount],
+    ];
+    recapRows.forEach(([labelA, valueA, labelB, valueB]) => {
+        summarySheet.getCell(`A${currentRow}`).value = labelA;
+        summarySheet.getCell(`B${currentRow}`).value = valueA;
+        summarySheet.getCell(`C${currentRow}`).value = labelB;
+        summarySheet.getCell(`D${currentRow}`).value = valueB;
+        applyAttendanceKeyValueStyle(summarySheet.getCell(`A${currentRow}`), summarySheet.getCell(`B${currentRow}`));
+        applyAttendanceKeyValueStyle(summarySheet.getCell(`C${currentRow}`), summarySheet.getCell(`D${currentRow}`));
+        currentRow += 1;
+    });
+
+    if (input.summary.pendingEmployees.length > 0) {
+        currentRow += 1;
+        applyAttendanceSectionHeading(summarySheet, currentRow, 4, 'Karyawan Belum Tercatat');
+        currentRow += 1;
+        const pendingHeader = summarySheet.getRow(currentRow);
+        pendingHeader.values = ['Kode', 'Nama', 'Divisi', 'Jabatan'];
+        applyAttendanceTableHeaderStyle(pendingHeader);
+        currentRow += 1;
+
+        input.summary.pendingEmployees.forEach((employee) => {
+            const row = summarySheet.getRow(currentRow);
+            row.values = [
+                employee.employeeCode || '-',
+                employee.name || '-',
+                employee.division || '-',
+                employee.position || '-',
+            ];
+            applyAttendanceBodyBorder(row);
+            currentRow += 1;
+        });
+    }
+
+    summarySheet.views = [{ state: 'frozen', ySplit: 5 }];
+
+    const detailSheet = workbook.addWorksheet(sanitizeSheetName('Detail Absensi'));
+    detailSheet.columns = [
+        { key: 'date', width: 16 },
+        { key: 'employeeCode', width: 16 },
+        { key: 'employeeName', width: 26 },
+        { key: 'division', width: 18 },
+        { key: 'position', width: 22 },
+        { key: 'status', width: 14 },
+        { key: 'checkInTime', width: 12 },
+        { key: 'checkOutTime', width: 12 },
+        { key: 'note', width: 30 },
+        { key: 'updatedAt', width: 22 },
+        { key: 'updatedByName', width: 20 },
+    ];
+
+    detailSheet.addRow([
+        `Laporan Absensi ${input.summary.periodLabel}`,
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+    ]);
+    detailSheet.mergeCells(1, 1, 1, 11);
+    detailSheet.getCell('A1').font = { bold: true, size: 14, color: { argb: 'FF111827' } };
+
+    detailSheet.addRow([
+        `Rentang: ${rangeLabel} | Status: ${statusLabel} | Karyawan: ${employeeLabel} | Cari: ${searchLabel}`,
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+    ]);
+    detailSheet.mergeCells(2, 1, 2, 11);
+    detailSheet.getCell('A2').font = { size: 10, color: { argb: 'FF4B5563' } };
+
+    const detailHeaderRow = detailSheet.addRow([
+        'Tanggal',
+        'Kode Karyawan',
+        'Nama Karyawan',
+        'Divisi',
+        'Jabatan',
+        'Status',
+        'Jam Masuk',
+        'Jam Pulang',
+        'Catatan',
+        'Input Terakhir',
+        'Diubah Oleh',
+    ]);
+    applyAttendanceTableHeaderStyle(detailHeaderRow);
+
+    if (input.records.length === 0) {
+        const emptyRow = detailSheet.addRow(['Tidak ada data absensi untuk periode ini']);
+        detailSheet.mergeCells(emptyRow.number, 1, emptyRow.number, 11);
+        emptyRow.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
+    } else {
+        input.records.forEach((record) => {
+            const row = detailSheet.addRow([
+                fmtDate(record.date),
+                record.employeeCode || '-',
+                record.employeeName || '-',
+                record.division || '-',
+                record.position || '-',
+                EMPLOYEE_ATTENDANCE_STATUS_LABELS[record.status] || record.status,
+                record.checkInTime || '-',
+                record.checkOutTime || '-',
+                record.note || '-',
+                record.updatedAt ? formatBusinessDateTime(record.updatedAt, 'id-ID', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: undefined,
+                }).replace(/\./g, ':') : '-',
+                record.updatedByName || record.createdByName || '-',
+            ]);
+            applyAttendanceBodyBorder(row);
+        });
+    }
+
+    detailSheet.views = [{ state: 'frozen', ySplit: 3 }];
+    detailSheet.autoFilter = {
+        from: { row: 3, column: 1 },
+        to: { row: Math.max(3, input.records.length + 3), column: 11 },
+    };
 
     await downloadWorkbook(workbook, filename);
 }

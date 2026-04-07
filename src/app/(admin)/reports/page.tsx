@@ -16,6 +16,7 @@ import { fetchAdminData, fetchAllAdminCollectionData } from "@/lib/api/admin-cli
 import {
   buildExpenseLookup,
   buildPaymentLookup,
+  buildPurchaseLookup,
   buildRefundLookup,
   resolveBankTransactionSourceLink,
 } from "@/lib/bank-transaction-links";
@@ -47,6 +48,7 @@ import type {
   Expense,
   FreightNota,
   Payment,
+  Purchase,
 } from "@/lib/types";
 import { hasPageAccess } from "@/lib/rbac";
 
@@ -59,6 +61,7 @@ export default function ReportsPage() {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [overpaymentRefunds, setOverpaymentRefunds] = useState<CustomerOverpaymentRefund[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [freightNotas, setFreightNotas] = useState<FreightNota[]>([]);
   const [driverVouchers, setDriverVouchers] = useState<DriverVoucher[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
@@ -74,6 +77,7 @@ export default function ReportsPage() {
   const canOpenDriverBorongans = user ? hasPageAccess(user.role, "driverBorongans") : false;
   const canOpenVehicles = user ? hasPageAccess(user.role, "vehicles") : false;
   const canOpenIncidents = user ? hasPageAccess(user.role, "incidents") : false;
+  const canOpenPurchases = user ? hasPageAccess(user.role, "purchases") : false;
 
   const businessToday = getBusinessCalendarDateParts() || {
     year: String(new Date().getFullYear()),
@@ -106,11 +110,12 @@ export default function ReportsPage() {
   useEffect(() => {
     async function loadReportData() {
       try {
-        const [pay, refunds, exp, nota, vouchers, banks, txs, companyProfile] =
+        const [pay, refunds, exp, purchaseRows, nota, vouchers, banks, txs, companyProfile] =
           await Promise.all([
             fetchAllAdminCollectionData<Payment>("/api/data?entity=payments", "Gagal memuat payments"),
             fetchAllAdminCollectionData<CustomerOverpaymentRefund>("/api/data?entity=customer-overpayment-refunds", "Gagal memuat refund kelebihan bayar"),
             fetchAllAdminCollectionData<Expense>("/api/data?entity=expenses", "Gagal memuat expenses"),
+            fetchAllAdminCollectionData<Purchase>("/api/data?entity=purchases", "Gagal memuat pembelian"),
             fetchAllAdminCollectionData<FreightNota>("/api/data?entity=freight-notas", "Gagal memuat freight-notas"),
             fetchAllAdminCollectionData<DriverVoucher>("/api/data?entity=driver-vouchers", "Gagal memuat driver-vouchers"),
             fetchAllAdminCollectionData<BankAccount>("/api/data?entity=bank-accounts", "Gagal memuat bank-accounts"),
@@ -120,6 +125,7 @@ export default function ReportsPage() {
         setPayments(pay || []);
         setOverpaymentRefunds(refunds || []);
         setExpenses(exp || []);
+        setPurchases(purchaseRows || []);
         setFreightNotas(nota || []);
         setDriverVouchers(vouchers || []);
         setAllBankAccounts(banks || []);
@@ -178,6 +184,7 @@ export default function ReportsPage() {
     [overpaymentRefunds],
   );
   const expensesById = useMemo(() => buildExpenseLookup(expenses), [expenses]);
+  const purchasesById = useMemo(() => buildPurchaseLookup(purchases), [purchases]);
   const invoiceIdsWithPages = useMemo(
     () => new Set(freightNotas.map((nota) => nota._id)),
     [freightNotas],
@@ -1154,6 +1161,7 @@ export default function ReportsPage() {
                         paymentsById,
                         refundsById,
                         expensesById,
+                        purchasesById,
                         invoiceIdsWithPages,
                         permissions: {
                           canOpenInvoices,
@@ -1161,6 +1169,7 @@ export default function ReportsPage() {
                           canOpenDriverBorongans,
                           canOpenVehicles,
                           canOpenIncidents,
+                          canOpenPurchases,
                         },
                       });
                       return (
@@ -1254,6 +1263,7 @@ export default function ReportsPage() {
                     paymentsById,
                     refundsById,
                     expensesById,
+                    purchasesById,
                     invoiceIdsWithPages,
                     permissions: {
                       canOpenInvoices,
@@ -1261,6 +1271,7 @@ export default function ReportsPage() {
                       canOpenDriverBorongans,
                       canOpenVehicles,
                       canOpenIncidents,
+                      canOpenPurchases,
                     },
                   });
                   return (

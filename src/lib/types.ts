@@ -36,6 +36,50 @@ export interface SessionUser {
   driverName?: string;
 }
 
+export interface Employee {
+  _id: string;
+  _type: 'employee';
+  employeeCode: string;
+  name: string;
+  phone?: string;
+  position?: string;
+  division?: string;
+  joinDate?: string;
+  active: boolean;
+  userRef?: string;
+  userName?: string;
+  notes?: string;
+}
+
+export type EmployeeAttendanceStatus =
+  | 'HADIR'
+  | 'IZIN'
+  | 'SAKIT'
+  | 'CUTI'
+  | 'ALPHA'
+  | 'LIBUR';
+
+export interface EmployeeAttendanceRecord {
+  _id: string;
+  _type: 'employeeAttendanceRecord';
+  employeeRef: string;
+  employeeCode?: string;
+  employeeName?: string;
+  position?: string;
+  division?: string;
+  date: string;
+  status: EmployeeAttendanceStatus;
+  checkInTime?: string;
+  checkOutTime?: string;
+  note?: string;
+  createdBy?: string;
+  createdByName?: string;
+  updatedBy?: string;
+  updatedByName?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 // ── Company Profile ──
 export interface CompanyProfile {
   _id: string;
@@ -155,6 +199,149 @@ export interface CustomerPickupLocation {
   notes?: string;
   active: boolean;
   isDefault?: boolean;
+}
+
+// ── Supplier & Inventory ──
+export interface Supplier {
+  _id: string;
+  _type: 'supplier';
+  supplierCode: string;
+  name: string;
+  contactPerson?: string;
+  phone?: string;
+  address?: string;
+  defaultTermDays?: number;
+  active: boolean;
+  notes?: string;
+}
+
+export type InventoryUnit =
+  | 'PCS'
+  | 'UNIT'
+  | 'BOX'
+  | 'SET'
+  | 'ROLL'
+  | 'KG'
+  | 'LITER'
+  | 'METER';
+
+export type WarehouseItemTrackingMode = 'STANDARD' | 'TIRE_ASSET';
+
+export interface WarehouseItem {
+  _id: string;
+  _type: 'warehouseItem';
+  itemCode: string;
+  name: string;
+  category?: string;
+  unit: InventoryUnit;
+  trackingMode?: WarehouseItemTrackingMode;
+  minStockQty?: number;
+  currentStockQty?: number;
+  defaultSupplierRef?: string;
+  defaultSupplierName?: string;
+  defaultPurchasePrice?: number;
+  tireTypeDefault?: TireEvent['tireType'];
+  tireBrandDefault?: string;
+  tireSizeDefault?: string;
+  active: boolean;
+  notes?: string;
+}
+
+export type PurchaseStatus =
+  | 'ORDERED'
+  | 'PARTIALLY_RECEIVED'
+  | 'RECEIVED'
+  | 'PARTIALLY_PAID'
+  | 'PAID'
+  | 'CANCELLED';
+
+export interface Purchase {
+  _id: string;
+  _type: 'purchase';
+  purchaseNumber: string;
+  supplierRef: string;
+  supplierName?: string;
+  orderDate: string;
+  dueDate?: string;
+  status: PurchaseStatus;
+  notes?: string;
+  totalAmount?: number;
+  totalOrderedQty?: number;
+  totalReceivedQty?: number;
+  paidAmount?: number;
+  outstandingAmount?: number;
+  lineCount?: number;
+  lastReceivedAt?: string;
+  lastPaidAt?: string;
+  createdBy?: string;
+  createdByName?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface PurchaseItem {
+  _id: string;
+  _type: 'purchaseItem';
+  purchaseRef: string;
+  warehouseItemRef: string;
+  itemCode?: string;
+  itemName?: string;
+  itemUnit?: InventoryUnit;
+  trackingMode?: WarehouseItemTrackingMode;
+  tireTypeDefault?: TireEvent['tireType'];
+  tireBrandDefault?: string;
+  tireSizeDefault?: string;
+  orderedQty: number;
+  receivedQty?: number;
+  unitPrice: number;
+  subtotal: number;
+  notes?: string;
+}
+
+export interface PurchasePayment {
+  _id: string;
+  _type: 'purchasePayment';
+  purchaseRef: string;
+  purchaseNumber?: string;
+  supplierRef?: string;
+  supplierName?: string;
+  date: string;
+  amount: number;
+  bankAccountRef: string;
+  bankAccountName?: string;
+  bankAccountNumber?: string;
+  bankTransactionRef?: string;
+  note?: string;
+  createdBy?: string;
+  createdByName?: string;
+}
+
+export type StockMovementType = 'IN' | 'OUT' | 'ADJUSTMENT';
+export type StockMovementSourceType =
+  | 'PURCHASE_RECEIPT'
+  | 'MANUAL_IN'
+  | 'MANUAL_OUT'
+  | 'ADJUSTMENT'
+  | 'TIRE_DEPLOYMENT'
+  | 'TIRE_RETURN';
+
+export interface StockMovement {
+  _id: string;
+  _type: 'stockMovement';
+  warehouseItemRef: string;
+  itemCode?: string;
+  itemName?: string;
+  unit?: InventoryUnit;
+  movementDate: string;
+  type: StockMovementType;
+  sourceType: StockMovementSourceType;
+  sourceRef?: string;
+  sourceNumber?: string;
+  quantity: number;
+  balanceAfter?: number;
+  note?: string;
+  createdBy?: string;
+  createdByName?: string;
 }
 
 export interface TripRouteRate {
@@ -832,6 +1019,13 @@ export interface TireEvent {
   tireType: 'Tubeless' | 'Tube Type' | 'Solid';
   tireBrand: string;
   tireSize: string;
+  linkedWarehouseItemRef?: string;
+  linkedWarehouseItemCode?: string;
+  linkedWarehouseItemName?: string;
+  sourcePurchaseRef?: string;
+  sourcePurchaseNumber?: string;
+  sourcePurchaseItemRef?: string;
+  sourceReceiveDate?: string;
   installDate: string;
   replaceDate?: string;
   notes?: string;
@@ -963,6 +1157,8 @@ export interface BankTransaction {
   relatedTransferRef?: string;
   relatedVoucherRef?: string;
   relatedOverpaymentRefundRef?: string;
+  relatedPurchasePaymentRef?: string;
+  relatedPurchaseRef?: string;
   _createdAt?: string;
 }
 

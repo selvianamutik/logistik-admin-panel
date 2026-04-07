@@ -12,13 +12,14 @@ import { formatBusinessDate, getBusinessDateValue } from '@/lib/business-date';
 import {
     buildExpenseLookup,
     buildPaymentLookup,
+    buildPurchaseLookup,
     buildRefundLookup,
     resolveBankTransactionSourceLink,
 } from '@/lib/bank-transaction-links';
 import { exportToExcel } from '@/lib/export';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { fetchCompanyProfile, openBrandedPrint, openPrintWindow } from '@/lib/print';
-import type { BankAccount, BankTransaction, CompanyProfile, CustomerOverpaymentRefund, Expense, FreightNota, Payment } from '@/lib/types';
+import type { BankAccount, BankTransaction, CompanyProfile, CustomerOverpaymentRefund, Expense, FreightNota, Payment, Purchase } from '@/lib/types';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
 
 const BANK_LOGOS: Record<string, { logo: string; color: string; gradient: string }> = {
@@ -70,6 +71,7 @@ export default function BankAccountDetailPage() {
     const [relatedPayments, setRelatedPayments] = useState<Array<Pick<Payment, '_id' | 'invoiceRef' | 'receiptNumber'>>>([]);
     const [relatedRefunds, setRelatedRefunds] = useState<Array<Pick<CustomerOverpaymentRefund, '_id' | 'sourceInvoiceRef' | 'sourceReceiptRef' | 'sourceReceiptNumber' | 'sourceType'>>>([]);
     const [relatedExpenses, setRelatedExpenses] = useState<Array<Pick<Expense, '_id' | 'voucherRef' | 'boronganRef' | 'relatedVehicleRef' | 'relatedIncidentRef'>>>([]);
+    const [relatedPurchases, setRelatedPurchases] = useState<Array<Pick<Purchase, '_id' | 'purchaseNumber' | 'supplierName'>>>([]);
     const [relatedFreightNotas, setRelatedFreightNotas] = useState<Array<Pick<FreightNota, '_id'>>>([]);
     const [company, setCompany] = useState<CompanyProfile | null>(null);
     const [loading, setLoading] = useState(true);
@@ -80,10 +82,12 @@ export default function BankAccountDetailPage() {
     const canOpenDriverBorongans = user ? hasPageAccess(user.role, 'driverBorongans') : false;
     const canOpenVehicles = user ? hasPageAccess(user.role, 'vehicles') : false;
     const canOpenIncidents = user ? hasPageAccess(user.role, 'incidents') : false;
+    const canOpenPurchases = user ? hasPageAccess(user.role, 'purchases') : false;
 
     const paymentsById = useMemo(() => buildPaymentLookup(relatedPayments), [relatedPayments]);
     const refundsById = useMemo(() => buildRefundLookup(relatedRefunds), [relatedRefunds]);
     const expensesById = useMemo(() => buildExpenseLookup(relatedExpenses), [relatedExpenses]);
+    const purchasesById = useMemo(() => buildPurchaseLookup(relatedPurchases), [relatedPurchases]);
     const invoiceIdsWithPages = useMemo(() => new Set(relatedFreightNotas.map(nota => nota._id)), [relatedFreightNotas]);
 
     useEffect(() => {
@@ -133,6 +137,10 @@ export default function BankAccountDetailPage() {
                     'expenses',
                     (transactionData || []).map(transaction => transaction.relatedExpenseRef || '')
                 );
+                const purchaseRows = await fetchEntityByIds<Pick<Purchase, '_id' | 'purchaseNumber' | 'supplierName'>>(
+                    'purchases',
+                    (transactionData || []).map(transaction => transaction.relatedPurchaseRef || '')
+                );
                 const freightNotaRows = await fetchEntityByIds<Pick<FreightNota, '_id'>>(
                     'freight-notas',
                     [
@@ -151,6 +159,7 @@ export default function BankAccountDetailPage() {
                 setRelatedPayments(paymentRows);
                 setRelatedRefunds(refundRows);
                 setRelatedExpenses(expenseRows);
+                setRelatedPurchases(purchaseRows);
                 setRelatedFreightNotas(freightNotaRows);
                 setCompany(companyData || null);
             } catch (error) {
@@ -353,17 +362,19 @@ export default function BankAccountDetailPage() {
                                 const sourceLink = resolveBankTransactionSourceLink({
                                     transaction: tx,
                                     paymentsById,
-                                    refundsById,
-                                    expensesById,
-                                    invoiceIdsWithPages,
-                                    permissions: {
-                                        canOpenInvoices,
-                                        canOpenDriverVouchers,
-                                        canOpenDriverBorongans,
-                                        canOpenVehicles,
-                                        canOpenIncidents,
-                                    },
-                                });
+                        refundsById,
+                        expensesById,
+                        purchasesById,
+                        invoiceIdsWithPages,
+                        permissions: {
+                          canOpenInvoices,
+                          canOpenDriverVouchers,
+                          canOpenDriverBorongans,
+                          canOpenVehicles,
+                          canOpenIncidents,
+                          canOpenPurchases,
+                        },
+                      });
                                 return (
                                     <tr key={tx._id} style={{ transition: 'background 0.1s' }}
                                         onMouseEnter={event => (event.currentTarget.style.background = 'var(--bg-secondary, #f8fafc)')}
@@ -408,17 +419,19 @@ export default function BankAccountDetailPage() {
                         const sourceLink = resolveBankTransactionSourceLink({
                             transaction: tx,
                             paymentsById,
-                            refundsById,
-                            expensesById,
-                            invoiceIdsWithPages,
-                            permissions: {
-                                canOpenInvoices,
-                                canOpenDriverVouchers,
-                                canOpenDriverBorongans,
-                                canOpenVehicles,
-                                canOpenIncidents,
-                            },
-                        });
+                      refundsById,
+                      expensesById,
+                      purchasesById,
+                      invoiceIdsWithPages,
+                      permissions: {
+                        canOpenInvoices,
+                        canOpenDriverVouchers,
+                        canOpenDriverBorongans,
+                        canOpenVehicles,
+                        canOpenIncidents,
+                        canOpenPurchases,
+                      },
+                    });
                         return (
                             <div key={tx._id} className="mobile-record-card">
                                 <div className="mobile-record-header">

@@ -18,6 +18,11 @@ export type EffectiveUserRole = Exclude<UserRole, 'ADMIN'>;
 export type InternalUserRole = Exclude<EffectiveUserRole, 'DRIVER'>;
 export type AppModule =
     | 'dashboard'
+    | 'employees'
+    | 'attendance'
+    | 'suppliers'
+    | 'warehouseItems'
+    | 'purchases'
     | 'orders'
     | 'deliveryOrders'
     | 'invoices'
@@ -76,6 +81,31 @@ const permissionMatrix: Record<AppModule, Partial<Record<EffectiveUserRole, Modu
         OPERASIONAL: { ...DENY_ALL, view: true },
         FINANCE: { ...DENY_ALL, view: true },
         ARMADA: { ...DENY_ALL, view: true },
+    },
+    employees: {
+        OWNER: OWNER_FULL,
+        OPERASIONAL: OWNER_FULL,
+        FINANCE: { ...DENY_ALL, view: true },
+    },
+    attendance: {
+        OWNER: OWNER_FULL,
+        OPERASIONAL: OWNER_FULL,
+        FINANCE: { ...DENY_ALL, view: true, export: true },
+    },
+    suppliers: {
+        OWNER: OWNER_FULL,
+        OPERASIONAL: OWNER_FULL,
+        FINANCE: { ...DENY_ALL, view: true, export: true },
+    },
+    warehouseItems: {
+        OWNER: OWNER_FULL,
+        OPERASIONAL: OWNER_FULL,
+        FINANCE: { ...DENY_ALL, view: true, export: true },
+    },
+    purchases: {
+        OWNER: OWNER_FULL,
+        OPERASIONAL: OWNER_FULL,
+        FINANCE: { ...DENY_ALL, view: true, update: true, export: true, print: true },
     },
     orders: {
         OWNER: OWNER_FULL,
@@ -253,6 +283,21 @@ export function getSidebarMenu(role: UserRole): SidebarMenuGroup[] {
                 { label: 'Surat Jalan', href: '/delivery-orders', icon: 'Truck', module: 'deliveryOrders' },
                 { label: 'Uang Jalan Trip', href: '/driver-vouchers', icon: 'Wallet', module: 'driverVouchers' },
                 { label: 'Pengeluaran', href: '/expenses', icon: 'Wallet', module: 'expenses' },
+            ],
+        },
+        {
+            label: 'SDM',
+            items: [
+                { label: 'Karyawan', href: '/employees', icon: 'Users', module: 'employees' },
+                { label: 'Absensi', href: '/attendance', icon: 'ScrollText', module: 'attendance' },
+            ],
+        },
+        {
+            label: 'Gudang & Pembelian',
+            items: [
+                { label: 'Supplier', href: '/suppliers', icon: 'Building2', module: 'suppliers' },
+                { label: 'Barang Gudang', href: '/inventory/items', icon: 'Package', module: 'warehouseItems' },
+                { label: 'Pembelian', href: '/inventory/purchases', icon: 'Receipt', module: 'purchases' },
             ],
         },
         {

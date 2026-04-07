@@ -33,6 +33,12 @@ import {
     handlePaymentCreate,
 } from '@/lib/api/finance-workflows';
 import {
+    handlePurchaseCreate,
+    handlePurchasePaymentCreate,
+    handlePurchaseReceive,
+    handleStockMovementCreate,
+} from '@/lib/api/inventory-workflows';
+import {
     handleGenericCreate,
     handleGenericDelete,
     handleGenericUpdate,
@@ -67,6 +73,8 @@ import {
     getAuditLogsSummary,
     getBankAccountsSummary,
     applyDerivedBankAccountBalances,
+    getEmployeeAttendanceList,
+    getEmployeeAttendanceSummary,
     getCustomerReceiptById,
     getCustomerReceiptList,
     getCustomerOverpaymentById,
@@ -117,6 +125,14 @@ type ReceiptResponseShape = Record<string, unknown> & {
 };
 
 const ENTITY_MODULE_MAP: Partial<Record<keyof typeof SANITY_TYPE_MAP, AppModule>> = {
+    employees: 'employees',
+    'employee-attendance-records': 'attendance',
+    suppliers: 'suppliers',
+    'warehouse-items': 'warehouseItems',
+    purchases: 'purchases',
+    'purchase-items': 'purchases',
+    'purchase-payments': 'purchases',
+    'stock-movements': 'warehouseItems',
     customers: 'customers',
     'customer-products': 'customers',
     'customer-recipients': 'customers',
@@ -177,6 +193,8 @@ function getMutationPermissionAction(action?: string): keyof ModulePermissions {
     if (action === 'delete') return 'delete';
     if (
         action === 'update' ||
+        action === 'receive' ||
+        action === 'record-payment' ||
         action === 'update-with-items' ||
         action === 'revise-targets' ||
         action === 'set-status' ||
@@ -217,6 +235,18 @@ function hasSpecialMutationPermission(session: Session, entity: string, action?:
 
     if (entity === 'driver-vouchers' && action === 'repair-issue-ledger') {
         return role === 'OWNER' || role === 'FINANCE';
+    }
+
+    if (entity === 'purchases' && action === 'receive') {
+        return role === 'OWNER' || role === 'OPERASIONAL';
+    }
+
+    if (entity === 'purchase-payments' && action === 'record-payment') {
+        return role === 'OWNER' || role === 'FINANCE';
+    }
+
+    if (entity === 'stock-movements') {
+        return role === 'OWNER' || role === 'OPERASIONAL';
     }
 
     return null;
@@ -475,6 +505,66 @@ export async function GET(request: Request) {
             return jsonNoStore({ data: summary });
         } catch (err) {
             console.error('API GET Audit Summary Error:', err);
+            return jsonNoStore({ error: 'Server error' }, { status: 500 });
+        }
+    }
+
+    if (entity === 'employee-attendance-summary') {
+        if (!hasPermission(session.role, 'attendance', 'view')) {
+            return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
+        }
+        try {
+            const searchFields = searchFieldsParam
+                ? searchFieldsParam.split(',').map(field => field.trim()).filter(Boolean)
+                : [];
+            const summary = await getEmployeeAttendanceSummary({
+                search: searchQuery || undefined,
+                searchFields,
+                period: periodParam,
+                date: searchParams.get('date'),
+                status: searchParams.get('status'),
+                employeeRef: searchParams.get('employeeRef'),
+            });
+            return jsonNoStore({ data: summary });
+        } catch (err) {
+            console.error('API GET Employee Attendance Summary Error:', err);
+            return jsonNoStore({ error: 'Server error' }, { status: 500 });
+        }
+    }
+
+    if (entity === 'employee-attendance-records' && !id) {
+        if (!hasPermission(session.role, 'attendance', 'view')) {
+            return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
+        }
+        try {
+            const page = pageParam ? Number.parseInt(pageParam, 10) : 1;
+            const pageSize = pageSizeParam ? Number.parseInt(pageSizeParam, 10) : 10;
+            const searchFields = searchFieldsParam
+                ? searchFieldsParam.split(',').map(field => field.trim()).filter(Boolean)
+                : [];
+            const result = await getEmployeeAttendanceList({
+                search: searchQuery || undefined,
+                searchFields,
+                page: countOnly ? undefined : page,
+                pageSize: countOnly ? undefined : pageSize,
+                sortField,
+                sortDir,
+                period: periodParam,
+                date: searchParams.get('date'),
+                status: searchParams.get('status'),
+                employeeRef: searchParams.get('employeeRef'),
+                countOnly,
+            });
+            return jsonNoStore({
+                data: countOnly ? [] : result.items,
+                meta: {
+                    page,
+                    pageSize,
+                    total: result.total,
+                },
+            });
+        } catch (err) {
+            console.error('API GET Employee Attendance Error:', err);
             return jsonNoStore({ error: 'Server error' }, { status: 500 });
         }
     }
@@ -1194,6 +1284,14 @@ export async function POST(request: Request) {
             return await handleDeliveryOrderCreate(session, data, addAuditLog);
         }
 
+        if (entity === 'purchases' && (action === 'create-with-items' || !action)) {
+            return await handlePurchaseCreate(session, data, addAuditLog);
+        }
+
+        if (entity === 'purchases' && action === 'receive') {
+            return await handlePurchaseReceive(session, data, addAuditLog);
+        }
+
         if (entity === 'order-items' && action === 'set-hold-quantity') {
             return await handleOrderItemHoldSet(session, data, addAuditLog);
         }
@@ -1259,6 +1357,14 @@ export async function POST(request: Request) {
 
         if (entity === 'customer-overpayment-refunds') {
             return await handleCustomerOverpaymentRefund(session, data, addAuditLog);
+        }
+
+        if (entity === 'purchase-payments' && (action === 'record-payment' || !action)) {
+            return await handlePurchasePaymentCreate(session, data, addAuditLog);
+        }
+
+        if (entity === 'stock-movements') {
+            return await handleStockMovementCreate(session, data, addAuditLog);
         }
 
         if (entity === 'invoice-adjustments' && action === 'update') {

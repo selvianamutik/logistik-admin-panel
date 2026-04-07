@@ -181,6 +181,14 @@ export function getSanityClient() {
 // URL entity name -> Sanity document _type
 export const SANITY_TYPE_MAP: Record<string, string> = {
     users: 'user',
+    employees: 'employee',
+    'employee-attendance-records': 'employeeAttendanceRecord',
+    suppliers: 'supplier',
+    'warehouse-items': 'warehouseItem',
+    purchases: 'purchase',
+    'purchase-items': 'purchaseItem',
+    'purchase-payments': 'purchasePayment',
+    'stock-movements': 'stockMovement',
     customers: 'customer',
     'customer-products': 'customerProduct',
     'customer-recipients': 'customerRecipient',

@@ -19,11 +19,20 @@ import {
     normalizeOptionalText,
     normalizeText,
 } from './data-helpers';
+import {
+    isInventoryUnit,
+    isWarehouseItemTrackingMode,
+    normalizeWarehouseItemTrackingMode,
+    parseInventoryQuantity,
+    parseWholeMoneyAmount,
+} from '@/lib/inventory';
 import { findMatchingTripRouteRate } from '@/lib/trip-route-rate-support';
 import type { TripRouteRate } from '@/lib/types';
 
 const CUSTOMER_DO_PREFIX_RE = /^[A-Z0-9][A-Z0-9-]{0,7}$/;
 const CUSTOMER_PRODUCT_CODE_RE = /^[A-Z0-9][A-Z0-9-]{0,19}$/;
+const SUPPLIER_CODE_RE = /^[A-Z0-9][A-Z0-9-]{0,19}$/;
+const WAREHOUSE_ITEM_CODE_RE = /^[A-Z0-9][A-Z0-9-]{0,29}$/;
 
 function parseStrictNumericInput(
     value: unknown,
@@ -77,6 +86,238 @@ export function normalizeCustomerProductCode(value: unknown) {
         throw new Error('Kode barang customer hanya boleh berisi huruf/angka singkat, misalnya BRG-001');
     }
     return code;
+}
+
+function normalizeSupplierCode(value: unknown) {
+    const code = normalizeOptionalText(value)
+        ?.toUpperCase()
+        .replace(/[^A-Z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    if (!code) {
+        throw new Error('Kode supplier wajib diisi');
+    }
+    if (!SUPPLIER_CODE_RE.test(code)) {
+        throw new Error('Kode supplier hanya boleh berisi huruf/angka singkat, misalnya SUP-001');
+    }
+    return code;
+}
+
+function normalizeWarehouseItemCode(value: unknown) {
+    const code = normalizeOptionalText(value)
+        ?.toUpperCase()
+        .replace(/[^A-Z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    if (!code) {
+        throw new Error('Kode barang gudang wajib diisi');
+    }
+    if (!WAREHOUSE_ITEM_CODE_RE.test(code)) {
+        throw new Error('Kode barang gudang hanya boleh berisi huruf/angka singkat, misalnya BRG-001');
+    }
+    return code;
+}
+
+export async function normalizeSupplierPayload(data: Record<string, unknown>, existing?: Record<string, unknown>) {
+    const next: Record<string, unknown> = {};
+    const existingId = typeof existing?._id === 'string' ? existing._id : undefined;
+    const supplierCode =
+        Object.prototype.hasOwnProperty.call(data, 'supplierCode') || !existing
+            ? normalizeSupplierCode(data.supplierCode)
+            : normalizeSupplierCode(existing?.supplierCode);
+    const name =
+        Object.prototype.hasOwnProperty.call(data, 'name') || !existing
+            ? normalizeText(data.name)
+            : normalizeOptionalText(existing?.name) || '';
+    if (!name) {
+        throw new Error('Nama supplier wajib diisi');
+    }
+
+    const duplicateCode = await getSanityClient().fetch<{ _id: string } | null>(
+        `*[_type == "supplier" && supplierCode == $supplierCode && _id != $excludeId][0]{ _id }`,
+        { supplierCode, excludeId: existingId || '' }
+    );
+    if (duplicateCode) {
+        throw new Error('Kode supplier sudah digunakan');
+    }
+
+    const defaultTermDays =
+        Object.prototype.hasOwnProperty.call(data, 'defaultTermDays') || !existing
+            ? parseStrictNumericInput(data.defaultTermDays ?? 0, 'Termin default supplier tidak valid', {
+                allowDecimal: false,
+                maxFractionDigits: 0,
+            })
+            : normalizeNumber(existing?.defaultTermDays ?? 0, {
+                allowDecimal: false,
+                maxFractionDigits: 0,
+            });
+    if (!Number.isFinite(defaultTermDays) || defaultTermDays < 0) {
+        throw new Error('Termin default supplier tidak valid');
+    }
+
+    next.supplierCode = supplierCode;
+    next.name = name;
+    next.contactPerson =
+        Object.prototype.hasOwnProperty.call(data, 'contactPerson') || !existing
+            ? normalizeOptionalText(data.contactPerson)
+            : normalizeOptionalText(existing?.contactPerson);
+    next.phone =
+        Object.prototype.hasOwnProperty.call(data, 'phone') || !existing
+            ? normalizeOptionalText(data.phone)
+            : normalizeOptionalText(existing?.phone);
+    next.address =
+        Object.prototype.hasOwnProperty.call(data, 'address') || !existing
+            ? normalizeOptionalText(data.address)
+            : normalizeOptionalText(existing?.address);
+    next.defaultTermDays = Math.round(defaultTermDays);
+    next.notes =
+        Object.prototype.hasOwnProperty.call(data, 'notes') || !existing
+            ? normalizeOptionalText(data.notes)
+            : normalizeOptionalText(existing?.notes);
+    if (Object.prototype.hasOwnProperty.call(data, 'active') || !existing) {
+        if (data.active !== undefined && typeof data.active !== 'boolean') {
+            throw new Error('Status supplier tidak valid');
+        }
+        next.active = typeof data.active === 'boolean' ? data.active : true;
+    }
+
+    return next;
+}
+
+export async function normalizeWarehouseItemPayload(data: Record<string, unknown>, existing?: Record<string, unknown>) {
+    const next: Record<string, unknown> = {};
+    const existingId = typeof existing?._id === 'string' ? existing._id : undefined;
+    const itemCode =
+        Object.prototype.hasOwnProperty.call(data, 'itemCode') || !existing
+            ? normalizeWarehouseItemCode(data.itemCode)
+            : normalizeWarehouseItemCode(existing?.itemCode);
+    const name =
+        Object.prototype.hasOwnProperty.call(data, 'name') || !existing
+            ? normalizeText(data.name)
+            : normalizeOptionalText(existing?.name) || '';
+    if (!name) {
+        throw new Error('Nama barang gudang wajib diisi');
+    }
+
+    const duplicateCode = await getSanityClient().fetch<{ _id: string } | null>(
+        `*[_type == "warehouseItem" && itemCode == $itemCode && _id != $excludeId][0]{ _id }`,
+        { itemCode, excludeId: existingId || '' }
+    );
+    if (duplicateCode) {
+        throw new Error('Kode barang gudang sudah digunakan');
+    }
+
+    const unit =
+        Object.prototype.hasOwnProperty.call(data, 'unit') || !existing
+            ? normalizeText(data.unit).toUpperCase()
+            : normalizeText(existing?.unit).toUpperCase();
+    if (!isInventoryUnit(unit)) {
+        throw new Error('Satuan barang gudang tidak valid');
+    }
+
+    const minStockQty =
+        Object.prototype.hasOwnProperty.call(data, 'minStockQty') || !existing
+            ? parseInventoryQuantity(data.minStockQty ?? 0)
+            : parseInventoryQuantity(existing?.minStockQty ?? 0);
+    if (!Number.isFinite(minStockQty) || minStockQty < 0) {
+        throw new Error('Stok minimum barang gudang tidak valid');
+    }
+
+    const defaultPurchasePrice =
+        Object.prototype.hasOwnProperty.call(data, 'defaultPurchasePrice') || !existing
+            ? parseWholeMoneyAmount(data.defaultPurchasePrice ?? 0)
+            : parseWholeMoneyAmount(existing?.defaultPurchasePrice ?? 0);
+    if (!Number.isFinite(defaultPurchasePrice) || defaultPurchasePrice < 0) {
+        throw new Error('Harga beli default barang gudang tidak valid');
+    }
+
+    const supplierRef =
+        Object.prototype.hasOwnProperty.call(data, 'defaultSupplierRef') || !existing
+            ? normalizeOptionalText(data.defaultSupplierRef)
+            : normalizeOptionalText(existing?.defaultSupplierRef);
+    let supplierName =
+        Object.prototype.hasOwnProperty.call(data, 'defaultSupplierName') || !existing
+            ? normalizeOptionalText(data.defaultSupplierName)
+            : normalizeOptionalText(existing?.defaultSupplierName);
+
+    if (supplierRef) {
+        const supplier = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(supplierRef);
+        if (!supplier) {
+            throw new Error('Supplier default barang gudang tidak ditemukan');
+        }
+        if (supplier.active === false) {
+            throw new Error('Supplier default barang gudang tidak aktif');
+        }
+        supplierName = supplier.name || supplierName;
+    } else {
+        supplierName = undefined;
+    }
+
+    const trackingMode =
+        Object.prototype.hasOwnProperty.call(data, 'trackingMode') || !existing
+            ? normalizeWarehouseItemTrackingMode(data.trackingMode)
+            : normalizeWarehouseItemTrackingMode(existing?.trackingMode);
+    if (!isWarehouseItemTrackingMode(trackingMode)) {
+        throw new Error('Mode tracking barang gudang tidak valid');
+    }
+    const tireTypeDefault =
+        Object.prototype.hasOwnProperty.call(data, 'tireTypeDefault') || !existing
+            ? normalizeOptionalText(data.tireTypeDefault)
+            : normalizeOptionalText(existing?.tireTypeDefault);
+    const tireBrandDefault =
+        Object.prototype.hasOwnProperty.call(data, 'tireBrandDefault') || !existing
+            ? normalizeOptionalText(data.tireBrandDefault)
+            : normalizeOptionalText(existing?.tireBrandDefault);
+    const tireSizeDefault =
+        Object.prototype.hasOwnProperty.call(data, 'tireSizeDefault') || !existing
+            ? normalizeOptionalText(data.tireSizeDefault)
+            : normalizeOptionalText(existing?.tireSizeDefault);
+
+    if (trackingMode === 'TIRE_ASSET') {
+        if (unit !== 'PCS' && unit !== 'UNIT') {
+            throw new Error('Barang gudang ban tertracking hanya boleh memakai satuan PCS atau UNIT');
+        }
+        if (tireTypeDefault !== 'Tubeless' && tireTypeDefault !== 'Tube Type' && tireTypeDefault !== 'Solid') {
+            throw new Error('Jenis ban default barang gudang tidak valid');
+        }
+        if (!tireBrandDefault) {
+            throw new Error('Merk ban default wajib diisi untuk barang gudang ban tertracking');
+        }
+        if (!tireSizeDefault) {
+            throw new Error('Ukuran ban default wajib diisi untuk barang gudang ban tertracking');
+        }
+    }
+
+    next.itemCode = itemCode;
+    next.name = name;
+    next.category =
+        Object.prototype.hasOwnProperty.call(data, 'category') || !existing
+            ? normalizeOptionalText(data.category)
+            : normalizeOptionalText(existing?.category);
+    next.unit = unit;
+    next.trackingMode = trackingMode;
+    next.minStockQty = minStockQty;
+    next.defaultSupplierRef = supplierRef;
+    next.defaultSupplierName = supplierName;
+    next.defaultPurchasePrice = defaultPurchasePrice > 0 ? defaultPurchasePrice : undefined;
+    next.tireTypeDefault = trackingMode === 'TIRE_ASSET' ? tireTypeDefault : undefined;
+    next.tireBrandDefault = trackingMode === 'TIRE_ASSET' ? tireBrandDefault : undefined;
+    next.tireSizeDefault = trackingMode === 'TIRE_ASSET' ? tireSizeDefault : undefined;
+    next.notes =
+        Object.prototype.hasOwnProperty.call(data, 'notes') || !existing
+            ? normalizeOptionalText(data.notes)
+            : normalizeOptionalText(existing?.notes);
+    if (Object.prototype.hasOwnProperty.call(data, 'active') || !existing) {
+        if (data.active !== undefined && typeof data.active !== 'boolean') {
+            throw new Error('Status barang gudang tidak valid');
+        }
+        next.active = typeof data.active === 'boolean' ? data.active : true;
+    }
+    if (!existing) {
+        next.currentStockQty = 0;
+    } else if (Object.prototype.hasOwnProperty.call(existing, 'currentStockQty')) {
+        next.currentStockQty = parseInventoryQuantity(existing.currentStockQty ?? 0);
+    }
+
+    return next;
 }
 
 export function normalizeCustomerPayload(data: Record<string, unknown>, existing?: Record<string, unknown>) {

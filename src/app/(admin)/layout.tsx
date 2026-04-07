@@ -315,6 +315,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         'invoices',
         'customers',
         'borongan',
+        'purchases',
         'driver-vouchers',
         'bank-accounts',
         'vehicles',
@@ -331,11 +332,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             dashboard: 'Dashboard', orders: 'Order', 'delivery-orders': 'Surat Jalan',
             invoices: 'Tagihan / Nota', customers: 'Customer', 'trip-rates': 'Biaya Rute Trip', services: 'Jenis Armada',
             'expense-categories': 'Kategori Biaya', expenses: 'Pengeluaran',
+            employees: 'Karyawan', attendance: 'Absensi',
             reports: 'Laporan', fleet: 'Armada', vehicles: 'Kendaraan', drivers: 'Supir',
             maintenance: 'Maintenance', incidents: 'Insiden', settings: 'Pengaturan',
             profile: 'Profil', password: 'Password', company: 'Perusahaan',
             users: 'Pengguna', 'audit-logs': 'Audit Aktivitas', new: 'Baru', edit: 'Edit',
             tires: 'Ban', 'bank-accounts': 'Rekening & Kas', borongan: 'Riwayat Borongan', 'driver-vouchers': 'Uang Jalan Trip',
+            inventory: 'Inventory', purchases: 'Pembelian', suppliers: 'Supplier',
         };
         const resolvedLabel =
             labels[part] ||

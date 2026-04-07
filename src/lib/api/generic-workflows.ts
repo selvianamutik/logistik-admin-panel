@@ -14,12 +14,19 @@ import {
 import {
     buildDefaultTireLayoutConfig,
     normalizeTireLayoutConfig,
-    resolveTireAssetStatus,
-    resolveTireHolderType,
-    resolveTirePlacementLabel,
-    resolveTireSlotCode,
 } from '@/lib/tire-slots';
-import type { BankTransaction, CompanyProfile, User } from '@/lib/types';
+import {
+    buildTireHistoryLogDoc,
+    buildTireHistorySnapshot,
+} from '@/lib/tire-history';
+import {
+    buildTrackedTireStockMovementDoc,
+    buildTrackedTireWarehouseNote,
+    countsTowardTrackedTireWarehouseStock,
+    resolveTrackedTirePlacementLabel,
+} from '@/lib/tire-inventory';
+import { isTireTrackedWarehouseItem } from '@/lib/inventory';
+import type { BankTransaction, CompanyProfile, User, WarehouseItem } from '@/lib/types';
 
 import {
     assertIsoDate,
@@ -41,7 +48,9 @@ import {
     normalizeCustomerPickupPayload,
     normalizeCustomerProductPayload,
     normalizeCustomerRecipientPayload,
+    normalizeSupplierPayload,
     normalizeTripRouteRatePayload,
+    normalizeWarehouseItemPayload,
     resolveTripRouteRateSelection,
 } from './generic-workflow-support';
 import {
@@ -49,6 +58,13 @@ import {
     handleDriverVoucherDisbursementDelete,
     handleDriverVoucherItemDelete,
 } from './driver-workflows';
+import {
+    buildEmployeeAttendanceSummary,
+    buildEmployeeSummary,
+    normalizeEmployeeAttendanceCreatePayload,
+    normalizeEmployeeAttendanceUpdates,
+    normalizeEmployeePayload,
+} from './employee-workflows';
 import { handleFreightNotaDelete } from './finance-workflows';
 import {
     handleDriverUpdate,
@@ -403,7 +419,8 @@ function isProtectedLedgerEntity(entity: string) {
         entity === 'invoice-adjustments' ||
         entity === 'incomes' ||
         entity === 'expenses' ||
-        entity === 'bank-transactions'
+        entity === 'bank-transactions' ||
+        entity === 'purchase-payments'
     );
 }
 
@@ -424,6 +441,10 @@ function isWorkflowManagedCreateEntity(entity: string) {
         entity === 'payments' ||
         entity === 'customer-receipts' ||
         entity === 'customer-overpayment-refunds' ||
+        entity === 'purchases' ||
+        entity === 'purchase-items' ||
+        entity === 'purchase-payments' ||
+        entity === 'stock-movements' ||
         entity === 'invoice-adjustments' ||
         entity === 'incomes' ||
         entity === 'expenses' ||
@@ -445,6 +466,10 @@ function isWorkflowManagedUpdateEntity(entity: string) {
         entity === 'delivery-order-items' ||
         entity === 'tracking-logs' ||
         entity === 'customer-overpayment-refunds' ||
+        entity === 'purchases' ||
+        entity === 'purchase-items' ||
+        entity === 'purchase-payments' ||
+        entity === 'stock-movements' ||
         entity === 'driver-vouchers' ||
         entity === 'freight-notas' ||
         entity === 'freight-nota-items' ||
@@ -475,109 +500,120 @@ function isWorkflowManagedDeleteEntity(entity: string) {
         entity === 'driver-borongan-items' ||
         entity === 'tracking-logs'
         || entity === 'customer-overpayment-refunds'
+        || entity === 'purchases'
+        || entity === 'purchase-items'
+        || entity === 'purchase-payments'
+        || entity === 'stock-movements'
     );
 }
 
 function buildCreateSummary(newDoc: Record<string, unknown>, fallbackId: string) {
+    if (newDoc._type === 'employee') {
+        return buildEmployeeSummary(newDoc, fallbackId);
+    }
+    if (newDoc._type === 'employeeAttendanceRecord') {
+        return buildEmployeeAttendanceSummary(newDoc, fallbackId);
+    }
     return (
         (newDoc.originArea && newDoc.destinationArea
             ? `${newDoc.originArea} -> ${newDoc.destinationArea}${newDoc.serviceName ? ` (${newDoc.serviceName})` : ''}`
             : undefined) ||
         newDoc.masterResi ||
         newDoc.doNumber ||
+        newDoc.purchaseNumber ||
         newDoc.invoiceNumber ||
         newDoc.notaNumber ||
         newDoc.boronganNumber ||
         newDoc.incidentNumber ||
+        newDoc.itemCode ||
+        newDoc.supplierCode ||
         newDoc.label ||
         newDoc.name ||
         fallbackId
     );
 }
 
-type TireHistorySnapshot = {
-    holderType?: string;
-    status?: string;
-    vehicleRef?: string;
-    vehiclePlate?: string;
-    slotCode?: string;
-    placementLabel?: string;
-};
-
-function buildTireHistorySnapshot(doc: Record<string, unknown>): TireHistorySnapshot {
-    return {
-        holderType: resolveTireHolderType(doc),
-        status: resolveTireAssetStatus(doc),
-        vehicleRef: extractRefId(doc.vehicleRef) || undefined,
-        vehiclePlate: normalizeOptionalText(doc.vehiclePlate),
-        slotCode: resolveTireSlotCode({
-            slotCode: normalizeOptionalText(doc.slotCode),
-            posisi: normalizeOptionalText(doc.posisi),
-        }),
-        placementLabel: resolveTirePlacementLabel(doc),
-    };
+function buildCreateAuditSummary(entity: string, newDoc: Record<string, unknown>, fallbackId: string) {
+    if (entity === 'employees') {
+        return `Tambah karyawan ${buildEmployeeSummary(newDoc, fallbackId)}`;
+    }
+    if (entity === 'employee-attendance-records') {
+        return `Catat absensi ${buildEmployeeAttendanceSummary(newDoc, fallbackId)}`;
+    }
+    if (entity === 'suppliers') {
+        return `Tambah supplier ${buildCreateSummary(newDoc, fallbackId)}`;
+    }
+    if (entity === 'warehouse-items') {
+        return `Tambah barang gudang ${buildCreateSummary(newDoc, fallbackId)}`;
+    }
+    if (entity === 'tire-events') {
+        return `Tambah ban ${(newDoc as Record<string, unknown>).tireCode}: ${(newDoc as Record<string, unknown>).posisi} (${(newDoc as Record<string, unknown>).status})`;
+    }
+    return `Created ${entity}: ${buildCreateSummary(newDoc, fallbackId)}`;
 }
 
-function deriveTireHistoryAction(previous: TireHistorySnapshot | null, next: TireHistorySnapshot) {
-    if (!previous) return 'CREATED';
-    if (previous.status !== 'SCRAPPED' && next.status === 'SCRAPPED') return 'SCRAPPED';
-    if (previous.placementLabel !== next.placementLabel) return 'MOVED';
-    if (previous.status !== next.status) return 'STATUS_CHANGED';
-    return 'UPDATED';
+async function resolveTrackedTireWarehouseItem(itemRef: string) {
+    const item = await sanityGetById<WarehouseItem>(itemRef);
+    if (!item || item._type !== 'warehouseItem') {
+        throw new Error('Master barang gudang ban tidak ditemukan');
+    }
+    if (!isTireTrackedWarehouseItem(item)) {
+        throw new Error('Master barang gudang terkait ban harus bertipe ban tertracking');
+    }
+    return item;
 }
 
-function buildTireHistoryNote(actionType: string, previous: TireHistorySnapshot | null, next: TireHistorySnapshot) {
-    if (actionType === 'CREATED') {
-        return `Ban dicatat dengan lokasi awal ${next.placementLabel || '-'}`;
-    }
-    if (actionType === 'SCRAPPED') {
-        return `Ban diafkirkan dari ${previous?.placementLabel || '-'} ke ${next.placementLabel || '-'}`;
-    }
-    if (actionType === 'MOVED') {
-        return `Ban dipindahkan dari ${previous?.placementLabel || '-'} ke ${next.placementLabel || '-'}`;
-    }
-    if (actionType === 'STATUS_CHANGED') {
-        return `Status ban berubah dari ${previous?.status || '-'} ke ${next.status || '-'}`;
-    }
-    return `Data ban diperbarui di ${next.placementLabel || '-'}`;
-}
-
-function buildTireHistoryLogDoc(params: {
-    tireEventRef: string;
-    tireCode: string;
-    tireBrand?: string;
-    tireSize?: string;
-    previous: TireHistorySnapshot | null;
-    next: TireHistorySnapshot;
+async function appendTrackedTireWarehouseSync(params: {
+    transaction: ReturnType<ReturnType<typeof getSanityClient>['transaction']>;
+    previousDoc: Record<string, unknown> | null;
+    nextDoc: Record<string, unknown>;
     session: Pick<ApiSession, '_id' | 'name'>;
-    note?: string;
 }) {
-    const actionType = deriveTireHistoryAction(params.previous, params.next);
-    return {
-        _id: crypto.randomUUID(),
-        _type: 'tireHistoryLog',
-        tireEventRef: params.tireEventRef,
-        tireCode: params.tireCode,
-        tireBrand: params.tireBrand,
-        tireSize: params.tireSize,
-        actionType,
-        timestamp: new Date().toISOString(),
-        actorUserRef: params.session._id,
-        actorUserName: params.session.name,
-        note: params.note || buildTireHistoryNote(actionType, params.previous, params.next),
-        fromHolderType: params.previous?.holderType,
-        fromStatus: params.previous?.status,
-        fromVehicleRef: params.previous?.vehicleRef,
-        fromVehiclePlate: params.previous?.vehiclePlate,
-        fromSlotCode: params.previous?.slotCode,
-        fromPlacementLabel: params.previous?.placementLabel,
-        toHolderType: params.next.holderType,
-        toStatus: params.next.status,
-        toVehicleRef: params.next.vehicleRef,
-        toVehiclePlate: params.next.vehiclePlate,
-        toSlotCode: params.next.slotCode,
-        toPlacementLabel: params.next.placementLabel,
-    };
+    const previousItemRef = normalizeOptionalText(params.previousDoc?.linkedWarehouseItemRef);
+    const nextItemRef = normalizeOptionalText(params.nextDoc.linkedWarehouseItemRef);
+    if (previousItemRef && nextItemRef && previousItemRef !== nextItemRef) {
+        throw new Error('Master barang gudang ban yang sudah terhubung tidak boleh diganti');
+    }
+    const itemRef = nextItemRef || previousItemRef;
+    if (!itemRef) {
+        return;
+    }
+
+    const warehouseItem = await resolveTrackedTireWarehouseItem(itemRef);
+    const countedBefore = countsTowardTrackedTireWarehouseStock(params.previousDoc || {});
+    const countedAfter = countsTowardTrackedTireWarehouseStock(params.nextDoc);
+    if (countedBefore === countedAfter) {
+        return;
+    }
+
+    const currentStockQty = Math.max(normalizeNumber(warehouseItem.currentStockQty ?? 0), 0);
+    const nextStockQty = countedAfter ? currentStockQty + 1 : currentStockQty - 1;
+    if (nextStockQty < 0) {
+        throw new Error('Stok gudang ban terkait tidak cukup untuk perpindahan ini');
+    }
+
+    const previousPlacement = params.previousDoc ? resolveTrackedTirePlacementLabel(params.previousDoc) : undefined;
+    const nextPlacement = resolveTrackedTirePlacementLabel(params.nextDoc);
+    const tireCode = normalizeOptionalText(params.nextDoc.tireCode) || normalizeOptionalText(params.previousDoc?.tireCode) || itemRef;
+
+    params.transaction.patch(warehouseItem._id, patch => patch.set({ currentStockQty: nextStockQty }));
+    params.transaction.create(buildTrackedTireStockMovementDoc({
+        warehouseItem,
+        quantity: 1,
+        balanceAfter: nextStockQty,
+        movementDate: getBusinessDateValue(),
+        type: countedAfter ? 'IN' : 'OUT',
+        sourceType: countedAfter ? 'TIRE_RETURN' : 'TIRE_DEPLOYMENT',
+        sourceRef: typeof params.nextDoc._id === 'string' ? params.nextDoc._id : undefined,
+        sourceNumber: tireCode,
+        note: buildTrackedTireWarehouseNote({
+            tireCode,
+            fromPlacement: previousPlacement,
+            toPlacement: nextPlacement,
+        }),
+        createdBy: params.session._id,
+        createdByName: params.session.name,
+    }));
 }
 
 export async function handleGenericUpdate(
@@ -812,6 +848,41 @@ export async function handleGenericUpdate(
         }
     }
 
+    if (entity === 'employees') {
+        const existingEmployee = await sanityGetById<Record<string, unknown>>(id);
+        if (!existingEmployee) {
+            return NextResponse.json({ error: 'Karyawan tidak ditemukan' }, { status: 404 });
+        }
+
+        try {
+            sanitizedEntityUpdates = await normalizeEmployeePayload(updates, {
+                partial: true,
+                excludeId: id,
+            });
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Data karyawan tidak valid' },
+                { status: 400 }
+            );
+        }
+    }
+
+    if (entity === 'employee-attendance-records') {
+        const existingAttendance = await sanityGetById<Record<string, unknown>>(id);
+        if (!existingAttendance) {
+            return NextResponse.json({ error: 'Absensi karyawan tidak ditemukan' }, { status: 404 });
+        }
+
+        try {
+            sanitizedEntityUpdates = await normalizeEmployeeAttendanceUpdates(session, updates, id, existingAttendance);
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Data absensi karyawan tidak valid' },
+                { status: 400 }
+            );
+        }
+    }
+
     if (entity === 'customers') {
         const existingCustomer = await sanityGetById<Record<string, unknown>>(id);
         if (!existingCustomer) {
@@ -823,6 +894,38 @@ export async function handleGenericUpdate(
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Data customer tidak valid' },
+                { status: 400 }
+            );
+        }
+    }
+
+    if (entity === 'suppliers') {
+        const existingSupplier = await sanityGetById<Record<string, unknown>>(id);
+        if (!existingSupplier) {
+            return NextResponse.json({ error: 'Supplier tidak ditemukan' }, { status: 404 });
+        }
+
+        try {
+            sanitizedEntityUpdates = await normalizeSupplierPayload(updates, existingSupplier);
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Data supplier tidak valid' },
+                { status: 400 }
+            );
+        }
+    }
+
+    if (entity === 'warehouse-items') {
+        const existingWarehouseItem = await sanityGetById<Record<string, unknown>>(id);
+        if (!existingWarehouseItem) {
+            return NextResponse.json({ error: 'Barang gudang tidak ditemukan' }, { status: 404 });
+        }
+
+        try {
+            sanitizedEntityUpdates = await normalizeWarehouseItemPayload(updates, existingWarehouseItem);
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Data barang gudang tidak valid' },
                 { status: 400 }
             );
         }
@@ -939,7 +1042,30 @@ export async function handleGenericUpdate(
             return NextResponse.json({ error: 'Catatan ban tidak ditemukan' }, { status: 404 });
         }
         const normalizedTireUpdates = await normalizeTireEventPayload({ ...existingTire, ...updates }, id);
-        const nextTireDoc = { ...existingTire, ...normalizedTireUpdates };
+        const nextTireDoc: Record<string, unknown> = { ...existingTire, ...normalizedTireUpdates };
+        if (Object.prototype.hasOwnProperty.call(updates, 'linkedWarehouseItemRef')) {
+            nextTireDoc.linkedWarehouseItemRef = normalizeOptionalText(updates.linkedWarehouseItemRef);
+        }
+        if (nextTireDoc.linkedWarehouseItemRef) {
+            const linkedItem = await resolveTrackedTireWarehouseItem(String(nextTireDoc.linkedWarehouseItemRef));
+            nextTireDoc.linkedWarehouseItemCode = linkedItem.itemCode;
+            nextTireDoc.linkedWarehouseItemName = linkedItem.name;
+        } else {
+            nextTireDoc.linkedWarehouseItemCode = undefined;
+            nextTireDoc.linkedWarehouseItemName = undefined;
+        }
+        const tirePatchPayload = {
+            ...normalizedTireUpdates,
+            linkedWarehouseItemRef: nextTireDoc.linkedWarehouseItemRef,
+            linkedWarehouseItemCode: nextTireDoc.linkedWarehouseItemCode,
+            linkedWarehouseItemName: nextTireDoc.linkedWarehouseItemName,
+        };
+        const tireSetPayload = Object.fromEntries(
+            Object.entries(tirePatchPayload).filter(([, value]) => value !== undefined)
+        );
+        const tireUnsetFields = Object.entries(tirePatchPayload)
+            .filter(([field, value]) => value === undefined && Object.prototype.hasOwnProperty.call(existingTire, field))
+            .map(([field]) => field);
         const historyLogDoc = buildTireHistoryLogDoc({
             tireEventRef: id,
             tireCode: normalizeOptionalText(nextTireDoc.tireCode) || id,
@@ -950,18 +1076,27 @@ export async function handleGenericUpdate(
             session,
             note: normalizeOptionalText(normalizedTireUpdates.notes),
         });
-        await getSanityClient()
+        const transaction = getSanityClient()
             .transaction()
-            .patch(id, { set: normalizedTireUpdates })
-            .create(historyLogDoc)
-            .commit();
+            .patch(id, {
+                set: tireSetPayload,
+                ...(tireUnsetFields.length > 0 ? { unset: tireUnsetFields } : {}),
+            })
+            .create(historyLogDoc);
+        await appendTrackedTireWarehouseSync({
+            transaction,
+            previousDoc: existingTire,
+            nextDoc: { ...nextTireDoc, _id: id },
+            session,
+        });
+        await transaction.commit();
         const updated = await sanityGetById<Record<string, unknown>>(id);
         await addAuditLog(
             session,
             'UPDATE',
             entity,
             id,
-            `Update ban ${normalizedTireUpdates.tireCode}: ${normalizedTireUpdates.posisi} (${normalizedTireUpdates.status})`
+            `Perbarui ban ${normalizedTireUpdates.tireCode}: ${normalizedTireUpdates.posisi} (${normalizedTireUpdates.status})`
         );
         return NextResponse.json({ data: updated });
     }
@@ -1052,7 +1187,17 @@ export async function handleGenericUpdate(
         await setSessionCookie(nextSessionToken);
     }
 
-    await addAuditLog(session, 'UPDATE', entity, id, `Updated ${entity}: ${JSON.stringify(normalizedUpdates).slice(0, 200)}`);
+    const updateSummary =
+        entity === 'employees'
+            ? `Perbarui karyawan ${buildEmployeeSummary(updated as Record<string, unknown>, id)}`
+            : entity === 'employee-attendance-records'
+                ? `Perbarui absensi ${buildEmployeeAttendanceSummary(updated as Record<string, unknown>, id)}`
+                : entity === 'suppliers'
+                    ? `Perbarui supplier ${buildCreateSummary(updated as Record<string, unknown>, id)}`
+                    : entity === 'warehouse-items'
+                        ? `Perbarui barang gudang ${buildCreateSummary(updated as Record<string, unknown>, id)}`
+                : `Updated ${entity}: ${JSON.stringify(normalizedUpdates).slice(0, 200)}`;
+    await addAuditLog(session, 'UPDATE', entity, id, updateSummary);
 
     if (entity === 'services') {
         const updatedService = updated as { _id?: string; name?: string; tireLayoutConfig?: Record<string, unknown> };
@@ -1142,6 +1287,48 @@ export async function handleGenericDelete(
         );
         if (relatedOrderItem) {
             return NextResponse.json({ error: 'Barang customer yang sudah dipakai order tidak boleh dihapus' }, { status: 409 });
+        }
+    }
+
+    if (entity === 'suppliers') {
+        const id = typeof data.id === 'string' ? data.id : '';
+        if (!id) {
+            return NextResponse.json({ error: 'Supplier tidak valid' }, { status: 400 });
+        }
+
+        const [relatedPurchase, defaultWarehouseItem] = await Promise.all([
+            getSanityClient().fetch<{ _id: string } | null>(
+                `*[_type == "purchase" && supplierRef == $ref][0]{ _id }`,
+                { ref: id }
+            ),
+            getSanityClient().fetch<{ _id: string } | null>(
+                `*[_type == "warehouseItem" && defaultSupplierRef == $ref][0]{ _id }`,
+                { ref: id }
+            ),
+        ]);
+        if (relatedPurchase || defaultWarehouseItem) {
+            return NextResponse.json({ error: 'Supplier yang sudah dipakai pembelian atau default barang tidak boleh dihapus' }, { status: 409 });
+        }
+    }
+
+    if (entity === 'warehouse-items') {
+        const id = typeof data.id === 'string' ? data.id : '';
+        if (!id) {
+            return NextResponse.json({ error: 'Barang gudang tidak valid' }, { status: 400 });
+        }
+
+        const [relatedPurchaseItem, relatedMovement] = await Promise.all([
+            getSanityClient().fetch<{ _id: string } | null>(
+                `*[_type == "purchaseItem" && warehouseItemRef == $ref][0]{ _id }`,
+                { ref: id }
+            ),
+            getSanityClient().fetch<{ _id: string } | null>(
+                `*[_type == "stockMovement" && warehouseItemRef == $ref][0]{ _id }`,
+                { ref: id }
+            ),
+        ]);
+        if (relatedPurchaseItem || relatedMovement) {
+            return NextResponse.json({ error: 'Barang gudang yang sudah punya histori pembelian atau stok tidak boleh dihapus' }, { status: 409 });
         }
     }
 
@@ -1239,6 +1426,24 @@ export async function handleGenericDelete(
 
     if (entity === 'driver-borongans') {
         return handleDriverBoronganDelete(session, data, addAuditLog);
+    }
+
+    if (entity === 'employees') {
+        const id = typeof data.id === 'string' ? data.id : '';
+        if (!id) {
+            return NextResponse.json({ error: 'Karyawan tidak valid' }, { status: 400 });
+        }
+
+        const linkedAttendance = await getSanityClient().fetch<{ _id: string } | null>(
+            `*[_type == "employeeAttendanceRecord" && employeeRef == $ref][0]{ _id }`,
+            { ref: id }
+        );
+        if (linkedAttendance) {
+            return NextResponse.json(
+                { error: 'Karyawan yang sudah punya riwayat absensi tidak boleh dihapus. Nonaktifkan saja bila sudah tidak bekerja.' },
+                { status: 409 }
+            );
+        }
     }
 
     const id = typeof data.id === 'string' ? data.id : '';
@@ -1425,6 +1630,30 @@ export async function handleGenericCreate(
         }
     }
 
+    if (entity === 'suppliers') {
+        shouldMergeRawCreatePayload = false;
+        try {
+            Object.assign(newDoc, await normalizeSupplierPayload(data));
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Data supplier tidak valid' },
+                { status: 400 }
+            );
+        }
+    }
+
+    if (entity === 'warehouse-items') {
+        shouldMergeRawCreatePayload = false;
+        try {
+            Object.assign(newDoc, await normalizeWarehouseItemPayload(data));
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Data barang gudang tidak valid' },
+                { status: 400 }
+            );
+        }
+    }
+
     if (entity === 'customer-products') {
         shouldMergeRawCreatePayload = false;
         try {
@@ -1500,9 +1729,39 @@ export async function handleGenericCreate(
         delete newDoc.password;
     }
 
+    if (entity === 'employees') {
+        shouldMergeRawCreatePayload = false;
+        try {
+            Object.assign(newDoc, await normalizeEmployeePayload(data));
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Data karyawan tidak valid' },
+                { status: 400 }
+            );
+        }
+    }
+
+    if (entity === 'employee-attendance-records') {
+        shouldMergeRawCreatePayload = false;
+        try {
+            Object.assign(newDoc, await normalizeEmployeeAttendanceCreatePayload(session, data));
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Data absensi karyawan tidak valid' },
+                { status: 400 }
+            );
+        }
+    }
+
     if (entity === 'tire-events') {
         shouldMergeRawCreatePayload = false;
-        const normalizedTireEvent = await normalizeTireEventPayload(data);
+        const normalizedTireEvent: Record<string, unknown> = { ...(await normalizeTireEventPayload(data)) };
+        if (typeof data.linkedWarehouseItemRef === 'string' && data.linkedWarehouseItemRef.trim()) {
+            const linkedItem = await resolveTrackedTireWarehouseItem(data.linkedWarehouseItemRef.trim());
+            normalizedTireEvent.linkedWarehouseItemRef = linkedItem._id;
+            normalizedTireEvent.linkedWarehouseItemCode = linkedItem.itemCode;
+            normalizedTireEvent.linkedWarehouseItemName = linkedItem.name;
+        }
         Object.assign(newDoc, normalizedTireEvent);
     }
 
@@ -1539,19 +1798,24 @@ export async function handleGenericCreate(
             session,
             note: normalizeOptionalText(createdTireDoc.notes),
         });
-
-        await getSanityClient()
+        const transaction = getSanityClient()
             .transaction()
             .create(createdTireDoc)
-            .create(historyLogDoc)
-            .commit();
+            .create(historyLogDoc);
+        await appendTrackedTireWarehouseSync({
+            transaction,
+            previousDoc: null,
+            nextDoc: createdTireDoc,
+            session,
+        });
+        await transaction.commit();
 
         await addAuditLog(
             session,
             'CREATE',
             entity,
             newId,
-            `Create ban ${(newDoc as Record<string, unknown>).tireCode}: ${(newDoc as Record<string, unknown>).posisi} (${(newDoc as Record<string, unknown>).status})`
+            `Tambah ban ${(newDoc as Record<string, unknown>).tireCode}: ${(newDoc as Record<string, unknown>).posisi} (${(newDoc as Record<string, unknown>).status})`
         );
 
         return NextResponse.json({
@@ -1584,9 +1848,7 @@ export async function handleGenericCreate(
         'CREATE',
         entity,
         newId,
-        entity === 'tire-events'
-            ? `Create ban ${(newDoc as Record<string, unknown>).tireCode}: ${(newDoc as Record<string, unknown>).posisi} (${(newDoc as Record<string, unknown>).status})`
-            : `Created ${entity}: ${buildCreateSummary(newDoc, newId)}`
+        buildCreateAuditSummary(entity, newDoc, newId)
     );
 
     return NextResponse.json({

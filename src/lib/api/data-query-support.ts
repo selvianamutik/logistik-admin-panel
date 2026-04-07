@@ -1,5 +1,12 @@
 import type { ApiSession } from '@/lib/api/data-helpers';
 import { addDaysToDateValue, getBusinessCalendarDateParts, getBusinessDateValue } from '@/lib/business-date';
+import {
+    EMPLOYEE_ATTENDANCE_PERIOD_LABELS,
+    getEmployeeAttendancePeriodRange,
+    isDateWithinEmployeeAttendanceRange,
+    normalizeEmployeeAttendanceStatus,
+    type EmployeeAttendancePeriod,
+} from '@/lib/employee-attendance';
 import { filterExpensesByRole, hasPageAccess, hasPermission } from '@/lib/rbac';
 import {
     getSanityClient,
@@ -27,6 +34,8 @@ import type {
     DriverVoucher,
     Expense,
     FreightNota,
+    Employee,
+    EmployeeAttendanceRecord,
     Payment,
     TireEvent,
     AuditLog,
@@ -37,6 +46,110 @@ import { getDriverVoucherFinancialSummary, getDriverVoucherIssuedAmount, getRece
 
 function parseWholeMoneyLike(value: unknown) {
     return Math.max(parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 }), 0);
+}
+
+function normalizeTextSearch(value: unknown) {
+    return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function sortEmployeeAttendanceRecords(
+    rows: EmployeeAttendanceRecord[],
+    sortField?: string,
+    sortDir?: 'asc' | 'desc',
+) {
+    const direction = sortDir === 'asc' ? 1 : -1;
+    const field = sortField || 'date';
+
+    return [...rows].sort((left, right) => {
+        if (field === 'status') {
+            return String(left.status || '').localeCompare(String(right.status || '')) * direction;
+        }
+        if (field === 'employeeCode') {
+            return String(left.employeeCode || '').localeCompare(String(right.employeeCode || '')) * direction;
+        }
+        if (field === 'employeeName') {
+            return String(left.employeeName || '').localeCompare(String(right.employeeName || '')) * direction;
+        }
+        if (field === 'division') {
+            return String(left.division || '').localeCompare(String(right.division || '')) * direction;
+        }
+        if (field === 'checkInTime') {
+            return String(left.checkInTime || '').localeCompare(String(right.checkInTime || '')) * direction;
+        }
+        const dateCompare = String(left.date || '').localeCompare(String(right.date || '')) * direction;
+        if (dateCompare !== 0) return dateCompare;
+        return String(left.employeeName || '').localeCompare(String(right.employeeName || '')) * direction;
+    });
+}
+
+function buildNormalizedAttendanceRecord(
+    record: EmployeeAttendanceRecord,
+    employeesById: Map<string, Employee>,
+) {
+    const employee = record.employeeRef ? employeesById.get(record.employeeRef) : undefined;
+    return {
+        ...record,
+        employeeCode: record.employeeCode || employee?.employeeCode || '',
+        employeeName: record.employeeName || employee?.name || '',
+        position: record.position || employee?.position || '',
+        division: record.division || employee?.division || '',
+    };
+}
+
+async function getEmployeeAttendanceDataset() {
+    const [employees, attendanceRows] = await Promise.all([
+        getSanityClient().fetch<Employee[]>(
+            `*[_type == "employee"] | order(active desc, employeeCode asc, name asc)`
+        ),
+        getSanityClient().fetch<EmployeeAttendanceRecord[]>(
+            `*[_type == "employeeAttendanceRecord"]`
+        ),
+    ]);
+
+    const employeesById = new Map(employees.map(employee => [employee._id, employee]));
+    const normalizedRows = attendanceRows.map(record => buildNormalizedAttendanceRecord(record, employeesById));
+
+    return {
+        employees,
+        employeesById,
+        attendanceRows: normalizedRows,
+    };
+}
+
+function filterEmployeeAttendanceRecords(
+    rows: EmployeeAttendanceRecord[],
+    params: Pick<EmployeeAttendanceListParams, 'search' | 'searchFields' | 'period' | 'date' | 'status' | 'employeeRef'>,
+) {
+    const search = normalizeTextSearch(params.search);
+    const searchableFields = (params.searchFields || []).map(field => field.trim()).filter(Boolean);
+    const period = normalizeEmployeeAttendancePeriod(params.period);
+    const anchorDate = params.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date) ? params.date : getBusinessDateValue();
+    const range = getEmployeeAttendancePeriodRange(period, anchorDate);
+    const status = normalizeEmployeeAttendanceStatus(params.status);
+    const employeeRef = typeof params.employeeRef === 'string' ? params.employeeRef.trim() : '';
+    const fields = searchableFields.length > 0
+        ? searchableFields
+        : ['employeeCode', 'employeeName', 'division', 'position', 'note', 'date'];
+
+    return rows.filter(record => {
+        if (!isDateWithinEmployeeAttendanceRange(record.date, range)) {
+            return false;
+        }
+        if (status && record.status !== status) {
+            return false;
+        }
+        if (employeeRef && record.employeeRef !== employeeRef) {
+            return false;
+        }
+        if (!search) {
+            return true;
+        }
+
+        return fields.some(field => {
+            const value = (record as unknown as Record<string, unknown>)[field];
+            return typeof value === 'string' && value.toLowerCase().includes(search);
+        });
+    });
 }
 
 function normalizeBusinessDateValue(value: string | undefined) {
@@ -270,6 +383,100 @@ export async function getAuditLogsSummary(params?: {
         mutationLogs,
         actorCount,
         period: normalizeAuditLogPeriod(params?.period),
+    };
+}
+
+type EmployeeAttendanceListParams = {
+    search?: string;
+    searchFields?: string[];
+    page?: number;
+    pageSize?: number;
+    sortField?: string;
+    sortDir?: 'asc' | 'desc';
+    period?: string | null;
+    date?: string | null;
+    status?: string | null;
+    employeeRef?: string | null;
+    countOnly?: boolean;
+};
+
+function normalizeEmployeeAttendancePeriod(value?: string | null): EmployeeAttendancePeriod {
+    if (value === 'today' || value === 'thisWeek' || value === 'thisMonth' || value === 'thisYear') {
+        return value;
+    }
+    return 'today';
+}
+
+export async function getEmployeeAttendanceList(params: EmployeeAttendanceListParams) {
+    const { attendanceRows } = await getEmployeeAttendanceDataset();
+    const filtered = filterEmployeeAttendanceRecords(attendanceRows, params);
+    const sorted = sortEmployeeAttendanceRecords(filtered, params.sortField, params.sortDir);
+    const total = sorted.length;
+    if (params.countOnly) {
+        return { items: [] as EmployeeAttendanceRecord[], total };
+    }
+
+    if (!params.page || !params.pageSize) {
+        return { items: sorted, total };
+    }
+
+    const offset = Math.max(params.page - 1, 0) * Math.max(params.pageSize, 1);
+    return {
+        items: sorted.slice(offset, offset + params.pageSize),
+        total,
+    };
+}
+
+export async function getEmployeeAttendanceSummary(params?: {
+    search?: string;
+    searchFields?: string[];
+    period?: string | null;
+    date?: string | null;
+    status?: string | null;
+    employeeRef?: string | null;
+}) {
+    const { employees, attendanceRows } = await getEmployeeAttendanceDataset();
+    const period = normalizeEmployeeAttendancePeriod(params?.period);
+    const anchorDate = params?.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date) ? params.date : getBusinessDateValue();
+    const range = getEmployeeAttendancePeriodRange(period, anchorDate);
+    const records = filterEmployeeAttendanceRecords(attendanceRows, {
+        search: params?.search,
+        searchFields: params?.searchFields,
+        period,
+        date: anchorDate,
+        status: params?.status,
+        employeeRef: params?.employeeRef,
+    });
+    const activeEmployees = employees.filter(employee => employee.active !== false);
+    const involvedEmployeeRefs = new Set(records.map(record => record.employeeRef).filter(Boolean));
+    const pendingEmployees = period === 'today'
+        ? activeEmployees
+            .filter(employee => !records.some(record => record.employeeRef === employee._id && record.date === anchorDate))
+            .map(employee => ({
+                _id: employee._id,
+                employeeCode: employee.employeeCode,
+                name: employee.name,
+                division: employee.division,
+                position: employee.position,
+            }))
+        : [];
+
+    return {
+        period,
+        periodLabel: EMPLOYEE_ATTENDANCE_PERIOD_LABELS[period],
+        startDate: range.startDate,
+        endDate: range.endDate,
+        activeEmployeeCount: activeEmployees.length,
+        recordedEmployeeCount: involvedEmployeeRefs.size,
+        unrecordedEmployeeCount: pendingEmployees.length,
+        totalRecords: records.length,
+        presentCount: records.filter(record => record.status === 'HADIR').length,
+        permissionCount: records.filter(record => record.status === 'IZIN').length,
+        sickCount: records.filter(record => record.status === 'SAKIT').length,
+        leaveCount: records.filter(record => record.status === 'CUTI').length,
+        absentCount: records.filter(record => record.status === 'ALPHA').length,
+        offCount: records.filter(record => record.status === 'LIBUR').length,
+        pendingEmployees,
     };
 }
 

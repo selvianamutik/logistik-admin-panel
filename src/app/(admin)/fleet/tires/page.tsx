@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useApp, useToast } from '../../layout';
 import { Plus, Search, Disc3, CheckCircle, Warehouse, ExternalLink, History } from 'lucide-react';
@@ -18,6 +19,7 @@ import {
     type ResolvedFleetTireEvent,
     type TireFormState,
 } from '@/lib/fleet-asset-page-support';
+import { isTireTrackedWarehouseItem, WAREHOUSE_ITEM_TRACKING_MODE_LABELS } from '@/lib/inventory';
 import { formatDate, TIRE_ASSET_STATUS_MAP } from '@/lib/utils';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import {
@@ -30,8 +32,8 @@ import {
     type TireHolderType,
 } from '@/lib/tire-slots';
 import { getTireHistoryActionColor, getTireHistoryActionLabel, getTireHistoryTransitionLabel } from '@/lib/tire-history';
-import type { TireEvent, TireHistoryLog, Vehicle } from '@/lib/types';
-import { hasPermission } from '@/lib/rbac';
+import type { TireEvent, TireHistoryLog, Vehicle, WarehouseItem } from '@/lib/types';
+import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import { formatDateTime } from '@/lib/utils';
 
 export default function TiresPage() {
@@ -40,6 +42,7 @@ export default function TiresPage() {
     const [events, setEvents] = useState<TireEvent[]>([]);
     const [allTireEvents, setAllTireEvents] = useState<TireEvent[]>([]);
     const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+    const [warehouseItems, setWarehouseItems] = useState<WarehouseItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [filterVehicle, setFilterVehicle] = useState('');
@@ -61,6 +64,9 @@ export default function TiresPage() {
     const [vehicleCategoryFilter, setVehicleCategoryFilter] = useState('');
     const canCreateTires = user ? hasPermission(user.role, 'tires', 'create') : false;
     const canManageTires = user ? hasPermission(user.role, 'tires', 'update') : false;
+    const canOpenPurchases = user ? hasPageAccess(user.role, 'purchases') : false;
+    const canOpenItems = user ? hasPageAccess(user.role, 'warehouseItems') : false;
+    const linkedWarehouseItemLocked = Boolean(editTarget?.linkedWarehouseItemRef || editTarget?.sourcePurchaseRef);
 
     useEffect(() => {
         setPage(1);
@@ -115,11 +121,12 @@ export default function TiresPage() {
                 return payload as { data: T; meta?: { total?: number } };
             };
 
-            const [tirePayload, vehiclePayload, matchingTires, allTireRows] = await Promise.all([
+            const [tirePayload, vehiclePayload, matchingTires, allTireRows, warehouseItemRows] = await Promise.all([
                 fetchEntity<TireEvent[]>(`/api/data?${buildCurrentTiresQuery()}`),
                 fetchAdminCollectionData<Vehicle[]>('/api/data?entity=vehicles', 'Gagal memuat data ban'),
                 fetchAllMatchingTires(),
                 fetchAllAdminCollectionData<TireEvent>('/api/data?entity=tire-events', 'Gagal memuat data ban'),
+                fetchAllAdminCollectionData<WarehouseItem>('/api/data?entity=warehouse-items&pageSize=200', 'Gagal memuat data ban'),
             ]);
 
             const nextCounts = matchingTires.reduce(
@@ -143,6 +150,7 @@ export default function TiresPage() {
             setAllTireEvents(allTireRows || []);
             setFilteredTotalTires(tirePayload.meta?.total || 0);
             setVehicles(vehiclePayload || []);
+            setWarehouseItems((warehouseItemRows || []).filter(item => item.active !== false));
             setMountedCount(nextCounts.mounted);
             setSpareCount(nextCounts.spare);
             setWarehouseCount(nextCounts.warehouse);
@@ -166,6 +174,14 @@ export default function TiresPage() {
     const selectableVehicles = useMemo(
         () => getSelectableTireVehiclesByCategory(vehicles, editTarget, vehicleCategoryFilter || undefined),
         [editTarget, vehicleCategoryFilter, vehicles]
+    );
+    const trackedTireItems = useMemo(
+        () => warehouseItems.filter(item => isTireTrackedWarehouseItem(item)),
+        [warehouseItems]
+    );
+    const selectedLinkedWarehouseItem = useMemo(
+        () => trackedTireItems.find(item => item._id === form.linkedWarehouseItemRef) || null,
+        [form.linkedWarehouseItemRef, trackedTireItems]
     );
     const selectedVehicle = useMemo(
         () => vehicles.find(vehicle => vehicle._id === form.vehicleRef) || null,
@@ -245,6 +261,7 @@ export default function TiresPage() {
             status,
             vehicleRef: event.vehicleRef || '',
             slotCode,
+            linkedWarehouseItemRef: event.linkedWarehouseItemRef || '',
             tireType: event.tireType,
             tireBrand: event.tireBrand,
             tireSize: event.tireSize,
@@ -308,6 +325,26 @@ export default function TiresPage() {
         }
     }, [form.holderType, form.slotCode, slotOptions]);
 
+    useEffect(() => {
+        if (!selectedLinkedWarehouseItem) {
+            return;
+        }
+        setForm(prev => {
+            const nextBrand = prev.tireBrand || selectedLinkedWarehouseItem.tireBrandDefault || prev.tireBrand;
+            const nextSize = prev.tireSize || selectedLinkedWarehouseItem.tireSizeDefault || prev.tireSize;
+            const nextType = prev.tireType || selectedLinkedWarehouseItem.tireTypeDefault || prev.tireType;
+            if (nextBrand === prev.tireBrand && nextSize === prev.tireSize && nextType === prev.tireType) {
+                return prev;
+            }
+            return {
+                ...prev,
+                tireBrand: nextBrand,
+                tireSize: nextSize,
+                tireType: nextType,
+            };
+        });
+    }, [selectedLinkedWarehouseItem]);
+
     const handleSave = async () => {
         if (!form.tireCode) { addToast('error', 'Isi kode ban'); return; }
         if (!form.tireBrand) { addToast('error', 'Isi merk/tipe ban'); return; }
@@ -326,6 +363,7 @@ export default function TiresPage() {
                 ...form,
                 vehiclePlate: vehicle?.plateNumber,
                 slotLabel: form.slotCode ? formatTireSlotLabel(form.slotCode) : undefined,
+                linkedWarehouseItemRef: form.linkedWarehouseItemRef || undefined,
             };
 
             if (editTarget) {
@@ -385,6 +423,13 @@ export default function TiresPage() {
                 <div className="kpi-card"><div className="kpi-icon primary"><Warehouse size={20} /></div><div className="kpi-content"><div className="kpi-label">Di Gudang</div><div className="kpi-value">{warehouseCount}</div></div></div>
             </div>
 
+            <div className="info-banner" style={{ marginBottom: '1.5rem' }}>
+                <div className="info-banner-title">Integrasi Ban dan Inventory</div>
+                <div className="info-banner-text">
+                    Harga pembelian ban dikelola di modul inventory dan pembelian supplier. Halaman ini fokus pada histori aset ban, posisi unit, dan pergerakan ban tanpa menampilkan harga.
+                </div>
+            </div>
+
             <div className="table-container">
                 <div className="table-toolbar">
                     <div className="table-toolbar-left">
@@ -410,15 +455,16 @@ export default function TiresPage() {
                                 <th>Lokasi Saat Ini</th>
                                 <th>Status</th>
                                 <th>Merk & Ukuran</th>
+                                <th>Sumber</th>
                                 <th><SortableTableHeader label="Tgl Catat" direction={dateSortDir} onToggle={() => setDateSortDir(current => current === 'desc' ? 'asc' : 'desc')} /></th>
                                 <th>Catatan</th>
                                 <th></th>
                             </tr>
                         </thead>
                         <tbody>
-                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
+                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 filteredTotalTires === 0 ? (
-                                    <tr><td colSpan={7}>
+                                    <tr><td colSpan={8}>
                                         <div className="empty-state">
                                             <Disc3 size={48} className="empty-state-icon" />
                                             <div className="empty-state-title">Belum ada ban tercatat</div>
@@ -442,6 +488,28 @@ export default function TiresPage() {
                                         <td>
                                             <div className="font-medium">{event.tireBrand}</div>
                                             <div className="font-mono text-sm">{event.tireSize}</div>
+                                        </td>
+                                        <td>
+                                            {event.sourcePurchaseNumber ? (
+                                                <div style={{ display: 'grid', gap: '0.2rem' }}>
+                                                    <div className="text-sm">
+                                                        {canOpenPurchases ? (
+                                                            <Link href={`/inventory/purchases/${event.sourcePurchaseRef}`} style={{ color: 'var(--color-primary)' }}>
+                                                                {event.sourcePurchaseNumber}
+                                                            </Link>
+                                                        ) : event.sourcePurchaseNumber}
+                                                    </div>
+                                                    <div className="text-muted text-sm">
+                                                        {canOpenItems && event.linkedWarehouseItemRef ? (
+                                                            <Link href={`/inventory/items?q=${encodeURIComponent(event.linkedWarehouseItemCode || event.linkedWarehouseItemName || '')}`} style={{ color: 'var(--color-primary)' }}>
+                                                                {event.linkedWarehouseItemCode || event.linkedWarehouseItemName || '-'}
+                                                            </Link>
+                                                        ) : (event.linkedWarehouseItemCode || event.linkedWarehouseItemName || '-')}
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <span className="text-muted">{event.linkedWarehouseItemCode || '-'}</span>
+                                            )}
                                         </td>
                                         <td className="text-muted">{formatDate(event.installDate)}</td>
                                         <td className="text-muted">{event.notes || '-'}</td>
@@ -489,6 +557,12 @@ export default function TiresPage() {
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Tanggal Catat</span>
                                         <span className="mobile-record-value">{formatDate(event.installDate)}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Sumber</span>
+                                        <span className="mobile-record-value">
+                                            {event.sourcePurchaseNumber || event.linkedWarehouseItemCode || '-'}
+                                        </span>
                                     </div>
                                     {event.notes && (
                                         <div className="mobile-record-kv">
@@ -540,6 +614,53 @@ export default function TiresPage() {
                                     </select>
                                 </div>
                             </div>
+
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Master Barang Gudang</label>
+                                    <select
+                                        className="form-select"
+                                        value={form.linkedWarehouseItemRef}
+                                        onChange={e => updateForm('linkedWarehouseItemRef', e.target.value)}
+                                        disabled={saving || linkedWarehouseItemLocked}
+                                    >
+                                        <option value="">Tidak dihubungkan</option>
+                                        {trackedTireItems.map(item => (
+                                            <option key={item._id} value={item._id}>
+                                                {item.itemCode} - {item.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>
+                                        Pilih master barang jika ban ini harus sinkron ke stok gudang ban. Harga tetap dikelola di modul inventory.
+                                    </div>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Mode Tracking</label>
+                                    <input
+                                        className="form-input"
+                                        value={selectedLinkedWarehouseItem ? WAREHOUSE_ITEM_TRACKING_MODE_LABELS[selectedLinkedWarehouseItem.trackingMode || 'STANDARD'] : 'Ban mandiri'}
+                                        readOnly
+                                    />
+                                </div>
+                            </div>
+
+                            {editTarget?.sourcePurchaseNumber && (
+                                <div className="info-banner" style={{ marginBottom: '1rem' }}>
+                                    <div className="info-banner-title">Sumber Pembelian</div>
+                                    <div className="info-banner-text">
+                                        Ban ini terdaftar dari pembelian {editTarget.sourcePurchaseNumber}.
+                                        {canOpenPurchases && editTarget.sourcePurchaseRef && (
+                                            <>
+                                                {' '}
+                                                <Link href={`/inventory/purchases/${editTarget.sourcePurchaseRef}`} style={{ color: 'var(--color-primary)', fontWeight: 600 }}>
+                                                    Buka pembelian
+                                                </Link>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
 
                             <div className="form-row">
                                 <div className="form-group">
@@ -601,6 +722,15 @@ export default function TiresPage() {
                                     </select>
                                 </div>
                             </div>
+
+                            {selectedLinkedWarehouseItem && form.holderType === 'WAREHOUSE' && (
+                                <div className="info-banner" style={{ marginBottom: '1rem' }}>
+                                    <div className="info-banner-title">Sinkron Stok Gudang Ban</div>
+                                    <div className="info-banner-text">
+                                        Ban ini terhubung ke {selectedLinkedWarehouseItem.itemCode} - {selectedLinkedWarehouseItem.name}. Saat ban masuk gudang stok akan bertambah, dan saat ban keluar ke unit atau pihak luar stok akan berkurang otomatis.
+                                    </div>
+                                </div>
+                            )}
 
                             {form.holderType === 'INTERNAL_VEHICLE' && (
                                 <div className="form-row">
