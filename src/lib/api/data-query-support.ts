@@ -448,10 +448,15 @@ export async function getEmployeeAttendanceSummary(params?: {
         employeeRef: params?.employeeRef,
     });
     const activeEmployees = employees.filter(employee => employee.active !== false);
-    const involvedEmployeeRefs = new Set(records.map(record => record.employeeRef).filter(Boolean));
+    const activeEmployeeRefSet = new Set(activeEmployees.map(employee => employee._id));
+    const recordedActiveEmployeeRefs = new Set(
+        records
+            .map(record => record.employeeRef)
+            .filter((employeeRef): employeeRef is string => Boolean(employeeRef) && activeEmployeeRefSet.has(employeeRef))
+    );
     const pendingEmployees = period === 'today'
         ? activeEmployees
-            .filter(employee => !records.some(record => record.employeeRef === employee._id && record.date === anchorDate))
+            .filter(employee => !recordedActiveEmployeeRefs.has(employee._id))
             .map(employee => ({
                 _id: employee._id,
                 employeeCode: employee.employeeCode,
@@ -460,6 +465,7 @@ export async function getEmployeeAttendanceSummary(params?: {
                 position: employee.position,
             }))
         : [];
+    const unrecordedEmployeeCount = Math.max(activeEmployees.length - recordedActiveEmployeeRefs.size, 0);
 
     return {
         period,
@@ -467,8 +473,8 @@ export async function getEmployeeAttendanceSummary(params?: {
         startDate: range.startDate,
         endDate: range.endDate,
         activeEmployeeCount: activeEmployees.length,
-        recordedEmployeeCount: involvedEmployeeRefs.size,
-        unrecordedEmployeeCount: pendingEmployees.length,
+        recordedEmployeeCount: recordedActiveEmployeeRefs.size,
+        unrecordedEmployeeCount,
         totalRecords: records.length,
         presentCount: records.filter(record => record.status === 'HADIR').length,
         permissionCount: records.filter(record => record.status === 'IZIN').length,

@@ -171,6 +171,7 @@ export default function AttendancePage() {
     const dailyRecordsByEmployee = useMemo(() => {
         return new Map(dailyRecords.map(record => [record.employeeRef, record] as const));
     }, [dailyRecords]);
+    const activeEmployeeRefSet = useMemo(() => new Set(activeEmployees.map(employee => employee._id)), [activeEmployees]);
     const dailyAttendanceRows = useMemo(() => {
         const keyword = inputSearch.trim().toLowerCase();
         const rows: DailyAttendanceRow[] = activeEmployees
@@ -236,7 +237,8 @@ export default function AttendancePage() {
         return dailyAttendanceRows.slice(offset, offset + INPUT_PAGE_SIZE);
     }, [dailyAttendanceRows, dailyPage]);
     const dailyAttendanceSummary = useMemo(() => {
-        const counts = dailyRecords.reduce(
+        const activeDailyRecords = dailyRecords.filter(record => activeEmployeeRefSet.has(record.employeeRef));
+        const counts = activeDailyRecords.reduce(
             (totals, record) => {
                 if (record.status === 'HADIR') totals.present += 1;
                 if (record.status === 'IZIN') totals.permission += 1;
@@ -251,11 +253,11 @@ export default function AttendancePage() {
 
         return {
             activeEmployeeCount: activeEmployees.length,
-            recordedEmployeeCount: dailyRecords.length,
-            unrecordedEmployeeCount: Math.max(activeEmployees.length - dailyRecords.length, 0),
+            recordedEmployeeCount: activeDailyRecords.length,
+            unrecordedEmployeeCount: Math.max(activeEmployees.length - activeDailyRecords.length, 0),
             ...counts,
         };
-    }, [activeEmployees.length, dailyRecords]);
+    }, [activeEmployeeRefSet, activeEmployees.length, dailyRecords]);
     const selectedEmployeeOption = useMemo(
         () => employeeOptions.find(employee => employee._id === employeeFilter) || null,
         [employeeFilter, employeeOptions],
