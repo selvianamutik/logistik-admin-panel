@@ -103,6 +103,9 @@ async function loadWarehouseItemSnapshot(itemRef: string) {
     if (!item || item._type !== 'warehouseItem') {
         throw new Error('Barang gudang tidak ditemukan');
     }
+    if (item.active === false) {
+        throw new Error('Barang gudang tidak aktif');
+    }
     if (!item.itemCode || !item.name || !item.unit) {
         throw new Error('Master barang gudang maintenance tidak valid');
     }

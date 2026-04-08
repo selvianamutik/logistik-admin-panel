@@ -130,10 +130,13 @@ async function resolveSupplierSnapshot(supplierRef: string) {
     return supplier;
 }
 
-async function resolveWarehouseItemSnapshot(itemRef: string) {
+async function resolveWarehouseItemSnapshot(itemRef: string, options?: { allowInactive?: boolean }) {
     const item = await sanityGetById<WarehouseItem>(itemRef);
     if (!item || item._type !== 'warehouseItem') {
         throw new Error('Barang gudang tidak ditemukan');
+    }
+    if (item.active === false && !options?.allowInactive) {
+        throw new Error('Barang gudang tidak aktif');
     }
     if (!item.itemCode || !item.name || !item.unit || !isInventoryUnit(item.unit)) {
         throw new Error('Master barang gudang tidak valid');
@@ -365,7 +368,7 @@ export async function handlePurchaseReceive(
                     { status: 409 }
                 );
             }
-            const warehouseItem = await resolveWarehouseItemSnapshot(item.warehouseItemRef);
+            const warehouseItem = await resolveWarehouseItemSnapshot(item.warehouseItemRef, { allowInactive: true });
             if (isTireTrackedWarehouseItem(item) || isTireTrackedWarehouseItem(warehouseItem)) {
                 assertTrackedTireWarehouseItemDefaults(warehouseItem);
                 assertTrackedTireQuantity(
