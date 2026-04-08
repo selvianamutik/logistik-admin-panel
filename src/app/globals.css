@@ -2813,8 +2813,8 @@ tbody td {
   }
 
   .modal {
-    width: 95vw !important;
-    max-width: 95vw !important;
+    width: calc(100vw - (var(--space-3) * 2)) !important;
+    max-width: calc(100vw - (var(--space-3) * 2)) !important;
     margin: var(--space-3);
   }
 }

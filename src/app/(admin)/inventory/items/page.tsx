@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { ArrowDownCircle, ArrowUpCircle, Edit, FileDown, Package, Plus, RefreshCw, Save, Search, X } from 'lucide-react';
+import { ArrowDownCircle, ArrowUpCircle, Edit, FileDown, History, Package, Plus, RefreshCw, Save, Search, X } from 'lucide-react';
 
 import AppPagination from '@/components/AppPagination';
 import CurrencyInput from '@/components/CurrencyInput';
@@ -13,13 +14,15 @@ import {
   formatInventoryQuantity,
   INVENTORY_UNIT_OPTIONS,
   isTireTrackedWarehouseItem,
+  STOCK_MOVEMENT_SOURCE_LABELS,
+  STOCK_MOVEMENT_TYPE_LABELS,
   WAREHOUSE_ITEM_TRACKING_MODE_LABELS,
   WAREHOUSE_ITEM_TRACKING_MODE_OPTIONS,
 } from '@/lib/inventory';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
-import { hasPermission } from '@/lib/rbac';
-import type { Supplier, WarehouseItem } from '@/lib/types';
-import { formatCurrency } from '@/lib/utils';
+import { hasPageAccess, hasPermission } from '@/lib/rbac';
+import type { Maintenance, StockMovement, Supplier, WarehouseItem } from '@/lib/types';
+import { formatCurrency, formatDate } from '@/lib/utils';
 
 import { useApp, useToast } from '../../layout';
 
@@ -93,16 +96,24 @@ export default function WarehouseItemsPage() {
   const [filteredTotal, setFilteredTotal] = useState(0);
   const [showModal, setShowModal] = useState(false);
   const [showMovementModal, setShowMovementModal] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [editItem, setEditItem] = useState<WarehouseItem | null>(null);
   const [movementItem, setMovementItem] = useState<WarehouseItem | null>(null);
+  const [historyItem, setHistoryItem] = useState<WarehouseItem | null>(null);
+  const [historyRows, setHistoryRows] = useState<StockMovement[]>([]);
+  const [historyMaintenancesById, setHistoryMaintenancesById] = useState<Record<string, Pick<Maintenance, '_id' | 'vehicleRef' | 'vehiclePlate' | 'type'>>>({});
   const [saving, setSaving] = useState(false);
   const [savingMovement, setSavingMovement] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [form, setForm] = useState<ItemFormState>(createItemForm());
   const [movementForm, setMovementForm] = useState<MovementFormState>(createMovementForm());
 
   const canManage = user ? hasPermission(user.role, 'warehouseItems', 'create') || hasPermission(user.role, 'warehouseItems', 'update') : false;
   const canExport = user ? hasPermission(user.role, 'warehouseItems', 'export') : false;
+  const canOpenPurchasePage = user ? hasPageAccess(user.role, 'purchases') : false;
+  const canOpenVehiclePage = user ? hasPageAccess(user.role, 'vehicles') : false;
+  const canOpenTirePage = user ? hasPageAccess(user.role, 'tires') : false;
   const activeSuppliers = useMemo(() => suppliers.filter((supplier) => supplier.active !== false), [suppliers]);
   const activeItemCount = allItems.filter((item) => item.active !== false).length;
   const lowStockCount = allItems.filter((item) => {
@@ -150,9 +161,105 @@ export default function WarehouseItemsPage() {
 
   const closeModal = () => { if (!saving) { setShowModal(false); setEditItem(null); setForm(createItemForm()); } };
   const closeMovementModal = () => { if (!savingMovement) { setShowMovementModal(false); setMovementItem(null); setMovementForm(createMovementForm()); } };
+  const closeHistoryModal = () => { if (!loadingHistory) { setShowHistoryModal(false); setHistoryItem(null); setHistoryRows([]); setHistoryMaintenancesById({}); } };
   const openCreate = () => { setEditItem(null); setForm(createItemForm()); setShowModal(true); };
   const openEdit = (item: WarehouseItem) => { setEditItem(item); setForm(createItemForm(item)); setShowModal(true); };
   const openMovement = (item: WarehouseItem, sourceType: 'MANUAL_IN' | 'MANUAL_OUT') => { setMovementItem(item); setMovementForm(createMovementForm(sourceType)); setShowMovementModal(true); };
+  const openHistory = async (item: WarehouseItem) => {
+    setHistoryItem(item);
+    setHistoryRows([]);
+    setHistoryMaintenancesById({});
+    setShowHistoryModal(true);
+    setLoadingHistory(true);
+    try {
+      const rows = await fetchAllAdminCollectionData<StockMovement>(
+        `/api/data?entity=stock-movements&filter=${encodeURIComponent(JSON.stringify({ warehouseItemRef: item._id }))}&pageSize=100&sortField=movementDate&sortDir=desc`,
+        'Gagal memuat riwayat mutasi stok',
+        100
+      );
+      setHistoryRows(rows || []);
+
+      if (!canOpenVehiclePage) {
+        setHistoryMaintenancesById({});
+        return;
+      }
+
+      const maintenanceRefs = Array.from(
+        new Set(
+          (rows || [])
+            .filter((row) => row.sourceType === 'MAINTENANCE_USAGE' && typeof row.sourceRef === 'string' && row.sourceRef.trim())
+            .map((row) => row.sourceRef as string)
+        )
+      );
+
+      if (maintenanceRefs.length === 0) {
+        setHistoryMaintenancesById({});
+        return;
+      }
+
+      const maintenanceEntries = await Promise.all(
+        maintenanceRefs.map(async (maintenanceRef) => {
+          const res = await fetch(`/api/data?entity=maintenances&id=${maintenanceRef}`);
+          const payload = await res.json();
+          if (!res.ok || !payload?.data?._id) {
+            return null;
+          }
+          const maintenance = payload.data as Maintenance;
+          return [maintenanceRef, {
+            _id: maintenance._id,
+            vehicleRef: maintenance.vehicleRef,
+            vehiclePlate: maintenance.vehiclePlate,
+            type: maintenance.type,
+          }] as const;
+        })
+      );
+
+      setHistoryMaintenancesById(
+        maintenanceEntries.reduce<Record<string, Pick<Maintenance, '_id' | 'vehicleRef' | 'vehiclePlate' | 'type'>>>((acc, entry) => {
+          if (!entry) return acc;
+          acc[entry[0]] = entry[1];
+          return acc;
+        }, {})
+      );
+    } catch (error) {
+      addToast('error', error instanceof Error ? error.message : 'Gagal memuat riwayat mutasi stok');
+      setHistoryRows([]);
+      setHistoryMaintenancesById({});
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const getMovementSourceMeta = (movement: StockMovement) => {
+    const sourceLabel = STOCK_MOVEMENT_SOURCE_LABELS[movement.sourceType];
+    if (movement.sourceType === 'PURCHASE_RECEIPT' && movement.sourceRef) {
+      return {
+        primary: movement.sourceNumber || sourceLabel,
+        secondary: sourceLabel,
+        href: canOpenPurchasePage ? `/inventory/purchases/${movement.sourceRef}` : undefined,
+      };
+    }
+    if (movement.sourceType === 'MAINTENANCE_USAGE') {
+      const maintenance = movement.sourceRef ? historyMaintenancesById[movement.sourceRef] : undefined;
+      return {
+        primary: maintenance?.vehiclePlate || movement.sourceNumber || 'Maintenance',
+        secondary: maintenance?.type ? `${sourceLabel} • ${maintenance.type}` : sourceLabel,
+        href: maintenance?.vehicleRef && canOpenVehiclePage ? `/fleet/vehicles/${maintenance.vehicleRef}?tab=maintenance` : undefined,
+      };
+    }
+    if ((movement.sourceType === 'TIRE_DEPLOYMENT' || movement.sourceType === 'TIRE_RETURN') && canOpenTirePage) {
+      return {
+        primary: movement.sourceNumber || sourceLabel,
+        secondary: sourceLabel,
+        href: '/fleet/tires',
+      };
+    }
+    return {
+      primary: movement.sourceNumber || sourceLabel,
+      secondary: sourceLabel,
+      href: undefined,
+    };
+  };
 
   const handleSave = async () => {
     if (!canManage) return addToast('error', 'Anda tidak punya hak mengubah barang gudang');
@@ -338,11 +445,12 @@ export default function WarehouseItemsPage() {
                         {canManage ? (
                           <>
                             <button className="table-action-btn" onClick={() => openEdit(item)}><Edit size={14} /> Edit</button>
+                            <button className="table-action-btn" onClick={() => void openHistory(item)}><History size={14} /> Riwayat</button>
                             {!isTireTrackedWarehouseItem(item) && <button className="table-action-btn" onClick={() => openMovement(item, 'MANUAL_IN')}><ArrowDownCircle size={14} /> Masuk</button>}
                             {!isTireTrackedWarehouseItem(item) && <button className="table-action-btn" onClick={() => openMovement(item, 'MANUAL_OUT')}><ArrowUpCircle size={14} /> Keluar</button>}
                             <button className="table-action-btn" onClick={() => toggleActive(item)} disabled={togglingId === item._id}><RefreshCw size={14} />{togglingId === item._id ? 'Menyimpan...' : item.active !== false ? 'Nonaktifkan' : 'Aktifkan'}</button>
                           </>
-                        ) : <span className="text-muted">Lihat saja</span>}
+                        ) : <button className="table-action-btn" onClick={() => void openHistory(item)}><History size={14} /> Riwayat</button>}
                       </div>
                     </td>
                   </tr>
@@ -378,9 +486,15 @@ export default function WarehouseItemsPage() {
                   {canManage && (
                     <div className="mobile-record-actions">
                       <button className="btn btn-secondary" onClick={() => openEdit(item)}><Edit size={14} /> Edit</button>
+                      <button className="btn btn-secondary" onClick={() => void openHistory(item)}><History size={14} /> Riwayat</button>
                       {!isTireTrackedWarehouseItem(item) && <button className="btn btn-secondary" onClick={() => openMovement(item, 'MANUAL_IN')}><ArrowDownCircle size={14} /> Masuk</button>}
                       {!isTireTrackedWarehouseItem(item) && <button className="btn btn-secondary" onClick={() => openMovement(item, 'MANUAL_OUT')}><ArrowUpCircle size={14} /> Keluar</button>}
                       <button className="btn btn-secondary" onClick={() => toggleActive(item)} disabled={togglingId === item._id}><RefreshCw size={14} />{togglingId === item._id ? 'Menyimpan...' : item.active !== false ? 'Nonaktifkan' : 'Aktifkan'}</button>
+                    </div>
+                  )}
+                  {!canManage && (
+                    <div className="mobile-record-actions">
+                      <button className="btn btn-secondary" onClick={() => void openHistory(item)}><History size={14} /> Riwayat</button>
                     </div>
                   )}
                 </div>
@@ -451,6 +565,134 @@ export default function WarehouseItemsPage() {
               <div className="info-banner" style={{ marginTop: '0.5rem' }}><div className="info-banner-title">Stok Saat Ini</div><div className="info-banner-text">{formatInventoryQuantity(movementItem.currentStockQty || 0)} {movementItem.unit}</div></div>
             </div>
             <div className="modal-footer"><button className="btn btn-secondary" onClick={closeMovementModal} disabled={savingMovement}>Batal</button><button className="btn btn-primary" onClick={handleStockMovement} disabled={savingMovement}><Save size={16} /> {savingMovement ? 'Menyimpan...' : 'Simpan Mutasi'}</button></div>
+          </div>
+        </div>
+      )}
+
+      {showHistoryModal && historyItem && (
+        <div className="modal-backdrop" onClick={closeHistoryModal}>
+          <div
+            className="modal modal-lg"
+            style={{ width: 'min(48rem, calc(100vw - 1rem))' }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div>
+                <div className="modal-title">Riwayat Mutasi Stok</div>
+                <div className="modal-subtitle">{historyItem.itemCode} - {historyItem.name}</div>
+              </div>
+              <button className="icon-btn" onClick={closeHistoryModal} disabled={loadingHistory}><X size={18} /></button>
+            </div>
+            <div className="modal-body">
+              <div className="info-banner" style={{ marginBottom: '1rem' }}>
+                <div className="info-banner-title">Stok Saat Ini</div>
+                <div className="info-banner-text">{formatInventoryQuantity(historyItem.currentStockQty || 0)} {historyItem.unit} • Menampilkan hingga 100 mutasi terbaru.</div>
+              </div>
+
+              <div className="table-wrapper table-desktop-only">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Tanggal</th>
+                      <th>Mutasi</th>
+                      <th>Sumber</th>
+                      <th>Qty</th>
+                      <th>Saldo Setelah</th>
+                      <th>Catatan</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loadingHistory ? (
+                      [1, 2, 3].map((index) => (
+                        <tr key={index}>{[1, 2, 3, 4, 5, 6].map((cell) => <td key={cell}><div className="skeleton skeleton-text" /></td>)}</tr>
+                      ))
+                    ) : historyRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={6}>
+                          <div className="empty-state">
+                            <History size={40} className="empty-state-icon" />
+                            <div className="empty-state-title">Belum ada mutasi stok</div>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : historyRows.map((movement) => {
+                      const sourceMeta = getMovementSourceMeta(movement);
+                      return (
+                        <tr key={movement._id}>
+                          <td>{formatDate(movement.movementDate)}</td>
+                          <td>
+                            <span className={`badge ${movement.type === 'OUT' ? 'badge-warning' : 'badge-success'}`}>
+                              {STOCK_MOVEMENT_TYPE_LABELS[movement.type]}
+                            </span>
+                          </td>
+                          <td>
+                            <div className="font-medium">
+                              {sourceMeta.href ? (
+                                <Link href={sourceMeta.href} style={{ color: 'var(--color-primary)' }}>{sourceMeta.primary}</Link>
+                              ) : sourceMeta.primary}
+                            </div>
+                            <div className="text-muted text-xs">{sourceMeta.secondary}</div>
+                          </td>
+                          <td>{formatInventoryQuantity(movement.quantity)} {movement.unit || historyItem.unit}</td>
+                          <td>{movement.balanceAfter !== undefined ? `${formatInventoryQuantity(movement.balanceAfter)} ${movement.unit || historyItem.unit}` : '-'}</td>
+                          <td>{movement.note || '-'}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {!loadingHistory && (
+                <div className="mobile-record-list">
+                  {historyRows.length === 0 ? (
+                    <div className="mobile-record-card">
+                      <div className="mobile-record-title">Belum ada mutasi stok</div>
+                    </div>
+                  ) : historyRows.map((movement) => {
+                    const sourceMeta = getMovementSourceMeta(movement);
+                    return (
+                      <div key={movement._id} className="mobile-record-card">
+                        <div className="mobile-record-header">
+                          <div>
+                            <div className="mobile-record-title">{formatDate(movement.movementDate)}</div>
+                            <div className="mobile-record-subtitle">{sourceMeta.secondary}</div>
+                          </div>
+                          <span className={`badge ${movement.type === 'OUT' ? 'badge-warning' : 'badge-success'}`}>
+                            {STOCK_MOVEMENT_TYPE_LABELS[movement.type]}
+                          </span>
+                        </div>
+                        <div className="mobile-record-grid">
+                          <div className="mobile-record-field mobile-record-field-full">
+                            <span className="mobile-record-label">Sumber</span>
+                            <span className="mobile-record-value">
+                              {sourceMeta.href ? (
+                                <Link href={sourceMeta.href} style={{ color: 'var(--color-primary)' }}>{sourceMeta.primary}</Link>
+                              ) : sourceMeta.primary}
+                            </span>
+                          </div>
+                          <div className="mobile-record-field">
+                            <span className="mobile-record-label">Qty</span>
+                            <span className="mobile-record-value">{formatInventoryQuantity(movement.quantity)} {movement.unit || historyItem.unit}</span>
+                          </div>
+                          <div className="mobile-record-field">
+                            <span className="mobile-record-label">Saldo Setelah</span>
+                            <span className="mobile-record-value">{movement.balanceAfter !== undefined ? `${formatInventoryQuantity(movement.balanceAfter)} ${movement.unit || historyItem.unit}` : '-'}</span>
+                          </div>
+                          <div className="mobile-record-field mobile-record-field-full">
+                            <span className="mobile-record-label">Catatan</span>
+                            <span className="mobile-record-value">{movement.note || '-'}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={closeHistoryModal} disabled={loadingHistory}>Tutup</button>
+            </div>
           </div>
         </div>
       )}
