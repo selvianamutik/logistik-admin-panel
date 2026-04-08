@@ -19,13 +19,13 @@ import {
     createDefaultMaintenanceCompletionForm,
     createEmptyMaintenanceMaterialLine,
     getMaintenanceMaterialOverflowCount,
-    getMaintenanceMaterialSummary,
+    getMaintenanceMaterialPreview,
     getMaintenanceRecordedCost,
     type MaintenanceCompletionFormState,
     type MaintenanceMaterialOption,
 } from '@/lib/maintenance';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
-import { hasPermission } from '@/lib/rbac';
+import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import type { Maintenance, Vehicle } from '@/lib/types';
 import { formatCurrency, formatDate, formatQuantity, MAINTENANCE_STATUS_MAP } from '@/lib/utils';
 import { useApp, useToast } from '../../layout';
@@ -59,6 +59,7 @@ export default function MaintenancePage() {
     const canCreateMaintenance = user ? hasPermission(user.role, 'maintenance', 'create') : false;
     const canUpdateMaintenance = user ? hasPermission(user.role, 'maintenance', 'update') : false;
     const canViewMaintenanceCost = user?.role === 'OWNER';
+    const canOpenWarehouseItems = user ? hasPageAccess(user.role, 'warehouseItems') : false;
 
     useEffect(() => {
         setPage(1);
@@ -320,6 +321,41 @@ export default function MaintenancePage() {
         }
     };
 
+    const renderMaterialUsage = (item: Maintenance) => {
+        if (item.status !== 'DONE') {
+            return <span>Belum dicatat</span>;
+        }
+
+        const materialPreview = getMaintenanceMaterialPreview(item);
+        if (materialPreview.length === 0) {
+            return <span className="text-muted text-sm">Tanpa material gudang</span>;
+        }
+
+        const overflowCount = getMaintenanceMaterialOverflowCount(item);
+        return (
+            <div style={{ display: 'grid', gap: '0.2rem' }}>
+                {materialPreview.map((usage) => {
+                    const usageLabel = `${usage.displayLabel} ${formatQuantity(usage.quantity, 3)} ${usage.unit}`;
+                    return canOpenWarehouseItems ? (
+                        <Link
+                            key={`${item._id}-${usage.warehouseItemRef}`}
+                            href={`/inventory/items/${usage.warehouseItemRef}`}
+                            className="text-sm font-medium"
+                            style={{ color: 'var(--color-primary)', wordBreak: 'break-word' }}
+                        >
+                            {usageLabel}
+                        </Link>
+                    ) : (
+                        <span key={`${item._id}-${usage.warehouseItemRef}`} className="text-sm" style={{ wordBreak: 'break-word' }}>
+                            {usageLabel}
+                        </span>
+                    );
+                })}
+                {overflowCount > 0 && <div className="text-muted text-xs">+{overflowCount} material lain</div>}
+            </div>
+        );
+    };
+
     return (
         <div>
             <div className="page-header">
@@ -371,15 +407,13 @@ export default function MaintenancePage() {
                             {loading ? [1, 2, 3].map(i => <tr key={i}>{Array.from({ length: tableColumnCount }).map((_, j) => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 filteredTotalMaintenance === 0 ? <tr><td colSpan={tableColumnCount}><div className="empty-state"><Wrench size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada jadwal maintenance</div></div></td></tr> :
                                     items.map(item => {
-                                        const overflowCount = getMaintenanceMaterialOverflowCount(item);
-                                        const materialLabel = item.status === 'DONE' ? getMaintenanceMaterialSummary(item) : 'Belum dicatat';
                                         return (
                                             <tr key={item._id}>
                                                 <td><Link href={`/fleet/vehicles/${item.vehicleRef}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{item.vehiclePlate}</Link></td>
                                                 <td><div className="font-medium">{item.type}</div><div className="text-muted text-sm">{getMaintenanceNextAction(item)}</div></td>
                                                 <td>{item.scheduleType === 'DATE' ? formatDate(item.plannedDate) : `${formatQuantity(item.plannedOdometer || 0, 0)} km`}</td>
                                                 <td><span className={`badge badge-${MAINTENANCE_STATUS_MAP[item.status]?.color}`}><span className="badge-dot" /> {MAINTENANCE_STATUS_MAP[item.status]?.label}</span></td>
-                                                <td><div>{materialLabel}</div>{overflowCount > 0 && <div className="text-muted text-xs">+{overflowCount} material lain</div>}</td>
+                                                <td>{renderMaterialUsage(item)}</td>
                                                 {canViewMaintenanceCost && <td>{item.status === 'DONE' ? formatCurrency(getMaintenanceRecordedCost(item)) : '-'}</td>}
                                                 <td>
                                                     <div className="table-actions">
@@ -404,8 +438,6 @@ export default function MaintenancePage() {
                         {filteredTotalMaintenance === 0 ? (
                             <div className="mobile-record-card"><div className="mobile-record-title">Belum ada jadwal maintenance</div></div>
                         ) : items.map(item => {
-                            const overflowCount = getMaintenanceMaterialOverflowCount(item);
-                            const materialLabel = item.status === 'DONE' ? getMaintenanceMaterialSummary(item) : 'Belum dicatat';
                             return (
                                 <div key={item._id} className="mobile-record-card">
                                     <div className="mobile-record-header">
@@ -415,7 +447,7 @@ export default function MaintenancePage() {
                                     <div className="mobile-record-meta">
                                         <div className="mobile-record-kv"><span className="mobile-record-label">Jadwal</span><span className="mobile-record-value">{item.scheduleType === 'DATE' ? formatDate(item.plannedDate) : `${formatQuantity(item.plannedOdometer || 0, 0)} km`}</span></div>
                                         <div className="mobile-record-kv"><span className="mobile-record-label">Tindak Lanjut</span><span className="mobile-record-value">{getMaintenanceNextAction(item)}</span></div>
-                                        <div className="mobile-record-kv"><span className="mobile-record-label">Material Gudang</span><span className="mobile-record-value">{materialLabel}{overflowCount > 0 ? ` (+${overflowCount} lagi)` : ''}</span></div>
+                                        <div className="mobile-record-kv"><span className="mobile-record-label">Material Gudang</span><div className="mobile-record-value">{renderMaterialUsage(item)}</div></div>
                                         {canViewMaintenanceCost && item.status === 'DONE' && <div className="mobile-record-kv"><span className="mobile-record-label">Biaya Internal</span><span className="mobile-record-value">{formatCurrency(getMaintenanceRecordedCost(item))}</span></div>}
                                         {item.notes && <div className="mobile-record-kv"><span className="mobile-record-label">Catatan Jadwal</span><span className="mobile-record-value">{item.notes}</span></div>}
                                     </div>

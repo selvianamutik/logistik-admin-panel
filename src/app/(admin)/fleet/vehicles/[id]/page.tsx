@@ -36,7 +36,7 @@ import {
 } from '@/lib/vehicle-detail-page-support';
 import {
     getMaintenanceMaterialOverflowCount,
-    getMaintenanceMaterialSummary,
+    getMaintenanceMaterialPreview,
     getMaintenanceRecordedCost,
 } from '@/lib/maintenance';
 import { getTireHistoryActionColor, getTireHistoryActionLabel } from '@/lib/tire-history';
@@ -72,6 +72,7 @@ export default function VehicleDetailPage() {
     const canViewVehicleExpenses = user ? hasPermission(user.role, 'expenses', 'view') : false;
     const canOpenCustomerPage = user ? hasPageAccess(user.role, 'customers') : false;
     const canOpenDeliveryOrderPage = user ? hasPageAccess(user.role, 'deliveryOrders') : false;
+    const canOpenWarehouseItems = user ? hasPageAccess(user.role, 'warehouseItems') : false;
     const vehicleTabs = getVehicleTabs(isOwner);
 
     const loadVehicleDetail = useCallback(async () => {
@@ -130,13 +131,58 @@ export default function VehicleDetailPage() {
     const totalDirectExpenses = vehicleDirectExpenses.reduce((sum, expense) => sum + expense.amount, 0);
     const totalMaintenanceCosts = maints.reduce((sum, maintenance) => sum + getMaintenanceRecordedCost(maintenance), 0);
     const totalExpenses = totalDirectExpenses + totalMaintenanceCosts;
+
+    const renderMaintenanceMaterialUsage = (item: Maintenance) => {
+        if (item.status !== 'DONE') {
+            return <span>Belum dicatat</span>;
+        }
+
+        const materialPreview = getMaintenanceMaterialPreview(item);
+        if (materialPreview.length === 0) {
+            return <span className="text-muted text-sm">Tanpa material gudang</span>;
+        }
+
+        const overflowCount = getMaintenanceMaterialOverflowCount(item);
+        return (
+            <div style={{ display: 'grid', gap: '0.2rem' }}>
+                {materialPreview.map((usage) => {
+                    const usageLabel = `${usage.displayLabel} ${formatQuantity(usage.quantity, 3)} ${usage.unit}`;
+                    return canOpenWarehouseItems ? (
+                        <Link
+                            key={`${item._id}-${usage.warehouseItemRef}`}
+                            href={`/inventory/items/${usage.warehouseItemRef}`}
+                            className="text-sm font-medium"
+                            style={{ color: 'var(--color-primary)', wordBreak: 'break-word' }}
+                        >
+                            {usageLabel}
+                        </Link>
+                    ) : (
+                        <span key={`${item._id}-${usage.warehouseItemRef}`} className="text-sm" style={{ wordBreak: 'break-word' }}>
+                            {usageLabel}
+                        </span>
+                    );
+                })}
+                {overflowCount > 0 && <div className="text-muted text-xs">+{overflowCount} material lain</div>}
+            </div>
+        );
+    };
+
+    const renderMaintenanceCostDescription = (maintenance: Maintenance) => (
+        <div style={{ display: 'grid', gap: '0.2rem' }}>
+            <div>{maintenance.type}</div>
+            {maintenance.materialUsageCount ? (
+                <div className="text-muted text-sm">{renderMaintenanceMaterialUsage(maintenance)}</div>
+            ) : null}
+        </div>
+    );
+
     const maintenanceCostRows = maints
         .filter((maintenance) => maintenance.status === 'DONE' && getMaintenanceRecordedCost(maintenance) > 0)
         .map((maintenance) => ({
             id: `maintenance-${maintenance._id}`,
             date: maintenance.completedDate || maintenance.plannedDate || '',
             source: 'Maintenance',
-            description: `${maintenance.type}${maintenance.materialUsageCount ? ` • ${getMaintenanceMaterialSummary(maintenance)}` : ''}`,
+            description: renderMaintenanceCostDescription(maintenance),
             amount: getMaintenanceRecordedCost(maintenance),
         }));
     const vehicleCostRows = [
@@ -517,10 +563,8 @@ export default function VehicleDetailPage() {
                         <div className="table-wrapper table-desktop-only"><table>
                             <thead><tr><th>Tipe</th><th>Jadwal</th><th>Status</th><th>Material Gudang</th><th>Odometer</th><th>Vendor</th>{isOwner && <th>Biaya Internal</th>}</tr></thead>
                             <tbody>{maints.length === 0 ? <tr><td colSpan={isOwner ? 7 : 6} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada maintenance</td></tr> : maints.map(m => {
-                                const overflowCount = getMaintenanceMaterialOverflowCount(m);
-                                const materialSummary = m.status === 'DONE' ? getMaintenanceMaterialSummary(m) : 'Belum dicatat';
                                 return (
-                                <tr key={m._id}><td>{m.type}</td><td>{m.scheduleType === 'DATE' ? formatDate(m.plannedDate) : `${formatQuantity(m.plannedOdometer || 0, 0)} km`}</td><td><span className={`badge badge-${MAINTENANCE_STATUS_MAP[m.status]?.color}`}>{MAINTENANCE_STATUS_MAP[m.status]?.label}</span></td><td><div>{materialSummary}</div>{overflowCount > 0 && <div className="text-muted text-xs">+{overflowCount} material lain</div>}</td><td>{m.odometerAtService ? `${formatQuantity(m.odometerAtService, 0)} km` : '-'}</td><td>{m.vendor || '-'}</td>{isOwner && <td>{m.status === 'DONE' ? formatCurrency(getMaintenanceRecordedCost(m)) : '-'}</td>}</tr>
+                                <tr key={m._id}><td>{m.type}</td><td>{m.scheduleType === 'DATE' ? formatDate(m.plannedDate) : `${formatQuantity(m.plannedOdometer || 0, 0)} km`}</td><td><span className={`badge badge-${MAINTENANCE_STATUS_MAP[m.status]?.color}`}>{MAINTENANCE_STATUS_MAP[m.status]?.label}</span></td><td>{renderMaintenanceMaterialUsage(m)}</td><td>{m.odometerAtService ? `${formatQuantity(m.odometerAtService, 0)} km` : '-'}</td><td>{m.vendor || '-'}</td>{isOwner && <td>{m.status === 'DONE' ? formatCurrency(getMaintenanceRecordedCost(m)) : '-'}</td>}</tr>
                                 );
                             })}</tbody>
                         </table></div>
@@ -549,7 +593,7 @@ export default function VehicleDetailPage() {
                                         </div>
                                         <div className="mobile-record-kv">
                                             <span className="mobile-record-label">Material Gudang</span>
-                                            <span className="mobile-record-value">{m.status === 'DONE' ? getMaintenanceMaterialSummary(m) : 'Belum dicatat'}</span>
+                                            <div className="mobile-record-value">{renderMaintenanceMaterialUsage(m)}</div>
                                         </div>
                                         {isOwner && m.status === 'DONE' && (
                                             <div className="mobile-record-kv">

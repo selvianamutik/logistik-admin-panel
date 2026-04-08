@@ -1,6 +1,11 @@
 import { getBusinessDateValue } from './business-date';
 import { formatQuantity } from './utils';
-import type { InventoryUnit, Maintenance, Vehicle } from './types';
+import type {
+  InventoryUnit,
+  Maintenance,
+  MaintenanceMaterialUsage,
+  Vehicle,
+} from './types';
 
 export type MaintenanceMaterialOption = {
   _id: string;
@@ -50,15 +55,33 @@ export function getMaintenanceRecordedCost(item: Maintenance) {
   return 0;
 }
 
-export function getMaintenanceMaterialSummary(item: Maintenance) {
+export type MaintenanceMaterialPreview = MaintenanceMaterialUsage & {
+  displayLabel: string;
+};
+
+function getMaintenanceMaterialDisplayLabel(usage: MaintenanceMaterialUsage) {
+  const codeAndName = [usage.itemCode, usage.itemName].filter(Boolean).join(' - ');
+  return codeAndName || 'Barang';
+}
+
+export function getMaintenanceMaterialPreview(item: Maintenance, limit = 2): MaintenanceMaterialPreview[] {
   const usages = Array.isArray(item.materialUsages) ? item.materialUsages : [];
+  return usages.slice(0, limit).map((usage) => ({
+    ...usage,
+    displayLabel: getMaintenanceMaterialDisplayLabel(usage),
+  }));
+}
+
+export function formatMaintenanceMaterialPreview(usage: MaintenanceMaterialPreview) {
+  return `${usage.displayLabel} ${formatQuantity(usage.quantity, 3)} ${usage.unit}`;
+}
+
+export function getMaintenanceMaterialSummary(item: Maintenance) {
+  const usages = getMaintenanceMaterialPreview(item);
   if (usages.length === 0) {
     return 'Tanpa material gudang';
   }
-  return usages
-    .slice(0, 2)
-    .map((usage) => `${usage.itemName || usage.itemCode || 'Barang'} ${formatQuantity(usage.quantity, 3)} ${usage.unit}`)
-    .join(', ');
+  return usages.map(formatMaintenanceMaterialPreview).join(', ');
 }
 
 export function getMaintenanceMaterialOverflowCount(item: Maintenance) {
