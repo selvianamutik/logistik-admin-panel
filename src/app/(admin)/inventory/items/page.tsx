@@ -111,6 +111,7 @@ export default function WarehouseItemsPage() {
 
   const canManage = user ? hasPermission(user.role, 'warehouseItems', 'create') || hasPermission(user.role, 'warehouseItems', 'update') : false;
   const canExport = user ? hasPermission(user.role, 'warehouseItems', 'export') : false;
+  const canOpenSuppliers = user ? hasPageAccess(user.role, 'suppliers') : false;
   const canOpenPurchasePage = user ? hasPageAccess(user.role, 'purchases') : false;
   const canOpenVehiclePage = user ? hasPageAccess(user.role, 'vehicles') : false;
   const canOpenTirePage = user ? hasPageAccess(user.role, 'tires') : false;
@@ -435,7 +436,13 @@ export default function WarehouseItemsPage() {
                         {WAREHOUSE_ITEM_TRACKING_MODE_LABELS[item.trackingMode || 'STANDARD']}
                       </span>
                     </td>
-                    <td>{item.defaultSupplierName || '-'}</td>
+                    <td>
+                      {canOpenSuppliers && item.defaultSupplierRef ? (
+                        <Link href={`/suppliers/${item.defaultSupplierRef}`} style={{ color: 'var(--color-primary)' }}>
+                          {item.defaultSupplierName || '-'}
+                        </Link>
+                      ) : (item.defaultSupplierName || '-')}
+                    </td>
                     <td>{formatInventoryQuantity(item.currentStockQty || 0)} {item.unit}</td>
                     <td>{formatInventoryQuantity(item.minStockQty || 0)} {item.unit}</td>
                     <td>{Number(item.defaultPurchasePrice || 0) > 0 ? formatCurrency(Number(item.defaultPurchasePrice || 0)) : '-'}</td>
@@ -475,7 +482,16 @@ export default function WarehouseItemsPage() {
                   <div className="mobile-record-grid">
                     <div className="mobile-record-field"><span className="mobile-record-label">Kategori</span><span className="mobile-record-value">{item.category || '-'}</span></div>
                     <div className="mobile-record-field"><span className="mobile-record-label">Mode</span><span className="mobile-record-value">{WAREHOUSE_ITEM_TRACKING_MODE_LABELS[item.trackingMode || 'STANDARD']}</span></div>
-                    <div className="mobile-record-field"><span className="mobile-record-label">Supplier</span><span className="mobile-record-value">{item.defaultSupplierName || '-'}</span></div>
+                    <div className="mobile-record-field">
+                      <span className="mobile-record-label">Supplier</span>
+                      <span className="mobile-record-value">
+                        {canOpenSuppliers && item.defaultSupplierRef ? (
+                          <Link href={`/suppliers/${item.defaultSupplierRef}`} style={{ color: 'var(--color-primary)' }}>
+                            {item.defaultSupplierName || '-'}
+                          </Link>
+                        ) : (item.defaultSupplierName || '-')}
+                      </span>
+                    </div>
                     <div className="mobile-record-field"><span className="mobile-record-label">Stok</span><span className="mobile-record-value">{formatInventoryQuantity(item.currentStockQty || 0)} {item.unit}</span></div>
                     <div className="mobile-record-field"><span className="mobile-record-label">Min. Stok</span><span className="mobile-record-value">{formatInventoryQuantity(item.minStockQty || 0)} {item.unit}</span></div>
                     <div className="mobile-record-field mobile-record-field-full"><span className="mobile-record-label">Harga Beli Default</span><span className="mobile-record-value">{Number(item.defaultPurchasePrice || 0) > 0 ? formatCurrency(Number(item.defaultPurchasePrice || 0)) : '-'}</span></div>

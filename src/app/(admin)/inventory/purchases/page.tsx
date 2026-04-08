@@ -10,7 +10,7 @@ import { getBusinessDateValue } from '@/lib/business-date';
 import { exportToExcel } from '@/lib/export';
 import { PURCHASE_STATUS_LABELS } from '@/lib/inventory';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
-import { hasPermission } from '@/lib/rbac';
+import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import type { Purchase, PurchaseStatus } from '@/lib/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
 
@@ -45,6 +45,7 @@ export default function PurchasesPage() {
 
   const canCreatePurchase = user ? hasPermission(user.role, 'purchases', 'create') : false;
   const canExportPurchases = user ? hasPermission(user.role, 'purchases', 'export') : false;
+  const canOpenSuppliers = user ? hasPageAccess(user.role, 'suppliers') : false;
   const today = getBusinessDateValue();
   const openCount = useMemo(() => allFilteredPurchases.filter((purchase) => purchase.status !== 'PAID' && purchase.status !== 'CANCELLED' && Number(purchase.outstandingAmount || 0) > 0).length, [allFilteredPurchases]);
   const overdueCount = useMemo(() => allFilteredPurchases.filter((purchase) => purchase.dueDate && purchase.dueDate < today && Number(purchase.outstandingAmount || 0) > 0).length, [allFilteredPurchases, today]);
@@ -160,7 +161,16 @@ export default function PurchasesPage() {
               ) : purchases.map((purchase) => (
                 <tr key={purchase._id}>
                   <td className="font-mono">{purchase.purchaseNumber}</td>
-                  <td><div className="font-semibold">{purchase.supplierName || '-'}</div><div className="text-muted text-xs">{purchase.notes || 'Tanpa catatan'}</div></td>
+                  <td>
+                    <div className="font-semibold">
+                      {canOpenSuppliers && purchase.supplierRef ? (
+                        <Link href={`/suppliers/${purchase.supplierRef}`} style={{ color: 'var(--color-primary)' }}>
+                          {purchase.supplierName || '-'}
+                        </Link>
+                      ) : (purchase.supplierName || '-')}
+                    </div>
+                    <div className="text-muted text-xs">{purchase.notes || 'Tanpa catatan'}</div>
+                  </td>
                   <td>{formatDate(purchase.orderDate)}</td>
                   <td>{purchase.dueDate ? formatDate(purchase.dueDate) : '-'}</td>
                   <td>{formatCurrency(Number(purchase.totalAmount || 0))}</td>
@@ -180,7 +190,16 @@ export default function PurchasesPage() {
             ) : purchases.map((purchase) => (
               <div key={purchase._id} className="mobile-record-card">
                 <div className="mobile-record-header">
-                  <div><div className="mobile-record-title">{purchase.purchaseNumber}</div><div className="mobile-record-subtitle">{purchase.supplierName || '-'}</div></div>
+                  <div>
+                    <div className="mobile-record-title">{purchase.purchaseNumber}</div>
+                    <div className="mobile-record-subtitle">
+                      {canOpenSuppliers && purchase.supplierRef ? (
+                        <Link href={`/suppliers/${purchase.supplierRef}`} style={{ color: 'var(--color-primary)' }}>
+                          {purchase.supplierName || '-'}
+                        </Link>
+                      ) : (purchase.supplierName || '-')}
+                    </div>
+                  </div>
                   <span className={`badge ${getStatusBadge(purchase.status)}`}>{PURCHASE_STATUS_LABELS[purchase.status]}</span>
                 </div>
                 <div className="mobile-record-grid">

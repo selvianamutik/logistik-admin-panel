@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Building2, Edit, FileDown, Plus, RefreshCw, Save, Search, X } from 'lucide-react';
@@ -337,7 +338,11 @@ export default function SuppliersPage() {
                                 <tr key={supplier._id}>
                                     <td className="font-mono">{supplier.supplierCode}</td>
                                     <td>
-                                        <div className="font-semibold">{supplier.name}</div>
+                                        <div className="font-semibold">
+                                            <Link href={`/suppliers/${supplier._id}`} style={{ color: 'var(--color-primary)' }}>
+                                                {supplier.name}
+                                            </Link>
+                                        </div>
                                         <div className="text-muted text-xs">{supplier.address || 'Tanpa alamat'}</div>
                                     </td>
                                     <td>
@@ -354,6 +359,9 @@ export default function SuppliersPage() {
                                         <div className="table-actions">
                                             {canManage ? (
                                                 <>
+                                                    <Link href={`/suppliers/${supplier._id}`} className="table-action-btn">
+                                                        Lihat Detail
+                                                    </Link>
                                                     <button className="table-action-btn" onClick={() => openEdit(supplier)}>
                                                         <Edit size={14} /> Edit
                                                     </button>
@@ -368,7 +376,11 @@ export default function SuppliersPage() {
                                                             : supplier.active !== false ? 'Nonaktifkan' : 'Aktifkan'}
                                                     </button>
                                                 </>
-                                            ) : <span className="text-muted">Lihat saja</span>}
+                                            ) : (
+                                                <Link href={`/suppliers/${supplier._id}`} className="table-action-btn">
+                                                    Lihat Detail
+                                                </Link>
+                                            )}
                                         </div>
                                     </td>
                                 </tr>
@@ -388,7 +400,11 @@ export default function SuppliersPage() {
                             <div key={supplier._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
-                                        <div className="mobile-record-title">{supplier.name}</div>
+                                        <div className="mobile-record-title">
+                                            <Link href={`/suppliers/${supplier._id}`} style={{ color: 'var(--color-primary)' }}>
+                                                {supplier.name}
+                                            </Link>
+                                        </div>
                                         <div className="mobile-record-subtitle">{supplier.supplierCode}</div>
                                     </div>
                                     <span className={`badge ${supplier.active !== false ? 'badge-success' : 'badge-gray'}`}>
@@ -411,6 +427,9 @@ export default function SuppliersPage() {
                                 </div>
                                 {canManage && (
                                     <div className="mobile-record-actions">
+                                        <Link href={`/suppliers/${supplier._id}`} className="btn btn-secondary">
+                                            Lihat Detail
+                                        </Link>
                                         <button className="btn btn-secondary" onClick={() => openEdit(supplier)}>
                                             <Edit size={14} /> Edit
                                         </button>
@@ -422,6 +441,13 @@ export default function SuppliersPage() {
                                             <RefreshCw size={14} />
                                             {togglingId === supplier._id ? 'Menyimpan...' : supplier.active !== false ? 'Nonaktifkan' : 'Aktifkan'}
                                         </button>
+                                    </div>
+                                )}
+                                {!canManage && (
+                                    <div className="mobile-record-actions">
+                                        <Link href={`/suppliers/${supplier._id}`} className="btn btn-secondary">
+                                            Lihat Detail
+                                        </Link>
                                     </div>
                                 )}
                             </div>

@@ -243,7 +243,7 @@ export default function PurchaseDetailPage() {
         <div className="card-header"><span className="card-header-title">{purchase.purchaseNumber}</span></div>
         <div className="card-body">
           <div className="detail-grid">
-            <div className="detail-row"><span className="detail-label">Supplier</span><span className="detail-value">{canOpenSuppliers && supplier ? <Link href={`/suppliers?q=${encodeURIComponent(supplier.supplierCode || supplier.name)}`} style={{ color: 'var(--color-primary)' }}>{purchase.supplierName || '-'}</Link> : (purchase.supplierName || '-')}</span></div>
+            <div className="detail-row"><span className="detail-label">Supplier</span><span className="detail-value">{canOpenSuppliers && supplier ? <Link href={`/suppliers/${supplier._id}`} style={{ color: 'var(--color-primary)' }}>{purchase.supplierName || '-'}</Link> : (purchase.supplierName || '-')}</span></div>
             <div className="detail-row"><span className="detail-label">Tanggal Pembelian</span><span className="detail-value">{formatDate(purchase.orderDate)}</span></div>
             <div className="detail-row"><span className="detail-label">Jatuh Tempo</span><span className="detail-value">{purchase.dueDate ? formatDate(purchase.dueDate) : '-'}</span></div>
             <div className="detail-row"><span className="detail-label">Total Dibayar</span><span className="detail-value">{formatCurrency(Number(summary.paidAmount || 0))}</span></div>
