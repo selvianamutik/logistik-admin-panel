@@ -219,6 +219,9 @@ export async function handlePurchaseCreate(
         assertIsoDate(orderDate, 'Tanggal pembelian');
         if (dueDate) {
             assertIsoDate(dueDate, 'Jatuh tempo pembelian');
+            if (dueDate < orderDate) {
+                throw new Error('Jatuh tempo pembelian tidak boleh lebih awal dari tanggal pembelian');
+            }
         }
 
         const supplier = await resolveSupplierSnapshot(supplierRef);
@@ -321,6 +324,12 @@ export async function handlePurchaseReceive(
         const bundle = await loadPurchaseBundle(purchaseRef);
         if (!bundle) {
             return NextResponse.json({ error: 'Pembelian tidak ditemukan' }, { status: 404 });
+        }
+        if (receiveDate < bundle.purchase.orderDate) {
+            return NextResponse.json(
+                { error: 'Tanggal terima barang tidak boleh lebih awal dari tanggal pembelian' },
+                { status: 400 }
+            );
         }
         if (bundle.purchase.status === 'CANCELLED') {
             return NextResponse.json({ error: 'Pembelian yang dibatalkan tidak bisa menerima barang' }, { status: 409 });
