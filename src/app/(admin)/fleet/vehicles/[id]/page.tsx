@@ -34,6 +34,11 @@ import {
     type VehicleTireFormState,
     VEHICLE_TIRE_TYPE_OPTIONS,
 } from '@/lib/vehicle-detail-page-support';
+import {
+    getMaintenanceMaterialOverflowCount,
+    getMaintenanceMaterialSummary,
+    getMaintenanceRecordedCost,
+} from '@/lib/maintenance';
 import { getTireHistoryActionColor, getTireHistoryActionLabel } from '@/lib/tire-history';
 
 export default function VehicleDetailPage() {
@@ -122,7 +127,28 @@ export default function VehicleDetailPage() {
 
     const vehicleDirectExpenses = expenses.filter(expense => !expense.voucherRef && !expense.boronganRef);
     const hiddenTripSettlementExpenses = expenses.filter(expense => Boolean(expense.voucherRef || expense.boronganRef));
-    const totalExpenses = vehicleDirectExpenses.reduce((s, e) => s + e.amount, 0);
+    const totalDirectExpenses = vehicleDirectExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+    const totalMaintenanceCosts = maints.reduce((sum, maintenance) => sum + getMaintenanceRecordedCost(maintenance), 0);
+    const totalExpenses = totalDirectExpenses + totalMaintenanceCosts;
+    const maintenanceCostRows = maints
+        .filter((maintenance) => maintenance.status === 'DONE' && getMaintenanceRecordedCost(maintenance) > 0)
+        .map((maintenance) => ({
+            id: `maintenance-${maintenance._id}`,
+            date: maintenance.completedDate || maintenance.plannedDate || '',
+            source: 'Maintenance',
+            description: `${maintenance.type}${maintenance.materialUsageCount ? ` • ${getMaintenanceMaterialSummary(maintenance)}` : ''}`,
+            amount: getMaintenanceRecordedCost(maintenance),
+        }));
+    const vehicleCostRows = [
+        ...vehicleDirectExpenses.map((expense) => ({
+            id: expense._id,
+            date: expense.date || '',
+            source: expense.categoryName || 'Pengeluaran',
+            description: expense.note || expense.description || '-',
+            amount: expense.amount,
+        })),
+        ...maintenanceCostRows,
+    ].sort((left, right) => `${right.date}-${right.id}`.localeCompare(`${left.date}-${left.id}`));
     const activeDeliveryOrder = dos.find(deliveryOrder => ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status));
     const {
         normalizedAllTireRows,
@@ -489,10 +515,14 @@ export default function VehicleDetailPage() {
                     </div>
                     <div className="card-body">
                         <div className="table-wrapper table-desktop-only"><table>
-                            <thead><tr><th>Tipe</th><th>Jadwal</th><th>Status</th><th>Odometer</th><th>Vendor</th></tr></thead>
-                            <tbody>{maints.length === 0 ? <tr><td colSpan={5} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada maintenance</td></tr> : maints.map(m => (
-                                <tr key={m._id}><td>{m.type}</td><td>{m.scheduleType === 'DATE' ? formatDate(m.plannedDate) : `${formatQuantity(m.plannedOdometer || 0, 0)} km`}</td><td><span className={`badge badge-${MAINTENANCE_STATUS_MAP[m.status]?.color}`}>{MAINTENANCE_STATUS_MAP[m.status]?.label}</span></td><td>{m.odometerAtService ? `${formatQuantity(m.odometerAtService, 0)} km` : '-'}</td><td>{m.vendor || '-'}</td></tr>
-                            ))}</tbody>
+                            <thead><tr><th>Tipe</th><th>Jadwal</th><th>Status</th><th>Material Gudang</th><th>Odometer</th><th>Vendor</th>{isOwner && <th>Biaya Internal</th>}</tr></thead>
+                            <tbody>{maints.length === 0 ? <tr><td colSpan={isOwner ? 7 : 6} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada maintenance</td></tr> : maints.map(m => {
+                                const overflowCount = getMaintenanceMaterialOverflowCount(m);
+                                const materialSummary = m.status === 'DONE' ? getMaintenanceMaterialSummary(m) : 'Belum dicatat';
+                                return (
+                                <tr key={m._id}><td>{m.type}</td><td>{m.scheduleType === 'DATE' ? formatDate(m.plannedDate) : `${formatQuantity(m.plannedOdometer || 0, 0)} km`}</td><td><span className={`badge badge-${MAINTENANCE_STATUS_MAP[m.status]?.color}`}>{MAINTENANCE_STATUS_MAP[m.status]?.label}</span></td><td><div>{materialSummary}</div>{overflowCount > 0 && <div className="text-muted text-xs">+{overflowCount} material lain</div>}</td><td>{m.odometerAtService ? `${formatQuantity(m.odometerAtService, 0)} km` : '-'}</td><td>{m.vendor || '-'}</td>{isOwner && <td>{m.status === 'DONE' ? formatCurrency(getMaintenanceRecordedCost(m)) : '-'}</td>}</tr>
+                                );
+                            })}</tbody>
                         </table></div>
                         <div className="mobile-record-list">
                             {maints.length === 0 ? (
@@ -517,6 +547,16 @@ export default function VehicleDetailPage() {
                                             <span className="mobile-record-label">Odometer</span>
                                             <span className="mobile-record-value">{m.odometerAtService ? `${formatQuantity(m.odometerAtService, 0)} km` : '-'}</span>
                                         </div>
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Material Gudang</span>
+                                            <span className="mobile-record-value">{m.status === 'DONE' ? getMaintenanceMaterialSummary(m) : 'Belum dicatat'}</span>
+                                        </div>
+                                        {isOwner && m.status === 'DONE' && (
+                                            <div className="mobile-record-kv">
+                                                <span className="mobile-record-label">Biaya Internal</span>
+                                                <span className="mobile-record-value">{formatCurrency(getMaintenanceRecordedCost(m))}</span>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             ))}
@@ -653,7 +693,7 @@ export default function VehicleDetailPage() {
                         <div>
                             <span className="card-header-title">Biaya Kendaraan Langsung</span>
                             <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
-                                Halaman kendaraan hanya menampilkan pengeluaran yang dicatat langsung ke unit. Uang jalan trip dan upah supir dilihat dari detail supir atau Uang Jalan Trip.
+                                Halaman kendaraan menampilkan pengeluaran langsung ke unit dan biaya material gudang yang dipakai saat maintenance. Uang jalan trip dan upah supir tetap dilihat dari detail supir atau Uang Jalan Trip.
                             </div>
                         </div>
                     </div>
@@ -667,9 +707,9 @@ export default function VehicleDetailPage() {
                             </div>
                         )}
                         <div className="table-wrapper"><table>
-                            <thead><tr><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th>Jumlah</th></tr></thead>
-                            <tbody>{vehicleDirectExpenses.length === 0 ? <tr><td colSpan={4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada biaya kendaraan langsung</td></tr> : vehicleDirectExpenses.map(e => (
-                                <tr key={e._id}><td>{formatDate(e.date)}</td><td>{e.categoryName}</td><td>{e.note || e.description}</td><td className="font-medium">{formatCurrency(e.amount)}</td></tr>
+                            <thead><tr><th>Tanggal</th><th>Sumber</th><th>Deskripsi</th><th>Jumlah</th></tr></thead>
+                            <tbody>{vehicleCostRows.length === 0 ? <tr><td colSpan={4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada biaya kendaraan langsung</td></tr> : vehicleCostRows.map(row => (
+                                <tr key={row.id}><td>{formatDate(row.date)}</td><td>{row.source}</td><td>{row.description}</td><td className="font-medium">{formatCurrency(row.amount)}</td></tr>
                             ))}</tbody>
                         </table></div>
                     </div>

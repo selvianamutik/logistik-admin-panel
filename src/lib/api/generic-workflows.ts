@@ -1022,6 +1022,13 @@ export async function handleGenericUpdate(
             return NextResponse.json({ error: 'Status maintenance tidak valid' }, { status: 400 });
         }
 
+        if (updates.status === 'DONE') {
+            return NextResponse.json(
+                { error: 'Maintenance selesai harus diproses lewat workflow resmi agar material gudang dan biaya unit tetap sinkron' },
+                { status: 409 }
+            );
+        }
+
         if (typeof updates.completedDate !== 'string' || !updates.completedDate) {
             updates.completedDate = getBusinessDateValue();
         }

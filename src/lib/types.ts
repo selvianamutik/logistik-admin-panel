@@ -322,6 +322,7 @@ export type StockMovementSourceType =
   | 'MANUAL_IN'
   | 'MANUAL_OUT'
   | 'ADJUSTMENT'
+  | 'MAINTENANCE_USAGE'
   | 'TIRE_DEPLOYMENT'
   | 'TIRE_RETURN';
 
@@ -976,6 +977,18 @@ export interface Vehicle {
 export type MaintenanceStatus = 'SCHEDULED' | 'DONE' | 'SKIPPED';
 export type ScheduleType = 'DATE' | 'ODOMETER';
 
+export interface MaintenanceMaterialUsage {
+  warehouseItemRef: string;
+  itemCode?: string;
+  itemName?: string;
+  category?: string;
+  unit: InventoryUnit;
+  quantity: number;
+  unitCostSnapshot?: number;
+  subtotalCost?: number;
+  note?: string;
+}
+
 export interface Maintenance {
   _id: string;
   _type: 'maintenance';
@@ -990,7 +1003,12 @@ export interface Maintenance {
   odometerAtService?: number;
   vendor?: string;
   notes?: string;
+  completionNotes?: string;
   attachmentUrls?: string[];
+  materialUsages?: MaintenanceMaterialUsage[];
+  materialUsageCount?: number;
+  materialCostTotal?: number;
+  totalCost?: number;
   relatedExpenseRef?: string;
   cost?: number;
 }

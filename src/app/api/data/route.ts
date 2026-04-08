@@ -39,6 +39,10 @@ import {
     handleStockMovementCreate,
 } from '@/lib/api/inventory-workflows';
 import {
+    getMaintenanceMaterialOptions,
+    handleMaintenanceComplete,
+} from '@/lib/api/maintenance-workflows';
+import {
     handleGenericCreate,
     handleGenericDelete,
     handleGenericUpdate,
@@ -207,7 +211,8 @@ function getMutationPermissionAction(action?: string): keyof ModulePermissions {
         action === 'top-up' ||
         action === 'repair-issue-ledger' ||
         action === 'mark-paid' ||
-        action === 'void'
+        action === 'void' ||
+        action === 'complete-with-materials'
     ) {
         return 'update';
     }
@@ -699,6 +704,19 @@ export async function GET(request: Request) {
             });
         } catch (err) {
             console.error('API GET Customer Overpayment Error:', err);
+            return jsonNoStore({ error: 'Server error' }, { status: 500 });
+        }
+    }
+
+    if (entity === 'maintenance-material-options') {
+        if (!hasPermission(session.role, 'maintenance', 'update')) {
+            return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
+        }
+        try {
+            const options = await getMaintenanceMaterialOptions();
+            return jsonNoStore({ data: options });
+        } catch (err) {
+            console.error('API GET Maintenance Material Options Error:', err);
             return jsonNoStore({ error: 'Server error' }, { status: 500 });
         }
     }
@@ -1244,9 +1262,9 @@ export async function POST(request: Request) {
                 const forbiddenModuleMutation = forbidModuleAccess(session, entity, getMutationPermissionAction(action));
                 if (forbiddenModuleMutation) {
                     return forbiddenModuleMutation;
-                }
             }
         }
+    }
 
         const forbidden = forbidOwnerOnlyEntity(session, entity);
         if (forbidden) return forbidden;
@@ -1322,6 +1340,10 @@ export async function POST(request: Request) {
 
         if (entity === 'delivery-orders' && action === 'reject-driver-status-request') {
             return await handleDeliveryOrderDriverStatusRequestReject(session, data, addAuditLog);
+        }
+
+        if (entity === 'maintenances' && action === 'complete-with-materials') {
+            return await handleMaintenanceComplete(session, data, addAuditLog);
         }
 
         if (entity === 'driver-borongans' && action === 'create-with-items') {
