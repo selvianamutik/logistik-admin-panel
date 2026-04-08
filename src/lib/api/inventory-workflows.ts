@@ -331,6 +331,12 @@ export async function handlePurchaseReceive(
                 { status: 400 }
             );
         }
+        if (bundle.purchase.lastReceivedAt && receiveDate < bundle.purchase.lastReceivedAt) {
+            return NextResponse.json(
+                { error: 'Tanggal terima barang tidak boleh lebih awal dari penerimaan terakhir pembelian ini' },
+                { status: 400 }
+            );
+        }
         if (bundle.purchase.status === 'CANCELLED') {
             return NextResponse.json({ error: 'Pembelian yang dibatalkan tidak bisa menerima barang' }, { status: 409 });
         }
@@ -622,6 +628,12 @@ export async function handlePurchasePaymentCreate(
         if (date < bundle.purchase.orderDate) {
             return NextResponse.json(
                 { error: 'Tanggal pembayaran supplier tidak boleh lebih awal dari tanggal pembelian' },
+                { status: 400 }
+            );
+        }
+        if (bundle.purchase.lastPaidAt && date < bundle.purchase.lastPaidAt) {
+            return NextResponse.json(
+                { error: 'Tanggal pembayaran supplier tidak boleh lebih awal dari pembayaran terakhir pembelian ini' },
                 { status: 400 }
             );
         }
