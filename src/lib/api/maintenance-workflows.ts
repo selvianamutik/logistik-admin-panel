@@ -18,6 +18,7 @@ import {
     normalizeOptionalText,
     type ApiSession,
 } from './data-helpers';
+import { getLatestWarehouseStockMovementDateMap } from './inventory-stock-support';
 
 type AuditLogFn = (
     session: Pick<ApiSession, '_id' | 'name'>,
@@ -230,6 +231,9 @@ export async function handleMaintenanceComplete(
 
         const warehouseItems = await Promise.all(materialInputs.map((input) => loadWarehouseItemSnapshot(input.warehouseItemRef)));
         const unitCostSnapshots = await Promise.all(warehouseItems.map((item) => resolveWarehouseItemUnitCost(item)));
+        const latestStockMovementDates = await getLatestWarehouseStockMovementDateMap(
+            warehouseItems.map((item) => item._id)
+        );
 
         const movementDocs: StockMovement[] = [];
         const materialUsages: MaintenanceMaterialUsage[] = [];
@@ -237,6 +241,13 @@ export async function handleMaintenanceComplete(
 
         for (const [index, item] of warehouseItems.entries()) {
             const materialInput = materialInputs[index];
+            const latestStockMovementDate = latestStockMovementDates.get(item._id);
+            if (latestStockMovementDate && completedDate < latestStockMovementDate) {
+                return NextResponse.json(
+                    { error: `Tanggal selesai maintenance tidak boleh lebih awal dari mutasi stok terakhir ${item.itemCode}` },
+                    { status: 400 }
+                );
+            }
             const currentStockQty = Math.max(parseInventoryQuantity(item.currentStockQty ?? 0), 0);
             if (currentStockQty < materialInput.quantity) {
                 return NextResponse.json(

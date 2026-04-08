@@ -31,6 +31,7 @@ import {
     normalizeText,
     type ApiSession,
 } from './data-helpers';
+import { getLatestWarehouseStockMovementDateMap } from './inventory-stock-support';
 
 type AuditLogFn = (
     session: Pick<ApiSession, '_id' | 'name'>,
@@ -382,6 +383,10 @@ export async function handlePurchaseReceive(
         const nextItems: PurchaseItem[] = [];
         const movementDocs: StockMovement[] = [];
         const registeredTires: TireEvent[] = [];
+        const receiptTargetItems = bundle.items.filter((item) => receiptMap.has(item._id));
+        const latestStockMovementDates = await getLatestWarehouseStockMovementDateMap(
+            receiptTargetItems.map((item) => item.warehouseItemRef)
+        );
 
         for (const [itemIndex, item] of bundle.items.entries()) {
             const receipt = receiptMap.get(item._id);
@@ -397,6 +402,15 @@ export async function handlePurchaseReceive(
                 );
             }
             const warehouseItem = await resolveWarehouseItemSnapshot(item.warehouseItemRef, { allowInactive: true });
+            const latestStockMovementDate = latestStockMovementDates.get(warehouseItem._id);
+            if (latestStockMovementDate && receiveDate < latestStockMovementDate) {
+                return NextResponse.json(
+                    {
+                        error: `Tanggal terima barang untuk ${warehouseItem.itemCode || warehouseItem.name || warehouseItem._id} tidak boleh lebih awal dari mutasi stok terakhir barang ini`,
+                    },
+                    { status: 400 }
+                );
+            }
             if (isTireTrackedWarehouseItem(item) || isTireTrackedWarehouseItem(warehouseItem)) {
                 assertTrackedTireWarehouseItemDefaults(warehouseItem);
                 assertTrackedTireQuantity(
@@ -541,6 +555,14 @@ export async function handleStockMovementCreate(
         }
 
         const warehouseItem = await resolveWarehouseItemSnapshot(warehouseItemRef);
+        const latestStockMovementDates = await getLatestWarehouseStockMovementDateMap([warehouseItem._id]);
+        const latestStockMovementDate = latestStockMovementDates.get(warehouseItem._id);
+        if (latestStockMovementDate && movementDate < latestStockMovementDate) {
+            return NextResponse.json(
+                { error: 'Tanggal mutasi stok tidak boleh lebih awal dari mutasi stok terakhir barang ini' },
+                { status: 400 }
+            );
+        }
         if (isTireTrackedWarehouseItem(warehouseItem)) {
             return NextResponse.json(
                 { error: 'Mutasi stok manual untuk ban tertracking dikelola lewat modul Ban dan penerimaan pembelian' },
