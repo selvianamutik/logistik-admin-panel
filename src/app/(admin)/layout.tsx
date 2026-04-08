@@ -316,6 +316,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         'customers',
         'borongan',
         'purchases',
+        'items',
+        'suppliers',
         'driver-vouchers',
         'bank-accounts',
         'vehicles',
@@ -338,7 +340,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             profile: 'Profil', password: 'Password', company: 'Perusahaan',
             users: 'Pengguna', 'audit-logs': 'Audit Aktivitas', new: 'Baru', edit: 'Edit',
             tires: 'Ban', 'bank-accounts': 'Rekening & Kas', borongan: 'Riwayat Borongan', 'driver-vouchers': 'Uang Jalan Trip',
-            inventory: 'Inventory', purchases: 'Pembelian', suppliers: 'Supplier',
+            inventory: 'Inventory', purchases: 'Pembelian', suppliers: 'Supplier', items: 'Barang Gudang',
         };
         const resolvedLabel =
             labels[part] ||

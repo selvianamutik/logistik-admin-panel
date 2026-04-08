@@ -115,6 +115,7 @@ export default function WarehouseItemsPage() {
   const canOpenPurchasePage = user ? hasPageAccess(user.role, 'purchases') : false;
   const canOpenVehiclePage = user ? hasPageAccess(user.role, 'vehicles') : false;
   const canOpenTirePage = user ? hasPageAccess(user.role, 'tires') : false;
+  const canOpenItemDetail = user ? hasPageAccess(user.role, 'warehouseItems') : false;
   const activeSuppliers = useMemo(() => suppliers.filter((supplier) => supplier.active !== false), [suppliers]);
   const activeItemCount = allItems.filter((item) => item.active !== false).length;
   const lowStockCount = allItems.filter((item) => {
@@ -243,7 +244,7 @@ export default function WarehouseItemsPage() {
     if (movement.sourceType === 'MAINTENANCE_USAGE') {
       const maintenance = movement.sourceRef ? historyMaintenancesById[movement.sourceRef] : undefined;
       return {
-        primary: maintenance?.vehiclePlate || movement.sourceNumber || 'Maintenance',
+        primary: canOpenVehiclePage && maintenance?.vehiclePlate ? maintenance.vehiclePlate : 'Maintenance',
         secondary: maintenance?.type ? `${sourceLabel} • ${maintenance.type}` : sourceLabel,
         href: maintenance?.vehicleRef && canOpenVehiclePage ? `/fleet/vehicles/${maintenance.vehicleRef}?tab=maintenance` : undefined,
       };
@@ -429,8 +430,23 @@ export default function WarehouseItemsPage() {
                 const badge = getStockBadge(item);
                 return (
                   <tr key={item._id}>
-                    <td className="font-mono">{item.itemCode}</td>
-                    <td><div className="font-semibold">{item.name}</div><div className="text-muted text-xs">{item.category || 'Tanpa kategori'} | {item.unit}</div></td>
+                    <td className="font-mono">
+                      {canOpenItemDetail ? (
+                        <Link href={`/inventory/items/${item._id}`} style={{ color: 'var(--color-primary)' }}>
+                          {item.itemCode}
+                        </Link>
+                      ) : item.itemCode}
+                    </td>
+                    <td>
+                      <div className="font-semibold">
+                        {canOpenItemDetail ? (
+                          <Link href={`/inventory/items/${item._id}`} style={{ color: 'var(--color-primary)' }}>
+                            {item.name}
+                          </Link>
+                        ) : item.name}
+                      </div>
+                      <div className="text-muted text-xs">{item.category || 'Tanpa kategori'} | {item.unit}</div>
+                    </td>
                     <td>
                       <span className={`badge ${isTireTrackedWarehouseItem(item) ? 'badge-info' : 'badge-gray'}`}>
                         {WAREHOUSE_ITEM_TRACKING_MODE_LABELS[item.trackingMode || 'STANDARD']}
@@ -476,7 +492,16 @@ export default function WarehouseItemsPage() {
               return (
                 <div key={item._id} className="mobile-record-card">
                   <div className="mobile-record-header">
-                    <div><div className="mobile-record-title">{item.name}</div><div className="mobile-record-subtitle">{item.itemCode} | {item.unit}</div></div>
+                    <div>
+                      <div className="mobile-record-title">
+                        {canOpenItemDetail ? (
+                          <Link href={`/inventory/items/${item._id}`} style={{ color: 'var(--color-primary)' }}>
+                            {item.name}
+                          </Link>
+                        ) : item.name}
+                      </div>
+                      <div className="mobile-record-subtitle">{item.itemCode} | {item.unit}</div>
+                    </div>
                     <span className={`badge ${badge.className}`}>{badge.label}</span>
                   </div>
                   <div className="mobile-record-grid">
@@ -633,6 +658,9 @@ export default function WarehouseItemsPage() {
                       </tr>
                     ) : historyRows.map((movement) => {
                       const sourceMeta = getMovementSourceMeta(movement);
+                      const safeNote = movement.sourceType === 'MAINTENANCE_USAGE' && !canOpenVehiclePage
+                        ? 'Pemakaian material maintenance'
+                        : (movement.note || '-');
                       return (
                         <tr key={movement._id}>
                           <td>{formatDate(movement.movementDate)}</td>
@@ -651,7 +679,7 @@ export default function WarehouseItemsPage() {
                           </td>
                           <td>{formatInventoryQuantity(movement.quantity)} {movement.unit || historyItem.unit}</td>
                           <td>{movement.balanceAfter !== undefined ? `${formatInventoryQuantity(movement.balanceAfter)} ${movement.unit || historyItem.unit}` : '-'}</td>
-                          <td>{movement.note || '-'}</td>
+                          <td>{safeNote}</td>
                         </tr>
                       );
                     })}
@@ -667,6 +695,9 @@ export default function WarehouseItemsPage() {
                     </div>
                   ) : historyRows.map((movement) => {
                     const sourceMeta = getMovementSourceMeta(movement);
+                    const safeNote = movement.sourceType === 'MAINTENANCE_USAGE' && !canOpenVehiclePage
+                      ? 'Pemakaian material maintenance'
+                      : (movement.note || '-');
                     return (
                       <div key={movement._id} className="mobile-record-card">
                         <div className="mobile-record-header">
@@ -697,7 +728,7 @@ export default function WarehouseItemsPage() {
                           </div>
                           <div className="mobile-record-field mobile-record-field-full">
                             <span className="mobile-record-label">Catatan</span>
-                            <span className="mobile-record-value">{movement.note || '-'}</span>
+                            <span className="mobile-record-value">{safeNote}</span>
                           </div>
                         </div>
                       </div>

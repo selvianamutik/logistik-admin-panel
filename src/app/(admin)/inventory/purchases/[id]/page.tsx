@@ -266,7 +266,7 @@ export default function PurchaseDetailPage() {
                   const registeredTires = tiresByPurchaseItemRef[item._id] || [];
                   return (
                     <tr key={item._id}>
-                      <td className="font-mono">{canOpenItems ? <Link href={`/inventory/items?q=${encodeURIComponent(item.itemCode || item.itemName || '')}`} style={{ color: 'var(--color-primary)' }}>{item.itemCode || '-'}</Link> : (item.itemCode || '-')}</td>
+                      <td className="font-mono">{canOpenItems ? <Link href={`/inventory/items/${item.warehouseItemRef}`} style={{ color: 'var(--color-primary)' }}>{item.itemCode || '-'}</Link> : (item.itemCode || '-')}</td>
                       <td>
                         <div className="font-medium">{item.itemName || '-'}</div>
                         {isTireTrackedWarehouseItem(item) && (
@@ -322,7 +322,7 @@ export default function PurchaseDetailPage() {
                   {linkedTires.map((tire) => (
                     <tr key={tire._id}>
                       <td>{canOpenTires ? <Link href={`/fleet/tires?q=${encodeURIComponent(tire.tireCode || '')}`} style={{ color: 'var(--color-primary)' }}>{tire.tireCode || '-'}</Link> : (tire.tireCode || '-')}</td>
-                      <td>{canOpenItems && tire.linkedWarehouseItemRef ? <Link href={`/inventory/items?q=${encodeURIComponent(tire.linkedWarehouseItemCode || tire.linkedWarehouseItemName || '')}`} style={{ color: 'var(--color-primary)' }}>{tire.linkedWarehouseItemCode || tire.linkedWarehouseItemName || '-'}</Link> : (tire.linkedWarehouseItemCode || tire.linkedWarehouseItemName || '-')}</td>
+                      <td>{canOpenItems && tire.linkedWarehouseItemRef ? <Link href={`/inventory/items/${tire.linkedWarehouseItemRef}`} style={{ color: 'var(--color-primary)' }}>{tire.linkedWarehouseItemCode || tire.linkedWarehouseItemName || '-'}</Link> : (tire.linkedWarehouseItemCode || tire.linkedWarehouseItemName || '-')}</td>
                       <td>{tire.posisi || '-'}</td>
                       <td>{formatDate(tire.sourceReceiveDate || tire.installDate)}</td>
                       <td>{tire.sourcePurchaseNumber || '-'}</td>

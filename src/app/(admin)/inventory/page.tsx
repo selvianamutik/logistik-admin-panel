@@ -255,7 +255,7 @@ export default function InventoryOverviewPage() {
                       <div>
                         <div className="mobile-record-title">
                           {canOpenItems ? (
-                            <Link href={`/inventory/items?q=${encodeURIComponent(item.itemCode || item.name || '')}`} style={{ color: 'var(--color-primary)' }}>
+                            <Link href={`/inventory/items/${item._id}`} style={{ color: 'var(--color-primary)' }}>
                               {item.name}
                             </Link>
                           ) : item.name}

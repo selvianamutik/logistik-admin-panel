@@ -393,7 +393,7 @@ export default function SupplierDetailPage() {
                       <tr key={item._id}>
                         <td className="font-mono">
                           {canOpenItems ? (
-                            <Link href={`/inventory/items?q=${encodeURIComponent(item.itemCode || item.name || '')}`} style={{ color: 'var(--color-primary)' }}>
+                            <Link href={`/inventory/items/${item._id}`} style={{ color: 'var(--color-primary)' }}>
                               {item.itemCode}
                             </Link>
                           ) : item.itemCode}
@@ -418,7 +418,7 @@ export default function SupplierDetailPage() {
                       <div>
                         <div className="mobile-record-title">
                           {canOpenItems ? (
-                            <Link href={`/inventory/items?q=${encodeURIComponent(item.itemCode || item.name || '')}`} style={{ color: 'var(--color-primary)' }}>
+                            <Link href={`/inventory/items/${item._id}`} style={{ color: 'var(--color-primary)' }}>
                               {item.name}
                             </Link>
                           ) : item.name}

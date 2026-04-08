@@ -501,7 +501,7 @@ export default function TiresPage() {
                                                     </div>
                                                     <div className="text-muted text-sm">
                                                         {canOpenItems && event.linkedWarehouseItemRef ? (
-                                                            <Link href={`/inventory/items?q=${encodeURIComponent(event.linkedWarehouseItemCode || event.linkedWarehouseItemName || '')}`} style={{ color: 'var(--color-primary)' }}>
+                                                            <Link href={`/inventory/items/${event.linkedWarehouseItemRef}`} style={{ color: 'var(--color-primary)' }}>
                                                                 {event.linkedWarehouseItemCode || event.linkedWarehouseItemName || '-'}
                                                             </Link>
                                                         ) : (event.linkedWarehouseItemCode || event.linkedWarehouseItemName || '-')}
