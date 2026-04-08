@@ -619,6 +619,12 @@ export async function handlePurchasePaymentCreate(
         if (!bundle) {
             return NextResponse.json({ error: 'Pembelian tidak ditemukan' }, { status: 404 });
         }
+        if (date < bundle.purchase.orderDate) {
+            return NextResponse.json(
+                { error: 'Tanggal pembayaran supplier tidak boleh lebih awal dari tanggal pembelian' },
+                { status: 400 }
+            );
+        }
         if (bundle.purchase.status === 'CANCELLED') {
             return NextResponse.json({ error: 'Pembelian yang dibatalkan tidak bisa dibayar' }, { status: 409 });
         }
