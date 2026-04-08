@@ -239,6 +239,7 @@ export async function normalizeEmployeeAttendanceUpdates(
     if (!resolvedExisting) {
         throw new Error('Data absensi tidak ditemukan');
     }
+    const existingEmployeeRef = normalizeOptionalText(resolvedExisting.employeeRef);
 
     const employeeRef = normalizeOptionalText(
         Object.prototype.hasOwnProperty.call(updates, 'employeeRef')
@@ -287,6 +288,9 @@ export async function normalizeEmployeeAttendanceUpdates(
     }
 
     const employee = await resolveEmployeeSnapshot(employeeRef);
+    if (employee.active === false && employeeRef !== existingEmployeeRef) {
+        throw new Error('Karyawan nonaktif tidak bisa dicatat absensinya');
+    }
     if (status === 'HADIR' && !checkInTime) {
         throw new Error('Jam masuk wajib diisi untuk status hadir');
     }
