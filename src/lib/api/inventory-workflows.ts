@@ -335,6 +335,7 @@ export async function handlePurchaseReceive(
             return NextResponse.json({ error: 'Pembelian yang dibatalkan tidak bisa menerima barang' }, { status: 409 });
         }
 
+        const validPurchaseItemIds = new Set(bundle.items.map(item => item._id));
         const receiptMap = new Map<string, { receivedQty: number; note?: string }>();
         for (const [index, rawItem] of receiptItems.entries()) {
             if (typeof rawItem !== 'object' || rawItem === null) {
@@ -347,10 +348,22 @@ export async function handlePurchaseReceive(
             if (!purchaseItemRef) {
                 return NextResponse.json({ error: `Item pembelian pada baris penerimaan #${index + 1} tidak valid` }, { status: 400 });
             }
+            if (!validPurchaseItemIds.has(purchaseItemRef)) {
+                return NextResponse.json(
+                    { error: `Item pada baris penerimaan #${index + 1} bukan milik dokumen pembelian ini` },
+                    { status: 409 }
+                );
+            }
             if (!Number.isFinite(receivedQty) || receivedQty < 0) {
                 return NextResponse.json({ error: `Qty terima pada baris #${index + 1} tidak valid` }, { status: 400 });
             }
             if (receivedQty > 0) {
+                if (receiptMap.has(purchaseItemRef)) {
+                    return NextResponse.json(
+                        { error: `Item pada baris penerimaan #${index + 1} duplikat dalam satu dokumen terima barang` },
+                        { status: 400 }
+                    );
+                }
                 receiptMap.set(purchaseItemRef, { receivedQty, note });
             }
         }
