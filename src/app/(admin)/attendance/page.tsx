@@ -48,11 +48,25 @@ type AttendanceFormState = {
     note: string;
 };
 
+type AttendanceViewMode = 'input' | 'recap';
+type AttendanceInputCoverage = 'PENDING' | 'RECORDED' | 'ALL';
+type DailyAttendanceRow = {
+    employee: Employee;
+    record: EmployeeAttendanceRecord | null;
+};
+
 const PERIOD_OPTIONS: Array<{ value: EmployeeAttendancePeriod; label: string }> = [
     { value: 'today', label: EMPLOYEE_ATTENDANCE_PERIOD_LABELS.today },
     { value: 'thisWeek', label: EMPLOYEE_ATTENDANCE_PERIOD_LABELS.thisWeek },
     { value: 'thisMonth', label: EMPLOYEE_ATTENDANCE_PERIOD_LABELS.thisMonth },
     { value: 'thisYear', label: EMPLOYEE_ATTENDANCE_PERIOD_LABELS.thisYear },
+];
+
+const INPUT_PAGE_SIZE = 12;
+const INPUT_COVERAGE_OPTIONS: Array<{ value: AttendanceInputCoverage; label: string }> = [
+    { value: 'PENDING', label: 'Belum Tercatat' },
+    { value: 'RECORDED', label: 'Sudah Tercatat' },
+    { value: 'ALL', label: 'Semua Karyawan' },
 ];
 
 const createDefaultAttendanceForm = (date: string, record?: Partial<EmployeeAttendanceRecord>): AttendanceFormState => ({
@@ -89,16 +103,24 @@ export default function AttendancePage() {
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [summary, setSummary] = useState<AttendanceSummary | null>(null);
     const [loading, setLoading] = useState(true);
+    const [viewMode, setViewMode] = useState<AttendanceViewMode>('input');
+    const [dailyRecords, setDailyRecords] = useState<EmployeeAttendanceRecord[]>([]);
     const [search, setSearch] = useState('');
     const [period, setPeriod] = useState<EmployeeAttendancePeriod>('today');
     const [selectedDate, setSelectedDate] = useState(getBusinessDateValue());
     const [statusFilter, setStatusFilter] = useState('');
     const [employeeFilter, setEmployeeFilter] = useState('');
     const [page, setPage] = useState(1);
+    const [dailyPage, setDailyPage] = useState(1);
+    const [inputSearch, setInputSearch] = useState('');
+    const [inputDivisionFilter, setInputDivisionFilter] = useState('');
+    const [inputCoverageFilter, setInputCoverageFilter] = useState<AttendanceInputCoverage>('PENDING');
+    const [inputStatusFilter, setInputStatusFilter] = useState('');
     const [totalRecords, setTotalRecords] = useState(0);
     const [showModal, setShowModal] = useState(false);
     const [editRecord, setEditRecord] = useState<EmployeeAttendanceRecord | null>(null);
     const [saving, setSaving] = useState(false);
+    const [employeeSearchTerm, setEmployeeSearchTerm] = useState('');
     const [form, setForm] = useState<AttendanceFormState>(createDefaultAttendanceForm(getBusinessDateValue()));
     const businessToday = getBusinessDateValue();
 
@@ -121,6 +143,119 @@ export default function AttendancePage() {
 
         return Array.from(optionMap.values());
     }, [activeEmployees, editRecord?.employeeRef, employees, form.employeeRef]);
+    const filteredEmployeeOptions = useMemo(() => {
+        const keyword = employeeSearchTerm.trim().toLowerCase();
+        if (!keyword) return employeeOptions;
+        return employeeOptions.filter(employee => {
+            const haystack = [
+                employee.employeeCode,
+                employee.name,
+                employee.division,
+                employee.position,
+            ]
+                .filter(Boolean)
+                .join(' ')
+                .toLowerCase();
+            return haystack.includes(keyword);
+        });
+    }, [employeeOptions, employeeSearchTerm]);
+    const divisionOptions = useMemo(() => {
+        return Array.from(
+            new Set(
+                activeEmployees
+                    .map(employee => employee.division?.trim())
+                    .filter((value): value is string => Boolean(value))
+            )
+        ).sort((left, right) => left.localeCompare(right, 'id-ID'));
+    }, [activeEmployees]);
+    const dailyRecordsByEmployee = useMemo(() => {
+        return new Map(dailyRecords.map(record => [record.employeeRef, record] as const));
+    }, [dailyRecords]);
+    const dailyAttendanceRows = useMemo(() => {
+        const keyword = inputSearch.trim().toLowerCase();
+        const rows: DailyAttendanceRow[] = activeEmployees
+            .map(employee => ({
+                employee,
+                record: dailyRecordsByEmployee.get(employee._id) || null,
+            }))
+            .filter(({ employee, record }) => {
+                if (keyword) {
+                    const haystack = [
+                        employee.employeeCode,
+                        employee.name,
+                        employee.division,
+                        employee.position,
+                    ]
+                        .filter(Boolean)
+                        .join(' ')
+                        .toLowerCase();
+                    if (!haystack.includes(keyword)) {
+                        return false;
+                    }
+                }
+
+                if (inputDivisionFilter && (employee.division || '') !== inputDivisionFilter) {
+                    return false;
+                }
+
+                if (inputCoverageFilter === 'PENDING' && record) {
+                    return false;
+                }
+
+                if (inputCoverageFilter === 'RECORDED' && !record) {
+                    return false;
+                }
+
+                if (inputCoverageFilter !== 'PENDING' && inputStatusFilter && record?.status !== inputStatusFilter) {
+                    return false;
+                }
+
+                return true;
+            });
+
+        return rows.sort((left, right) => {
+            if (inputCoverageFilter === 'ALL') {
+                const leftRecorded = Boolean(left.record);
+                const rightRecorded = Boolean(right.record);
+                if (leftRecorded !== rightRecorded) {
+                    return leftRecorded ? 1 : -1;
+                }
+            }
+            return left.employee.name.localeCompare(right.employee.name, 'id-ID');
+        });
+    }, [
+        activeEmployees,
+        dailyRecordsByEmployee,
+        inputCoverageFilter,
+        inputDivisionFilter,
+        inputSearch,
+        inputStatusFilter,
+    ]);
+    const paginatedDailyAttendanceRows = useMemo(() => {
+        const offset = Math.max(dailyPage - 1, 0) * INPUT_PAGE_SIZE;
+        return dailyAttendanceRows.slice(offset, offset + INPUT_PAGE_SIZE);
+    }, [dailyAttendanceRows, dailyPage]);
+    const dailyAttendanceSummary = useMemo(() => {
+        const counts = dailyRecords.reduce(
+            (totals, record) => {
+                if (record.status === 'HADIR') totals.present += 1;
+                if (record.status === 'IZIN') totals.permission += 1;
+                if (record.status === 'SAKIT') totals.sick += 1;
+                if (record.status === 'CUTI') totals.leave += 1;
+                if (record.status === 'ALPHA') totals.absent += 1;
+                if (record.status === 'LIBUR') totals.off += 1;
+                return totals;
+            },
+            { present: 0, permission: 0, sick: 0, leave: 0, absent: 0, off: 0 }
+        );
+
+        return {
+            activeEmployeeCount: activeEmployees.length,
+            recordedEmployeeCount: dailyRecords.length,
+            unrecordedEmployeeCount: Math.max(activeEmployees.length - dailyRecords.length, 0),
+            ...counts,
+        };
+    }, [activeEmployees.length, dailyRecords]);
     const selectedEmployeeOption = useMemo(
         () => employeeOptions.find(employee => employee._id === employeeFilter) || null,
         [employeeFilter, employeeOptions],
@@ -131,6 +266,12 @@ export default function AttendancePage() {
         || employeeFilter
         || period !== 'today'
         || selectedDate !== businessToday,
+    );
+    const hasInputCustomFilters = Boolean(
+        inputSearch.trim()
+        || inputDivisionFilter
+        || inputCoverageFilter !== 'PENDING'
+        || inputStatusFilter,
     );
     const attendancePeriodLabel = summary?.periodLabel || PERIOD_OPTIONS.find(option => option.value === period)?.label || EMPLOYEE_ATTENDANCE_PERIOD_LABELS.today;
     const attendanceRangeLabel = useMemo(() => {
@@ -159,6 +300,25 @@ export default function AttendancePage() {
         }
         return filters.length > 0 ? filters.join(' | ') : 'Semua status dan semua karyawan';
     }, [businessToday, period, search, selectedDate, selectedEmployeeOption, statusFilter]);
+    const inputFilterSummary = useMemo(() => {
+        const filters: string[] = [];
+        if (inputCoverageFilter !== 'PENDING') {
+            const coverageLabel = INPUT_COVERAGE_OPTIONS.find(option => option.value === inputCoverageFilter)?.label;
+            if (coverageLabel) {
+                filters.push(`Mode: ${coverageLabel}`);
+            }
+        }
+        if (inputDivisionFilter) {
+            filters.push(`Divisi: ${inputDivisionFilter}`);
+        }
+        if (inputStatusFilter) {
+            filters.push(`Status: ${EMPLOYEE_ATTENDANCE_STATUS_LABELS[inputStatusFilter as EmployeeAttendanceStatus]}`);
+        }
+        if (inputSearch.trim()) {
+            filters.push(`Cari: "${inputSearch.trim()}"`);
+        }
+        return filters.length > 0 ? filters.join(' | ') : 'Belum tercatat, semua divisi';
+    }, [inputCoverageFilter, inputDivisionFilter, inputSearch, inputStatusFilter]);
 
     const buildAttendanceQuery = useCallback((targetPage = page, targetPageSize = DEFAULT_PAGE_SIZE) => {
         const params = new URLSearchParams({
@@ -191,10 +351,16 @@ export default function AttendancePage() {
                 'Gagal memuat data karyawan',
                 200,
             ).catch(() => []);
-            const [listRes, summaryRes, employeeRows] = await Promise.all([
+            const dailyRecordsPromise = fetchAllAdminCollectionData<EmployeeAttendanceRecord>(
+                `/api/data?entity=employee-attendance-records&period=today&date=${encodeURIComponent(selectedDate)}&sortField=employeeName&sortDir=asc&pageSize=200`,
+                'Gagal memuat input absensi harian',
+                200,
+            ).catch(() => []);
+            const [listRes, summaryRes, employeeRows, dailyRows] = await Promise.all([
                 fetch(`/api/data?${buildAttendanceQuery()}`),
                 fetch(`/api/data?entity=employee-attendance-summary&period=${encodeURIComponent(period)}&date=${encodeURIComponent(selectedDate)}${search.trim() ? `&q=${encodeURIComponent(search.trim())}&searchFields=${encodeURIComponent('employeeCode,employeeName,division,position,note,date')}` : ''}${statusFilter ? `&status=${encodeURIComponent(statusFilter)}` : ''}${employeeFilter ? `&employeeRef=${encodeURIComponent(employeeFilter)}` : ''}`),
                 employeesPromise,
+                dailyRecordsPromise,
             ]);
             const [listPayload, summaryPayload] = await Promise.all([listRes.json(), summaryRes.json()]);
             if (!listRes.ok) {
@@ -208,6 +374,7 @@ export default function AttendancePage() {
             setTotalRecords(listPayload.meta?.total || 0);
             setSummary(summaryPayload.data as AttendanceSummary);
             setEmployees(employeeRows || []);
+            setDailyRecords(dailyRows || []);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat data absensi');
         } finally {
@@ -223,6 +390,16 @@ export default function AttendancePage() {
         setPage(1);
     }, [search, period, selectedDate, statusFilter, employeeFilter]);
 
+    useEffect(() => {
+        setDailyPage(1);
+    }, [inputCoverageFilter, inputDivisionFilter, inputSearch, inputStatusFilter, selectedDate]);
+
+    useEffect(() => {
+        if (inputCoverageFilter === 'PENDING' && inputStatusFilter) {
+            setInputStatusFilter('');
+        }
+    }, [inputCoverageFilter, inputStatusFilter]);
+
     const resetFilters = () => {
         setSearch('');
         setPeriod('today');
@@ -231,21 +408,31 @@ export default function AttendancePage() {
         setEmployeeFilter('');
     };
 
+    const resetInputFilters = () => {
+        setInputSearch('');
+        setInputDivisionFilter('');
+        setInputCoverageFilter('PENDING');
+        setInputStatusFilter('');
+    };
+
     const closeModal = () => {
         if (saving) return;
         setShowModal(false);
         setEditRecord(null);
+        setEmployeeSearchTerm('');
         setForm(createDefaultAttendanceForm(selectedDate));
     };
 
     const openCreateModal = (employee?: Pick<Employee, '_id'>) => {
         setEditRecord(null);
+        setEmployeeSearchTerm('');
         setForm(createDefaultAttendanceForm(selectedDate, employee ? { employeeRef: employee._id } : undefined));
         setShowModal(true);
     };
 
     const openEditModal = (record: EmployeeAttendanceRecord) => {
         setEditRecord(record);
+        setEmployeeSearchTerm('');
         setForm(createDefaultAttendanceForm(selectedDate, record));
         setShowModal(true);
     };
@@ -276,7 +463,8 @@ export default function AttendancePage() {
             };
 
             const duplicateRecord = !editRecord
-                ? records.find(record => record.employeeRef === form.employeeRef && record.date === form.date)
+                ? dailyRecords.find(record => record.employeeRef === form.employeeRef && record.date === form.date)
+                    || records.find(record => record.employeeRef === form.employeeRef && record.date === form.date)
                 : null;
             const targetRecord = editRecord || duplicateRecord || null;
 
@@ -374,28 +562,243 @@ export default function AttendancePage() {
         summary,
     ]);
 
-    const pendingEmployees = summary?.pendingEmployees || [];
+    const renderInputView = () => (
+        <>
+            <div className="kpi-grid attendance-kpi-grid" style={{ marginBottom: '1.5rem' }}>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Karyawan Aktif</div><div className="kpi-value">{dailyAttendanceSummary.activeEmployeeCount}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Sudah Tercatat</div><div className="kpi-value">{dailyAttendanceSummary.recordedEmployeeCount}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Belum Tercatat</div><div className="kpi-value">{dailyAttendanceSummary.unrecordedEmployeeCount}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Hadir</div><div className="kpi-value">{dailyAttendanceSummary.present}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Izin</div><div className="kpi-value">{dailyAttendanceSummary.permission}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Sakit</div><div className="kpi-value">{dailyAttendanceSummary.sick}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Alpha / Cuti</div><div className="kpi-value">{dailyAttendanceSummary.absent + dailyAttendanceSummary.leave}</div></div></div>
+            </div>
 
-    return (
-        <div>
-            <div className="page-header">
-                <div className="page-header-left">
-                    <h1 className="page-title">Absensi</h1>
+            <div className="table-container" style={{ marginBottom: '1rem' }}>
+                <div className="table-toolbar">
+                    <div className="table-toolbar-left attendance-toolbar-filters">
+                        <input
+                            type="date"
+                            className="form-input attendance-date-input"
+                            value={selectedDate}
+                            onChange={event => setSelectedDate(event.target.value)}
+                        />
+                        <div className="table-search">
+                            <Search size={16} className="table-search-icon" />
+                            <input
+                                placeholder="Cari kode, nama, divisi, jabatan..."
+                                value={inputSearch}
+                                onChange={event => setInputSearch(event.target.value)}
+                            />
+                        </div>
+                        <select className="filter-select" value={inputDivisionFilter} onChange={event => setInputDivisionFilter(event.target.value)}>
+                            <option value="">Semua Divisi</option>
+                            {divisionOptions.map(division => (
+                                <option key={division} value={division}>{division}</option>
+                            ))}
+                        </select>
+                        <select className="filter-select" value={inputCoverageFilter} onChange={event => setInputCoverageFilter(event.target.value as AttendanceInputCoverage)}>
+                            {INPUT_COVERAGE_OPTIONS.map(option => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                        </select>
+                        <select
+                            className="filter-select"
+                            value={inputStatusFilter}
+                            onChange={event => setInputStatusFilter(event.target.value)}
+                            disabled={inputCoverageFilter === 'PENDING'}
+                        >
+                            <option value="">Semua Status Tercatat</option>
+                            {EMPLOYEE_ATTENDANCE_STATUS_OPTIONS.map(status => (
+                                <option key={status} value={status}>{EMPLOYEE_ATTENDANCE_STATUS_LABELS[status]}</option>
+                            ))}
+                        </select>
+                    </div>
+                    {hasInputCustomFilters && (
+                        <div className="table-toolbar-right">
+                            <button className="btn btn-secondary btn-sm" onClick={resetInputFilters}>
+                                Reset Filter
+                            </button>
+                        </div>
+                    )}
                 </div>
-                <div className="page-actions">
-                    {canExportAttendance && (
-                        <button className="btn btn-secondary btn-sm" onClick={handleExport}>
-                            <FileDown size={15} /> Excel
-                        </button>
-                    )}
-                    {canManageAttendance && (
-                        <button className="btn btn-primary" onClick={() => openCreateModal()}>
-                            <Plus size={18} /> Catat Absensi
-                        </button>
-                    )}
+                <div className="attendance-overview-card">
+                    <div className="attendance-overview-grid">
+                        <div className="attendance-overview-item">
+                            <div className="attendance-overview-label">Tanggal Input</div>
+                            <div className="attendance-overview-value">{formatAttendanceDateLabel(selectedDate)}</div>
+                            <div className="attendance-overview-note">Admin input per hari, lalu cari dan filter karyawan dari daftar ini.</div>
+                        </div>
+                        <div className="attendance-overview-item">
+                            <div className="attendance-overview-label">Filter Aktif</div>
+                            <div className="attendance-overview-value">{hasInputCustomFilters ? 'Disaring' : 'Belum Tercatat'}</div>
+                            <div className="attendance-overview-note">{inputFilterSummary}</div>
+                        </div>
+                        <div className="attendance-overview-item">
+                            <div className="attendance-overview-label">Karyawan Ditampilkan</div>
+                            <div className="attendance-overview-value">{dailyAttendanceRows.length}</div>
+                            <div className="attendance-overview-note">Daftar dipaginate supaya tetap nyaman saat jumlah karyawan bertambah.</div>
+                        </div>
+                        <div className="attendance-overview-item">
+                            <div className="attendance-overview-label">Fokus Hari Ini</div>
+                            <div className="attendance-overview-value">{dailyAttendanceSummary.unrecordedEmployeeCount} Belum Tercatat</div>
+                            <div className="attendance-overview-note">Gunakan tombol catat per baris, bukan scroll tombol nama satu per satu.</div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
+            <div className="table-container">
+                <div className="table-wrapper table-desktop-only">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Karyawan</th>
+                                <th>Divisi / Jabatan</th>
+                                <th>Status Hari Ini</th>
+                                <th>Jam</th>
+                                <th>Catatan</th>
+                                <th>Input Terakhir</th>
+                                <th>Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {loading ? [1, 2, 3].map(index => (
+                                <tr key={index}>
+                                    {[1, 2, 3, 4, 5, 6, 7].map(cell => (
+                                        <td key={cell}><div className="skeleton skeleton-text" /></td>
+                                    ))}
+                                </tr>
+                            )) : dailyAttendanceRows.length === 0 ? (
+                                <tr>
+                                    <td colSpan={7}>
+                                        <div className="empty-state">
+                                            <ScrollText size={48} className="empty-state-icon" />
+                                            <div className="empty-state-title">Tidak ada karyawan yang cocok dengan filter input</div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ) : paginatedDailyAttendanceRows.map(({ employee, record }) => (
+                                <tr key={employee._id}>
+                                    <td>
+                                        <div className="font-semibold">{employee.name}</div>
+                                        <div className="text-muted text-xs">{employee.employeeCode}</div>
+                                    </td>
+                                    <td>
+                                        <div>{employee.division || '-'}</div>
+                                        <div className="text-muted text-xs">{employee.position || '-'}</div>
+                                    </td>
+                                    <td>
+                                        {record ? (
+                                            <span className={`badge ${STATUS_BADGE_CLASS[record.status] || 'badge-gray'}`}>
+                                                {EMPLOYEE_ATTENDANCE_STATUS_LABELS[record.status]}
+                                            </span>
+                                        ) : (
+                                            <span className="text-muted">Belum tercatat</span>
+                                        )}
+                                    </td>
+                                    <td>{record ? `${record.checkInTime || '-'} - ${record.checkOutTime || '-'}` : '-'}</td>
+                                    <td className="text-muted" style={{ minWidth: 220 }}>{record?.note || '-'}</td>
+                                    <td className="text-muted">
+                                        {record ? (
+                                            <>
+                                                <div>{record.updatedAt ? formatDateTime(record.updatedAt) : '-'}</div>
+                                                <div className="text-xs">{record.updatedByName || record.createdByName || '-'}</div>
+                                            </>
+                                        ) : (
+                                            <div className="text-xs">Belum ada input</div>
+                                        )}
+                                    </td>
+                                    <td>
+                                        {canManageAttendance ? (
+                                            record ? (
+                                                <button className="table-action-btn" onClick={() => openEditModal(record)}>
+                                                    <Pencil size={14} /> Edit
+                                                </button>
+                                            ) : (
+                                                <button className="table-action-btn" onClick={() => openCreateModal(employee)}>
+                                                    <Plus size={14} /> Catat
+                                                </button>
+                                            )
+                                        ) : (
+                                            <span className="text-muted">Lihat saja</span>
+                                        )}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+                {!loading && (
+                    <div className="mobile-record-list">
+                        {dailyAttendanceRows.length === 0 ? (
+                            <div className="mobile-record-card">
+                                <div className="mobile-record-title">Tidak ada karyawan yang cocok dengan filter input</div>
+                            </div>
+                        ) : paginatedDailyAttendanceRows.map(({ employee, record }) => (
+                            <div key={employee._id} className="mobile-record-card">
+                                <div className="mobile-record-header">
+                                    <div>
+                                        <div className="mobile-record-title">{employee.name}</div>
+                                        <div className="mobile-record-subtitle">{employee.employeeCode} | {employee.division || '-'} / {employee.position || '-'}</div>
+                                    </div>
+                                    {record ? (
+                                        <span className={`badge ${STATUS_BADGE_CLASS[record.status] || 'badge-gray'}`}>
+                                            {EMPLOYEE_ATTENDANCE_STATUS_LABELS[record.status]}
+                                        </span>
+                                    ) : (
+                                        <span className="badge badge-gray">Belum Tercatat</span>
+                                    )}
+                                </div>
+                                <div className="mobile-record-meta">
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Jam</span>
+                                        <span className="mobile-record-value">{record ? `${record.checkInTime || '-'} - ${record.checkOutTime || '-'}` : '-'}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Catatan</span>
+                                        <span className="mobile-record-value">{record?.note || '-'}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Input Terakhir</span>
+                                        <span className="mobile-record-value">{record?.updatedAt ? formatDateTime(record.updatedAt) : 'Belum ada input'}</span>
+                                    </div>
+                                </div>
+                                {canManageAttendance && (
+                                    <div className="mobile-record-actions">
+                                        {record ? (
+                                            <button className="btn btn-secondary" onClick={() => openEditModal(record)}>
+                                                <Pencil size={14} /> Edit
+                                            </button>
+                                        ) : (
+                                            <button className="btn btn-secondary" onClick={() => openCreateModal(employee)}>
+                                                <Plus size={14} /> Catat
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {dailyAttendanceRows.length > 0 && (
+                    <AppPagination
+                        page={dailyPage}
+                        pageSize={INPUT_PAGE_SIZE}
+                        totalItems={dailyAttendanceRows.length}
+                        onPageChange={setDailyPage}
+                        info={({ startIndex, endIndex, totalItems }) => (
+                            <>{startIndex}-{endIndex} dari {totalItems} karyawan untuk input harian {formatAttendanceDateLabel(selectedDate)}</>
+                        )}
+                    />
+                )}
+            </div>
+        </>
+    );
+
+    const renderRecapView = () => (
+        <>
             <div className="kpi-grid attendance-kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Karyawan Aktif</div><div className="kpi-value">{summary?.activeEmployeeCount || activeEmployees.length}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Tercatat</div><div className="kpi-value">{summary?.recordedEmployeeCount || 0}</div></div></div>
@@ -480,32 +883,6 @@ export default function AttendancePage() {
                     </div>
                 </div>
             </div>
-
-            {period === 'today' && !search.trim() && !statusFilter && !employeeFilter && pendingEmployees.length > 0 && (
-                <div className="card" style={{ marginBottom: '1rem', padding: '1rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
-                        <div>
-                            <div style={{ fontWeight: 700 }}>Belum Tercatat Hari Ini</div>
-                            <div className="text-muted text-sm">
-                                {summary?.unrecordedEmployeeCount || pendingEmployees.length} karyawan aktif belum punya absensi pada {formatBusinessDate(selectedDate, 'id-ID', { day: '2-digit', month: 'long', year: 'numeric' })}.
-                            </div>
-                        </div>
-                    </div>
-                    <div className="attendance-pending-actions">
-                        {pendingEmployees.map(employee => (
-                            <button
-                                key={employee._id}
-                                type="button"
-                                className="btn btn-secondary btn-sm"
-                                onClick={() => openCreateModal(employee)}
-                                disabled={!canManageAttendance}
-                            >
-                                <Plus size={14} /> {employee.employeeCode} - {employee.name}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            )}
 
             <div className="table-container">
                 <div className="table-wrapper table-desktop-only">
@@ -633,6 +1010,38 @@ export default function AttendancePage() {
                     />
                 )}
             </div>
+        </>
+    );
+
+    return (
+        <div>
+            <div className="page-header">
+                <div className="page-header-left">
+                    <h1 className="page-title">Absensi</h1>
+                </div>
+                <div className="page-actions">
+                    {canExportAttendance && (
+                        <button className="btn btn-secondary btn-sm" onClick={handleExport}>
+                            <FileDown size={15} /> Excel
+                        </button>
+                    )}
+                    {canManageAttendance && (
+                        <button className="btn btn-primary" onClick={() => openCreateModal()}>
+                            <Plus size={18} /> Catat Absensi
+                        </button>
+                    )}
+                </div>
+            </div>
+            <div className="segmented-tabs" style={{ marginBottom: '1rem' }}>
+                <button className={`segmented-tab ${viewMode === 'input' ? 'active' : ''}`} onClick={() => setViewMode('input')}>
+                    Input Harian
+                </button>
+                <button className={`segmented-tab ${viewMode === 'recap' ? 'active' : ''}`} onClick={() => setViewMode('recap')}>
+                    Rekap Absensi
+                </button>
+            </div>
+
+            {viewMode === 'input' ? renderInputView() : renderRecapView()}
 
             {showModal && (
                 <div className="modal-overlay" onClick={closeModal}>
@@ -647,13 +1056,20 @@ export default function AttendancePage() {
                             <div className="form-grid">
                                 <div className="form-group">
                                     <label className="form-label">Karyawan <span className="required">*</span></label>
+                                    <input
+                                        className="form-input"
+                                        value={employeeSearchTerm}
+                                        onChange={event => setEmployeeSearchTerm(event.target.value)}
+                                        placeholder="Cari karyawan di modal..."
+                                        style={{ marginBottom: '0.5rem' }}
+                                    />
                                     <select
                                         className="form-select"
                                         value={form.employeeRef}
                                         onChange={event => setForm(current => ({ ...current, employeeRef: event.target.value }))}
                                     >
                                         <option value="">Pilih karyawan</option>
-                                        {employeeOptions.map(employee => (
+                                        {filteredEmployeeOptions.map(employee => (
                                             <option key={employee._id} value={employee._id}>
                                                 {employee.employeeCode} - {employee.name}
                                             </option>
