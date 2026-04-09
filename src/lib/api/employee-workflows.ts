@@ -32,6 +32,10 @@ function parseTimeToMinutes(value: string) {
     return (hours * 60) + minutes;
 }
 
+function requiresAttendanceTime(status: ReturnType<typeof normalizeEmployeeAttendanceStatus>) {
+    return status === 'HADIR' || status === 'PULANG_LEBIH_AWAL';
+}
+
 async function ensureEmployeeCodeUnique(employeeCode: string, excludeId?: string) {
     const duplicate = await getSanityClient().fetch<{ _id: string } | null>(
         `*[_type == "employee" && employeeCode == $employeeCode && _id != $excludeId][0]{ _id }`,
@@ -200,10 +204,13 @@ export async function normalizeEmployeeAttendanceCreatePayload(
         throw new Error('Karyawan nonaktif tidak bisa dicatat absensinya');
     }
 
-    if (status === 'HADIR' && !checkInTime) {
-        throw new Error('Jam masuk wajib diisi untuk status hadir');
+    if (requiresAttendanceTime(status) && !checkInTime) {
+        throw new Error('Jam masuk wajib diisi untuk status hadir atau pulang lebih awal');
     }
-    if (status === 'HADIR' && checkInTime && checkOutTime && parseTimeToMinutes(checkOutTime) < parseTimeToMinutes(checkInTime)) {
+    if (status === 'PULANG_LEBIH_AWAL' && !checkOutTime) {
+        throw new Error('Jam pulang wajib diisi untuk status pulang lebih awal');
+    }
+    if (requiresAttendanceTime(status) && checkInTime && checkOutTime && parseTimeToMinutes(checkOutTime) < parseTimeToMinutes(checkInTime)) {
         throw new Error('Jam pulang tidak boleh lebih awal dari jam masuk');
     }
 
@@ -217,8 +224,8 @@ export async function normalizeEmployeeAttendanceCreatePayload(
         division: employee.division || '',
         date,
         status,
-        checkInTime: status === 'HADIR' ? checkInTime : undefined,
-        checkOutTime: status === 'HADIR' ? checkOutTime : undefined,
+        checkInTime: requiresAttendanceTime(status) ? checkInTime : undefined,
+        checkOutTime: requiresAttendanceTime(status) ? checkOutTime : undefined,
         note,
         createdBy: session._id,
         createdByName: session.name,
@@ -291,10 +298,13 @@ export async function normalizeEmployeeAttendanceUpdates(
     if (employee.active === false && employeeRef !== existingEmployeeRef) {
         throw new Error('Karyawan nonaktif tidak bisa dicatat absensinya');
     }
-    if (status === 'HADIR' && !checkInTime) {
-        throw new Error('Jam masuk wajib diisi untuk status hadir');
+    if (requiresAttendanceTime(status) && !checkInTime) {
+        throw new Error('Jam masuk wajib diisi untuk status hadir atau pulang lebih awal');
     }
-    if (status === 'HADIR' && checkInTime && checkOutTime && parseTimeToMinutes(checkOutTime) < parseTimeToMinutes(checkInTime)) {
+    if (status === 'PULANG_LEBIH_AWAL' && !checkOutTime) {
+        throw new Error('Jam pulang wajib diisi untuk status pulang lebih awal');
+    }
+    if (requiresAttendanceTime(status) && checkInTime && checkOutTime && parseTimeToMinutes(checkOutTime) < parseTimeToMinutes(checkInTime)) {
         throw new Error('Jam pulang tidak boleh lebih awal dari jam masuk');
     }
 
@@ -308,8 +318,8 @@ export async function normalizeEmployeeAttendanceUpdates(
         division: employee.division || '',
         date,
         status,
-        checkInTime: status === 'HADIR' ? checkInTime : undefined,
-        checkOutTime: status === 'HADIR' ? checkOutTime : undefined,
+        checkInTime: requiresAttendanceTime(status) ? checkInTime : undefined,
+        checkOutTime: requiresAttendanceTime(status) ? checkOutTime : undefined,
         note,
         updatedBy: session._id,
         updatedByName: session.name,

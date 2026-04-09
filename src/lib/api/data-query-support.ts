@@ -477,6 +477,7 @@ export async function getEmployeeAttendanceSummary(params?: {
         unrecordedEmployeeCount,
         totalRecords: records.length,
         presentCount: records.filter(record => record.status === 'HADIR').length,
+        earlyLeaveCount: records.filter(record => record.status === 'PULANG_LEBIH_AWAL').length,
         permissionCount: records.filter(record => record.status === 'IZIN').length,
         sickCount: records.filter(record => record.status === 'SAKIT').length,
         leaveCount: records.filter(record => record.status === 'CUTI').length,

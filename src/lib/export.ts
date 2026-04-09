@@ -68,6 +68,7 @@ interface EmployeeAttendanceExportSummary {
     unrecordedEmployeeCount: number;
     totalRecords: number;
     presentCount: number;
+    earlyLeaveCount: number;
     permissionCount: number;
     sickCount: number;
     leaveCount: number;
@@ -568,12 +569,13 @@ export async function exportEmployeeAttendanceReport(input: {
     currentRow += 1;
     applyAttendanceSectionHeading(summarySheet, currentRow, 4, 'Rekap Periode');
     currentRow += 1;
-    const recapRows: Array<[string, number, string, number]> = [
+    const recapRows: Array<[string, ExportValue, string, ExportValue]> = [
         ['Karyawan Aktif', input.summary.activeEmployeeCount, 'Tercatat', input.summary.recordedEmployeeCount],
         ['Belum Tercatat', input.summary.unrecordedEmployeeCount, 'Total Record', input.summary.totalRecords],
-        ['Hadir', input.summary.presentCount, 'Izin', input.summary.permissionCount],
-        ['Sakit', input.summary.sickCount, 'Cuti', input.summary.leaveCount],
-        ['Alpha', input.summary.absentCount, 'Libur', input.summary.offCount],
+        ['Hadir', input.summary.presentCount, 'Pulang Lebih Awal', input.summary.earlyLeaveCount],
+        ['Izin', input.summary.permissionCount, 'Sakit', input.summary.sickCount],
+        ['Cuti', input.summary.leaveCount, 'Alpha', input.summary.absentCount],
+        ['Libur', input.summary.offCount, '', ''],
     ];
     recapRows.forEach(([labelA, valueA, labelB, valueB]) => {
         summarySheet.getCell(`A${currentRow}`).value = labelA;

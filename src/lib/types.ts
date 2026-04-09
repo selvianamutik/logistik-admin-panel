@@ -53,6 +53,7 @@ export interface Employee {
 
 export type EmployeeAttendanceStatus =
   | 'HADIR'
+  | 'PULANG_LEBIH_AWAL'
   | 'IZIN'
   | 'SAKIT'
   | 'CUTI'

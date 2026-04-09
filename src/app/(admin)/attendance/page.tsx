@@ -31,6 +31,7 @@ type AttendanceSummary = {
     unrecordedEmployeeCount: number;
     totalRecords: number;
     presentCount: number;
+    earlyLeaveCount: number;
     permissionCount: number;
     sickCount: number;
     leaveCount: number;
@@ -80,12 +81,17 @@ const createDefaultAttendanceForm = (date: string, record?: Partial<EmployeeAtte
 
 const STATUS_BADGE_CLASS: Record<EmployeeAttendanceStatus, string> = {
     HADIR: 'badge-success',
+    PULANG_LEBIH_AWAL: 'badge-warning',
     IZIN: 'badge-info',
     SAKIT: 'badge-warning',
     CUTI: 'badge-purple',
     ALPHA: 'badge-danger',
     LIBUR: 'badge-gray',
 };
+
+function requiresAttendanceTime(status: EmployeeAttendanceStatus) {
+    return status === 'HADIR' || status === 'PULANG_LEBIH_AWAL';
+}
 
 function formatAttendanceDateLabel(dateValue?: string) {
     if (!dateValue) return '-';
@@ -241,6 +247,7 @@ export default function AttendancePage() {
         const counts = activeDailyRecords.reduce(
             (totals, record) => {
                 if (record.status === 'HADIR') totals.present += 1;
+                if (record.status === 'PULANG_LEBIH_AWAL') totals.earlyLeave += 1;
                 if (record.status === 'IZIN') totals.permission += 1;
                 if (record.status === 'SAKIT') totals.sick += 1;
                 if (record.status === 'CUTI') totals.leave += 1;
@@ -248,7 +255,7 @@ export default function AttendancePage() {
                 if (record.status === 'LIBUR') totals.off += 1;
                 return totals;
             },
-            { present: 0, permission: 0, sick: 0, leave: 0, absent: 0, off: 0 }
+            { present: 0, earlyLeave: 0, permission: 0, sick: 0, leave: 0, absent: 0, off: 0 }
         );
 
         return {
@@ -448,8 +455,12 @@ export default function AttendancePage() {
             addToast('error', 'Karyawan, tanggal, dan status wajib diisi');
             return;
         }
-        if (form.status === 'HADIR' && !form.checkInTime) {
-            addToast('error', 'Jam masuk wajib diisi untuk status hadir');
+        if (requiresAttendanceTime(form.status) && !form.checkInTime) {
+            addToast('error', 'Jam masuk wajib diisi untuk status hadir atau pulang lebih awal');
+            return;
+        }
+        if (form.status === 'PULANG_LEBIH_AWAL' && !form.checkOutTime) {
+            addToast('error', 'Jam pulang wajib diisi untuk status pulang lebih awal');
             return;
         }
 
@@ -459,8 +470,8 @@ export default function AttendancePage() {
                 employeeRef: form.employeeRef,
                 date: form.date,
                 status: form.status,
-                checkInTime: form.status === 'HADIR' ? form.checkInTime : '',
-                checkOutTime: form.status === 'HADIR' ? form.checkOutTime : '',
+                checkInTime: requiresAttendanceTime(form.status) ? form.checkInTime : '',
+                checkOutTime: requiresAttendanceTime(form.status) ? form.checkOutTime : '',
                 note: form.note,
             };
 
@@ -527,6 +538,7 @@ export default function AttendancePage() {
                     unrecordedEmployeeCount: summary?.unrecordedEmployeeCount || 0,
                     totalRecords: summary?.totalRecords || rows.length,
                     presentCount: summary?.presentCount || 0,
+                    earlyLeaveCount: summary?.earlyLeaveCount || 0,
                     permissionCount: summary?.permissionCount || 0,
                     sickCount: summary?.sickCount || 0,
                     leaveCount: summary?.leaveCount || 0,
@@ -805,6 +817,7 @@ export default function AttendancePage() {
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Karyawan Aktif</div><div className="kpi-value">{summary?.activeEmployeeCount || activeEmployees.length}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Tercatat</div><div className="kpi-value">{summary?.recordedEmployeeCount || 0}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Hadir</div><div className="kpi-value">{summary?.presentCount || 0}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Pulang Cepat</div><div className="kpi-value">{summary?.earlyLeaveCount || 0}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Izin</div><div className="kpi-value">{summary?.permissionCount || 0}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Sakit</div><div className="kpi-value">{summary?.sickCount || 0}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Cuti</div><div className="kpi-value">{summary?.leaveCount || 0}</div></div></div>
@@ -1104,7 +1117,7 @@ export default function AttendancePage() {
                                     </select>
                                 </div>
                             </div>
-                            {form.status === 'HADIR' && (
+                            {requiresAttendanceTime(form.status) && (
                                 <div className="form-grid">
                                     <div className="form-group">
                                         <label className="form-label">Jam Masuk <span className="required">*</span></label>
@@ -1116,7 +1129,7 @@ export default function AttendancePage() {
                                         />
                                     </div>
                                     <div className="form-group">
-                                        <label className="form-label">Jam Pulang</label>
+                                        <label className="form-label">Jam Pulang{form.status === 'PULANG_LEBIH_AWAL' ? ' *' : ''}</label>
                                         <input
                                             type="time"
                                             className="form-input"
@@ -1133,7 +1146,7 @@ export default function AttendancePage() {
                                     rows={3}
                                     value={form.note}
                                     onChange={event => setForm(current => ({ ...current, note: event.target.value }))}
-                                    placeholder={form.status === 'HADIR' ? 'Catatan tambahan bila ada' : 'Contoh: izin keluarga, kontrol dokter, cuti tahunan'}
+                                    placeholder={requiresAttendanceTime(form.status) ? 'Catatan tambahan bila ada, misalnya alasan pulang lebih awal' : 'Contoh: izin keluarga, kontrol dokter, cuti tahunan'}
                                 />
                             </div>
                         </div>

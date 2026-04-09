@@ -2,6 +2,7 @@ import { getBusinessDateValue, parseBusinessDateValue } from './business-date';
 
 export type EmployeeAttendanceStatus =
     | 'HADIR'
+    | 'PULANG_LEBIH_AWAL'
     | 'IZIN'
     | 'SAKIT'
     | 'CUTI'
@@ -12,6 +13,7 @@ export type EmployeeAttendancePeriod = 'today' | 'thisWeek' | 'thisMonth' | 'thi
 
 export const EMPLOYEE_ATTENDANCE_STATUS_OPTIONS: EmployeeAttendanceStatus[] = [
     'HADIR',
+    'PULANG_LEBIH_AWAL',
     'IZIN',
     'SAKIT',
     'CUTI',
@@ -21,6 +23,7 @@ export const EMPLOYEE_ATTENDANCE_STATUS_OPTIONS: EmployeeAttendanceStatus[] = [
 
 export const EMPLOYEE_ATTENDANCE_STATUS_LABELS: Record<EmployeeAttendanceStatus, string> = {
     HADIR: 'Hadir',
+    PULANG_LEBIH_AWAL: 'Pulang Lebih Awal',
     IZIN: 'Izin',
     SAKIT: 'Sakit',
     CUTI: 'Cuti',
