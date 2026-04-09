@@ -1261,6 +1261,9 @@ export async function handleDeliveryOrderStatusUpdate(
             }
 
             const progress = getOrderItemProgress(orderItem);
+            const usesDeliveryOrderOwnedTarget =
+                orderItem.entrySource === 'DELIVERY_ORDER' &&
+                extractRefId(orderItem.sourceDeliveryOrderRef) === id;
             const plannedQtyKoli = roundQuantity(normalizeNumber(item.shippedQtyKoli ?? item.orderItemQtyKoli ?? 0));
             const plannedWeight = roundQuantity(normalizeNumber(item.shippedWeight ?? item.orderItemWeight ?? 0));
             const plannedVolume = roundQuantity(normalizeNumber(item.orderItemVolumeM3 ?? 0), 3);
@@ -1287,7 +1290,7 @@ export async function handleDeliveryOrderStatusUpdate(
                         Math.max(progress.deliveredQtyKoli + progress.assignedQtyKoli + progress.heldQtyKoli - plannedQtyKoli, 0)
                     );
                     const maxActualQtyKoli = roundQuantity(Math.max(progress.totalQtyKoli - otherReservedQtyKoli, 0));
-                    if (actualCargo.actualQtyKoli > maxActualQtyKoli) {
+                    if (!usesDeliveryOrderOwnedTarget && actualCargo.actualQtyKoli > maxActualQtyKoli) {
                         return NextResponse.json(
                             {
                                 error: `Qty aktual untuk ${orderItem.description || 'item order'} melebihi sisa target order/resi (${maxActualQtyKoli} koli). Revisi order/resi dulu jika total barang fisik memang bertambah.`,
@@ -1327,7 +1330,7 @@ export async function handleDeliveryOrderStatusUpdate(
                 const otherReservedWeight = roundQuantity(
                     Math.max(progress.deliveredWeight + progress.assignedWeight + progress.heldWeight - plannedWeight, 0)
                 );
-                if (progress.totalWeight > 0) {
+                if (!usesDeliveryOrderOwnedTarget && progress.totalWeight > 0) {
                     const maxActualWeight = roundQuantity(Math.max(progress.totalWeight - otherReservedWeight, 0));
                     if (actualWeight - maxActualWeight > 0.00001) {
                         return NextResponse.json(
@@ -1342,7 +1345,7 @@ export async function handleDeliveryOrderStatusUpdate(
                     Math.max(progress.deliveredVolume + progress.assignedVolume + progress.heldVolume - plannedVolume, 0),
                     3
                 );
-                if (progress.totalVolume > 0) {
+                if (!usesDeliveryOrderOwnedTarget && progress.totalVolume > 0) {
                     const maxActualVolume = roundQuantity(Math.max(progress.totalVolume - otherReservedVolume, 0), 3);
                     if (actualVolume - maxActualVolume > 0.00001) {
                         return NextResponse.json(
@@ -1362,7 +1365,10 @@ export async function handleDeliveryOrderStatusUpdate(
                     deliveredWeight: roundQuantity(progress.deliveredWeight + actualWeight),
                     deliveredVolume: roundQuantity(progress.deliveredVolume + actualVolume, 3),
                 };
-                transaction.patch(orderItemRef, {
+                const orderItemPatch: {
+                    set: Record<string, unknown>;
+                    unset?: string[];
+                } = {
                     set: {
                         assignedQtyKoli: nextProgress.assignedQtyKoli,
                         assignedWeight: nextProgress.assignedWeight,
@@ -1372,7 +1378,23 @@ export async function handleDeliveryOrderStatusUpdate(
                         deliveredVolume: nextProgress.deliveredVolume,
                         status: deriveOrderItemStatusFromProgress(nextProgress),
                     },
-                });
+                };
+                if (usesDeliveryOrderOwnedTarget) {
+                    if (requireQty) {
+                        orderItemPatch.set.qtyKoli = actualQtyKoli;
+                    }
+                    orderItemPatch.set.weight = actualWeight;
+                    orderItemPatch.set.weightInputValue = actualCargo.actualWeightInputValue;
+                    orderItemPatch.set.weightInputUnit = actualCargo.actualWeightInputUnit;
+                    if (actualVolume > 0) {
+                        orderItemPatch.set.volume = actualVolume;
+                        orderItemPatch.set.volumeInputValue = actualCargo.actualVolumeInputValue;
+                        orderItemPatch.set.volumeInputUnit = actualCargo.actualVolumeInputUnit;
+                    } else {
+                        orderItemPatch.unset = ['volume', 'volumeInputValue', 'volumeInputUnit'];
+                    }
+                }
+                transaction.patch(orderItemRef, orderItemPatch);
                 transaction.patch(item._id, {
                     set: {
                         actualQtyKoli: requireQty ? actualCargo.actualQtyKoli : undefined,

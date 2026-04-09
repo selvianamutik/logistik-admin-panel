@@ -97,6 +97,9 @@ export type DeliveryOrderItemSelection = {
 export type OrderItemProgressSnapshot = {
     _id: string;
     orderRef?: unknown;
+    entrySource?: 'ORDER' | 'DELIVERY_ORDER';
+    sourceDeliveryOrderRef?: unknown;
+    sourceDeliveryOrderNumber?: string;
     description?: string;
     qtyKoli?: number;
     weight?: number;

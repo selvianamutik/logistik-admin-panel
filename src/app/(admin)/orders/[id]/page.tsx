@@ -316,6 +316,28 @@ export default function OrderDetailPage() {
     const canCreateDeliveryOrder = availableItems.length > 0 || isHeaderOnlyOrder;
     const draftDirectCargoItems = getDraftOrderItems(directCargoItems);
     const directCargoSummary = summarizeDraftOrderCargo(directCargoItems);
+    const headerOnlyDeliveredMatchesTotal =
+        isHeaderOnlyOrder &&
+        totalDeliveredActualCargo.qtyKoli === totalOrderCargo.qtyKoli &&
+        totalDeliveredActualCargo.weightKg === totalOrderCargo.weightKg &&
+        totalDeliveredActualCargo.volumeM3 === totalOrderCargo.volumeM3;
+    const progressSummaryLabel = hasCargoAggregate(totalOrderCargo)
+        ? headerOnlyDeliveredMatchesTotal
+            ? `${formatCargoSummary({
+                qtyKoli: totalDeliveredActualCargo.qtyKoli,
+                weightKg: totalDeliveredActualCargo.weightKg,
+                volumeM3: totalDeliveredActualCargo.volumeM3,
+            })} (${progress}%)`
+            : `${formatCargoSummary({
+                qtyKoli: totalDeliveredActualCargo.qtyKoli,
+                weightKg: totalDeliveredActualCargo.weightKg,
+                volumeM3: totalDeliveredActualCargo.volumeM3,
+            })} / ${formatCargoSummary({
+                qtyKoli: totalOrderCargo.qtyKoli,
+                weightKg: totalOrderCargo.weightKg,
+                volumeM3: totalOrderCargo.volumeM3,
+            })} (${progress}%)`
+        : 'Belum ada muatan tercatat';
 
     const handleCreateDO = async () => {
         const selectedItems = isHeaderOnlyOrder
@@ -560,19 +582,7 @@ export default function OrderDetailPage() {
                     )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 'var(--font-size-sm)' }}>
                         <span className="font-semibold">Progress Pengiriman Aktual</span>
-                        <span className="text-muted">
-                            {hasCargoAggregate(totalOrderCargo)
-                                ? `${formatCargoSummary({
-                                    qtyKoli: totalDeliveredActualCargo.qtyKoli,
-                                    weightKg: totalDeliveredActualCargo.weightKg,
-                                    volumeM3: totalDeliveredActualCargo.volumeM3,
-                                })} / ${formatCargoSummary({
-                                    qtyKoli: totalOrderCargo.qtyKoli,
-                                    weightKg: totalOrderCargo.weightKg,
-                                    volumeM3: totalOrderCargo.volumeM3,
-                                })} (${progress}%)`
-                                : 'Belum ada muatan tercatat'}
-                        </span>
+                        <span className="text-muted">{progressSummaryLabel}</span>
                     </div>
                     <div className="progress-bar">
                         <div className={`progress-bar-fill ${progress === 100 ? 'success' : ''}`} style={{ width: `${progress}%` }} />
