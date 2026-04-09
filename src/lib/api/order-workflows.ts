@@ -2043,6 +2043,7 @@ export async function handleDeliveryOrderCreate(
     let selectionByItemId = new Map<string, ReturnType<typeof normalizeDeliveryOrderSelections>[number]>();
     let directCargoItems: NormalizedOrderItemInput[] = [];
     const selectionSummaries: string[] = [];
+    let plannedShipmentWeightKgTotal = 0;
 
     if (usingDirectCargoInput) {
         if (!allowsDirectCargoInput) {
@@ -2064,10 +2065,11 @@ export async function handleDeliveryOrderCreate(
         const plannedWeightKg = roundQuantity(
             directCargoItems.reduce((sum, item) => sum + normalizeNumber(item.weight || 0), 0)
         );
-        if (vehicleCapacityKg > 0 && plannedWeightKg - vehicleCapacityKg > 0.00001) {
+        plannedShipmentWeightKgTotal = plannedWeightKg;
+        if (vehicleCapacityKg > 0 && plannedShipmentWeightKgTotal - vehicleCapacityKg > 0.00001) {
             return NextResponse.json(
                 {
-                    error: `Muatan rencana ${plannedWeightKg} kg melebihi kapasitas kendaraan ${vehicleCapacityKg} kg.`,
+                    error: `Muatan rencana ${plannedShipmentWeightKgTotal} kg melebihi kapasitas kendaraan ${vehicleCapacityKg} kg.`,
                 },
                 { status: 409 }
             );
@@ -2183,6 +2185,10 @@ export async function handleDeliveryOrderCreate(
                     }
                 }
 
+                plannedShipmentWeightKgTotal = roundQuantity(
+                    plannedShipmentWeightKgTotal +
+                    calculateWeightPortion(progress.totalWeight, progress.totalQtyKoli, selection.qtyKoli)
+                );
                 selectionSummaries.push(summarizeSelection(selection, item.description));
                 continue;
             }
@@ -2234,7 +2240,17 @@ export async function handleDeliveryOrderCreate(
                 }
             }
 
+            plannedShipmentWeightKgTotal = roundQuantity(plannedShipmentWeightKgTotal + selectedWeightKg);
             selectionSummaries.push(summarizeSelection(selection, item.description));
+        }
+
+        if (vehicleCapacityKg > 0 && plannedShipmentWeightKgTotal - vehicleCapacityKg > 0.00001) {
+            return NextResponse.json(
+                {
+                    error: `Muatan rencana ${plannedShipmentWeightKgTotal} kg melebihi kapasitas kendaraan ${vehicleCapacityKg} kg.`,
+                },
+                { status: 409 }
+            );
         }
     }
 
