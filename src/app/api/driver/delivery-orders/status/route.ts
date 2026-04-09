@@ -4,6 +4,7 @@ import {
     handleDeliveryOrderDriverStatusRequest,
     handleDeliveryOrderStatusUpdate,
 } from '@/lib/api/order-workflows';
+import { validateDriverStatusTransition } from '@/lib/api/driver-status-guards';
 import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
 import { sanityCreate, sanityGetById } from '@/lib/sanity';
 import type { DeliveryOrder } from '@/lib/types';
@@ -77,6 +78,11 @@ export async function POST(request: Request) {
 
         if (extractRefId(deliveryOrder.driverRef) !== auth.driver._id) {
             return jsonNoStore({ error: 'Surat jalan ini bukan milik supir yang login' }, { status: 403 });
+        }
+
+        const driverStatusTransitionError = validateDriverStatusTransition(deliveryOrder, status);
+        if (driverStatusTransitionError) {
+            return jsonNoStore({ error: driverStatusTransitionError }, { status: 409 });
         }
 
         if (DRIVER_APPROVAL_REQUEST_STATUSES.has(status)) {
