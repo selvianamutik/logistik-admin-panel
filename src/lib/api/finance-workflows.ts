@@ -2068,6 +2068,56 @@ export async function handleFreightNotaCreate(
         );
     }
 
+    const payloadCoverageByDoRef = new Map<
+        string,
+        {
+            fullDoIncluded: boolean;
+            deliveryOrderItemRefs: Set<string>;
+        }
+    >();
+    for (const row of rows) {
+        if (!row.doRef) continue;
+        const deliveryOrder = deliveryOrderMap.get(row.doRef);
+        const coverage =
+            payloadCoverageByDoRef.get(row.doRef) ||
+            {
+                fullDoIncluded: false,
+                deliveryOrderItemRefs: new Set<string>(),
+            };
+        if (!row.deliveryOrderItemRef) {
+            if (coverage.fullDoIncluded || coverage.deliveryOrderItemRefs.size > 0) {
+                return NextResponse.json(
+                    {
+                        error: `DO ${deliveryOrder?.doNumber || row.doRef} duplikat dalam payload nota`,
+                    },
+                    { status: 409 }
+                );
+            }
+            coverage.fullDoIncluded = true;
+            payloadCoverageByDoRef.set(row.doRef, coverage);
+            continue;
+        }
+
+        if (coverage.fullDoIncluded) {
+            return NextResponse.json(
+                {
+                    error: `DO ${deliveryOrder?.doNumber || row.doRef} sudah dimasukkan penuh dalam payload nota`,
+                },
+                { status: 409 }
+            );
+        }
+        if (coverage.deliveryOrderItemRefs.has(row.deliveryOrderItemRef)) {
+            return NextResponse.json(
+                {
+                    error: `Item DO ${row.deliveryOrderItemRef} duplikat dalam payload nota`,
+                },
+                { status: 400 }
+            );
+        }
+        coverage.deliveryOrderItemRefs.add(row.deliveryOrderItemRef);
+        payloadCoverageByDoRef.set(row.doRef, coverage);
+    }
+
     for (const row of rows) {
         if (!row.date || !row.noSJ || !row.tujuan) {
             return NextResponse.json(
