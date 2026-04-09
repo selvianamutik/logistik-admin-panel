@@ -1597,6 +1597,21 @@ export async function handleDeliveryOrderDriverStatusRequest(
         }`,
         { ref: id }
     );
+    const explicitActualItemRefs = new Set(
+        (Array.isArray(data.actualItems) ? data.actualItems : [])
+            .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+            .map(item => normalizeText(item.deliveryOrderItemRef))
+            .filter(Boolean)
+    );
+    const missingExplicitActualItem = doItems.find(item => !explicitActualItemRefs.has(item._id));
+    if (missingExplicitActualItem) {
+        return NextResponse.json(
+            {
+                error: `Driver harus mengisi seluruh muatan aktual sebelum mengajukan selesai. Item ${missingExplicitActualItem._id} belum diisi.`,
+            },
+            { status: 400 }
+        );
+    }
     let pendingDriverActualCargoItems: Array<{
         deliveryOrderItemRef: string;
         actualQtyKoli?: number;
@@ -1744,6 +1759,7 @@ export async function handleDeliveryOrderDriverStatusRequestReject(
             pendingDriverStatusRequestedBy: undefined,
             pendingDriverStatusRequestedByName: undefined,
             pendingDriverStatusNote: undefined,
+            pendingDriverActualCargoItems: undefined,
         },
     });
 }
