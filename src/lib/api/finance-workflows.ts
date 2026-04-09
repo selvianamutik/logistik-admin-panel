@@ -1953,9 +1953,22 @@ export async function handleFreightNotaCreate(
             { ids: orderRefs }
         )
         : [];
-    const deliveryOrderItems = uniqueDoRefs.length > 0
+    const referencedDeliveryOrderItemRefs = [
+        ...new Set(
+            rows
+                .map(row => row.deliveryOrderItemRef)
+                .filter((ref): ref is string => Boolean(ref))
+        ),
+    ];
+    const deliveryOrderItems = uniqueDoRefs.length > 0 || referencedDeliveryOrderItemRefs.length > 0
         ? await getSanityClient().fetch<FreightNotaDeliveryOrderItemSource[]>(
-            `*[_type == "deliveryOrderItem" && deliveryOrderRef in $ids]{
+            `*[
+                _type == "deliveryOrderItem" &&
+                (
+                    deliveryOrderRef in $deliveryOrderRefs ||
+                    _id in $itemRefs
+                )
+            ]{
                 _id,
                 deliveryOrderRef,
                 orderItemDescription,
@@ -1964,7 +1977,10 @@ export async function handleFreightNotaCreate(
                 actualQtyKoli,
                 actualWeightKg
             }`,
-            { ids: uniqueDoRefs }
+            {
+                deliveryOrderRefs: uniqueDoRefs,
+                itemRefs: referencedDeliveryOrderItemRefs,
+            }
         )
         : [];
 
@@ -1996,6 +2012,25 @@ export async function handleFreightNotaCreate(
         const orderRef = extractRefId(deliveryOrder.orderRef);
         const sourceOrder = orderRef ? orderMap.get(orderRef) : undefined;
         const itemSource = row.deliveryOrderItemRef ? doItemById.get(row.deliveryOrderItemRef) : undefined;
+        if (row.deliveryOrderItemRef && !itemSource) {
+            return NextResponse.json(
+                {
+                    error: `Item DO ${row.deliveryOrderItemRef} tidak ditemukan untuk pembuatan nota`,
+                },
+                { status: 404 }
+            );
+        }
+        if (itemSource) {
+            const itemDeliveryOrderRef = normalizeOptionalText(itemSource.deliveryOrderRef);
+            if (itemDeliveryOrderRef !== row.doRef) {
+                return NextResponse.json(
+                    {
+                        error: `Item DO ${row.deliveryOrderItemRef} bukan milik surat jalan ${deliveryOrder.doNumber || row.doRef}`,
+                    },
+                    { status: 409 }
+                );
+            }
+        }
         const itemSummary = itemSource
             ? summarizeDeliveryOrderItems([itemSource])
             : summarizeDeliveryOrderItems(doItemMap.get(row.doRef) || []);
