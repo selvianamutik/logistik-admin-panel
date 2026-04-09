@@ -958,6 +958,10 @@ export interface Vehicle {
   plateNumber: string;
   vehicleType: string;
   brandModel: string;
+  size?: string;
+  dimension?: string;
+  capacityMin?: string;
+  capacityMax?: string;
   year: number;
   capacityKg?: number;
   capacityVolume?: number;

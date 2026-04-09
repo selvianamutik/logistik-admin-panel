@@ -74,6 +74,20 @@ function normalizeOptionalNonNegativeNumber(value: unknown, label: string) {
     return normalized;
 }
 
+function parseCapacityRangeValue(value?: string) {
+    if (!value) {
+        return undefined;
+    }
+
+    const normalized = value.replace(',', '.').trim();
+    if (!/^\d+(\.\d+)?$/.test(normalized)) {
+        return undefined;
+    }
+
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 export function normalizeOptionalWholeNumber(value: unknown, label: string) {
     if (value === '' || value === null || value === undefined) {
         return undefined;
@@ -337,7 +351,7 @@ export async function normalizeVehiclePayload(
     const partial = options?.partial === true;
     const next: Record<string, unknown> = {};
     const existingVehicle = options?.excludeId
-        ? await sanityGetById<{ _id: string; lastOdometer?: number; serviceRef?: string; unitCode?: string; vehicleType?: string }>(options.excludeId)
+        ? await sanityGetById<{ _id: string; lastOdometer?: number; serviceRef?: string; unitCode?: string; vehicleType?: string; capacityMin?: string; capacityMax?: string }>(options.excludeId)
         : null;
 
     if (options?.excludeId && !existingVehicle) {
@@ -370,6 +384,34 @@ export async function normalizeVehiclePayload(
             throw new Error('Merk/model kendaraan wajib diisi');
         }
         next.brandModel = brandModel;
+    }
+
+    if (!partial || hasOwnKey(data, 'size')) {
+        next.size = normalizeOptionalText(data.size);
+    }
+
+    if (!partial || hasOwnKey(data, 'dimension')) {
+        next.dimension = normalizeOptionalText(data.dimension);
+    }
+
+    if (!partial || hasOwnKey(data, 'capacityMin')) {
+        next.capacityMin = normalizeOptionalText(data.capacityMin);
+    }
+
+    if (!partial || hasOwnKey(data, 'capacityMax')) {
+        next.capacityMax = normalizeOptionalText(data.capacityMax);
+    }
+
+    const resolvedCapacityMin = normalizeOptionalText(
+        String(next.capacityMin ?? existingVehicle?.capacityMin ?? '')
+    );
+    const resolvedCapacityMax = normalizeOptionalText(
+        String(next.capacityMax ?? existingVehicle?.capacityMax ?? '')
+    );
+    const parsedCapacityMin = parseCapacityRangeValue(resolvedCapacityMin);
+    const parsedCapacityMax = parseCapacityRangeValue(resolvedCapacityMax);
+    if (parsedCapacityMin !== undefined && parsedCapacityMax !== undefined && parsedCapacityMax < parsedCapacityMin) {
+        throw new Error('Kapasitas maks tidak boleh lebih kecil dari kapasitas min');
     }
 
     if (!partial || hasOwnKey(data, 'year')) {

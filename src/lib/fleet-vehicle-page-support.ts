@@ -14,6 +14,10 @@ export type VehicleForm = {
     plateNumber: string;
     vehicleType: string;
     brandModel: string;
+    size: string;
+    dimension: string;
+    capacityMin: string;
+    capacityMax: string;
     year: number;
     capacityKg: number;
     capacityVolume: number;
@@ -36,6 +40,10 @@ export const EMPTY_VEHICLE_FORM: VehicleForm = {
     plateNumber: '',
     vehicleType: 'Truck',
     brandModel: '',
+    size: '',
+    dimension: '',
+    capacityMin: '',
+    capacityMax: '',
     year: getCurrentBusinessYear(),
     capacityKg: 0,
     capacityVolume: 0,
@@ -117,12 +125,37 @@ export function getSelectableVehicleServiceOptions(services: Service[], currentS
     return services.filter(service => service.active !== false || service._id === currentServiceRef);
 }
 
+function parseCapacityRangeValue(value: string) {
+    if (!value.trim()) {
+        return undefined;
+    }
+
+    const normalized = value.replace(',', '.').trim();
+    if (!/^\d+(\.\d+)?$/.test(normalized)) {
+        return undefined;
+    }
+
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+export function hasInvalidCapacityRange(form: Pick<VehicleForm, 'capacityMin' | 'capacityMax'>) {
+    const min = parseCapacityRangeValue(form.capacityMin);
+    const max = parseCapacityRangeValue(form.capacityMax);
+
+    return min !== undefined && max !== undefined && max < min;
+}
+
 export function buildVehicleBasePayload(form: VehicleForm, isOwner: boolean) {
     return {
         unitCode: form.unitCode,
         plateNumber: form.plateNumber,
         vehicleType: form.vehicleType,
         brandModel: form.brandModel,
+        size: form.size || undefined,
+        dimension: form.dimension || undefined,
+        capacityMin: form.capacityMin || undefined,
+        capacityMax: form.capacityMax || undefined,
         year: form.year,
         capacityKg: form.capacityKg,
         capacityVolume: form.capacityVolume,
@@ -141,6 +174,10 @@ export function buildVehiclePrintHtml(vehicles: Vehicle[], services: Service[]) 
                     <th>Kode</th>
                     <th>Plat Nomor</th>
                     <th>Merk/Model</th>
+                    <th>Ukuran</th>
+                    <th>Dimensi</th>
+                    <th>Kapasitas Min</th>
+                    <th>Kapasitas Maks</th>
                     <th>Kategori</th>
                     <th>Tipe</th>
                     <th>Tahun</th>
@@ -156,6 +193,10 @@ export function buildVehiclePrintHtml(vehicles: Vehicle[], services: Service[]) 
                             <td class="b">${vehicle.unitCode || '-'}</td>
                             <td>${vehicle.plateNumber}</td>
                             <td>${vehicle.brandModel}</td>
+                            <td>${vehicle.size || '-'}</td>
+                            <td>${vehicle.dimension || '-'}</td>
+                            <td>${vehicle.capacityMin || '-'}</td>
+                            <td>${vehicle.capacityMax || '-'}</td>
                             <td>${getVehicleServiceLabel(vehicle, services)}</td>
                             <td>${vehicle.vehicleType}</td>
                             <td>${vehicle.year}</td>
@@ -176,6 +217,10 @@ export function mapVehicleToForm(vehicle: Vehicle): VehicleForm {
         plateNumber: vehicle.plateNumber || '',
         vehicleType: vehicle.vehicleType || 'Truck',
         brandModel: vehicle.brandModel || '',
+        size: vehicle.size || '',
+        dimension: vehicle.dimension || '',
+        capacityMin: vehicle.capacityMin || '',
+        capacityMax: vehicle.capacityMax || '',
         year: vehicle.year || getCurrentBusinessYear(),
         capacityKg: vehicle.capacityKg || 0,
         capacityVolume: vehicle.capacityVolume || 0,
