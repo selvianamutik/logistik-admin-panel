@@ -608,6 +608,7 @@ export function normalizeDeliveryOrderActualCargoInputs(
     doItems: DeliveryOrderItemCargoSnapshot[]
 ) {
     const rawActualItems = Array.isArray(data.actualItems) ? data.actualItems : [];
+    const knownDoItemIds = new Set(doItems.map(item => item._id));
     const providedActuals = new Map<string, Record<string, unknown>>();
     for (const rawItem of rawActualItems) {
         if (!isPlainObject(rawItem)) {
@@ -616,6 +617,12 @@ export function normalizeDeliveryOrderActualCargoInputs(
         const deliveryOrderItemRef = normalizeText(rawItem.deliveryOrderItemRef);
         if (!deliveryOrderItemRef) {
             continue;
+        }
+        if (!knownDoItemIds.has(deliveryOrderItemRef)) {
+            throw new Error(`Item muatan aktual ${deliveryOrderItemRef} bukan milik surat jalan ini`);
+        }
+        if (providedActuals.has(deliveryOrderItemRef)) {
+            throw new Error(`Item muatan aktual ${deliveryOrderItemRef} duplikat dalam payload`);
         }
         providedActuals.set(deliveryOrderItemRef, rawItem);
     }
