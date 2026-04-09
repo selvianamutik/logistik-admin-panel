@@ -2117,6 +2117,25 @@ export async function handleFreightNotaCreate(
         coverage.deliveryOrderItemRefs.add(row.deliveryOrderItemRef);
         payloadCoverageByDoRef.set(row.doRef, coverage);
     }
+    for (const [doRef, coverage] of payloadCoverageByDoRef.entries()) {
+        if (coverage.fullDoIncluded || coverage.deliveryOrderItemRefs.size === 0) {
+            continue;
+        }
+        const doItems = doItemMap.get(doRef) || [];
+        const doItemIds = doItems
+            .map(item => normalizeOptionalText(item._id))
+            .filter((itemId): itemId is string => Boolean(itemId));
+        const missingItemIds = doItemIds.filter(itemId => !coverage.deliveryOrderItemRefs.has(itemId));
+        if (missingItemIds.length > 0) {
+            const deliveryOrder = deliveryOrderMap.get(doRef);
+            return NextResponse.json(
+                {
+                    error: `DO ${deliveryOrder?.doNumber || doRef} harus memasukkan semua item muatan dalam payload nota`,
+                },
+                { status: 409 }
+            );
+        }
+    }
 
     for (const row of rows) {
         if (!row.date || !row.noSJ || !row.tujuan) {
