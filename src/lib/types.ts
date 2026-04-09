@@ -365,6 +365,8 @@ export interface Service {
   code: string;
   name: string;
   description: string;
+  maxPayloadKg?: number;
+  overtonaseDriverRatePerKg?: number;
   tireLayoutConfig?: TireLayoutConfig;
   active: boolean;
 }
@@ -600,8 +602,16 @@ export interface DeliveryOrder {
   tripRouteRateRef?: string;
   tripOriginArea?: string;
   tripDestinationArea?: string;
+  baseTaripBorongan?: number;
   taripBorongan?: number;       // Tarif upah supir per DO/perjalanan
   keteranganBorongan?: string;  // Keterangan upah borongan
+  actualTotalWeightKg?: number;
+  serviceMaxPayloadKg?: number;
+  vehicleCapacityKg?: number;
+  overtonaseWeightKg?: number;
+  overtonaseDriverRatePerKg?: number;
+  overtonaseDriverAmount?: number;
+  vehicleCapacityExceededKg?: number;
   trackingState?: 'IDLE' | 'ACTIVE' | 'PAUSED' | 'STOPPED';
   trackingStartedAt?: string;
   trackingStoppedAt?: string;

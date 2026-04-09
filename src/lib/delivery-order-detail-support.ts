@@ -647,10 +647,26 @@ export function buildResolvedDeliveryOrder(deliveryOrder: DeliveryOrder | null, 
     }
 
     const parsedTaripBorongan = parseFormattedNumberish(deliveryOrder.taripBorongan, { maxFractionDigits: 0 });
+    const parsedBaseTaripBorongan = parseFormattedNumberish(deliveryOrder.baseTaripBorongan, { maxFractionDigits: 0 });
+    const parsedActualTotalWeightKg = parseFormattedNumberish(deliveryOrder.actualTotalWeightKg, { maxFractionDigits: 2 });
+    const parsedServiceMaxPayloadKg = parseFormattedNumberish(deliveryOrder.serviceMaxPayloadKg, { maxFractionDigits: 2 });
+    const parsedVehicleCapacityKg = parseFormattedNumberish(deliveryOrder.vehicleCapacityKg, { maxFractionDigits: 2 });
+    const parsedOvertonaseWeightKg = parseFormattedNumberish(deliveryOrder.overtonaseWeightKg, { maxFractionDigits: 2 });
+    const parsedOvertonaseDriverRatePerKg = parseFormattedNumberish(deliveryOrder.overtonaseDriverRatePerKg, { maxFractionDigits: 0 });
+    const parsedOvertonaseDriverAmount = parseFormattedNumberish(deliveryOrder.overtonaseDriverAmount, { maxFractionDigits: 0 });
+    const parsedVehicleCapacityExceededKg = parseFormattedNumberish(deliveryOrder.vehicleCapacityExceededKg, { maxFractionDigits: 2 });
 
     return {
         ...deliveryOrder,
+        baseTaripBorongan: Number.isFinite(parsedBaseTaripBorongan) ? parsedBaseTaripBorongan : 0,
         taripBorongan: Number.isFinite(parsedTaripBorongan) ? parsedTaripBorongan : 0,
+        actualTotalWeightKg: Number.isFinite(parsedActualTotalWeightKg) ? parsedActualTotalWeightKg : undefined,
+        serviceMaxPayloadKg: Number.isFinite(parsedServiceMaxPayloadKg) ? parsedServiceMaxPayloadKg : undefined,
+        vehicleCapacityKg: Number.isFinite(parsedVehicleCapacityKg) ? parsedVehicleCapacityKg : undefined,
+        overtonaseWeightKg: Number.isFinite(parsedOvertonaseWeightKg) ? parsedOvertonaseWeightKg : undefined,
+        overtonaseDriverRatePerKg: Number.isFinite(parsedOvertonaseDriverRatePerKg) ? parsedOvertonaseDriverRatePerKg : undefined,
+        overtonaseDriverAmount: Number.isFinite(parsedOvertonaseDriverAmount) ? parsedOvertonaseDriverAmount : undefined,
+        vehicleCapacityExceededKg: Number.isFinite(parsedVehicleCapacityExceededKg) ? parsedVehicleCapacityExceededKg : undefined,
         customerName: deliveryOrder.customerName || sourceOrder?.customerName,
         receiverName: deliveryOrder.receiverName || sourceOrder?.receiverName,
         receiverPhone: deliveryOrder.receiverPhone || sourceOrder?.receiverPhone,

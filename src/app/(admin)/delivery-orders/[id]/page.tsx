@@ -218,7 +218,7 @@ export default function DODetailPage() {
             setLinkedTripCashLink(tripCashLink || null);
             setLinkedVoucherBonNumber(linkedVoucherRows?.[0]?.bonNumber || tripCashLink?.bonNumber || '');
             if (!editingTaripRef.current) {
-                setTaripBorongan(resolvedDeliveryOrder?.taripBorongan || 0);
+                setTaripBorongan((resolvedDeliveryOrder?.baseTaripBorongan ?? resolvedDeliveryOrder?.taripBorongan) || 0);
                 setKeteranganBorongan(resolvedDeliveryOrder?.keteranganBorongan || '');
                 setTripRouteRateRef(resolvedDeliveryOrder?.tripRouteRateRef || '');
                 setTripOriginArea(resolvedDeliveryOrder?.tripOriginArea || '');
@@ -567,7 +567,8 @@ export default function DODetailPage() {
                 tripRouteRateRef: tripRouteRateRef || undefined,
                 tripOriginArea: tripOriginArea || undefined,
                 tripDestinationArea: tripDestinationArea || undefined,
-                taripBorongan,
+                baseTaripBorongan: matchedTripRouteRate?.rate ?? taripBorongan,
+                taripBorongan: (matchedTripRouteRate?.rate ?? taripBorongan) + (prev.overtonaseDriverAmount || 0),
                 keteranganBorongan,
             } : prev);
             setEditingTarip(false);
@@ -696,6 +697,17 @@ export default function DODetailPage() {
             SETTLED: { label: 'Selesai', cls: 'badge-success' },
         }[linkedTripCashStatus || 'DRAFT'])
         : null;
+    const baseTripFee = doData.baseTaripBorongan ?? doData.taripBorongan ?? 0;
+    const overtonaseDriverAmount = doData.overtonaseDriverAmount || 0;
+    const totalTripFee = doData.taripBorongan || 0;
+    const hasOvertonase = (doData.overtonaseWeightKg || 0) > 0;
+    const exceedsVehicleCapacity = (doData.vehicleCapacityExceededKg || 0) > 0;
+    const shouldOpenTripFeeCard = !doData.taripBorongan || hasOvertonase || exceedsVehicleCapacity;
+    const settledVoucherNeedsManualAdjustment = Boolean(
+        linkedVoucher?.status === 'SETTLED' &&
+        totalTripFee > 0 &&
+        Math.abs((linkedVoucher.driverFeeAmount || 0) - totalTripFee) > 0.01
+    );
     const voucherIssueBlockingReasons = [
         !doData.driverRef ? 'supir trip belum diisi' : null,
         !doData.vehicleRef && !doData.vehiclePlate ? 'kendaraan trip belum diisi' : null,
@@ -1211,16 +1223,30 @@ export default function DODetailPage() {
             </CollapsibleCard>
 
             <div id="delivery-order-trip-fee-card">
-            <CollapsibleCard title="Upah Trip Driver" defaultOpen={!doData.taripBorongan}>
+            <CollapsibleCard title="Upah Trip Driver" defaultOpen={shouldOpenTripFeeCard}>
                     {!editingTarip ? (
                         <div>
                             <div className="detail-row">
                                 <div className="detail-item">
-                                    <div className="detail-label">Upah Trip per DO</div>
+                                    <div className="detail-label">Upah Dasar Trip</div>
                                     <div className="detail-value font-semibold" style={{ color: doData.taripBorongan ? 'var(--color-primary)' : 'var(--color-gray-400)' }}>
-                                        {doData.taripBorongan ? formatCurrency(doData.taripBorongan) : 'Belum diisi'}
+                                        {baseTripFee ? formatCurrency(baseTripFee) : 'Belum diisi'}
                                     </div>
                                 </div>
+                                <div className="detail-item">
+                                    <div className="detail-label">Tambahan Overtonase</div>
+                                    <div className="detail-value font-semibold" style={{ color: hasOvertonase ? 'var(--color-warning)' : 'var(--color-gray-500)' }}>
+                                        {hasOvertonase ? formatCurrency(overtonaseDriverAmount) : '-'}
+                                    </div>
+                                </div>
+                                <div className="detail-item">
+                                    <div className="detail-label">Total Upah Trip Final</div>
+                                    <div className="detail-value font-semibold" style={{ color: totalTripFee ? 'var(--color-primary)' : 'var(--color-gray-400)' }}>
+                                        {totalTripFee ? formatCurrency(totalTripFee) : 'Belum diisi'}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="detail-row" style={{ marginTop: '0.75rem' }}>
                                 <div className="detail-item">
                                     <div className="detail-label">Keterangan</div>
                                     <div className="detail-value">{doData.keteranganBorongan || '-'}</div>
@@ -1234,6 +1260,38 @@ export default function DODetailPage() {
                                 )}
                             </div>
                             <div className="detail-row" style={{ marginTop: '0.75rem' }}>
+                                <div className="detail-item">
+                                    <div className="detail-label">Berat Aktual Final</div>
+                                    <div className="detail-value">
+                                        {doData.actualTotalWeightKg ? `${doData.actualTotalWeightKg} kg` : 'Belum difinalkan'}
+                                    </div>
+                                </div>
+                                <div className="detail-item">
+                                    <div className="detail-label">Batas Normal Layanan</div>
+                                    <div className="detail-value">
+                                        {doData.serviceMaxPayloadKg ? `${doData.serviceMaxPayloadKg} kg` : '-'}
+                                    </div>
+                                </div>
+                                <div className="detail-item">
+                                    <div className="detail-label">Kapasitas Kendaraan</div>
+                                    <div className="detail-value">
+                                        {doData.vehicleCapacityKg ? `${doData.vehicleCapacityKg} kg` : '-'}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="detail-row" style={{ marginTop: '0.75rem' }}>
+                                <div className="detail-item">
+                                    <div className="detail-label">Berat Overtonase</div>
+                                    <div className="detail-value">
+                                        {hasOvertonase ? `${doData.overtonaseWeightKg} kg` : '-'}
+                                    </div>
+                                </div>
+                                <div className="detail-item">
+                                    <div className="detail-label">Rate Tambahan / kg</div>
+                                    <div className="detail-value">
+                                        {doData.overtonaseDriverRatePerKg ? formatCurrency(doData.overtonaseDriverRatePerKg) : '-'}
+                                    </div>
+                                </div>
                                 <div className="detail-item">
                                     <div className="detail-label">Asal Area Trip</div>
                                     <div className="detail-value">{doData.tripOriginArea || '-'}</div>
@@ -1253,9 +1311,19 @@ export default function DODetailPage() {
                                     </div>
                                 </div>
                             </div>
+                            {exceedsVehicleCapacity && (
+                                <div className="text-danger text-sm" style={{ marginTop: '0.75rem' }}>
+                                    Berat aktual final melebihi kapasitas kendaraan sebesar {doData.vehicleCapacityExceededKg} kg. Ini bukan sekadar overtonase tarif, tapi sudah melewati batas armada dan perlu evaluasi operasional.
+                                </div>
+                            )}
                             {linkedTripCashBonNumber && (
                                 <div className="text-muted text-sm" style={{ marginTop: '0.75rem' }}>
                                     Upah trip sudah terkunci karena DO ini sudah punya uang jalan trip {linkedTripCashBonNumber}. Untuk menjaga settlement tetap konsisten, nominal dan master rute tidak bisa diubah lagi dari DO.
+                                </div>
+                            )}
+                            {settledVoucherNeedsManualAdjustment && (
+                                <div className="text-muted text-sm" style={{ marginTop: '0.75rem' }}>
+                                    Bon {linkedTripCashBonNumber || linkedVoucher?.bonNumber} sudah settle. Tambahan overtonase hanya tercermin di DO ini dan tidak mengubah settlement lama secara otomatis.
                                 </div>
                             )}
                         </div>
@@ -1298,7 +1366,7 @@ export default function DODetailPage() {
                             )}
                             <div className="form-row">
                                 <div className="form-group">
-                                    <label className="form-label">Upah Trip per DO (Rp) <span className="required">*</span></label>
+                                    <label className="form-label">Upah Dasar Trip per DO (Rp) <span className="required">*</span></label>
                                     <CurrencyInput
                                         value={matchedTripRouteRate?.rate ?? taripBorongan}
                                         onValueChange={value => setTaripBorongan(value)}
@@ -1307,8 +1375,11 @@ export default function DODetailPage() {
                                     />
                                     <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
                                         {isTripFeeLockedToMaster
-                                            ? 'Upah trip terkunci mengikuti master biaya rute trip yang dipilih.'
-                                            : 'Jika belum ada master rute yang cocok, upah trip masih boleh diisi manual sebelum voucher diterbitkan.'}
+                                            ? 'Upah dasar trip terkunci mengikuti master biaya rute trip yang dipilih.'
+                                            : 'Jika belum ada master rute yang cocok, upah dasar trip masih boleh diisi manual sebelum voucher diterbitkan.'}
+                                    </div>
+                                    <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
+                                        Tambahan overtonase dihitung otomatis dari berat aktual final saat DO diselesaikan, jadi field ini hanya untuk upah dasar.
                                     </div>
                                 </div>
                                 <div className="form-group">
@@ -1326,7 +1397,7 @@ export default function DODetailPage() {
                                         setTripRouteRateRef(doData.tripRouteRateRef || '');
                                         setTripOriginArea(doData.tripOriginArea || '');
                                         setTripDestinationArea(doData.tripDestinationArea || '');
-                                        setTaripBorongan(doData.taripBorongan || 0);
+                                        setTaripBorongan((doData.baseTaripBorongan ?? doData.taripBorongan) || 0);
                                         setKeteranganBorongan(doData.keteranganBorongan || '');
                                         setEditingTarip(false);
                                     }}

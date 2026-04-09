@@ -128,9 +128,9 @@ const seedData: DataStore = {
     ],
 
     services: [
-        { _id: 'svc-001', _type: 'service', code: 'CDD', name: 'CDD / Engkel', description: 'Kategori armada Colt Diesel / engkel untuk distribusi umum dan muatan menengah', active: true },
-        { _id: 'svc-002', _type: 'service', code: 'CDB', name: 'CDD Box / Canter', description: 'Kategori armada box/canter untuk distribusi retail, rute cepat, dan muatan tertutup', active: true },
-        { _id: 'svc-003', _type: 'service', code: 'FUS', name: 'Fuso / Heavy', description: 'Kategori armada Fuso/truck besar untuk muatan berat, proyek, dan partai besar', active: true }
+        { _id: 'svc-001', _type: 'service', code: 'CDD', name: 'CDD / Engkel', description: 'Kategori armada Colt Diesel / engkel untuk distribusi umum dan muatan menengah', maxPayloadKg: 120, overtonaseDriverRatePerKg: 1000, active: true },
+        { _id: 'svc-002', _type: 'service', code: 'CDB', name: 'CDD Box / Canter', description: 'Kategori armada box/canter untuk distribusi retail, rute cepat, dan muatan tertutup', maxPayloadKg: 160, overtonaseDriverRatePerKg: 900, active: true },
+        { _id: 'svc-003', _type: 'service', code: 'FUS', name: 'Fuso / Heavy', description: 'Kategori armada Fuso/truck besar untuk muatan berat, proyek, dan partai besar', maxPayloadKg: 250, overtonaseDriverRatePerKg: 750, active: true }
     ],
 
     expenseCategories: [

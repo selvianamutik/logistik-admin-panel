@@ -45,6 +45,7 @@ import {
     resolveOrderPartyData,
     resolveOrderPickupData,
     resolveOrderRecipientData,
+    summarizeActualCargoInputs,
     summarizeSelection,
     type NormalizedActualCargoInput,
     type NormalizedOrderItemInput,
@@ -56,6 +57,8 @@ import {
 } from './order-workflow-support';
 import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
 import { resolveTripRouteRateSelection } from './generic-workflow-support';
+import { computeDriverVoucherTotals } from './driver-workflow-support';
+import { computeDeliveryOrderOvertonage } from '@/lib/delivery-order-overtonage';
 import type { CompanyProfile } from '@/lib/types';
 
 type AuditLogFn = (
@@ -992,6 +995,8 @@ export async function handleDeliveryOrderStatusUpdate(
         status?: string;
         orderRef?: unknown;
         driverRef?: unknown;
+        serviceRef?: unknown;
+        vehicleRef?: unknown;
         trackingState?: string;
         podReceiverName?: string;
         podReceivedDate?: string;
@@ -999,6 +1004,8 @@ export async function handleDeliveryOrderStatusUpdate(
         receiverName?: string;
         receiverCompany?: string;
         receiverAddress?: string;
+        baseTaripBorongan?: number;
+        taripBorongan?: number;
         pendingDriverStatus?: string;
         pendingDriverStatusRequestedAt?: string;
         pendingDriverStatusRequestedBy?: string;
@@ -1087,6 +1094,17 @@ export async function handleDeliveryOrderStatusUpdate(
 
     let actualCargoByDoItemId = new Map<string, NormalizedActualCargoInput>();
     let actualDropPoints: ReturnType<typeof normalizeDeliveryActualDropPoints> | undefined;
+    let overtonageResult: ReturnType<typeof computeDeliveryOrderOvertonage> | undefined;
+    let linkedVoucherAdjustmentSummary: string | undefined;
+    let settledVoucherOvertonageWarning: string | undefined;
+    let linkedVoucherPatch:
+        | {
+            _id: string;
+            _rev: string;
+            driverFeeAmount: number;
+            totalClaimAmount: number;
+        }
+        | undefined;
     if (status === 'DELIVERED') {
         try {
             actualCargoByDoItemId = normalizeDeliveryOrderActualCargoInputs(data, doItems);
@@ -1096,6 +1114,83 @@ export async function handleDeliveryOrderStatusUpdate(
                 { error: error instanceof Error ? error.message : 'Muatan aktual surat jalan tidak valid' },
                 { status: 400 }
             );
+        }
+
+        const actualCargoTotals = summarizeActualCargoInputs(actualCargoByDoItemId);
+        const serviceRef = extractRefId(deliveryOrder.serviceRef);
+        const vehicleRef = extractRefId(deliveryOrder.vehicleRef);
+        const [service, vehicle, linkedVoucher] = await Promise.all([
+            serviceRef
+                ? sanityGetById<{
+                    _id: string;
+                    maxPayloadKg?: number;
+                    overtonaseDriverRatePerKg?: number;
+                }>(serviceRef)
+                : Promise.resolve(null),
+            vehicleRef
+                ? sanityGetById<{
+                    _id: string;
+                    capacityKg?: number;
+                }>(vehicleRef)
+                : Promise.resolve(null),
+            getSanityClient().fetch<{
+                _id: string;
+                _rev?: string;
+                bonNumber?: string;
+                status?: string;
+                totalSpent?: number;
+                totalIssuedAmount?: number;
+                cashGiven?: number;
+                driverFeeAmount?: number;
+            } | null>(
+                `*[_type == "driverVoucher" && (deliveryOrderRef == $ref || deliveryOrderRef._ref == $ref)][0]{
+                    _id,
+                    _rev,
+                    bonNumber,
+                    status,
+                    totalSpent,
+                    totalIssuedAmount,
+                    cashGiven,
+                    driverFeeAmount
+                }`,
+                { ref: id }
+            ),
+        ]);
+
+        overtonageResult = computeDeliveryOrderOvertonage({
+            actualTotalWeightKg: actualCargoTotals.weightKg,
+            serviceMaxPayloadKg: service?.maxPayloadKg,
+            vehicleCapacityKg: vehicle?.capacityKg,
+            baseTripFee: normalizeCurrencyNumber(deliveryOrder.baseTaripBorongan ?? deliveryOrder.taripBorongan ?? 0),
+            overtonaseDriverRatePerKg: service?.overtonaseDriverRatePerKg,
+        });
+
+        if (
+            linkedVoucher?._id &&
+            linkedVoucher._rev &&
+            linkedVoucher.status !== 'SETTLED' &&
+            Math.abs(normalizeCurrencyNumber(linkedVoucher.driverFeeAmount ?? 0) - overtonageResult.effectiveTripFee) > 0.01
+        ) {
+            const voucherTotals = computeDriverVoucherTotals(
+                normalizeNumber(linkedVoucher.totalIssuedAmount ?? linkedVoucher.cashGiven ?? 0, { maxFractionDigits: 0 }),
+                normalizeNumber(linkedVoucher.totalSpent ?? 0, { maxFractionDigits: 0 }),
+                overtonageResult.effectiveTripFee
+            );
+            linkedVoucherPatch = {
+                _id: linkedVoucher._id,
+                _rev: linkedVoucher._rev,
+                driverFeeAmount: voucherTotals.driverFeeAmount,
+                totalClaimAmount: voucherTotals.totalClaimAmount,
+            };
+            linkedVoucherAdjustmentSummary = `bon ${linkedVoucher.bonNumber || linkedVoucher._id} ikut disinkronkan ke ${voucherTotals.driverFeeAmount}`;
+        }
+
+        if (
+            linkedVoucher?._id &&
+            linkedVoucher.status === 'SETTLED' &&
+            Math.abs(normalizeCurrencyNumber(linkedVoucher.driverFeeAmount ?? 0) - overtonageResult.effectiveTripFee) > 0.01
+        ) {
+            settledVoucherOvertonageWarning = `Bon ${linkedVoucher.bonNumber || linkedVoucher._id} sudah settle, jadi tambahan overtonase tidak ikut mengubah settlement lama.`;
         }
     }
 
@@ -1111,6 +1206,15 @@ export async function handleDeliveryOrderStatusUpdate(
                         podReceiverName,
                         podReceivedDate,
                         podNote,
+                        baseTaripBorongan: normalizeCurrencyNumber(deliveryOrder.baseTaripBorongan ?? deliveryOrder.taripBorongan ?? 0) || undefined,
+                        taripBorongan: overtonageResult?.effectiveTripFee || normalizeCurrencyNumber(deliveryOrder.taripBorongan ?? 0) || undefined,
+                        actualTotalWeightKg: overtonageResult?.actualTotalWeightKg || undefined,
+                        serviceMaxPayloadKg: overtonageResult?.serviceMaxPayloadKg,
+                        vehicleCapacityKg: overtonageResult?.vehicleCapacityKg,
+                        overtonaseWeightKg: overtonageResult?.overtonaseWeightKg,
+                        overtonaseDriverRatePerKg: overtonageResult?.overtonaseDriverRatePerKg,
+                        overtonaseDriverAmount: overtonageResult?.overtonaseDriverAmount,
+                        vehicleCapacityExceededKg: overtonageResult?.vehicleCapacityExceededKg,
                         cargoFinalizedAt: timestamp,
                         cargoFinalizedBy: session._id,
                         cargoFinalizedByName: session.name,
@@ -1137,6 +1241,16 @@ export async function handleDeliveryOrderStatusUpdate(
             userRef: session._id,
             userName: session.name,
         });
+
+    if (linkedVoucherPatch) {
+        transaction.patch(linkedVoucherPatch._id, {
+            ifRevisionID: linkedVoucherPatch._rev,
+            set: {
+                driverFeeAmount: linkedVoucherPatch.driverFeeAmount,
+                totalClaimAmount: linkedVoucherPatch.totalClaimAmount,
+            },
+        });
+    }
 
     for (const item of doItems) {
         const orderItemRef = extractRefId(item.orderItemRef);
@@ -1312,7 +1426,9 @@ export async function handleDeliveryOrderStatusUpdate(
         'UPDATE',
         'delivery-orders',
         id,
-        `DO status ${deliveryOrder.doNumber || id}: ${deliveryOrder.status || '-'} -> ${status}${status === 'DELIVERED' ? ` (muatan aktual difinalisasi ${doItems.length} item, ${actualDropPoints?.length || 0} titik drop)` : ''}`
+        `DO status ${deliveryOrder.doNumber || id}: ${deliveryOrder.status || '-'} -> ${status}${status === 'DELIVERED'
+            ? ` (muatan aktual difinalisasi ${doItems.length} item, ${actualDropPoints?.length || 0} titik drop${overtonageResult?.actualTotalWeightKg ? `, berat final ${overtonageResult.actualTotalWeightKg} kg` : ''}${overtonageResult?.overtonaseWeightKg ? `, overtonase ${overtonageResult.overtonaseWeightKg} kg + ${overtonageResult.overtonaseDriverAmount || 0}` : ''}${overtonageResult?.vehicleCapacityExceededKg ? `, melebihi kapasitas kendaraan ${overtonageResult.vehicleCapacityExceededKg} kg` : ''}${linkedVoucherAdjustmentSummary ? `, ${linkedVoucherAdjustmentSummary}` : ''}${settledVoucherOvertonageWarning ? `, ${settledVoucherOvertonageWarning}` : ''})`
+            : ''}`
     );
 
     return NextResponse.json({
@@ -1324,6 +1440,15 @@ export async function handleDeliveryOrderStatusUpdate(
                     podReceiverName,
                     podReceivedDate,
                     podNote,
+                    baseTaripBorongan: normalizeCurrencyNumber(deliveryOrder.baseTaripBorongan ?? deliveryOrder.taripBorongan ?? 0) || undefined,
+                    taripBorongan: overtonageResult?.effectiveTripFee || normalizeCurrencyNumber(deliveryOrder.taripBorongan ?? 0) || undefined,
+                    actualTotalWeightKg: overtonageResult?.actualTotalWeightKg || undefined,
+                    serviceMaxPayloadKg: overtonageResult?.serviceMaxPayloadKg,
+                    vehicleCapacityKg: overtonageResult?.vehicleCapacityKg,
+                    overtonaseWeightKg: overtonageResult?.overtonaseWeightKg,
+                    overtonaseDriverRatePerKg: overtonageResult?.overtonaseDriverRatePerKg,
+                    overtonaseDriverAmount: overtonageResult?.overtonaseDriverAmount,
+                    vehicleCapacityExceededKg: overtonageResult?.vehicleCapacityExceededKg,
                     pendingDriverStatus: undefined,
                     pendingDriverStatusRequestedAt: undefined,
                     pendingDriverStatusRequestedBy: undefined,
@@ -2117,6 +2242,7 @@ export async function handleDeliveryOrderCreate(
         tripRouteRateRef: tripRouteSelection?.tripRouteRateRef,
         tripOriginArea: tripRouteSelection?.tripOriginArea,
         tripDestinationArea: tripRouteSelection?.tripDestinationArea,
+        baseTaripBorongan: effectiveTripFee > 0 ? effectiveTripFee : undefined,
         taripBorongan: effectiveTripFee > 0 ? effectiveTripFee : undefined,
         date: doDate,
         notes: normalizeOptionalText(data.notes),

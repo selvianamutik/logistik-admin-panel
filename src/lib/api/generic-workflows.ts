@@ -670,6 +670,9 @@ export async function handleGenericUpdate(
             status?: string;
             podReceiverName?: string;
             podReceivedDate?: string;
+            serviceRef?: string;
+            baseTaripBorongan?: number;
+            overtonaseDriverAmount?: number;
         }>(id);
         if (!existingDeliveryOrder) {
             return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
@@ -735,7 +738,7 @@ export async function handleGenericUpdate(
             if (updatesTripRouteSelection) {
                 try {
                     const tripRouteSelection = await resolveTripRouteRateSelection(updates, {
-                        serviceRef: normalizeOptionalText((existingDeliveryOrder as Record<string, unknown>).serviceRef),
+                        serviceRef: normalizeOptionalText(existingDeliveryOrder.serviceRef),
                     });
                     const matchedTripRouteRateFee = normalizeCurrencyNumber(tripRouteSelection.matchedTripRouteRate?.rate ?? 0);
                     if (
@@ -773,7 +776,9 @@ export async function handleGenericUpdate(
                 if (!Number.isFinite(taripBorongan) || taripBorongan <= 0) {
                     return NextResponse.json({ error: 'Tarip borongan harus lebih besar dari 0' }, { status: 400 });
                 }
-                updates.taripBorongan = taripBorongan;
+                const currentOvertonaseAmount = normalizeCurrencyNumber(existingDeliveryOrder.overtonaseDriverAmount ?? 0);
+                updates.baseTaripBorongan = taripBorongan;
+                updates.taripBorongan = taripBorongan + currentOvertonaseAmount;
             }
             if (Object.prototype.hasOwnProperty.call(updates, 'keteranganBorongan')) {
                 updates.keteranganBorongan = normalizeOptionalText(updates.keteranganBorongan);

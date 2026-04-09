@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApp, useToast } from '../layout';
 import { AlertTriangle, Edit, Layers, Plus, Save, Trash2, X } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { Service, TireAxleLayoutMode, TireLayoutConfig } from '@/lib/types';
 import {
@@ -18,6 +19,8 @@ type ServiceFormState = {
     code: string;
     name: string;
     description: string;
+    maxPayloadKg: number;
+    overtonaseDriverRatePerKg: number;
     active: boolean;
     tireLayoutConfig: TireLayoutConfig;
 };
@@ -44,10 +47,12 @@ function updateAxleLayout(
     };
 }
 
-const createDefaultServiceForm = (seed?: Partial<Pick<Service, 'code' | 'name' | 'description' | 'active' | 'tireLayoutConfig'>>) => ({
+const createDefaultServiceForm = (seed?: Partial<Pick<Service, 'code' | 'name' | 'description' | 'maxPayloadKg' | 'overtonaseDriverRatePerKg' | 'active' | 'tireLayoutConfig'>>) => ({
     code: seed?.code || '',
     name: seed?.name || '',
     description: seed?.description || '',
+    maxPayloadKg: seed?.maxPayloadKg || 0,
+    overtonaseDriverRatePerKg: seed?.overtonaseDriverRatePerKg || 0,
     active: seed?.active !== false,
     tireLayoutConfig: normalizeTireLayoutConfig(seed?.tireLayoutConfig, buildDefaultTireLayoutConfig(undefined, seed?.name || '')),
 });
@@ -195,12 +200,16 @@ export default function ServicesPage() {
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Hak Ubah</div><div className="kpi-value">{isOwner ? 'OWNER' : 'Lihat saja'}</div></div></div>
             </div>
             <div className="table-container"><div className="table-wrapper"><table>
-                <thead><tr><th>Kode</th><th>Nama</th><th>Deskripsi</th><th>Status</th><th>Aksi</th></tr></thead>
+                <thead><tr><th>Kode</th><th>Nama</th><th>Deskripsi</th><th>Muatan & Overtonase</th><th>Status</th><th>Aksi</th></tr></thead>
                 <tbody>
-                    {loading ? [1, 2].map(i => <tr key={i}>{[1, 2, 3, 4, 5].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                        totalItems === 0 ? <tr><td colSpan={5}><div className="empty-state"><Layers size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada kategori armada</div></div></td></tr> :
+                    {loading ? [1, 2].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
+                        totalItems === 0 ? <tr><td colSpan={6}><div className="empty-state"><Layers size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada kategori armada</div></div></td></tr> :
                             items.map(s => (
                                 <tr key={s._id}><td className="font-mono">{s.code}</td><td className="font-semibold">{s.name}<div className="text-muted text-sm">{summarizeTireLayout(normalizeTireLayoutConfig(s.tireLayoutConfig, buildDefaultTireLayoutConfig(undefined, s.name)))}</div></td><td className="text-muted">{s.description}</td>
+                                    <td className="text-muted">
+                                        <div>{s.maxPayloadKg ? `${s.maxPayloadKg} kg normal` : 'Tanpa batas normal'}</div>
+                                        <div className="text-sm">{s.overtonaseDriverRatePerKg ? `+${s.overtonaseDriverRatePerKg.toLocaleString('id-ID')} / kg` : 'Tanpa tambahan upah otomatis'}</div>
+                                    </td>
                                     <td><span className={`badge ${s.active !== false ? 'badge-success' : 'badge-gray'}`}>{s.active !== false ? 'Aktif' : 'Non-Aktif'}</span></td>
                                     <td>{isOwner ? <div className="table-actions"><button className="table-action-btn" onClick={() => openEdit(s)}><Edit size={14} /> Edit</button><button className="table-action-btn danger" onClick={() => setDeleteId(s._id)}><Trash2 size={14} /> Hapus</button></div> : <span className="text-muted">Lihat saja</span>}</td></tr>
                             ))}
@@ -228,6 +237,22 @@ export default function ServicesPage() {
                         </div>
                         <div className="form-group"><label className="form-label">Nama Kategori</label><input className="form-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Contoh: CDD Box / Fuso / Tronton" /></div>
                         <div className="form-group"><label className="form-label">Deskripsi</label><textarea className="form-textarea" rows={2} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Digunakan untuk memfilter kendaraan saat membuat surat jalan" /></div>
+                        <div className="form-row">
+                            <div className="form-group">
+                                <label className="form-label">Batas Muatan Normal (kg)</label>
+                                <FormattedNumberInput allowDecimal={false} value={form.maxPayloadKg} onValueChange={value => setForm({ ...form, maxPayloadKg: value })} />
+                                <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
+                                    Jika berat aktual trip melebihi batas ini, sistem akan menghitung overtonase.
+                                </div>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Tambahan Upah Overtonase / kg (Rp)</label>
+                                <FormattedNumberInput allowDecimal={false} value={form.overtonaseDriverRatePerKg} onValueChange={value => setForm({ ...form, overtonaseDriverRatePerKg: value })} />
+                                <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
+                                    Otomatis ditambahkan ke upah trip saat DO difinalkan dan berat aktual final melewati batas normal.
+                                </div>
+                            </div>
+                        </div>
                         <div className="form-group">
                             <label className="form-label">Susunan Slot Ban</label>
                             <div style={{ display: 'grid', gap: '0.85rem' }}>
