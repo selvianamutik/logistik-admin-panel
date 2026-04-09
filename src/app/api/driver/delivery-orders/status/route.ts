@@ -50,6 +50,14 @@ export async function POST(request: Request) {
             id?: string;
             status?: string;
             note?: string;
+            actualItems?: Array<{
+                deliveryOrderItemRef?: string;
+                actualQtyKoli?: number;
+                actualWeightInputValue?: number;
+                actualWeightInputUnit?: string;
+                actualVolumeInputValue?: number;
+                actualVolumeInputUnit?: string;
+            }>;
         }>(request);
         if ('error' in parsedBody) {
             return parsedBody.error;
@@ -88,7 +96,7 @@ export async function POST(request: Request) {
         if (DRIVER_APPROVAL_REQUEST_STATUSES.has(status)) {
             return await handleDeliveryOrderDriverStatusRequest(
                 auth.session,
-                { id, status, note },
+                { id, status, note, actualItems: body.actualItems },
                 addAuditLog
             );
         }

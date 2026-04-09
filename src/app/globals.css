@@ -2495,6 +2495,75 @@ tbody td {
   margin-top: 1rem;
 }
 
+.driver-completion-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.driver-completion-summary-card {
+  border: 1px solid var(--color-gray-100);
+  border-radius: 14px;
+  padding: 0.85rem 0.95rem;
+  background: rgba(248, 250, 252, 0.9);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.driver-completion-summary-card span {
+  color: var(--color-gray-500);
+  font-size: 0.8rem;
+}
+
+.driver-completion-summary-card strong {
+  color: var(--color-gray-900);
+  line-height: 1.45;
+}
+
+.driver-completion-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.driver-completion-item {
+  border: 1px solid var(--color-gray-100);
+  border-radius: 16px;
+  padding: 0.95rem;
+  background: var(--color-white);
+}
+
+.driver-completion-item-header {
+  margin-bottom: 0.85rem;
+}
+
+.driver-completion-item-title {
+  font-weight: 700;
+  color: var(--color-gray-900);
+  margin-bottom: 0.25rem;
+}
+
+.driver-completion-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.driver-completion-unit-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px;
+  gap: 0.5rem;
+}
+
+.driver-completion-empty {
+  border: 1px dashed var(--color-gray-200);
+  border-radius: 16px;
+  padding: 1rem;
+  color: var(--color-gray-600);
+  background: rgba(248, 250, 252, 0.8);
+}
+
 @media (max-width: 768px) {
   .driver-app-shell {
     padding: 0.85rem;
@@ -2517,6 +2586,15 @@ tbody td {
 
   .driver-action-row .btn {
     flex: 1 1 calc(50% - 0.25rem);
+  }
+
+  .driver-completion-summary,
+  .driver-completion-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .driver-completion-unit-row {
+    grid-template-columns: 1fr;
   }
 }
 

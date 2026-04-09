@@ -1,12 +1,25 @@
 import { getDriverSession, getSession, getSessionFromToken } from '@/lib/auth';
 import { getSanityClient, sanityGetById, sanityGetCompanyProfile } from '@/lib/sanity';
-import type { CompanyProfile, DeliveryOrder, Driver, SessionUser, User } from '@/lib/types';
+import type {
+    CompanyProfile,
+    DeliveryOrder,
+    DeliveryOrderItem,
+    Driver,
+    SessionUser,
+    User,
+} from '@/lib/types';
 import { normalizeUserRole, type InternalUserRole } from '@/lib/rbac';
 
 export type DriverSessionContext = {
     session: SessionUser;
     user: User;
     driver: Driver;
+};
+
+export type DriverAssignedDeliveryOrderCargoItem = DeliveryOrderItem;
+
+export type DriverAssignedDeliveryOrder = DeliveryOrder & {
+    driverCargoItems?: DriverAssignedDeliveryOrderCargoItem[];
 };
 
 export async function requireInternalSession(allowedRoles?: InternalUserRole[]) {
@@ -76,7 +89,7 @@ export async function getDriverAppContext() {
 }
 
 export async function getDriverAssignedDeliveryOrders(driverRef: string) {
-    return getSanityClient().fetch<DeliveryOrder[]>(
+    return getSanityClient().fetch<DriverAssignedDeliveryOrder[]>(
         `*[
             _type == "deliveryOrder" &&
             (driverRef == $driverRef || driverRef._ref == $driverRef) &&
@@ -105,7 +118,31 @@ export async function getDriverAssignedDeliveryOrders(driverRef: string) {
             pendingDriverStatus,
             pendingDriverStatusRequestedAt,
             pendingDriverStatusRequestedByName,
-            pendingDriverStatusNote
+            pendingDriverStatusNote,
+            pendingDriverActualCargoItems,
+            "driverCargoItems": *[_type == "deliveryOrderItem" && deliveryOrderRef == ^._id] | order(_createdAt asc){
+                _id,
+                _type,
+                "deliveryOrderRef": ^._id,
+                "orderItemRef": coalesce(orderItemRef._ref, orderItemRef),
+                orderItemDescription,
+                orderItemQtyKoli,
+                orderItemWeight,
+                orderItemVolumeM3,
+                orderItemWeightInputValue,
+                orderItemWeightInputUnit,
+                orderItemVolumeInputValue,
+                orderItemVolumeInputUnit,
+                shippedQtyKoli,
+                shippedWeight,
+                actualQtyKoli,
+                actualWeightKg,
+                actualVolumeM3,
+                actualWeightInputValue,
+                actualWeightInputUnit,
+                actualVolumeInputValue,
+                actualVolumeInputUnit
+            }
         }`,
         { driverRef }
     );

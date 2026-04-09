@@ -15,7 +15,7 @@ import { getBusinessDateValue } from '@/lib/business-date';
 import {
     buildDeliveryOrderDetailState,
     buildDeliveryOrderPrintHtml,
-    buildActualCargoDraft,
+    buildActualCargoDrafts,
     buildTripResourceBusyIds,
     buildDeliveryOrderPodUpdateData,
     buildDeliveryOrderStatusUpdateData,
@@ -290,7 +290,12 @@ export default function DODetailPage() {
         setPodName('');
         setPodDate(getBusinessDateValue());
         setPodNote('');
-        const nextActualCargoItems = doItems.map(buildActualCargoDraft);
+        const nextActualCargoItems = buildActualCargoDrafts(
+            doItems,
+            fromDriverRequest && requestedStatus === 'DELIVERED'
+                ? doData?.pendingDriverActualCargoItems
+                : undefined
+        );
         const nextActualDropPoints = buildDefaultActualDropDrafts(doData, nextActualCargoItems);
         setActualCargoItems(nextActualCargoItems);
         setActualDropPoints(nextActualDropPoints);

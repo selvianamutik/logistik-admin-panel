@@ -1,4 +1,12 @@
-import type { DeliveryOrder, DeliveryOrderItem, Driver, Order, TrackingLog, Vehicle } from '@/lib/types';
+import type {
+    DeliveryOrder,
+    DeliveryOrderItem,
+    Driver,
+    Order,
+    PendingDriverActualCargoItem,
+    TrackingLog,
+    Vehicle,
+} from '@/lib/types';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import {
     convertWeightToKg,
@@ -61,7 +69,10 @@ export type DeliveryOrderDetailState = {
     mapEmbedUrl: string | null;
 };
 
-export function buildActualCargoDraft(item: DeliveryOrderItem): ActualCargoDraft {
+export function buildActualCargoDraft(
+    item: DeliveryOrderItem,
+    pendingDraft?: PendingDriverActualCargoItem | null
+): ActualCargoDraft {
     const plannedQtyKoli = parseFormattedNumberish(item.orderItemQtyKoli ?? item.shippedQtyKoli ?? 0);
     const plannedWeightKg = parseFormattedNumberish(item.orderItemWeight ?? item.shippedWeight ?? 0);
     const plannedWeightInputUnit = item.orderItemWeightInputUnit || 'KG';
@@ -83,9 +94,15 @@ export function buildActualCargoDraft(item: DeliveryOrderItem): ActualCargoDraft
             : plannedVolumeM3 > 0
                 ? convertM3ToVolumeInputValue(plannedVolumeM3, plannedVolumeInputUnit)
                 : undefined;
-    const actualWeightInputUnit = item.actualWeightInputUnit || plannedWeightInputUnit || 'KG';
+    const actualWeightInputUnit = pendingDraft?.actualWeightInputUnit || item.actualWeightInputUnit || plannedWeightInputUnit || 'KG';
     const actualWeightInputValue =
-        item.actualWeightInputValue !== undefined && item.actualWeightInputValue !== null
+        pendingDraft?.actualWeightInputValue !== undefined && pendingDraft.actualWeightInputValue !== null
+            ? String(
+                parseFormattedNumberish(pendingDraft.actualWeightInputValue, {
+                    maxFractionDigits: actualWeightInputUnit === 'TON' ? 3 : 2,
+                })
+            )
+            : item.actualWeightInputValue !== undefined && item.actualWeightInputValue !== null
             ? String(
                 parseFormattedNumberish(item.actualWeightInputValue, {
                     maxFractionDigits: actualWeightInputUnit === 'TON' ? 3 : 2,
@@ -94,9 +111,15 @@ export function buildActualCargoDraft(item: DeliveryOrderItem): ActualCargoDraft
             : plannedWeightKg > 0
                 ? String(convertKgToWeightInputValue(parseFormattedNumberish(item.actualWeightKg ?? item.orderItemWeight ?? item.shippedWeight ?? 0), actualWeightInputUnit))
                 : '';
-    const actualVolumeInputUnit = item.actualVolumeInputUnit || plannedVolumeInputUnit || 'M3';
+    const actualVolumeInputUnit = pendingDraft?.actualVolumeInputUnit || item.actualVolumeInputUnit || plannedVolumeInputUnit || 'M3';
     const actualVolumeInputValue =
-        item.actualVolumeInputValue !== undefined && item.actualVolumeInputValue !== null
+        pendingDraft?.actualVolumeInputValue !== undefined && pendingDraft.actualVolumeInputValue !== null
+            ? String(
+                parseFormattedNumberish(pendingDraft.actualVolumeInputValue, {
+                    maxFractionDigits: actualVolumeInputUnit === 'LITER' ? 0 : 3,
+                })
+            )
+            : item.actualVolumeInputValue !== undefined && item.actualVolumeInputValue !== null
             ? String(
                 parseFormattedNumberish(item.actualVolumeInputValue, {
                     maxFractionDigits: actualVolumeInputUnit === 'LITER' ? 0 : 3,
@@ -117,7 +140,7 @@ export function buildActualCargoDraft(item: DeliveryOrderItem): ActualCargoDraft
         plannedVolumeInputUnit,
         actualQtyKoli:
             plannedQtyKoli > 0
-                ? String(parseFormattedNumberish(item.actualQtyKoli ?? item.orderItemQtyKoli ?? item.shippedQtyKoli ?? 0))
+                ? String(parseFormattedNumberish(pendingDraft?.actualQtyKoli ?? item.actualQtyKoli ?? item.orderItemQtyKoli ?? item.shippedQtyKoli ?? 0))
                 : '',
         actualWeightInputValue,
         actualWeightInputUnit,
@@ -127,6 +150,19 @@ export function buildActualCargoDraft(item: DeliveryOrderItem): ActualCargoDraft
         requireWeight: plannedWeightKg > 0,
         requireVolume: plannedVolumeM3 > 0,
     };
+}
+
+export function buildActualCargoDrafts(
+    items: DeliveryOrderItem[],
+    pendingDrafts?: PendingDriverActualCargoItem[]
+) {
+    const pendingDraftByItemId = new Map(
+        (pendingDrafts || [])
+            .filter(item => Boolean(item?.deliveryOrderItemRef))
+            .map(item => [item.deliveryOrderItemRef, item])
+    );
+
+    return items.map(item => buildActualCargoDraft(item, pendingDraftByItemId.get(item._id)));
 }
 
 export function updateActualCargoDraftWeightUnit(item: ActualCargoDraft, nextUnit: WeightInputUnit): ActualCargoDraft {

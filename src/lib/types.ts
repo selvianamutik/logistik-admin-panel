@@ -550,6 +550,15 @@ export interface DeliveryActualDropPoint {
   note?: string;
 }
 
+export interface PendingDriverActualCargoItem {
+  deliveryOrderItemRef: string;
+  actualQtyKoli?: number;
+  actualWeightInputValue?: number;
+  actualWeightInputUnit?: WeightInputUnit;
+  actualVolumeInputValue?: number;
+  actualVolumeInputUnit?: VolumeInputUnit;
+}
+
 export interface DeliveryOrder {
   _id: string;
   _type: 'deliveryOrder';
@@ -607,6 +616,7 @@ export interface DeliveryOrder {
   pendingDriverStatusRequestedBy?: string;
   pendingDriverStatusRequestedByName?: string;
   pendingDriverStatusNote?: string;
+  pendingDriverActualCargoItems?: PendingDriverActualCargoItem[];
   cargoFinalizedAt?: string;
   cargoFinalizedBy?: string;
   cargoFinalizedByName?: string;

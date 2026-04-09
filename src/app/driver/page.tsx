@@ -12,8 +12,18 @@ import {
     Truck,
 } from 'lucide-react';
 
+import FormattedNumberInput from '@/components/FormattedNumberInput';
+import {
+    buildActualCargoDrafts,
+    updateActualCargoDraftVolumeUnit,
+    updateActualCargoDraftWeightUnit,
+    type ActualCargoDraft,
+} from '@/lib/delivery-order-detail-support';
+import { parseFormattedNumberish } from '@/lib/formatted-number';
+import { VOLUME_INPUT_UNIT_OPTIONS, WEIGHT_INPUT_UNIT_OPTIONS, formatCargoSummary } from '@/lib/measurement';
 import { DO_STATUS_MAP, formatDate, formatDateTime } from '@/lib/utils';
-import type { DeliveryOrder, Driver, SessionUser } from '@/lib/types';
+import type { Driver, SessionUser } from '@/lib/types';
+import type { DriverAssignedDeliveryOrder } from '@/lib/api/driver-portal';
 
 type DriverSessionResponse = {
     user: SessionUser;
@@ -22,7 +32,7 @@ type DriverSessionResponse = {
 };
 
 type DriverPortalError = Error & { status?: number };
-type DriverProgressStatus = Extract<DeliveryOrder['status'], 'ON_DELIVERY' | 'ARRIVED' | 'DELIVERED'>;
+type DriverProgressStatus = Extract<DriverAssignedDeliveryOrder['status'], 'ON_DELIVERY' | 'ARRIVED' | 'DELIVERED'>;
 
 function createDriverPortalError(status: number, message: string) {
     const error = new Error(message) as DriverPortalError;
@@ -30,7 +40,7 @@ function createDriverPortalError(status: number, message: string) {
     return error;
 }
 
-function formatTrackingState(state?: DeliveryOrder['trackingState']) {
+function formatTrackingState(state?: DriverAssignedDeliveryOrder['trackingState']) {
     switch (state) {
         case 'ACTIVE':
             return { label: 'Tracking Aktif', color: 'badge-info' };
@@ -43,11 +53,11 @@ function formatTrackingState(state?: DeliveryOrder['trackingState']) {
     }
 }
 
-function canDriverStartTracking(status: DeliveryOrder['status']) {
+function canDriverStartTracking(status: DriverAssignedDeliveryOrder['status']) {
     return ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(status);
 }
 
-function getNextDriverProgressStatus(order: DeliveryOrder): DriverProgressStatus | null {
+function getNextDriverProgressStatus(order: DriverAssignedDeliveryOrder): DriverProgressStatus | null {
     if (
         order.trackingState !== 'ACTIVE' ||
         order.status === 'DELIVERED' ||
@@ -95,6 +105,25 @@ function getDriverProgressSuccessMessage(nextStatus: DriverProgressStatus) {
     }
 }
 
+function areActualCargoDraftsReady(items: ActualCargoDraft[]) {
+    return items.every(item => {
+        const qty = parseFormattedNumberish(item.actualQtyKoli || 0);
+        const weight = parseFormattedNumberish(item.actualWeightInputValue || 0, {
+            maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
+        });
+        const volume = parseFormattedNumberish(item.actualVolumeInputValue || 0, {
+            maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
+        });
+
+        return (
+            (!item.requireQty || qty > 0) &&
+            (!item.requireWeight || weight > 0) &&
+            (!item.requireVolume || volume > 0) &&
+            ((item.requireQty && qty > 0) || weight > 0 || volume > 0)
+        );
+    });
+}
+
 export default function DriverPortalPage() {
     const router = useRouter();
     const intervalRef = useRef<number | null>(null);
@@ -103,12 +132,16 @@ export default function DriverPortalPage() {
     const [user, setUser] = useState<SessionUser | null>(null);
     const [driver, setDriver] = useState<Driver | null>(null);
     const [companyName, setCompanyName] = useState('PT Gading Mas Surya');
-    const [orders, setOrders] = useState<DeliveryOrder[]>([]);
+    const [orders, setOrders] = useState<DriverAssignedDeliveryOrder[]>([]);
     const [loading, setLoading] = useState(true);
     const [loggingOut, setLoggingOut] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
     const [feedback, setFeedback] = useState<{ type: 'error' | 'success' | 'info'; message: string } | null>(null);
+    const [showDeliveredRequestModal, setShowDeliveredRequestModal] = useState(false);
+    const [completionOrderId, setCompletionOrderId] = useState<string | null>(null);
+    const [completionNote, setCompletionNote] = useState('');
+    const [completionCargoItems, setCompletionCargoItems] = useState<ActualCargoDraft[]>([]);
 
     const handleDriverAuthFailure = useCallback((message = 'Sesi driver berakhir. Silakan login ulang.') => {
         setFeedback({ type: 'error', message });
@@ -124,8 +157,36 @@ export default function DriverPortalPage() {
         [orders]
     );
     const isActionInFlight = Boolean(actionLoadingId);
+    const completionOrder = useMemo(
+        () => orders.find(item => item._id === completionOrderId) || null,
+        [completionOrderId, orders]
+    );
+    const completionCargoReady = useMemo(
+        () => areActualCargoDraftsReady(completionCargoItems),
+        [completionCargoItems]
+    );
+    const completionCargoSummary = useMemo(
+        () => formatCargoSummary({
+            qtyKoli: completionCargoItems.reduce((sum, item) => sum + parseFormattedNumberish(item.actualQtyKoli || 0), 0),
+            weightKg: completionCargoItems.reduce((sum, item) => {
+                const value = parseFormattedNumberish(item.actualWeightInputValue || 0, {
+                    maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
+                });
+                return sum + (item.actualWeightInputUnit === 'TON' ? value * 1000 : value);
+            }, 0),
+            volumeM3: completionCargoItems.reduce((sum, item) => {
+                const value = parseFormattedNumberish(item.actualVolumeInputValue || 0, {
+                    maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
+                });
+                if (item.actualVolumeInputUnit === 'LITER') return sum + value / 1000;
+                if (item.actualVolumeInputUnit === 'KL') return sum + value;
+                return sum + value;
+            }, 0),
+        }),
+        [completionCargoItems]
+    );
 
-    const applyOrderUpdate = useCallback((updated: DeliveryOrder) => {
+    const applyOrderUpdate = useCallback((updated: DriverAssignedDeliveryOrder) => {
         setOrders(prev => prev.map(item => (item._id === updated._id ? { ...item, ...updated } : item)));
     }, []);
 
@@ -214,20 +275,39 @@ export default function DriverPortalPage() {
             }
 
             if (payload.data) {
-                applyOrderUpdate(payload.data as DeliveryOrder);
+                applyOrderUpdate(payload.data as DriverAssignedDeliveryOrder);
             }
 
-            return payload.data as DeliveryOrder | undefined;
+            return payload.data as DriverAssignedDeliveryOrder | undefined;
         },
         [applyOrderUpdate]
     );
 
     const postDeliveryProgress = useCallback(
-        async (deliveryOrderRef: string, status: DriverProgressStatus) => {
+        async (
+            deliveryOrderRef: string,
+            status: DriverProgressStatus,
+            options?: {
+                note?: string;
+                actualItems?: Array<{
+                    deliveryOrderItemRef: string;
+                    actualQtyKoli: number;
+                    actualWeightInputValue: number;
+                    actualWeightInputUnit: ActualCargoDraft['actualWeightInputUnit'];
+                    actualVolumeInputValue: number;
+                    actualVolumeInputUnit: ActualCargoDraft['actualVolumeInputUnit'];
+                }>;
+            }
+        ) => {
             const res = await fetch('/api/driver/delivery-orders/status', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: deliveryOrderRef, status }),
+                body: JSON.stringify({
+                    id: deliveryOrderRef,
+                    status,
+                    note: options?.note,
+                    actualItems: options?.actualItems,
+                }),
             });
 
             const payload = await res.json();
@@ -236,10 +316,10 @@ export default function DriverPortalPage() {
             }
 
             if (payload.data) {
-                applyOrderUpdate(payload.data as DeliveryOrder);
+                applyOrderUpdate(payload.data as DriverAssignedDeliveryOrder);
             }
 
-            return payload.data as DeliveryOrder | undefined;
+            return payload.data as DriverAssignedDeliveryOrder | undefined;
         },
         [applyOrderUpdate]
     );
@@ -394,8 +474,128 @@ export default function DriverPortalPage() {
         }
     };
 
+    const openDeliveredRequestModal = useCallback((order: DriverAssignedDeliveryOrder) => {
+        setCompletionOrderId(order._id);
+        setCompletionNote(order.pendingDriverStatusNote || '');
+        setCompletionCargoItems(
+            buildActualCargoDrafts(order.driverCargoItems || [], order.pendingDriverActualCargoItems)
+        );
+        setShowDeliveredRequestModal(true);
+    }, []);
+
+    const closeDeliveredRequestModal = useCallback(() => {
+        if (actionLoadingId) {
+            return;
+        }
+        setShowDeliveredRequestModal(false);
+        setCompletionOrderId(null);
+        setCompletionNote('');
+        setCompletionCargoItems([]);
+    }, [actionLoadingId]);
+
+    const updateCompletionCargoDraft = useCallback((
+        deliveryOrderItemRef: string,
+        field: keyof Pick<
+            ActualCargoDraft,
+            'actualQtyKoli' | 'actualWeightInputValue' | 'actualVolumeInputValue'
+        >,
+        value: string
+    ) => {
+        setCompletionCargoItems(previous =>
+            previous.map(item =>
+                item.deliveryOrderItemRef === deliveryOrderItemRef
+                    ? { ...item, [field]: value }
+                    : item
+            )
+        );
+    }, []);
+
+    const updateCompletionCargoWeightUnit = useCallback((
+        deliveryOrderItemRef: string,
+        nextUnit: ActualCargoDraft['actualWeightInputUnit']
+    ) => {
+        setCompletionCargoItems(previous =>
+            previous.map(item =>
+                item.deliveryOrderItemRef === deliveryOrderItemRef
+                    ? updateActualCargoDraftWeightUnit(item, nextUnit)
+                    : item
+            )
+        );
+    }, []);
+
+    const updateCompletionCargoVolumeUnit = useCallback((
+        deliveryOrderItemRef: string,
+        nextUnit: ActualCargoDraft['actualVolumeInputUnit']
+    ) => {
+        setCompletionCargoItems(previous =>
+            previous.map(item =>
+                item.deliveryOrderItemRef === deliveryOrderItemRef
+                    ? updateActualCargoDraftVolumeUnit(item, nextUnit)
+                    : item
+            )
+        );
+    }, []);
+
+    const submitDeliveredRequest = useCallback(async () => {
+        if (!completionOrder) {
+            return;
+        }
+
+        setActionLoadingId(completionOrder._id);
+        try {
+            await postDeliveryProgress(completionOrder._id, 'DELIVERED', {
+                note: completionNote,
+                actualItems: completionCargoItems.map(item => ({
+                    deliveryOrderItemRef: item.deliveryOrderItemRef,
+                    actualQtyKoli: parseFormattedNumberish(item.actualQtyKoli || 0),
+                    actualWeightInputValue: parseFormattedNumberish(item.actualWeightInputValue || 0, {
+                        maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
+                    }),
+                    actualWeightInputUnit: item.actualWeightInputUnit,
+                    actualVolumeInputValue: parseFormattedNumberish(item.actualVolumeInputValue || 0, {
+                        maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
+                    }),
+                    actualVolumeInputUnit: item.actualVolumeInputUnit,
+                })),
+            });
+            setFeedback({ type: 'success', message: getDriverProgressSuccessMessage('DELIVERED') });
+            await loadOrders();
+            setShowDeliveredRequestModal(false);
+            setCompletionOrderId(null);
+            setCompletionNote('');
+            setCompletionCargoItems([]);
+        } catch (error) {
+            if (error instanceof Error && 'status' in error && (error.status === 401 || error.status === 403)) {
+                handleDriverAuthFailure(error.message);
+                return;
+            }
+            setFeedback({
+                type: 'error',
+                message: error instanceof Error ? error.message : 'Gagal mengirim permintaan selesai',
+            });
+        } finally {
+            setActionLoadingId(null);
+        }
+    }, [
+        completionCargoItems,
+        completionNote,
+        completionOrder,
+        handleDriverAuthFailure,
+        loadOrders,
+        postDeliveryProgress,
+    ]);
+
     const handleDeliveryProgress = useCallback(
         async (deliveryOrderRef: string, nextStatus: DriverProgressStatus) => {
+            if (nextStatus === 'DELIVERED') {
+                const targetOrder = orders.find(item => item._id === deliveryOrderRef);
+                if (!targetOrder) {
+                    setFeedback({ type: 'error', message: 'Surat jalan tidak ditemukan untuk diajukan selesai.' });
+                    return;
+                }
+                openDeliveredRequestModal(targetOrder);
+                return;
+            }
             setActionLoadingId(deliveryOrderRef);
             try {
                 await postDeliveryProgress(deliveryOrderRef, nextStatus);
@@ -414,7 +614,7 @@ export default function DriverPortalPage() {
                 setActionLoadingId(null);
             }
         },
-        [handleDriverAuthFailure, loadOrders, postDeliveryProgress]
+        [handleDriverAuthFailure, loadOrders, openDeliveredRequestModal, orders, postDeliveryProgress]
     );
 
     if (loading) {
@@ -557,6 +757,160 @@ export default function DriverPortalPage() {
                     })
                 )}
             </section>
+
+            {showDeliveredRequestModal && completionOrder && (
+                <div className="modal-overlay" onClick={closeDeliveredRequestModal}>
+                    <div className="modal modal-lg" onClick={event => event.stopPropagation()}>
+                        <div className="modal-header">
+                            <div>
+                                <h3 className="modal-title">Ajukan Selesai {completionOrder.doNumber}</h3>
+                                <div className="text-muted text-sm" style={{ marginTop: '0.3rem' }}>
+                                    Isi barang aktual yang benar-benar sampai supaya admin tinggal review.
+                                </div>
+                            </div>
+                            <button className="modal-close" onClick={closeDeliveredRequestModal} disabled={isActionInFlight}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="driver-completion-summary">
+                                <div className="driver-completion-summary-card">
+                                    <span>Customer</span>
+                                    <strong>{completionOrder.customerName || '-'}</strong>
+                                </div>
+                                <div className="driver-completion-summary-card">
+                                    <span>Tujuan</span>
+                                    <strong>{completionOrder.receiverName || completionOrder.receiverAddress || '-'}</strong>
+                                </div>
+                                <div className="driver-completion-summary-card">
+                                    <span>Ringkasan Aktual</span>
+                                    <strong>{completionCargoItems.length > 0 ? completionCargoSummary : 'Belum ada item'}</strong>
+                                </div>
+                            </div>
+
+                            <div className="driver-completion-list">
+                                {completionCargoItems.length === 0 ? (
+                                    <div className="driver-completion-empty">
+                                        Belum ada item muatan di surat jalan ini. Hubungi admin sebelum mengajukan selesai.
+                                    </div>
+                                ) : (
+                                    completionCargoItems.map(item => (
+                                        <div key={item.deliveryOrderItemRef} className="driver-completion-item">
+                                            <div className="driver-completion-item-header">
+                                                <div>
+                                                    <div className="driver-completion-item-title">{item.description}</div>
+                                                    <div className="text-muted text-sm">
+                                                        Rencana: {formatCargoSummary({
+                                                            qtyKoli: item.plannedQtyKoli,
+                                                            weightKg: item.plannedWeightKg,
+                                                            weightInputValue: item.plannedWeightInputValue,
+                                                            weightInputUnit: item.plannedWeightInputUnit,
+                                                            volumeM3: item.plannedVolumeM3,
+                                                            volumeInputValue: item.plannedVolumeInputValue,
+                                                            volumeInputUnit: item.plannedVolumeInputUnit,
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="driver-completion-metrics">
+                                                {item.requireQty && (
+                                                    <div className="form-group">
+                                                        <label className="form-label">Qty Aktual</label>
+                                                        <FormattedNumberInput
+                                                            min={0}
+                                                            maxFractionDigits={2}
+                                                            value={parseFormattedNumberish(item.actualQtyKoli || 0, { maxFractionDigits: 2 })}
+                                                            onValueChange={value => updateCompletionCargoDraft(item.deliveryOrderItemRef, 'actualQtyKoli', String(value))}
+                                                            disabled={isActionInFlight}
+                                                        />
+                                                    </div>
+                                                )}
+
+                                                {(item.requireWeight || item.plannedWeightKg > 0) && (
+                                                    <div className="form-group">
+                                                        <label className="form-label">Berat Aktual</label>
+                                                        <div className="driver-completion-unit-row">
+                                                            <FormattedNumberInput
+                                                                min={0}
+                                                                maxFractionDigits={item.actualWeightInputUnit === 'TON' ? 3 : 2}
+                                                                value={parseFormattedNumberish(item.actualWeightInputValue || 0, {
+                                                                    maxFractionDigits: item.actualWeightInputUnit === 'TON' ? 3 : 2,
+                                                                })}
+                                                                onValueChange={value => updateCompletionCargoDraft(item.deliveryOrderItemRef, 'actualWeightInputValue', String(value))}
+                                                                disabled={isActionInFlight}
+                                                            />
+                                                            <select
+                                                                className="form-select"
+                                                                value={item.actualWeightInputUnit}
+                                                                onChange={event => updateCompletionCargoWeightUnit(item.deliveryOrderItemRef, event.target.value as ActualCargoDraft['actualWeightInputUnit'])}
+                                                                disabled={isActionInFlight}
+                                                            >
+                                                                {WEIGHT_INPUT_UNIT_OPTIONS.map(option => (
+                                                                    <option key={option.value} value={option.value}>{option.label}</option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {(item.requireVolume || (item.plannedVolumeM3 || 0) > 0) && (
+                                                    <div className="form-group">
+                                                        <label className="form-label">Volume Aktual</label>
+                                                        <div className="driver-completion-unit-row">
+                                                            <FormattedNumberInput
+                                                                min={0}
+                                                                maxFractionDigits={item.actualVolumeInputUnit === 'LITER' ? 0 : 3}
+                                                                value={parseFormattedNumberish(item.actualVolumeInputValue || 0, {
+                                                                    maxFractionDigits: item.actualVolumeInputUnit === 'LITER' ? 0 : 3,
+                                                                })}
+                                                                onValueChange={value => updateCompletionCargoDraft(item.deliveryOrderItemRef, 'actualVolumeInputValue', String(value))}
+                                                                disabled={isActionInFlight}
+                                                            />
+                                                            <select
+                                                                className="form-select"
+                                                                value={item.actualVolumeInputUnit}
+                                                                onChange={event => updateCompletionCargoVolumeUnit(item.deliveryOrderItemRef, event.target.value as ActualCargoDraft['actualVolumeInputUnit'])}
+                                                                disabled={isActionInFlight}
+                                                            >
+                                                                {VOLUME_INPUT_UNIT_OPTIONS.map(option => (
+                                                                    <option key={option.value} value={option.value}>{option.label}</option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+
+                            <div className="form-group" style={{ marginTop: '1rem' }}>
+                                <label className="form-label">Catatan Driver</label>
+                                <textarea
+                                    className="form-textarea"
+                                    rows={3}
+                                    value={completionNote}
+                                    onChange={event => setCompletionNote(event.target.value)}
+                                    disabled={isActionInFlight}
+                                    placeholder="Mis. berat aktual berubah setelah bongkar atau ada selisih koli."
+                                />
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={closeDeliveredRequestModal} disabled={isActionInFlight}>
+                                Batal
+                            </button>
+                            <button
+                                className="btn btn-success"
+                                onClick={() => void submitDeliveredRequest()}
+                                disabled={isActionInFlight || completionCargoItems.length === 0 || !completionCargoReady}
+                            >
+                                <Truck size={15} /> {actionLoadingId === completionOrder._id ? 'Mengirim...' : 'Ajukan Selesai'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </main>
     );
 }
