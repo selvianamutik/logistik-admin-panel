@@ -467,6 +467,7 @@ export interface Order {
   _id: string;
   _type: 'order';
   masterResi: string;
+  cargoEntryMode?: 'ORDER' | 'DELIVERY_ORDER';
   customerRef: string;
   customerName?: string;
   customerRecipientRef?: string;
@@ -488,6 +489,9 @@ export interface OrderItem {
   _id: string;
   _type: 'orderItem';
   orderRef: string;
+  entrySource?: 'ORDER' | 'DELIVERY_ORDER';
+  sourceDeliveryOrderRef?: string;
+  sourceDeliveryOrderNumber?: string;
   customerProductRef?: string;
   customerProductCode?: string;
   customerProductName?: string;

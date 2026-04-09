@@ -3,40 +3,23 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '../../layout';
-import { Save, Plus, X } from 'lucide-react';
-import FormattedNumberInput from '@/components/FormattedNumberInput';
+import { Save } from 'lucide-react';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
-import type { Customer, CustomerPickupLocation, CustomerProduct, CustomerRecipient, Service } from '@/lib/types';
+import type { Customer, CustomerPickupLocation, CustomerRecipient, Service } from '@/lib/types';
 import {
     applyCustomerPickupSnapshot,
     applyCustomerRecipientSnapshot,
-    applyCustomerProductToOrderItem,
-    createDefaultOrderItemForm,
     findDefaultCustomerPickup,
     findDefaultCustomerRecipient,
-    getDraftOrderItems,
-    resetCustomerScopedOrderItems,
     sortCustomerPickups,
     sortCustomerRecipients,
-    summarizeDraftOrderCargo,
-    updateOrderItemVolumeUnit,
-    updateOrderItemWeightUnit,
-    type OrderItemForm,
 } from '@/lib/order-create-page-support';
-import {
-    formatCargoSummary,
-    VOLUME_INPUT_UNIT_OPTIONS,
-    WEIGHT_INPUT_UNIT_OPTIONS,
-    type VolumeInputUnit,
-    type WeightInputUnit,
-} from '@/lib/measurement';
 
 export default function NewOrderPage() {
     const router = useRouter();
     const { addToast } = useToast();
     const [customers, setCustomers] = useState<Customer[]>([]);
-    const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
     const [customerRecipients, setCustomerRecipients] = useState<CustomerRecipient[]>([]);
     const [customerPickups, setCustomerPickups] = useState<CustomerPickupLocation[]>([]);
     const [customerScopedMastersLoaded, setCustomerScopedMastersLoaded] = useState(false);
@@ -62,10 +45,6 @@ export default function NewOrderPage() {
     const [receiverCompany, setReceiverCompany] = useState('');
     const [pickupAddress, setPickupAddress] = useState('');
     const [notes, setNotes] = useState('');
-    const [items, setItems] = useState<OrderItemForm[]>([createDefaultOrderItemForm()]);
-
-    const draftItems = getDraftOrderItems(items);
-    const draftCargo = summarizeDraftOrderCargo(items);
     const selectedCustomer = customers.find(customer => customer._id === customerRef) || null;
     const selectedService = services.find(service => service._id === serviceRef) || null;
     const sortedCustomerRecipients = sortCustomerRecipients(customerRecipients);
@@ -85,7 +64,6 @@ export default function NewOrderPage() {
 
     useEffect(() => {
         if (!customerRef) {
-            setCustomerProducts([]);
             setCustomerRecipients([]);
             setCustomerPickups([]);
             setCustomerScopedMastersLoaded(false);
@@ -96,11 +74,7 @@ export default function NewOrderPage() {
         setCustomerScopedMastersLoaded(false);
         const loadCustomerScopedMasters = async () => {
             try {
-                const [productRows, recipientRows, pickupRows] = await Promise.all([
-                    fetchAdminCollectionData<CustomerProduct[]>(
-                        `/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef, active: true }))}`,
-                        'Gagal memuat master customer'
-                    ),
+                const [recipientRows, pickupRows] = await Promise.all([
                     fetchAdminCollectionData<CustomerRecipient[]>(
                         `/api/data?entity=customer-recipients&filter=${encodeURIComponent(JSON.stringify({ customerRef, active: true }))}`,
                         'Gagal memuat master customer'
@@ -111,14 +85,12 @@ export default function NewOrderPage() {
                     ),
                 ]);
                 if (!cancelled) {
-                    setCustomerProducts(productRows || []);
                     setCustomerRecipients(recipientRows || []);
                     setCustomerPickups(pickupRows || []);
                     setCustomerScopedMastersLoaded(true);
                 }
             } catch (error) {
                 if (!cancelled) {
-                    setCustomerProducts([]);
                     setCustomerRecipients([]);
                     setCustomerPickups([]);
                     setCustomerScopedMastersLoaded(true);
@@ -172,11 +144,6 @@ export default function NewOrderPage() {
         setShouldAutoApplyDefaultPickup(false);
     }, [customerPickupRef, customerPickups, customerRef, customerScopedMastersLoaded, shouldAutoApplyDefaultPickup]);
 
-    const addItem = () => setItems(prev => [...prev, createDefaultOrderItemForm()]);
-    const removeItem = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx));
-    const updateItem = <K extends keyof OrderItemForm>(idx: number, field: K, value: OrderItemForm[K]) => {
-        setItems(prev => prev.map((item, i) => i === idx ? { ...item, [field]: value } : item));
-    };
     const handleCustomerChange = (nextCustomerRef: string) => {
         const selectedCustomer = customers.find(customer => customer._id === nextCustomerRef);
         setCustomerRef(nextCustomerRef);
@@ -190,7 +157,6 @@ export default function NewOrderPage() {
         setSavePickupToMaster(false);
         setSavePickupAsDefault(false);
         setPickupMasterLabel('');
-        setItems(prev => resetCustomerScopedOrderItems(prev));
         setPickupAddress(selectedCustomer?.address || '');
         setReceiverName('');
         setReceiverPhone('');
@@ -242,25 +208,10 @@ export default function NewOrderPage() {
         setPickupAddress(value);
     };
 
-    const applyCustomerProductSelection = (idx: number, nextProductRef: string) => {
-        const selectedProduct = customerProducts.find(product => product._id === nextProductRef);
-        setItems(prev => prev.map((item, i) => {
-            if (i !== idx) {
-                return item;
-            }
-            return applyCustomerProductToOrderItem(item, selectedProduct);
-        }));
-    };
-
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!customerRef || !receiverName || !receiverAddress) {
             addToast('error', 'Mohon lengkapi data wajib');
-            return;
-        }
-        const validItems = items.filter(item => item.description.trim());
-        if (validItems.length === 0) {
-            addToast('error', 'Minimal 1 item order wajib diisi');
             return;
         }
         setLoading(true);
@@ -343,7 +294,7 @@ export default function NewOrderPage() {
                         receiverName, receiverPhone, receiverAddress, receiverCompany,
                         pickupAddress, serviceRef, serviceName: selService?.name || '',
                         notes,
-                        items: validItems,
+                        items: [],
                     },
                 }),
             });
@@ -389,15 +340,15 @@ export default function NewOrderPage() {
                     </div>
                     <div className="kpi-card">
                         <div className="kpi-content">
-                            <div className="kpi-label">Draft Barang</div>
-                            <div className="kpi-value">{draftItems.length} item</div>
+                            <div className="kpi-label">Tujuan</div>
+                            <div className="kpi-value" style={{ fontSize: '1rem' }}>{receiverName || 'Belum diisi'}</div>
                         </div>
                     </div>
                     <div className="kpi-card">
                         <div className="kpi-content">
-                            <div className="kpi-label">Muatan Draft</div>
+                            <div className="kpi-label">Input Barang</div>
                             <div className="kpi-value" style={{ fontSize: '0.95rem' }}>
-                                {draftItems.length > 0 ? formatCargoSummary(draftCargo) : 'Belum diisi'}
+                                Di Surat Jalan
                             </div>
                         </div>
                     </div>
@@ -519,96 +470,17 @@ export default function NewOrderPage() {
                     </div>
                 </div>
 
-                {/* Items */}
                 <div className="card mt-6">
                     <div className="card-header">
-                        <span className="card-header-title">Barang yang Dikirim</span>
-                        <button type="button" className="btn btn-secondary btn-sm" onClick={addItem}>
-                            <Plus size={14} /> Tambah Item
-                        </button>
+                        <span className="card-header-title">Workflow Barang & Armada</span>
                     </div>
                     <div className="card-body">
-                        {items.map((item, idx) => (
-                            <div key={idx} style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 12, padding: 12, background: 'var(--color-gray-50)', borderRadius: 'var(--radius-md)' }}>
-                                {customerRef && customerProducts.length > 0 && (
-                                    <div style={{ flex: '1 1 260px' }}>
-                                        <label className="form-label">Barang Customer</label>
-                                        <select
-                                            className="form-select"
-                                            value={item.customerProductRef}
-                                            onChange={e => applyCustomerProductSelection(idx, e.target.value)}
-                                        >
-                                            <option value="">Pilih dari master barang customer (opsional)</option>
-                                            {customerProducts.map(product => (
-                                                <option key={product._id} value={product._id}>
-                                                    {product.code ? `${product.code} - ` : ''}{product.name}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                )}
-                                <div style={{ flex: '2 1 280px' }}>
-                                    <label className="form-label">Deskripsi</label>
-                                    <input className="form-input" value={item.description} onChange={e => updateItem(idx, 'description', e.target.value)} placeholder="Nama/deskripsi barang" />
-                                </div>
-                                <div style={{ flex: '0 1 110px' }}>
-                                    <label className="form-label">Koli (Opsional)</label>
-                                    <FormattedNumberInput
-                                        min={0}
-                                        allowDecimal={false}
-                                        value={item.qtyKoli}
-                                        onValueChange={value => updateItem(idx, 'qtyKoli', value)}
-                                    />
-                                </div>
-                                <div style={{ flex: '1 1 180px' }}>
-                                    <label className="form-label">Berat</label>
-                                    <div style={{ display: 'flex', gap: 8 }}>
-                                        <FormattedNumberInput
-                                            min={0}
-                                            maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
-                                            value={item.weightInputValue}
-                                            onValueChange={value => updateItem(idx, 'weightInputValue', value)}
-                                        />
-                                        <select
-                                            className="form-select"
-                                            value={item.weightInputUnit}
-                                            onChange={e => setItems(prev => prev.map((entry, i) => (
-                                                i === idx ? updateOrderItemWeightUnit(entry, e.target.value as WeightInputUnit) : entry
-                                            )))}
-                                            style={{ width: 92 }}
-                                        >
-                                            {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                                        </select>
-                                    </div>
-                                </div>
-                                <div style={{ flex: '1 1 180px' }}>
-                                    <label className="form-label">Volume</label>
-                                    <div style={{ display: 'flex', gap: 8 }}>
-                                        <FormattedNumberInput
-                                            min={0}
-                                            maxFractionDigits={item.volumeInputUnit === 'LITER' ? 0 : 3}
-                                            value={item.volumeInputValue}
-                                            onValueChange={value => updateItem(idx, 'volumeInputValue', value)}
-                                        />
-                                        <select
-                                            className="form-select"
-                                            value={item.volumeInputUnit}
-                                            onChange={e => setItems(prev => prev.map((entry, i) => (
-                                                i === idx ? updateOrderItemVolumeUnit(entry, e.target.value as VolumeInputUnit) : entry
-                                            )))}
-                                            style={{ width: 92 }}
-                                        >
-                                            {VOLUME_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                                        </select>
-                                    </div>
-                                </div>
-                                {items.length > 1 && (
-                                    <button type="button" className="btn btn-ghost btn-icon-only" onClick={() => removeItem(idx)} style={{ marginBottom: 4 }}>
-                                        <X size={18} />
-                                    </button>
-                                )}
+                        <div className="info-banner">
+                            <div className="info-banner-title">Order sekarang hanya menyimpan booking utama</div>
+                            <div className="info-banner-text">
+                                Barang, truck, driver, collie, dan muatan akan dicatat saat membuat Surat Jalan. Jalur ini menjaga order tetap ringan dan manifest pengiriman tetap mengikuti DO yang benar-benar jalan.
                             </div>
-                        ))}
+                        </div>
                     </div>
                 </div>
 

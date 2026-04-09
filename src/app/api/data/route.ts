@@ -60,6 +60,7 @@ import {
     handleOrderItemHoldRelease,
     handleOrderItemHoldSet,
     handleOrderCreate,
+    handleOrderHeaderBookingUpdate,
     handleOrderTargetRevision,
     handleOrderUpdateWithItems,
 } from '@/lib/api/order-workflows';
@@ -200,6 +201,7 @@ function getMutationPermissionAction(action?: string): keyof ModulePermissions {
         action === 'receive' ||
         action === 'record-payment' ||
         action === 'update-with-items' ||
+        action === 'update-header-booking' ||
         action === 'revise-targets' ||
         action === 'set-status' ||
         action === 'assign-trip-resources' ||
@@ -1292,6 +1294,10 @@ export async function POST(request: Request) {
 
         if (entity === 'orders' && action === 'update-with-items') {
             return await handleOrderUpdateWithItems(session, data, addAuditLog);
+        }
+
+        if (entity === 'orders' && action === 'update-header-booking') {
+            return await handleOrderHeaderBookingUpdate(session, data, addAuditLog);
         }
 
         if (entity === 'orders' && action === 'revise-targets') {

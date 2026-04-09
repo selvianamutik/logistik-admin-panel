@@ -54,6 +54,7 @@ import {
     type ResolvedCustomerRecipientData,
     type ResolvedOrderPartyData,
 } from './order-workflow-support';
+import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
 import { resolveTripRouteRateSelection } from './generic-workflow-support';
 import type { CompanyProfile } from '@/lib/types';
 
@@ -86,6 +87,43 @@ async function releaseDriverTrackingLockIfOwned(driverRef: unknown, deliveryOrde
         .unset(['activeTrackingDeliveryOrderRef'])
         .set({ activeTrackingUpdatedAt: timestamp })
         .commit();
+}
+
+function buildOrderItemDraftDocument(
+    orderRef: string,
+    item: NormalizedOrderItemInput,
+    itemId: string = crypto.randomUUID(),
+    extras?: Record<string, unknown>
+) {
+    return {
+        _id: itemId,
+        _type: 'orderItem',
+        orderRef,
+        entrySource: 'ORDER',
+        customerProductRef: item.customerProductRef,
+        customerProductCode: item.customerProductCode,
+        customerProductName: item.customerProductName,
+        description: item.description,
+        qtyKoli: item.qtyKoli,
+        weight: item.weight,
+        volume: item.volume,
+        weightInputValue: item.weightInputValue,
+        weightInputUnit: item.weightInputUnit,
+        volumeInputValue: item.volumeInputValue,
+        volumeInputUnit: item.volumeInputUnit,
+        value: item.value,
+        deliveredQtyKoli: 0,
+        deliveredWeight: 0,
+        deliveredVolume: 0,
+        assignedQtyKoli: 0,
+        assignedWeight: 0,
+        assignedVolume: 0,
+        heldQtyKoli: 0,
+        heldWeight: 0,
+        heldVolume: 0,
+        status: 'PENDING',
+        ...extras,
+    };
 }
 
 export async function syncOrderStatusFromItems(orderRef: string, session: ApiSession, addAuditLog: AuditLogFn) {
@@ -367,13 +405,14 @@ export async function handleOrderCreate(
         serviceName = party.serviceName;
         customerRecipient = await resolveOrderRecipientData(customerRef, customerRecipientRef);
         customerPickup = await resolveOrderPickupData(customerRef, customerPickupRef);
-        items = await normalizeOrderItemsInput(customerRef, Array.isArray(data.items) ? data.items : []);
+        items = await normalizeOrderItemsInput(customerRef, Array.isArray(data.items) ? data.items : [], {
+            allowEmpty: true,
+        });
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Data order tidak valid';
         const status = message.includes('tidak ditemukan') ? 404 : message.includes('tidak aktif') ? 409 : 400;
         return NextResponse.json({ error: message }, { status });
     }
-
     const receiverName = normalizeText(data.receiverName) || normalizeOptionalText(customerRecipient?.receiverName) || '';
     const receiverAddress = normalizeText(data.receiverAddress) || normalizeOptionalText(customerRecipient?.receiverAddress) || '';
     if (!receiverName || !receiverAddress) {
@@ -386,6 +425,7 @@ export async function handleOrderCreate(
     const orderDoc = {
         _id: orderId,
         _type: 'order',
+        cargoEntryMode: items.length === 0 ? 'DELIVERY_ORDER' : 'ORDER',
         customerRef,
         customerName: customer.name,
         customerRecipientRef: customerRecipientRef || undefined,
@@ -406,37 +446,17 @@ export async function handleOrderCreate(
 
     const transaction = getSanityClient().transaction().create(orderDoc);
     for (const item of items) {
-        transaction.create({
-            _id: crypto.randomUUID(),
-            _type: 'orderItem',
-            orderRef: orderId,
-            customerProductRef: item.customerProductRef,
-            customerProductCode: item.customerProductCode,
-            customerProductName: item.customerProductName,
-            description: item.description,
-            qtyKoli: item.qtyKoli,
-            weight: item.weight,
-            volume: item.volume,
-            weightInputValue: item.weightInputValue,
-            weightInputUnit: item.weightInputUnit,
-            volumeInputValue: item.volumeInputValue,
-            volumeInputUnit: item.volumeInputUnit,
-            value: item.value,
-            deliveredQtyKoli: 0,
-            deliveredWeight: 0,
-            deliveredVolume: 0,
-            assignedQtyKoli: 0,
-            assignedWeight: 0,
-            assignedVolume: 0,
-            heldQtyKoli: 0,
-            heldWeight: 0,
-            heldVolume: 0,
-            status: 'PENDING',
-        });
+        transaction.create(buildOrderItemDraftDocument(orderId, item));
     }
 
     await transaction.commit();
-    await addAuditLog(session, 'CREATE', 'orders', orderId, `Created orders: ${masterResi}`);
+    await addAuditLog(
+        session,
+        'CREATE',
+        'orders',
+        orderId,
+        `Created orders: ${masterResi}${items.length > 0 ? ` (${items.length} item target)` : ' (header booking tanpa item)'}`
+    );
     return NextResponse.json({ data: orderDoc, id: orderId });
 }
 
@@ -455,9 +475,15 @@ export async function handleOrderUpdateWithItems(
         return NextResponse.json({ error: 'Order, customer, penerima, dan alamat tujuan wajib diisi' }, { status: 400 });
     }
 
-    const order = await sanityGetById<{ _id: string; masterResi?: string }>(id);
+    const order = await sanityGetById<{ _id: string; masterResi?: string; cargoEntryMode?: 'ORDER' | 'DELIVERY_ORDER' }>(id);
     if (!order) {
         return NextResponse.json({ error: 'Order tidak ditemukan' }, { status: 404 });
+    }
+    if (order.cargoEntryMode === 'DELIVERY_ORDER') {
+        return NextResponse.json(
+            { error: 'Order ini memakai flow header booking. Edit header order lewat workflow header booking, bukan edit item order.' },
+            { status: 409 }
+        );
     }
 
     const relatedDeliveryOrder = await getSanityClient().fetch<{ _id: string } | null>(
@@ -523,11 +549,19 @@ export async function handleOrderUpdateWithItems(
         serviceName = party.serviceName;
         customerRecipient = await resolveOrderRecipientData(customerRef, customerRecipientRef);
         customerPickup = await resolveOrderPickupData(customerRef, customerPickupRef);
-        items = await normalizeOrderItemsInput(customerRef, Array.isArray(data.items) ? data.items : []);
+        items = await normalizeOrderItemsInput(customerRef, Array.isArray(data.items) ? data.items : [], {
+            allowEmpty: true,
+        });
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Data order tidak valid';
         const status = message.includes('tidak ditemukan') ? 404 : message.includes('tidak aktif') ? 409 : 400;
         return NextResponse.json({ error: message }, { status });
+    }
+    if (items.length === 0 && existingItems.length > 0) {
+        return NextResponse.json(
+            { error: 'Order lama yang sudah punya item target tidak boleh dikosongkan. Barang tetap mengikuti histori order ini.' },
+            { status: 409 }
+        );
     }
 
     const receiverName = normalizeText(data.receiverName) || normalizeOptionalText(customerRecipient?.receiverName) || '';
@@ -539,6 +573,7 @@ export async function handleOrderUpdateWithItems(
     const transaction = getSanityClient()
         .transaction()
         .patch(id, patch => patch.set({
+            cargoEntryMode: 'ORDER',
             customerRef,
             customerName: customer.name,
             customerRecipientRef: customerRecipientRef || undefined,
@@ -558,33 +593,7 @@ export async function handleOrderUpdateWithItems(
     }
 
     for (const item of items) {
-        transaction.create({
-            _id: crypto.randomUUID(),
-            _type: 'orderItem',
-            orderRef: id,
-            customerProductRef: item.customerProductRef,
-            customerProductCode: item.customerProductCode,
-            customerProductName: item.customerProductName,
-            description: item.description,
-            qtyKoli: item.qtyKoli,
-            weight: item.weight,
-            volume: item.volume,
-            weightInputValue: item.weightInputValue,
-            weightInputUnit: item.weightInputUnit,
-            volumeInputValue: item.volumeInputValue,
-            volumeInputUnit: item.volumeInputUnit,
-            value: item.value,
-            deliveredQtyKoli: 0,
-            deliveredWeight: 0,
-            deliveredVolume: 0,
-            assignedQtyKoli: 0,
-            assignedWeight: 0,
-            assignedVolume: 0,
-            heldQtyKoli: 0,
-            heldWeight: 0,
-            heldVolume: 0,
-            status: 'PENDING',
-        });
+        transaction.create(buildOrderItemDraftDocument(id, item));
     }
 
     await transaction.commit();
@@ -593,10 +602,136 @@ export async function handleOrderUpdateWithItems(
         'UPDATE',
         'orders',
         id,
-        `Update order ${order.masterResi || id} dengan ${items.length} item`
+        `Update order ${order.masterResi || id}${items.length > 0 ? ` dengan ${items.length} item` : ' sebagai header booking tanpa item'}`
     );
 
     const updatedOrder = await sanityGetById(id);
+    return NextResponse.json({ data: updatedOrder, id });
+}
+
+export async function handleOrderHeaderBookingUpdate(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const id = normalizeText(data.id);
+    const customerRef = normalizeText(data.customerRef);
+    const serviceRef = normalizeOptionalText(data.serviceRef);
+    const customerRecipientRef = normalizeOptionalText(data.customerRecipientRef);
+    const customerPickupRef = normalizeOptionalText(data.customerPickupRef);
+    const notes = normalizeOptionalText(data.notes);
+
+    if (!id || !customerRef) {
+        return NextResponse.json({ error: 'Order, customer, penerima, dan alamat tujuan wajib diisi' }, { status: 400 });
+    }
+
+    const order = await sanityGetById<{
+        _createdAt?: string;
+        _id: string;
+        createdAt?: string;
+        masterResi?: string;
+        cargoEntryMode?: 'ORDER' | 'DELIVERY_ORDER';
+        customerRef?: string;
+        customerRecipientRef?: string;
+        customerPickupRef?: string;
+        receiverName?: string;
+        receiverPhone?: string;
+        receiverAddress?: string;
+        receiverCompany?: string;
+        pickupAddress?: string;
+        serviceRef?: string;
+        notes?: string;
+    }>(id);
+    if (!order) {
+        return NextResponse.json({ error: 'Order tidak ditemukan' }, { status: 404 });
+    }
+    if (order.cargoEntryMode !== 'DELIVERY_ORDER') {
+        return NextResponse.json(
+            { error: 'Order ini masih memakai flow item target di order. Gunakan edit order biasa.' },
+            { status: 409 }
+        );
+    }
+
+    const relatedDeliveryOrder = await getSanityClient().fetch<{ _id: string } | null>(
+        `*[_type == "deliveryOrder" && orderRef == $ref][0]{ _id }`,
+        { ref: id }
+    );
+
+    if (relatedDeliveryOrder) {
+        const attemptedHeaderChanges =
+            normalizeText(order.customerRef) !== customerRef ||
+            normalizeOptionalText(order.serviceRef) !== serviceRef ||
+            normalizeOptionalText(order.customerRecipientRef) !== customerRecipientRef ||
+            normalizeOptionalText(order.customerPickupRef) !== customerPickupRef ||
+            normalizeText(order.receiverName) !== normalizeText(data.receiverName) ||
+            normalizeOptionalText(order.receiverPhone) !== normalizeOptionalText(data.receiverPhone) ||
+            normalizeText(order.receiverAddress) !== normalizeText(data.receiverAddress) ||
+            normalizeOptionalText(order.receiverCompany) !== normalizeOptionalText(data.receiverCompany) ||
+            normalizeOptionalText(order.pickupAddress) !== normalizeOptionalText(data.pickupAddress);
+
+        if (attemptedHeaderChanges) {
+            return NextResponse.json(
+                { error: 'Order header booking yang sudah punya Surat Jalan hanya boleh mengubah catatan umum.' },
+                { status: 409 }
+            );
+        }
+
+        const updatedOrder = await sanityUpdate(id, { notes });
+        await addAuditLog(
+            session,
+            'UPDATE',
+            'orders',
+            id,
+            `Update header booking ${order.masterResi || id}: catatan umum diperbarui setelah Surat Jalan terbit`
+        );
+        return NextResponse.json({ data: updatedOrder, id });
+    }
+
+    let customer: ResolvedOrderPartyData['customer'];
+    let serviceName: string | undefined;
+    let customerRecipient: ResolvedCustomerRecipientData | null = null;
+    let customerPickup: ResolvedCustomerPickupData | null = null;
+    try {
+        const party = await resolveOrderPartyData(customerRef, serviceRef);
+        customer = party.customer;
+        serviceName = party.serviceName;
+        customerRecipient = await resolveOrderRecipientData(customerRef, customerRecipientRef);
+        customerPickup = await resolveOrderPickupData(customerRef, customerPickupRef);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Data order tidak valid';
+        const status = message.includes('tidak ditemukan') ? 404 : message.includes('tidak aktif') ? 409 : 400;
+        return NextResponse.json({ error: message }, { status });
+    }
+
+    const receiverName = normalizeText(data.receiverName) || normalizeOptionalText(customerRecipient?.receiverName) || '';
+    const receiverAddress = normalizeText(data.receiverAddress) || normalizeOptionalText(customerRecipient?.receiverAddress) || '';
+    if (!receiverName || !receiverAddress) {
+        return NextResponse.json({ error: 'Order, customer, penerima, dan alamat tujuan wajib diisi' }, { status: 400 });
+    }
+
+    const updatedOrder = await sanityUpdate(id, {
+        cargoEntryMode: 'DELIVERY_ORDER',
+        customerRef,
+        customerName: customer.name,
+        customerRecipientRef: customerRecipientRef || undefined,
+        customerPickupRef: customerPickupRef || undefined,
+        receiverName,
+        receiverPhone: normalizeOptionalText(data.receiverPhone) || normalizeOptionalText(customerRecipient?.receiverPhone) || '',
+        receiverAddress,
+        receiverCompany: normalizeOptionalText(data.receiverCompany) || normalizeOptionalText(customerRecipient?.receiverCompany),
+        pickupAddress: normalizeOptionalText(data.pickupAddress) || normalizeOptionalText(customerPickup?.pickupAddress) || customer.address || undefined,
+        serviceRef: serviceRef || '',
+        serviceName,
+        notes,
+    });
+
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'orders',
+        id,
+        `Update header booking ${order.masterResi || id}: customer, tujuan, armada, atau catatan diperbarui`
+    );
     return NextResponse.json({ data: updatedOrder, id });
 }
 
@@ -614,9 +749,15 @@ export async function handleOrderTargetRevision(
         return NextResponse.json({ error: 'Alasan revisi order wajib diisi' }, { status: 400 });
     }
 
-    const order = await sanityGetById<{ _id: string; masterResi?: string; notes?: string }>(id);
+    const order = await sanityGetById<{ _id: string; masterResi?: string; notes?: string; cargoEntryMode?: 'ORDER' | 'DELIVERY_ORDER' }>(id);
     if (!order) {
         return NextResponse.json({ error: 'Order tidak ditemukan' }, { status: 404 });
+    }
+    if (order.cargoEntryMode === 'DELIVERY_ORDER') {
+        return NextResponse.json(
+            { error: 'Order header booking tidak memakai revisi target item. Barang tetap mengikuti Surat Jalan.' },
+            { status: 409 }
+        );
     }
 
     const existingItems = await getSanityClient().fetch<OrderItemProgressSnapshot[]>(
@@ -1378,6 +1519,7 @@ export async function handleDeliveryOrderCreate(
     const order = await sanityGetById<{
         _id: string;
         masterResi?: string;
+        cargoEntryMode?: 'ORDER' | 'DELIVERY_ORDER';
         customerRef?: string;
         customerName?: string;
         receiverName?: string;
@@ -1413,6 +1555,7 @@ export async function handleDeliveryOrderCreate(
         typeof data.vehiclePlate === 'string' && data.vehiclePlate.trim()
             ? data.vehiclePlate.trim()
             : '';
+    let vehicleCapacityKg = 0;
     const vehicleCategoryOverrideReason = normalizeOptionalText(data.vehicleCategoryOverrideReason);
     const driverRef = typeof data.driverRef === 'string' ? data.driverRef : '';
     let driverName =
@@ -1430,6 +1573,7 @@ export async function handleDeliveryOrderCreate(
             status?: string;
             serviceRef?: string;
             serviceName?: string;
+            capacityKg?: number;
         }>(vehicleRef);
         if (!vehicle) {
             return NextResponse.json({ error: 'Kendaraan DO tidak ditemukan' }, { status: 404 });
@@ -1440,6 +1584,7 @@ export async function handleDeliveryOrderCreate(
         if (vehicle.status === 'OUT_OF_SERVICE') {
             return NextResponse.json({ error: 'Kendaraan yang sedang out of service tidak bisa dipakai untuk surat jalan baru' }, { status: 409 });
         }
+        vehicleCapacityKg = normalizeNumber(vehicle.capacityKg ?? 0);
         const conflictingDeliveryOrder = await getSanityClient().fetch<{
             _id: string;
             doNumber?: string;
@@ -1604,6 +1749,26 @@ export async function handleDeliveryOrderCreate(
         }
     }
 
+    const existingOrderItemCount = await getSanityClient().fetch<number>(
+        `count(*[_type == "orderItem" && orderRef == $ref])`,
+        { ref: orderRef }
+    );
+    const orderItemCargoModeHints =
+        !order.cargoEntryMode && existingOrderItemCount > 0
+            ? await getSanityClient().fetch<Array<{
+                _createdAt?: string;
+                entrySource?: 'ORDER' | 'DELIVERY_ORDER';
+                sourceDeliveryOrderRef?: string;
+            }>>(
+                `*[_type == "orderItem" && orderRef == $ref]{
+                    _createdAt,
+                    entrySource,
+                    sourceDeliveryOrderRef
+                }`,
+                { ref: orderRef }
+            )
+            : [];
+    const resolvedCargoEntryMode = resolveOrderCargoEntryMode(order, orderItemCargoModeHints);
     const requestedItemIds = Array.from(new Set([
         ...(Array.isArray(data.itemRefs) ? data.itemRefs.filter((item): item is string => typeof item === 'string' && item.length > 0) : []),
         ...(Array.isArray(data.items)
@@ -1613,156 +1778,206 @@ export async function handleDeliveryOrderCreate(
                 .filter(Boolean)
             : []),
     ]));
-    if (requestedItemIds.length === 0) {
-        return NextResponse.json({ error: 'Pilih minimal 1 item untuk surat jalan' }, { status: 400 });
-    }
-
-    const selectedItems = await getSanityClient().fetch<OrderItemProgressSnapshot[]>(
-        `*[_type == "orderItem" && _id in $ids]{
-            _id,
-            orderRef,
-            description,
-            qtyKoli,
-            weight,
-            volume,
-            weightInputValue,
-            weightInputUnit,
-            volumeInputValue,
-            volumeInputUnit,
-            status,
-            deliveredQtyKoli,
-            deliveredWeight,
-            deliveredVolume,
-            assignedQtyKoli,
-            assignedWeight,
-            assignedVolume,
-            heldQtyKoli,
-            heldWeight,
-            heldVolume,
-            holdReason,
-            holdLocation
-        }`,
-        { ids: requestedItemIds }
-    );
-    if (selectedItems.length !== requestedItemIds.length) {
-        return NextResponse.json({ error: 'Sebagian item order tidak ditemukan' }, { status: 404 });
-    }
-
-    let normalizedSelections: ReturnType<typeof normalizeDeliveryOrderSelections>;
-    try {
-        normalizedSelections = normalizeDeliveryOrderSelections(data, selectedItems);
-    } catch (error) {
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Item surat jalan tidak valid' },
-            { status: 400 }
-        );
-    }
-    if (normalizedSelections.length === 0) {
-        return NextResponse.json({ error: 'Pilih minimal 1 item untuk surat jalan' }, { status: 400 });
-    }
-
-    const duplicateSelection = normalizedSelections.find(
-        (selection, index) => normalizedSelections.findIndex(candidate => candidate.orderItemRef === selection.orderItemRef) !== index
-    );
-    if (duplicateSelection) {
-        return NextResponse.json({ error: 'Item surat jalan tidak boleh dipilih dua kali' }, { status: 400 });
-    }
-
-    const selectionByItemId = new Map(normalizedSelections.map(selection => [selection.orderItemRef, selection]));
+    const usingDirectCargoInput = requestedItemIds.length === 0;
+    const allowsDirectCargoInput = resolvedCargoEntryMode === 'DELIVERY_ORDER' || existingOrderItemCount === 0;
+    let selectedItems: OrderItemProgressSnapshot[] = [];
+    let normalizedSelections: ReturnType<typeof normalizeDeliveryOrderSelections> = [];
+    let selectionByItemId = new Map<string, ReturnType<typeof normalizeDeliveryOrderSelections>[number]>();
+    let directCargoItems: NormalizedOrderItemInput[] = [];
     const selectionSummaries: string[] = [];
 
-    for (const item of selectedItems) {
-        const selection = selectionByItemId.get(item._id);
-        if (!selection) {
-            continue;
+    if (usingDirectCargoInput) {
+        if (!allowsDirectCargoInput) {
+            return NextResponse.json(
+                { error: 'Order ini sudah punya item target. Pilih item order yang mau dimasukkan ke surat jalan.' },
+                { status: 409 }
+            );
         }
-        if (extractRefId(item.orderRef) !== orderRef) {
-            return NextResponse.json({ error: 'Ada item yang bukan milik order ini' }, { status: 400 });
+        try {
+            directCargoItems = await normalizeOrderItemsInput(
+                orderCustomerRef || normalizeText(order.customerRef),
+                Array.isArray(data.cargoItems) ? data.cargoItems : [],
+                { allowEmpty: false }
+            );
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Barang surat jalan tidak valid';
+            return NextResponse.json({ error: message }, { status: 400 });
         }
-
-        const progress = getOrderItemProgress(item);
-        const activeAssignment = await getSanityClient().fetch<{ _id: string } | null>(
-            `*[
-                _type == "deliveryOrderItem" &&
-                orderItemRef == $orderItemRef &&
-                defined(*[_type == "deliveryOrder" && _id == ^.deliveryOrderRef && status in ["CREATED", "HEADING_TO_PICKUP", "ON_DELIVERY", "ARRIVED"]][0]._id)
-            ][0]{ _id }`,
-            { orderItemRef: item._id }
+        const plannedWeightKg = roundQuantity(
+            directCargoItems.reduce((sum, item) => sum + normalizeNumber(item.weight || 0), 0)
         );
-        if (activeAssignment) {
-            return NextResponse.json({ error: 'Ada item yang sudah terikat ke surat jalan aktif lain' }, { status: 409 });
+        if (vehicleCapacityKg > 0 && plannedWeightKg - vehicleCapacityKg > 0.00001) {
+            return NextResponse.json(
+                {
+                    error: `Muatan rencana ${plannedWeightKg} kg melebihi kapasitas kendaraan ${vehicleCapacityKg} kg.`,
+                },
+                { status: 409 }
+            );
+        }
+        for (const item of directCargoItems) {
+            selectionSummaries.push(
+                summarizeSelection({
+                    orderItemRef: item.description,
+                    qtyKoli: item.qtyKoli,
+                    weightInputValue: item.weightInputValue,
+                    weightInputUnit: item.weightInputUnit,
+                    volumeInputValue: item.volumeInputValue,
+                    volumeInputUnit: item.volumeInputUnit,
+                    holdRemaining: false,
+                }, item.description)
+            );
+        }
+    } else if (resolvedCargoEntryMode === 'DELIVERY_ORDER') {
+        return NextResponse.json(
+            { error: 'Order ini memakai flow barang di Surat Jalan. Barang baru harus diinput langsung saat membuat Surat Jalan.' },
+            { status: 409 }
+        );
+    } else {
+        selectedItems = await getSanityClient().fetch<OrderItemProgressSnapshot[]>(
+            `*[_type == "orderItem" && _id in $ids]{
+                _id,
+                orderRef,
+                description,
+                qtyKoli,
+                weight,
+                volume,
+                weightInputValue,
+                weightInputUnit,
+                volumeInputValue,
+                volumeInputUnit,
+                status,
+                deliveredQtyKoli,
+                deliveredWeight,
+                deliveredVolume,
+                assignedQtyKoli,
+                assignedWeight,
+                assignedVolume,
+                heldQtyKoli,
+                heldWeight,
+                heldVolume,
+                holdReason,
+                holdLocation
+            }`,
+            { ids: requestedItemIds }
+        );
+        if (selectedItems.length !== requestedItemIds.length) {
+            return NextResponse.json({ error: 'Sebagian item order tidak ditemukan' }, { status: 404 });
         }
 
-        if (progress.totalQtyKoli > 0) {
-            if (!Number.isFinite(selection.qtyKoli) || selection.qtyKoli <= 0) {
-                return NextResponse.json({ error: 'Jumlah koli kirim harus lebih besar dari 0' }, { status: 400 });
+        try {
+            normalizedSelections = normalizeDeliveryOrderSelections(data, selectedItems);
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Item surat jalan tidak valid' },
+                { status: 400 }
+            );
+        }
+        if (normalizedSelections.length === 0) {
+            return NextResponse.json({ error: 'Pilih minimal 1 item untuk surat jalan' }, { status: 400 });
+        }
+
+        const duplicateSelection = normalizedSelections.find(
+            (selection, index) => normalizedSelections.findIndex(candidate => candidate.orderItemRef === selection.orderItemRef) !== index
+        );
+        if (duplicateSelection) {
+            return NextResponse.json({ error: 'Item surat jalan tidak boleh dipilih dua kali' }, { status: 400 });
+        }
+
+        selectionByItemId = new Map(normalizedSelections.map(selection => [selection.orderItemRef, selection]));
+
+        for (const item of selectedItems) {
+            const selection = selectionByItemId.get(item._id);
+            if (!selection) {
+                continue;
             }
-            if (selection.qtyKoli > progress.pendingQtyKoli) {
-                return NextResponse.json({ error: `Jumlah koli kirim untuk ${item.description || 'item order'} melebihi sisa qty yang siap dikirim` }, { status: 409 });
+            if (extractRefId(item.orderRef) !== orderRef) {
+                return NextResponse.json({ error: 'Ada item yang bukan milik order ini' }, { status: 400 });
             }
 
-            const remainingQtyAfterShipment = roundQuantity(Math.max(progress.pendingQtyKoli - selection.qtyKoli, 0));
+            const progress = getOrderItemProgress(item);
+            const activeAssignment = await getSanityClient().fetch<{ _id: string } | null>(
+                `*[
+                    _type == "deliveryOrderItem" &&
+                    orderItemRef == $orderItemRef &&
+                    defined(*[_type == "deliveryOrder" && _id == ^.deliveryOrderRef && status in ["CREATED", "HEADING_TO_PICKUP", "ON_DELIVERY", "ARRIVED"]][0]._id)
+                ][0]{ _id }`,
+                { orderItemRef: item._id }
+            );
+            if (activeAssignment) {
+                return NextResponse.json({ error: 'Ada item yang sudah terikat ke surat jalan aktif lain' }, { status: 409 });
+            }
+
+            if (progress.totalQtyKoli > 0) {
+                if (!Number.isFinite(selection.qtyKoli) || selection.qtyKoli <= 0) {
+                    return NextResponse.json({ error: 'Jumlah koli kirim harus lebih besar dari 0' }, { status: 400 });
+                }
+                if (selection.qtyKoli > progress.pendingQtyKoli) {
+                    return NextResponse.json({ error: `Jumlah koli kirim untuk ${item.description || 'item order'} melebihi sisa qty yang siap dikirim` }, { status: 409 });
+                }
+
+                const remainingQtyAfterShipment = roundQuantity(Math.max(progress.pendingQtyKoli - selection.qtyKoli, 0));
+                if (selection.holdRemaining) {
+                    if (remainingQtyAfterShipment <= 0) {
+                        return NextResponse.json({ error: `Tidak ada sisa qty ${item.description || 'item order'} yang bisa ditahan` }, { status: 409 });
+                    }
+                    if (!selection.holdReason) {
+                        return NextResponse.json({ error: `Alasan hold wajib diisi untuk sisa qty ${item.description || 'item order'}` }, { status: 400 });
+                    }
+                }
+
+                selectionSummaries.push(summarizeSelection(selection, item.description));
+                continue;
+            }
+
+            if (progress.pendingWeight <= 0 && progress.pendingVolume <= 0) {
+                return NextResponse.json({ error: `Tidak ada sisa berat/volume ${item.description || 'item order'} yang siap dikirim` }, { status: 409 });
+            }
+            if (selection.qtyKoli > 0) {
+                return NextResponse.json(
+                    { error: `Item ${item.description || 'item order'} tidak memakai basis koli. Centang item untuk mengirim seluruh sisa berat/volume.` },
+                    { status: 400 }
+                );
+            }
+            const selectedWeightInputValue = normalizeNumber(selection.weightInputValue ?? 0, {
+                maxFractionDigits: selection.weightInputUnit === 'TON' ? 3 : 2,
+            });
+            const selectedVolumeInputValue = normalizeNumber(selection.volumeInputValue ?? 0, {
+                maxFractionDigits: selection.volumeInputUnit === 'LITER' ? 0 : 3,
+            });
+            const selectedWeightKg = selectedWeightInputValue > 0 && selection.weightInputUnit
+                ? roundQuantity(convertWeightToKg(selectedWeightInputValue, selection.weightInputUnit))
+                : 0;
+            const selectedVolumeM3 = selectedVolumeInputValue > 0 && selection.volumeInputUnit
+                ? roundQuantity(convertVolumeToM3(selectedVolumeInputValue, selection.volumeInputUnit), 3)
+                : 0;
+            if (progress.pendingWeight > 0 && selectedWeightKg <= 0) {
+                return NextResponse.json({ error: `Berat kirim untuk ${item.description || 'item order'} wajib diisi` }, { status: 400 });
+            }
+            if (progress.pendingVolume > 0 && selectedVolumeM3 <= 0) {
+                return NextResponse.json({ error: `Volume kirim untuk ${item.description || 'item order'} wajib diisi` }, { status: 400 });
+            }
+            if (selectedWeightKg <= 0 && selectedVolumeM3 <= 0) {
+                return NextResponse.json({ error: `Muatan kirim untuk ${item.description || 'item order'} tidak valid` }, { status: 400 });
+            }
+            if (selectedWeightKg - progress.pendingWeight > 0.00001) {
+                return NextResponse.json({ error: `Berat kirim untuk ${item.description || 'item order'} melebihi sisa berat yang siap dikirim` }, { status: 409 });
+            }
+            if (selectedVolumeM3 - progress.pendingVolume > 0.00001) {
+                return NextResponse.json({ error: `Volume kirim untuk ${item.description || 'item order'} melebihi sisa volume yang siap dikirim` }, { status: 409 });
+            }
+            const remainingWeightAfterShipment = roundQuantity(Math.max(progress.pendingWeight - selectedWeightKg, 0));
+            const remainingVolumeAfterShipment = roundQuantity(Math.max(progress.pendingVolume - selectedVolumeM3, 0), 3);
             if (selection.holdRemaining) {
-                if (remainingQtyAfterShipment <= 0) {
-                    return NextResponse.json({ error: `Tidak ada sisa qty ${item.description || 'item order'} yang bisa ditahan` }, { status: 409 });
+                if (remainingWeightAfterShipment <= 0 && remainingVolumeAfterShipment <= 0) {
+                    return NextResponse.json({ error: `Tidak ada sisa muatan ${item.description || 'item order'} yang bisa ditahan` }, { status: 409 });
                 }
                 if (!selection.holdReason) {
-                    return NextResponse.json({ error: `Alasan hold wajib diisi untuk sisa qty ${item.description || 'item order'}` }, { status: 400 });
+                    return NextResponse.json({ error: `Alasan hold wajib diisi untuk sisa muatan ${item.description || 'item order'}` }, { status: 400 });
                 }
             }
 
             selectionSummaries.push(summarizeSelection(selection, item.description));
-            continue;
         }
-
-        if (progress.pendingWeight <= 0 && progress.pendingVolume <= 0) {
-            return NextResponse.json({ error: `Tidak ada sisa berat/volume ${item.description || 'item order'} yang siap dikirim` }, { status: 409 });
-        }
-        if (selection.qtyKoli > 0) {
-            return NextResponse.json(
-                { error: `Item ${item.description || 'item order'} tidak memakai basis koli. Centang item untuk mengirim seluruh sisa berat/volume.` },
-                { status: 400 }
-            );
-        }
-        const selectedWeightInputValue = normalizeNumber(selection.weightInputValue ?? 0, {
-            maxFractionDigits: selection.weightInputUnit === 'TON' ? 3 : 2,
-        });
-        const selectedVolumeInputValue = normalizeNumber(selection.volumeInputValue ?? 0, {
-            maxFractionDigits: selection.volumeInputUnit === 'LITER' ? 0 : 3,
-        });
-        const selectedWeightKg = selectedWeightInputValue > 0 && selection.weightInputUnit
-            ? roundQuantity(convertWeightToKg(selectedWeightInputValue, selection.weightInputUnit))
-            : 0;
-        const selectedVolumeM3 = selectedVolumeInputValue > 0 && selection.volumeInputUnit
-            ? roundQuantity(convertVolumeToM3(selectedVolumeInputValue, selection.volumeInputUnit), 3)
-            : 0;
-        if (progress.pendingWeight > 0 && selectedWeightKg <= 0) {
-            return NextResponse.json({ error: `Berat kirim untuk ${item.description || 'item order'} wajib diisi` }, { status: 400 });
-        }
-        if (progress.pendingVolume > 0 && selectedVolumeM3 <= 0) {
-            return NextResponse.json({ error: `Volume kirim untuk ${item.description || 'item order'} wajib diisi` }, { status: 400 });
-        }
-        if (selectedWeightKg <= 0 && selectedVolumeM3 <= 0) {
-            return NextResponse.json({ error: `Muatan kirim untuk ${item.description || 'item order'} tidak valid` }, { status: 400 });
-        }
-        if (selectedWeightKg - progress.pendingWeight > 0.00001) {
-            return NextResponse.json({ error: `Berat kirim untuk ${item.description || 'item order'} melebihi sisa berat yang siap dikirim` }, { status: 409 });
-        }
-        if (selectedVolumeM3 - progress.pendingVolume > 0.00001) {
-            return NextResponse.json({ error: `Volume kirim untuk ${item.description || 'item order'} melebihi sisa volume yang siap dikirim` }, { status: 409 });
-        }
-        const remainingWeightAfterShipment = roundQuantity(Math.max(progress.pendingWeight - selectedWeightKg, 0));
-        const remainingVolumeAfterShipment = roundQuantity(Math.max(progress.pendingVolume - selectedVolumeM3, 0), 3);
-        if (selection.holdRemaining) {
-            if (remainingWeightAfterShipment <= 0 && remainingVolumeAfterShipment <= 0) {
-                return NextResponse.json({ error: `Tidak ada sisa muatan ${item.description || 'item order'} yang bisa ditahan` }, { status: 409 });
-            }
-            if (!selection.holdReason) {
-                return NextResponse.json({ error: `Alasan hold wajib diisi untuk sisa muatan ${item.description || 'item order'}` }, { status: 400 });
-            }
-        }
-
-        selectionSummaries.push(summarizeSelection(selection, item.description));
     }
 
     const doId = crypto.randomUUID();
@@ -1815,6 +2030,46 @@ export async function handleDeliveryOrderCreate(
     };
 
     const transaction = getSanityClient().transaction().create(doDoc);
+    if (usingDirectCargoInput) {
+        if (order.cargoEntryMode !== 'DELIVERY_ORDER') {
+            transaction.patch(orderRef, {
+                set: {
+                    cargoEntryMode: 'DELIVERY_ORDER',
+                },
+            });
+        }
+        for (const item of directCargoItems) {
+            const orderItemId = crypto.randomUUID();
+            const usesQtyBasis = item.qtyKoli > 0;
+            transaction.create({
+                ...buildOrderItemDraftDocument(orderRef, item, orderItemId, {
+                    entrySource: 'DELIVERY_ORDER',
+                    sourceDeliveryOrderRef: doId,
+                    sourceDeliveryOrderNumber: doNumber,
+                }),
+                assignedQtyKoli: usesQtyBasis ? item.qtyKoli : 0,
+                assignedWeight: item.weight,
+                assignedVolume: item.volume || 0,
+                status: 'ASSIGNED',
+            });
+            transaction.create({
+                _id: crypto.randomUUID(),
+                _type: 'deliveryOrderItem',
+                deliveryOrderRef: doId,
+                orderItemRef: orderItemId,
+                orderItemDescription: item.description,
+                orderItemQtyKoli: usesQtyBasis ? item.qtyKoli : undefined,
+                orderItemWeight: item.weight,
+                orderItemVolumeM3: item.volume,
+                orderItemWeightInputValue: item.weightInputValue,
+                orderItemWeightInputUnit: item.weightInputUnit,
+                orderItemVolumeInputValue: item.volumeInputValue,
+                orderItemVolumeInputUnit: item.volumeInputUnit,
+                shippedQtyKoli: usesQtyBasis ? item.qtyKoli : undefined,
+                shippedWeight: item.weight,
+            });
+        }
+    }
     for (const item of selectedItems) {
         const selection = selectionByItemId.get(item._id);
         if (!selection) {

@@ -336,7 +336,11 @@ export async function resolveOrderPickupData(customerRef: string, customerPickup
     return pickup;
 }
 
-export async function normalizeOrderItemsInput(customerRef: string, rawItems: unknown[]) {
+export async function normalizeOrderItemsInput(
+    customerRef: string,
+    rawItems: unknown[],
+    options?: { allowEmpty?: boolean }
+) {
     const items = rawItems
         .filter(isPlainObject)
         .filter(item => normalizeText(item.description) || normalizeOptionalText(item.customerProductRef))
@@ -383,6 +387,9 @@ export async function normalizeOrderItemsInput(customerRef: string, rawItems: un
         });
 
     if (items.length === 0) {
+        if (options?.allowEmpty) {
+            return items;
+        }
         throw new Error('Minimal 1 item order wajib diisi');
     }
 

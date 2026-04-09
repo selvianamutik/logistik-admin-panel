@@ -7,12 +7,12 @@ import {
     type VolumeInputUnit,
 } from './measurement';
 import {
-    createDefaultOrderItemForm,
     summarizeDraftOrderCargo,
     type OrderItemForm,
 } from './order-create-page-support';
 
 export type OrderEditFormState = {
+    cargoEntryMode: 'ORDER' | 'DELIVERY_ORDER';
     customerRef: string;
     customerName: string;
     customerRecipientRef: string;
@@ -34,6 +34,7 @@ export type OrderEditFormState = {
 };
 
 export const DEFAULT_ORDER_EDIT_FORM: OrderEditFormState = {
+    cargoEntryMode: 'ORDER',
     customerRef: '',
     customerName: '',
     customerRecipientRef: '',
@@ -60,6 +61,7 @@ export function buildOrderEditForm(order: Order | null): OrderEditFormState {
     }
 
     return {
+        cargoEntryMode: order.cargoEntryMode || 'ORDER',
         customerRef: order.customerRef,
         customerName: order.customerName || '',
         customerRecipientRef: order.customerRecipientRef || '',
@@ -127,8 +129,7 @@ export function mapOrderItemToOrderEditForm(item: OrderItem): OrderItemForm {
 }
 
 export function getOrderEditItems(orderItems: OrderItem[]) {
-    const mappedItems = (orderItems || []).map(mapOrderItemToOrderEditForm);
-    return mappedItems.length > 0 ? mappedItems : [createDefaultOrderItemForm()];
+    return (orderItems || []).map(mapOrderItemToOrderEditForm);
 }
 
 export function hasOrderItemOperationalProgress(orderItems: OrderItem[]) {

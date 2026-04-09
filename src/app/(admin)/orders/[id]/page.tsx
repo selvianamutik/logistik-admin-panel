@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '../../layout';
-import { Truck, FileText, Edit, Eye } from 'lucide-react';
+import { Truck, FileText, Edit, Eye, Plus, X } from 'lucide-react';
 import CurrencyInput from '@/components/CurrencyInput';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
@@ -38,8 +38,18 @@ import {
     type SelectedShipmentMap,
     summarizeSelectedShipments,
 } from '@/lib/order-detail-support';
+import {
+    applyCustomerProductToOrderItem,
+    createDefaultOrderItemForm,
+    getDraftOrderItems,
+    summarizeDraftOrderCargo,
+    updateOrderItemVolumeUnit,
+    updateOrderItemWeightUnit,
+    type OrderItemForm,
+} from '@/lib/order-create-page-support';
+import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
 import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
-import type { Customer, Order, OrderItem, DeliveryOrder, DeliveryOrderItem, Driver, FreightNota, FreightNotaItem, TripRouteRate, Vehicle } from '@/lib/types';
+import type { Customer, CustomerProduct, Order, OrderItem, DeliveryOrder, DeliveryOrderItem, Driver, FreightNota, FreightNotaItem, TripRouteRate, Vehicle } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import { useApp } from '../../layout';
@@ -58,6 +68,7 @@ export default function OrderDetailPage() {
     const [loading, setLoading] = useState(true);
     const [showDOModal, setShowDOModal] = useState(false);
     const [creatingDO, setCreatingDO] = useState(false);
+    const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
     // DO form
     const [doDate, setDoDate] = useState(getBusinessDateValue());
     const [doCustomerDoNumber, setDoCustomerDoNumber] = useState('');
@@ -71,6 +82,7 @@ export default function OrderDetailPage() {
     const [doNotes, setDoNotes] = useState('');
     const [shipperReferenceFormat, setShipperReferenceFormat] = useState('SJ');
     const [selectedShipments, setSelectedShipments] = useState<SelectedShipmentMap>({});
+    const [directCargoItems, setDirectCargoItems] = useState<OrderItemForm[]>([createDefaultOrderItemForm()]);
     const [vehicles, setVehicles] = useState<Array<Pick<Vehicle, '_id' | 'unitCode' | 'plateNumber' | 'serviceRef' | 'serviceName'>>>([]);
     const [busyVehicleIds, setBusyVehicleIds] = useState<string[]>([]);
     const [busyDriverIds, setBusyDriverIds] = useState<string[]>([]);
@@ -103,7 +115,7 @@ export default function OrderDetailPage() {
                 fetchAdminCollectionData<TripRouteRate[]>(`/api/data?entity=trip-route-rates&filter=${encodeURIComponent(JSON.stringify({ active: true }))}`, 'Gagal memuat detail order'),
             ]);
             const deliveryOrderIds = (deliveryOrders || []).map(item => item._id);
-            const [deliveryOrderItems, notaItems, customerData] = await Promise.all([
+            const [deliveryOrderItems, notaItems, customerData, customerProductData] = await Promise.all([
                 deliveryOrderIds.length > 0
                     ? fetchAdminCollectionData<DeliveryOrderItem[]>(`/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: deliveryOrderIds }))}`, 'Gagal memuat detail order')
                     : Promise.resolve([] as DeliveryOrderItem[]),
@@ -113,6 +125,12 @@ export default function OrderDetailPage() {
                 orderData?.customerRef
                     ? fetchAdminData<Pick<Customer, 'deliveryOrderPrefix'> | null>(`/api/data?entity=customers&id=${orderData.customerRef}`, 'Gagal memuat detail order')
                     : Promise.resolve(null),
+                orderData?.customerRef
+                    ? fetchAdminCollectionData<CustomerProduct[]>(
+                        `/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef: orderData.customerRef, active: true }))}`,
+                        'Gagal memuat detail order'
+                    )
+                    : Promise.resolve([] as CustomerProduct[]),
             ]);
             const notaIds = [...new Set((notaItems || []).map(item => item.notaRef).filter(Boolean))];
             const orderNotas = notaIds.length > 0
@@ -125,6 +143,7 @@ export default function OrderDetailPage() {
             setDoItems(deliveryOrderItems);
             setNotas([...(orderNotas || [])].sort((a, b) => `${b.issueDate || ''}-${b._id}`.localeCompare(`${a.issueDate || ''}-${a._id}`)));
             setShipperReferenceFormat((customerData?.deliveryOrderPrefix || 'SJ').toUpperCase());
+            setCustomerProducts((customerProductData || []).filter(product => product.active !== false));
             setTripRouteRates((tripRateData || []).filter(rate => rate.active !== false));
             const { busyVehicleIds: nextBusyVehicleIds, busyDriverIds: nextBusyDriverIds } = buildBusyAssignmentIds(activeDeliveryOrders || []);
             setVehicles(vehicleData || []);
@@ -249,8 +268,31 @@ export default function OrderDetailPage() {
         setSelectedShipments(nextSelections);
     };
 
+    const updateDirectCargoItem = <K extends keyof OrderItemForm>(idx: number, field: K, value: OrderItemForm[K]) => {
+        setDirectCargoItems(prev => prev.map((item, i) => (i === idx ? { ...item, [field]: value } : item)));
+    };
+
+    const addDirectCargoItem = () => {
+        setDirectCargoItems(prev => [...prev, createDefaultOrderItemForm()]);
+    };
+
+    const removeDirectCargoItem = (idx: number) => {
+        setDirectCargoItems(prev => {
+            const next = prev.filter((_, i) => i !== idx);
+            return next.length > 0 ? next : [createDefaultOrderItemForm()];
+        });
+    };
+
+    const applyDirectCargoProductSelection = (idx: number, nextProductRef: string) => {
+        const selectedProduct = customerProducts.find(product => product._id === nextProductRef);
+        setDirectCargoItems(prev => prev.map((item, i) => (
+            i === idx ? applyCustomerProductToOrderItem(item, selectedProduct) : item
+        )));
+    };
+
     const openCreateDOModal = () => {
         setSelectedShipments({});
+        setDirectCargoItems([createDefaultOrderItemForm()]);
         setDoTripRouteRateRef('');
         setDoTripOriginArea('');
         setDoTripDestinationArea('');
@@ -270,15 +312,25 @@ export default function OrderDetailPage() {
         itemCount: selectedShipmentItemCount,
         holdCount: selectedHoldCount,
     } = summarizeSelectedShipments(availableItems, selectedShipments, itemProgressById);
+    const isHeaderOnlyOrder = resolveOrderCargoEntryMode(order, items) === 'DELIVERY_ORDER';
+    const canCreateDeliveryOrder = availableItems.length > 0 || isHeaderOnlyOrder;
+    const draftDirectCargoItems = getDraftOrderItems(directCargoItems);
+    const directCargoSummary = summarizeDraftOrderCargo(directCargoItems);
 
     const handleCreateDO = async () => {
-        const selectedItems = buildCreateDeliveryOrderItems(
-            availableItems,
-            selectedShipments,
-            itemProgressById
-        );
+        const selectedItems = isHeaderOnlyOrder
+            ? []
+            : buildCreateDeliveryOrderItems(
+                availableItems,
+                selectedShipments,
+                itemProgressById
+            );
 
-        if (selectedItems.length === 0) {
+        if (isHeaderOnlyOrder && draftDirectCargoItems.length === 0) {
+            addToast('error', 'Isi minimal 1 barang untuk surat jalan');
+            return;
+        }
+        if (!isHeaderOnlyOrder && selectedItems.length === 0) {
             addToast('error', 'Pilih minimal 1 item untuk surat jalan');
             return;
         }
@@ -296,23 +348,44 @@ export default function OrderDetailPage() {
                 body: JSON.stringify({
                     entity: 'delivery-orders',
                     action: 'create-with-items',
-                    data: buildCreateDeliveryOrderRequestData({
-                        order,
-                        items: selectedItems,
-                        customerDoNumber: doCustomerDoNumber,
-                        tripRouteRateRef: doTripRouteRateRef,
-                        tripOriginArea: doTripOriginArea,
-                        tripDestinationArea: doTripDestinationArea,
-                        vehicleRef: doVehicle,
-                        selectedVehicle: selVeh,
-                        driverRef: doDriver,
-                        selectedDriver: selDriver,
-                        taripBorongan: matchedDoTripRouteRate?.rate ?? doTripFee,
-                        date: doDate,
-                        notes: doNotes,
-                        requiresVehicleOverrideReason,
-                        vehicleOverrideReason: doVehicleOverrideReason,
-                    }),
+                    data: isHeaderOnlyOrder
+                        ? {
+                            orderRef: order?._id,
+                            masterResi: order?.masterResi,
+                            customerDoNumber: doCustomerDoNumber.trim() || undefined,
+                            tripRouteRateRef: doTripRouteRateRef || undefined,
+                            tripOriginArea: doTripOriginArea || undefined,
+                            tripDestinationArea: doTripDestinationArea || undefined,
+                            vehicleRef: doVehicle || undefined,
+                            vehiclePlate: selVeh?.plateNumber || '',
+                            vehicleCategoryOverrideReason: requiresVehicleOverrideReason ? doVehicleOverrideReason.trim() : undefined,
+                            driverRef: doDriver || undefined,
+                            driverName: selDriver?.name || '',
+                            taripBorongan: matchedDoTripRouteRate?.rate ?? doTripFee,
+                            date: doDate,
+                            notes: doNotes,
+                            customerName: order?.customerName,
+                            receiverName: order?.receiverName,
+                            receiverAddress: order?.receiverAddress,
+                            cargoItems: draftDirectCargoItems,
+                        }
+                        : buildCreateDeliveryOrderRequestData({
+                            order,
+                            items: selectedItems,
+                            customerDoNumber: doCustomerDoNumber,
+                            tripRouteRateRef: doTripRouteRateRef,
+                            tripOriginArea: doTripOriginArea,
+                            tripDestinationArea: doTripDestinationArea,
+                            vehicleRef: doVehicle,
+                            selectedVehicle: selVeh,
+                            driverRef: doDriver,
+                            selectedDriver: selDriver,
+                            taripBorongan: matchedDoTripRouteRate?.rate ?? doTripFee,
+                            date: doDate,
+                            notes: doNotes,
+                            requiresVehicleOverrideReason,
+                            vehicleOverrideReason: doVehicleOverrideReason,
+                        }),
                 }),
             });
             const doData = await doRes.json();
@@ -327,6 +400,7 @@ export default function OrderDetailPage() {
             );
             setShowDOModal(false);
             setSelectedShipments({});
+            setDirectCargoItems([createDefaultOrderItemForm()]);
             setDoCustomerDoNumber('');
             setDoVehicle('');
             setDoDriver('');
@@ -456,8 +530,8 @@ export default function OrderDetailPage() {
                     </div>
                 </div>
                 <div className="page-actions">
-                    <button className="btn btn-primary" onClick={openCreateDOModal} disabled={availableItems.length === 0}>
-                        <Truck size={16} /> Buat Surat Jalan
+                    <button className="btn btn-primary" onClick={openCreateDOModal} disabled={!canCreateDeliveryOrder}>
+                        <Truck size={16} /> {isHeaderOnlyOrder && dos.length > 0 ? 'Tambah Surat Jalan' : 'Buat Surat Jalan'}
                     </button>
                     {canCreateInvoice && (
                         <button className="btn btn-secondary" onClick={() => router.push('/invoices/new')}>
@@ -477,21 +551,27 @@ export default function OrderDetailPage() {
             {/* Progress Bar */}
             <div className="card mb-6">
                 <div className="card-body">
+                    {isHeaderOnlyOrder && (
+                        <div style={{ marginBottom: '0.85rem', padding: '0.85rem 1rem', borderRadius: '0.75rem', border: '1px solid var(--color-gray-200)', background: 'var(--color-gray-50)', fontSize: '0.82rem', color: 'var(--color-gray-700)' }}>
+                            {dos.length > 0
+                                ? 'Order ini memakai flow header booking. Manifest barang tersimpan per Surat Jalan, bukan di header order.'
+                                : 'Order ini masih berupa header booking. Barang, koli, dan berat akan dicatat saat Surat Jalan pertama dibuat.'}
+                        </div>
+                    )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 'var(--font-size-sm)' }}>
                         <span className="font-semibold">Progress Pengiriman Aktual</span>
                         <span className="text-muted">
-                            {formatCargoSummary({
-                                qtyKoli: totalDeliveredActualCargo.qtyKoli,
-                                weightKg: totalDeliveredActualCargo.weightKg,
-                                volumeM3: totalDeliveredActualCargo.volumeM3,
-                            })}
-                            {' / '}
-                            {formatCargoSummary({
-                                qtyKoli: totalOrderCargo.qtyKoli,
-                                weightKg: totalOrderCargo.weightKg,
-                                volumeM3: totalOrderCargo.volumeM3,
-                            })}{' '}
-                            ({progress}%)
+                            {hasCargoAggregate(totalOrderCargo)
+                                ? `${formatCargoSummary({
+                                    qtyKoli: totalDeliveredActualCargo.qtyKoli,
+                                    weightKg: totalDeliveredActualCargo.weightKg,
+                                    volumeM3: totalDeliveredActualCargo.volumeM3,
+                                })} / ${formatCargoSummary({
+                                    qtyKoli: totalOrderCargo.qtyKoli,
+                                    weightKg: totalOrderCargo.weightKg,
+                                    volumeM3: totalOrderCargo.volumeM3,
+                                })} (${progress}%)`
+                                : 'Belum ada muatan tercatat'}
                         </span>
                     </div>
                     <div className="progress-bar">
@@ -532,14 +612,16 @@ export default function OrderDetailPage() {
 
             <div className="detail-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="card">
-                    <div className="card-header"><span className="card-header-title">Target Order Saat Ini</span></div>
+                    <div className="card-header"><span className="card-header-title">{isHeaderOnlyOrder ? 'Muatan Tercatat di DO' : 'Target Order Saat Ini'}</span></div>
                     <div className="card-body">
                         <div className="detail-value" style={{ fontSize: '1.1rem', fontWeight: 700 }}>
-                            {formatCargoSummary({
-                                qtyKoli: totalOrderCargo.qtyKoli,
-                                weightKg: totalOrderCargo.weightKg,
-                                volumeM3: totalOrderCargo.volumeM3,
-                            })}
+                            {hasCargoAggregate(totalOrderCargo)
+                                ? formatCargoSummary({
+                                    qtyKoli: totalOrderCargo.qtyKoli,
+                                    weightKg: totalOrderCargo.weightKg,
+                                    volumeM3: totalOrderCargo.volumeM3,
+                                })
+                                : 'Belum dicatat'}
                         </div>
                     </div>
                 </div>
@@ -605,13 +687,22 @@ export default function OrderDetailPage() {
             {/* Items */}
             <div className="card mt-6">
                 <div className="card-header">
-                    <span className="card-header-title">Item / Koli ({items.length})</span>
+                    <span className="card-header-title">{isHeaderOnlyOrder ? `Barang / Manifest DO (${dos.length})` : `Item / Koli (${items.length})`}</span>
                 </div>
-                <div className="table-wrapper">
-                    <table>
-                        <thead><tr><th>Deskripsi</th><th>Koli</th><th>Muatan</th><th>Progress</th><th>Status</th><th>Aksi</th></tr></thead>
-                        <tbody>
-                            {items.map(item => {
+                {isHeaderOnlyOrder ? (
+                    <div className="card-body">
+                        <div style={{ padding: '1rem 1.1rem', borderRadius: '0.75rem', background: 'var(--color-gray-50)', border: '1px solid var(--color-gray-200)', fontSize: '0.85rem', color: 'var(--color-gray-700)' }}>
+                            {dos.length > 0
+                                ? 'Order ini tidak menyimpan item target di header. Lihat detail Surat Jalan untuk manifest barang, koli, dan muatan yang sudah dicatat admin.'
+                                : 'Belum ada item target di order ini. Barang akan dicatat saat admin membuat Surat Jalan berdasarkan dokumen dari pengirim.'}
+                        </div>
+                    </div>
+                ) : (
+                    <div className="table-wrapper">
+                        <table>
+                            <thead><tr><th>Deskripsi</th><th>Koli</th><th>Muatan</th><th>Progress</th><th>Status</th><th>Aksi</th></tr></thead>
+                            <tbody>
+                                {items.map(item => {
                                 const activeAssignment = activeAssignmentByItemId[item._id];
                                 const doItem = doItemByOrderItemId[item._id];
                                 const progressInfo = itemProgressById[item._id];
@@ -721,9 +812,10 @@ export default function OrderDetailPage() {
                                 </tr>
                                 );
                             })}
-                        </tbody>
-                    </table>
-                </div>
+                            </tbody>
+                        </table>
+                    </div>
+                )}
             </div>
 
             {/* DOs */}
@@ -950,46 +1042,167 @@ export default function OrderDetailPage() {
                                 <label className="form-label">Catatan</label>
                                 <textarea className="form-textarea" rows={2} value={doNotes} onChange={e => setDoNotes(e.target.value)} placeholder="Catatan opsional..." disabled={creatingDO} />
                             </div>
-                            <div className="form-section-title">Pilih Item untuk DO</div>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
-                                <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
-                                    <div className="text-muted text-sm">Item dipilih</div>
-                                    <div className="font-semibold" style={{ fontSize: '1.1rem', marginTop: '0.2rem' }}>{selectedShipmentItemCount} item</div>
-                                </div>
-                                <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
-                                    <div className="text-muted text-sm">Muatan trip ini</div>
-                                    <div className="font-semibold" style={{ fontSize: '0.95rem', marginTop: '0.2rem' }}>
-                                        {selectedShipmentItemCount > 0 ? formatCargoSummary(selectedShipmentTotals) : 'Belum ada item dipilih'}
+                            <div className="form-section-title">{isHeaderOnlyOrder ? 'Input Barang Surat Jalan' : 'Pilih Item untuk DO'}</div>
+                            {isHeaderOnlyOrder ? (
+                                <>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
+                                        <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
+                                            <div className="text-muted text-sm">Barang dicatat</div>
+                                            <div className="font-semibold" style={{ fontSize: '1.1rem', marginTop: '0.2rem' }}>{draftDirectCargoItems.length} item</div>
+                                        </div>
+                                        <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
+                                            <div className="text-muted text-sm">Muatan rencana</div>
+                                            <div className="font-semibold" style={{ fontSize: '0.95rem', marginTop: '0.2rem' }}>
+                                                {draftDirectCargoItems.length > 0 ? formatCargoSummary(directCargoSummary) : 'Belum ada barang'}
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
-                                <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
-                                    <div className="text-muted text-sm">Item ditahan</div>
-                                    <div className="font-semibold" style={{ fontSize: '1.1rem', marginTop: '0.2rem' }}>{selectedHoldCount} item</div>
-                                </div>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.9rem' }}>
-                                <div className="text-muted text-sm">
-                                    {selectedShipmentItemCount > 0
-                                        ? 'Trip ini sudah siap dibuat. Koreksi hanya item yang memang perlu parsial atau hold.'
-                                        : 'Belum ada item dipilih. Untuk trip normal, gunakan pilih semua yang siap jalan.'}
-                                </div>
-                                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                    <button type="button" className="btn btn-secondary btn-sm" onClick={selectAllAvailableItems} disabled={creatingDO || availableItems.length === 0}>
-                                        Pilih Semua Siap Jalan
-                                    </button>
-                                    <button type="button" className="btn btn-secondary btn-sm" onClick={clearSelectedShipments} disabled={creatingDO || selectedShipmentItemCount === 0}>
-                                        Kosongkan Pilihan
-                                    </button>
-                                </div>
-                            </div>
-                            {availableItems.length === 0 ? (
-                                <p className="text-muted text-sm">Semua item sudah masuk surat jalan</p>
+                                    <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '0.85rem 1rem', marginBottom: '1rem', fontSize: '0.82rem', color: 'var(--color-gray-700)', border: '1px solid var(--color-gray-200)' }}>
+                                        Karena order ini masih berupa header booking, barang, koli, dan muatan dicatat langsung di Surat Jalan ini.
+                                    </div>
+                                    <div style={{ display: 'grid', gap: '0.85rem' }}>
+                                        {directCargoItems.map((item, idx) => (
+                                            <div key={`direct-cargo-${idx}`} style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', padding: 12, background: 'var(--color-gray-50)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-gray-200)' }}>
+                                                <div style={{ flex: '1 1 240px' }}>
+                                                    <label className="form-label">Barang Customer</label>
+                                                    <select
+                                                        className="form-select"
+                                                        value={item.customerProductRef}
+                                                        onChange={e => applyDirectCargoProductSelection(idx, e.target.value)}
+                                                        disabled={creatingDO || !order.customerRef}
+                                                    >
+                                                        <option value="">{customerProducts.length > 0 ? 'Pilih dari master barang customer (opsional)' : 'Belum ada master barang customer'}</option>
+                                                        {customerProducts.map(product => (
+                                                            <option key={product._id} value={product._id}>
+                                                                {product.code ? `${product.code} - ` : ''}{product.name}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                                <div style={{ flex: '2 1 260px' }}>
+                                                    <label className="form-label">Deskripsi Barang</label>
+                                                    <input
+                                                        className="form-input"
+                                                        value={item.description}
+                                                        onChange={e => updateDirectCargoItem(idx, 'description', e.target.value)}
+                                                        placeholder="Mis. Oli Diesel 10W-40 / Beras 50 kg / Keramik"
+                                                        disabled={creatingDO}
+                                                    />
+                                                </div>
+                                                <div style={{ flex: '0 1 110px' }}>
+                                                    <label className="form-label">Koli</label>
+                                                    <FormattedNumberInput
+                                                        min={0}
+                                                        allowDecimal={false}
+                                                        value={item.qtyKoli}
+                                                        onValueChange={value => updateDirectCargoItem(idx, 'qtyKoli', value)}
+                                                        disabled={creatingDO}
+                                                    />
+                                                </div>
+                                                <div style={{ flex: '1 1 180px' }}>
+                                                    <label className="form-label">Berat</label>
+                                                    <div style={{ display: 'flex', gap: 8 }}>
+                                                        <FormattedNumberInput
+                                                            min={0}
+                                                            maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
+                                                            value={item.weightInputValue}
+                                                            onValueChange={value => updateDirectCargoItem(idx, 'weightInputValue', value)}
+                                                            disabled={creatingDO}
+                                                        />
+                                                        <select
+                                                            className="form-select"
+                                                            value={item.weightInputUnit}
+                                                            onChange={e => setDirectCargoItems(prev => prev.map((entry, i) => (
+                                                                i === idx ? updateOrderItemWeightUnit(entry, e.target.value as WeightInputUnit) : entry
+                                                            )))}
+                                                            style={{ width: 92 }}
+                                                            disabled={creatingDO}
+                                                        >
+                                                            {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                <div style={{ flex: '1 1 180px' }}>
+                                                    <label className="form-label">Volume</label>
+                                                    <div style={{ display: 'flex', gap: 8 }}>
+                                                        <FormattedNumberInput
+                                                            min={0}
+                                                            maxFractionDigits={item.volumeInputUnit === 'LITER' ? 0 : 3}
+                                                            value={item.volumeInputValue}
+                                                            onValueChange={value => updateDirectCargoItem(idx, 'volumeInputValue', value)}
+                                                            disabled={creatingDO}
+                                                        />
+                                                        <select
+                                                            className="form-select"
+                                                            value={item.volumeInputUnit}
+                                                            onChange={e => setDirectCargoItems(prev => prev.map((entry, i) => (
+                                                                i === idx ? updateOrderItemVolumeUnit(entry, e.target.value as VolumeInputUnit) : entry
+                                                            )))}
+                                                            style={{ width: 92 }}
+                                                            disabled={creatingDO}
+                                                        >
+                                                            {VOLUME_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                {directCargoItems.length > 1 && (
+                                                    <button type="button" className="btn btn-ghost btn-icon-only" onClick={() => removeDirectCargoItem(idx)} disabled={creatingDO} style={{ marginBottom: 4 }}>
+                                                        <X size={18} />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginTop: '1rem' }}>
+                                        <div className="text-muted text-sm">
+                                            Input minimal 1 barang sesuai manifest dari pengirim. Truk, supir, dan muatan akan terkunci setelah Surat Jalan dibuat.
+                                        </div>
+                                        <button type="button" className="btn btn-secondary btn-sm" onClick={addDirectCargoItem} disabled={creatingDO}>
+                                            <Plus size={14} /> Tambah Barang
+                                        </button>
+                                    </div>
+                                </>
                             ) : (
-                                <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-                                    <table>
-                                        <thead><tr><th style={{ width: 40 }}></th><th>Item</th><th>Progress</th><th>Rencana Kirim</th><th>Tahan Sisa (Opsional)</th></tr></thead>
-                                        <tbody>
-                                            {availableItems.map(item => {
+                                <>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
+                                        <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
+                                            <div className="text-muted text-sm">Item dipilih</div>
+                                            <div className="font-semibold" style={{ fontSize: '1.1rem', marginTop: '0.2rem' }}>{selectedShipmentItemCount} item</div>
+                                        </div>
+                                        <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
+                                            <div className="text-muted text-sm">Muatan trip ini</div>
+                                            <div className="font-semibold" style={{ fontSize: '0.95rem', marginTop: '0.2rem' }}>
+                                                {selectedShipmentItemCount > 0 ? formatCargoSummary(selectedShipmentTotals) : 'Belum ada item dipilih'}
+                                            </div>
+                                        </div>
+                                        <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
+                                            <div className="text-muted text-sm">Item ditahan</div>
+                                            <div className="font-semibold" style={{ fontSize: '1.1rem', marginTop: '0.2rem' }}>{selectedHoldCount} item</div>
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.9rem' }}>
+                                        <div className="text-muted text-sm">
+                                            {selectedShipmentItemCount > 0
+                                                ? 'Trip ini sudah siap dibuat. Koreksi hanya item yang memang perlu parsial atau hold.'
+                                                : 'Belum ada item dipilih. Untuk trip normal, gunakan pilih semua yang siap jalan.'}
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                            <button type="button" className="btn btn-secondary btn-sm" onClick={selectAllAvailableItems} disabled={creatingDO || availableItems.length === 0}>
+                                                Pilih Semua Siap Jalan
+                                            </button>
+                                            <button type="button" className="btn btn-secondary btn-sm" onClick={clearSelectedShipments} disabled={creatingDO || selectedShipmentItemCount === 0}>
+                                                Kosongkan Pilihan
+                                            </button>
+                                        </div>
+                                    </div>
+                                    {availableItems.length === 0 ? (
+                                        <p className="text-muted text-sm">Semua item sudah masuk surat jalan</p>
+                                    ) : (
+                                        <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                                            <table>
+                                                <thead><tr><th style={{ width: 40 }}></th><th>Item</th><th>Progress</th><th>Rencana Kirim</th><th>Tahan Sisa (Opsional)</th></tr></thead>
+                                                <tbody>
+                                                    {availableItems.map(item => {
                                                 const selection = selectedShipments[item._id];
                                                 const progressInfo = itemProgressById[item._id];
                                                 const usesQtyBasis = progressInfo.totalQtyKoli > 0;
@@ -1345,15 +1558,25 @@ export default function OrderDetailPage() {
                                                     </tr>
                                                 );
                                             })}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+                                </>
                             )}
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setShowDOModal(false)} disabled={creatingDO}>Batal</button>
-                            <button className="btn btn-primary" onClick={handleCreateDO} disabled={Object.keys(selectedShipments).length === 0 || creatingDO}>
-                                <Truck size={16} /> {creatingDO ? 'Membuat Surat Jalan...' : `Buat Surat Jalan (${Object.keys(selectedShipments).length} item)`}
+                            <button
+                                className="btn btn-primary"
+                                onClick={handleCreateDO}
+                                disabled={creatingDO || (isHeaderOnlyOrder ? draftDirectCargoItems.length === 0 : Object.keys(selectedShipments).length === 0)}
+                            >
+                                <Truck size={16} /> {creatingDO
+                                    ? 'Membuat Surat Jalan...'
+                                    : isHeaderOnlyOrder
+                                        ? `Buat Surat Jalan (${draftDirectCargoItems.length} barang)`
+                                        : `Buat Surat Jalan (${Object.keys(selectedShipments).length} item)`}
                             </button>
                         </div>
                     </div>
