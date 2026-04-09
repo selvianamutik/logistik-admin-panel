@@ -12,6 +12,7 @@ import {
     EMPTY_VEHICLE_FORM,
     getSelectableVehicleServiceOptions,
     getVehicleSections,
+    hasInvalidCapacityRange,
     mapVehicleToForm,
     type VehicleForm,
 } from '@/lib/fleet-vehicle-page-support';
@@ -70,6 +71,10 @@ export default function VehicleEditPage() {
         }
         if (!form.serviceRef) {
             addToast('error', 'Kategori armada wajib dipilih');
+            return;
+        }
+        if (hasInvalidCapacityRange(form)) {
+            addToast('error', 'Kapasitas maks tidak boleh lebih kecil dari kapasitas min');
             return;
         }
 
@@ -192,7 +197,18 @@ export default function VehicleEditPage() {
                         <div className="card-header"><span className="card-header-title">Spesifikasi</span></div>
                         <div className="card-body">
                             <div className="form-row">
-                                <div className="form-group"><label className="form-label">Kapasitas (kg)</label><FormattedNumberInput allowDecimal={false} value={form.capacityKg} onValueChange={value => setForm({ ...form, capacityKg: value })} /></div>
+                                <div className="form-group"><label className="form-label">Ukuran</label><input className="form-input" value={form.size} onChange={e => setForm({ ...form, size: e.target.value })} placeholder="Medium / Large / CDD" /></div>
+                                <div className="form-group"><label className="form-label">Dimensi</label><input className="form-input" value={form.dimension} onChange={e => setForm({ ...form, dimension: e.target.value })} placeholder="P x L x T" /></div>
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Kapasitas (ton)</label>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)', gap: '0.75rem', alignItems: 'center' }}>
+                                        <input className="form-input" value={form.capacityMin} onChange={e => setForm({ ...form, capacityMin: e.target.value })} placeholder="Min" />
+                                        <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>-</span>
+                                        <input className="form-input" value={form.capacityMax} onChange={e => setForm({ ...form, capacityMax: e.target.value })} placeholder="Maks" />
+                                    </div>
+                                </div>
                                 <div className="form-group"><label className="form-label">Volume (m3)</label><FormattedNumberInput maxFractionDigits={3} value={form.capacityVolume} onValueChange={value => setForm({ ...form, capacityVolume: value })} /></div>
                             </div>
                             {isOwner && <div className="form-row">
