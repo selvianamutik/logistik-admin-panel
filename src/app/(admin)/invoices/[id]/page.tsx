@@ -409,7 +409,7 @@ export default function NotaDetailPage() {
     const totalBilledWeightLabel = formatFreightNotaDisplayWeight({
         beratKg: nota.totalWeightKg || 0,
         billingMode,
-        includeCanonical: billingMode === 'PER_TON',
+        includeCanonical: false,
     });
 
     return (
@@ -454,8 +454,8 @@ export default function NotaDetailPage() {
                             <div className="detail-item"><div className="detail-label">Total Collie</div><div className="detail-value">{formatQuantity(nota.totalCollie || 0)}</div></div>
                         </div>
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">Total Berat Ditagihkan</div><div className="detail-value">{totalBilledWeightLabel}</div></div>
-                            <div className="detail-item"><div className="detail-label">Total Berat Canonical</div><div className="detail-value">{formatQuantity(nota.totalWeightKg || 0)} kg</div></div>
+                            <div className="detail-item"><div className="detail-label">Dasar Tagihan Final</div><div className="detail-value">{totalBilledWeightLabel}</div></div>
+                            <div className="detail-item"><div className="detail-label">Berat Final Sistem (Kg)</div><div className="detail-value">{formatQuantity(nota.totalWeightKg || 0)} kg</div></div>
                         </div>
                         <div className="detail-row">
                             <div className="detail-item"><div className="detail-label">Tagihan Final</div><div className="detail-value font-semibold">{formatCurrency(netAmount)}</div></div>

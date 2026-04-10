@@ -783,7 +783,7 @@ export async function exportInvoices(invoices: Record<string, unknown>[]) {
             { header: 'Jatuh Tempo', key: 'dueDate', width: 18, formatter: (value) => value ? fmtDate(String(value)) : '-' },
             { header: 'Total Collie', key: 'totalCollie', width: 14 },
             {
-                header: 'Total Berat Tagih',
+                header: 'Dasar Tagihan',
                 key: 'totalWeightKg',
                 width: 18,
                 formatter: (value, row) => formatFreightNotaDisplayWeight({
@@ -792,7 +792,7 @@ export async function exportInvoices(invoices: Record<string, unknown>[]) {
                     includeCanonical: false,
                 }),
             },
-            { header: 'Total Berat (Kg)', key: 'totalWeightKg', width: 16 },
+            { header: 'Berat Final Sistem (Kg)', key: 'totalWeightKg', width: 20 },
             { header: 'Tagihan Final', key: 'netAmount', width: 18 },
             { header: 'Status', key: 'status', width: 14 },
         ],

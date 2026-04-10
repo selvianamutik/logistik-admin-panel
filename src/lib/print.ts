@@ -465,7 +465,7 @@ export function buildFreightNotaPrintDocument(opts: {
                                 <td>${escapePrintHtml(dueDateLabel)}</td>
                             </tr>
                             <tr>
-                                <td>Total Berat Ditagihkan</td>
+                                <td>Dasar Tagihan Final</td>
                                 <td>${escapePrintHtml(billedWeightLabel)}</td>
                             </tr>
                         </tbody>
