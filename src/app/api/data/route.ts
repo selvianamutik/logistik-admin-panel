@@ -26,6 +26,7 @@ import {
     handleCustomerReceiptCreate,
     handleExpenseCreate,
     handleFreightNotaCreate,
+    handleFreightNotaDelete,
     handleInvoiceAdjustmentCreate,
     handleInvoiceAdjustmentDelete,
     handleInvoiceAdjustmentUpdate,
@@ -1326,6 +1327,10 @@ export async function POST(request: Request) {
 
         if (entity === 'freight-notas' && action === 'create-with-items') {
             return await handleFreightNotaCreate(session, data, addAuditLog);
+        }
+
+        if (entity === 'freight-notas' && action === 'delete') {
+            return await handleFreightNotaDelete(session, data, addAuditLog);
         }
 
         if (entity === 'invoices' && action === 'create-with-items') {

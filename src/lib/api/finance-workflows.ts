@@ -1909,6 +1909,7 @@ export async function handleFreightNotaCreate(
     const deliveryOrders = uniqueDoRefs.length > 0
         ? await getSanityClient().fetch<Array<{
             _id: string;
+            _rev?: string;
             status?: string;
             orderRef?: unknown;
             doNumber?: string;
@@ -1917,9 +1918,11 @@ export async function handleFreightNotaCreate(
             pickupAddress?: string;
             receiverAddress?: string;
             date?: string;
+            freightNotaRef?: unknown;
         }>>(
             `*[_type == "deliveryOrder" && _id in $ids]{
                 _id,
+                _rev,
                 status,
                 orderRef,
                 doNumber,
@@ -1927,7 +1930,8 @@ export async function handleFreightNotaCreate(
                 vehiclePlate,
                 pickupAddress,
                 receiverAddress,
-                date
+                date,
+                freightNotaRef
             }`,
             { ids: uniqueDoRefs }
         )
@@ -2162,6 +2166,13 @@ export async function handleFreightNotaCreate(
     }
 
     if (uniqueDoRefs.length > 0) {
+        const lockedDeliveryOrder = deliveryOrders.find(item => normalizeOptionalText(item.freightNotaRef));
+        if (lockedDeliveryOrder) {
+            return NextResponse.json(
+                { error: `DO ${lockedDeliveryOrder.doNumber || lockedDeliveryOrder._id} sudah tercantum di nota lain` },
+                { status: 409 }
+            );
+        }
         const existingNotaItems = await getSanityClient().fetch<Array<{ doRef?: string; doNumber?: string }>>(
             `*[_type == "freightNotaItem" && doRef in $ids]{ doRef, doNumber }`,
             { ids: uniqueDoRefs }
@@ -2363,6 +2374,21 @@ export async function handleFreightNotaCreate(
     };
 
     const transaction = getSanityClient().transaction().create(notaDoc);
+    for (const deliveryOrder of deliveryOrders) {
+        if (!deliveryOrder._rev) {
+            return NextResponse.json(
+                { error: `Revisi surat jalan ${deliveryOrder.doNumber || deliveryOrder._id} tidak tersedia` },
+                { status: 409 }
+            );
+        }
+        transaction.patch(deliveryOrder._id, {
+            ifRevisionID: deliveryOrder._rev,
+            set: {
+                freightNotaRef: notaId,
+                freightNotaNumber: notaNumber,
+            },
+        });
+    }
     for (const row of rows) {
         transaction.create({
             _id: crypto.randomUUID(),
@@ -2385,7 +2411,18 @@ export async function handleFreightNotaCreate(
         });
     }
 
-    await transaction.commit();
+    try {
+        await transaction.commit();
+    } catch (error) {
+        const message = error instanceof Error ? error.message : '';
+        if (/revision|conflict|document/i.test(message)) {
+            return NextResponse.json(
+                { error: 'DO berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
     await addAuditLog(session, 'CREATE', 'freight-notas', notaId, `Created freight-notas: ${notaNumber}`);
     return NextResponse.json({ data: notaDoc, id: notaId });
 }
@@ -2425,12 +2462,39 @@ export async function handleFreightNotaDelete(
         `*[_type == "freightNotaItem" && notaRef == $ref]._id`,
         { ref: id }
     );
+    const relatedDeliveryOrders = await getSanityClient().fetch<Array<{ _id: string; _rev?: string; freightNotaRef?: unknown }>>(
+        `*[_type == "deliveryOrder" && freightNotaRef == $ref]{ _id, _rev, freightNotaRef }`,
+        { ref: id }
+    );
     const transaction = getSanityClient().transaction();
     for (const itemId of itemIds) {
         transaction.delete(itemId);
     }
+    for (const deliveryOrder of relatedDeliveryOrders) {
+        if (!deliveryOrder._rev) {
+            return NextResponse.json(
+                { error: `Revisi surat jalan ${deliveryOrder._id} tidak tersedia` },
+                { status: 409 }
+            );
+        }
+        transaction.patch(deliveryOrder._id, {
+            ifRevisionID: deliveryOrder._rev,
+            unset: ['freightNotaRef', 'freightNotaNumber'],
+        });
+    }
     transaction.delete(id);
-    await transaction.commit();
+    try {
+        await transaction.commit();
+    } catch (error) {
+        const message = error instanceof Error ? error.message : '';
+        if (/revision|conflict|document/i.test(message)) {
+            return NextResponse.json(
+                { error: 'Nota berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
 
     await addAuditLog(session, 'DELETE', 'freight-notas', id, `Deleted freight-notas ${nota.notaNumber || id}`);
     return NextResponse.json({ success: true });
