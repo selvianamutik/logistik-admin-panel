@@ -207,6 +207,13 @@ export async function POST(request: Request) {
                 };
 
         if (action === 'start' || action === 'resume') {
+            if (!extractRefId(deliveryOrder.vehicleRef) || !extractRefId(deliveryOrder.driverRef)) {
+                return jsonNoStore(
+                    { error: 'Armada trip belum lengkap. Minta admin isi kendaraan dan supir dulu sebelum tracking dimulai.' },
+                    { status: 409 }
+                );
+            }
+
             const currentTrackingState = deliveryOrder.trackingState || 'STOPPED';
 
             if (action === 'start') {

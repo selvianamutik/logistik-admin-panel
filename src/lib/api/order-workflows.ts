@@ -1024,6 +1024,22 @@ export async function handleDeliveryOrderStatusUpdate(
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
     }
 
+    const hasTripVehicle = Boolean(extractRefId(deliveryOrder.vehicleRef));
+    const hasTripDriver = Boolean(extractRefId(deliveryOrder.driverRef));
+    const requiresTripResources =
+        status === 'HEADING_TO_PICKUP' ||
+        status === 'ON_DELIVERY' ||
+        status === 'ARRIVED' ||
+        status === 'DELIVERED';
+    if (requiresTripResources && (!hasTripVehicle || !hasTripDriver)) {
+        return NextResponse.json(
+            {
+                error: 'Armada trip belum lengkap. Isi kendaraan dan supir dulu sebelum DO dijalankan atau diselesaikan.',
+            },
+            { status: 409 }
+        );
+    }
+
     if (deliveryOrder.pendingDriverStatus && status !== deliveryOrder.pendingDriverStatus) {
         return NextResponse.json(
             {

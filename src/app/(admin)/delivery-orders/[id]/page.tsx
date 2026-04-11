@@ -663,7 +663,9 @@ export default function DODetailPage() {
     if (loading) return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 200 }} /></div>;
     if (!doData) return <div className="empty-state"><div className="empty-state-title">Surat Jalan tidak ditemukan</div></div>;
 
+    const hasTripResourcesAssigned = Boolean(doData.vehicleRef && doData.driverRef);
     const nextStatuses = getNextDeliveryOrderStatuses(doData.status);
+    const availableNextStatuses = nextStatuses.filter(status => status === 'CANCELLED' || hasTripResourcesAssigned);
     const tripResourceActionLabel = getTripResourceActionLabel(doData);
     const tripResourceBusyIds = buildTripResourceBusyIds(activeDeliveryOrders, doData._id);
     const assignableVehicles = getAssignableTripVehicles({
@@ -726,7 +728,7 @@ export default function DODetailPage() {
         canManageTripFee ||
         canCreateTripCash ||
         canOpenTripCashPage ||
-        (canManageDeliveryStatus && nextStatuses.includes('CANCELLED'));
+        (canManageDeliveryStatus && availableNextStatuses.includes('CANCELLED'));
     const {
         actualCargoTotals,
         autoActualDropDraft,
@@ -775,9 +777,9 @@ export default function DODetailPage() {
                             <Truck size={16} /> {tripResourceActionLabel}
                         </button>
                     )}
-                    {nextStatuses.length > 0 && canManageDeliveryStatus && !doData.pendingDriverStatus && (
+                    {availableNextStatuses.length > 0 && canManageDeliveryStatus && !doData.pendingDriverStatus && (
                         <button className="btn btn-primary" onClick={() => openStatusModal()}>
-                            <Truck size={16} /> {nextStatuses.includes('DELIVERED') ? 'Lanjut / Selesaikan DO' : 'Ubah Status'}
+                            <Truck size={16} /> {availableNextStatuses.includes('DELIVERED') ? 'Lanjut / Selesaikan DO' : 'Ubah Status'}
                         </button>
                     )}
                     {doData.status === 'DELIVERED' && !doData.podReceiverName && canManageDeliveryStatus && (
@@ -904,7 +906,7 @@ export default function DODetailPage() {
                                     <Wallet size={14} /> Terbitkan Uang Jalan
                                 </Link>
                             )}
-                            {canManageDeliveryStatus && nextStatuses.includes('CANCELLED') && (
+                            {canManageDeliveryStatus && availableNextStatuses.includes('CANCELLED') && (
                                 <button className="btn btn-secondary btn-sm" onClick={() => openStatusModal('CANCELLED')}>
                                     Batalkan Surat Jalan
                                 </button>
@@ -1594,7 +1596,7 @@ export default function DODetailPage() {
                                 ) : (
                                     <select className="form-select" value={newStatus} onChange={e => setNewStatus(e.target.value)} disabled={updatingStatus}>
                                         <option value="">Pilih status</option>
-                                        {nextStatuses.map(s => <option key={s} value={s}>{DO_STATUS_MAP[s]?.label || s}</option>)}
+                                        {availableNextStatuses.map(s => <option key={s} value={s}>{DO_STATUS_MAP[s]?.label || s}</option>)}
                                     </select>
                                 )}
                             </div>
