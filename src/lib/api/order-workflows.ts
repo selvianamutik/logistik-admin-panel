@@ -1024,6 +1024,15 @@ export async function handleDeliveryOrderStatusUpdate(
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
     }
 
+    if (deliveryOrder.pendingDriverStatus && status !== deliveryOrder.pendingDriverStatus) {
+        return NextResponse.json(
+            {
+                error: `DO ${deliveryOrder.doNumber || id} sedang menunggu approval permintaan driver ${deliveryOrder.pendingDriverStatus}. Review/approve atau tolak dulu sebelum ganti ke status lain.`,
+            },
+            { status: 409 }
+        );
+    }
+
     const allowedStatuses = DO_STATUS_TRANSITIONS[deliveryOrder.status || ''] || [];
     if (!allowedStatuses.includes(status)) {
         return NextResponse.json({ error: 'Transisi status DO tidak valid' }, { status: 400 });

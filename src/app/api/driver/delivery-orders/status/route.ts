@@ -9,7 +9,7 @@ import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/r
 import { sanityCreate, sanityGetById } from '@/lib/sanity';
 import type { DeliveryOrder } from '@/lib/types';
 
-const DRIVER_ALLOWED_STATUS_UPDATES = new Set(['HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED']);
+const DRIVER_ALLOWED_STATUS_UPDATES = new Set(['ON_DELIVERY', 'ARRIVED']);
 const DRIVER_APPROVAL_REQUEST_STATUSES = new Set(['DELIVERED']);
 
 async function addAuditLog(actor: { _id: string; name: string; email?: string; role?: string }, action: string, entityRef: string, summary: string) {

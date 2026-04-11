@@ -775,7 +775,7 @@ export default function DODetailPage() {
                             <Truck size={16} /> {tripResourceActionLabel}
                         </button>
                     )}
-                    {nextStatuses.length > 0 && canManageDeliveryStatus && (
+                    {nextStatuses.length > 0 && canManageDeliveryStatus && !doData.pendingDriverStatus && (
                         <button className="btn btn-primary" onClick={() => openStatusModal()}>
                             <Truck size={16} /> {nextStatuses.includes('DELIVERED') ? 'Lanjut / Selesaikan DO' : 'Ubah Status'}
                         </button>
