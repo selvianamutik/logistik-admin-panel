@@ -294,12 +294,16 @@ export default function NotaListPage() {
         return acc;
     }, {});
     const receiptOpenNotaItems = receiptOpenNotas
-        .map(nota => ({
-            nota,
-            paidAmount: receiptPaymentTotals[nota._id] || 0,
-            netAmount: getReceivableNetAmount(nota),
-            remainingAmount: Math.max(getReceivableNetAmount(nota) - (receiptPaymentTotals[nota._id] || 0), 0),
-        }))
+        .map(nota => {
+            const netAmount = getReceivableNetAmount(nota);
+            const paidAmount = parseWholeMoneyLike(nota.totalPaidEffective ?? receiptPaymentTotals[nota._id] ?? 0);
+            return {
+                nota,
+                paidAmount,
+                netAmount,
+                remainingAmount: Math.max(netAmount - paidAmount, 0),
+            };
+        })
         .filter(item => item.remainingAmount > 0)
         .sort((a, b) => a.nota.issueDate.localeCompare(b.nota.issueDate));
     const singleOpenNota = receiptOpenNotaItems.length === 1 ? receiptOpenNotaItems[0] : null;

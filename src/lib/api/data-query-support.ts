@@ -1560,6 +1560,7 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
         doStats,
         unpaidNotas,
         notaPayments,
+        notaRefunds,
         borongans,
         boronganItems,
         vouchers,
@@ -1600,6 +1601,15 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
         canViewInvoices
             ? client.fetch<Array<{ invoiceRef?: string; amount?: number }>>(
                 `*[_type == "payment" && defined(invoiceRef)]{ invoiceRef, amount }`
+            )
+            : Promise.resolve([]),
+        canViewInvoices
+            ? client.fetch<Array<Pick<CustomerOverpaymentRefund, 'sourceType' | 'sourceInvoiceRef' | 'amount'>>>(
+                `*[_type == "customerOverpaymentRefund" && sourceType == "INVOICE_OVERPAID"]{
+                    sourceType,
+                    sourceInvoiceRef,
+                    amount
+                }`
             )
             : Promise.resolve([]),
         canSeeBorongan
@@ -1698,15 +1708,17 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
     ]);
 
     const notaPaymentTotals = getFreightNotaPaymentTotals(notaPayments);
-    const derivedUnpaidNotas = applyDerivedFreightNotaStatus(unpaidNotas, notaPaymentTotals).filter(nota => nota.status !== 'PAID');
-    const recentNotasWithDerivedStatus = applyDerivedFreightNotaStatus(recentNotas, notaPaymentTotals);
+    const { invoiceRefundsByRef } = getCustomerOverpaymentRefundTotals(notaRefunds);
+    const derivedUnpaidNotas = applyDerivedFreightNotaStatus(unpaidNotas, notaPaymentTotals, invoiceRefundsByRef).filter(nota => nota.status !== 'PAID');
+    const recentNotasWithDerivedStatus = applyDerivedFreightNotaStatus(recentNotas, notaPaymentTotals, invoiceRefundsByRef);
     const unpaidBorongansWithDerivedTotals = applyDerivedDriverBoronganTotals(borongans, boronganItems)
         .filter(borongan => borongan.status !== 'PAID');
     const openVouchersWithDerivedFinancials = applyDerivedDriverVoucherLedger(vouchers, voucherDisbursements, voucherItems)
         .filter(voucher => voucher.status !== 'SETTLED');
     const notaOutstanding = derivedUnpaidNotas.reduce((sum, nota) => {
-        const paidAmount = notaPaymentTotals[nota._id] || 0;
-        return sum + Math.max(getReceivableNetAmount(nota) - paidAmount, 0);
+        const refundedAmount = invoiceRefundsByRef[nota._id] || 0;
+        const effectivePaidAmount = Math.max((notaPaymentTotals[nota._id] || 0) - refundedAmount, 0);
+        return sum + Math.max(getReceivableNetAmount(nota) - effectivePaidAmount, 0);
     }, 0);
     const boronganOutstanding = unpaidBorongansWithDerivedTotals.reduce(
         (sum, borongan) => sum + parseWholeMoneyLike(borongan.totalAmount),
