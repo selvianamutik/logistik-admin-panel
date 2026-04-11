@@ -1131,6 +1131,13 @@ export async function handleDeliveryOrderStatusUpdate(
         }
         | undefined;
     if (status === 'DELIVERED') {
+        if (doItems.length === 0) {
+            return NextResponse.json(
+                { error: 'Surat jalan belum punya item muatan. Isi barang dulu sebelum DO diselesaikan.' },
+                { status: 400 }
+            );
+        }
+
         try {
             actualCargoByDoItemId = normalizeDeliveryOrderActualCargoInputs(data, doItems);
             actualDropPoints = normalizeDeliveryActualDropPoints(data, deliveryOrder, actualCargoByDoItemId);
@@ -1622,6 +1629,12 @@ export async function handleDeliveryOrderDriverStatusRequest(
         }`,
         { ref: id }
     );
+    if (doItems.length === 0) {
+        return NextResponse.json(
+            { error: 'Surat jalan ini belum punya item muatan. Minta admin isi barang dulu sebelum driver mengajukan selesai.' },
+            { status: 400 }
+        );
+    }
     const explicitActualItemRefs = new Set(
         (Array.isArray(data.actualItems) ? data.actualItems : [])
             .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
