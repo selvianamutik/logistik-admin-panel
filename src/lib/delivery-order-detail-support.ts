@@ -304,7 +304,8 @@ export function getNextDeliveryOrderStatuses(current: string): string[] {
     const transitions: Record<string, string[]> = {
         CREATED: ['HEADING_TO_PICKUP', 'ON_DELIVERY', 'CANCELLED'],
         HEADING_TO_PICKUP: ['ON_DELIVERY', 'CANCELLED'],
-        ON_DELIVERY: ['ARRIVED', 'DELIVERED', 'CANCELLED'],
+        // Keep client options aligned with backend order workflow guards.
+        ON_DELIVERY: ['ARRIVED', 'CANCELLED'],
         ARRIVED: ['DELIVERED', 'CANCELLED'],
     };
     return transitions[current] || [];
