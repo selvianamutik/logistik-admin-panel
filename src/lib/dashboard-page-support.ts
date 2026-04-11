@@ -9,7 +9,19 @@ export interface DashboardData {
     voucherStats: { unsettled: number; totalIssued: number };
     fleetStats: { openIncidents: number; maintenanceDue: number };
     recentOrders: Array<{ _id: string; masterResi: string; customerName: string; status: string; createdAt: string }>;
-    recentNotas: Array<{ _id: string; notaNumber: string; customerName: string; status: string; totalAmount: number; totalAdjustmentAmount?: number; netAmount?: number }>;
+    recentNotas: Array<{
+        _id: string;
+        notaNumber: string;
+        customerName: string;
+        status: string;
+        totalAmount: number;
+        totalAdjustmentAmount?: number;
+        pph23Enabled?: boolean;
+        pph23RatePercent?: number;
+        pph23BaseMode?: 'BEFORE_CLAIM' | 'AFTER_CLAIM';
+        pph23Amount?: number;
+        netAmount?: number;
+    }>;
 }
 
 export function getRecentOrderAction(status: string) {

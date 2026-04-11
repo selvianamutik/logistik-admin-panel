@@ -112,6 +112,14 @@ export function getReceivableNetAmount(value: {
         value.netAmount !== undefined && value.netAmount !== null
             ? Math.max(parseFormattedNumberish(value.netAmount), 0)
             : undefined;
+    const storedPph23Amount =
+        value.pph23Amount !== undefined && value.pph23Amount !== null
+            ? Math.max(parseFormattedNumberish(value.pph23Amount), 0)
+            : undefined;
+    const hasPph23Metadata =
+        value.pph23Enabled !== undefined
+        || value.pph23RatePercent !== undefined
+        || value.pph23BaseMode !== undefined;
     const computedPph23Amount = calculatePph23Summary({
         grossAmount,
         claimAmount: adjustmentAmount,
@@ -122,6 +130,14 @@ export function getReceivableNetAmount(value: {
 
     const computedNetAmount = Math.max(grossAmount - adjustmentAmount - computedPph23Amount, 0);
     if (hasGrossAmount) {
+        if (!hasPph23Metadata) {
+            if (storedNetAmount !== undefined) {
+                return storedNetAmount;
+            }
+            if (storedPph23Amount !== undefined) {
+                return Math.max(grossAmount - adjustmentAmount - storedPph23Amount, 0);
+            }
+        }
         return computedNetAmount;
     }
 

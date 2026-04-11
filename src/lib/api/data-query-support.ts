@@ -1510,6 +1510,10 @@ export type DashboardSummary = {
         status?: string;
         totalAmount?: number;
         totalAdjustmentAmount?: number;
+        pph23Enabled?: boolean;
+        pph23RatePercent?: number;
+        pph23BaseMode?: 'BEFORE_CLAIM' | 'AFTER_CLAIM';
+        pph23Amount?: number;
         netAmount?: number;
     }>;
 };
@@ -1579,8 +1583,18 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
             "onDelivery": count(*[_type == "deliveryOrder" && status == "ON_DELIVERY"])
         }`),
         canViewInvoices
-            ? client.fetch<Array<Pick<FreightNota, '_id' | 'status' | 'totalAmount' | 'totalAdjustmentAmount' | 'netAmount'>>>(
-                `*[_type == "freightNota"]{ _id, status, totalAmount, totalAdjustmentAmount, netAmount }`
+            ? client.fetch<Array<Pick<FreightNota, '_id' | 'status' | 'totalAmount' | 'totalAdjustmentAmount' | 'pph23Enabled' | 'pph23RatePercent' | 'pph23BaseMode' | 'pph23Amount' | 'netAmount'>>>(
+                `*[_type == "freightNota"]{
+                    _id,
+                    status,
+                    totalAmount,
+                    totalAdjustmentAmount,
+                    pph23Enabled,
+                    pph23RatePercent,
+                    pph23BaseMode,
+                    pph23Amount,
+                    netAmount
+                }`
             )
             : Promise.resolve([]),
         canViewInvoices
@@ -1674,6 +1688,10 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
                 status,
                 totalAmount,
                 totalAdjustmentAmount,
+                pph23Enabled,
+                pph23RatePercent,
+                pph23BaseMode,
+                pph23Amount,
                 netAmount
             }`)
             : Promise.resolve([]),
