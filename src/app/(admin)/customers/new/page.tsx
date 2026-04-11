@@ -7,6 +7,7 @@ import { Save } from 'lucide-react';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { FREIGHT_NOTA_BILLING_MODE_OPTIONS } from '@/lib/freight-nota-billing';
+import { DEFAULT_PPH23_RATE_PERCENT, PPH23_BASE_MODE_OPTIONS } from '@/lib/pph23';
 
 export default function CustomerNewPage() {
     const router = useRouter();
@@ -22,9 +23,13 @@ export default function CustomerNewPage() {
         npwp: string;
         deliveryOrderPrefix: string;
         defaultFreightNotaBillingMode: 'PER_KG' | 'PER_TON';
+        defaultPph23Enabled: boolean;
+        defaultPph23RatePercent: number;
+        defaultPph23BaseMode: 'BEFORE_CLAIM' | 'AFTER_CLAIM';
     }>({
         name: '', address: '', contactPerson: '', phone: '', email: '',
         defaultPaymentTerm: 14, npwp: '', deliveryOrderPrefix: 'SJ', defaultFreightNotaBillingMode: 'PER_KG',
+        defaultPph23Enabled: false, defaultPph23RatePercent: DEFAULT_PPH23_RATE_PERCENT, defaultPph23BaseMode: 'BEFORE_CLAIM',
     });
 
     const handleSave = async (e: React.FormEvent) => {
@@ -104,6 +109,50 @@ export default function CustomerNewPage() {
                             </select>
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
                                 Menentukan default tampilan berat dan basis tarif saat admin membuat nota customer ini.
+                            </div>
+                        </div>
+                        <div className="card" style={{ marginTop: '1rem', border: '1px solid var(--color-border)' }}>
+                            <div className="card-body" style={{ padding: '1rem' }}>
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Default PPh 23</label>
+                                        <select
+                                            className="form-select"
+                                            value={form.defaultPph23Enabled ? 'YA' : 'TIDAK'}
+                                            onChange={e => setForm({
+                                                ...form,
+                                                defaultPph23Enabled: e.target.value === 'YA',
+                                                defaultPph23RatePercent: e.target.value === 'YA' ? (form.defaultPph23RatePercent || DEFAULT_PPH23_RATE_PERCENT) : DEFAULT_PPH23_RATE_PERCENT,
+                                            })}
+                                        >
+                                            <option value="TIDAK">Tidak dipotong</option>
+                                            <option value="YA">Potong PPh 23</option>
+                                        </select>
+                                    </div>
+                                    <div className="form-group" style={{ maxWidth: 180 }}>
+                                        <label className="form-label">Tarif PPh 23 (%)</label>
+                                        <FormattedNumberInput
+                                            maxFractionDigits={2}
+                                            value={form.defaultPph23RatePercent}
+                                            onValueChange={value => setForm({ ...form, defaultPph23RatePercent: value })}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="form-group" style={{ maxWidth: 260 }}>
+                                    <label className="form-label">Basis Hitung Default</label>
+                                    <select
+                                        className="form-select"
+                                        value={form.defaultPph23BaseMode}
+                                        onChange={e => setForm({ ...form, defaultPph23BaseMode: e.target.value as 'BEFORE_CLAIM' | 'AFTER_CLAIM' })}
+                                    >
+                                        {PPH23_BASE_MODE_OPTIONS.map(option => (
+                                            <option key={option.value} value={option.value}>{option.label}</option>
+                                        ))}
+                                    </select>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                        Ini hanya default customer. Admin tetap bisa override lagi di nota sebelum ada pembayaran.
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>

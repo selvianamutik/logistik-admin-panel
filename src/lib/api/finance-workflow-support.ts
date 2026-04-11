@@ -1,4 +1,5 @@
 import type { InvoiceAdjustmentKind, Payment } from '@/lib/types';
+import { calculatePph23Summary, normalizePph23BaseMode, normalizePph23Enabled, normalizePph23RatePercent } from '@/lib/pph23';
 
 import {
     normalizeNumber,
@@ -46,6 +47,11 @@ export type ReceivableDoc = Record<string, unknown> & {
     _type: 'freightNota' | 'invoice';
     totalAmount?: number;
     totalAdjustmentAmount?: number;
+    pph23Enabled?: boolean;
+    pph23RatePercent?: number;
+    pph23BaseMode?: string;
+    pph23BaseAmount?: number;
+    pph23Amount?: number;
     netAmount?: number;
     customerRef?: unknown;
     customerName?: string;
@@ -65,6 +71,11 @@ export type ReceivableSnapshot = {
     doc: ReceivableDoc;
     grossAmount: number;
     totalAdjustmentAmount: number;
+    pph23Enabled: boolean;
+    pph23RatePercent: number;
+    pph23BaseMode: 'BEFORE_CLAIM' | 'AFTER_CLAIM';
+    pph23BaseAmount: number;
+    pph23Amount: number;
     netAmount: number;
     paidBeforeRefund: number;
     totalPaid: number;
@@ -141,15 +152,28 @@ export function deriveBillingStatus(netAmount: number, totalPaid: number) {
 }
 
 export function buildReceivablePatch(
-    snapshot: Pick<ReceivableSnapshot, 'grossAmount'>,
+    snapshot: Pick<ReceivableSnapshot, 'grossAmount'> & Partial<Pick<ReceivableSnapshot, 'pph23Enabled' | 'pph23RatePercent' | 'pph23BaseMode'>>,
     totalPaid: number,
-    totalAdjustmentAmount: number
+    totalAdjustmentAmount: number,
+    pph23Override?: Partial<Pick<ReceivableSnapshot, 'pph23Enabled' | 'pph23RatePercent' | 'pph23BaseMode'>>
 ) {
     const nextAdjustment = roundCurrencyAmount(totalAdjustmentAmount);
-    const nextNetAmount = roundCurrencyAmount(Math.max(snapshot.grossAmount - nextAdjustment, 0));
+    const pph23Summary = calculatePph23Summary({
+        grossAmount: snapshot.grossAmount,
+        claimAmount: nextAdjustment,
+        enabled: pph23Override?.pph23Enabled ?? ('pph23Enabled' in snapshot ? snapshot.pph23Enabled : false),
+        ratePercent: pph23Override?.pph23RatePercent ?? ('pph23RatePercent' in snapshot ? snapshot.pph23RatePercent : 2),
+        baseMode: pph23Override?.pph23BaseMode ?? ('pph23BaseMode' in snapshot ? snapshot.pph23BaseMode : 'BEFORE_CLAIM'),
+    });
+    const nextNetAmount = pph23Summary.netAmount;
     return {
         status: deriveBillingStatus(nextNetAmount, totalPaid),
         totalAdjustmentAmount: nextAdjustment,
+        pph23Enabled: pph23Summary.enabled,
+        pph23RatePercent: pph23Summary.ratePercent,
+        pph23BaseMode: pph23Summary.baseMode,
+        pph23BaseAmount: pph23Summary.baseAmount,
+        pph23Amount: pph23Summary.amount,
         netAmount: nextNetAmount,
     };
 }
@@ -167,7 +191,14 @@ export function computeReceivableSnapshot(
     const totalAdjustmentAmount = roundCurrencyAmount(
         approvedAdjustments.reduce((sum, item) => sum + normalizeNumber(item.amount || 0), 0)
     );
-    const netAmount = roundCurrencyAmount(Math.max(grossAmount - totalAdjustmentAmount, 0));
+    const pph23Summary = calculatePph23Summary({
+        grossAmount,
+        claimAmount: totalAdjustmentAmount,
+        enabled: normalizePph23Enabled(doc.pph23Enabled),
+        ratePercent: normalizePph23RatePercent(doc.pph23RatePercent),
+        baseMode: normalizePph23BaseMode(doc.pph23BaseMode),
+    });
+    const netAmount = pph23Summary.netAmount;
     const totalPaid = roundCurrencyAmount(Math.max(paidBeforeRefund - roundCurrencyAmount(refundedOverpaymentAmount), 0));
     const customerRef =
         typeof doc.customerRef === 'string'
@@ -185,6 +216,11 @@ export function computeReceivableSnapshot(
         doc,
         grossAmount,
         totalAdjustmentAmount,
+        pph23Enabled: pph23Summary.enabled,
+        pph23RatePercent: pph23Summary.ratePercent,
+        pph23BaseMode: pph23Summary.baseMode,
+        pph23BaseAmount: pph23Summary.baseAmount,
+        pph23Amount: pph23Summary.amount,
         netAmount,
         paidBeforeRefund,
         totalPaid,

@@ -9,6 +9,7 @@ import CollapsibleCard from '@/components/CollapsibleCard';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { FREIGHT_NOTA_BILLING_MODE_OPTIONS, getFreightNotaBillingModeLabel } from '@/lib/freight-nota-billing';
+import { buildPph23Label, DEFAULT_PPH23_RATE_PERCENT, PPH23_BASE_MODE_OPTIONS } from '@/lib/pph23';
 import { formatDate, formatCurrency, getReceivableNetAmount } from '@/lib/utils';
 import { formatCargoSummary, VOLUME_INPUT_UNIT_OPTIONS, WEIGHT_INPUT_UNIT_OPTIONS, type VolumeInputUnit, type WeightInputUnit } from '@/lib/measurement';
 import type { Customer, CustomerPickupLocation, CustomerProduct, CustomerRecipient, Order, FreightNota } from '@/lib/types';
@@ -114,6 +115,9 @@ export default function CustomerDetailPage() {
         npwp: '',
         deliveryOrderPrefix: 'SJ',
         defaultFreightNotaBillingMode: 'PER_KG' as 'PER_KG' | 'PER_TON',
+        defaultPph23Enabled: false,
+        defaultPph23RatePercent: DEFAULT_PPH23_RATE_PERCENT,
+        defaultPph23BaseMode: 'BEFORE_CLAIM' as 'BEFORE_CLAIM' | 'AFTER_CLAIM',
     });
     const [productForm, setProductForm] = useState<CustomerProductForm>(DEFAULT_PRODUCT_FORM);
     const [recipientForm, setRecipientForm] = useState<CustomerRecipientForm>(DEFAULT_RECIPIENT_FORM);
@@ -151,6 +155,9 @@ export default function CustomerDetailPage() {
                         npwp: cust.npwp || '',
                         deliveryOrderPrefix: cust.deliveryOrderPrefix || 'SJ',
                         defaultFreightNotaBillingMode: cust.defaultFreightNotaBillingMode === 'PER_TON' ? 'PER_TON' : 'PER_KG',
+                        defaultPph23Enabled: cust.defaultPph23Enabled === true,
+                        defaultPph23RatePercent: typeof cust.defaultPph23RatePercent === 'number' ? cust.defaultPph23RatePercent : DEFAULT_PPH23_RATE_PERCENT,
+                        defaultPph23BaseMode: cust.defaultPph23BaseMode === 'AFTER_CLAIM' ? 'AFTER_CLAIM' : 'BEFORE_CLAIM',
                     });
                 }
             } catch (error) {
@@ -508,6 +515,45 @@ export default function CustomerDetailPage() {
                                         ))}
                                     </select>
                                 </div>
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Default PPh 23</label>
+                                        <select
+                                            className="form-select"
+                                            value={form.defaultPph23Enabled ? 'YA' : 'TIDAK'}
+                                            onChange={e => setForm({
+                                                ...form,
+                                                defaultPph23Enabled: e.target.value === 'YA',
+                                                defaultPph23RatePercent: e.target.value === 'YA'
+                                                    ? (form.defaultPph23RatePercent || DEFAULT_PPH23_RATE_PERCENT)
+                                                    : DEFAULT_PPH23_RATE_PERCENT,
+                                            })}
+                                        >
+                                            <option value="TIDAK">Tidak dipotong</option>
+                                            <option value="YA">Potong PPh 23</option>
+                                        </select>
+                                    </div>
+                                    <div className="form-group" style={{ maxWidth: 180 }}>
+                                        <label className="form-label">Tarif PPh 23 (%)</label>
+                                        <FormattedNumberInput
+                                            maxFractionDigits={2}
+                                            value={form.defaultPph23RatePercent}
+                                            onValueChange={value => setForm({ ...form, defaultPph23RatePercent: value })}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="form-group" style={{ maxWidth: 280 }}>
+                                    <label className="form-label">Basis Hitung PPh 23</label>
+                                    <select
+                                        className="form-select"
+                                        value={form.defaultPph23BaseMode}
+                                        onChange={e => setForm({ ...form, defaultPph23BaseMode: e.target.value as 'BEFORE_CLAIM' | 'AFTER_CLAIM' })}
+                                    >
+                                        {PPH23_BASE_MODE_OPTIONS.map(option => (
+                                            <option key={option.value} value={option.value}>{option.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
                                 <div className="form-group">
                                     <label className="form-label">Awalan Referensi SJ Pengirim</label>
                                     <input className="form-input" value={form.deliveryOrderPrefix} onChange={e => setForm({ ...form, deliveryOrderPrefix: e.target.value.toUpperCase() })} />
@@ -532,7 +578,11 @@ export default function CustomerDetailPage() {
                                 </div>
                                 <div className="detail-row">
                                     <div className="detail-item"><div className="detail-label">Default Basis Billing Nota</div><div className="detail-value">{getFreightNotaBillingModeLabel(customer.defaultFreightNotaBillingMode === 'PER_TON' ? 'PER_TON' : 'PER_KG')}</div></div>
-                                    <div className="detail-item"><div className="detail-label">Cara Pakai</div><div className="detail-value">Admin mengisi nomor SJ pengirim manual saat membuat surat jalan.</div></div>
+                                    <div className="detail-item"><div className="detail-label">Default PPh 23</div><div className="detail-value">{buildPph23Label({
+                                        enabled: customer.defaultPph23Enabled,
+                                        ratePercent: customer.defaultPph23RatePercent,
+                                        baseMode: customer.defaultPph23BaseMode === 'AFTER_CLAIM' ? 'AFTER_CLAIM' : 'BEFORE_CLAIM',
+                                    })}</div></div>
                                 </div>
                                 <div className="detail-row">
                                     <div className="detail-item"><div className="detail-label">Awalan Referensi SJ Pengirim</div><div className="detail-value font-mono">{customer.deliveryOrderPrefix || 'SJ'}</div></div>

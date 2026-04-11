@@ -27,6 +27,7 @@ import {
     type NotaItemRow,
 } from '@/lib/invoice-create-page-support';
 import { convertWeightToKg } from '@/lib/measurement';
+import { buildPph23Label, calculatePph23Summary, DEFAULT_PPH23_RATE_PERCENT, PPH23_BASE_MODE_OPTIONS } from '@/lib/pph23';
 import type { CompanyProfile, Customer, DeliveryOrder, DeliveryOrderItem, FreightNotaBillingMode, Order } from '@/lib/types';
 import { formatCurrency, formatInternalDeliveryOrderNumber, formatQuantity, formatShipperDeliveryOrderNumber } from '@/lib/utils';
 
@@ -51,6 +52,9 @@ export default function NewNotaPage() {
     const [notes, setNotes] = useState('');
     const [rows, setRows] = useState<NotaItemRow[]>([createEmptyNotaRow()]);
     const [billingMode, setBillingMode] = useState<FreightNotaBillingMode>('PER_KG');
+    const [pph23Enabled, setPph23Enabled] = useState(false);
+    const [pph23RatePercent, setPph23RatePercent] = useState(DEFAULT_PPH23_RATE_PERCENT);
+    const [pph23BaseMode, setPph23BaseMode] = useState<'BEFORE_CLAIM' | 'AFTER_CLAIM'>('BEFORE_CLAIM');
 
     useEffect(() => {
         async function loadData() {
@@ -99,6 +103,13 @@ export default function NewNotaPage() {
         const selectedCustomer = customers.find(item => item._id === customerRef);
         if (!selectedCustomer) return;
         setBillingMode(normalizeFreightNotaBillingMode(selectedCustomer.defaultFreightNotaBillingMode));
+        setPph23Enabled(selectedCustomer.defaultPph23Enabled === true);
+        setPph23RatePercent(
+            typeof selectedCustomer.defaultPph23RatePercent === 'number'
+                ? selectedCustomer.defaultPph23RatePercent
+                : DEFAULT_PPH23_RATE_PERCENT
+        );
+        setPph23BaseMode(selectedCustomer.defaultPph23BaseMode === 'AFTER_CLAIM' ? 'AFTER_CLAIM' : 'BEFORE_CLAIM');
     }, [customerRef, customers]);
 
     useEffect(() => {
@@ -192,6 +203,13 @@ export default function NewNotaPage() {
     const totalCollie = rows.reduce((sum, row) => sum + (row.collie || 0), 0);
     const totalBerat = rows.reduce((sum, row) => sum + (row.beratKg || 0), 0);
     const totalAmount = rows.reduce((sum, row) => sum + (row.uangRp || 0), 0);
+    const pph23Summary = calculatePph23Summary({
+        grossAmount: totalAmount,
+        claimAmount: 0,
+        enabled: pph23Enabled,
+        ratePercent: pph23RatePercent,
+        baseMode: pph23BaseMode,
+    });
     const hasSelectedRows = rows.some(row => Boolean(row.doRef));
     const totalBeratLabel = formatFreightNotaDisplayWeight({
         beratKg: totalBerat,
@@ -225,6 +243,9 @@ export default function NewNotaPage() {
                         dueDate: dueDate || undefined,
                         notes: notes || undefined,
                         billingMode,
+                        pph23Enabled,
+                        pph23RatePercent,
+                        pph23BaseMode,
                         items: filledRows,
                     },
                 }),
@@ -358,6 +379,52 @@ export default function NewNotaPage() {
                                     Default customer akan terpakai otomatis. Kamu masih bisa override per nota kalau customer minta tagihan dalam ton.
                                 </div>
                             </div>
+                            <div className="card" style={{ marginTop: '1rem', border: '1px solid var(--color-border)' }}>
+                                <div className="card-body" style={{ padding: '1rem' }}>
+                                    <div className="form-row">
+                                        <div className="form-group">
+                                            <label className="form-label">PPh 23</label>
+                                            <select
+                                                className="form-select"
+                                                value={pph23Enabled ? 'YA' : 'TIDAK'}
+                                                onChange={event => {
+                                                    const nextEnabled = event.target.value === 'YA';
+                                                    setPph23Enabled(nextEnabled);
+                                                    if (nextEnabled && pph23RatePercent <= 0) {
+                                                        setPph23RatePercent(DEFAULT_PPH23_RATE_PERCENT);
+                                                    }
+                                                }}
+                                            >
+                                                <option value="TIDAK">Tidak dipotong</option>
+                                                <option value="YA">Potong PPh 23</option>
+                                            </select>
+                                        </div>
+                                        <div className="form-group" style={{ maxWidth: 180 }}>
+                                            <label className="form-label">Tarif PPh 23 (%)</label>
+                                            <FormattedNumberInput
+                                                maxFractionDigits={2}
+                                                value={pph23RatePercent}
+                                                onValueChange={value => setPph23RatePercent(value)}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="form-group" style={{ maxWidth: 280 }}>
+                                        <label className="form-label">Basis Hitung PPh 23</label>
+                                        <select
+                                            className="form-select"
+                                            value={pph23BaseMode}
+                                            onChange={event => setPph23BaseMode(event.target.value as 'BEFORE_CLAIM' | 'AFTER_CLAIM')}
+                                        >
+                                            {PPH23_BASE_MODE_OPTIONS.map(option => (
+                                                <option key={option.value} value={option.value}>{option.label}</option>
+                                            ))}
+                                        </select>
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                            {buildPph23Label({ enabled: pph23Enabled, ratePercent: pph23RatePercent, baseMode: pph23BaseMode })}. Masih bisa diubah lagi di detail nota sebelum ada pembayaran.
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
 
                             <div className="form-group">
                                 <label className="form-label">Catatan</label>
@@ -424,16 +491,16 @@ export default function NewNotaPage() {
                                 color: '#fff',
                                 padding: '1.25rem',
                             }}
-                        >
-                            <div
-                                style={{
+                            >
+                                <div
+                                    style={{
                                     fontSize: '0.72rem',
                                     opacity: 0.8,
                                     textTransform: 'uppercase',
                                     marginBottom: '0.25rem',
                                 }}
                             >
-                                Total Ongkos Angkut
+                                Tagihan Bruto
                             </div>
                             <div style={{ fontSize: '1.75rem', fontWeight: 700 }}>{formatCurrency(totalAmount)}</div>
                         </div>
@@ -467,9 +534,31 @@ export default function NewNotaPage() {
                                     marginBottom: '1rem',
                                     fontSize: '0.85rem',
                                 }}
+                                >
+                                    <span className="text-muted">Basis Billing</span>
+                                    <strong>{getFreightNotaBillingModeLabel(billingMode)}</strong>
+                                </div>
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    marginBottom: '0.5rem',
+                                    fontSize: '0.85rem',
+                                }}
                             >
-                                <span className="text-muted">Basis Billing</span>
-                                <strong>{getFreightNotaBillingModeLabel(billingMode)}</strong>
+                                <span className="text-muted">PPh 23</span>
+                                <strong>{pph23Enabled ? `-${formatCurrency(pph23Summary.amount)}` : '-'}</strong>
+                            </div>
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    marginBottom: '1rem',
+                                    fontSize: '0.85rem',
+                                }}
+                            >
+                                <span className="text-muted">Tagihan Transfer Final</span>
+                                <strong>{formatCurrency(pph23Summary.netAmount)}</strong>
                             </div>
                             <button className="btn btn-primary" style={{ width: '100%' }} onClick={handleSave} disabled={saving}>
                                 <Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan Nota'}

@@ -153,6 +153,9 @@ export interface Customer {
   deliveryOrderCounter?: number;
   deliveryOrderPeriod?: string;
   defaultFreightNotaBillingMode?: FreightNotaBillingMode;
+  defaultPph23Enabled?: boolean;
+  defaultPph23RatePercent?: number;
+  defaultPph23BaseMode?: Pph23BaseMode;
   active: boolean;
 }
 
@@ -687,6 +690,7 @@ export interface FreightNotaInstructionAccount {
 }
 
 export type FreightNotaBillingMode = 'PER_KG' | 'PER_TON';
+export type Pph23BaseMode = 'BEFORE_CLAIM' | 'AFTER_CLAIM';
 
 export interface FreightNota {
   _id: string;
@@ -711,6 +715,11 @@ export interface FreightNota {
   status: NotaStatus;
   totalAmount: number;
   totalAdjustmentAmount?: number;
+  pph23Enabled?: boolean;
+  pph23RatePercent?: number;
+  pph23BaseMode?: Pph23BaseMode;
+  pph23BaseAmount?: number;
+  pph23Amount?: number;
   netAmount?: number;
   totalPaidEffective?: number;
   refundedOverpaymentAmount?: number;
@@ -808,6 +817,11 @@ export interface Invoice {
   status: InvoiceStatus;
   totalAmount: number;
   totalAdjustmentAmount?: number;
+  pph23Enabled?: boolean;
+  pph23RatePercent?: number;
+  pph23BaseMode?: Pph23BaseMode;
+  pph23BaseAmount?: number;
+  pph23Amount?: number;
   netAmount?: number;
   notes?: string;
 }

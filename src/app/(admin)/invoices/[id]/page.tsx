@@ -7,6 +7,7 @@ import { useApp, useToast } from '../../layout';
 import { Printer, DollarSign, Landmark, Trash2, FileDown } from 'lucide-react';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import CurrencyInput from '@/components/CurrencyInput';
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData, fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
@@ -23,6 +24,7 @@ import {
     resolvePaymentAccountLabel,
     sortInvoiceAdjustments,
 } from '@/lib/invoice-detail-page-support';
+import { buildPph23Label, calculatePph23Summary, DEFAULT_PPH23_RATE_PERCENT, PPH23_BASE_MODE_OPTIONS } from '@/lib/pph23';
 import { buildFreightNotaPrintDocument, fetchCompanyProfile, formatFreightNotaDisplayNumber, openBrandedPrint, openPrintWindow, resolveDocumentIssuerProfile } from '@/lib/print';
 import { exportFreightNotaDetail } from '@/lib/export';
 import { deriveReceivableStatus, formatDate, formatCurrency, formatQuantity, INVOICE_ADJUSTMENT_KIND_MAP, PAYMENT_METHOD_MAP } from '@/lib/utils';
@@ -44,9 +46,11 @@ export default function NotaDetailPage() {
     const [loading, setLoading] = useState(true);
     const [showPayModal, setShowPayModal] = useState(false);
     const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
+    const [showPph23Modal, setShowPph23Modal] = useState(false);
     const [showRefundModal, setShowRefundModal] = useState(false);
     const [paying, setPaying] = useState(false);
     const [adjusting, setAdjusting] = useState(false);
+    const [savingPph23, setSavingPph23] = useState(false);
     const [refunding, setRefunding] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [voidingAdjustmentId, setVoidingAdjustmentId] = useState<string | null>(null);
@@ -60,6 +64,9 @@ export default function NotaDetailPage() {
     const [adjustDate, setAdjustDate] = useState(getBusinessDateValue());
     const [adjustNote, setAdjustNote] = useState('');
     const [editingAdjustmentId, setEditingAdjustmentId] = useState<string | null>(null);
+    const [pph23Enabled, setPph23Enabled] = useState(false);
+    const [pph23RatePercent, setPph23RatePercent] = useState(DEFAULT_PPH23_RATE_PERCENT);
+    const [pph23BaseMode, setPph23BaseMode] = useState<'BEFORE_CLAIM' | 'AFTER_CLAIM'>('BEFORE_CLAIM');
     const [refundDate, setRefundDate] = useState(getBusinessDateValue());
     const [refundAmount, setRefundAmount] = useState(0);
     const [refundBankRef, setRefundBankRef] = useState('');
@@ -86,6 +93,13 @@ export default function NotaDetailPage() {
             }
 
             setNota(notaData);
+            setPph23Enabled(notaData?.pph23Enabled === true);
+            setPph23RatePercent(
+                typeof notaData?.pph23RatePercent === 'number'
+                    ? notaData.pph23RatePercent
+                    : DEFAULT_PPH23_RATE_PERCENT
+            );
+            setPph23BaseMode(notaData?.pph23BaseMode === 'AFTER_CLAIM' ? 'AFTER_CLAIM' : 'BEFORE_CLAIM');
             setItems([...(notaItems || [])].sort((a, b) => `${b.date || ''}-${b._id}`.localeCompare(`${a.date || ''}-${a._id}`)));
             setPayments([...(paymentRows || [])].sort((a, b) => `${b.date || ''}-${b._id}`.localeCompare(`${a.date || ''}-${a._id}`)));
             setAdjustments(sortInvoiceAdjustments(adjustmentRows || []));
@@ -109,6 +123,11 @@ export default function NotaDetailPage() {
         refundedOverpaymentAmount,
         grossAmount,
         totalAdjustmentAmount,
+        pph23Enabled: effectivePph23Enabled,
+        pph23RatePercent: effectivePph23RatePercent,
+        pph23BaseMode: effectivePph23BaseMode,
+        pph23BaseAmount,
+        pph23Amount,
         netAmount,
         remaining,
         creditAmount,
@@ -121,6 +140,14 @@ export default function NotaDetailPage() {
     const canPrintInvoice = user ? hasPermission(user.role, 'freightNotas', 'print') : false;
     const canManageOverpaymentRefund = canManageInvoice;
     const canOpenBankAccounts = user ? hasPageAccess(user.role, 'bankAccounts') : false;
+    const canEditPph23 = canManageInvoice && totalPaidRaw <= 0 && refundedOverpaymentAmount <= 0;
+    const draftPph23Summary = calculatePph23Summary({
+        grossAmount,
+        claimAmount: totalAdjustmentAmount,
+        enabled: pph23Enabled,
+        ratePercent: pph23RatePercent,
+        baseMode: pph23BaseMode,
+    });
     const paymentAccountOptions = payMethod === 'TRANSFER'
         ? bankAccounts.filter(account => account.accountType !== 'CASH')
         : payMethod === 'CASH'
@@ -150,6 +177,21 @@ export default function NotaDetailPage() {
     const openCreateAdjustmentModal = () => {
         resetAdjustmentForm();
         setShowAdjustmentModal(true);
+    };
+
+    const resetPph23Form = () => {
+        setPph23Enabled(nota?.pph23Enabled === true);
+        setPph23RatePercent(
+            typeof nota?.pph23RatePercent === 'number'
+                ? nota.pph23RatePercent
+                : DEFAULT_PPH23_RATE_PERCENT
+        );
+        setPph23BaseMode(nota?.pph23BaseMode === 'AFTER_CLAIM' ? 'AFTER_CLAIM' : 'BEFORE_CLAIM');
+    };
+
+    const openPph23Modal = () => {
+        resetPph23Form();
+        setShowPph23Modal(true);
     };
 
     const openEditAdjustmentModal = (adjustment: InvoiceAdjustment) => {
@@ -201,6 +243,44 @@ export default function NotaDetailPage() {
             addToast('error', 'Gagal');
         } finally {
             setPaying(false);
+        }
+    };
+
+    const handleSavePph23 = async () => {
+        if (!nota) return;
+        if (pph23Enabled && pph23RatePercent <= 0) {
+            addToast('error', 'Tarif PPh 23 harus lebih dari 0%');
+            return;
+        }
+
+        setSavingPph23(true);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'freight-notas',
+                    action: 'update-pph23',
+                    data: {
+                        id: nota._id,
+                        pph23Enabled,
+                        pph23RatePercent,
+                        pph23BaseMode,
+                    },
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menyimpan pengaturan PPh 23');
+                return;
+            }
+            addToast('success', 'Pengaturan PPh 23 berhasil diperbarui');
+            setShowPph23Modal(false);
+            await loadNotaDetail();
+        } catch {
+            addToast('error', 'Gagal menyimpan pengaturan PPh 23');
+        } finally {
+            setSavingPph23(false);
         }
     };
 
@@ -430,10 +510,11 @@ export default function NotaDetailPage() {
                 <div className="page-actions" style={{ gap: '0.4rem' }}>
                     {canManageInvoice && displayStatus !== 'PAID' && <button className="btn btn-success btn-sm" onClick={() => setShowPayModal(true)}><DollarSign size={14} /> Catat Pembayaran</button>}
                     {canManageInvoice && grossAmount > totalAdjustmentAmount && <button className="btn btn-secondary btn-sm" onClick={openCreateAdjustmentModal}>Catat Klaim / Potongan</button>}
+                    {canEditPph23 && <button className="btn btn-secondary btn-sm" onClick={openPph23Modal}>Atur PPh 23</button>}
                     {canManageOverpaymentRefund && creditAmount > 0 && <button className="btn btn-warning btn-sm" onClick={openRefundOverpaymentModal}>Konfirmasi Transfer Balik</button>}
                     {canExportInvoice && <button className="btn btn-secondary btn-sm" onClick={handleExportExcel}><FileDown size={14} /> Excel</button>}
                     {canPrintInvoice && <button className="btn btn-secondary btn-sm" onClick={handlePrint}><Printer size={14} /> Cetak Nota</button>}
-                    {canDeleteInvoice && <button className="btn btn-secondary btn-sm" onClick={handleDelete} disabled={deleting}><Trash2 size={14} /></button>}
+                    {canDeleteInvoice && <button className="btn btn-secondary btn-sm" onClick={handleDelete} disabled={deleting}><Trash2 size={14} /> Hapus Nota</button>}
                 </div>
             </div>
 
@@ -458,8 +539,12 @@ export default function NotaDetailPage() {
                             <div className="detail-item"><div className="detail-label">Berat Final Sistem (Kg)</div><div className="detail-value">{formatQuantity(nota.totalWeightKg || 0)} kg</div></div>
                         </div>
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">Tagihan Final</div><div className="detail-value font-semibold">{formatCurrency(netAmount)}</div></div>
-                            <div className="detail-item"><div className="detail-label">{creditAmount > 0 ? 'Kelebihan Bayar' : 'Sisa Piutang'}</div><div className="detail-value font-semibold">{formatCurrency(creditAmount > 0 ? creditAmount : remaining)}</div></div>
+                            <div className="detail-item"><div className="detail-label">Tagihan Bruto</div><div className="detail-value font-semibold">{formatCurrency(grossAmount)}</div></div>
+                            <div className="detail-item"><div className="detail-label">Tagihan Transfer Final</div><div className="detail-value font-semibold">{formatCurrency(netAmount)}</div></div>
+                        </div>
+                        <div className="detail-row">
+                            <div className="detail-item"><div className="detail-label">PPh 23</div><div className="detail-value">{effectivePph23Enabled ? `${buildPph23Label({ enabled: effectivePph23Enabled, ratePercent: effectivePph23RatePercent, baseMode: effectivePph23BaseMode })} • -${formatCurrency(pph23Amount)}` : 'Tidak dipotong'}</div></div>
+                            <div className="detail-item"><div className="detail-label">{creditAmount > 0 ? 'Kelebihan Bayar' : 'Sisa Tagihan Transfer'}</div><div className="detail-value font-semibold">{formatCurrency(creditAmount > 0 ? creditAmount : remaining)}</div></div>
                         </div>
                     </div>
                 </div>
@@ -469,18 +554,19 @@ export default function NotaDetailPage() {
                     <div style={{ display: 'grid', gap: 'var(--space-4)' }}>
                         <div className="card" style={{ overflow: 'hidden' }}>
                             <div style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, #7c3aed 100%)', color: '#fff', padding: '1.25rem' }}>
-                                <div style={{ fontSize: '0.72rem', opacity: 0.8, textTransform: 'uppercase', marginBottom: '0.25rem' }}>Tagihan Final</div>
+                                <div style={{ fontSize: '0.72rem', opacity: 0.8, textTransform: 'uppercase', marginBottom: '0.25rem' }}>Tagihan Transfer Final</div>
                                 <div style={{ fontSize: '1.75rem', fontWeight: 700 }}>{formatCurrency(netAmount)}</div>
-                                {totalAdjustmentAmount > 0 && (
+                                {(totalAdjustmentAmount > 0 || pph23Amount > 0) && (
                                     <div style={{ fontSize: '0.78rem', opacity: 0.85, marginTop: '0.25rem' }}>
-                                        Tagihan Awal {formatCurrency(grossAmount)} | Potongan {formatCurrency(totalAdjustmentAmount)}
+                                        Bruto {formatCurrency(grossAmount)} | Klaim {formatCurrency(totalAdjustmentAmount)} | PPh 23 {formatCurrency(pph23Amount)}
                                     </div>
                                 )}
                             </div>
                             <div className="card-body">
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.75rem', marginBottom: '0.75rem' }}>
-                                    <div><div style={{ fontSize: '0.7rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Tagihan Awal</div><div style={{ fontSize: '1rem', fontWeight: 700 }}>{formatCurrency(grossAmount)}</div></div>
+                                    <div><div style={{ fontSize: '0.7rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Tagihan Bruto</div><div style={{ fontSize: '1rem', fontWeight: 700 }}>{formatCurrency(grossAmount)}</div></div>
                                     <div style={{ textAlign: 'right' }}><div style={{ fontSize: '0.7rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Potongan</div><div style={{ fontSize: '1rem', fontWeight: 700, color: totalAdjustmentAmount > 0 ? 'var(--color-warning)' : 'var(--color-gray-600)' }}>-{formatCurrency(totalAdjustmentAmount)}</div></div>
+                                    <div><div style={{ fontSize: '0.7rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>PPh 23</div><div style={{ fontSize: '1rem', fontWeight: 700, color: effectivePph23Enabled ? 'var(--color-warning)' : 'var(--color-gray-600)' }}>{effectivePph23Enabled ? `-${formatCurrency(pph23Amount)}` : '-'}</div><div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{effectivePph23Enabled ? `${formatCurrency(pph23BaseAmount)} • ${buildPph23Label({ enabled: effectivePph23Enabled, ratePercent: effectivePph23RatePercent, baseMode: effectivePph23BaseMode })}` : 'Tidak dipotong'}</div></div>
                                     <div>
                                         <div style={{ fontSize: '0.7rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Sudah Dibayar</div>
                                         <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-success)' }}>{formatCurrency(totalPaid)}</div>
@@ -696,6 +782,70 @@ export default function NotaDetailPage() {
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setShowAdjustmentModal(false)} disabled={adjusting}>Batal</button>
                             <button className="btn btn-warning" onClick={handleSaveAdjustment} disabled={adjusting}>{adjusting ? 'Menyimpan...' : editingAdjustmentId ? 'Simpan Perubahan' : 'Simpan Klaim / Potongan'}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {canManageInvoice && showPph23Modal && (
+                <div className="modal-overlay" onClick={() => { if (!savingPph23) setShowPph23Modal(false); }}>
+                    <div className="modal" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header"><h3 className="modal-title">Atur PPh 23 Nota</h3><button className="modal-close" onClick={() => setShowPph23Modal(false)} disabled={savingPph23}>&times;</button></div>
+                        <div className="modal-body">
+                            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.75rem' }}>
+                                <div><div style={{ fontSize: '0.68rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Tagihan Bruto</div><div style={{ fontSize: '1rem', fontWeight: 700 }}>{formatCurrency(grossAmount)}</div></div>
+                                <div style={{ textAlign: 'right' }}><div style={{ fontSize: '0.68rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Klaim / Potongan</div><div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--color-warning)' }}>-{formatCurrency(totalAdjustmentAmount)}</div></div>
+                                <div><div style={{ fontSize: '0.68rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>PPh 23 Preview</div><div style={{ fontSize: '1rem', fontWeight: 700, color: draftPph23Summary.enabled ? 'var(--color-warning)' : 'var(--color-gray-600)' }}>{draftPph23Summary.enabled ? `-${formatCurrency(draftPph23Summary.amount)}` : '-'}</div></div>
+                                <div style={{ textAlign: 'right' }}><div style={{ fontSize: '0.68rem', color: 'var(--color-gray-400)', textTransform: 'uppercase' }}>Tagihan Transfer Final</div><div style={{ fontSize: '1rem', fontWeight: 700 }}>{formatCurrency(draftPph23Summary.netAmount)}</div></div>
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">PPh 23</label>
+                                    <select
+                                        className="form-select"
+                                        value={pph23Enabled ? 'YA' : 'TIDAK'}
+                                        onChange={e => {
+                                            const nextEnabled = e.target.value === 'YA';
+                                            setPph23Enabled(nextEnabled);
+                                            if (nextEnabled && pph23RatePercent <= 0) {
+                                                setPph23RatePercent(DEFAULT_PPH23_RATE_PERCENT);
+                                            }
+                                        }}
+                                        disabled={savingPph23}
+                                    >
+                                        <option value="TIDAK">Tidak dipotong</option>
+                                        <option value="YA">Potong PPh 23</option>
+                                    </select>
+                                </div>
+                                <div className="form-group" style={{ maxWidth: 180 }}>
+                                    <label className="form-label">Tarif PPh 23 (%)</label>
+                                    <FormattedNumberInput
+                                        maxFractionDigits={2}
+                                        value={pph23RatePercent}
+                                        onValueChange={value => setPph23RatePercent(value)}
+                                        disabled={savingPph23}
+                                    />
+                                </div>
+                            </div>
+                            <div className="form-group" style={{ maxWidth: 300 }}>
+                                <label className="form-label">Basis Hitung PPh 23</label>
+                                <select
+                                    className="form-select"
+                                    value={pph23BaseMode}
+                                    onChange={e => setPph23BaseMode(e.target.value as 'BEFORE_CLAIM' | 'AFTER_CLAIM')}
+                                    disabled={savingPph23}
+                                >
+                                    {PPH23_BASE_MODE_OPTIONS.map(option => (
+                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--color-gray-600)' }}>
+                                {buildPph23Label({ enabled: pph23Enabled, ratePercent: pph23RatePercent, baseMode: pph23BaseMode })}. Setelah nota punya pembayaran, pengaturan ini otomatis terkunci agar piutang tidak berubah di tengah jalan.
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setShowPph23Modal(false)} disabled={savingPph23}>Batal</button>
+                            <button className="btn btn-primary" onClick={handleSavePph23} disabled={savingPph23}>{savingPph23 ? 'Menyimpan...' : 'Simpan PPh 23'}</button>
                         </div>
                     </div>
                 </div>

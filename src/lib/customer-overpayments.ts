@@ -169,7 +169,7 @@ export function buildCustomerOverpaymentCases(params: {
                 refundedAmount,
                 remainingAmount,
                 sourceLabel: nota.notaNumber || nota._id,
-                sourceDescription: 'Pembayaran melebihi tagihan final setelah klaim/potongan.',
+                sourceDescription: 'Pembayaran melebihi tagihan transfer final setelah klaim/potongan dan PPh 23.',
             });
             return acc;
         }, []);

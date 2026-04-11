@@ -9,12 +9,14 @@ import {
 } from '@/lib/freight-nota-billing';
 import { getSanityClient, sanityCreate, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
 import { buildFreightNotaDisplayNumberFromParts } from '@/lib/nota-numbering';
+import { DEFAULT_PPH23_RATE_PERCENT, normalizePph23BaseMode, normalizePph23Enabled, normalizePph23RatePercent } from '@/lib/pph23';
 import type {
     CustomerOverpaymentRefund,
     FreightNotaInstructionAccount,
     InvoiceAdjustmentKind,
     Payment,
     PaymentMethod,
+    Pph23BaseMode,
 } from '@/lib/types';
 
 import {
@@ -92,6 +94,38 @@ function normalizeWholeMoneyAmount(value: unknown) {
 
 function formatAuditMoney(amount: number) {
     return `Rp ${Math.round(amount).toLocaleString('id-ID')}`;
+}
+
+function normalizePph23SettingsInput(
+    data: Record<string, unknown>,
+    fallback?: {
+        enabled?: boolean;
+        ratePercent?: number;
+        baseMode?: Pph23BaseMode;
+    }
+) {
+    const enabled = Object.prototype.hasOwnProperty.call(data, 'pph23Enabled')
+        ? normalizePph23Enabled(data.pph23Enabled, fallback?.enabled ?? false)
+        : fallback?.enabled ?? false;
+    const ratePercent = Object.prototype.hasOwnProperty.call(data, 'pph23RatePercent')
+        ? normalizePph23RatePercent(data.pph23RatePercent, fallback?.ratePercent ?? DEFAULT_PPH23_RATE_PERCENT)
+        : fallback?.ratePercent ?? DEFAULT_PPH23_RATE_PERCENT;
+    const baseMode = Object.prototype.hasOwnProperty.call(data, 'pph23BaseMode')
+        ? normalizePph23BaseMode(data.pph23BaseMode, fallback?.baseMode ?? 'BEFORE_CLAIM')
+        : fallback?.baseMode ?? 'BEFORE_CLAIM';
+
+    if (!Number.isFinite(ratePercent) || ratePercent < 0 || ratePercent > 100) {
+        throw new Error('Tarif PPh 23 tidak valid');
+    }
+    if (enabled && ratePercent <= 0) {
+        throw new Error('Tarif PPh 23 harus lebih dari 0%');
+    }
+
+    return {
+        pph23Enabled: enabled,
+        pph23RatePercent: ratePercent,
+        pph23BaseMode: baseMode,
+    };
 }
 
 function buildExpenseAuditSummary(input: {
@@ -2239,6 +2273,11 @@ export async function handleFreightNotaCreate(
     let finalCustomerContactPerson = normalizeOptionalText(data.customerContactPerson);
     let finalCustomerPhone = normalizeOptionalText(data.customerPhone);
     let customerTermDays: number | null = null;
+    let customerPph23Defaults: {
+        enabled: boolean;
+        ratePercent: number;
+        baseMode: Pph23BaseMode;
+    } | null = null;
     if (resolvedCustomerRef) {
         const customerDoc = await getSanityClient().fetch<{
             _id: string;
@@ -2248,9 +2287,12 @@ export async function handleFreightNotaCreate(
             phone?: string;
             defaultPaymentTerm?: number;
             defaultFreightNotaBillingMode?: string;
+            defaultPph23Enabled?: boolean;
+            defaultPph23RatePercent?: number;
+            defaultPph23BaseMode?: string;
             active?: boolean;
         } | null>(
-            `*[_type == "customer" && _id == $id][0]{ _id, name, address, contactPerson, phone, defaultPaymentTerm, defaultFreightNotaBillingMode, active }`,
+            `*[_type == "customer" && _id == $id][0]{ _id, name, address, contactPerson, phone, defaultPaymentTerm, defaultFreightNotaBillingMode, defaultPph23Enabled, defaultPph23RatePercent, defaultPph23BaseMode, active }`,
             { id: resolvedCustomerRef }
         );
         if (!customerDoc) {
@@ -2268,6 +2310,11 @@ export async function handleFreightNotaCreate(
         if (typeof customerDoc?.defaultPaymentTerm === 'number' && Number.isFinite(customerDoc.defaultPaymentTerm) && customerDoc.defaultPaymentTerm >= 0) {
             customerTermDays = customerDoc.defaultPaymentTerm;
         }
+        customerPph23Defaults = {
+            enabled: normalizePph23Enabled(customerDoc?.defaultPph23Enabled),
+            ratePercent: normalizePph23RatePercent(customerDoc?.defaultPph23RatePercent, DEFAULT_PPH23_RATE_PERCENT),
+            baseMode: normalizePph23BaseMode(customerDoc?.defaultPph23BaseMode, 'BEFORE_CLAIM'),
+        };
         if (!Object.prototype.hasOwnProperty.call(data, 'billingMode')) {
             billingMode = normalizeFreightNotaBillingMode(customerDoc?.defaultFreightNotaBillingMode);
             for (const row of rows) {
@@ -2287,6 +2334,33 @@ export async function handleFreightNotaCreate(
     if (totalAmount <= 0) {
         return NextResponse.json({ error: 'Total nota harus lebih besar dari 0' }, { status: 400 });
     }
+    let pph23Settings: {
+        pph23Enabled: boolean;
+        pph23RatePercent: number;
+        pph23BaseMode: Pph23BaseMode;
+    };
+    try {
+        pph23Settings = normalizePph23SettingsInput(data, customerPph23Defaults ? {
+            enabled: customerPph23Defaults.enabled,
+            ratePercent: customerPph23Defaults.ratePercent,
+            baseMode: customerPph23Defaults.baseMode,
+        } : undefined);
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Pengaturan PPh 23 tidak valid' },
+            { status: 400 }
+        );
+    }
+    const initialReceivablePatch = buildReceivablePatch(
+        {
+            grossAmount: totalAmount,
+            pph23Enabled: pph23Settings.pph23Enabled,
+            pph23RatePercent: pph23Settings.pph23RatePercent,
+            pph23BaseMode: pph23Settings.pph23BaseMode,
+        },
+        0,
+        0,
+    );
 
     const notaId = crypto.randomUUID();
     const notaNumber = await sanityGetNextNumber('nota', issueDate);
@@ -2363,7 +2437,12 @@ export async function handleFreightNotaCreate(
         status: 'UNPAID',
         totalAmount,
         totalAdjustmentAmount: 0,
-        netAmount: totalAmount,
+        pph23Enabled: pph23Settings.pph23Enabled,
+        pph23RatePercent: pph23Settings.pph23RatePercent,
+        pph23BaseMode: pph23Settings.pph23BaseMode,
+        pph23BaseAmount: initialReceivablePatch.pph23BaseAmount,
+        pph23Amount: initialReceivablePatch.pph23Amount,
+        netAmount: initialReceivablePatch.netAmount,
         totalCollie,
         totalWeightKg,
         billingMode,
@@ -2425,6 +2504,86 @@ export async function handleFreightNotaCreate(
     }
     await addAuditLog(session, 'CREATE', 'freight-notas', notaId, `Created freight-notas: ${notaNumber}`);
     return NextResponse.json({ data: notaDoc, id: notaId });
+}
+
+export async function handleFreightNotaPph23Update(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const notaId = typeof data.id === 'string' ? data.id : '';
+    if (!notaId) {
+        return NextResponse.json({ error: 'Nota tidak valid' }, { status: 400 });
+    }
+
+    const snapshot = await loadReceivableSnapshot(notaId);
+    if ('error' in snapshot) return snapshot.error;
+    if (snapshot.doc._type !== 'freightNota') {
+        return NextResponse.json({ error: 'Pengaturan PPh 23 hanya tersedia untuk nota ongkos' }, { status: 409 });
+    }
+    if (!snapshot.doc._rev) {
+        return NextResponse.json({ error: 'Revisi nota tidak tersedia' }, { status: 409 });
+    }
+    if (snapshot.paidBeforeRefund > 0 || snapshot.refundedOverpaymentAmount > 0) {
+        return NextResponse.json(
+            { error: 'Pengaturan PPh 23 tidak bisa diubah setelah nota memiliki pembayaran' },
+            { status: 409 }
+        );
+    }
+
+    let pph23Settings: {
+        pph23Enabled: boolean;
+        pph23RatePercent: number;
+        pph23BaseMode: Pph23BaseMode;
+    };
+    try {
+        pph23Settings = normalizePph23SettingsInput(data, {
+            enabled: snapshot.pph23Enabled,
+            ratePercent: snapshot.pph23RatePercent,
+            baseMode: snapshot.pph23BaseMode,
+        });
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Pengaturan PPh 23 tidak valid' },
+            { status: 400 }
+        );
+    }
+
+    const patch = buildReceivablePatch(snapshot, snapshot.totalPaid, snapshot.totalAdjustmentAmount, pph23Settings);
+
+    try {
+        await getSanityClient()
+            .transaction()
+            .patch(notaId, {
+                ifRevisionID: snapshot.doc._rev,
+                set: patch,
+            })
+            .commit();
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Nota berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
+
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'freight-notas',
+        notaId,
+        `Pengaturan PPh 23 diperbarui untuk ${snapshot.label}`
+    );
+
+    return NextResponse.json({
+        success: true,
+        data: {
+            _id: notaId,
+            ...patch,
+        },
+    });
 }
 
 export async function handleFreightNotaDelete(

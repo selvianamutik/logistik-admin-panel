@@ -11,6 +11,7 @@ import {
     type WeightInputUnit,
 } from '@/lib/measurement';
 import { normalizeFreightNotaBillingMode, resolveFreightNotaBillingModeInput } from '@/lib/freight-nota-billing';
+import { DEFAULT_PPH23_RATE_PERCENT, normalizePph23BaseMode, normalizePph23Enabled, normalizePph23RatePercent } from '@/lib/pph23';
 import { getSanityClient, sanityGetById } from '@/lib/sanity';
 
 import {
@@ -375,6 +376,35 @@ export function normalizeCustomerPayload(data: Record<string, unknown>, existing
                 { allowEmpty: false }
             )
             : normalizeFreightNotaBillingMode(existing?.defaultFreightNotaBillingMode);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'defaultPph23Enabled') || !existing) {
+        next.defaultPph23Enabled = Object.prototype.hasOwnProperty.call(data, 'defaultPph23Enabled')
+            ? normalizePph23Enabled(data.defaultPph23Enabled)
+            : normalizePph23Enabled(existing?.defaultPph23Enabled);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'defaultPph23RatePercent') || !existing) {
+        const fallbackRate =
+            existing && existing.defaultPph23RatePercent !== undefined
+                ? normalizePph23RatePercent(existing.defaultPph23RatePercent)
+                : DEFAULT_PPH23_RATE_PERCENT;
+        const ratePercent = Object.prototype.hasOwnProperty.call(data, 'defaultPph23RatePercent')
+            ? normalizePph23RatePercent(data.defaultPph23RatePercent, fallbackRate)
+            : fallbackRate;
+        if (!Number.isFinite(ratePercent) || ratePercent < 0 || ratePercent > 100) {
+            throw new Error('Default tarif PPh 23 customer tidak valid');
+        }
+        next.defaultPph23RatePercent = ratePercent;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'defaultPph23BaseMode') || !existing) {
+        next.defaultPph23BaseMode = Object.prototype.hasOwnProperty.call(data, 'defaultPph23BaseMode')
+            ? normalizePph23BaseMode(data.defaultPph23BaseMode)
+            : normalizePph23BaseMode(existing?.defaultPph23BaseMode);
+    }
+    if (normalizePph23Enabled(next.defaultPph23Enabled ?? existing?.defaultPph23Enabled) && normalizePph23RatePercent(next.defaultPph23RatePercent ?? existing?.defaultPph23RatePercent, DEFAULT_PPH23_RATE_PERCENT) <= 0) {
+        throw new Error('Default tarif PPh 23 customer harus lebih dari 0%');
     }
 
     if (Object.prototype.hasOwnProperty.call(data, 'active') || !existing) {

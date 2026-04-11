@@ -6,6 +6,7 @@ import { format, parseISO } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
 import { formatBusinessDate, formatBusinessDateTime } from './business-date';
 import { parseFormattedNumberish } from './formatted-number';
+import { calculatePph23Summary } from './pph23';
 
 const JAKARTA_TIME_ZONE = 'Asia/Jakarta';
 
@@ -92,6 +93,10 @@ export function formatShipperDeliveryOrderNumber(value: {
 export function getReceivableNetAmount(value: {
     totalAmount?: number | string | null;
     totalAdjustmentAmount?: number | string | null;
+    pph23Enabled?: boolean | string | null;
+    pph23RatePercent?: number | string | null;
+    pph23BaseMode?: string | null;
+    pph23Amount?: number | string | null;
     netAmount?: number | string | null;
 }) {
     const hasGrossAmount = value.totalAmount !== undefined && value.totalAmount !== null && value.totalAmount !== '';
@@ -107,8 +112,15 @@ export function getReceivableNetAmount(value: {
         value.netAmount !== undefined && value.netAmount !== null
             ? Math.max(parseFormattedNumberish(value.netAmount), 0)
             : undefined;
+    const computedPph23Amount = calculatePph23Summary({
+        grossAmount,
+        claimAmount: adjustmentAmount,
+        enabled: value.pph23Enabled,
+        ratePercent: value.pph23RatePercent,
+        baseMode: value.pph23BaseMode,
+    }).amount;
 
-    const computedNetAmount = Math.max(grossAmount - adjustmentAmount, 0);
+    const computedNetAmount = Math.max(grossAmount - adjustmentAmount - computedPph23Amount, 0);
     if (hasGrossAmount) {
         return computedNetAmount;
     }
@@ -120,6 +132,10 @@ export function deriveReceivableStatus(
     value: {
         totalAmount?: number | string | null;
         totalAdjustmentAmount?: number | string | null;
+        pph23Enabled?: boolean | string | null;
+        pph23RatePercent?: number | string | null;
+        pph23BaseMode?: string | null;
+        pph23Amount?: number | string | null;
         netAmount?: number | string | null;
     },
     totalPaid?: number | string | null
@@ -139,6 +155,10 @@ export function getReceivableRemainingAmount(
     value: {
         totalAmount?: number | string | null;
         totalAdjustmentAmount?: number | string | null;
+        pph23Enabled?: boolean | string | null;
+        pph23RatePercent?: number | string | null;
+        pph23BaseMode?: string | null;
+        pph23Amount?: number | string | null;
         netAmount?: number | string | null;
     },
     totalPaid?: number | string | null

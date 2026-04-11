@@ -13,9 +13,11 @@ import {
     getFreightNotaWeightColumnLabel,
     normalizeFreightNotaBillingMode,
 } from './freight-nota-billing';
+import { buildPph23Label, calculatePph23Summary } from './pph23';
 import {
     buildInvoiceInstructionAccountText,
     fetchCompanyProfile,
+    fmtCurrency,
     fmtDate,
     fmtNumber,
     formatFreightNotaDisplayNumber,
@@ -100,6 +102,10 @@ type ExcelImageExtension = 'png' | 'jpeg' | 'gif';
 
 function numericish(value: unknown): string | number | undefined {
     return typeof value === 'string' || typeof value === 'number' ? value : undefined;
+}
+
+function booleanish(value: unknown): string | boolean | undefined {
+    return typeof value === 'string' || typeof value === 'boolean' ? value : undefined;
 }
 
 function sanitizeSheetName(name: string) {
@@ -772,6 +778,10 @@ export async function exportInvoices(invoices: Record<string, unknown>[]) {
             netAmount: getReceivableNetAmount({
                 totalAmount: numericish(invoice.totalAmount),
                 totalAdjustmentAmount: numericish(invoice.totalAdjustmentAmount),
+                pph23Enabled: booleanish(invoice.pph23Enabled),
+                pph23RatePercent: numericish(invoice.pph23RatePercent),
+                pph23BaseMode: typeof invoice.pph23BaseMode === 'string' ? invoice.pph23BaseMode : undefined,
+                pph23Amount: numericish(invoice.pph23Amount),
                 netAmount: numericish(invoice.netAmount),
             }),
         })),
@@ -793,7 +803,8 @@ export async function exportInvoices(invoices: Record<string, unknown>[]) {
                 }),
             },
             { header: 'Berat Final Sistem (Kg)', key: 'totalWeightKg', width: 20 },
-            { header: 'Tagihan Final', key: 'netAmount', width: 18 },
+            { header: 'PPh 23', key: 'pph23Amount', width: 16, formatter: (value) => fmtCurrency(parseFormattedNumberish(value || 0)) },
+            { header: 'Tagihan Transfer Final', key: 'netAmount', width: 20 },
             { header: 'Status', key: 'status', width: 14 },
         ],
         `nota-ongkos-${getBusinessDateValue()}`,
@@ -806,9 +817,14 @@ export async function exportInvoices(invoices: Record<string, unknown>[]) {
                 values: {
                     totalCollie: invoices.reduce((sum, item) => sum + parseFormattedNumberish(item.totalCollie || 0), 0),
                     totalWeightKg: invoices.reduce((sum, item) => sum + parseFormattedNumberish(item.totalWeightKg || 0), 0),
+                    pph23Amount: invoices.reduce((sum, item) => sum + parseFormattedNumberish(item.pph23Amount || 0), 0),
                     netAmount: invoices.reduce((sum, item) => sum + getReceivableNetAmount({
                         totalAmount: numericish(item.totalAmount),
                         totalAdjustmentAmount: numericish(item.totalAdjustmentAmount),
+                        pph23Enabled: booleanish(item.pph23Enabled),
+                        pph23RatePercent: numericish(item.pph23RatePercent),
+                        pph23BaseMode: typeof item.pph23BaseMode === 'string' ? item.pph23BaseMode : undefined,
+                        pph23Amount: numericish(item.pph23Amount),
                         netAmount: numericish(item.netAmount),
                     }), 0),
                 },
@@ -889,6 +905,16 @@ export async function exportFreightNotaDetail(
     const issuerBranding = resolveDocumentIssuerProfile(nota, resolvedCompany);
     const displayNumber = formatFreightNotaDisplayNumber(nota, resolvedCompany);
     const billingMode = normalizeFreightNotaBillingMode(nota.billingMode);
+    const grossAmount = parseFormattedNumberish(nota.totalAmount || 0);
+    const adjustmentAmount = parseFormattedNumberish(nota.totalAdjustmentAmount || 0);
+    const pph23Summary = calculatePph23Summary({
+        grossAmount,
+        claimAmount: adjustmentAmount,
+        enabled: nota.pph23Enabled,
+        ratePercent: nota.pph23RatePercent,
+        baseMode: nota.pph23BaseMode,
+    });
+    const netAmount = getReceivableNetAmount(nota);
     const groupedRows = items.reduce<Array<{
         no: number;
         vehiclePlate: string;
@@ -1018,6 +1044,26 @@ export async function exportFreightNotaDetail(
         '',
     ]);
     merges.push({ startRow: totalRowIndex, startCol: 1, endRow: totalRowIndex, endCol: 7 });
+
+    if (adjustmentAmount > 0) {
+        const adjustmentRowIndex = rows.length + 1;
+        rows.push(['Potongan / Klaim', '', '', '', '', '', '', '', '', '', fmtNumber(adjustmentAmount), '']);
+        merges.push({ startRow: adjustmentRowIndex, startCol: 1, endRow: adjustmentRowIndex, endCol: 10 });
+    }
+
+    if (pph23Summary.amount > 0) {
+        const pph23RowIndex = rows.length + 1;
+        rows.push([buildPph23Label({
+            enabled: pph23Summary.enabled,
+            ratePercent: pph23Summary.ratePercent,
+            baseMode: pph23Summary.baseMode,
+        }), '', '', '', '', '', '', '', '', '', fmtNumber(pph23Summary.amount), '']);
+        merges.push({ startRow: pph23RowIndex, startCol: 1, endRow: pph23RowIndex, endCol: 10 });
+    }
+
+    const transferRowIndex = rows.length + 1;
+    rows.push(['Tagihan Transfer Final', '', '', '', '', '', '', '', '', '', fmtNumber(netAmount), '']);
+    merges.push({ startRow: transferRowIndex, startCol: 1, endRow: transferRowIndex, endCol: 10 });
 
     rows.push([]);
     rows.push(['NOTE : ONGKOS ANGKUTAN HARAP DITRANSFER KE :']);

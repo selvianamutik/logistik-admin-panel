@@ -10,6 +10,7 @@ import {
     normalizeFreightNotaBillingMode,
 } from './freight-nota-billing';
 import { buildFreightNotaDisplayNumberFromParts } from './nota-numbering';
+import { buildPph23Label, calculatePph23Summary } from './pph23';
 import { resolveCompanyLogoUrl } from './branding';
 import { parseFormattedNumberish } from './formatted-number';
 import type { BankAccount, CompanyProfile, Customer, FreightNota, FreightNotaInstructionAccount, FreightNotaItem } from './types';
@@ -326,6 +327,13 @@ export function buildFreightNotaPrintDocument(opts: {
     const displayNumber = formatFreightNotaDisplayNumber(nota, company);
     const grossAmount = parseFormattedNumberish(nota.totalAmount || 0);
     const adjustmentAmount = parseFormattedNumberish(nota.totalAdjustmentAmount || 0);
+    const pph23Summary = calculatePph23Summary({
+        grossAmount,
+        claimAmount: adjustmentAmount,
+        enabled: nota.pph23Enabled,
+        ratePercent: nota.pph23RatePercent,
+        baseMode: nota.pph23BaseMode,
+    });
     const netAmount = getReceivableNetAmount(nota);
     const billingMode = normalizeFreightNotaBillingMode(nota.billingMode);
     const printDate = fmtLongPrintDate(new Date());
@@ -542,8 +550,18 @@ export function buildFreightNotaPrintDocument(opts: {
                                 <td class="r">(${escapePrintHtml(fmtCurrency(adjustmentAmount))})</td>
                             </tr>
                         ` : ''}
+                        ${pph23Summary.amount > 0 ? `
+                            <tr>
+                                <td>${escapePrintHtml(buildPph23Label({
+                                    enabled: pph23Summary.enabled,
+                                    ratePercent: pph23Summary.ratePercent,
+                                    baseMode: pph23Summary.baseMode,
+                                }))}</td>
+                                <td class="r">(${escapePrintHtml(fmtCurrency(pph23Summary.amount))})</td>
+                            </tr>
+                        ` : ''}
                         <tr class="invoice-grand-total-row">
-                            <td>Grand Total</td>
+                            <td>Tagihan Transfer Final</td>
                             <td class="r">${escapePrintHtml(fmtCurrency(netAmount))}</td>
                         </tr>
                     </tbody>

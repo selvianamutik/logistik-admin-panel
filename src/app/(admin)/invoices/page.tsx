@@ -683,7 +683,7 @@ export default function NotaListPage() {
             const grandTotal = allMatchingNotas.reduce((sum, nota) => sum + getReceivableNetAmount(nota), 0);
             openBrandedPrint({
                 title: 'Daftar Nota Ongkos Angkut', company: co, bodyHtml: `
-                    <table><thead><tr><th>No. Nota</th><th>Customer</th><th>Tanggal</th><th>Total Collie</th><th>Dasar Tagihan</th><th class="r">Tagihan Final</th><th>Status</th></tr></thead>
+                    <table><thead><tr><th>No. Nota</th><th>Customer</th><th>Tanggal</th><th>Total Collie</th><th>Dasar Tagihan</th><th class="r">Tagihan Transfer Final</th><th>Status</th></tr></thead>
                     <tbody>${allMatchingNotas.map(n => {
                         const displayStatus = deriveReceivableStatus(n, getNotaEffectivePaid(n));
                         return `<tr><td><div class="b">${formatFreightNotaDisplayNumber(n, co)}</div><div style="font-size:11px;color:#64748b">${n.notaNumber}</div></td><td>${n.customerName}</td><td>${formatDate(n.issueDate)}</td><td>${formatQuantity(n.totalCollie || 0)}</td><td>${formatFreightNotaDisplayWeight({ beratKg: n.totalWeightKg || 0, billingMode: normalizeFreightNotaBillingMode(n.billingMode), includeCanonical: false })}</td><td class="r b">${formatCurrency(getReceivableNetAmount(n))}</td><td>${STATUS_MAP[displayStatus]?.label || displayStatus}</td></tr>`;
@@ -857,7 +857,7 @@ export default function NotaListPage() {
                 </div>
                 <div className="table-wrapper table-desktop-only">
                     <table>
-                        <thead><tr><th>No. Nota</th><th>Customer</th><th><SortableTableHeader label="Tanggal" direction={dateSortDir} onToggle={() => setDateSortDir(current => current === 'desc' ? 'asc' : 'desc')} /></th><th>Total Collie</th><th>Dasar Tagihan</th><th>Tagihan Final</th><th>Status</th><th>Tindak Lanjut</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>No. Nota</th><th>Customer</th><th><SortableTableHeader label="Tanggal" direction={dateSortDir} onToggle={() => setDateSortDir(current => current === 'desc' ? 'asc' : 'desc')} /></th><th>Total Collie</th><th>Dasar Tagihan</th><th>Tagihan Transfer Final</th><th>Status</th><th>Tindak Lanjut</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 totalInvoices === 0 ? (
@@ -884,7 +884,7 @@ export default function NotaListPage() {
                                         <td>{formatFreightNotaDisplayWeight({ beratKg: n.totalWeightKg || 0, billingMode: normalizeFreightNotaBillingMode(n.billingMode), includeCanonical: false })}</td>
                                         <td>
                                             <div className="font-semibold">{formatCurrency(getReceivableNetAmount(n))}</div>
-                                            {parseWholeMoneyLike(n.totalAdjustmentAmount) > 0 && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Tagihan Awal {formatCurrency(n.totalAmount)}</div>}
+                                            {(parseWholeMoneyLike(n.totalAdjustmentAmount) > 0 || parseWholeMoneyLike(n.pph23Amount) > 0) && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Bruto {formatCurrency(n.totalAmount)} • Klaim {formatCurrency(parseWholeMoneyLike(n.totalAdjustmentAmount))} • PPh 23 {formatCurrency(parseWholeMoneyLike(n.pph23Amount))}</div>}
                                             {parseWholeMoneyLike(n.openOverpaymentAmount) > 0 && <div style={{ fontSize: '0.72rem', color: 'var(--color-warning)' }}>Kelebihan Bayar {formatCurrency(n.openOverpaymentAmount)}</div>}
                                         </td>
                                         <td><span className={`badge badge-${STATUS_MAP[displayStatus]?.color}`}><span className="badge-dot" /> {STATUS_MAP[displayStatus]?.label}</span></td>
@@ -938,7 +938,7 @@ export default function NotaListPage() {
                                         <span className="mobile-record-value">{formatFreightNotaDisplayWeight({ beratKg: n.totalWeightKg || 0, billingMode: normalizeFreightNotaBillingMode(n.billingMode), includeCanonical: false })}</span>
                                     </div>
                                     <div className="mobile-record-kv">
-                                        <span className="mobile-record-label">Tagihan Final</span>
+                                        <span className="mobile-record-label">Tagihan Transfer Final</span>
                                         <span className="mobile-record-value" style={{ fontWeight: 700 }}>{formatCurrency(getReceivableNetAmount(n))}</span>
                                     </div>
                                     <div className="mobile-record-kv">
@@ -965,7 +965,7 @@ export default function NotaListPage() {
                         onPageChange={setPage}
                         info={({ startIndex, endIndex, totalItems }) => (
                             <>
-                                Menampilkan {startIndex}-{endIndex} dari {totalItems} nota. Urutan dimulai dari tagihan yang paling perlu ditindaklanjuti. Total tagihan final terfilter: <strong style={{ color: 'var(--color-danger)' }}>{formatCurrency(grandTotal)}</strong>
+                                Menampilkan {startIndex}-{endIndex} dari {totalItems} nota. Urutan dimulai dari tagihan yang paling perlu ditindaklanjuti. Total tagihan transfer final terfilter: <strong style={{ color: 'var(--color-danger)' }}>{formatCurrency(grandTotal)}</strong>
                             </>
                         )}
                     />

@@ -1,5 +1,6 @@
 import { parseFormattedNumberish } from './formatted-number';
 import { getReceivableNetAmount } from './utils';
+import { calculatePph23Summary } from './pph23';
 import type { BankAccount, FreightNota, InvoiceAdjustment, Payment } from './types';
 
 export const INVOICE_DETAIL_STATUS_MAP: Record<string, { label: string; color: string }> = {
@@ -28,6 +29,13 @@ export function buildInvoiceDetailSummary(params: {
             : params.adjustments
                 .filter(item => item.status === 'APPROVED')
                 .reduce((sum, item) => sum + parseFormattedNumberish(item.amount || 0, { maxFractionDigits: 0 }), 0);
+    const pph23Summary = calculatePph23Summary({
+        grossAmount,
+        claimAmount: totalAdjustmentAmount,
+        enabled: params.nota?.pph23Enabled,
+        ratePercent: params.nota?.pph23RatePercent,
+        baseMode: params.nota?.pph23BaseMode,
+    });
     const netAmount = params.nota ? getReceivableNetAmount(params.nota) : 0;
     const refundedOverpaymentAmount = parseFormattedNumberish(params.nota?.refundedOverpaymentAmount || 0, { maxFractionDigits: 0 });
     const totalPaid =
@@ -47,6 +55,11 @@ export function buildInvoiceDetailSummary(params: {
         refundedOverpaymentAmount,
         grossAmount,
         totalAdjustmentAmount,
+        pph23Enabled: pph23Summary.enabled,
+        pph23RatePercent: pph23Summary.ratePercent,
+        pph23BaseMode: pph23Summary.baseMode,
+        pph23BaseAmount: pph23Summary.baseAmount,
+        pph23Amount: pph23Summary.amount,
         netAmount,
         remaining,
         creditAmount,
