@@ -62,6 +62,40 @@ function fmtCurrency(amount) {
     }).format(parseWholeMoneyLike(amount));
 }
 
+function normalizePph23Enabled(value) {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') {
+        const normalized = value.trim().toUpperCase();
+        return normalized === 'TRUE' || normalized === '1' || normalized === 'YA' || normalized === 'YES';
+    }
+    return false;
+}
+
+function normalizePph23RatePercent(value) {
+    const parsed = parseWholeMoneyLike(value);
+    return parsed > 0 ? parsed : 2;
+}
+
+function normalizePph23BaseMode(value) {
+    return value === 'AFTER_CLAIM' ? 'AFTER_CLAIM' : 'BEFORE_CLAIM';
+}
+
+function roundMoney(value) {
+    return Math.round(parseWholeMoneyLike(value));
+}
+
+function calculatePph23Amount({ totalAmount, totalAdjustmentAmount, pph23Enabled, pph23RatePercent, pph23BaseMode }) {
+    if (!normalizePph23Enabled(pph23Enabled)) return 0;
+    const grossAmount = Math.max(parseWholeMoneyLike(totalAmount), 0);
+    const claimAmount = Math.max(parseWholeMoneyLike(totalAdjustmentAmount), 0);
+    const ratePercent = normalizePph23RatePercent(pph23RatePercent);
+    const baseMode = normalizePph23BaseMode(pph23BaseMode);
+    const baseAmount = baseMode === 'AFTER_CLAIM'
+        ? Math.max(grossAmount - claimAmount, 0)
+        : grossAmount;
+    return roundMoney((baseAmount * ratePercent) / 100);
+}
+
 function printSection(title, findings) {
     console.log(`\n${title}`);
     if (findings.length === 0) {
@@ -89,8 +123,8 @@ function printInfoSection(title, notes) {
 async function main() {
     const client = getClient();
     const data = await client.fetch(`{
-        "invoices": *[_type == "invoice"]{ _id, invoiceNumber, totalAmount, totalAdjustmentAmount, netAmount, status },
-        "freightNotas": *[_type == "freightNota"]{ _id, notaNumber, totalAmount, totalAdjustmentAmount, netAmount, status },
+        "invoices": *[_type == "invoice"]{ _id, invoiceNumber, totalAmount, totalAdjustmentAmount, netAmount, pph23Enabled, pph23RatePercent, pph23BaseMode, pph23Amount, status },
+        "freightNotas": *[_type == "freightNota"]{ _id, notaNumber, totalAmount, totalAdjustmentAmount, netAmount, pph23Enabled, pph23RatePercent, pph23BaseMode, pph23Amount, status },
         "payments": *[_type == "payment"]{ _id, invoiceRef, receiptRef, amount, date },
         "customerReceipts": *[_type == "customerReceipt"]{ _id, receiptNumber, totalAmount, unappliedAmount, allocationCount, customerRef, customerName, method, bankAccountRef },
         "customerOverpaymentRefunds": *[_type == "customerOverpaymentRefund"]{ _id, sourceType, sourceReceiptRef, sourceInvoiceRef, amount, date, bankAccountRef },
@@ -194,13 +228,24 @@ async function main() {
         const refundedAmount = sum(docRefunds, item => parseWholeMoneyLike(item.amount));
         const totalPaid = Math.max(totalPaidRaw - refundedAmount, 0);
         const totalAdjustment = sum(docAdjustments, item => parseWholeMoneyLike(item.amount));
-        const expectedNet = Math.max(parseWholeMoneyLike(doc.totalAmount) - totalAdjustment, 0);
+        const expectedPph23Amount = calculatePph23Amount({
+            totalAmount: doc.totalAmount,
+            totalAdjustmentAmount: totalAdjustment,
+            pph23Enabled: doc.pph23Enabled,
+            pph23RatePercent: doc.pph23RatePercent,
+            pph23BaseMode: doc.pph23BaseMode,
+        });
+        const expectedNet = Math.max(parseWholeMoneyLike(doc.totalAmount) - totalAdjustment - expectedPph23Amount, 0);
         const storedAdjustment = parseWholeMoneyLike(doc.totalAdjustmentAmount);
         const storedNet = parseWholeMoneyLike(doc.netAmount);
+        const storedPph23Amount = parseWholeMoneyLike(doc.pph23Amount);
         const expectedStatus = totalPaid >= expectedNet ? 'PAID' : totalPaid > 0 ? 'PARTIAL' : 'UNPAID';
 
         if (storedAdjustment !== totalAdjustment) {
             receivableFindings.push(`${doc.kind} ${doc.label} totalAdjustmentAmount ${fmtCurrency(doc.totalAdjustmentAmount)} tidak cocok dengan adjustment ${fmtCurrency(totalAdjustment)}`);
+        }
+        if (storedPph23Amount !== expectedPph23Amount) {
+            receivableFindings.push(`${doc.kind} ${doc.label} pph23Amount ${fmtCurrency(doc.pph23Amount)} tidak cocok dengan PPh 23 ${fmtCurrency(expectedPph23Amount)}`);
         }
         if (storedNet !== expectedNet) {
             receivableFindings.push(`${doc.kind} ${doc.label} netAmount ${fmtCurrency(doc.netAmount)} tidak cocok dengan netto ${fmtCurrency(expectedNet)}`);

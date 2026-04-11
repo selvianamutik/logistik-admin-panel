@@ -444,7 +444,11 @@ function validateAdjustmentChangeAgainstRefunds(
     snapshot: ReceivableSnapshot,
     nextAdjustmentAmount: number
 ) {
-    const nextNetAmount = Math.max(snapshot.grossAmount - nextAdjustmentAmount, 0);
+    const nextNetAmount = buildReceivablePatch(
+        snapshot,
+        snapshot.totalPaid,
+        nextAdjustmentAmount
+    ).netAmount;
     const nextRawOverpaymentAmount = Math.max(snapshot.paidBeforeRefund - nextNetAmount, 0);
     if (snapshot.refundedOverpaymentAmount > nextRawOverpaymentAmount) {
         return NextResponse.json(
