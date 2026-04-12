@@ -5,10 +5,10 @@ import {
     requireDriverSessionContext,
     toSpeedKph,
 } from '@/lib/api/driver-portal';
-import { extractRefId } from '@/lib/api/data-helpers';
+import { extractRefId, isMutationConflictError } from '@/lib/api/data-helpers';
 import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
 import { handleDeliveryOrderStatusUpdate } from '@/lib/api/order-workflows';
-import { getSanityClient, sanityCreate, sanityGetById, sanityUpdate } from '@/lib/sanity';
+import { getSanityClient, sanityCreate, sanityGetById } from '@/lib/sanity';
 import type { DeliveryOrder, Driver } from '@/lib/types';
 
 async function addAuditLog(actor: { _id: string; name: string; email?: string; role?: string }, action: string, entityRef: string, summary: string) {
@@ -119,6 +119,37 @@ function canRollbackFreshTrackingStart(deliveryOrder: DeliveryOrder, now: string
     return nowMs - latestTrackingMs <= TRACKING_ROLLBACK_GRACE_MS;
 }
 
+function buildTrackingConflictResponse(message = 'Status tracking berubah karena ada update lain. Refresh lalu coba lagi.') {
+    return jsonNoStore({ error: message }, { status: 409 });
+}
+
+function ensureTrackingRevision(
+    deliveryOrder: DeliveryOrder & { _rev?: string },
+    message = 'Revisi tracking DO tidak tersedia. Refresh lalu coba lagi.'
+) {
+    if (!deliveryOrder._rev) {
+        return jsonNoStore({ error: message }, { status: 409 });
+    }
+    return null;
+}
+
+async function patchDeliveryOrderTrackingState(
+    deliveryOrder: DeliveryOrder & { _rev?: string },
+    setData: Record<string, unknown>,
+    unsetFields: string[] = []
+) {
+    const patch = getSanityClient()
+        .patch(deliveryOrder._id)
+        .ifRevisionId(deliveryOrder._rev as string);
+
+    if (unsetFields.length > 0) {
+        patch.unset(unsetFields);
+    }
+
+    patch.set(setData);
+    return patch.commit() as Promise<DeliveryOrder>;
+}
+
 export async function POST(request: Request) {
     if (!hasBearerDriverAuth(request)) {
         const originError = ensureSameOriginRequest(request);
@@ -152,7 +183,7 @@ export async function POST(request: Request) {
             return jsonNoStore({ error: 'Aksi tracking tidak valid' }, { status: 400 });
         }
 
-        const deliveryOrder = await sanityGetById<DeliveryOrder>(deliveryOrderRef);
+        const deliveryOrder = await sanityGetById<DeliveryOrder & { _rev?: string }>(deliveryOrderRef);
         if (!deliveryOrder) {
             return jsonNoStore({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
         }
@@ -352,15 +383,39 @@ export async function POST(request: Request) {
                     });
                 }
 
-                const trackingPatch = getSanityClient()
-                    .patch(deliveryOrderRef)
-                    .set({
-                        trackingState: 'ACTIVE',
-                        trackingStartedAt: deliveryOrder.trackingStartedAt || now,
-                        ...locationPatch,
-                    })
-                    .unset(['trackingStoppedAt']);
-                const updated = await trackingPatch.commit() as DeliveryOrder;
+                const latestDeliveryOrder = await sanityGetById<DeliveryOrder & { _rev?: string }>(deliveryOrderRef);
+                if (!latestDeliveryOrder) {
+                    await releaseDriverTrackingLockIfOwned(auth.driver._id, deliveryOrderRef, now);
+                    return jsonNoStore({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
+                }
+                if (isClosedDeliveryOrder(latestDeliveryOrder.status)) {
+                    await releaseDriverTrackingLockIfOwned(auth.driver._id, deliveryOrderRef, now);
+                    return buildTrackingConflictResponse('DO sudah ditutup admin sebelum tracking aktif. Refresh lalu cek status terbaru.');
+                }
+                const revisionError = ensureTrackingRevision(latestDeliveryOrder);
+                if (revisionError) {
+                    await releaseDriverTrackingLockIfOwned(auth.driver._id, deliveryOrderRef, now);
+                    return revisionError;
+                }
+
+                let updated: DeliveryOrder;
+                try {
+                    updated = await patchDeliveryOrderTrackingState(
+                        latestDeliveryOrder,
+                        {
+                            trackingState: 'ACTIVE',
+                            trackingStartedAt: latestDeliveryOrder.trackingStartedAt || now,
+                            ...locationPatch,
+                        },
+                        ['trackingStoppedAt']
+                    );
+                } catch (error) {
+                    await releaseDriverTrackingLockIfOwned(auth.driver._id, deliveryOrderRef, now);
+                    if (isMutationConflictError(error)) {
+                        return buildTrackingConflictResponse('Tracking gagal diaktifkan karena status DO baru berubah. Refresh lalu coba lagi.');
+                    }
+                    throw error;
+                }
 
                 return jsonNoStore({ data: updated });
             } catch (error) {
@@ -378,10 +433,23 @@ export async function POST(request: Request) {
                 return jsonNoStore({ error: 'Tracking belum aktif untuk DO ini' }, { status: 409 });
             }
 
-            const updated = await sanityUpdate<DeliveryOrder>(deliveryOrderRef, {
-                ...locationPatch,
-                trackingState: 'ACTIVE',
-            });
+            const revisionError = ensureTrackingRevision(deliveryOrder);
+            if (revisionError) {
+                return revisionError;
+            }
+
+            let updated: DeliveryOrder;
+            try {
+                updated = await patchDeliveryOrderTrackingState(deliveryOrder, {
+                    ...locationPatch,
+                    trackingState: 'ACTIVE',
+                });
+            } catch (error) {
+                if (isMutationConflictError(error)) {
+                    return buildTrackingConflictResponse('Tracking berubah karena DO sudah diubah admin. Refresh lalu cek status terbaru.');
+                }
+                throw error;
+            }
             return jsonNoStore({ data: updated });
         }
 
@@ -408,10 +476,23 @@ export async function POST(request: Request) {
                 speedKph,
             });
 
-            const updated = await sanityUpdate<DeliveryOrder>(deliveryOrderRef, {
-                trackingState: 'PAUSED',
-                ...locationPatch,
-            });
+            const revisionError = ensureTrackingRevision(deliveryOrder);
+            if (revisionError) {
+                return revisionError;
+            }
+
+            let updated: DeliveryOrder;
+            try {
+                updated = await patchDeliveryOrderTrackingState(deliveryOrder, {
+                    trackingState: 'PAUSED',
+                    ...locationPatch,
+                });
+            } catch (error) {
+                if (isMutationConflictError(error)) {
+                    return buildTrackingConflictResponse();
+                }
+                throw error;
+            }
 
             try {
                 await releaseDriverTrackingLockIfOwned(auth.driver._id, deliveryOrderRef, now);
@@ -446,11 +527,24 @@ export async function POST(request: Request) {
                 speedKph,
             });
 
-            const updated = await sanityUpdate<DeliveryOrder>(deliveryOrderRef, {
-                trackingState: 'STOPPED',
-                trackingStoppedAt: now,
-                ...locationPatch,
-            });
+            const revisionError = ensureTrackingRevision(deliveryOrder);
+            if (revisionError) {
+                return revisionError;
+            }
+
+            let updated: DeliveryOrder;
+            try {
+                updated = await patchDeliveryOrderTrackingState(deliveryOrder, {
+                    trackingState: 'STOPPED',
+                    trackingStoppedAt: now,
+                    ...locationPatch,
+                });
+            } catch (error) {
+                if (isMutationConflictError(error)) {
+                    return buildTrackingConflictResponse();
+                }
+                throw error;
+            }
 
             try {
                 await releaseDriverTrackingLockIfOwned(auth.driver._id, deliveryOrderRef, now);
@@ -484,11 +578,24 @@ export async function POST(request: Request) {
                 speedKph,
             });
 
-            const updated = await sanityUpdate<DeliveryOrder>(deliveryOrderRef, {
-                trackingState: 'STOPPED',
-                trackingStoppedAt: now,
-                ...locationPatch,
-            });
+            const revisionError = ensureTrackingRevision(deliveryOrder);
+            if (revisionError) {
+                return revisionError;
+            }
+
+            let updated: DeliveryOrder;
+            try {
+                updated = await patchDeliveryOrderTrackingState(deliveryOrder, {
+                    trackingState: 'STOPPED',
+                    trackingStoppedAt: now,
+                    ...locationPatch,
+                });
+            } catch (error) {
+                if (isMutationConflictError(error)) {
+                    return buildTrackingConflictResponse();
+                }
+                throw error;
+            }
 
             try {
                 let driverState = await refreshDriverTrackingState(auth.driver._id);
