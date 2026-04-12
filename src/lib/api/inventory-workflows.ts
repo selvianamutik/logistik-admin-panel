@@ -27,6 +27,7 @@ import {
     assertIsoDate,
     computeLedgerDebitBalance,
     getLedgerAccount,
+    isMutationConflictError,
     normalizeOptionalText,
     normalizeText,
     type ApiSession,
@@ -47,6 +48,10 @@ type PurchaseCreateLine = {
     unitPrice: number;
     notes?: string;
 };
+
+type PurchaseDocument = Purchase & { _rev?: string };
+type PurchaseItemDocument = PurchaseItem & { _rev?: string };
+type WarehouseItemDocument = WarehouseItem & { _rev?: string };
 
 function formatAuditMoney(amount: number) {
     return `Rp ${Math.round(amount).toLocaleString('id-ID')}`;
@@ -77,9 +82,9 @@ async function getNextPurchaseNumber(orderDate: string) {
 
 async function loadPurchaseBundle(purchaseId: string) {
     const [purchase, items, payments] = await Promise.all([
-        sanityGetById<Purchase>(purchaseId),
-        getSanityClient().fetch<PurchaseItem[]>(
-            `*[_type == "purchaseItem" && purchaseRef == $ref] | order(_createdAt asc)`,
+        sanityGetById<PurchaseDocument>(purchaseId),
+        getSanityClient().fetch<PurchaseItemDocument[]>(
+            `*[_type == "purchaseItem" && purchaseRef == $ref] | order(_createdAt asc){ ..., _rev }`,
             { ref: purchaseId }
         ),
         getSanityClient().fetch<PurchasePayment[]>(
@@ -132,7 +137,7 @@ async function resolveSupplierSnapshot(supplierRef: string) {
 }
 
 async function resolveWarehouseItemSnapshot(itemRef: string, options?: { allowInactive?: boolean }) {
-    const item = await sanityGetById<WarehouseItem>(itemRef);
+    const item = await sanityGetById<WarehouseItemDocument>(itemRef);
     if (!item || item._type !== 'warehouseItem') {
         throw new Error('Barang gudang tidak ditemukan');
     }
@@ -379,6 +384,10 @@ export async function handlePurchaseReceive(
             return NextResponse.json({ error: 'Isi minimal satu qty terima lebih besar dari 0' }, { status: 400 });
         }
 
+        if (!bundle.purchase._rev) {
+            return NextResponse.json({ error: 'Revisi pembelian tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+        }
+
         const transaction = getSanityClient().transaction();
         const nextItems: PurchaseItem[] = [];
         const movementDocs: StockMovement[] = [];
@@ -422,8 +431,21 @@ export async function handlePurchaseReceive(
             const nextStockQty = currentStockQty + receipt.receivedQty;
             const nextReceivedQty = Math.max(parseInventoryQuantity(item.receivedQty ?? 0), 0) + receipt.receivedQty;
 
-            transaction.patch(item._id, patch => patch.set({ receivedQty: nextReceivedQty }));
-            transaction.patch(warehouseItem._id, patch => patch.set({ currentStockQty: nextStockQty }));
+            if (!item._rev) {
+                return NextResponse.json(
+                    { error: `Revisi item pembelian ${item.itemName || item.itemCode || item._id} tidak tersedia. Refresh lalu coba lagi.` },
+                    { status: 409 }
+                );
+            }
+            if (!warehouseItem._rev) {
+                return NextResponse.json(
+                    { error: `Revisi barang gudang ${warehouseItem.itemCode || warehouseItem.name || warehouseItem._id} tidak tersedia. Refresh lalu coba lagi.` },
+                    { status: 409 }
+                );
+            }
+
+            transaction.patch(item._id, patch => patch.ifRevisionId(item._rev!).set({ receivedQty: nextReceivedQty }));
+            transaction.patch(warehouseItem._id, patch => patch.ifRevisionId(warehouseItem._rev!).set({ currentStockQty: nextStockQty }));
 
             const movementDoc = buildTrackedTireStockMovementDoc({
                 warehouseItem,
@@ -500,13 +522,23 @@ export async function handlePurchaseReceive(
             paidAmount: summary.paidAmount,
             existingStatus: bundle.purchase.status,
         });
-        transaction.patch(bundle.purchase._id, patch => patch.set({
+        transaction.patch(bundle.purchase._id, patch => patch.ifRevisionId(bundle.purchase._rev!).set({
             totalReceivedQty: summary.totalReceivedQty,
             status: nextStatus,
             lastReceivedAt: receiveDate,
             updatedAt: new Date().toISOString(),
         }));
-        await transaction.commit();
+        try {
+            await transaction.commit();
+        } catch (error) {
+            if (isMutationConflictError(error)) {
+                return NextResponse.json(
+                    { error: 'Pembelian, item pembelian, atau stok gudang berubah karena ada update lain. Refresh lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+            throw error;
+        }
 
         await addAuditLog(
             session,
@@ -574,6 +606,9 @@ export async function handleStockMovementCreate(
             return NextResponse.json({ error: 'Stok barang tidak cukup untuk dikeluarkan' }, { status: 409 });
         }
         const nextStockQty = sourceType === 'MANUAL_OUT' ? currentStockQty - quantity : currentStockQty + quantity;
+        if (!warehouseItem._rev) {
+            return NextResponse.json({ error: 'Revisi barang gudang tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+        }
 
         const movementDoc: StockMovement = {
             _id: `stock-movement-${crypto.randomUUID()}`,
@@ -592,11 +627,21 @@ export async function handleStockMovementCreate(
             createdByName: session.name,
         };
 
-        await getSanityClient()
-            .transaction()
-            .patch(warehouseItem._id, patch => patch.set({ currentStockQty: nextStockQty }))
-            .create(movementDoc)
-            .commit();
+        try {
+            await getSanityClient()
+                .transaction()
+                .patch(warehouseItem._id, patch => patch.ifRevisionId(warehouseItem._rev!).set({ currentStockQty: nextStockQty }))
+                .create(movementDoc)
+                .commit();
+        } catch (error) {
+            if (isMutationConflictError(error)) {
+                return NextResponse.json(
+                    { error: 'Stok barang berubah karena ada update lain. Refresh lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+            throw error;
+        }
 
         await addAuditLog(
             session,
@@ -647,6 +692,9 @@ export async function handlePurchasePaymentCreate(
         if (!bundle) {
             return NextResponse.json({ error: 'Pembelian tidak ditemukan' }, { status: 404 });
         }
+        if (!bundle.purchase._rev) {
+            return NextResponse.json({ error: 'Revisi pembelian tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+        }
         if (date < bundle.purchase.orderDate) {
             return NextResponse.json(
                 { error: 'Tanggal pembayaran supplier tidak boleh lebih awal dari tanggal pembelian' },
@@ -678,6 +726,9 @@ export async function handlePurchasePaymentCreate(
         const bankAccount = await getLedgerAccount(bankAccountRef);
         if (!bankAccount) {
             return NextResponse.json({ error: 'Rekening pembayaran supplier tidak ditemukan' }, { status: 404 });
+        }
+        if (!bankAccount._rev) {
+            return NextResponse.json({ error: 'Revisi rekening pembayaran supplier tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
         }
         const ledger = computeLedgerDebitBalance(bankAccount.currentBalance, amount);
         if (ledger.nextBalance < 0) {
@@ -717,32 +768,42 @@ export async function handlePurchasePaymentCreate(
             existingStatus: bundle.purchase.status,
         });
 
-        await getSanityClient()
-            .transaction()
-            .create(paymentDoc)
-            .create({
-                _id: transactionId,
-                _type: 'bankTransaction',
-                bankAccountRef: bankAccount._id,
-                bankAccountName: bankAccount.bankName,
-                bankAccountNumber: bankAccount.accountNumber,
-                type: 'DEBIT',
-                amount,
-                date,
-                description: `Pembayaran supplier ${bundle.purchase.purchaseNumber} - ${bundle.purchase.supplierName || '-'}`,
-                balanceAfter: ledger.nextBalance,
-                relatedPurchasePaymentRef: paymentId,
-                relatedPurchaseRef: bundle.purchase._id,
-            })
-            .patch(bankAccount._id, patch => patch.set({ currentBalance: ledger.nextBalance }))
-            .patch(bundle.purchase._id, patch => patch.set({
-                paidAmount: nextSummary.paidAmount,
-                outstandingAmount: nextSummary.outstandingAmount,
-                status: nextStatus,
-                lastPaidAt: date,
-                updatedAt: new Date().toISOString(),
-            }))
-            .commit();
+        try {
+            await getSanityClient()
+                .transaction()
+                .create(paymentDoc)
+                .create({
+                    _id: transactionId,
+                    _type: 'bankTransaction',
+                    bankAccountRef: bankAccount._id,
+                    bankAccountName: bankAccount.bankName,
+                    bankAccountNumber: bankAccount.accountNumber,
+                    type: 'DEBIT',
+                    amount,
+                    date,
+                    description: `Pembayaran supplier ${bundle.purchase.purchaseNumber} - ${bundle.purchase.supplierName || '-'}`,
+                    balanceAfter: ledger.nextBalance,
+                    relatedPurchasePaymentRef: paymentId,
+                    relatedPurchaseRef: bundle.purchase._id,
+                })
+                .patch(bankAccount._id, patch => patch.ifRevisionId(bankAccount._rev!).set({ currentBalance: ledger.nextBalance }))
+                .patch(bundle.purchase._id, patch => patch.ifRevisionId(bundle.purchase._rev!).set({
+                    paidAmount: nextSummary.paidAmount,
+                    outstandingAmount: nextSummary.outstandingAmount,
+                    status: nextStatus,
+                    lastPaidAt: date,
+                    updatedAt: new Date().toISOString(),
+                }))
+                .commit();
+        } catch (error) {
+            if (isMutationConflictError(error)) {
+                return NextResponse.json(
+                    { error: 'Pembelian atau rekening pembayaran berubah karena ada update lain. Refresh lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+            throw error;
+        }
 
         await addAuditLog(
             session,

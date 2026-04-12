@@ -9,7 +9,6 @@ import {
     sanityGetById,
     sanityGetCompanyProfile,
     sanityGetNextNumber,
-    sanityUpdate,
 } from '@/lib/sanity';
 import {
     buildDefaultTireLayoutConfig,
@@ -1893,6 +1892,11 @@ export async function handleGenericCreate(
             );
         }
         newDoc.accountType = 'BANK';
+        const initialBalance =
+            typeof newDoc.initialBalance === 'number' && Number.isFinite(newDoc.initialBalance)
+                ? newDoc.initialBalance
+                : normalizeCurrencyNumber(data.initialBalance || 0);
+        newDoc.currentBalance = Number.isFinite(initialBalance) ? initialBalance : 0;
     }
 
     if (shouldMergeRawCreatePayload) {
@@ -1947,14 +1951,6 @@ export async function handleGenericCreate(
 
     if (entity === 'customer-pickups' && newDoc.isDefault === true && typeof newDoc.customerRef === 'string') {
         await clearOtherCustomerScopedDefaults('customerPickupLocation', newDoc.customerRef, newId);
-    }
-
-    if (entity === 'bank-accounts') {
-        const initialBalance =
-            typeof newDoc.initialBalance === 'number' && Number.isFinite(newDoc.initialBalance)
-                ? newDoc.initialBalance
-                : normalizeCurrencyNumber(data.initialBalance || 0);
-        await sanityUpdate(newId, { currentBalance: Number.isFinite(initialBalance) ? initialBalance : 0 });
     }
 
     await addAuditLog(
