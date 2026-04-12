@@ -1599,7 +1599,7 @@ export async function handleGenericCreate(
     addAuditLog: AuditLogFn
 ) {
     if (entity === 'company') {
-        const existing = await sanityGetCompanyProfile();
+        const existing = await sanityGetCompanyProfile() as (CompanyProfile & { _id?: string; _rev?: string }) | null;
         let sanitizedCompanyData: Record<string, unknown>;
         try {
             sanitizedCompanyData = await sanitizeCompanyInvoiceSettings(data, existing);
@@ -1610,7 +1610,29 @@ export async function handleGenericCreate(
             );
         }
         if (existing?._id) {
-            const updated = await sanityUpdate(existing._id, sanitizedCompanyData);
+            if (!existing._rev) {
+                return NextResponse.json(
+                    { error: 'Revisi profil perusahaan tidak tersedia. Refresh lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+
+            let updated: unknown;
+            try {
+                updated = await getSanityClient()
+                    .patch(existing._id)
+                    .ifRevisionId(existing._rev)
+                    .set(sanitizedCompanyData)
+                    .commit();
+            } catch (error) {
+                if (isMutationConflictError(error)) {
+                    return NextResponse.json(
+                        { error: 'Profil perusahaan berubah karena ada update lain. Refresh lalu coba lagi.' },
+                        { status: 409 }
+                    );
+                }
+                throw error;
+            }
             await addAuditLog(session, 'UPDATE', 'companyProfile', existing._id, 'Company profile updated');
             return NextResponse.json({ data: updated });
         }
