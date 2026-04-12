@@ -2818,6 +2818,7 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
 
     const deliveryOrder = await sanityGetById<{
         _id: string;
+        _rev?: string;
         doNumber?: string;
         customerDoNumber?: string;
         customerRef?: unknown;
@@ -2878,9 +2879,26 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
         }
     }
 
-    const updatedDeliveryOrder = await sanityUpdate(id, {
-        customerDoNumber,
-    });
+    if (!deliveryOrder._rev) {
+        return NextResponse.json({ error: 'Revisi surat jalan tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
+
+    let updatedDeliveryOrder: unknown;
+    try {
+        updatedDeliveryOrder = await getSanityClient()
+            .patch(id)
+            .ifRevisionId(deliveryOrder._rev)
+            .set({ customerDoNumber })
+            .commit();
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'No. SJ pengirim berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
 
     await addAuditLog(
         session,
