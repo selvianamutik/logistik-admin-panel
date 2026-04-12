@@ -632,6 +632,7 @@ export async function handleOrderHeaderBookingUpdate(
     const order = await sanityGetById<{
         _createdAt?: string;
         _id: string;
+        _rev?: string;
         createdAt?: string;
         masterResi?: string;
         cargoEntryMode?: 'ORDER' | 'DELIVERY_ORDER';
@@ -680,7 +681,26 @@ export async function handleOrderHeaderBookingUpdate(
             );
         }
 
-        const updatedOrder = await sanityUpdate(id, { notes });
+        if (!order._rev) {
+            return NextResponse.json({ error: 'Revisi order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+        }
+
+        let updatedOrder: unknown;
+        try {
+            updatedOrder = await getSanityClient()
+                .patch(id)
+                .ifRevisionId(order._rev)
+                .set({ notes })
+                .commit();
+        } catch (error) {
+            if (isMutationConflictError(error)) {
+                return NextResponse.json(
+                    { error: 'Header booking berubah karena ada update lain. Refresh lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+            throw error;
+        }
         await addAuditLog(
             session,
             'UPDATE',
@@ -713,21 +733,40 @@ export async function handleOrderHeaderBookingUpdate(
         return NextResponse.json({ error: 'Order, customer, penerima, dan alamat tujuan wajib diisi' }, { status: 400 });
     }
 
-    const updatedOrder = await sanityUpdate(id, {
-        cargoEntryMode: 'DELIVERY_ORDER',
-        customerRef,
-        customerName: customer.name,
-        customerRecipientRef: customerRecipientRef || undefined,
-        customerPickupRef: customerPickupRef || undefined,
-        receiverName,
-        receiverPhone: normalizeOptionalText(data.receiverPhone) || normalizeOptionalText(customerRecipient?.receiverPhone) || '',
-        receiverAddress,
-        receiverCompany: normalizeOptionalText(data.receiverCompany) || normalizeOptionalText(customerRecipient?.receiverCompany),
-        pickupAddress: normalizeOptionalText(data.pickupAddress) || normalizeOptionalText(customerPickup?.pickupAddress) || customer.address || undefined,
-        serviceRef: serviceRef || '',
-        serviceName,
-        notes,
-    });
+    if (!order._rev) {
+        return NextResponse.json({ error: 'Revisi order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
+
+    let updatedOrder: unknown;
+    try {
+        updatedOrder = await getSanityClient()
+            .patch(id)
+            .ifRevisionId(order._rev)
+            .set({
+                cargoEntryMode: 'DELIVERY_ORDER',
+                customerRef,
+                customerName: customer.name,
+                customerRecipientRef: customerRecipientRef || undefined,
+                customerPickupRef: customerPickupRef || undefined,
+                receiverName,
+                receiverPhone: normalizeOptionalText(data.receiverPhone) || normalizeOptionalText(customerRecipient?.receiverPhone) || '',
+                receiverAddress,
+                receiverCompany: normalizeOptionalText(data.receiverCompany) || normalizeOptionalText(customerRecipient?.receiverCompany),
+                pickupAddress: normalizeOptionalText(data.pickupAddress) || normalizeOptionalText(customerPickup?.pickupAddress) || customer.address || undefined,
+                serviceRef: serviceRef || '',
+                serviceName,
+                notes,
+            })
+            .commit();
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Header booking berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
 
     await addAuditLog(
         session,
@@ -753,7 +792,7 @@ export async function handleOrderTargetRevision(
         return NextResponse.json({ error: 'Alasan revisi order wajib diisi' }, { status: 400 });
     }
 
-    const order = await sanityGetById<{ _id: string; masterResi?: string; notes?: string; cargoEntryMode?: 'ORDER' | 'DELIVERY_ORDER' }>(id);
+    const order = await sanityGetById<{ _id: string; _rev?: string; masterResi?: string; notes?: string; cargoEntryMode?: 'ORDER' | 'DELIVERY_ORDER' }>(id);
     if (!order) {
         return NextResponse.json({ error: 'Order tidak ditemukan' }, { status: 404 });
     }
@@ -764,9 +803,10 @@ export async function handleOrderTargetRevision(
         );
     }
 
-    const existingItems = await getSanityClient().fetch<OrderItemProgressSnapshot[]>(
+    const existingItems = await getSanityClient().fetch<Array<OrderItemProgressSnapshot & { _rev?: string }>>(
         `*[_type == "orderItem" && orderRef == $ref]{
             _id,
+            _rev,
             orderRef,
             description,
             qtyKoli,
@@ -793,6 +833,12 @@ export async function handleOrderTargetRevision(
     );
     if (existingItems.length === 0) {
         return NextResponse.json({ error: 'Order belum punya item yang bisa direvisi' }, { status: 409 });
+    }
+    if (!order._rev) {
+        return NextResponse.json({ error: 'Revisi order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
+    if (existingItems.some(item => !item._rev)) {
+        return NextResponse.json({ error: 'Revisi item order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
     const rawItems = Array.isArray(data.items) ? data.items.filter(isPlainObject) : [];
@@ -924,6 +970,7 @@ export async function handleOrderTargetRevision(
                 : deriveOrderItemStatusFromProgress(nextProgress);
 
         transaction.patch(existingItem._id, {
+            ifRevisionID: existingItem._rev,
             set: {
                 qtyKoli,
                 weight,
@@ -959,12 +1006,23 @@ export async function handleOrderTargetRevision(
     }
 
     transaction.patch(id, {
+        ifRevisionID: order._rev,
         set: {
             notes: normalizeOptionalText(data.notes),
         },
     });
 
-    await transaction.commit();
+    try {
+        await transaction.commit();
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Data order atau target item berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
     await syncOrderStatusFromItems(id, session, addAuditLog);
     await addAuditLog(
         session,
