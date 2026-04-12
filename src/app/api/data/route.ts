@@ -59,6 +59,7 @@ import {
     handleDeliveryOrderTripResourceAssign,
     handleDeliveryOrderDriverStatusRequestReject,
     handleDeliveryOrderStatusUpdate,
+    handleOrderDelete,
     handleOrderItemHoldRelease,
     handleOrderItemHoldSet,
     handleOrderCreate,
@@ -1304,6 +1305,10 @@ export async function POST(request: Request) {
 
         if (entity === 'orders' && action === 'revise-targets') {
             return await handleOrderTargetRevision(session, data, addAuditLog);
+        }
+
+        if (entity === 'orders' && action === 'delete') {
+            return await handleOrderDelete(session, data, addAuditLog);
         }
 
         if (entity === 'delivery-orders' && action === 'create-with-items') {
