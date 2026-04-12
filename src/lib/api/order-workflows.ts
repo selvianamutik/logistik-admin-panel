@@ -1860,6 +1860,7 @@ export async function handleDeliveryOrderCreate(
 
     const order = await sanityGetById<{
         _id: string;
+        _rev?: string;
         masterResi?: string;
         cargoEntryMode?: 'ORDER' | 'DELIVERY_ORDER';
         customerRef?: string;
@@ -2122,7 +2123,7 @@ export async function handleDeliveryOrderCreate(
     ]));
     const usingDirectCargoInput = requestedItemIds.length === 0;
     const allowsDirectCargoInput = resolvedCargoEntryMode === 'DELIVERY_ORDER' || existingOrderItemCount === 0;
-    let selectedItems: OrderItemProgressSnapshot[] = [];
+    let selectedItems: Array<OrderItemProgressSnapshot & { _rev?: string }> = [];
     let normalizedSelections: ReturnType<typeof normalizeDeliveryOrderSelections> = [];
     let selectionByItemId = new Map<string, ReturnType<typeof normalizeDeliveryOrderSelections>[number]>();
     let directCargoItems: NormalizedOrderItemInput[] = [];
@@ -2177,9 +2178,10 @@ export async function handleDeliveryOrderCreate(
             { status: 409 }
         );
     } else {
-        selectedItems = await getSanityClient().fetch<OrderItemProgressSnapshot[]>(
+        selectedItems = await getSanityClient().fetch<Array<OrderItemProgressSnapshot & { _rev?: string }>>(
             `*[_type == "orderItem" && _id in $ids]{
                 _id,
+                _rev,
                 orderRef,
                 description,
                 qtyKoli,
@@ -2206,6 +2208,9 @@ export async function handleDeliveryOrderCreate(
         );
         if (selectedItems.length !== requestedItemIds.length) {
             return NextResponse.json({ error: 'Sebagian item order tidak ditemukan' }, { status: 404 });
+        }
+        if (selectedItems.some(item => !item._rev)) {
+            return NextResponse.json({ error: 'Revisi item order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
         }
 
         try {
@@ -2391,7 +2396,11 @@ export async function handleDeliveryOrderCreate(
     const transaction = getSanityClient().transaction().create(doDoc);
     if (usingDirectCargoInput) {
         if (order.cargoEntryMode !== 'DELIVERY_ORDER') {
+            if (!order._rev) {
+                return NextResponse.json({ error: 'Revisi order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+            }
             transaction.patch(orderRef, {
+                ifRevisionID: order._rev,
                 set: {
                     cargoEntryMode: 'DELIVERY_ORDER',
                 },
@@ -2510,6 +2519,7 @@ export async function handleDeliveryOrderCreate(
             shippedWeight,
         });
         transaction.patch(item._id, {
+            ifRevisionID: item._rev,
             set: {
                 assignedQtyKoli: nextProgress.assignedQtyKoli,
                 assignedWeight: nextProgress.assignedWeight,
@@ -2524,7 +2534,17 @@ export async function handleDeliveryOrderCreate(
         });
     }
 
-    await transaction.commit();
+    try {
+        await transaction.commit();
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Data order atau item surat jalan berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
     await syncOrderStatusFromItems(orderRef, session, addAuditLog);
     await addAuditLog(
         session,
