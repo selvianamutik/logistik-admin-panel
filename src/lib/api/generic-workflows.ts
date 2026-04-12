@@ -360,10 +360,10 @@ async function sanitizeCompanyInvoiceSettings(
     };
 }
 
-async function removeInvoiceInstructionAccountFromCompany(accountId: string) {
-    const company = await sanityGetCompanyProfile();
+async function buildInvoiceInstructionAccountRemoval(accountId: string) {
+    const company = await sanityGetCompanyProfile() as (CompanyProfile & { _id?: string; _rev?: string }) | null;
     if (!company?._id) {
-        return;
+        return null;
     }
 
     const selectedRefs: string[] = Array.isArray(company.invoiceSettings?.invoiceBankAccountRefs)
@@ -375,7 +375,11 @@ async function removeInvoiceInstructionAccountFromCompany(accountId: string) {
     const isDefaultRef = company.invoiceSettings?.defaultInvoiceBankAccountRef === accountId;
 
     if (!hasSelectedRef && !isDefaultRef) {
-        return;
+        return null;
+    }
+
+    if (!company._rev) {
+        throw new Error('Revisi profil perusahaan tidak tersedia. Refresh lalu coba lagi.');
     }
 
     const nextRefs = selectedRefs.filter((ref: string) => ref !== accountId);
@@ -384,16 +388,15 @@ async function removeInvoiceInstructionAccountFromCompany(accountId: string) {
             ? company.invoiceSettings?.defaultInvoiceBankAccountRef
             : nextRefs[0];
 
-    const updatedCompany: CompanyProfile = {
-        ...company,
+    return {
+        companyId: company._id,
+        companyRev: company._rev,
         invoiceSettings: {
             ...company.invoiceSettings,
             invoiceBankAccountRefs: nextRefs,
             defaultInvoiceBankAccountRef: nextDefaultRef,
         },
     };
-
-    await sanityUpdate(company._id, updatedCompany as unknown as Record<string, unknown>);
 }
 
 async function clearOtherCustomerScopedDefaults(docType: 'customerRecipient' | 'customerPickupLocation', customerRef: string, keepId: string) {
@@ -1544,8 +1547,35 @@ export async function handleGenericDelete(
             return NextResponse.json({ error: 'Akun Kas Tunai sistem tidak boleh dinonaktifkan' }, { status: 409 });
         }
 
-        await sanityUpdate(id, { active: false });
-        await removeInvoiceInstructionAccountFromCompany(id);
+        const companyInvoiceCleanup = await buildInvoiceInstructionAccountRemoval(id);
+        if (!existingAccount._rev) {
+            return NextResponse.json({ error: 'Revisi rekening tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+        }
+
+        const transaction = getSanityClient().transaction().patch(id, {
+            ifRevisionID: existingAccount._rev,
+            set: { active: false },
+        });
+        if (companyInvoiceCleanup) {
+            transaction.patch(companyInvoiceCleanup.companyId, {
+                ifRevisionID: companyInvoiceCleanup.companyRev,
+                set: {
+                    invoiceSettings: companyInvoiceCleanup.invoiceSettings,
+                },
+            });
+        }
+
+        try {
+            await transaction.commit();
+        } catch (error) {
+            if (isMutationConflictError(error)) {
+                return NextResponse.json(
+                    { error: 'Rekening atau profil perusahaan berubah karena ada update lain. Refresh lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+            throw error;
+        }
         await addAuditLog(
             session,
             'DELETE',
