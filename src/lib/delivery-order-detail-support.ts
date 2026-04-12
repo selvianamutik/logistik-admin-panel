@@ -302,7 +302,7 @@ export function shouldOpenAdvancedDropEditor(doData: DeliveryOrder | null, dropD
 
 export function getNextDeliveryOrderStatuses(current: string): string[] {
     const transitions: Record<string, string[]> = {
-        CREATED: ['HEADING_TO_PICKUP', 'ON_DELIVERY', 'CANCELLED'],
+        CREATED: ['HEADING_TO_PICKUP', 'CANCELLED'],
         HEADING_TO_PICKUP: ['ON_DELIVERY', 'CANCELLED'],
         // Keep client options aligned with backend order workflow guards.
         ON_DELIVERY: ['ARRIVED', 'CANCELLED'],
