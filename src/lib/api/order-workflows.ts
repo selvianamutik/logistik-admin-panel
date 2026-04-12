@@ -14,6 +14,7 @@ import { getSanityClient, sanityGetById, sanityGetNextNumber, sanityUpdate } fro
 import {
     assertIsoDate,
     extractRefId,
+    isMutationConflictError,
     isPlainObject,
     normalizeCurrencyNumber,
     normalizeNumber,
@@ -991,6 +992,7 @@ export async function handleDeliveryOrderStatusUpdate(
 
     const deliveryOrder = await sanityGetById<{
         _id: string;
+        _rev?: string;
         doNumber?: string;
         status?: string;
         orderRef?: unknown;
@@ -1022,6 +1024,9 @@ export async function handleDeliveryOrderStatusUpdate(
     }>(id);
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
+    }
+    if (!deliveryOrder._rev) {
+        return NextResponse.json({ error: 'Revisi surat jalan tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
     const hasTripVehicle = Boolean(extractRefId(deliveryOrder.vehicleRef));
@@ -1231,6 +1236,7 @@ export async function handleDeliveryOrderStatusUpdate(
     const transaction = getSanityClient()
         .transaction()
         .patch(id, {
+            ifRevisionID: deliveryOrder._rev,
             set: {
                 status,
                 ...(status === 'DELIVERED'
@@ -1460,7 +1466,17 @@ export async function handleDeliveryOrderStatusUpdate(
         }
     }
 
-    await transaction.commit();
+    try {
+        await transaction.commit();
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Status surat jalan berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
 
     if (shouldStopTracking) {
         try {
@@ -1548,6 +1564,7 @@ export async function handleDeliveryOrderDriverStatusRequest(
 
     const deliveryOrder = await sanityGetById<{
         _id: string;
+        _rev?: string;
         doNumber?: string;
         status?: string;
         driverRef?: unknown;
@@ -1567,6 +1584,9 @@ export async function handleDeliveryOrderDriverStatusRequest(
     }>(id);
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
+    }
+    if (!deliveryOrder._rev) {
+        return NextResponse.json({ error: 'Revisi surat jalan tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
     const allowedStatuses = DO_STATUS_TRANSITIONS[deliveryOrder.status || ''] || [];
@@ -1679,6 +1699,7 @@ export async function handleDeliveryOrderDriverStatusRequest(
     const transaction = getSanityClient()
         .transaction()
         .patch(id, {
+            ifRevisionID: deliveryOrder._rev,
             set: {
                 pendingDriverStatus: status,
                 pendingDriverStatusRequestedAt: timestamp,
@@ -1700,7 +1721,17 @@ export async function handleDeliveryOrderDriverStatusRequest(
             userName: session.name,
         });
 
-    await transaction.commit();
+    try {
+        await transaction.commit();
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Permintaan driver berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
 
     await addAuditLog(
         session,
@@ -1739,6 +1770,7 @@ export async function handleDeliveryOrderDriverStatusRequestReject(
 
     const deliveryOrder = await sanityGetById<{
         _id: string;
+        _rev?: string;
         doNumber?: string;
         pendingDriverStatus?: string;
         pendingDriverStatusRequestedAt?: string;
@@ -1757,6 +1789,9 @@ export async function handleDeliveryOrderDriverStatusRequestReject(
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
     }
+    if (!deliveryOrder._rev) {
+        return NextResponse.json({ error: 'Revisi surat jalan tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
     if (!deliveryOrder.pendingDriverStatus) {
         return NextResponse.json({ error: 'Tidak ada permintaan status driver yang menunggu approval' }, { status: 409 });
     }
@@ -1765,6 +1800,7 @@ export async function handleDeliveryOrderDriverStatusRequestReject(
     const transaction = getSanityClient()
         .transaction()
         .patch(id, {
+            ifRevisionID: deliveryOrder._rev,
             unset: DRIVER_STATUS_REQUEST_FIELDS,
         })
         .create({
@@ -1779,7 +1815,17 @@ export async function handleDeliveryOrderDriverStatusRequestReject(
             userName: session.name,
         });
 
-    await transaction.commit();
+    try {
+        await transaction.commit();
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Permintaan driver berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
 
     await addAuditLog(
         session,
