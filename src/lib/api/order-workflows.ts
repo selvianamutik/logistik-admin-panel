@@ -2555,6 +2555,7 @@ export async function handleDeliveryOrderTripResourceAssign(
 
     const deliveryOrder = await sanityGetById<{
         _id: string;
+        _rev?: string;
         doNumber?: string;
         customerDoNumber?: string;
         status?: string;
@@ -2749,15 +2750,34 @@ export async function handleDeliveryOrderTripResourceAssign(
         return NextResponse.json({ data: unchangedDeliveryOrder, id });
     }
 
-    const updatedDeliveryOrder = await sanityUpdate(id, {
-        vehicleRef: nextVehicleRef || undefined,
-        vehiclePlate: nextVehiclePlate || undefined,
-        vehicleServiceRef: nextVehicleServiceRef || undefined,
-        vehicleServiceName: nextVehicleServiceName || undefined,
-        vehicleCategoryOverrideReason: nextVehicleCategoryOverrideReason || undefined,
-        driverRef: nextDriverRef || undefined,
-        driverName: nextDriverName || undefined,
-    });
+    if (!deliveryOrder._rev) {
+        return NextResponse.json({ error: 'Revisi surat jalan tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
+
+    let updatedDeliveryOrder: unknown;
+    try {
+        updatedDeliveryOrder = await getSanityClient()
+            .patch(id)
+            .ifRevisionId(deliveryOrder._rev)
+            .set({
+                vehicleRef: nextVehicleRef || undefined,
+                vehiclePlate: nextVehiclePlate || undefined,
+                vehicleServiceRef: nextVehicleServiceRef || undefined,
+                vehicleServiceName: nextVehicleServiceName || undefined,
+                vehicleCategoryOverrideReason: nextVehicleCategoryOverrideReason || undefined,
+                driverRef: nextDriverRef || undefined,
+                driverName: nextDriverName || undefined,
+            })
+            .commit();
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Armada trip berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
 
     const changes: string[] = [];
     if (vehicleChanged) {
