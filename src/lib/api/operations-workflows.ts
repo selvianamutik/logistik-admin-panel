@@ -7,6 +7,7 @@ import type { Driver, User } from '@/lib/types';
 
 import {
     assertIsoDateTime,
+    isMutationConflictError,
     type ApiSession,
 } from './data-helpers';
 import {
@@ -420,9 +421,10 @@ export async function handleDriverUpdate(
             : existingDriver.name;
     const isDeactivatingDriver = existingDriver.active !== false && normalizedUpdates.active === false;
 
-    const linkedDriverUsers = await getSanityClient().fetch<Array<Pick<User, '_id' | 'active' | 'driverName'>>>(
+    const linkedDriverUsers = await getSanityClient().fetch<Array<(Pick<User, '_id' | 'active' | 'driverName'> & { _rev?: string })>>(
         `*[_type == "user" && role == "DRIVER" && driverRef == $ref]{
             _id,
+            _rev,
             active,
             driverName
         }`,
@@ -455,20 +457,32 @@ export async function handleDriverUpdate(
     }
 
     const now = new Date().toISOString();
-    const trackedDeliveryOrders = await getSanityClient().fetch<Array<{ _id: string; doNumber?: string; status?: string }>>(
+    const trackedDeliveryOrders = await getSanityClient().fetch<Array<{ _id: string; _rev?: string; doNumber?: string; status?: string }>>(
         `*[
             _type == "deliveryOrder" &&
             (driverRef == $ref || driverRef._ref == $ref) &&
             trackingState in ["ACTIVE", "PAUSED"]
         ]{
             _id,
+            _rev,
             doNumber,
             status
         }`,
         { ref: id }
     );
 
+    if (!existingDriver._rev) {
+        return NextResponse.json({ error: 'Revisi supir tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
+    if (linkedDriverUsers.some(user => !user._rev)) {
+        return NextResponse.json({ error: 'Revisi akun mobile driver tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
+    if (trackedDeliveryOrders.some(deliveryOrder => !deliveryOrder._rev)) {
+        return NextResponse.json({ error: 'Revisi tracking surat jalan tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
+
     const transaction = getSanityClient().transaction().patch(id, {
+        ifRevisionID: existingDriver._rev,
         set: {
             ...normalizedUpdates,
             activeTrackingUpdatedAt: now,
@@ -478,6 +492,7 @@ export async function handleDriverUpdate(
 
     for (const deliveryOrder of trackedDeliveryOrders) {
         transaction.patch(deliveryOrder._id, {
+            ifRevisionID: deliveryOrder._rev,
             set: {
                 trackingState: 'STOPPED',
                 trackingStoppedAt: now,
@@ -507,11 +522,24 @@ export async function handleDriverUpdate(
             nextUserPatch.driverName = nextDriverName;
         }
         if (Object.keys(nextUserPatch).length > 0) {
-            transaction.patch(user._id, { set: nextUserPatch });
+            transaction.patch(user._id, {
+                ifRevisionID: user._rev,
+                set: nextUserPatch,
+            });
         }
     }
 
-    await transaction.commit();
+    try {
+        await transaction.commit();
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Data supir atau tracking berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
 
     const updated = await sanityGetById<Driver>(id);
     if (!updated) {

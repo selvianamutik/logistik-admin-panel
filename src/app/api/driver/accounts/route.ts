@@ -1,5 +1,5 @@
 import { hashPassword } from '@/lib/auth';
-import { sanitizeUserForClient } from '@/lib/api/data-helpers';
+import { isMutationConflictError, sanitizeUserForClient } from '@/lib/api/data-helpers';
 import { requireInternalSession } from '@/lib/api/driver-portal';
 import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
 import { getSanityClient, sanityCreate, sanityGetById, sanityUpdate } from '@/lib/sanity';
@@ -63,20 +63,29 @@ function buildPatchPayload(updates: Record<string, unknown>) {
 async function deactivateDriverAccountAtomically(input: {
     session: { _id: string; name: string };
     accountId: string;
+    accountRev?: string;
     accountUpdates: Record<string, unknown>;
     driverRef: string;
     driverName: string;
 }) {
+    if (!input.accountRev) {
+        return {
+            stoppedTrackingCount: 0,
+            conflictMessage: 'Revisi akun driver tidak tersedia. Refresh lalu coba lagi.',
+        };
+    }
+
     const now = new Date().toISOString();
     const [driver, trackedDeliveryOrders] = await Promise.all([
         sanityGetById<Driver>(input.driverRef),
-        getSanityClient().fetch<Array<{ _id: string; doNumber?: string; status?: string }>>(
+        getSanityClient().fetch<Array<{ _id: string; _rev?: string; doNumber?: string; status?: string }>>(
             `*[
                 _type == "deliveryOrder" &&
                 (driverRef == $ref || driverRef._ref == $ref) &&
                 trackingState in ["ACTIVE", "PAUSED"]
             ]{
                 _id,
+                _rev,
                 doNumber,
                 status
             }`,
@@ -84,11 +93,25 @@ async function deactivateDriverAccountAtomically(input: {
         ),
     ]);
 
+    if (driver && !driver._rev) {
+        return {
+            stoppedTrackingCount: 0,
+            conflictMessage: 'Revisi supir tidak tersedia. Refresh lalu coba lagi.',
+        };
+    }
+    if (trackedDeliveryOrders.some(deliveryOrder => !deliveryOrder._rev)) {
+        return {
+            stoppedTrackingCount: 0,
+            conflictMessage: 'Revisi tracking surat jalan tidak tersedia. Refresh lalu coba lagi.',
+        };
+    }
+
     const transaction = getSanityClient().transaction();
     const accountPatch = buildPatchPayload(input.accountUpdates);
 
     if (Object.keys(accountPatch.set).length > 0 || accountPatch.unset.length > 0) {
         transaction.patch(input.accountId, {
+            ifRevisionID: input.accountRev,
             ...(Object.keys(accountPatch.set).length > 0 ? { set: accountPatch.set } : {}),
             ...(accountPatch.unset.length > 0 ? { unset: accountPatch.unset } : {}),
         });
@@ -96,6 +119,7 @@ async function deactivateDriverAccountAtomically(input: {
 
     if (driver) {
         transaction.patch(input.driverRef, {
+            ifRevisionID: driver._rev,
             set: { activeTrackingUpdatedAt: now },
             unset: ['activeTrackingDeliveryOrderRef'],
         });
@@ -103,6 +127,7 @@ async function deactivateDriverAccountAtomically(input: {
 
     for (const deliveryOrder of trackedDeliveryOrders) {
         transaction.patch(deliveryOrder._id, {
+            ifRevisionID: deliveryOrder._rev,
             set: {
                 trackingState: 'STOPPED',
                 trackingStoppedAt: now,
@@ -123,7 +148,18 @@ async function deactivateDriverAccountAtomically(input: {
         });
     }
 
-    await transaction.commit();
+    try {
+        await transaction.commit();
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return {
+                stoppedTrackingCount: 0,
+                conflictMessage: 'Data akun driver atau tracking berubah karena ada update lain. Refresh lalu coba lagi.',
+            };
+        }
+        throw error;
+    }
+
     return { stoppedTrackingCount: trackedDeliveryOrders.length };
 }
 
@@ -262,7 +298,7 @@ export async function POST(request: Request) {
             return jsonNoStore({ error: 'ID akun driver tidak valid' }, { status: 400 });
         }
 
-        const existing = await sanityGetById<User>(id);
+        const existing = await sanityGetById<User & { _rev?: string }>(id);
         if (!existing || existing.role !== 'DRIVER') {
             return jsonNoStore({ error: 'Akun driver tidak ditemukan' }, { status: 404 });
         }
@@ -303,10 +339,14 @@ export async function POST(request: Request) {
             const trackingResult = await deactivateDriverAccountAtomically({
                 session: auth.session,
                 accountId: id,
+                accountRev: existing._rev,
                 accountUpdates: updates,
                 driverRef,
                 driverName: driver.name,
             });
+            if ('conflictMessage' in trackingResult) {
+                return jsonNoStore({ error: trackingResult.conflictMessage }, { status: 409 });
+            }
             stoppedTrackingCount = trackingResult.stoppedTrackingCount;
             const refreshed = await sanityGetById<User>(id);
             if (!refreshed) {
@@ -325,6 +365,9 @@ export async function POST(request: Request) {
             },
         });
     } catch (error) {
+        if (isMutationConflictError(error)) {
+            return jsonNoStore({ error: 'Data akun driver berubah karena ada update lain. Refresh lalu coba lagi.' }, { status: 409 });
+        }
         console.error('Driver account route error:', error);
         return jsonNoStore({ error: 'Terjadi kesalahan server' }, { status: 500 });
     }
