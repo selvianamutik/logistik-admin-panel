@@ -1176,7 +1176,7 @@ export async function handleGenericUpdate(
                             ? await normalizeVehiclePayload(session, updates, { partial: true, excludeId: id })
                             : sanitizedEntityUpdates ?? updates;
 
-    const currentDoc = await sanityGetById<{ _id: string; _rev?: string }>(id);
+    const currentDoc = await sanityGetById<Record<string, unknown> & { _id: string; _rev?: string }>(id);
     if (!currentDoc) {
         return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
@@ -1186,11 +1186,56 @@ export async function handleGenericUpdate(
 
     let updated: unknown;
     try {
-        updated = await getSanityClient()
-            .patch(id)
-            .ifRevisionId(currentDoc._rev)
-            .set(normalizedUpdates)
-            .commit();
+        if (entity === 'services') {
+            const currentServiceName = normalizeOptionalText(currentDoc.name) || '';
+            const nextServiceName =
+                typeof normalizedUpdates.name === 'string'
+                    ? normalizeOptionalText(normalizedUpdates.name) || ''
+                    : currentServiceName;
+            const nextServiceTireLayoutConfig =
+                Object.prototype.hasOwnProperty.call(normalizedUpdates, 'tireLayoutConfig')
+                    ? (normalizedUpdates.tireLayoutConfig as Record<string, unknown> | undefined)
+                    : (isPlainObject(currentDoc.tireLayoutConfig) ? currentDoc.tireLayoutConfig as Record<string, unknown> : undefined);
+            const relatedVehicles = await getSanityClient().fetch<Array<{ _id: string; _rev?: string; vehicleType?: string }>>(
+                `*[_type == "vehicle" && (serviceRef == $ref || serviceRef._ref == $ref)]{
+                    _id,
+                    _rev,
+                    vehicleType
+                }`,
+                { ref: id }
+            );
+            if (relatedVehicles.some(vehicle => !vehicle._rev)) {
+                return NextResponse.json(
+                    { error: 'Revisi kendaraan turunan tidak tersedia. Refresh lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+
+            const transaction = getSanityClient().transaction().patch(id, {
+                ifRevisionID: currentDoc._rev,
+                set: normalizedUpdates,
+            });
+            for (const vehicle of relatedVehicles) {
+                transaction.patch(vehicle._id, {
+                    ifRevisionID: vehicle._rev as string,
+                    set: {
+                        serviceName: nextServiceName,
+                        tireLayoutConfig: normalizeTireLayoutConfig(
+                            nextServiceTireLayoutConfig,
+                            buildDefaultTireLayoutConfig(vehicle.vehicleType || '', nextServiceName)
+                        ),
+                    },
+                });
+            }
+            await transaction.commit();
+            updated = await sanityGetById(id);
+        } else {
+            updated = await getSanityClient()
+                .patch(id)
+                .ifRevisionId(currentDoc._rev)
+                .set(normalizedUpdates)
+                .commit();
+        }
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
@@ -1234,25 +1279,6 @@ export async function handleGenericUpdate(
                         ? `Perbarui barang gudang ${buildCreateSummary(updated as Record<string, unknown>, id)}`
                 : `Updated ${entity}: ${JSON.stringify(normalizedUpdates).slice(0, 200)}`;
     await addAuditLog(session, 'UPDATE', entity, id, updateSummary);
-
-    if (entity === 'services') {
-        const updatedService = updated as { _id?: string; name?: string; tireLayoutConfig?: Record<string, unknown> };
-        if (updatedService._id) {
-            const relatedVehicles = await getSanityClient().fetch<Array<{ _id: string; vehicleType?: string }>>(
-                `*[_type == "vehicle" && (serviceRef == $ref || serviceRef._ref == $ref)]{ _id, vehicleType }`,
-                { ref: updatedService._id }
-            );
-            await Promise.all(
-                relatedVehicles.map(vehicle => sanityUpdate(vehicle._id, {
-                    serviceName: updatedService.name || '',
-                    tireLayoutConfig: normalizeTireLayoutConfig(
-                        updatedService.tireLayoutConfig,
-                        buildDefaultTireLayoutConfig(vehicle.vehicleType || '', updatedService.name || '')
-                    ),
-                }))
-            );
-        }
-    }
 
     if (entity === 'order-items' && typeof normalizedUpdates.status === 'string') {
         const orderItem = updated as { orderRef?: unknown };

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { resolveCompanyLogoUrl } from '@/lib/branding';
 import { getBusinessCalendarDateParts, getBusinessDateTimeLocalValue } from '@/lib/business-date';
-import { getSanityClient, sanityDelete, sanityGetById, sanityGetNextNumber, sanityUpdate } from '@/lib/sanity';
+import { getSanityClient, sanityDelete, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
 import type { Driver, User } from '@/lib/types';
 
 import {
@@ -433,23 +433,52 @@ export async function handleDriverUpdate(
 
     const shouldSyncDriverName = nextDriverName !== existingDriver.name;
     const activeLinkedUsers = linkedDriverUsers.filter(user => user.active !== false);
+    const linkedUsersToRename = shouldSyncDriverName
+        ? linkedDriverUsers.filter(user => user.driverName !== nextDriverName)
+        : [];
 
     if (!isDeactivatingDriver) {
-        const updated = await sanityUpdate<Driver>(id, normalizedUpdates);
+        if (!existingDriver._rev) {
+            return NextResponse.json({ error: 'Revisi supir tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+        }
+        if (linkedUsersToRename.some(user => !user._rev)) {
+            return NextResponse.json({ error: 'Revisi akun mobile driver tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+        }
 
-        if (shouldSyncDriverName) {
-            await Promise.all(
-                linkedDriverUsers
-                    .filter(user => user.driverName !== nextDriverName)
-                    .map(user => getSanityClient().patch(user._id).set({ driverName: nextDriverName }).commit())
-            );
+        try {
+            const transaction = getSanityClient().transaction().patch(id, {
+                ifRevisionID: existingDriver._rev,
+                set: normalizedUpdates,
+            });
+            for (const user of linkedUsersToRename) {
+                transaction.patch(user._id, {
+                    ifRevisionID: user._rev as string,
+                    set: {
+                        driverName: nextDriverName,
+                    },
+                });
+            }
+            await transaction.commit();
+        } catch (error) {
+            if (isMutationConflictError(error)) {
+                return NextResponse.json(
+                    { error: 'Data supir atau akun mobile driver berubah karena ada update lain. Refresh lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+            throw error;
+        }
+
+        const updated = await sanityGetById<Driver>(id);
+        if (!updated) {
+            return NextResponse.json({ error: 'Supir tidak ditemukan' }, { status: 404 });
         }
 
         await addAuditLog(session, 'UPDATE', 'drivers', id, `Updated drivers: ${JSON.stringify(normalizedUpdates).slice(0, 200)}`);
         return NextResponse.json({
             data: updated,
             meta: {
-                syncedDriverAccountIds: shouldSyncDriverName ? linkedDriverUsers.map(user => user._id) : [],
+                syncedDriverAccountIds: linkedUsersToRename.map(user => user._id),
                 disabledDriverAccountIds: [],
                 stoppedTrackingCount: 0,
             },
@@ -569,7 +598,7 @@ export async function handleDriverUpdate(
     return NextResponse.json({
         data: updated,
         meta: {
-            syncedDriverAccountIds: shouldSyncDriverName ? linkedDriverUsers.map(user => user._id) : [],
+            syncedDriverAccountIds: linkedUsersToRename.map(user => user._id),
             disabledDriverAccountIds: activeLinkedUsers.map(user => user._id),
             stoppedTrackingCount: trackedDeliveryOrders.length,
         },
