@@ -204,9 +204,12 @@ export async function handleOrderItemHoldSet(
         return NextResponse.json({ error: 'Alasan hold wajib diisi' }, { status: 400 });
     }
 
-    const orderItem = await sanityGetById<OrderItemProgressSnapshot>(id);
+    const orderItem = await sanityGetById<OrderItemProgressSnapshot & { _rev?: string }>(id);
     if (!orderItem) {
         return NextResponse.json({ error: 'Item order tidak ditemukan' }, { status: 404 });
+    }
+    if (!orderItem._rev) {
+        return NextResponse.json({ error: 'Revisi item order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
     const progress = getOrderItemProgress(orderItem);
@@ -243,7 +246,22 @@ export async function handleOrderItemHoldSet(
             }),
         };
 
-        const updated = await sanityUpdate(id, updates);
+        let updated: unknown;
+        try {
+            const patch = getSanityClient().patch(id).ifRevisionId(orderItem._rev).set(updates);
+            if (!holdLocation) {
+                patch.unset(['holdLocation']);
+            }
+            updated = await patch.commit();
+        } catch (error) {
+            if (isMutationConflictError(error)) {
+                return NextResponse.json(
+                    { error: 'Item order berubah karena ada update lain. Refresh lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+            throw error;
+        }
         const orderRef = extractRefId(orderItem.orderRef);
         if (orderRef) {
             await syncOrderStatusFromItems(orderRef, session, addAuditLog);
@@ -286,7 +304,22 @@ export async function handleOrderItemHoldSet(
         }),
     };
 
-    const updated = await sanityUpdate(id, updates);
+    let updated: unknown;
+    try {
+        const patch = getSanityClient().patch(id).ifRevisionId(orderItem._rev).set(updates);
+        if (!holdLocation) {
+            patch.unset(['holdLocation']);
+        }
+        updated = await patch.commit();
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Item order berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
     const orderRef = extractRefId(orderItem.orderRef);
     if (orderRef) {
         await syncOrderStatusFromItems(orderRef, session, addAuditLog);
@@ -312,9 +345,12 @@ export async function handleOrderItemHoldRelease(
         return NextResponse.json({ error: 'Item order tidak valid' }, { status: 400 });
     }
 
-    const orderItem = await sanityGetById<OrderItemProgressSnapshot>(id);
+    const orderItem = await sanityGetById<OrderItemProgressSnapshot & { _rev?: string }>(id);
     if (!orderItem) {
         return NextResponse.json({ error: 'Item order tidak ditemukan' }, { status: 404 });
+    }
+    if (!orderItem._rev) {
+        return NextResponse.json({ error: 'Revisi item order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
     const progress = getOrderItemProgress(orderItem);
@@ -335,7 +371,23 @@ export async function handleOrderItemHoldRelease(
                 pendingVolume: roundQuantity(progress.pendingVolume + progress.heldVolume, 3),
             }),
         };
-        const updated = await sanityUpdate(id, updates);
+        let updated: unknown;
+        try {
+            updated = await getSanityClient()
+                .patch(id)
+                .ifRevisionId(orderItem._rev)
+                .unset(['holdReason', 'holdLocation'])
+                .set(updates)
+                .commit();
+        } catch (error) {
+            if (isMutationConflictError(error)) {
+                return NextResponse.json(
+                    { error: 'Item order berubah karena ada update lain. Refresh lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+            throw error;
+        }
 
         const orderRef = extractRefId(orderItem.orderRef);
         if (orderRef) {
@@ -368,7 +420,23 @@ export async function handleOrderItemHoldRelease(
             pendingWeight: roundQuantity(progress.pendingWeight + progress.heldWeight),
         }),
     };
-    const updated = await sanityUpdate(id, updates);
+    let updated: unknown;
+    try {
+        updated = await getSanityClient()
+            .patch(id)
+            .ifRevisionId(orderItem._rev)
+            .unset(['holdReason', 'holdLocation'])
+            .set(updates)
+            .commit();
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Item order berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
 
     const orderRef = extractRefId(orderItem.orderRef);
     if (orderRef) {
@@ -479,9 +547,17 @@ export async function handleOrderUpdateWithItems(
         return NextResponse.json({ error: 'Order, customer, penerima, dan alamat tujuan wajib diisi' }, { status: 400 });
     }
 
-    const order = await sanityGetById<{ _id: string; masterResi?: string; cargoEntryMode?: 'ORDER' | 'DELIVERY_ORDER' }>(id);
+    const order = await sanityGetById<{
+        _id: string;
+        _rev?: string;
+        masterResi?: string;
+        cargoEntryMode?: 'ORDER' | 'DELIVERY_ORDER';
+    }>(id);
     if (!order) {
         return NextResponse.json({ error: 'Order tidak ditemukan' }, { status: 404 });
+    }
+    if (!order._rev) {
+        return NextResponse.json({ error: 'Revisi order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
     if (order.cargoEntryMode === 'DELIVERY_ORDER') {
         return NextResponse.json(
@@ -500,6 +576,9 @@ export async function handleOrderUpdateWithItems(
 
     const existingItems = await getSanityClient().fetch<Array<{
         _id: string;
+        _rev?: string;
+        description?: string;
+        status?: string;
         deliveredQtyKoli?: number;
         deliveredWeight?: number;
         deliveredVolume?: number;
@@ -512,6 +591,9 @@ export async function handleOrderUpdateWithItems(
     }>>(
         `*[_type == "orderItem" && orderRef == $ref]{
             _id,
+            _rev,
+            description,
+            status,
             deliveredQtyKoli,
             deliveredWeight,
             deliveredVolume,
@@ -573,26 +655,39 @@ export async function handleOrderUpdateWithItems(
     if (!receiverName || !receiverAddress) {
         return NextResponse.json({ error: 'Order, customer, penerima, dan alamat tujuan wajib diisi' }, { status: 400 });
     }
+    if (existingItems.some(item => !item._rev)) {
+        return NextResponse.json({ error: 'Revisi item order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
 
     const transaction = getSanityClient()
         .transaction()
-        .patch(id, patch => patch.set({
-            cargoEntryMode: 'ORDER',
-            customerRef,
-            customerName: customer.name,
-            customerRecipientRef: customerRecipientRef || undefined,
-            customerPickupRef: customerPickupRef || undefined,
-            receiverName,
-            receiverPhone: normalizeOptionalText(data.receiverPhone) || normalizeOptionalText(customerRecipient?.receiverPhone) || '',
-            receiverAddress,
-            receiverCompany: normalizeOptionalText(data.receiverCompany) || normalizeOptionalText(customerRecipient?.receiverCompany),
-            pickupAddress: normalizeOptionalText(data.pickupAddress) || normalizeOptionalText(customerPickup?.pickupAddress) || customer.address || undefined,
-            serviceRef: serviceRef || '',
-            serviceName,
-            notes: normalizeOptionalText(data.notes),
-        }));
+        .patch(id, {
+            ifRevisionID: order._rev,
+            set: {
+                cargoEntryMode: 'ORDER',
+                customerRef,
+                customerName: customer.name,
+                customerRecipientRef: customerRecipientRef || undefined,
+                customerPickupRef: customerPickupRef || undefined,
+                receiverName,
+                receiverPhone: normalizeOptionalText(data.receiverPhone) || normalizeOptionalText(customerRecipient?.receiverPhone) || '',
+                receiverAddress,
+                receiverCompany: normalizeOptionalText(data.receiverCompany) || normalizeOptionalText(customerRecipient?.receiverCompany),
+                pickupAddress: normalizeOptionalText(data.pickupAddress) || normalizeOptionalText(customerPickup?.pickupAddress) || customer.address || undefined,
+                serviceRef: serviceRef || '',
+                serviceName,
+                notes: normalizeOptionalText(data.notes),
+            },
+        });
 
     for (const item of existingItems) {
+        transaction.patch(item._id, {
+            ifRevisionID: item._rev as string,
+            set: {
+                description: item.description,
+                status: item.status,
+            },
+        });
         transaction.delete(item._id);
     }
 
@@ -600,7 +695,17 @@ export async function handleOrderUpdateWithItems(
         transaction.create(buildOrderItemDraftDocument(id, item));
     }
 
-    await transaction.commit();
+    try {
+        await transaction.commit();
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Data order atau item target berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
     await addAuditLog(
         session,
         'UPDATE',
