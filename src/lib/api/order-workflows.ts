@@ -9,7 +9,7 @@ import {
     roundQuantity,
 } from '@/lib/order-item-progress';
 import { resolveCompanyLogoUrl } from '@/lib/branding';
-import { getSanityClient, sanityGetById, sanityGetNextNumber, sanityUpdate } from '@/lib/sanity';
+import { getSanityClient, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
 
 import {
     assertIsoDate,
@@ -132,43 +132,60 @@ function buildOrderItemDraftDocument(
 }
 
 export async function syncOrderStatusFromItems(orderRef: string, session: ApiSession, addAuditLog: AuditLogFn) {
-    const order = await sanityGetById<{ _id: string; status?: string }>(orderRef);
-    if (!order || order.status === 'CANCELLED') {
-        return;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        const order = await sanityGetById<{ _id: string; _rev?: string; status?: string }>(orderRef);
+        if (!order || order.status === 'CANCELLED') {
+            return;
+        }
+
+        const items = await getSanityClient().fetch<OrderItemStatusSummary[]>(
+            `*[_type == "orderItem" && orderRef == $orderRef]{
+                status,
+                qtyKoli,
+                weight,
+                volume,
+                deliveredQtyKoli,
+                deliveredWeight,
+                deliveredVolume,
+                assignedQtyKoli,
+                assignedWeight,
+                assignedVolume,
+                heldQtyKoli,
+                heldWeight,
+                heldVolume
+            }`,
+            { orderRef }
+        );
+        const nextStatus = deriveOrderStatusFromItems(items);
+
+        if (order.status === nextStatus) {
+            return;
+        }
+        if (!order._rev) {
+            return;
+        }
+
+        try {
+            await getSanityClient()
+                .patch(orderRef)
+                .ifRevisionId(order._rev)
+                .set({ status: nextStatus })
+                .commit();
+            await addAuditLog(
+                session,
+                'UPDATE',
+                'orders',
+                orderRef,
+                `Order auto-${nextStatus}: sinkronisasi dari ${items.length} item`
+            );
+            return;
+        } catch (error) {
+            if (isMutationConflictError(error)) {
+                continue;
+            }
+            throw error;
+        }
     }
-
-    const items = await getSanityClient().fetch<OrderItemStatusSummary[]>(
-        `*[_type == "orderItem" && orderRef == $orderRef]{
-            status,
-            qtyKoli,
-            weight,
-            volume,
-            deliveredQtyKoli,
-            deliveredWeight,
-            deliveredVolume,
-            assignedQtyKoli,
-            assignedWeight,
-            assignedVolume,
-            heldQtyKoli,
-            heldWeight,
-            heldVolume
-        }`,
-        { orderRef }
-    );
-    const nextStatus = deriveOrderStatusFromItems(items);
-
-    if (order.status === nextStatus) {
-        return;
-    }
-
-    await sanityUpdate(orderRef, { status: nextStatus });
-    await addAuditLog(
-        session,
-        'UPDATE',
-        'orders',
-        orderRef,
-        `Order auto-${nextStatus}: sinkronisasi dari ${items.length} item`
-    );
 }
 
 export async function handleOrderItemHoldSet(

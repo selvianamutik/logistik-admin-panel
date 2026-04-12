@@ -32,6 +32,7 @@ import {
     assertIsoDate,
     CASH_ACCOUNT_SYSTEM_KEY,
     extractRefId,
+    isMutationConflictError,
     isPlainObject,
     normalizeCurrencyNumber,
     normalizeNumber,
@@ -1175,7 +1176,30 @@ export async function handleGenericUpdate(
                             ? await normalizeVehiclePayload(session, updates, { partial: true, excludeId: id })
                             : sanitizedEntityUpdates ?? updates;
 
-    const updated = await sanityUpdate(id, normalizedUpdates);
+    const currentDoc = await sanityGetById<{ _id: string; _rev?: string }>(id);
+    if (!currentDoc) {
+        return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+    if (!currentDoc._rev) {
+        return NextResponse.json({ error: 'Revisi dokumen tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
+
+    let updated: unknown;
+    try {
+        updated = await getSanityClient()
+            .patch(id)
+            .ifRevisionId(currentDoc._rev)
+            .set(normalizedUpdates)
+            .commit();
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Dokumen berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
     if (!updated) {
         return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
