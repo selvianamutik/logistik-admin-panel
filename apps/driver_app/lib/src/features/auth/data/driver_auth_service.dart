@@ -55,6 +55,7 @@ class DriverAuthService {
       role: user['role'] as String? ?? 'DRIVER',
       driverRef: driverRef,
       token: decoded['token'] as String?,
+      accessNotice: parseDriverAccessNotice(decoded['driverAccessNotice']),
     );
   }
 

@@ -324,6 +324,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         'drivers',
         'incidents',
     ]);
+    const nonDetailChildSegments = new Set(['new', 'edit', 'skors', 'scoring']);
 
     // Breadcrumbs
     const pathParts = pathname.split('/').filter(Boolean);
@@ -336,6 +337,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             'expense-categories': 'Kategori Biaya', expenses: 'Pengeluaran',
             employees: 'Karyawan', attendance: 'Absensi',
             reports: 'Laporan', fleet: 'Armada', vehicles: 'Kendaraan', drivers: 'Supir',
+            skors: 'Skors',
+            scoring: 'Skors',
             maintenance: 'Maintenance', incidents: 'Insiden', settings: 'Pengaturan',
             profile: 'Profil', password: 'Password', company: 'Perusahaan',
             users: 'Pengguna', 'audit-logs': 'Audit Aktivitas', new: 'Baru', edit: 'Edit',
@@ -344,7 +347,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         };
         const resolvedLabel =
             labels[part] ||
-            (detailSegmentParents.has(previousPart) ? 'Detail' : part);
+            (detailSegmentParents.has(previousPart) && !nonDetailChildSegments.has(part) ? 'Detail' : part);
         return {
             label: resolvedLabel,
             href,

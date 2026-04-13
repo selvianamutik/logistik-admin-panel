@@ -1,4 +1,4 @@
-import { getDriverAssignedDeliveryOrders, requireDriverSessionContext } from '@/lib/api/driver-portal';
+import { getDriverAssignedDeliveryOrders, getDriverPortalAccessNotice, requireDriverSessionContext } from '@/lib/api/driver-portal';
 import { jsonNoStore } from '@/lib/api/request-security';
 
 export const dynamic = 'force-dynamic';
@@ -8,6 +8,11 @@ export async function GET(request: Request) {
     const result = await requireDriverSessionContext(request);
     if ('error' in result) {
         return jsonNoStore({ error: result.error }, { status: result.status });
+    }
+
+    const driverAccessNotice = await getDriverPortalAccessNotice(result.driver._id);
+    if (driverAccessNotice?.blocking) {
+        return jsonNoStore({ error: driverAccessNotice.message }, { status: 403 });
     }
 
     const deliveryOrders = await getDriverAssignedDeliveryOrders(result.driver._id);

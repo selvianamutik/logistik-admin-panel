@@ -48,13 +48,7 @@ async function fetchCurrentDriverScore(driverRef: string, today: string) {
 }
 
 export async function getCurrentDriverScore(driverRef: string, today = getBusinessDateValue()) {
-    const score = await fetchCurrentDriverScore(driverRef, today);
-
-    if (score) {
-        console.log(`[getCurrentDriverScore] Found active ${score.scoreType} for ${driverRef}`);
-    }
-
-    return score;
+    return fetchCurrentDriverScore(driverRef, today);
 }
 
 export async function acknowledgeDriverWarningScore(scoreId: string, driverRef: string) {

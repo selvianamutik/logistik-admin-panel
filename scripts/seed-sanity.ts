@@ -5,7 +5,6 @@
 
 import { createClient } from '@sanity/client';
 
-import { addDaysToDateValue, getBusinessDateValue } from '../src/lib/business-date';
 import { buildFreightNotaDisplayNumberFromParts } from '../src/lib/nota-numbering';
 import { loadScriptEnv, requireEnv } from './_env';
 
@@ -32,12 +31,6 @@ const OWNER_USER_NAME = 'Raka Prasetya';
 const OPERASIONAL_USER_NAME = 'Dimas Wicaksono';
 const FINANCE_USER_NAME = 'Nadia Puspita';
 const ARMADA_USER_NAME = 'Yoga Saputra';
-const TEMP_DRIVER_SCORE_EFFECTIVE_DATE = getBusinessDateValue();
-const TEMP_DRIVER_SCORE_DURATION_DAYS = 3;
-const TEMP_DRIVER_SCORE_DUE_DATE = addDaysToDateValue(
-    TEMP_DRIVER_SCORE_EFFECTIVE_DATE,
-    TEMP_DRIVER_SCORE_DURATION_DAYS - 1
-);
 
 const documents: SeedDoc[] = [];
 
@@ -1465,23 +1458,6 @@ function buildSeedDocuments() {
             simExpiry: '2028-08-20',
             address: 'Gresik',
             active: true,
-        },
-        {
-            _id: 'driver-score-temp-001',
-            _type: 'driverScore',
-            driverRef: 'drv-001',
-            driverName: 'Agus Santoso',
-            scoreType: 'DAYS',
-            effectiveDate: TEMP_DRIVER_SCORE_EFFECTIVE_DATE,
-            durationDays: TEMP_DRIVER_SCORE_DURATION_DAYS,
-            dueDate: TEMP_DRIVER_SCORE_DUE_DATE,
-            notes: 'TEMP seed skors aktif untuk verifikasi payload driverAccessNotice setelah reseed.',
-            createdAt: `${TEMP_DRIVER_SCORE_EFFECTIVE_DATE}T01:00:00Z`,
-            createdBy: 'user-owner-001',
-            createdByName: OWNER_USER_NAME,
-            updatedAt: `${TEMP_DRIVER_SCORE_EFFECTIVE_DATE}T01:00:00Z`,
-            updatedBy: 'user-owner-001',
-            updatedByName: OWNER_USER_NAME,
         },
         {
             _id: 'veh-001',

@@ -1,4 +1,4 @@
-import { requireDriverSessionContext } from '@/lib/api/driver-portal';
+import { getDriverPortalAccessNotice, requireDriverSessionContext } from '@/lib/api/driver-portal';
 import { extractRefId } from '@/lib/api/data-helpers';
 import {
     handleDeliveryOrderDriverStatusRequest,
@@ -43,6 +43,10 @@ export async function POST(request: Request) {
     const auth = await requireDriverSessionContext(request);
     if ('error' in auth) {
         return jsonNoStore({ error: auth.error }, { status: auth.status });
+    }
+    const driverAccessNotice = await getDriverPortalAccessNotice(auth.driver._id);
+    if (driverAccessNotice?.blocking) {
+        return jsonNoStore({ error: driverAccessNotice.message }, { status: 403 });
     }
 
     try {

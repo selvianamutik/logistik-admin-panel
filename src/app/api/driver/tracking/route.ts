@@ -1,6 +1,7 @@
 import {
     formatTrackingLocationText,
     hasBearerDriverAuth,
+    getDriverPortalAccessNotice,
     normalizeTrackingNumber,
     requireDriverSessionContext,
     toSpeedKph,
@@ -161,6 +162,10 @@ export async function POST(request: Request) {
     const auth = await requireDriverSessionContext(request);
     if ('error' in auth) {
         return jsonNoStore({ error: auth.error }, { status: auth.status });
+    }
+    const driverAccessNotice = await getDriverPortalAccessNotice(auth.driver._id);
+    if (driverAccessNotice?.blocking) {
+        return jsonNoStore({ error: driverAccessNotice.message }, { status: 403 });
     }
 
     try {
