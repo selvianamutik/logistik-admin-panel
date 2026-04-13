@@ -23,6 +23,7 @@ const RESET_TYPES = [
     'loginRateLimit',
     'incident',
     'trackingLog',
+    'driverScore',
     'driverVoucherDisbursement',
     'driverVoucherItem',
     'driverVoucher',

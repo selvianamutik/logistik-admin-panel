@@ -59,6 +59,10 @@ import {
     handleDriverVoucherItemDelete,
 } from './driver-workflows';
 import {
+    handleDriverScoreCreate,
+    handleDriverScoreUpdate,
+} from './driver-score-workflows';
+import {
     buildEmployeeAttendanceSummary,
     buildEmployeeSummary,
     normalizeEmployeeAttendanceCreatePayload,
@@ -1120,6 +1124,10 @@ export async function handleGenericUpdate(
         return handleDriverUpdate(session, id, updates, addAuditLog);
     }
 
+    if (entity === 'driver-scores') {
+        return handleDriverScoreUpdate(session, id, updates, addAuditLog);
+    }
+
     if (entity === 'bank-accounts') {
         if ('currentBalance' in updates || 'initialBalance' in updates) {
             return NextResponse.json({ error: 'Saldo rekening tidak boleh diubah manual lewat API umum' }, { status: 409 });
@@ -1823,6 +1831,10 @@ export async function handleGenericCreate(
     if (entity === 'drivers') {
         shouldMergeRawCreatePayload = false;
         Object.assign(newDoc, await normalizeDriverPayload(data));
+    }
+
+    if (entity === 'driver-scores') {
+        return handleDriverScoreCreate(session, data, addAuditLog);
     }
 
     if (entity === 'vehicles') {

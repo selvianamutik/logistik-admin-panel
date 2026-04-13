@@ -7,10 +7,11 @@ import { Car, Smartphone, Truck, Wallet } from 'lucide-react';
 import { useApp, useToast } from '../../../layout';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
+import { buildDriverScoresQuery, DRIVER_SCORE_TYPE_META, getDriverScoreStatusMeta, getLatestDriverScoreSummary } from '@/lib/driver-scoring-support';
 import { buildDriverAccountMap, isDriverAccountActive, type DriverMobileAccount } from '@/lib/fleet-asset-page-support';
 import { DRIVER_VOUCHER_STATUS_MAP } from '@/lib/driver-voucher-detail-support';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
-import type { DeliveryOrder, Driver, DriverVoucher } from '@/lib/types';
+import type { DeliveryOrder, Driver, DriverScore, DriverVoucher } from '@/lib/types';
 import {
     DO_STATUS_MAP,
     formatCurrency,
@@ -29,10 +30,12 @@ export default function DriverDetailPage() {
     const [driver, setDriver] = useState<Driver | null>(null);
     const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([]);
     const [vouchers, setVouchers] = useState<DriverVoucher[]>([]);
+    const [scores, setScores] = useState<DriverScore[]>([]);
     const [accounts, setAccounts] = useState<DriverMobileAccount[]>([]);
     const [loading, setLoading] = useState(true);
 
     const canViewDriverAccounts = user ? (user.role === 'OWNER' || user.role === 'ARMADA') : false;
+    const canViewDriverScores = user ? hasPermission(user.role, 'driverScores', 'view') : false;
     const canViewDriverVouchers = user ? hasPermission(user.role, 'driverVouchers', 'view') : false;
     const canOpenCustomerPage = user ? hasPageAccess(user.role, 'customers') : false;
     const canOpenDeliveryOrderPage = user ? hasPageAccess(user.role, 'deliveryOrders') : false;
@@ -43,7 +46,7 @@ export default function DriverDetailPage() {
         setLoading(true);
         try {
             const driverFilter = encodeURIComponent(JSON.stringify({ driverRef: driverId }));
-            const [driverData, doRows, voucherRows, accountRows] = await Promise.all([
+            const [driverData, doRows, voucherRows, accountRows, scoreRows] = await Promise.all([
                 fetchAdminData<Driver | null>(`/api/data?entity=drivers&id=${driverId}`, 'Gagal memuat data supir'),
                 fetchAllAdminCollectionData<DeliveryOrder>(`/api/data?entity=delivery-orders&filter=${driverFilter}&sortField=date&sortDir=desc`, 'Gagal memuat riwayat DO'),
                 canViewDriverVouchers
@@ -57,12 +60,17 @@ export default function DriverDetailPage() {
                             return (payload.data || []) as DriverMobileAccount[];
                         })
                     : Promise.resolve([] as DriverMobileAccount[]),
+                fetchAllAdminCollectionData<DriverScore>(
+                    `/api/data?${buildDriverScoresQuery({ page: 1, pageSize: 500, driverRef: driverId })}`,
+                    'Gagal memuat riwayat scoring supir'
+                ),
             ]);
 
             setDriver(driverData);
             setDeliveryOrders((doRows || []).sort((a, b) => `${b.date}-${b._id}`.localeCompare(`${a.date}-${a._id}`)));
             setVouchers((voucherRows || []).sort((a, b) => `${b.issuedDate}-${b._id}`.localeCompare(`${a.issuedDate}-${a._id}`)));
             setAccounts(accountRows || []);
+            setScores((scoreRows || []).sort((a, b) => `${b.effectiveDate}-${b.createdAt}-${b._id}`.localeCompare(`${a.effectiveDate}-${a.createdAt}-${a._id}`)));
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail supir');
         } finally {
@@ -88,6 +96,7 @@ export default function DriverDetailPage() {
         () => vouchers.reduce((sum, item) => sum + getDriverVoucherFinancialSummary(item).driverFeeAmount, 0),
         [vouchers]
     );
+    const latestScoreSummary = useMemo(() => getLatestDriverScoreSummary(scores), [scores]);
 
     if (loading) {
         return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 320 }} /></div>;
@@ -174,6 +183,34 @@ export default function DriverDetailPage() {
                                     </div>
                                 )}
                             </div>
+                            <div style={{ padding: '0.9rem 1rem', borderRadius: '0.8rem', border: '1px solid var(--color-gray-200)', background: 'white', marginTop: '1rem' }}>
+                                <div className="text-muted text-sm">Status Scoring</div>
+                                {latestScoreSummary ? (
+                                    <div style={{ marginTop: '0.35rem', display: 'grid', gap: '0.35rem' }}>
+                                        <div className="font-medium" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                            <span>{DRIVER_SCORE_TYPE_META[latestScoreSummary.score.scoreType].label}</span>
+                                            <span className={`badge ${getDriverScoreStatusMeta(latestScoreSummary.score).badgeClass}`}>
+                                                {getDriverScoreStatusMeta(latestScoreSummary.score).label}
+                                            </span>
+                                        </div>
+                                        <div className="text-muted text-sm">
+                                            Berlaku {formatDate(latestScoreSummary.score.effectiveDate)} sampai {formatDate(latestScoreSummary.score.dueDate)}
+                                        </div>
+                                        <div className="text-muted text-sm">
+                                            {latestScoreSummary.score.notes || 'Belum ada catatan tambahan'}
+                                        </div>
+                                        {canViewDriverScores && (
+                                            <div className="text-muted text-sm">
+                                                Kelola skors dari <Link href={`/fleet/drivers/skors?driverRef=${driverId}`} style={{ color: 'var(--color-primary)' }}>halaman skors supir</Link>.
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div style={{ marginTop: '0.35rem' }}>
+                                        Belum ada scoring untuk supir ini.
+                                    </div>
+                                )}
+                            </div>
                             <div style={{ padding: '0.9rem 1rem', borderRadius: '0.8rem', border: '1px solid var(--color-primary-soft)', background: 'var(--color-primary-surface)', marginTop: '1rem' }}>
                                 <div className="text-muted text-sm">Catatan Struktur Data</div>
                                 <div style={{ marginTop: '0.35rem', lineHeight: 1.6 }}>
@@ -249,6 +286,67 @@ export default function DriverDetailPage() {
                     </div>
                 </div>
             </div>
+
+            {canViewDriverScores && <div className="card">
+                <div className="card-header">
+                    <div>
+                        <span className="card-header-title">Riwayat Warning & Skors Supir</span>
+                        <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>Warning hilang setelah dibaca driver. Skors selesai otomatis saat masa berlakunya lewat.</div>
+                    </div>
+                </div>
+                <div className="card-body">
+                    <div className="table-wrapper table-desktop-only">
+                        <table>
+                            <thead><tr><th>Skor</th><th>Mulai Berlaku</th><th>Durasi</th><th>Jatuh Tempo</th><th>Status</th><th>Catatan</th></tr></thead>
+                            <tbody>
+                                {scores.length === 0 ? (
+                                    <tr><td colSpan={6} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada riwayat scoring untuk supir ini</td></tr>
+                                ) : scores.map(item => {
+                                    const statusMeta = getDriverScoreStatusMeta(item);
+                                    return (
+                                        <tr key={item._id}>
+                                            <td>{DRIVER_SCORE_TYPE_META[item.scoreType].label}</td>
+                                            <td>{formatDate(item.effectiveDate)}</td>
+                                            <td>{item.durationDays} hari</td>
+                                            <td>{formatDate(item.dueDate)}</td>
+                                            <td><span className={`badge ${statusMeta.badgeClass}`}>{statusMeta.label}</span></td>
+                                            <td>{item.notes || '-'}</td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div className="mobile-record-list">
+                        {scores.length === 0 ? (
+                            <div className="mobile-record-card"><div className="mobile-record-title">Belum ada riwayat scoring untuk supir ini</div></div>
+                        ) : scores.map(item => {
+                            const statusMeta = getDriverScoreStatusMeta(item);
+                            return (
+                                <div key={item._id} className="mobile-record-card">
+                                    <div className="mobile-record-header">
+                                        <div>
+                                            <div className="mobile-record-title">{DRIVER_SCORE_TYPE_META[item.scoreType].label}</div>
+                                            <div className="mobile-record-subtitle">{formatDate(item.effectiveDate)} - {formatDate(item.dueDate)}</div>
+                                        </div>
+                                        <span className={`badge ${statusMeta.badgeClass}`}>{statusMeta.label}</span>
+                                    </div>
+                                    <div className="mobile-record-meta">
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Durasi</span>
+                                            <span className="mobile-record-value">{item.durationDays} hari</span>
+                                        </div>
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Catatan</span>
+                                            <span className="mobile-record-value">{item.notes || '-'}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            </div>}
 
             <div className="card">
                 <div className="card-header">

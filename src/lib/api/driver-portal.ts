@@ -1,10 +1,14 @@
 import { getDriverSession, getSession, getSessionFromToken } from '@/lib/auth';
+import { getBusinessDateValue } from '@/lib/business-date';
+import { getDriverScoreStatusMeta } from '@/lib/driver-scoring-support';
+import { getCurrentDriverScore } from '@/lib/api/driver-score-workflows';
 import { getSanityClient, sanityGetById, sanityGetCompanyProfile } from '@/lib/sanity';
 import type {
     CompanyProfile,
     DeliveryOrder,
     DeliveryOrderItem,
     Driver,
+    DriverScore,
     SessionUser,
     User,
 } from '@/lib/types';
@@ -20,6 +24,19 @@ export type DriverAssignedDeliveryOrderCargoItem = DeliveryOrderItem;
 
 export type DriverAssignedDeliveryOrder = DeliveryOrder & {
     driverCargoItems?: DriverAssignedDeliveryOrderCargoItem[];
+};
+
+export type DriverPortalAccessNotice = {
+    scoreId: string;
+    scoreType: DriverScore['scoreType'];
+    title: string;
+    message: string;
+    blocking: boolean;
+    effectiveDate: string;
+    dueDate: string;
+    durationDays: number;
+    notes?: string;
+    warningAcknowledgedAt?: string;
 };
 
 export async function requireInternalSession(allowedRoles?: InternalUserRole[]) {
@@ -85,6 +102,34 @@ export async function getDriverAppContext() {
                 themeColor: company.themeColor,
             }
             : null,
+    };
+}
+
+export async function getDriverPortalAccessNotice(driverRef: string): Promise<DriverPortalAccessNotice | null> {
+    const score = await getCurrentDriverScore(driverRef, getBusinessDateValue());
+    if (!score) {
+        return null;
+    }
+
+    const statusMeta = getDriverScoreStatusMeta(score);
+    const blocking = score.scoreType === 'DAYS';
+    const title = blocking ? 'Akses aplikasi ditangguhkan' : 'Peringatan untuk akun driver';
+    const baseMessage = blocking
+        ? `Akun driver ini sedang diskors sampai ${score.dueDate || 'waktu yang belum ditentukan'}. Akses aplikasi ditutup sementara.`
+        : `Akun driver ini mendapat warning aktif yang perlu dibaca.`;
+    const noteText = score.notes ? ` Catatan admin: ${score.notes}` : '';
+
+    return {
+        scoreId: score._id,
+        scoreType: score.scoreType,
+        title,
+        message: `${baseMessage}${noteText} (${statusMeta.label})`,
+        blocking,
+        effectiveDate: score.effectiveDate,
+        dueDate: score.dueDate,
+        durationDays: score.durationDays,
+        notes: score.notes,
+        warningAcknowledgedAt: score.warningAcknowledgedAt,
     };
 }
 

@@ -67,6 +67,7 @@ import {
     handleOrderTargetRevision,
     handleOrderUpdateWithItems,
 } from '@/lib/api/order-workflows';
+import { handleDriverScoreEndEarly } from '@/lib/api/driver-score-workflows';
 import { handleInvoiceCreate } from '@/lib/api/support-workflows';
 import {
     filterExpensesByRole,
@@ -217,6 +218,7 @@ function getMutationPermissionAction(action?: string): keyof ModulePermissions {
         action === 'repair-issue-ledger' ||
         action === 'mark-paid' ||
         action === 'void' ||
+        action === 'end-early' ||
         action === 'complete-with-materials'
     ) {
         return 'update';
@@ -1424,6 +1426,10 @@ export async function POST(request: Request) {
 
         if (entity === 'invoice-adjustments') {
             return await handleInvoiceAdjustmentCreate(session, data, addAuditLog);
+        }
+
+        if (entity === 'driver-scores' && action === 'end-early') {
+            return await handleDriverScoreEndEarly(session, data, addAuditLog);
         }
 
         if (action === 'update') {

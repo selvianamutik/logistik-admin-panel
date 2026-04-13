@@ -1,6 +1,6 @@
 import { createSession, hashPassword, isPasswordHashMigrated, verifyPassword } from '@/lib/auth';
 import { isMutationConflictError, writeAuditLog } from '@/lib/api/data-helpers';
-import { getDriverAppContext, sanitizeDriverForMobile } from '@/lib/api/driver-portal';
+import { getDriverAppContext, getDriverPortalAccessNotice, sanitizeDriverForMobile } from '@/lib/api/driver-portal';
 import { clearFailedAttempts, getRequestIp, recordLoginAttempt } from '@/lib/api/rate-limit';
 import { jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
 import { sanityGetById, getSanityClient } from '@/lib/sanity';
@@ -185,6 +185,7 @@ export async function POST(request: Request) {
 
         const token = await createSession(syncedUser);
         const appContext = await getDriverAppContext();
+        const driverAccessNotice = await getDriverPortalAccessNotice(driver._id);
         await writeAuditLog(
             { _id: syncedUser._id, name: syncedUser.name, email: syncedUser.email, role: syncedUser.role },
             'LOGIN',
@@ -207,6 +208,7 @@ export async function POST(request: Request) {
             },
             driver: sanitizeDriverForMobile(driver),
             company: appContext.company,
+            driverAccessNotice,
         });
     } catch (error) {
         console.error('Driver mobile login error:', error);

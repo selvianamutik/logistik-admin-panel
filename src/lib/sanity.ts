@@ -227,6 +227,7 @@ export const SANITY_TYPE_MAP: Record<string, string> = {
     'driver-borongans': 'driverBorongan',
     'driver-borogan-items': 'driverBoronganItem',
     'driver-borongan-items': 'driverBoronganItem',
+    'driver-scores': 'driverScore',
     company: 'companyProfile',
 };
 
