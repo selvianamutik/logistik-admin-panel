@@ -11,6 +11,7 @@ import {
 
 import {
     assertIsoDate,
+    normalizeCurrencyNumber,
     normalizeNumber,
     normalizeOptionalText,
     normalizeText,
@@ -52,6 +53,29 @@ const VEHICLE_STATUS_VALUES = new Set(['ACTIVE', 'IN_SERVICE', 'OUT_OF_SERVICE',
 const TIRE_HOLDER_TYPES = new Set(['INTERNAL_VEHICLE', 'EXTERNAL_VEHICLE', 'WAREHOUSE']);
 const TIRE_EVENT_STATUSES = new Set(['IN_USE', 'SPARE', 'IN_WAREHOUSE', 'LOANED_OUT', 'SCRAPPED']);
 const TIRE_TYPES = new Set(['Tubeless', 'Tube Type', 'Solid']);
+const INCIDENT_SETTLEMENT_LINE_TYPES = new Set(['COST', 'COMPENSATION', 'RECOVERY']);
+const INCIDENT_SETTLEMENT_LINE_STATUSES = new Set(['DRAFT', 'APPROVED', 'POSTED', 'VOID']);
+const INCIDENT_SETTLEMENT_RECIPIENT_TYPES = new Set(['DRIVER', 'KERNET', 'THIRD_PARTY', 'FAMILY', 'VENDOR', 'INSURANCE', 'INTERNAL', 'OTHER']);
+const INCIDENT_SETTLEMENT_CATEGORIES = new Set([
+    'TOWING',
+    'REPAIR',
+    'SPAREPART',
+    'TIRE',
+    'MEDICAL',
+    'THIRD_PARTY_DAMAGE',
+    'POLICE_ADMIN',
+    'ACCOMMODATION',
+    'CARGO_HANDLING',
+    'COMPENSATION_DRIVER',
+    'COMPENSATION_CREW',
+    'COMPENSATION_THIRD_PARTY',
+    'COMPENSATION_FAMILY',
+    'INSURANCE_CLAIM',
+    'THIRD_PARTY_RECOVERY',
+    'VENDOR_RECOVERY',
+    'INTERNAL_RECOVERY',
+    'OTHER',
+]);
 
 function hasOwnKey(value: Record<string, unknown>, key: string) {
     return Object.prototype.hasOwnProperty.call(value, key);
@@ -284,6 +308,85 @@ export async function normalizeExpenseCategoryPayload(
             throw new Error('Status kategori biaya tidak valid');
         }
         next.active = typeof data.active === 'boolean' ? data.active : true;
+    }
+
+    return next;
+}
+
+export async function normalizeIncidentSettlementLinePayload(
+    data: Record<string, unknown>,
+    options?: { partial?: boolean }
+) {
+    const partial = options?.partial === true;
+    const next: Record<string, unknown> = {};
+
+    if (!partial || hasOwnKey(data, 'lineType')) {
+        const lineType = typeof data.lineType === 'string' && INCIDENT_SETTLEMENT_LINE_TYPES.has(data.lineType)
+            ? data.lineType
+            : '';
+        if (!lineType) {
+            throw new Error('Tipe detail insiden tidak valid');
+        }
+        next.lineType = lineType;
+    }
+
+    if (!partial || hasOwnKey(data, 'category')) {
+        const category = typeof data.category === 'string' && INCIDENT_SETTLEMENT_CATEGORIES.has(data.category)
+            ? data.category
+            : '';
+        if (!category) {
+            throw new Error('Kategori detail insiden tidak valid');
+        }
+        next.category = category;
+    }
+
+    if (!partial || hasOwnKey(data, 'date')) {
+        const date = normalizeText(data.date) || getBusinessDateValue();
+        assertIsoDate(date, 'Tanggal detail insiden');
+        next.date = date;
+    }
+
+    if (!partial || hasOwnKey(data, 'amount')) {
+        const amount = normalizeCurrencyNumber(data.amount, { maxFractionDigits: 0 });
+        if (!Number.isFinite(amount) || amount <= 0) {
+            throw new Error('Nominal detail insiden tidak valid');
+        }
+        next.amount = amount;
+    }
+
+    if (!partial || hasOwnKey(data, 'description')) {
+        const description = normalizeText(data.description);
+        if (!description) {
+            throw new Error('Deskripsi detail insiden wajib diisi');
+        }
+        next.description = description;
+    }
+
+    if (!partial || hasOwnKey(data, 'payeeName')) {
+        next.payeeName = normalizeOptionalText(data.payeeName);
+    }
+
+    if (!partial || hasOwnKey(data, 'recipientType')) {
+        const recipientType = normalizeOptionalText(data.recipientType)?.toUpperCase();
+        if (recipientType && !INCIDENT_SETTLEMENT_RECIPIENT_TYPES.has(recipientType)) {
+            throw new Error('Pihak penerima / sumber tidak valid');
+        }
+        next.recipientType = recipientType;
+    }
+
+    if (!partial || hasOwnKey(data, 'note')) {
+        next.note = normalizeOptionalText(data.note);
+    }
+
+    if (!partial || hasOwnKey(data, 'status')) {
+        const status = typeof data.status === 'string' && INCIDENT_SETTLEMENT_LINE_STATUSES.has(data.status)
+            ? data.status
+            : undefined;
+        if (!partial && !status) {
+            next.status = 'DRAFT';
+        } else if (status) {
+            next.status = status;
+        }
     }
 
     return next;

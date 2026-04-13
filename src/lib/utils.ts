@@ -305,6 +305,30 @@ export const INCIDENT_STATUS_MAP: Record<string, { label: string; color: string 
     CLOSED: { label: 'Ditutup', color: 'gray' },
 };
 
+export const INCIDENT_SETTLEMENT_LINE_TYPE_MAP: Record<string, { label: string; color: string }> = {
+    COST: { label: 'Biaya', color: 'danger' },
+    COMPENSATION: { label: 'Santunan', color: 'warning' },
+    RECOVERY: { label: 'Recovery', color: 'success' },
+};
+
+export const INCIDENT_SETTLEMENT_STATUS_MAP: Record<string, { label: string; color: string }> = {
+    DRAFT: { label: 'Draft', color: 'gray' },
+    APPROVED: { label: 'Disetujui', color: 'info' },
+    POSTED: { label: 'Tercatat', color: 'success' },
+    VOID: { label: 'Void', color: 'danger' },
+};
+
+export const INCIDENT_SETTLEMENT_RECIPIENT_TYPE_MAP: Record<string, string> = {
+    DRIVER: 'Driver',
+    KERNET: 'Kernet',
+    THIRD_PARTY: 'Pihak Ketiga',
+    FAMILY: 'Keluarga',
+    VENDOR: 'Vendor',
+    INSURANCE: 'Asuransi',
+    INTERNAL: 'Internal',
+    OTHER: 'Lainnya',
+};
+
 export const MAINTENANCE_STATUS_MAP: Record<string, { label: string; color: string }> = {
     SCHEDULED: { label: 'Dijadwalkan', color: 'info' },
     DONE: { label: 'Selesai', color: 'success' },
@@ -329,6 +353,27 @@ export const INCIDENT_TYPE_MAP: Record<string, string> = {
     ENGINE_TROUBLE: 'Masalah Mesin',
     ACCIDENT_MINOR: 'Kecelakaan Ringan',
     ACCIDENT_MAJOR: 'Kecelakaan Berat',
+    OTHER: 'Lainnya',
+};
+
+export const INCIDENT_SETTLEMENT_CATEGORY_MAP: Record<string, string> = {
+    TOWING: 'Derek / Evakuasi',
+    REPAIR: 'Perbaikan Bengkel',
+    SPAREPART: 'Sparepart',
+    TIRE: 'Ban Darurat / Ban Pengganti',
+    MEDICAL: 'Biaya Medis',
+    THIRD_PARTY_DAMAGE: 'Ganti Rugi Pihak Ketiga',
+    POLICE_ADMIN: 'Polisi / Administrasi',
+    ACCOMMODATION: 'Akomodasi Darurat',
+    CARGO_HANDLING: 'Cargo Handling / Bongkar Ulang',
+    COMPENSATION_DRIVER: 'Santunan Driver',
+    COMPENSATION_CREW: 'Santunan Kernet',
+    COMPENSATION_THIRD_PARTY: 'Santunan Pihak Ketiga',
+    COMPENSATION_FAMILY: 'Santunan Keluarga',
+    INSURANCE_CLAIM: 'Klaim Asuransi',
+    THIRD_PARTY_RECOVERY: 'Recovery Pihak Ketiga',
+    VENDOR_RECOVERY: 'Recovery Vendor',
+    INTERNAL_RECOVERY: 'Recovery Internal',
     OTHER: 'Lainnya',
 };
 

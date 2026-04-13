@@ -987,6 +987,7 @@ export type PrivacyLevel = 'internal' | 'ownerOnly';
 export interface Expense {
   _id: string;
   _type: 'expense';
+  _rev?: string;
   categoryRef: string;
   categoryName?: string;
   date: string;
@@ -1001,6 +1002,7 @@ export interface Expense {
   relatedVehicleRef?: string;
   relatedVehiclePlate?: string;
   relatedIncidentRef?: string;
+  relatedIncidentSettlementLineRef?: string;
   relatedMaintenanceRef?: string;
   boronganRef?: string;
   voucherRef?: string;
@@ -1153,6 +1155,7 @@ export type IncidentStatus = 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
 export interface Incident {
   _id: string;
   _type: 'incident';
+  _rev?: string;
   incidentNumber: string;
   issuerCompanyName?: string;
   issuerCompanyAddress?: string;
@@ -1185,6 +1188,71 @@ export interface IncidentActionLog {
   note: string;
   userRef?: string;
   userName?: string;
+}
+
+export type IncidentSettlementLineType = 'COST' | 'COMPENSATION' | 'RECOVERY';
+export type IncidentSettlementLineStatus = 'DRAFT' | 'APPROVED' | 'POSTED' | 'VOID';
+export type IncidentSettlementRecipientType =
+  | 'DRIVER'
+  | 'KERNET'
+  | 'THIRD_PARTY'
+  | 'FAMILY'
+  | 'VENDOR'
+  | 'INSURANCE'
+  | 'INTERNAL'
+  | 'OTHER';
+export type IncidentSettlementCategory =
+  | 'TOWING'
+  | 'REPAIR'
+  | 'SPAREPART'
+  | 'TIRE'
+  | 'MEDICAL'
+  | 'THIRD_PARTY_DAMAGE'
+  | 'POLICE_ADMIN'
+  | 'ACCOMMODATION'
+  | 'CARGO_HANDLING'
+  | 'COMPENSATION_DRIVER'
+  | 'COMPENSATION_CREW'
+  | 'COMPENSATION_THIRD_PARTY'
+  | 'COMPENSATION_FAMILY'
+  | 'INSURANCE_CLAIM'
+  | 'THIRD_PARTY_RECOVERY'
+  | 'VENDOR_RECOVERY'
+  | 'INTERNAL_RECOVERY'
+  | 'OTHER';
+
+export interface IncidentSettlementLine {
+  _id: string;
+  _type: 'incidentSettlementLine';
+  _rev?: string;
+  incidentRef: string;
+  incidentNumber?: string;
+  lineType: IncidentSettlementLineType;
+  category: IncidentSettlementCategory;
+  date: string;
+  amount: number;
+  description: string;
+  payeeName?: string;
+  recipientType?: IncidentSettlementRecipientType;
+  note?: string;
+  status: IncidentSettlementLineStatus;
+  linkedExpenseRef?: string;
+  linkedExpenseDate?: string;
+  linkedExpenseAmount?: number;
+  linkedExpenseCategoryRef?: string;
+  linkedExpenseCategoryName?: string;
+  postedAt?: string;
+  postedBy?: string;
+  postedByName?: string;
+  createdAt?: string;
+  createdBy?: string;
+  createdByName?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+  updatedByName?: string;
+  voidedAt?: string;
+  voidedBy?: string;
+  voidedByName?: string;
 }
 
 // ── Audit Log ──

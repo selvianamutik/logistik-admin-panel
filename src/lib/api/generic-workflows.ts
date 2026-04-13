@@ -461,6 +461,7 @@ function isWorkflowManagedCreateEntity(entity: string) {
         entity === 'driver-voucher-disbursements' ||
         entity === 'incidents' ||
         entity === 'incident-action-logs' ||
+        entity === 'incident-settlement-lines' ||
         entity === 'tire-history-logs' ||
         entity === 'audit-logs'
     );
@@ -487,6 +488,7 @@ function isWorkflowManagedUpdateEntity(entity: string) {
         entity === 'driver-voucher-disbursements' ||
         entity === 'incidents' ||
         entity === 'incident-action-logs' ||
+        entity === 'incident-settlement-lines' ||
         entity === 'tire-history-logs' ||
         entity === 'audit-logs'
     );
@@ -497,6 +499,7 @@ function isWorkflowManagedDeleteEntity(entity: string) {
         entity === 'driver-vouchers' ||
         entity === 'incidents' ||
         entity === 'incident-action-logs' ||
+        entity === 'incident-settlement-lines' ||
         entity === 'tire-history-logs' ||
         entity === 'delivery-orders' ||
         entity === 'delivery-order-items' ||

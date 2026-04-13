@@ -51,6 +51,10 @@ import {
 } from '@/lib/api/generic-workflows';
 import {
     handleIncidentCreate,
+    handleIncidentSettlementLineCreate,
+    handleIncidentSettlementLineDelete,
+    handleIncidentSettlementLineStatusUpdate,
+    handleIncidentSettlementLineUpdate,
     handleIncidentStatusUpdate,
 } from '@/lib/api/operations-workflows';
 import {
@@ -166,6 +170,7 @@ const ENTITY_MODULE_MAP: Partial<Record<keyof typeof SANITY_TYPE_MAP, AppModule>
     'tire-history-logs': 'tires',
     incidents: 'incidents',
     'incident-action-logs': 'incidents',
+    'incident-settlement-lines': 'incidents',
     'bank-accounts': 'bankAccounts',
     'bank-transactions': 'bankAccounts',
     'driver-vouchers': 'driverVouchers',
@@ -1293,6 +1298,18 @@ export async function POST(request: Request) {
             return await handleIncidentStatusUpdate(session, data, addAuditLog);
         }
 
+        if (entity === 'incident-settlement-lines' && action === 'update') {
+            return await handleIncidentSettlementLineUpdate(session, data, addAuditLog);
+        }
+
+        if (entity === 'incident-settlement-lines' && action === 'delete') {
+            return await handleIncidentSettlementLineDelete(session, data, addAuditLog);
+        }
+
+        if (entity === 'incident-settlement-lines' && action === 'set-status') {
+            return await handleIncidentSettlementLineStatusUpdate(session, data, addAuditLog);
+        }
+
         if (entity === 'orders' && action === 'create-with-items') {
             return await handleOrderCreate(session, data, addAuditLog);
         }
@@ -1454,6 +1471,10 @@ export async function POST(request: Request) {
 
         if (entity === 'incidents') {
             return await handleIncidentCreate(session, data, addAuditLog);
+        }
+
+        if (entity === 'incident-settlement-lines') {
+            return await handleIncidentSettlementLineCreate(session, data, addAuditLog);
         }
 
         return await handleGenericCreate(session, entity, docType, data, addAuditLog);

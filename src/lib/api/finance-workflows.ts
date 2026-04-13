@@ -147,6 +147,12 @@ function buildExpenseAuditSummary(input: {
     return contextLabel ? `${summary} - ${contextLabel}` : summary;
 }
 
+function sanitizePatchSet(input: Record<string, unknown>) {
+    return Object.fromEntries(
+        Object.entries(input).filter(([, value]) => value !== undefined)
+    );
+}
+
 function parseOptionalStrictNotaRowNumber(
     value: unknown,
     label: string,
@@ -1655,8 +1661,16 @@ export async function handleExpenseCreate(
         relatedVehiclePlate = vehicle.plateNumber;
     }
 
-    const relatedIncidentRef =
+    let relatedIncidentRef =
         typeof data.relatedIncidentRef === 'string' && data.relatedIncidentRef ? data.relatedIncidentRef : undefined;
+    const relatedIncidentSettlementLineRef =
+        typeof data.relatedIncidentSettlementLineRef === 'string' && data.relatedIncidentSettlementLineRef
+            ? data.relatedIncidentSettlementLineRef
+            : undefined;
+    const relatedIncidentSettlementLineRevision =
+        typeof data.relatedIncidentSettlementLineRevision === 'string' && data.relatedIncidentSettlementLineRevision
+            ? data.relatedIncidentSettlementLineRevision
+            : undefined;
     const relatedMaintenanceRef =
         typeof data.relatedMaintenanceRef === 'string' && data.relatedMaintenanceRef ? data.relatedMaintenanceRef : undefined;
     const boronganRef =
@@ -1669,6 +1683,79 @@ export async function handleExpenseCreate(
             { error: 'Pengeluaran hanya boleh dikaitkan ke satu workflow: insiden, maintenance, slip borongan, atau bon trip' },
             { status: 409 }
         );
+    }
+
+    let incidentSettlementLine:
+        | {
+            _id: string;
+            _rev?: string;
+            incidentRef: string;
+            lineType?: string;
+            status?: string;
+            amount?: number;
+            description?: string;
+            note?: string;
+            payeeName?: string;
+            linkedExpenseRef?: string;
+        }
+        | null = null;
+    if (relatedIncidentSettlementLineRef) {
+        incidentSettlementLine = await sanityGetById<{
+            _id: string;
+            _rev?: string;
+            incidentRef: string;
+            lineType?: string;
+            status?: string;
+            amount?: number;
+            description?: string;
+            note?: string;
+            payeeName?: string;
+            linkedExpenseRef?: string;
+        }>(relatedIncidentSettlementLineRef);
+        if (!incidentSettlementLine) {
+            return NextResponse.json({ error: 'Detail insiden tidak ditemukan' }, { status: 404 });
+        }
+        if (
+            !relatedIncidentSettlementLineRevision
+            || !incidentSettlementLine._rev
+            || relatedIncidentSettlementLineRevision !== incidentSettlementLine._rev
+        ) {
+            return NextResponse.json(
+                { error: 'Detail insiden berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        if (incidentSettlementLine.lineType === 'RECOVERY') {
+            return NextResponse.json(
+                { error: 'Recovery tidak diposting sebagai pengeluaran. Gunakan tandai diterima pada detail insiden.' },
+                { status: 409 }
+            );
+        }
+        if (incidentSettlementLine.status !== 'APPROVED') {
+            return NextResponse.json(
+                { error: 'Hanya detail insiden berstatus disetujui yang boleh diposting ke pengeluaran' },
+                { status: 409 }
+            );
+        }
+        if (incidentSettlementLine.linkedExpenseRef) {
+            return NextResponse.json(
+                { error: 'Detail insiden ini sudah terhubung ke pengeluaran lain' },
+                { status: 409 }
+            );
+        }
+        if (amount !== Math.max(normalizeCurrencyNumber(incidentSettlementLine.amount ?? 0), 0)) {
+            return NextResponse.json(
+                { error: 'Nominal pengeluaran harus sama dengan nominal detail insiden yang diposting' },
+                { status: 409 }
+            );
+        }
+        if (relatedIncidentRef && relatedIncidentRef !== incidentSettlementLine.incidentRef) {
+            return NextResponse.json(
+                { error: 'Insiden pengeluaran tidak cocok dengan detail insiden yang dipilih' },
+                { status: 409 }
+            );
+        }
+        relatedIncidentRef = incidentSettlementLine.incidentRef;
     }
 
     if (relatedIncidentRef) {
@@ -1746,8 +1833,12 @@ export async function handleExpenseCreate(
     }
     const privacyLevel = requestedPrivacyLevel;
 
-    const expenseNote = normalizeOptionalText(data.note);
-    const expenseDescription = normalizeOptionalText(data.description);
+    let expenseNote = normalizeOptionalText(data.note);
+    let expenseDescription = normalizeOptionalText(data.description);
+    if (incidentSettlementLine) {
+        expenseNote = expenseNote || incidentSettlementLine.note || incidentSettlementLine.payeeName;
+        expenseDescription = expenseDescription || incidentSettlementLine.description;
+    }
     const expenseDocBase: { _type: 'expense'; [key: string]: unknown } = {
         _type: 'expense',
         categoryRef,
@@ -1761,6 +1852,7 @@ export async function handleExpenseCreate(
         relatedVehicleRef,
         relatedVehiclePlate,
         relatedIncidentRef,
+        relatedIncidentSettlementLineRef,
         relatedMaintenanceRef,
         boronganRef,
         voucherRef,
@@ -1776,10 +1868,69 @@ export async function handleExpenseCreate(
     });
 
     if (!selectedAccountRef) {
-        const created = await sanityCreate(expenseDocBase);
-        const expenseId = (created as Record<string, unknown>)._id as string;
-        await addAuditLog(session, 'CREATE', 'expenses', expenseId, expenseAuditSummary);
-        return NextResponse.json({ data: created, id: expenseId });
+        if (!incidentSettlementLine) {
+            const created = await sanityCreate(expenseDocBase);
+            const expenseId = (created as Record<string, unknown>)._id as string;
+            await addAuditLog(session, 'CREATE', 'expenses', expenseId, expenseAuditSummary);
+            return NextResponse.json({ data: created, id: expenseId });
+        }
+
+        const expenseId = crypto.randomUUID();
+        const now = new Date().toISOString();
+        const lineRef = relatedIncidentSettlementLineRef as string;
+        const expenseDoc = {
+            _id: expenseId,
+            ...expenseDocBase,
+        };
+        try {
+            await getSanityClient()
+                .transaction()
+                .create(expenseDoc)
+                .patch(lineRef, {
+                    ifRevisionID: incidentSettlementLine._rev,
+                    set: sanitizePatchSet({
+                        status: 'POSTED',
+                        linkedExpenseRef: expenseId,
+                        linkedExpenseDate: expenseDate,
+                        linkedExpenseAmount: amount,
+                        linkedExpenseCategoryRef: categoryRef,
+                        linkedExpenseCategoryName: category.name,
+                        postedAt: now,
+                        postedBy: session._id,
+                        postedByName: session.name,
+                        updatedAt: now,
+                        updatedBy: session._id,
+                        updatedByName: session.name,
+                    }),
+                })
+                .create({
+                    _id: crypto.randomUUID(),
+                    _type: 'incidentActionLog',
+                    incidentRef: incidentSettlementLine.incidentRef,
+                    timestamp: now,
+                    note: `Detail insiden diposting ke pengeluaran: ${expenseDescription || expenseNote || category.name || 'Pengeluaran insiden'}`,
+                    userRef: session._id,
+                    userName: session.name,
+                })
+                .commit();
+            await addAuditLog(session, 'CREATE', 'expenses', expenseId, expenseAuditSummary);
+            await addAuditLog(
+                session,
+                'UPDATE',
+                'incident-settlement-lines',
+                incidentSettlementLine._id,
+                `Posted incident settlement line to expense ${expenseId}`
+            );
+            return NextResponse.json({ data: expenseDoc, id: expenseId });
+        } catch (err) {
+            if (isMutationConflictError(err)) {
+                return NextResponse.json(
+                    { error: 'Pengeluaran atau detail insiden berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+            throw err;
+        }
     }
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -1837,10 +1988,50 @@ export async function handleExpenseCreate(
                 ifRevisionID: bankAcc._rev,
                 set: { currentBalance: newBalance },
             });
+        if (incidentSettlementLine && typeof relatedIncidentSettlementLineRef === 'string') {
+            const lineRef = relatedIncidentSettlementLineRef;
+            const now = new Date().toISOString();
+            transaction
+                .patch(lineRef, {
+                    ifRevisionID: incidentSettlementLine._rev,
+                    set: sanitizePatchSet({
+                        status: 'POSTED',
+                        linkedExpenseRef: expenseId,
+                        linkedExpenseDate: expenseDate,
+                        linkedExpenseAmount: amount,
+                        linkedExpenseCategoryRef: categoryRef,
+                        linkedExpenseCategoryName: category.name,
+                        postedAt: now,
+                        postedBy: session._id,
+                        postedByName: session.name,
+                        updatedAt: now,
+                        updatedBy: session._id,
+                        updatedByName: session.name,
+                    }),
+                })
+                .create({
+                    _id: crypto.randomUUID(),
+                    _type: 'incidentActionLog',
+                    incidentRef: incidentSettlementLine.incidentRef,
+                    timestamp: now,
+                    note: `Detail insiden diposting ke pengeluaran: ${expenseDescription || expenseNote || category.name || 'Pengeluaran insiden'}`,
+                    userRef: session._id,
+                    userName: session.name,
+                });
+        }
 
         try {
             await transaction.commit();
             await addAuditLog(session, 'CREATE', 'expenses', expenseId, expenseAuditSummaryWithBank);
+            if (incidentSettlementLine) {
+                await addAuditLog(
+                    session,
+                    'UPDATE',
+                    'incident-settlement-lines',
+                    incidentSettlementLine._id,
+                    `Posted incident settlement line to expense ${expenseId}`
+                );
+            }
             return NextResponse.json({ data: expenseDoc, id: expenseId });
         } catch (err) {
             if (!isMutationConflictError(err)) {
