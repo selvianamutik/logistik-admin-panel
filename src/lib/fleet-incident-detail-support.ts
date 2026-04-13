@@ -68,7 +68,7 @@ export function getAvailableIncidentSettlementStatuses(line: IncidentSettlementL
 }
 
 export function canEditIncidentSettlementLine(line: IncidentSettlementLine) {
-    return line.status !== 'POSTED' && line.status !== 'VOID';
+    return line.status === 'DRAFT';
 }
 
 export function canDeleteIncidentSettlementLine(line: IncidentSettlementLine) {

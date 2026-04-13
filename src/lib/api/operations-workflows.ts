@@ -423,8 +423,11 @@ export async function handleIncidentSettlementLineUpdate(
     if (!requireIncidentSettlementRevision(revision, existing._rev)) {
         return NextResponse.json({ error: 'Detail insiden berubah karena ada update lain. Refresh lalu coba lagi.' }, { status: 409 });
     }
-    if (existing.status === 'POSTED' || existing.status === 'VOID') {
-        return NextResponse.json({ error: 'Detail insiden yang sudah diposting atau void tidak boleh diedit langsung' }, { status: 409 });
+    if (existing.status !== 'DRAFT') {
+        return NextResponse.json(
+            { error: 'Hanya detail insiden draft yang boleh diedit. Turunkan status ke draft dulu jika perlu revisi.' },
+            { status: 409 }
+        );
     }
 
     try {
