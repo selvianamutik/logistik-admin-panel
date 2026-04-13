@@ -44,7 +44,8 @@ export type AppModule =
     | 'bankAccounts'
     | 'driverVouchers'
     | 'freightNotas'
-    | 'driverBorongans';
+    | 'driverBorongans'
+    | 'driverScores';
 
 const DENY_ALL: ModulePermissions = {
     view: false,
@@ -210,6 +211,11 @@ const permissionMatrix: Record<AppModule, Partial<Record<EffectiveUserRole, Modu
     },
     driverBorongans: {
         OWNER: OWNER_FULL,
+    },
+    driverScores: {
+        OWNER: OWNER_FULL,
+        OPERASIONAL: OWNER_FULL,
+        ARMADA: OWNER_FULL,
     },
 };
 

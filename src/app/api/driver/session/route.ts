@@ -1,4 +1,4 @@
-import { getDriverAppContext, requireDriverSessionContext, sanitizeDriverForMobile } from '@/lib/api/driver-portal';
+import { getDriverAppContext, getDriverPortalAccessNotice, requireDriverSessionContext, sanitizeDriverForMobile } from '@/lib/api/driver-portal';
 import { jsonNoStore } from '@/lib/api/request-security';
 
 export const dynamic = 'force-dynamic';
@@ -11,10 +11,13 @@ export async function GET(request: Request) {
     }
 
     const appContext = await getDriverAppContext();
+    const driverAccessNotice = await getDriverPortalAccessNotice(result.driver._id);
+
 
     return jsonNoStore({
         user: result.session,
         driver: sanitizeDriverForMobile(result.driver),
         company: appContext.company,
+        driverAccessNotice: driverAccessNotice ?? null,
     });
 }

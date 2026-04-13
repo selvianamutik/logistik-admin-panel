@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useApp, useToast } from '../../layout';
 import { Plus, Search, UserCircle, Save, X, Edit2, ToggleLeft, ToggleRight, Smartphone } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
+import { buildDriverScoreSummaryMap, buildDriverScoresQuery, DRIVER_SCORE_TYPE_META, getDriverScoreStatusMeta } from '@/lib/driver-scoring-support';
 import {
     buildDriverAccountMap,
     buildDriversQuery,
@@ -14,9 +15,10 @@ import {
     isDriverActive,
     type DriverMobileAccount,
 } from '@/lib/fleet-asset-page-support';
-import { formatDateTime } from '@/lib/utils';
+import { formatDate, formatDateTime } from '@/lib/utils';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
-import type { Driver } from '@/lib/types';
+import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
+import type { Driver, DriverScore } from '@/lib/types';
 import { hasPermission } from '@/lib/rbac';
 
 export default function DriversPage() {
@@ -24,6 +26,7 @@ export default function DriversPage() {
     const { addToast } = useToast();
     const [items, setItems] = useState<Driver[]>([]);
     const [accounts, setAccounts] = useState<DriverMobileAccount[]>([]);
+    const [scores, setScores] = useState<DriverScore[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [page, setPage] = useState(1);
@@ -42,6 +45,7 @@ export default function DriversPage() {
     const [accountForm, setAccountForm] = useState(createDefaultDriverAccessForm());
     const canCreateDrivers = user ? hasPermission(user.role, 'drivers', 'create') : false;
     const canManageDrivers = user ? hasPermission(user.role, 'drivers', 'update') : false;
+    const canViewDriverScores = user ? hasPermission(user.role, 'driverScores', 'view') : false;
     const canViewDriverAccounts = user ? (user.role === 'OWNER' || user.role === 'ARMADA') : false;
     const canManageDriverAccounts = canViewDriverAccounts && canManageDrivers;
 
@@ -92,6 +96,7 @@ export default function DriversPage() {
 
             const drivers = (listPayload.data || []) as Driver[];
             let matchingAccounts: DriverMobileAccount[] = [];
+            let scoreRows: DriverScore[] = [];
             if (canViewDriverAccounts) {
                 const accountsRes = await fetch('/api/driver/accounts');
                 const accountsPayload = await accountsRes.json();
@@ -100,6 +105,10 @@ export default function DriversPage() {
                 }
                 matchingAccounts = (accountsPayload.data || []) as DriverMobileAccount[];
             }
+            scoreRows = await fetchAllAdminCollectionData<DriverScore>(
+                `/api/data?${buildDriverScoresQuery({ page: 1, pageSize: 500 })}`,
+                'Gagal memuat scoring supir'
+            );
 
             const matchingDriverRefs = new Set(matchingDrivers.map(driver => driver._id));
             const activeMatchingDrivers = matchingDrivers.filter(driver => driver.active !== false).length;
@@ -111,6 +120,7 @@ export default function DriversPage() {
             setItems(drivers);
             setTotalDrivers(listPayload.meta?.total || 0);
             setAccounts(canViewDriverAccounts ? matchingAccounts : []);
+            setScores(scoreRows);
             setActiveDrivers(activeMatchingDrivers);
             setInactiveDrivers(inactiveMatchingDrivers);
             setMobileReadyDrivers(mobileReadyMatchingDrivers);
@@ -126,6 +136,7 @@ export default function DriversPage() {
     }, [loadDrivers]);
 
     const accountByDriverRef = buildDriverAccountMap(accounts);
+    const scoreByDriverRef = buildDriverScoreSummaryMap(scores);
 
     const closeModal = () => {
         if (savingDriver) return;
@@ -308,6 +319,7 @@ export default function DriversPage() {
         <div>
             <div className="page-header"><div className="page-header-left"><h1 className="page-title">Supir</h1></div>
                 <div className="page-actions">
+                    {canViewDriverScores && <Link className="btn btn-secondary" href="/fleet/drivers/skors">Skors Supir</Link>}
                     {canCreateDrivers && <button className="btn btn-primary" onClick={() => { setEditId(null); setShowModal(true); }}><Plus size={18} /> Tambah Supir</button>}
                 </div></div>
             <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
@@ -319,12 +331,14 @@ export default function DriversPage() {
                 <div className="table-toolbar"><div className="table-toolbar-left"><div className="table-search"><Search size={16} className="table-search-icon" /><input placeholder="Cari nama, HP, SIM..." value={search} onChange={e => setSearch(e.target.value)} /></div></div></div>
                 <div className="table-wrapper table-desktop-only">
                     <table>
-                        <thead><tr><th>Nama</th><th>No. HP</th><th>No. SIM</th><th>SIM Berlaku</th><th>Akses Mobile</th><th>Status</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>Nama</th><th>No. HP</th><th>No. SIM</th><th>SIM Berlaku</th><th>Scoring</th><th>Akses Mobile</th><th>Status</th><th>Aksi</th></tr></thead>
                         <tbody>
-                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
-                                totalDrivers === 0 ? <tr><td colSpan={7}><div className="empty-state"><UserCircle size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada supir</div></div></td></tr> :
+                            {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
+                                totalDrivers === 0 ? <tr><td colSpan={8}><div className="empty-state"><UserCircle size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada supir</div></div></td></tr> :
                                     items.map(driver => {
                                         const account = accountByDriverRef.get(driver._id);
+                                        const scoreSummary = scoreByDriverRef.get(driver._id) || null;
+                                        const scoreStatusMeta = scoreSummary ? getDriverScoreStatusMeta(scoreSummary.score) : null;
                                         return (
                                             <tr key={driver._id}>
                                                 <td>
@@ -335,6 +349,19 @@ export default function DriversPage() {
                                                 <td>{driver.phone}</td>
                                                 <td>{driver.licenseNumber || '-'}</td>
                                                 <td className="text-muted">{driver.simExpiry || '-'}</td>
+                                                <td>
+                                                    {scoreSummary && scoreStatusMeta ? (
+                                                        <div style={{ display: 'grid', gap: '0.25rem' }}>
+                                                            <div className="font-medium">{DRIVER_SCORE_TYPE_META[scoreSummary.score.scoreType].label}</div>
+                                                            <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                                <span className={`badge ${scoreStatusMeta.badgeClass}`}>{scoreStatusMeta.label}</span>
+                                                                <span className="text-muted text-sm">Sampai {formatDate(scoreSummary.score.dueDate)}</span>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-muted">Belum ada scoring</span>
+                                                    )}
+                                                </td>
                                                 <td>
                                                     {!canViewDriverAccounts ? (
                                                         <span className="text-muted">Hanya owner / armada</span>
@@ -352,7 +379,7 @@ export default function DriversPage() {
                                                         <span className="text-muted">Belum ada akun mobile</span>
                                                     )}
                                                 </td>
-                                                <td><span className={`badge ${isDriverActive(driver) ? 'badge-green' : 'badge-gray'}`}>{isDriverActive(driver) ? 'Aktif' : 'Non-aktif'}</span></td>
+                                                <td><span className={`badge ${isDriverActive(driver) ? 'badge-success' : 'badge-gray'}`}>{isDriverActive(driver) ? 'Aktif' : 'Non-aktif'}</span></td>
                                                 <td>
                                                     <div style={{ display: 'flex', gap: '0.25rem' }}>
                                                         <Link className="btn btn-ghost btn-sm" href={`/fleet/drivers/${driver._id}`} title="Lihat detail">
@@ -386,6 +413,8 @@ export default function DriversPage() {
                             </div>
                         ) : items.map(driver => {
                             const account = accountByDriverRef.get(driver._id);
+                            const scoreSummary = scoreByDriverRef.get(driver._id) || null;
+                            const scoreStatusMeta = scoreSummary ? getDriverScoreStatusMeta(scoreSummary.score) : null;
                             return (
                                 <div key={driver._id} className="mobile-record-card">
                                     <div className="mobile-record-header">
@@ -397,9 +426,17 @@ export default function DriversPage() {
                                             </div>
                                             <div className="mobile-record-subtitle">{driver.phone} | {driver.licenseNumber || 'SIM belum diisi'}</div>
                                         </div>
-                                        <span className={`badge ${isDriverActive(driver) ? 'badge-green' : 'badge-gray'}`}>{isDriverActive(driver) ? 'Aktif' : 'Non-aktif'}</span>
+                                        <span className={`badge ${isDriverActive(driver) ? 'badge-success' : 'badge-gray'}`}>{isDriverActive(driver) ? 'Aktif' : 'Non-aktif'}</span>
                                     </div>
                                     <div className="mobile-record-meta">
+                                        <div className="mobile-record-kv">
+                                            <span className="mobile-record-label">Scoring</span>
+                                            <span className="mobile-record-value">
+                                                {scoreSummary && scoreStatusMeta
+                                                    ? `${DRIVER_SCORE_TYPE_META[scoreSummary.score.scoreType].label} | ${scoreStatusMeta.label} | s.d. ${formatDate(scoreSummary.score.dueDate)}`
+                                                    : 'Belum ada scoring'}
+                                            </span>
+                                        </div>
                                         <div className="mobile-record-kv">
                                             <span className="mobile-record-label">SIM Berlaku</span>
                                             <span className="mobile-record-value">{driver.simExpiry || '-'}</span>
@@ -419,6 +456,9 @@ export default function DriversPage() {
                                         <Link className="btn btn-secondary" href={`/fleet/drivers/${driver._id}`}>
                                             Detail
                                         </Link>
+                                        {canViewDriverScores && <Link className="btn btn-secondary" href={`/fleet/drivers/skors?driverRef=${driver._id}`}>
+                                            Skors
+                                        </Link>}
                                         {canManageDrivers && <button className="btn btn-secondary" onClick={() => openEdit(driver)}>
                                             <Edit2 size={14} /> Edit
                                         </button>}
@@ -504,7 +544,7 @@ export default function DriversPage() {
                             <div className="form-group">
                                 <label className="form-label">{accountForm.accountId ? 'Reset Password (opsional)' : 'Password Awal *'}</label>
                                 <input className="form-input" type="password" value={accountForm.password} onChange={e => setAccountForm({ ...accountForm, password: e.target.value })} autoComplete="new-password" />
-                                <div className="form-hint">Minimal 8 karakter. Driver login dari halaman <code>/driver/login</code>.</div>
+                                <div className="form-hint">Minimal 8 karakter. Driver login dari aplikasi mobile.</div>
                             </div>
                             <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                 <input type="checkbox" checked={accountForm.active} onChange={e => setAccountForm({ ...accountForm, active: e.target.checked })} />

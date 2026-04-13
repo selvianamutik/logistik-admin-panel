@@ -396,7 +396,27 @@ export interface Driver {
     active: boolean;
     activeTrackingDeliveryOrderRef?: string;
     activeTrackingUpdatedAt?: string;
-  }
+}
+
+export interface DriverScore {
+    _id: string;
+    _type: 'driverScore';
+    driverRef: string;
+    driverName?: string;
+    scoreType: 'WARNING' | 'DAYS';
+    effectiveDate: string;
+    durationDays: number;
+    dueDate: string;
+    notes?: string;
+    warningAcknowledgedAt?: string;
+    warningAcknowledgedByDriverRef?: string;
+    createdAt: string;
+    createdBy?: string;
+    createdByName?: string;
+    updatedAt?: string;
+    updatedBy?: string;
+    updatedByName?: string;
+}
 
 // ── Driver Voucher (Bon Supir) ──
 export type DriverVoucherStatus = 'DRAFT' | 'ISSUED' | 'SETTLED';
