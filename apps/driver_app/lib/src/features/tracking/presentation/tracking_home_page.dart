@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../../../app.dart';
+import '../data/driver_access_service.dart';
 import '../data/delivery_order_service.dart';
 import '../data/driver_tracking_service.dart';
 import '../domain/models.dart';
@@ -22,8 +23,10 @@ class TrackingHomePage extends StatefulWidget {
   State<TrackingHomePage> createState() => _TrackingHomePageState();
 }
 
-class _TrackingHomePageState extends State<TrackingHomePage> {
+class _TrackingHomePageState extends State<TrackingHomePage>
+    with WidgetsBindingObserver {
   final DeliveryOrderService _deliveryOrderService = DeliveryOrderService();
+  final DriverAccessService _driverAccessService = DriverAccessService();
   late final DriverTrackingService _trackingService;
 
   List<DeliveryTrip> _trips = const [];
@@ -34,25 +37,146 @@ class _TrackingHomePageState extends State<TrackingHomePage> {
   bool _trackingEnabled = false;
   bool _loadingTrips = true;
   bool _updatingStatus = false;
+  bool _acknowledgingWarning = false;
   String? _loadError;
   String? _locationError;
   String? _pingError;
   int _pingCount = 0;
+  DriverAccessNotice? _accessNotice;
 
   Duration _trackingInterval = const Duration(seconds: 30);
   Timer? _pingCounterTimer;
+  Timer? _noticePollTimer;
 
   @override
   void initState() {
     super.initState();
+    _accessNotice = widget.session.accessNotice;
     _trackingService = DriverTrackingService(
       sessionToken: widget.session.token ?? '',
     );
-    unawaited(_loadTrips());
+    unawaited(_bootstrapPage());
+    WidgetsBinding.instance.addObserver(this);
+    _noticePollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (mounted && widget.session.token != null) {
+        unawaited(_silentNoticeCheck());
+      }
+    });
+  }
+
+  Future<void> _silentNoticeCheck() async {
+    final sessionToken = widget.session.token;
+    if (sessionToken == null || sessionToken.isEmpty) return;
+
+    try {
+      final notice = await _driverAccessService.fetchCurrentAccessNotice(
+        sessionToken: sessionToken,
+      );
+      if (!mounted) return;
+
+      if (notice == null) {
+        if (_accessNotice != null) {
+          setState(() => _accessNotice = null);
+        }
+      } else if (_isNoticeBlocking(notice)) {
+        if (_accessNotice?.scoreId != notice.scoreId ||
+            !_isNoticeBlocking(_accessNotice)) {
+          setState(() {
+            _accessNotice = notice;
+            _loadingTrips = false;
+          });
+        }
+      } else {
+        if (_accessNotice?.scoreId != notice.scoreId ||
+            _accessNotice?.warningAcknowledgedAt !=
+                notice.warningAcknowledgedAt) {
+          setState(() => _accessNotice = notice);
+        }
+      }
+    } catch (_) {
+      // Background poll swallows errors safely
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (!_loadingTrips) {
+        unawaited(_bootstrapPage());
+      }
+    }
+  }
+
+  bool _isNoticeBlocking(DriverAccessNotice? notice) {
+    final isBlocking =
+        notice != null &&
+        (notice.blocking ||
+            (notice.isWarning &&
+                (notice.warningAcknowledgedAt == null ||
+                    notice.warningAcknowledgedAt!.isEmpty)));
+    return isBlocking;
+  }
+
+  Future<void> _bootstrapPage() async {
+    final sessionToken = widget.session.token;
+    if (sessionToken == null || sessionToken.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _loadingTrips = false;
+        _loadError = 'Sesi driver tidak valid. Silakan login ulang.';
+      });
+      return;
+    }
+
+    try {
+      final notice = await _driverAccessService.fetchCurrentAccessNotice(
+        sessionToken: sessionToken,
+      );
+      if (!mounted) return;
+      if (_isNoticeBlocking(notice)) {
+        setState(() {
+          _accessNotice = notice;
+          _loadingTrips = false;
+          _loadError = null;
+        });
+        return;
+      }
+      // and any existing session-level blocking notice should be cleared.
+      if (notice == null && _accessNotice != null) {}
+      setState(() => _accessNotice = notice);
+      await _loadTrips(skipAccessRefresh: true);
+    } on DriverAccessException catch (err) {
+      if (!mounted) return;
+      // Server explicitly rejected access — surface the error.
+      // Keep any session-level blocking notice visible.
+      if (_isNoticeBlocking(_accessNotice)) {
+        setState(() => _loadingTrips = false);
+      } else {
+        setState(() {
+          _loadingTrips = false;
+          _loadError = err.message;
+        });
+      }
+    } catch (err, stack) {
+      // Network / parse errors — do not swallow silently.
+      if (!mounted) return;
+      if (_isNoticeBlocking(_accessNotice)) {
+        // Session has a blocking notice — keep showing it, stop spinner.
+        setState(() => _loadingTrips = false);
+      } else {
+        setState(() {
+          _loadingTrips = false;
+          _loadError =
+              'Gagal terhubung ke server. Tarik ke bawah untuk refresh.';
+        });
+      }
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _noticePollTimer?.cancel();
     _pingCounterTimer?.cancel();
     _trackingService.stop();
     super.dispose();
@@ -60,7 +184,7 @@ class _TrackingHomePageState extends State<TrackingHomePage> {
 
   // ── Trips ──────────────────────────────────────────────────
 
-  Future<void> _loadTrips() async {
+  Future<void> _loadTrips({bool skipAccessRefresh = false}) async {
     final sessionToken = widget.session.token;
     if (sessionToken == null || sessionToken.isEmpty) {
       setState(() {
@@ -69,6 +193,32 @@ class _TrackingHomePageState extends State<TrackingHomePage> {
       });
       return;
     }
+
+    if (!skipAccessRefresh) {
+      try {
+        final notice = await _driverAccessService.fetchCurrentAccessNotice(
+          sessionToken: sessionToken,
+        );
+        if (!mounted) return;
+        if (_isNoticeBlocking(notice)) {
+          setState(() {
+            _accessNotice = notice;
+            _loadingTrips = false;
+            _loadError = null;
+          });
+          return;
+        }
+        setState(() => _accessNotice = notice);
+      } on DriverAccessException catch (err) {
+        if (!mounted) return;
+        setState(() {
+          _loadingTrips = false;
+          _loadError = err.message;
+        });
+        return;
+      }
+    }
+
     setState(() {
       _loadingTrips = true;
       _loadError = null;
@@ -80,6 +230,9 @@ class _TrackingHomePageState extends State<TrackingHomePage> {
       if (!mounted) return;
       setState(() {
         _trips = trips;
+        // DO NOT clear _accessNotice here. It should only be cleared by
+        // explicit server response (notice = null) or after acknowledgement.
+        // The previous code was wiping warnings incorrectly.
         final activeId = _activeTrip?.deliveryOrderId;
         final lockedTrip = trips.firstWhereOrNull(
           (t) => t.trackingState == 'ACTIVE' || t.trackingState == 'PAUSED',
@@ -99,6 +252,18 @@ class _TrackingHomePageState extends State<TrackingHomePage> {
       setState(() {
         _loadingTrips = false;
         _loadError = err.message;
+        if (err.statusCode == 403) {
+          _accessNotice = DriverAccessNotice(
+            scoreId: '',
+            scoreType: 'DAYS',
+            title: 'Akses aplikasi ditangguhkan',
+            message: err.message,
+            blocking: true,
+            effectiveDate: '',
+            dueDate: '',
+            durationDays: 0,
+          );
+        }
       });
     } catch (_) {
       if (!mounted) return;
@@ -106,6 +271,41 @@ class _TrackingHomePageState extends State<TrackingHomePage> {
         _loadingTrips = false;
         _loadError = 'Tidak bisa memuat trip driver dari server';
       });
+    }
+  }
+
+  Future<void> _closeWarningNotice() async {
+    final sessionToken = widget.session.token;
+    final notice = _accessNotice;
+    if (sessionToken == null ||
+        sessionToken.isEmpty ||
+        notice == null ||
+        !notice.isWarning ||
+        notice.scoreId.isEmpty) {
+      return;
+    }
+
+    setState(() => _acknowledgingWarning = true);
+    try {
+      final nextNotice = await _driverAccessService.acknowledgeWarning(
+        sessionToken: sessionToken,
+        scoreId: notice.scoreId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _acknowledgingWarning = false;
+        _accessNotice = nextNotice;
+      });
+      await _loadTrips(skipAccessRefresh: true);
+    } on DriverAccessException catch (err) {
+      if (!mounted) return;
+      setState(() => _acknowledgingWarning = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(err.message),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -382,6 +582,13 @@ class _TrackingHomePageState extends State<TrackingHomePage> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final compact = MediaQuery.sizeOf(context).width < 380;
+    final accessNotice = _accessNotice;
+    final hasBlockingNotice =
+        accessNotice != null &&
+        (accessNotice.blocking ||
+            (accessNotice.isWarning &&
+                (accessNotice.warningAcknowledgedAt == null ||
+                    accessNotice.warningAcknowledgedAt!.isEmpty)));
 
     return Scaffold(
       appBar: AppBar(
@@ -419,86 +626,217 @@ class _TrackingHomePageState extends State<TrackingHomePage> {
           ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _loadTrips,
-        color: scheme.primary,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
-          children: [
-            _DriverCard(session: widget.session, tripCount: _trips.length),
-            const SizedBox(height: 16),
-            _SectionHeader(title: 'Trip', count: _trips.length),
-            const SizedBox(height: 10),
-            _buildTripList(scheme),
-            if (_selectedTrip != null) ...[
-              const SizedBox(height: 20),
-              const _SectionHeader(title: 'Trip dipilih'),
-              const SizedBox(height: 10),
-              _TripDetailCard(trip: _selectedTrip!),
-              const SizedBox(height: 12),
-              if (_locationError != null) ...[
-                _ErrorBanner(
-                  icon: Icons.location_off_rounded,
-                  message: _locationError!,
-                  onRetry: () => unawaited(_setTrackingEnabled(true)),
-                ),
-                const SizedBox(height: 12),
+      body: Stack(
+        children: [
+          RefreshIndicator(
+            onRefresh: hasBlockingNotice ? () async {} : _loadTrips,
+            color: scheme.primary,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
+              physics: hasBlockingNotice
+                  ? const NeverScrollableScrollPhysics()
+                  : const AlwaysScrollableScrollPhysics(),
+              children: [
+                _DriverCard(session: widget.session, tripCount: _trips.length),
+                const SizedBox(height: 16),
+                if (!hasBlockingNotice && accessNotice != null) ...[
+                  _ErrorBanner(
+                    icon: Icons.warning_amber_rounded,
+                    message: accessNotice.message,
+                    isWarning: true,
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                _SectionHeader(title: 'Trip', count: _trips.length),
+                const SizedBox(height: 10),
+                _buildTripList(scheme),
+                if (_selectedTrip != null) ...[
+                  const SizedBox(height: 20),
+                  const _SectionHeader(title: 'Trip dipilih'),
+                  const SizedBox(height: 10),
+                  _TripDetailCard(trip: _selectedTrip!),
+                  const SizedBox(height: 12),
+                  if (_locationError != null) ...[
+                    _ErrorBanner(
+                      icon: Icons.location_off_rounded,
+                      message: _locationError!,
+                      onRetry: () => unawaited(_setTrackingEnabled(true)),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (_pingError != null) ...[
+                    _ErrorBanner(
+                      icon: Icons.cloud_off_rounded,
+                      message: _pingError!,
+                      isWarning: true,
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (_selectedTrip!.isAwaitingAdminApproval) ...[
+                    const _ErrorBanner(
+                      icon: Icons.admin_panel_settings_rounded,
+                      message: 'Trip ini menunggu approval admin.',
+                      isWarning: true,
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  _TrackingCard(
+                    trackingEnabled: _trackingEnabled,
+                    selectedInterval: _trackingInterval,
+                    location: _latestLocation,
+                    pingCount: _pingCount,
+                    onTrackingChanged: (v) => (_setTrackingEnabled(v)),
+                    onIntervalChanged: _changeInterval,
+                  ),
+                  const SizedBox(height: 12),
+                  if (_activeTrip == null ||
+                      _activeTrip!.deliveryOrderId ==
+                          _selectedTrip!.deliveryOrderId)
+                    _StartDeliveryButton(
+                      trip: _selectedTrip!,
+                      onPressed:
+                          (_selectedTrip!.status == TripStatus.onDelivery ||
+                              _selectedTrip!.status == TripStatus.arrived ||
+                              _selectedTrip!.isAwaitingAdminApproval)
+                          ? null
+                          : () => unawaited(_beginDelivery(_selectedTrip!)),
+                    ),
+                  if (_activeTrip?.deliveryOrderId ==
+                      _selectedTrip!.deliveryOrderId) ...[
+                    const SizedBox(height: 12),
+                    _AdvanceButton(
+                      status: _selectedTrip!.status,
+                      awaitingAdminApproval:
+                          _selectedTrip!.isAwaitingAdminApproval,
+                      onPressed:
+                          _selectedTrip!.status == TripStatus.delivered ||
+                              _selectedTrip!.isAwaitingAdminApproval
+                          ? null
+                          : (_updatingStatus
+                                ? null
+                                : () => unawaited(_advanceStatus())),
+                    ),
+                  ],
+                ],
               ],
-              if (_pingError != null) ...[
-                _ErrorBanner(
-                  icon: Icons.cloud_off_rounded,
-                  message: _pingError!,
-                  isWarning: true,
+            ),
+          ),
+          if (hasBlockingNotice && accessNotice != null)
+            Positioned.fill(
+              child: ColoredBox(
+                color: Colors.black.withValues(alpha: 0.45),
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 420),
+                      child: Material(
+                        color: Colors.white,
+                        elevation: 16,
+                        borderRadius: BorderRadius.circular(24),
+                        child: Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 48,
+                                    height: 48,
+                                    decoration: BoxDecoration(
+                                      color: accessNotice.blocking
+                                          ? scheme.errorContainer
+                                          : scheme.secondaryContainer,
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    child: Icon(
+                                      accessNotice.blocking
+                                          ? Icons.block_rounded
+                                          : Icons.warning_amber_rounded,
+                                      color: accessNotice.blocking
+                                          ? scheme.error
+                                          : scheme.secondary,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: Text(
+                                      accessNotice.title,
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                accessNotice.message,
+                                style: TextStyle(
+                                  color: scheme.onSurface.withValues(
+                                    alpha: 0.78,
+                                  ),
+                                  height: 1.5,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                accessNotice.isWarning
+                                    ? 'Warning ini hanya tampil satu kali. Setelah ditutup, warning akan hilang dari aplikasi driver.'
+                                    : 'Akses akan kembali normal setelah masa skors selesai di server.',
+                                style: TextStyle(
+                                  color: scheme.onSurface.withValues(
+                                    alpha: 0.6,
+                                  ),
+                                  fontSize: 12,
+                                  height: 1.45,
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+                              Row(
+                                children: [
+                                  if (accessNotice.blocking)
+                                    OutlinedButton.icon(
+                                      onPressed: () =>
+                                          unawaited(_bootstrapPage()),
+                                      icon: const Icon(Icons.refresh_rounded),
+                                      label: const Text('Refresh'),
+                                    ),
+                                  const Spacer(),
+                                  if (accessNotice.blocking)
+                                    FilledButton.icon(
+                                      onPressed: widget.onLogout,
+                                      icon: const Icon(Icons.logout_rounded),
+                                      label: const Text('Keluar'),
+                                    )
+                                  else
+                                    FilledButton(
+                                      onPressed: _acknowledgingWarning
+                                          ? null
+                                          : () => unawaited(
+                                              _closeWarningNotice(),
+                                            ),
+                                      child: Text(
+                                        _acknowledgingWarning
+                                            ? 'Memproses...'
+                                            : 'Tutup Warning',
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 12),
-              ],
-              if (_selectedTrip!.isAwaitingAdminApproval) ...[
-                const _ErrorBanner(
-                  icon: Icons.admin_panel_settings_rounded,
-                  message: 'Trip ini menunggu approval admin.',
-                  isWarning: true,
-                ),
-                const SizedBox(height: 12),
-              ],
-              _TrackingCard(
-                trackingEnabled: _trackingEnabled,
-                selectedInterval: _trackingInterval,
-                location: _latestLocation,
-                pingCount: _pingCount,
-                onTrackingChanged: (v) => (_setTrackingEnabled(v)),
-                onIntervalChanged: _changeInterval,
               ),
-              const SizedBox(height: 12),
-              if (_activeTrip == null ||
-                  _activeTrip!.deliveryOrderId ==
-                      _selectedTrip!.deliveryOrderId)
-                _StartDeliveryButton(
-                  trip: _selectedTrip!,
-                  onPressed:
-                      (_selectedTrip!.status == TripStatus.onDelivery ||
-                          _selectedTrip!.status == TripStatus.arrived ||
-                          _selectedTrip!.isAwaitingAdminApproval)
-                      ? null
-                      : () => unawaited(_beginDelivery(_selectedTrip!)),
-                ),
-              if (_activeTrip?.deliveryOrderId ==
-                  _selectedTrip!.deliveryOrderId) ...[
-                const SizedBox(height: 12),
-                _AdvanceButton(
-                  status: _selectedTrip!.status,
-                  awaitingAdminApproval: _selectedTrip!.isAwaitingAdminApproval,
-                  onPressed:
-                      _selectedTrip!.status == TripStatus.delivered ||
-                          _selectedTrip!.isAwaitingAdminApproval
-                      ? null
-                      : (_updatingStatus
-                            ? null
-                            : () => unawaited(_advanceStatus())),
-                ),
-              ],
-            ],
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }
