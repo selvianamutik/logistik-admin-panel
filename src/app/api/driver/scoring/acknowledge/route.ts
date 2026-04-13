@@ -6,9 +6,12 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export async function POST(request: Request) {
-    const originError = ensureSameOriginRequest(request);
-    if (originError) {
-        return originError;
+    const clientType = request.headers.get('x-client-type');
+    if (clientType !== 'driver-app') {
+        const originError = ensureSameOriginRequest(request);
+        if (originError) {
+            return originError;
+        }
     }
 
     const auth = await requireDriverSessionContext(request);
