@@ -42,6 +42,8 @@ type AuditLogFn = (
     summary: string
 ) => void | Promise<void>;
 
+type SanityMutations = Parameters<ReturnType<typeof getSanityClient>['mutate']>[0];
+
 type NormalizedDriverBoronganRow = {
     doRef?: string;
     doNumber?: string;
@@ -554,15 +556,22 @@ export async function handleDriverBoronganDelete(
         `*[_type == "driverBoronganItem" && boronganRef == $ref]._id`,
         { ref: id }
     );
-    const transaction = getSanityClient().transaction();
-    const mutationTimestamp = new Date().toISOString();
-    transaction.patch(id, patch => patch.ifRevisionId(borongan._rev!).set({ updatedAt: mutationTimestamp }));
+    const mutations: Array<Record<string, unknown>> = [];
     for (const itemId of itemIds) {
-        transaction.delete(itemId);
+        mutations.push({
+            delete: {
+                id: itemId,
+            },
+        });
     }
-    transaction.delete(id);
+    mutations.push({
+        delete: {
+            id,
+            ifRevisionID: borongan._rev,
+        },
+    });
     try {
-        await transaction.commit();
+        await getSanityClient().mutate(mutations as unknown as SanityMutations);
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
@@ -832,13 +841,14 @@ async function getDriverVoucherState(voucherId: string) {
         return { error: NextResponse.json({ error: 'Bon supir tidak ditemukan' }, { status: 404 }) };
     }
 
-    const items = await getSanityClient().fetch<Array<{ _id: string; category: string; description?: string; amount: number; expenseDate?: string }>>(
-        `*[_type == "driverVoucherItem" && voucherRef == $ref] | order(coalesce(expenseDate, _createdAt) asc){ _id, expenseDate, category, description, amount }`,
+    const items = await getSanityClient().fetch<Array<{ _id: string; _rev?: string; category: string; description?: string; amount: number; expenseDate?: string }>>(
+        `*[_type == "driverVoucherItem" && voucherRef == $ref] | order(coalesce(expenseDate, _createdAt) asc){ _id, _rev, expenseDate, category, description, amount }`,
         { ref: voucherId }
     );
 
     const disbursements = await getSanityClient().fetch<Array<{
         _id: string;
+        _rev?: string;
         kind: 'INITIAL' | 'TOP_UP';
         date: string;
         amount: number;
@@ -857,6 +867,7 @@ async function getDriverVoucherState(voucherId: string) {
             bankAccountName,
             bankAccountNumber,
             bankTransactionRef,
+            _rev,
             note
         }`,
         { ref: voucherId }
@@ -1500,6 +1511,9 @@ export async function handleDriverVoucherItemDelete(
         if (!deletedItem) {
             return NextResponse.json({ error: 'Item bon tidak ditemukan atau sudah berubah. Muat ulang lalu coba lagi.' }, { status: 404 });
         }
+        if (!deletedItem._rev) {
+            return NextResponse.json({ error: 'Revisi item bon tidak tersedia. Muat ulang lalu coba lagi.' }, { status: 409 });
+        }
 
         const nextOperationalSpent = state.items
             .filter(existing => existing._id !== itemId)
@@ -1511,18 +1525,25 @@ export async function handleDriverVoucherItemDelete(
         );
 
         try {
-            await getSanityClient()
-                .transaction()
-                .delete(itemId)
-                .patch(initialItem.voucherRef, {
-                    ifRevisionID: state.voucher._rev,
-                    set: {
-                        totalSpent: nextTotals.totalSpent,
-                        totalClaimAmount: nextTotals.totalClaimAmount,
-                        balance: nextTotals.balance,
+            await getSanityClient().mutate([
+                {
+                    delete: {
+                        id: itemId,
+                        ifRevisionID: deletedItem._rev,
                     },
-                })
-                .commit();
+                },
+                {
+                    patch: {
+                        id: initialItem.voucherRef,
+                        ifRevisionID: state.voucher._rev,
+                        set: {
+                            totalSpent: nextTotals.totalSpent,
+                            totalClaimAmount: nextTotals.totalClaimAmount,
+                            balance: nextTotals.balance,
+                        },
+                    },
+                },
+            ] as unknown as SanityMutations);
 
             await addAuditLog(
                 session,
@@ -1604,6 +1625,9 @@ export async function handleDriverVoucherDisbursementDelete(
         if (disbursement.kind !== 'TOP_UP') {
             return NextResponse.json({ error: 'Bon awal tidak bisa dihapus dari riwayat pencairan' }, { status: 409 });
         }
+        if (!disbursement._rev) {
+            return NextResponse.json({ error: 'Revisi tambahan bon tidak tersedia. Muat ulang lalu coba lagi.' }, { status: 409 });
+        }
 
         const amount = normalizeNumber(disbursement.amount || 0);
         if (amount <= 0) {
@@ -1629,29 +1653,46 @@ export async function handleDriverVoucherDisbursementDelete(
             normalizeNumber(state.voucher.driverFeeAmount || 0, { maxFractionDigits: 0 })
         );
 
-        const transaction = getSanityClient().transaction().delete(disbursementId);
+        const mutations: Array<Record<string, unknown>> = [
+            {
+                delete: {
+                    id: disbursementId,
+                    ifRevisionID: disbursement._rev,
+                },
+            },
+        ];
         if (disbursement.bankTransactionRef) {
-            transaction.delete(disbursement.bankTransactionRef);
-        }
-        if (bank && disbursement.bankAccountRef) {
-            transaction.patch(disbursement.bankAccountRef, {
-                ifRevisionID: bank._rev,
-                set: { currentBalance: readLedgerBalance(bank.currentBalance) + amount },
+            mutations.push({
+                delete: {
+                    id: disbursement.bankTransactionRef,
+                },
             });
         }
-        transaction.patch(initialDisbursement.voucherRef, {
-            ifRevisionID: state.voucher._rev,
-            set: {
-                totalIssuedAmount: nextIssuedAmount,
-                topUpCount: nextTopUpCount,
-                totalSpent: totals.totalSpent,
-                totalClaimAmount: totals.totalClaimAmount,
-                balance: totals.balance,
+        if (bank && disbursement.bankAccountRef) {
+            mutations.push({
+                patch: {
+                    id: disbursement.bankAccountRef,
+                    ifRevisionID: bank._rev,
+                    set: { currentBalance: readLedgerBalance(bank.currentBalance) + amount },
+                },
+            });
+        }
+        mutations.push({
+            patch: {
+                id: initialDisbursement.voucherRef,
+                ifRevisionID: state.voucher._rev,
+                set: {
+                    totalIssuedAmount: nextIssuedAmount,
+                    topUpCount: nextTopUpCount,
+                    totalSpent: totals.totalSpent,
+                    totalClaimAmount: totals.totalClaimAmount,
+                    balance: totals.balance,
+                },
             },
         });
 
         try {
-            await transaction.commit();
+            await getSanityClient().mutate(mutations as unknown as SanityMutations);
 
             const updatedVoucher = {
                 ...state.voucher,

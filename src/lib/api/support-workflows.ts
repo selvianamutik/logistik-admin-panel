@@ -23,6 +23,8 @@ type AuditLogFn = (
     summary: string
 ) => void | Promise<void>;
 
+type SanityMutations = Parameters<ReturnType<typeof getSanityClient>['mutate']>[0];
+
 const MANAGEABLE_USER_ROLES = ['OWNER', 'OPERASIONAL', 'FINANCE', 'ARMADA', 'DRIVER'] as const;
 
 function extractRefId(value: unknown) {
@@ -550,14 +552,14 @@ export async function handleCustomerDelete(
     }
 
     try {
-        await getSanityClient()
-            .transaction()
-            .patch(id, {
-                ifRevisionID: customer._rev,
-                set: { updatedAt: new Date().toISOString() },
-            })
-            .delete(id)
-            .commit();
+        await getSanityClient().mutate([
+            {
+                delete: {
+                    id,
+                    ifRevisionID: customer._rev,
+                },
+            },
+        ] as unknown as SanityMutations);
         await addAuditLog(session, 'DELETE', 'customers', id, `Deleted customers ${customer.name || id}`);
         return NextResponse.json({ success: true });
     } catch (error) {

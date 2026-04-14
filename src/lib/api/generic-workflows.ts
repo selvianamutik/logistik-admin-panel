@@ -98,6 +98,8 @@ type AuditLogFn = (
     summary: string
 ) => void | Promise<void>;
 
+type SanityMutations = Parameters<ReturnType<typeof getSanityClient>['mutate']>[0];
+
 const COMPANY_ASSET_DATA_URL_RE = /^data:image\/(?:png|jpeg|jpg|gif|webp|svg\+xml);base64,[a-z0-9+/=]+$/i;
 const COMPANY_ASSET_MAX_LENGTH = 1_500_000;
 
@@ -1439,14 +1441,14 @@ export async function handleGenericDelete(
         }
 
         try {
-            await getSanityClient()
-                .transaction()
-                .patch(id, {
-                    ifRevisionID: customerProduct._rev,
-                    set: { updatedAt: new Date().toISOString() },
-                })
-                .delete(id)
-                .commit();
+            await getSanityClient().mutate([
+                {
+                    delete: {
+                        id,
+                        ifRevisionID: customerProduct._rev,
+                    },
+                },
+            ] as unknown as SanityMutations);
             await addAuditLog(
                 session,
                 'DELETE',
@@ -1495,14 +1497,14 @@ export async function handleGenericDelete(
         }
 
         try {
-            await getSanityClient()
-                .transaction()
-                .patch(id, {
-                    ifRevisionID: supplier._rev,
-                    set: { updatedAt: new Date().toISOString() },
-                })
-                .delete(id)
-                .commit();
+            await getSanityClient().mutate([
+                {
+                    delete: {
+                        id,
+                        ifRevisionID: supplier._rev,
+                    },
+                },
+            ] as unknown as SanityMutations);
             await addAuditLog(session, 'DELETE', entity, id, `Deleted supplier ${supplier.name || id}`);
             return NextResponse.json({ success: true });
         } catch (error) {
@@ -1545,14 +1547,14 @@ export async function handleGenericDelete(
         }
 
         try {
-            await getSanityClient()
-                .transaction()
-                .patch(id, {
-                    ifRevisionID: warehouseItem._rev,
-                    set: { updatedAt: new Date().toISOString() },
-                })
-                .delete(id)
-                .commit();
+            await getSanityClient().mutate([
+                {
+                    delete: {
+                        id,
+                        ifRevisionID: warehouseItem._rev,
+                    },
+                },
+            ] as unknown as SanityMutations);
             await addAuditLog(
                 session,
                 'DELETE',
@@ -1595,14 +1597,14 @@ export async function handleGenericDelete(
         }
 
         try {
-            await getSanityClient()
-                .transaction()
-                .patch(id, {
-                    ifRevisionID: recipient._rev,
-                    set: { updatedAt: new Date().toISOString() },
-                })
-                .delete(id)
-                .commit();
+            await getSanityClient().mutate([
+                {
+                    delete: {
+                        id,
+                        ifRevisionID: recipient._rev,
+                    },
+                },
+            ] as unknown as SanityMutations);
             await addAuditLog(
                 session,
                 'DELETE',
@@ -1645,14 +1647,14 @@ export async function handleGenericDelete(
         }
 
         try {
-            await getSanityClient()
-                .transaction()
-                .patch(id, {
-                    ifRevisionID: pickup._rev,
-                    set: { updatedAt: new Date().toISOString() },
-                })
-                .delete(id)
-                .commit();
+            await getSanityClient().mutate([
+                {
+                    delete: {
+                        id,
+                        ifRevisionID: pickup._rev,
+                    },
+                },
+            ] as unknown as SanityMutations);
             await addAuditLog(
                 session,
                 'DELETE',
@@ -1695,14 +1697,14 @@ export async function handleGenericDelete(
         }
 
         try {
-            await getSanityClient()
-                .transaction()
-                .patch(id, {
-                    ifRevisionID: tripRouteRate._rev,
-                    set: { updatedAt: new Date().toISOString() },
-                })
-                .delete(id)
-                .commit();
+            await getSanityClient().mutate([
+                {
+                    delete: {
+                        id,
+                        ifRevisionID: tripRouteRate._rev,
+                    },
+                },
+            ] as unknown as SanityMutations);
             await addAuditLog(
                 session,
                 'DELETE',

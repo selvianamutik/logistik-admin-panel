@@ -33,6 +33,8 @@ type AuditLogFn = (
     summary: string
 ) => void | Promise<void>;
 
+type SanityMutations = Parameters<ReturnType<typeof getSanityClient>['mutate']>[0];
+
 const INCIDENT_STATUS_TRANSITIONS: Record<string, string[]> = {
     OPEN: ['IN_PROGRESS'],
     IN_PROGRESS: ['RESOLVED'],
@@ -558,19 +560,26 @@ export async function handleIncidentSettlementLineDelete(
     }
 
     try {
-        await getSanityClient()
-            .transaction()
-            .delete(id)
-            .create({
-                _id: crypto.randomUUID(),
-                _type: 'incidentActionLog',
-                incidentRef: existing.incidentRef,
-                timestamp: new Date().toISOString(),
-                note: `Detail insiden dihapus: ${formatIncidentSettlementLabel(existing)}`,
-                userRef: session._id,
-                userName: session.name,
-            })
-            .commit();
+        const now = new Date().toISOString();
+        await getSanityClient().mutate([
+            {
+                delete: {
+                    id,
+                    ifRevisionID: existing._rev,
+                },
+            },
+            {
+                create: {
+                    _id: crypto.randomUUID(),
+                    _type: 'incidentActionLog',
+                    incidentRef: existing.incidentRef,
+                    timestamp: now,
+                    note: `Detail insiden dihapus: ${formatIncidentSettlementLabel(existing)}`,
+                    userRef: session._id,
+                    userName: session.name,
+                },
+            },
+        ] as unknown as SanityMutations);
         await addAuditLog(session, 'DELETE', 'incident-settlement-lines', id, `Deleted incident settlement line ${formatIncidentSettlementLabel(existing)}`);
         return NextResponse.json({ success: true });
     } catch (error) {
@@ -721,14 +730,14 @@ export async function handleServiceDelete(
     }
 
     try {
-        await getSanityClient()
-            .transaction()
-            .patch(id, {
-                ifRevisionID: service._rev,
-                set: { updatedAt: new Date().toISOString() },
-            })
-            .delete(id)
-            .commit();
+        await getSanityClient().mutate([
+            {
+                delete: {
+                    id,
+                    ifRevisionID: service._rev,
+                },
+            },
+        ] as unknown as SanityMutations);
         await addAuditLog(session, 'DELETE', 'services', id, `Deleted vehicle category ${service.name || id}`);
         return NextResponse.json({ success: true });
     } catch (err) {
@@ -772,14 +781,14 @@ export async function handleExpenseCategoryDelete(
     }
 
     try {
-        await getSanityClient()
-            .transaction()
-            .patch(id, {
-                ifRevisionID: category._rev,
-                set: { updatedAt: new Date().toISOString() },
-            })
-            .delete(id)
-            .commit();
+        await getSanityClient().mutate([
+            {
+                delete: {
+                    id,
+                    ifRevisionID: category._rev,
+                },
+            },
+        ] as unknown as SanityMutations);
         await addAuditLog(session, 'DELETE', 'expense-categories', id, `Deleted expense-categories ${category.name || id}`);
         return NextResponse.json({ success: true });
     } catch (err) {
@@ -859,14 +868,14 @@ export async function handleDriverDelete(
     }
 
     try {
-        await getSanityClient()
-            .transaction()
-            .patch(id, {
-                ifRevisionID: driver._rev,
-                set: { updatedAt: new Date().toISOString() },
-            })
-            .delete(id)
-            .commit();
+        await getSanityClient().mutate([
+            {
+                delete: {
+                    id,
+                    ifRevisionID: driver._rev,
+                },
+            },
+        ] as unknown as SanityMutations);
         await addAuditLog(session, 'DELETE', 'drivers', id, `Deleted drivers ${driver.name || id}`);
         return NextResponse.json({ success: true });
     } catch (error) {
@@ -1152,14 +1161,14 @@ export async function handleVehicleDelete(
     }
 
     try {
-        await getSanityClient()
-            .transaction()
-            .patch(id, {
-                ifRevisionID: vehicle._rev,
-                set: { updatedAt: new Date().toISOString() },
-            })
-            .delete(id)
-            .commit();
+        await getSanityClient().mutate([
+            {
+                delete: {
+                    id,
+                    ifRevisionID: vehicle._rev,
+                },
+            },
+        ] as unknown as SanityMutations);
         await addAuditLog(session, 'DELETE', 'vehicles', id, `Deleted vehicles ${vehicle.plateNumber || id}`);
         return NextResponse.json({ success: true });
     } catch (err) {
