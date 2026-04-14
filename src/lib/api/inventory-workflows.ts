@@ -305,6 +305,18 @@ export async function handlePurchaseCreate(
                 ifRevisionID: supplier._rev,
                 set: { updatedAt: purchaseDoc.updatedAt },
             });
+        for (const item of itemSnapshots) {
+            if (!item._rev) {
+                return NextResponse.json(
+                    { error: `Revisi barang gudang ${item.itemCode || item.name || item._id} tidak tersedia. Refresh lalu coba lagi.` },
+                    { status: 409 }
+                );
+            }
+            transaction.patch(item._id, {
+                ifRevisionID: item._rev,
+                set: { updatedAt: purchaseDoc.updatedAt },
+            });
+        }
         for (const item of items) {
             transaction.create(item);
         }
