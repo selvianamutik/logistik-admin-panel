@@ -404,15 +404,59 @@ async function buildInvoiceInstructionAccountRemoval(accountId: string) {
 }
 
 async function clearOtherCustomerScopedDefaults(docType: 'customerRecipient' | 'customerPickupLocation', customerRef: string, keepId: string) {
-    const otherDocIds = await getSanityClient().fetch<Array<{ _id: string }>>(
-        `*[_type == $docType && customerRef == $customerRef && _id != $keepId && isDefault == true]{ _id }`,
-        { docType, customerRef, keepId }
-    );
-    const transaction = getSanityClient().transaction().patch(keepId, patch => patch.set({ isDefault: true }));
-    for (const doc of otherDocIds) {
-        transaction.patch(doc._id, patch => patch.set({ isDefault: false }));
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        const scopedDocs = await getSanityClient().fetch<Array<{ _id: string; _rev?: string; isDefault?: boolean }>>(
+            `*[_type == $docType && customerRef == $customerRef && (_id == $keepId || isDefault == true)]{ _id, _rev, isDefault }`,
+            { docType, customerRef, keepId }
+        );
+        const keepDoc = scopedDocs.find(doc => doc._id === keepId);
+        if (!keepDoc) {
+            return;
+        }
+        if (!keepDoc._rev) {
+            throw new Error('Revisi master default customer tidak tersedia. Refresh lalu coba lagi.');
+        }
+
+        const docsToUnset = scopedDocs.filter(doc => doc._id !== keepId && doc.isDefault === true);
+        if (docsToUnset.some(doc => !doc._rev)) {
+            throw new Error('Revisi master default customer tidak tersedia. Refresh lalu coba lagi.');
+        }
+        if (keepDoc.isDefault === true && docsToUnset.length === 0) {
+            return;
+        }
+
+        const transaction = getSanityClient().transaction().patch(keepId, {
+            ifRevisionID: keepDoc._rev,
+            set: { isDefault: true },
+        });
+        for (const doc of docsToUnset) {
+            transaction.patch(doc._id, {
+                ifRevisionID: doc._rev as string,
+                set: { isDefault: false },
+            });
+        }
+
+        try {
+            await transaction.commit();
+            return;
+        } catch (error) {
+            if (!isMutationConflictError(error)) {
+                throw error;
+            }
+            if (attempt === 2) {
+                const latestScopedDocs = await getSanityClient().fetch<Array<{ _id: string; isDefault?: boolean }>>(
+                    `*[_type == $docType && customerRef == $customerRef && (_id == $keepId || isDefault == true)]{ _id, isDefault }`,
+                    { docType, customerRef, keepId }
+                );
+                const latestKeepDoc = latestScopedDocs.find(doc => doc._id === keepId);
+                const latestOtherDefaults = latestScopedDocs.filter(doc => doc._id !== keepId && doc.isDefault === true);
+                if (latestKeepDoc?.isDefault === true && latestOtherDefaults.length === 0) {
+                    return;
+                }
+                throw new Error('Default customer berubah karena ada update lain. Refresh lalu coba lagi.');
+            }
+        }
     }
-    await transaction.commit();
 }
 
 function isProtectedLedgerEntity(entity: string) {
@@ -1332,14 +1376,28 @@ export async function handleGenericUpdate(
     if (entity === 'customer-recipients' && normalizedUpdates.isDefault === true) {
         const updatedRecipient = updated as { customerRef?: string; _id?: string };
         if (typeof updatedRecipient.customerRef === 'string' && typeof updatedRecipient._id === 'string') {
-            await clearOtherCustomerScopedDefaults('customerRecipient', updatedRecipient.customerRef, updatedRecipient._id);
+            try {
+                await clearOtherCustomerScopedDefaults('customerRecipient', updatedRecipient.customerRef, updatedRecipient._id);
+            } catch (error) {
+                return NextResponse.json(
+                    { error: error instanceof Error ? error.message : 'Default penerima berubah karena ada update lain. Refresh lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
         }
     }
 
     if (entity === 'customer-pickups' && normalizedUpdates.isDefault === true) {
         const updatedPickup = updated as { customerRef?: string; _id?: string };
         if (typeof updatedPickup.customerRef === 'string' && typeof updatedPickup._id === 'string') {
-            await clearOtherCustomerScopedDefaults('customerPickupLocation', updatedPickup.customerRef, updatedPickup._id);
+            try {
+                await clearOtherCustomerScopedDefaults('customerPickupLocation', updatedPickup.customerRef, updatedPickup._id);
+            } catch (error) {
+                return NextResponse.json(
+                    { error: error instanceof Error ? error.message : 'Default pickup berubah karena ada update lain. Refresh lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
         }
     }
 
@@ -2295,11 +2353,25 @@ export async function handleGenericCreate(
     }
 
     if (entity === 'customer-recipients' && newDoc.isDefault === true && typeof newDoc.customerRef === 'string') {
-        await clearOtherCustomerScopedDefaults('customerRecipient', newDoc.customerRef, newId);
+        try {
+            await clearOtherCustomerScopedDefaults('customerRecipient', newDoc.customerRef, newId);
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Default penerima berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
     }
 
     if (entity === 'customer-pickups' && newDoc.isDefault === true && typeof newDoc.customerRef === 'string') {
-        await clearOtherCustomerScopedDefaults('customerPickupLocation', newDoc.customerRef, newId);
+        try {
+            await clearOtherCustomerScopedDefaults('customerPickupLocation', newDoc.customerRef, newId);
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Default pickup berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
     }
 
     await addAuditLog(
