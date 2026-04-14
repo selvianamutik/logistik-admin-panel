@@ -118,6 +118,7 @@ export default function IncidentDetailPage() {
     const hasPendingSettlement = useMemo(() => hasUnsettledIncidentSettlementLines(lines), [lines]);
     const availableStatuses = incident ? getAvailableIncidentStatusesForContext(incident.status, lines) : [];
     const lineCategories = getIncidentSettlementCategoryOptions(lineForm.lineType);
+    const incidentClosed = incident?.status === 'CLOSED';
 
     const resetLineModal = () => {
         setShowLineModal(false);
@@ -277,13 +278,13 @@ export default function IncidentDetailPage() {
 
     const renderActions = (line: IncidentSettlementLine) => (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {canManageIncident && canEditIncidentSettlementLine(line) && <button className="table-action-btn" onClick={() => openLineModal(line)}><Pencil size={14} /> Edit</button>}
-            {canManageIncident && line.status === 'DRAFT' && <button className="table-action-btn" onClick={() => void updateLineStatus(line, 'APPROVED')}><CheckCircle2 size={14} /> Approve</button>}
-            {canManageIncident && line.status === 'APPROVED' && <button className="table-action-btn" onClick={() => void updateLineStatus(line, 'DRAFT')}><XCircle size={14} /> Draft</button>}
+            {canManageIncident && !incidentClosed && canEditIncidentSettlementLine(line) && <button className="table-action-btn" onClick={() => openLineModal(line)}><Pencil size={14} /> Edit</button>}
+            {canManageIncident && !incidentClosed && line.status === 'DRAFT' && <button className="table-action-btn" onClick={() => void updateLineStatus(line, 'APPROVED')}><CheckCircle2 size={14} /> Approve</button>}
+            {canManageIncident && !incidentClosed && line.status === 'APPROVED' && <button className="table-action-btn" onClick={() => void updateLineStatus(line, 'DRAFT')}><XCircle size={14} /> Draft</button>}
             {canCreateExpense && canPostIncidentSettlementLine(line) && <button className="table-action-btn" onClick={() => openExpenseModal(line)}><ReceiptText size={14} /> Post Expense</button>}
             {canManageIncident && canMarkIncidentRecoveryPosted(line) && <button className="table-action-btn" onClick={() => void updateLineStatus(line, 'POSTED')}><CheckCircle2 size={14} /> Tandai Diterima</button>}
             {canManageIncident && line.status !== 'VOID' && line.status !== 'POSTED' && <button className="table-action-btn" onClick={() => void updateLineStatus(line, 'VOID')}><XCircle size={14} /> Void</button>}
-            {canManageIncident && canDeleteIncidentSettlementLine(line) && <button className="table-action-btn danger" onClick={() => void deleteLine(line)}><Trash2 size={14} /> Hapus</button>}
+            {canManageIncident && !incidentClosed && canDeleteIncidentSettlementLine(line) && <button className="table-action-btn danger" onClick={() => void deleteLine(line)}><Trash2 size={14} /> Hapus</button>}
         </div>
     );
 
@@ -303,7 +304,7 @@ export default function IncidentDetailPage() {
                 </div>
                 <div className="page-actions">
                     {canManageIncident && availableStatuses.length > 0 && <button className="btn btn-primary" onClick={() => setShowStatusModal(true)}><Save size={16} /> Ubah Status</button>}
-                    {canManageIncident && <button className="btn btn-secondary" onClick={() => openLineModal()}><Plus size={16} /> Tambah Detail Biaya</button>}
+                    {canManageIncident && !incidentClosed && <button className="btn btn-secondary" onClick={() => openLineModal()}><Plus size={16} /> Tambah Detail Biaya</button>}
                     <button className="btn btn-secondary" onClick={handlePrint}><Printer size={16} /> Print</button>
                 </div>
             </div>

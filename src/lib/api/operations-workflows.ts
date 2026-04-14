@@ -105,6 +105,16 @@ function getAllowedIncidentSettlementTargetStatuses(line: Pick<IncidentSettlemen
     return [];
 }
 
+function getAllowedClosedIncidentSettlementTargetStatuses(line: Pick<IncidentSettlementLine, 'lineType' | 'status'>) {
+    if (line.status === 'POSTED' || line.status === 'VOID') {
+        return [];
+    }
+    if (line.lineType === 'RECOVERY' && line.status === 'APPROVED') {
+        return ['POSTED', 'VOID'];
+    }
+    return ['VOID'];
+}
+
 export async function handleIncidentCreate(
     session: ApiSession,
     data: Record<string, unknown>,
@@ -366,9 +376,15 @@ export async function handleIncidentSettlementLineCreate(
         return NextResponse.json({ error: 'Insiden terkait wajib dipilih' }, { status: 400 });
     }
 
-    const incident = await sanityGetById<{ _id: string; incidentNumber?: string }>(incidentRef);
+    const incident = await sanityGetById<{ _id: string; incidentNumber?: string; status?: string }>(incidentRef);
     if (!incident) {
         return NextResponse.json({ error: 'Insiden tidak ditemukan' }, { status: 404 });
+    }
+    if (incident.status === 'CLOSED') {
+        return NextResponse.json(
+            { error: 'Insiden yang sudah ditutup tidak boleh ditambah detail settlement baru' },
+            { status: 409 }
+        );
     }
 
     try {
@@ -433,6 +449,16 @@ export async function handleIncidentSettlementLineUpdate(
     const existing = await sanityGetById<IncidentSettlementLine>(id);
     if (!existing) {
         return NextResponse.json({ error: 'Detail insiden tidak ditemukan' }, { status: 404 });
+    }
+    const incident = await sanityGetById<{ _id: string; status?: string }>(existing.incidentRef);
+    if (!incident) {
+        return NextResponse.json({ error: 'Insiden terkait detail settlement tidak ditemukan' }, { status: 404 });
+    }
+    if (incident.status === 'CLOSED') {
+        return NextResponse.json(
+            { error: 'Detail settlement pada insiden yang sudah ditutup tidak boleh diedit langsung' },
+            { status: 409 }
+        );
     }
     if (!requireIncidentSettlementRevision(revision, existing._rev)) {
         return NextResponse.json({ error: 'Detail insiden berubah karena ada update lain. Refresh lalu coba lagi.' }, { status: 409 });
@@ -514,6 +540,16 @@ export async function handleIncidentSettlementLineDelete(
     if (!existing) {
         return NextResponse.json({ error: 'Detail insiden tidak ditemukan' }, { status: 404 });
     }
+    const incident = await sanityGetById<{ _id: string; status?: string }>(existing.incidentRef);
+    if (!incident) {
+        return NextResponse.json({ error: 'Insiden terkait detail settlement tidak ditemukan' }, { status: 404 });
+    }
+    if (incident.status === 'CLOSED') {
+        return NextResponse.json(
+            { error: 'Detail settlement pada insiden yang sudah ditutup tidak boleh dihapus. Gunakan void jika perlu menutup data lama.' },
+            { status: 409 }
+        );
+    }
     if (!requireIncidentSettlementRevision(revision, existing._rev)) {
         return NextResponse.json({ error: 'Detail insiden berubah karena ada update lain. Refresh lalu coba lagi.' }, { status: 409 });
     }
@@ -561,11 +597,17 @@ export async function handleIncidentSettlementLineStatusUpdate(
     if (!existing) {
         return NextResponse.json({ error: 'Detail insiden tidak ditemukan' }, { status: 404 });
     }
+    const incident = await sanityGetById<{ _id: string; status?: string }>(existing.incidentRef);
+    if (!incident) {
+        return NextResponse.json({ error: 'Insiden terkait detail settlement tidak ditemukan' }, { status: 404 });
+    }
     if (!requireIncidentSettlementRevision(revision, existing._rev)) {
         return NextResponse.json({ error: 'Detail insiden berubah karena ada update lain. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
-    const allowedTargets = getAllowedIncidentSettlementTargetStatuses(existing);
+    const allowedTargets = incident.status === 'CLOSED'
+        ? getAllowedClosedIncidentSettlementTargetStatuses(existing)
+        : getAllowedIncidentSettlementTargetStatuses(existing);
     if (!allowedTargets.includes(status)) {
         return NextResponse.json(
             {
