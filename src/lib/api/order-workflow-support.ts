@@ -172,6 +172,7 @@ export type ResolvedOrderPartyData = {
 
 export type ResolvedCustomerRecipientData = {
     _id: string;
+    _rev?: string;
     customerRef?: string;
     label?: string;
     receiverName?: string;
@@ -183,6 +184,7 @@ export type ResolvedCustomerRecipientData = {
 
 export type ResolvedCustomerPickupData = {
     _id: string;
+    _rev?: string;
     customerRef?: string;
     label?: string;
     pickupAddress?: string;

@@ -516,6 +516,12 @@ export async function handleOrderCreate(
     if (serviceRef && !service?._rev) {
         return NextResponse.json({ error: 'Revisi kategori armada tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
+    if (customerRecipientRef && !customerRecipient?._rev) {
+        return NextResponse.json({ error: 'Revisi master penerima tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
+    if (customerPickupRef && !customerPickup?._rev) {
+        return NextResponse.json({ error: 'Revisi master pickup tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
 
     const orderId = crypto.randomUUID();
     const masterResi = await sanityGetNextNumber('resi');
@@ -555,6 +561,18 @@ export async function handleOrderCreate(
             set: { updatedAt: createdAt },
         });
     }
+    if (customerRecipientRef && customerRecipient?._rev) {
+        transaction.patch(customerRecipient._id, {
+            ifRevisionID: customerRecipient._rev,
+            set: { updatedAt: createdAt },
+        });
+    }
+    if (customerPickupRef && customerPickup?._rev) {
+        transaction.patch(customerPickup._id, {
+            ifRevisionID: customerPickup._rev,
+            set: { updatedAt: createdAt },
+        });
+    }
     for (const item of items) {
         transaction.create(buildOrderItemDraftDocument(orderId, item));
     }
@@ -564,7 +582,7 @@ export async function handleOrderCreate(
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
-                { error: 'Order, customer, atau kategori armada berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { error: 'Order, customer, tujuan, pickup, atau kategori armada berubah karena ada update lain. Refresh lalu coba lagi.' },
                 { status: 409 }
             );
         }
@@ -714,12 +732,19 @@ export async function handleOrderUpdateWithItems(
     if (serviceRef && !service?._rev) {
         return NextResponse.json({ error: 'Revisi kategori armada tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
+    if (customerRecipientRef && !customerRecipient?._rev) {
+        return NextResponse.json({ error: 'Revisi master penerima tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
+    if (customerPickupRef && !customerPickup?._rev) {
+        return NextResponse.json({ error: 'Revisi master pickup tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
 
+    const mutationTimestamp = new Date().toISOString();
     const transaction = getSanityClient()
         .transaction()
         .patch(customer._id, {
             ifRevisionID: customer._rev,
-            set: { updatedAt: new Date().toISOString() },
+            set: { updatedAt: mutationTimestamp },
         })
         .patch(id, {
             ifRevisionID: order._rev,
@@ -742,7 +767,19 @@ export async function handleOrderUpdateWithItems(
     if (serviceRef && service?._rev) {
         transaction.patch(service._id, {
             ifRevisionID: service._rev,
-            set: { updatedAt: new Date().toISOString() },
+            set: { updatedAt: mutationTimestamp },
+        });
+    }
+    if (customerRecipientRef && customerRecipient?._rev) {
+        transaction.patch(customerRecipient._id, {
+            ifRevisionID: customerRecipient._rev,
+            set: { updatedAt: mutationTimestamp },
+        });
+    }
+    if (customerPickupRef && customerPickup?._rev) {
+        transaction.patch(customerPickup._id, {
+            ifRevisionID: customerPickup._rev,
+            set: { updatedAt: mutationTimestamp },
         });
     }
 
@@ -766,7 +803,7 @@ export async function handleOrderUpdateWithItems(
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
-                { error: 'Data order, customer, kategori armada, atau item target berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { error: 'Data order, customer, tujuan, pickup, kategori armada, atau item target berubah karena ada update lain. Refresh lalu coba lagi.' },
                 { status: 409 }
             );
         }
@@ -915,6 +952,12 @@ export async function handleOrderHeaderBookingUpdate(
     if (serviceRef && !service?._rev) {
         return NextResponse.json({ error: 'Revisi kategori armada tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
+    if (customerRecipientRef && !customerRecipient?._rev) {
+        return NextResponse.json({ error: 'Revisi master penerima tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
+    if (customerPickupRef && !customerPickup?._rev) {
+        return NextResponse.json({ error: 'Revisi master pickup tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
 
     let updatedOrder: unknown;
     try {
@@ -949,11 +992,23 @@ export async function handleOrderHeaderBookingUpdate(
                 set: { updatedAt: mutationTimestamp },
             });
         }
+        if (customerRecipientRef && customerRecipient?._rev) {
+            transaction.patch(customerRecipient._id, {
+                ifRevisionID: customerRecipient._rev,
+                set: { updatedAt: mutationTimestamp },
+            });
+        }
+        if (customerPickupRef && customerPickup?._rev) {
+            transaction.patch(customerPickup._id, {
+                ifRevisionID: customerPickup._rev,
+                set: { updatedAt: mutationTimestamp },
+            });
+        }
         updatedOrder = await transaction.commit();
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
-                { error: 'Header booking, customer, atau kategori armada berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { error: 'Header booking, customer, tujuan, pickup, atau kategori armada berubah karena ada update lain. Refresh lalu coba lagi.' },
                 { status: 409 }
             );
         }
