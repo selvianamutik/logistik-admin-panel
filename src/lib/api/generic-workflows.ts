@@ -407,11 +407,7 @@ async function clearOtherCustomerScopedDefaults(docType: 'customerRecipient' | '
         `*[_type == $docType && customerRef == $customerRef && _id != $keepId && isDefault == true]{ _id }`,
         { docType, customerRef, keepId }
     );
-    if (otherDocIds.length === 0) {
-        return;
-    }
-
-    const transaction = getSanityClient().transaction();
+    const transaction = getSanityClient().transaction().patch(keepId, patch => patch.set({ isDefault: true }));
     for (const doc of otherDocIds) {
         transaction.patch(doc._id, patch => patch.set({ isDefault: false }));
     }
