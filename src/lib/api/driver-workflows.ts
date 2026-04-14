@@ -406,14 +406,16 @@ export async function handleDriverBoronganCreate(
 
     const driverDerivedFromDo = Boolean(inferredDriverRef && inferredDriverRef === resolvedDriverRef && deliveryOrders.length > 0);
     let finalDriverName = driverName;
+    let selectedDriver: { _id: string; _rev?: string; name?: string; active?: boolean } | null = null;
     if (resolvedDriverRef) {
-        const driverDoc = await getSanityClient().fetch<{ _id: string; name?: string; active?: boolean } | null>(
-            `*[_type == "driver" && _id == $id][0]{ _id, name, active }`,
+        const driverDoc = await getSanityClient().fetch<{ _id: string; _rev?: string; name?: string; active?: boolean } | null>(
+            `*[_type == "driver" && _id == $id][0]{ _id, _rev, name, active }`,
             { id: resolvedDriverRef }
         );
         if (!driverDoc) {
             return NextResponse.json({ error: 'Supir borongan tidak ditemukan' }, { status: 404 });
         }
+        selectedDriver = driverDoc;
         if (driverDoc.active === false && !driverDerivedFromDo) {
             return NextResponse.json({ error: 'Supir borongan tidak aktif untuk slip manual' }, { status: 409 });
         }
@@ -464,6 +466,15 @@ export async function handleDriverBoronganCreate(
     };
 
     const transaction = getSanityClient().transaction().create(boronganDoc);
+    const mutationTimestamp = new Date().toISOString();
+    if (selectedDriver?._id) {
+        if (!selectedDriver._rev) {
+            return NextResponse.json({ error: 'Revisi supir borongan tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+        }
+        transaction.patch(selectedDriver._id, patch =>
+            patch.ifRevisionId(selectedDriver._rev!).set({ updatedAt: mutationTimestamp })
+        );
+    }
     for (const row of rows) {
         transaction.create({
             _id: crypto.randomUUID(),
@@ -484,7 +495,6 @@ export async function handleDriverBoronganCreate(
         });
     }
     if (uniqueDoRefs.length > 0) {
-        const mutationTimestamp = new Date().toISOString();
         for (const deliveryOrder of deliveryOrders) {
             if (!deliveryOrder._rev) {
                 return NextResponse.json(
@@ -501,7 +511,7 @@ export async function handleDriverBoronganCreate(
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
-                { error: 'Slip borongan atau DO terkait berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { error: 'Slip borongan, supir, atau DO terkait berubah karena ada update lain. Refresh lalu coba lagi.' },
                 { status: 409 }
             );
         }

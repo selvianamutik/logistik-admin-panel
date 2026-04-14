@@ -2243,12 +2243,22 @@ export async function handleDeliveryOrderCreate(
             ? data.vehiclePlate.trim()
             : '';
     let vehicleCapacityKg = 0;
+    let selectedVehicle: {
+        _id: string;
+        _rev?: string;
+        plateNumber?: string;
+        status?: string;
+        serviceRef?: string;
+        serviceName?: string;
+        capacityKg?: number;
+    } | null = null;
     const vehicleCategoryOverrideReason = normalizeOptionalText(data.vehicleCategoryOverrideReason);
     const driverRef = typeof data.driverRef === 'string' ? data.driverRef : '';
     let driverName =
         typeof data.driverName === 'string' && data.driverName.trim()
             ? data.driverName.trim()
             : '';
+    let selectedDriver: { _id: string; _rev?: string; name?: string; active?: boolean } | null = null;
     let vehicleServiceRef: string | undefined;
     let vehicleServiceName: string | undefined;
     let vehicleCategoryOverrideReasonToStore: string | undefined;
@@ -2261,10 +2271,12 @@ export async function handleDeliveryOrderCreate(
             serviceRef?: string;
             serviceName?: string;
             capacityKg?: number;
+            _rev?: string;
         }>(vehicleRef);
         if (!vehicle) {
             return NextResponse.json({ error: 'Kendaraan DO tidak ditemukan' }, { status: 404 });
         }
+        selectedVehicle = vehicle;
         if (vehicle.status === 'SOLD') {
             return NextResponse.json({ error: 'Kendaraan yang sudah dijual tidak bisa dipakai untuk surat jalan baru' }, { status: 409 });
         }
@@ -2328,10 +2340,11 @@ export async function handleDeliveryOrderCreate(
         vehiclePlate = vehicle.plateNumber || vehiclePlate;
     }
     if (driverRef) {
-        const driver = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(driverRef);
+        const driver = await sanityGetById<{ _id: string; _rev?: string; name?: string; active?: boolean }>(driverRef);
         if (!driver) {
             return NextResponse.json({ error: 'Supir DO tidak ditemukan' }, { status: 404 });
         }
+        selectedDriver = driver;
         if (driver.active === false) {
             return NextResponse.json({ error: 'Supir DO tidak aktif' }, { status: 409 });
         }
@@ -2744,10 +2757,29 @@ export async function handleDeliveryOrderCreate(
     };
 
     const transaction = getSanityClient().transaction().create(doDoc);
+    const mutationTimestamp = new Date().toISOString();
     if (tripRouteSelection?.matchedTripRouteRate?._id && tripRouteSelection.matchedTripRouteRate._rev) {
         transaction.patch(tripRouteSelection.matchedTripRouteRate._id, {
             ifRevisionID: tripRouteSelection.matchedTripRouteRate._rev,
-            set: { updatedAt: new Date().toISOString() },
+            set: { updatedAt: mutationTimestamp },
+        });
+    }
+    if (selectedVehicle?._id) {
+        if (!selectedVehicle._rev) {
+            return NextResponse.json({ error: 'Revisi kendaraan tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+        }
+        transaction.patch(selectedVehicle._id, {
+            ifRevisionID: selectedVehicle._rev,
+            set: { updatedAt: mutationTimestamp },
+        });
+    }
+    if (selectedDriver?._id) {
+        if (!selectedDriver._rev) {
+            return NextResponse.json({ error: 'Revisi supir tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+        }
+        transaction.patch(selectedDriver._id, {
+            ifRevisionID: selectedDriver._rev,
+            set: { updatedAt: mutationTimestamp },
         });
     }
     if (usingDirectCargoInput) {
@@ -2763,7 +2795,7 @@ export async function handleDeliveryOrderCreate(
             });
         }
         try {
-            patchLinkedCustomerProducts(transaction, directCargoItems, new Date().toISOString());
+            patchLinkedCustomerProducts(transaction, directCargoItems, mutationTimestamp);
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Barang customer berubah karena ada update lain. Refresh lalu coba lagi.' },
@@ -2903,7 +2935,7 @@ export async function handleDeliveryOrderCreate(
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
-                { error: 'Data order, barang customer, master biaya rute trip, atau item surat jalan berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { error: 'Data order, barang customer, master biaya rute trip, kendaraan, supir, atau item surat jalan berubah karena ada update lain. Refresh lalu coba lagi.' },
                 { status: 409 }
             );
         }
@@ -2995,10 +3027,20 @@ export async function handleDeliveryOrderTripResourceAssign(
     let nextVehicleCategoryOverrideReason = deliveryOrder.vehicleCategoryOverrideReason || undefined;
     let nextDriverRef = currentDriverRef || '';
     let nextDriverName = deliveryOrder.driverName || '';
+    let selectedVehicle: {
+        _id: string;
+        _rev?: string;
+        plateNumber?: string;
+        status?: string;
+        serviceRef?: string;
+        serviceName?: string;
+    } | null = null;
+    let selectedDriver: { _id: string; _rev?: string; name?: string; active?: boolean } | null = null;
 
     if (vehicleRef) {
         const vehicle = await sanityGetById<{
             _id: string;
+            _rev?: string;
             plateNumber?: string;
             status?: string;
             serviceRef?: string;
@@ -3007,6 +3049,7 @@ export async function handleDeliveryOrderTripResourceAssign(
         if (!vehicle) {
             return NextResponse.json({ error: 'Kendaraan DO tidak ditemukan' }, { status: 404 });
         }
+        selectedVehicle = vehicle;
         if (vehicle.status === 'SOLD') {
             return NextResponse.json({ error: 'Kendaraan yang sudah dijual tidak bisa dipakai untuk surat jalan baru' }, { status: 409 });
         }
@@ -3077,10 +3120,11 @@ export async function handleDeliveryOrderTripResourceAssign(
     }
 
     if (driverRef) {
-        const driver = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(driverRef);
+        const driver = await sanityGetById<{ _id: string; _rev?: string; name?: string; active?: boolean }>(driverRef);
         if (!driver) {
             return NextResponse.json({ error: 'Supir DO tidak ditemukan' }, { status: 404 });
         }
+        selectedDriver = driver;
         if (driver.active === false) {
             return NextResponse.json({ error: 'Supir DO tidak aktif' }, { status: 409 });
         }
@@ -3140,10 +3184,29 @@ export async function handleDeliveryOrderTripResourceAssign(
 
     let updatedDeliveryOrder: unknown;
     try {
-        updatedDeliveryOrder = await getSanityClient()
-            .patch(id)
-            .ifRevisionId(deliveryOrder._rev)
-            .set({
+        const mutationTimestamp = new Date().toISOString();
+        const transaction = getSanityClient().transaction();
+        if (vehicleChanged && selectedVehicle?._id) {
+            if (!selectedVehicle._rev) {
+                return NextResponse.json({ error: 'Revisi kendaraan tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+            }
+            transaction.patch(selectedVehicle._id, {
+                ifRevisionID: selectedVehicle._rev,
+                set: { updatedAt: mutationTimestamp },
+            });
+        }
+        if (driverChanged && selectedDriver?._id) {
+            if (!selectedDriver._rev) {
+                return NextResponse.json({ error: 'Revisi supir tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+            }
+            transaction.patch(selectedDriver._id, {
+                ifRevisionID: selectedDriver._rev,
+                set: { updatedAt: mutationTimestamp },
+            });
+        }
+        transaction.patch(id, {
+            ifRevisionID: deliveryOrder._rev,
+            set: {
                 vehicleRef: nextVehicleRef || undefined,
                 vehiclePlate: nextVehiclePlate || undefined,
                 vehicleServiceRef: nextVehicleServiceRef || undefined,
@@ -3151,12 +3214,13 @@ export async function handleDeliveryOrderTripResourceAssign(
                 vehicleCategoryOverrideReason: nextVehicleCategoryOverrideReason || undefined,
                 driverRef: nextDriverRef || undefined,
                 driverName: nextDriverName || undefined,
-            })
-            .commit();
+            },
+        });
+        updatedDeliveryOrder = await transaction.commit();
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
-                { error: 'Armada trip berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { error: 'Armada trip, kendaraan, atau supir berubah karena ada update lain. Refresh lalu coba lagi.' },
                 { status: 409 }
             );
         }

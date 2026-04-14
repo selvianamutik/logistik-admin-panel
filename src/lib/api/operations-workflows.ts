@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { resolveCompanyLogoUrl } from '@/lib/branding';
 import { getBusinessCalendarDateParts, getBusinessDateTimeLocalValue } from '@/lib/business-date';
-import { getSanityClient, sanityDelete, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
+import { getSanityClient, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
 import type { Driver, IncidentSettlementLine, User } from '@/lib/types';
 
 import {
@@ -807,9 +807,15 @@ export async function handleDriverDelete(
         return NextResponse.json({ error: 'Supir tidak valid' }, { status: 400 });
     }
 
-    const driver = await sanityGetById<{ _id: string; name?: string }>(id);
+    const driver = await sanityGetById<{ _id: string; _rev?: string; name?: string }>(id);
     if (!driver) {
         return NextResponse.json({ error: 'Supir tidak ditemukan' }, { status: 404 });
+    }
+    if (!driver._rev) {
+        return NextResponse.json(
+            { error: 'Revisi supir tidak tersedia. Refresh lalu coba lagi.' },
+            { status: 409 }
+        );
     }
 
     const relatedDeliveryOrder = await getSanityClient().fetch<{ _id: string } | null>(
@@ -852,9 +858,26 @@ export async function handleDriverDelete(
         return NextResponse.json({ error: 'Supir yang masih punya akun mobile tidak boleh dihapus' }, { status: 409 });
     }
 
-    await sanityDelete(id);
-    await addAuditLog(session, 'DELETE', 'drivers', id, `Deleted drivers ${driver.name || id}`);
-    return NextResponse.json({ success: true });
+    try {
+        await getSanityClient()
+            .transaction()
+            .patch(id, {
+                ifRevisionID: driver._rev,
+                set: { updatedAt: new Date().toISOString() },
+            })
+            .delete(id)
+            .commit();
+        await addAuditLog(session, 'DELETE', 'drivers', id, `Deleted drivers ${driver.name || id}`);
+        return NextResponse.json({ success: true });
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Supir berubah atau baru dipakai pada transaksi lain. Muat ulang lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
 }
 
 export async function handleDriverUpdate(
