@@ -1405,19 +1405,24 @@ export async function handleDriverVoucherItemDelete(
         return NextResponse.json({ error: 'Item bon tidak valid' }, { status: 400 });
     }
 
-    const item = await sanityGetById<{ _id: string; voucherRef: string }>(itemId);
-    if (!item?.voucherRef) {
+    const initialItem = await sanityGetById<{ _id: string; voucherRef: string }>(itemId);
+    if (!initialItem?.voucherRef) {
         return NextResponse.json({ error: 'Item bon tidak ditemukan' }, { status: 404 });
     }
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
-        const state = await getDriverVoucherState(item.voucherRef);
+        const state = await getDriverVoucherState(initialItem.voucherRef);
         if ('error' in state) return state.error;
         if (state.voucher.status === 'SETTLED') {
             return NextResponse.json({ error: 'Bon yang sudah settle tidak bisa diubah' }, { status: 409 });
         }
         if (!state.voucher._rev) {
             return NextResponse.json({ error: 'Revisi bon tidak tersedia' }, { status: 409 });
+        }
+
+        const deletedItem = state.items.find(existing => existing._id === itemId);
+        if (!deletedItem) {
+            return NextResponse.json({ error: 'Item bon tidak ditemukan atau sudah berubah. Muat ulang lalu coba lagi.' }, { status: 404 });
         }
 
         const nextOperationalSpent = state.items
@@ -1428,13 +1433,12 @@ export async function handleDriverVoucherItemDelete(
             nextOperationalSpent,
             normalizeNumber(state.voucher.driverFeeAmount || 0, { maxFractionDigits: 0 })
         );
-        const deletedItem = state.items.find(existing => existing._id === itemId);
 
         try {
             await getSanityClient()
                 .transaction()
                 .delete(itemId)
-                .patch(item.voucherRef, {
+                .patch(initialItem.voucherRef, {
                     ifRevisionID: state.voucher._rev,
                     set: {
                         totalSpent: nextTotals.totalSpent,
@@ -1490,7 +1494,7 @@ export async function handleDriverVoucherDisbursementDelete(
         return NextResponse.json({ error: 'Tambahan bon tidak valid' }, { status: 400 });
     }
 
-    const disbursement = await sanityGetById<{
+    const initialDisbursement = await sanityGetById<{
         _id: string;
         _rev?: string;
         voucherRef?: string;
@@ -1500,21 +1504,29 @@ export async function handleDriverVoucherDisbursementDelete(
         bankTransactionRef?: string;
         note?: string;
     }>(disbursementId);
-    if (!disbursement?.voucherRef) {
+    if (!initialDisbursement?.voucherRef) {
         return NextResponse.json({ error: 'Tambahan bon tidak ditemukan' }, { status: 404 });
     }
-    if (disbursement.kind !== 'TOP_UP') {
+    if (initialDisbursement.kind !== 'TOP_UP') {
         return NextResponse.json({ error: 'Bon awal tidak bisa dihapus dari riwayat pencairan' }, { status: 409 });
     }
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
-        const state = await getDriverVoucherState(disbursement.voucherRef);
+        const state = await getDriverVoucherState(initialDisbursement.voucherRef);
         if ('error' in state) return state.error;
         if (state.voucher.status === 'SETTLED') {
             return NextResponse.json({ error: 'Bon yang sudah settle tidak bisa dikoreksi' }, { status: 409 });
         }
         if (!state.voucher._rev) {
             return NextResponse.json({ error: 'Revisi bon tidak tersedia' }, { status: 409 });
+        }
+
+        const disbursement = state.disbursements.find(existing => existing._id === disbursementId);
+        if (!disbursement) {
+            return NextResponse.json({ error: 'Tambahan bon tidak ditemukan atau sudah berubah. Muat ulang lalu coba lagi.' }, { status: 404 });
+        }
+        if (disbursement.kind !== 'TOP_UP') {
+            return NextResponse.json({ error: 'Bon awal tidak bisa dihapus dari riwayat pencairan' }, { status: 409 });
         }
 
         const amount = normalizeNumber(disbursement.amount || 0);
@@ -1551,7 +1563,7 @@ export async function handleDriverVoucherDisbursementDelete(
                 set: { currentBalance: readLedgerBalance(bank.currentBalance) + amount },
             });
         }
-        transaction.patch(disbursement.voucherRef, {
+        transaction.patch(initialDisbursement.voucherRef, {
             ifRevisionID: state.voucher._rev,
             set: {
                 totalIssuedAmount: nextIssuedAmount,
