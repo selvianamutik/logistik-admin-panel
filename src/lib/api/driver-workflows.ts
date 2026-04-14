@@ -922,6 +922,9 @@ export async function handleDriverVoucherCreate(
             { status: 409 }
         );
     }
+    if (!deliveryOrder._rev) {
+        return NextResponse.json({ error: 'Revisi surat jalan bon tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
 
     const driverRef = extractRefId(deliveryOrder.driverRef);
     if (!driverRef) {
@@ -931,12 +934,15 @@ export async function handleDriverVoucherCreate(
         );
     }
 
-    const driver = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(driverRef);
+    const driver = await sanityGetById<{ _id: string; _rev?: string; name?: string; active?: boolean }>(driverRef);
     if (!driver) {
         return NextResponse.json({ error: 'Supir trip tidak ditemukan' }, { status: 404 });
     }
     if (driver.active === false) {
         return NextResponse.json({ error: 'Supir trip tidak aktif' }, { status: 409 });
+    }
+    if (!driver._rev) {
+        return NextResponse.json({ error: 'Revisi supir trip tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
     if (!deliveryOrder.vehicleRef && !deliveryOrder.vehiclePlate) {
@@ -1031,12 +1037,19 @@ export async function handleDriverVoucherCreate(
         );
     }
 
-    if (canonicalVehicleRef && !canonicalVehiclePlate) {
-        const vehicle = await sanityGetById<{ _id: string; plateNumber?: string }>(canonicalVehicleRef);
+    let linkedVehicle: { _id: string; _rev?: string; plateNumber?: string } | null = null;
+    if (canonicalVehicleRef) {
+        const vehicle = await sanityGetById<{ _id: string; _rev?: string; plateNumber?: string }>(canonicalVehicleRef);
         if (!vehicle) {
             return NextResponse.json({ error: 'Kendaraan bon tidak ditemukan' }, { status: 404 });
         }
-        canonicalVehiclePlate = vehicle.plateNumber;
+        if (!vehicle._rev) {
+            return NextResponse.json({ error: 'Revisi kendaraan bon tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+        }
+        linkedVehicle = vehicle;
+        if (!canonicalVehiclePlate) {
+            canonicalVehiclePlate = vehicle.plateNumber;
+        }
     }
 
     const bonNumber = await sanityGetNextNumber('bon', issueDate);
@@ -1104,6 +1117,14 @@ export async function handleDriverVoucherCreate(
 
         const transaction = getSanityClient()
             .transaction()
+            .patch(deliveryOrderRef, {
+                ifRevisionID: deliveryOrder._rev,
+                set: { updatedAt: new Date().toISOString() },
+            })
+            .patch(driverRef, {
+                ifRevisionID: driver._rev,
+                set: { updatedAt: new Date().toISOString() },
+            })
             .create(voucherDoc)
             .create({
                 _id: initialDisbursementId,
@@ -1136,6 +1157,12 @@ export async function handleDriverVoucherCreate(
                 ifRevisionID: issueBank._rev,
                 set: { currentBalance: newBalance },
             });
+        if (linkedVehicle) {
+            transaction.patch(linkedVehicle._id, {
+                ifRevisionID: linkedVehicle._rev,
+                set: { updatedAt: new Date().toISOString() },
+            });
+        }
 
         try {
             await transaction.commit();
@@ -1154,7 +1181,7 @@ export async function handleDriverVoucherCreate(
 
             if (attempt === 2) {
                 return NextResponse.json(
-                    { error: 'Pencairan bon berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { error: 'Pencairan bon, surat jalan, supir, kendaraan, atau rekening berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
                     { status: 409 }
                 );
             }
@@ -1162,7 +1189,7 @@ export async function handleDriverVoucherCreate(
     }
 
     return NextResponse.json(
-        { error: 'Pencairan bon berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+        { error: 'Pencairan bon, surat jalan, supir, kendaraan, atau rekening berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
         { status: 409 }
     );
 }

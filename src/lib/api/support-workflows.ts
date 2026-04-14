@@ -327,7 +327,10 @@ export async function handleInvoiceCreate(
         return NextResponse.json({ error: 'Surat jalan invoice tidak ditemukan' }, { status: 404 });
     }
 
-    if (customerRef && !(await sanityGetById<{ _id: string; name?: string }>(customerRef))) {
+    const customerDoc = customerRef
+        ? await sanityGetById<{ _id: string; _rev?: string; name?: string }>(customerRef)
+        : null;
+    if (customerRef && !customerDoc) {
         return NextResponse.json({ error: 'Customer invoice tidak ditemukan' }, { status: 404 });
     }
 
@@ -351,6 +354,9 @@ export async function handleInvoiceCreate(
     }
     if (deliveryOrderDoc && !deliveryOrderDoc._rev) {
         return NextResponse.json({ error: 'Revisi surat jalan invoice tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
+    if (customerDoc && !customerDoc._rev) {
+        return NextResponse.json({ error: 'Revisi customer invoice tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
     const invoiceId = crypto.randomUUID();
@@ -427,6 +433,12 @@ export async function handleInvoiceCreate(
         return NextResponse.json({ error: 'Total invoice harus sama dengan jumlah subtotal item' }, { status: 400 });
     }
     const mutationTimestamp = new Date().toISOString();
+    if (customerDoc) {
+        transaction.patch(customerDoc._id, {
+            ifRevisionID: customerDoc._rev,
+            set: { updatedAt: mutationTimestamp },
+        });
+    }
     if (orderDoc) {
         transaction.patch(orderDoc._id, {
             ifRevisionID: orderDoc._rev,
@@ -445,7 +457,7 @@ export async function handleInvoiceCreate(
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
-                { error: 'Invoice atau dokumen sumber berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                { error: 'Invoice, customer, atau dokumen sumber berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
                 { status: 409 }
             );
         }

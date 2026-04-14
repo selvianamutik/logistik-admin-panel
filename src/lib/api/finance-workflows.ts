@@ -61,6 +61,7 @@ type AuditLogFn = (
 
 type ReceiptCustomerSource = {
     _id: string;
+    _rev?: string;
     name?: string;
     active?: boolean;
 };
@@ -751,6 +752,7 @@ export async function handleCustomerReceiptCreate(
 
         let baseCustomerRef = explicitCustomerRef;
         let customerName = '-';
+        let linkedCustomer: ReceiptCustomerSource | null = null;
         if (loadedSnapshots.length > 0) {
             if (
                 explicitCustomerRef &&
@@ -789,6 +791,16 @@ export async function handleCustomerReceiptCreate(
             }
             baseCustomerRef = customer._id;
             customerName = normalizeText(customer.name) || '-';
+            linkedCustomer = customer;
+        }
+        if (!linkedCustomer && baseCustomerRef) {
+            linkedCustomer = await sanityGetById<ReceiptCustomerSource>(baseCustomerRef);
+            if (!linkedCustomer) {
+                return NextResponse.json({ error: 'Customer penerimaan tidak ditemukan' }, { status: 404 });
+            }
+        }
+        if (linkedCustomer && !linkedCustomer._rev) {
+            return NextResponse.json({ error: 'Revisi customer penerimaan tidak tersedia' }, { status: 409 });
         }
 
         for (const snapshot of loadedSnapshots) {
@@ -846,6 +858,12 @@ export async function handleCustomerReceiptCreate(
                 amount: totalAmount,
                 note: `Penerimaan customer ${receiptNumber}`,
             });
+        if (linkedCustomer) {
+            transaction.patch(linkedCustomer._id, {
+                ifRevisionID: linkedCustomer._rev,
+                set: { updatedAt: new Date().toISOString() },
+            });
+        }
 
         if (bankAcc) {
             const nextBankBalance = readLedgerBalance(bankAcc.currentBalance) + totalAmount;
@@ -948,7 +966,7 @@ export async function handleCustomerReceiptCreate(
 
             if (attempt === 2) {
                 return NextResponse.json(
-                    { error: 'Penerimaan berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { error: 'Penerimaan, customer, atau nota berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
                     { status: 409 }
                 );
             }
@@ -956,7 +974,7 @@ export async function handleCustomerReceiptCreate(
     }
 
     return NextResponse.json(
-        { error: 'Penerimaan berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+        { error: 'Penerimaan, customer, atau nota berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
         { status: 409 }
     );
 }
@@ -2571,6 +2589,20 @@ export async function handleFreightNotaCreate(
     let finalCustomerContactPerson = normalizeOptionalText(data.customerContactPerson);
     let finalCustomerPhone = normalizeOptionalText(data.customerPhone);
     let customerTermDays: number | null = null;
+    let linkedCustomer: {
+        _id: string;
+        _rev?: string;
+        name?: string;
+        address?: string;
+        contactPerson?: string;
+        phone?: string;
+        defaultPaymentTerm?: number;
+        defaultFreightNotaBillingMode?: string;
+        defaultPph23Enabled?: boolean;
+        defaultPph23RatePercent?: number;
+        defaultPph23BaseMode?: string;
+        active?: boolean;
+    } | null = null;
     let customerPph23Defaults: {
         enabled: boolean;
         ratePercent: number;
@@ -2579,6 +2611,7 @@ export async function handleFreightNotaCreate(
     if (resolvedCustomerRef) {
         const customerDoc = await getSanityClient().fetch<{
             _id: string;
+            _rev?: string;
             name?: string;
             address?: string;
             contactPerson?: string;
@@ -2590,12 +2623,13 @@ export async function handleFreightNotaCreate(
             defaultPph23BaseMode?: string;
             active?: boolean;
         } | null>(
-            `*[_type == "customer" && _id == $id][0]{ _id, name, address, contactPerson, phone, defaultPaymentTerm, defaultFreightNotaBillingMode, defaultPph23Enabled, defaultPph23RatePercent, defaultPph23BaseMode, active }`,
+            `*[_type == "customer" && _id == $id][0]{ _id, _rev, name, address, contactPerson, phone, defaultPaymentTerm, defaultFreightNotaBillingMode, defaultPph23Enabled, defaultPph23RatePercent, defaultPph23BaseMode, active }`,
             { id: resolvedCustomerRef }
         );
         if (!customerDoc) {
             return NextResponse.json({ error: 'Customer nota tidak ditemukan' }, { status: 404 });
         }
+        linkedCustomer = customerDoc;
         if (customerDoc.active === false && !customerDerivedFromDo) {
             return NextResponse.json({ error: 'Customer nota tidak aktif untuk nota manual' }, { status: 409 });
         }
@@ -2624,6 +2658,9 @@ export async function handleFreightNotaCreate(
     }
     if (!finalCustomerName) {
         return NextResponse.json({ error: 'Nama customer nota wajib diisi' }, { status: 400 });
+    }
+    if (linkedCustomer && !linkedCustomer._rev) {
+        return NextResponse.json({ error: 'Revisi customer nota tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
     const totalAmount = normalizeFreightNotaAmount(rows.reduce((sum, row) => sum + row.uangRp, 0));
@@ -2751,6 +2788,12 @@ export async function handleFreightNotaCreate(
     };
 
     const transaction = getSanityClient().transaction().create(notaDoc);
+    if (linkedCustomer) {
+        transaction.patch(linkedCustomer._id, {
+            ifRevisionID: linkedCustomer._rev,
+            set: { updatedAt: new Date().toISOString() },
+        });
+    }
     for (const deliveryOrder of deliveryOrders) {
         if (!deliveryOrder._rev) {
             return NextResponse.json(
@@ -2794,7 +2837,7 @@ export async function handleFreightNotaCreate(
         const message = error instanceof Error ? error.message : '';
         if (/revision|conflict|document/i.test(message)) {
             return NextResponse.json(
-                { error: 'DO berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                { error: 'DO atau customer berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
                 { status: 409 }
             );
         }
