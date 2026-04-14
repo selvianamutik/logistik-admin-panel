@@ -1352,12 +1352,47 @@ export async function handleGenericDelete(
             return NextResponse.json({ error: 'Barang customer tidak valid' }, { status: 400 });
         }
 
+        const customerProduct = await sanityGetById<{ _id: string; _rev?: string; code?: string; name?: string }>(id);
+        if (!customerProduct) {
+            return NextResponse.json({ error: 'Barang customer tidak ditemukan' }, { status: 404 });
+        }
+        if (!customerProduct._rev) {
+            return NextResponse.json({ error: 'Revisi barang customer tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+        }
+
         const relatedOrderItem = await getSanityClient().fetch<{ _id: string } | null>(
             `*[_type == "orderItem" && customerProductRef == $ref][0]{ _id }`,
             { ref: id }
         );
         if (relatedOrderItem) {
             return NextResponse.json({ error: 'Barang customer yang sudah dipakai order tidak boleh dihapus' }, { status: 409 });
+        }
+
+        try {
+            await getSanityClient()
+                .transaction()
+                .patch(id, {
+                    ifRevisionID: customerProduct._rev,
+                    set: { updatedAt: new Date().toISOString() },
+                })
+                .delete(id)
+                .commit();
+            await addAuditLog(
+                session,
+                'DELETE',
+                entity,
+                id,
+                `Deleted customer product ${customerProduct.code || customerProduct.name || id}`
+            );
+            return NextResponse.json({ success: true });
+        } catch (error) {
+            if (isMutationConflictError(error)) {
+                return NextResponse.json(
+                    { error: 'Barang customer berubah atau baru dipakai pada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+            throw error;
         }
     }
 

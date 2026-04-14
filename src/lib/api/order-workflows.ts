@@ -131,6 +131,27 @@ function buildOrderItemDraftDocument(
     };
 }
 
+function patchLinkedCustomerProducts(
+    transaction: ReturnType<ReturnType<typeof getSanityClient>['transaction']>,
+    items: NormalizedOrderItemInput[],
+    timestamp: string
+) {
+    const seenProductRefs = new Set<string>();
+    for (const item of items) {
+        if (!item.customerProductRef || seenProductRefs.has(item.customerProductRef)) {
+            continue;
+        }
+        if (!item.customerProductRevision) {
+            throw new Error('Revisi barang customer tidak tersedia. Refresh lalu coba lagi.');
+        }
+        transaction.patch(item.customerProductRef, {
+            ifRevisionID: item.customerProductRevision,
+            set: { updatedAt: timestamp },
+        });
+        seenProductRefs.add(item.customerProductRef);
+    }
+}
+
 export async function syncOrderStatusFromItems(orderRef: string, session: ApiSession, addAuditLog: AuditLogFn) {
     for (let attempt = 0; attempt < 3; attempt += 1) {
         const order = await sanityGetById<{ _id: string; _rev?: string; status?: string }>(orderRef);
@@ -561,6 +582,14 @@ export async function handleOrderCreate(
             set: { updatedAt: createdAt },
         });
     }
+    try {
+        patchLinkedCustomerProducts(transaction, items, createdAt);
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Barang customer berubah karena ada update lain. Refresh lalu coba lagi.' },
+            { status: 409 }
+        );
+    }
     if (customerRecipientRef && customerRecipient?._rev) {
         transaction.patch(customerRecipient._id, {
             ifRevisionID: customerRecipient._rev,
@@ -582,7 +611,7 @@ export async function handleOrderCreate(
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
-                { error: 'Order, customer, tujuan, pickup, atau kategori armada berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { error: 'Order, customer, barang customer, tujuan, pickup, atau kategori armada berubah karena ada update lain. Refresh lalu coba lagi.' },
                 { status: 409 }
             );
         }
@@ -770,6 +799,14 @@ export async function handleOrderUpdateWithItems(
             set: { updatedAt: mutationTimestamp },
         });
     }
+    try {
+        patchLinkedCustomerProducts(transaction, items, mutationTimestamp);
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Barang customer berubah karena ada update lain. Refresh lalu coba lagi.' },
+            { status: 409 }
+        );
+    }
     if (customerRecipientRef && customerRecipient?._rev) {
         transaction.patch(customerRecipient._id, {
             ifRevisionID: customerRecipient._rev,
@@ -803,7 +840,7 @@ export async function handleOrderUpdateWithItems(
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
-                { error: 'Data order, customer, tujuan, pickup, kategori armada, atau item target berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { error: 'Data order, customer, barang customer, tujuan, pickup, kategori armada, atau item target berubah karena ada update lain. Refresh lalu coba lagi.' },
                 { status: 409 }
             );
         }
@@ -2713,6 +2750,14 @@ export async function handleDeliveryOrderCreate(
                 },
             });
         }
+        try {
+            patchLinkedCustomerProducts(transaction, directCargoItems, new Date().toISOString());
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Barang customer berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
         for (const item of directCargoItems) {
             const orderItemId = crypto.randomUUID();
             const usesQtyBasis = item.qtyKoli > 0;
@@ -2846,7 +2891,7 @@ export async function handleDeliveryOrderCreate(
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
-                { error: 'Data order atau item surat jalan berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { error: 'Data order, barang customer, atau item surat jalan berubah karena ada update lain. Refresh lalu coba lagi.' },
                 { status: 409 }
             );
         }

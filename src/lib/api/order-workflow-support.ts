@@ -52,6 +52,7 @@ export type OrderItemStatusSummary = {
 
 type CustomerProductOrderSource = {
     _id: string;
+    _rev?: string;
     customerRef?: unknown;
     code?: string;
     name?: string;
@@ -69,6 +70,7 @@ type CustomerProductOrderSource = {
 export type NormalizedOrderItemInput = {
     id?: string;
     customerProductRef?: string;
+    customerProductRevision?: string;
     customerProductCode?: string;
     customerProductName?: string;
     description: string;
@@ -410,6 +412,7 @@ export async function normalizeOrderItemsInput(
         ? await getSanityClient().fetch<CustomerProductOrderSource[]>(
             `*[_type == "customerProduct" && _id in $ids]{
                 _id,
+                _rev,
                 customerRef,
                 code,
                 name,
@@ -441,6 +444,7 @@ export async function normalizeOrderItemsInput(
                 throw new Error(`Barang customer ${customerProduct.name || customerProduct.code || ''} tidak aktif`);
             }
             item.customerProductCode = normalizeOptionalText(customerProduct.code);
+            item.customerProductRevision = customerProduct._rev;
             item.customerProductName = normalizeOptionalText(customerProduct.name);
             item.description =
                 item.description ||
