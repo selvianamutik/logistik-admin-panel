@@ -282,7 +282,12 @@ export function isMutationConflictError(err: unknown) {
                 ? err.message
                 : '';
 
-    return statusCode === 409 || /revision/i.test(message) || /conflict/i.test(message);
+    return (
+        statusCode === 409
+        || /revision/i.test(message)
+        || /conflict/i.test(message)
+        || (/mutation failed/i.test(message) && /was not found/i.test(message))
+    );
 }
 
 export async function writeAuditLog(

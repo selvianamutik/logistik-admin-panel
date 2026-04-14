@@ -59,6 +59,7 @@ type NormalizedDriverBoronganRow = {
 
 type DriverBoronganDeliveryOrderSource = {
     _id: string;
+    _rev?: string;
     status?: string;
     orderRef?: unknown;
     doNumber?: string;
@@ -215,6 +216,7 @@ export async function handleDriverBoronganCreate(
         ? await getSanityClient().fetch<DriverBoronganDeliveryOrderSource[]>(
             `*[_type == "deliveryOrder" && _id in $ids]{
                 _id,
+                _rev,
                 status,
                 orderRef,
                 doNumber,
@@ -481,8 +483,30 @@ export async function handleDriverBoronganCreate(
             ket: row.ket,
         });
     }
+    if (uniqueDoRefs.length > 0) {
+        const mutationTimestamp = new Date().toISOString();
+        for (const deliveryOrder of deliveryOrders) {
+            if (!deliveryOrder._rev) {
+                return NextResponse.json(
+                    { error: `Revisi DO ${deliveryOrder.doNumber || deliveryOrder._id} tidak tersedia. Refresh lalu coba lagi.` },
+                    { status: 409 }
+                );
+            }
+            transaction.patch(deliveryOrder._id, patch => patch.ifRevisionId(deliveryOrder._rev!).set({ updatedAt: mutationTimestamp }));
+        }
+    }
 
-    await transaction.commit();
+    try {
+        await transaction.commit();
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Slip borongan atau DO terkait berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
     await addAuditLog(session, 'CREATE', 'driver-borongans', boronganId, `Created driver-borongans: ${boronganNumber}`);
     return NextResponse.json({ data: boronganDoc, id: boronganId });
 }
@@ -497,9 +521,12 @@ export async function handleDriverBoronganDelete(
         return NextResponse.json({ error: 'Borongan tidak valid' }, { status: 400 });
     }
 
-    const borongan = await sanityGetById<{ _id: string; boronganNumber?: string; status?: string }>(id);
+    const borongan = await sanityGetById<{ _id: string; _rev?: string; boronganNumber?: string; status?: string }>(id);
     if (!borongan) {
         return NextResponse.json({ error: 'Borongan tidak ditemukan' }, { status: 404 });
+    }
+    if (!borongan._rev) {
+        return NextResponse.json({ error: 'Revisi slip borongan tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
     if (borongan.status === 'PAID') {
         return NextResponse.json({ error: 'Slip borongan yang sudah dibayar tidak boleh dihapus' }, { status: 409 });
@@ -518,11 +545,23 @@ export async function handleDriverBoronganDelete(
         { ref: id }
     );
     const transaction = getSanityClient().transaction();
+    const mutationTimestamp = new Date().toISOString();
+    transaction.patch(id, patch => patch.ifRevisionId(borongan._rev!).set({ updatedAt: mutationTimestamp }));
     for (const itemId of itemIds) {
         transaction.delete(itemId);
     }
     transaction.delete(id);
-    await transaction.commit();
+    try {
+        await transaction.commit();
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Slip borongan berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
 
     await addAuditLog(session, 'DELETE', 'driver-borongans', id, `Deleted driver-borongans ${borongan.boronganNumber || id}`);
     return NextResponse.json({ success: true });

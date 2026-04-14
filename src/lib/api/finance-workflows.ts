@@ -1792,9 +1792,18 @@ export async function handleExpenseCreate(
         }
     }
 
+    let linkedBorongan:
+        | {
+            _id: string;
+            _rev?: string;
+        }
+        | null = null;
     if (boronganRef) {
-        const borongan = await sanityGetById<{ _id: string }>(boronganRef);
-        if (!borongan) {
+        linkedBorongan = await sanityGetById<{
+            _id: string;
+            _rev?: string;
+        }>(boronganRef);
+        if (!linkedBorongan) {
             return NextResponse.json({ error: 'Slip borongan terkait pengeluaran tidak ditemukan' }, { status: 404 });
         }
     }
@@ -1868,7 +1877,7 @@ export async function handleExpenseCreate(
     });
 
     if (!selectedAccountRef) {
-        if (!incidentSettlementLine) {
+        if (!incidentSettlementLine && !linkedBorongan) {
             const created = await sanityCreate(expenseDocBase);
             const expenseId = (created as Record<string, unknown>)._id as string;
             await addAuditLog(session, 'CREATE', 'expenses', expenseId, expenseAuditSummary);
@@ -1877,15 +1886,26 @@ export async function handleExpenseCreate(
 
         const expenseId = crypto.randomUUID();
         const now = new Date().toISOString();
-        const lineRef = relatedIncidentSettlementLineRef as string;
         const expenseDoc = {
             _id: expenseId,
             ...expenseDocBase,
         };
-        try {
-            await getSanityClient()
-                .transaction()
-                .create(expenseDoc)
+        const transaction = getSanityClient().transaction().create(expenseDoc);
+        if (linkedBorongan) {
+            if (!linkedBorongan._rev) {
+                return NextResponse.json(
+                    { error: 'Revisi slip borongan tidak tersedia. Refresh lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+            transaction.patch(linkedBorongan._id, {
+                ifRevisionID: linkedBorongan._rev,
+                set: { updatedAt: now },
+            });
+        }
+        if (incidentSettlementLine) {
+            const lineRef = relatedIncidentSettlementLineRef as string;
+            transaction
                 .patch(lineRef, {
                     ifRevisionID: incidentSettlementLine._rev,
                     set: sanitizePatchSet({
@@ -1911,21 +1931,25 @@ export async function handleExpenseCreate(
                     note: `Detail insiden diposting ke pengeluaran: ${expenseDescription || expenseNote || category.name || 'Pengeluaran insiden'}`,
                     userRef: session._id,
                     userName: session.name,
-                })
-                .commit();
+                });
+        }
+        try {
+            await transaction.commit();
             await addAuditLog(session, 'CREATE', 'expenses', expenseId, expenseAuditSummary);
-            await addAuditLog(
-                session,
-                'UPDATE',
-                'incident-settlement-lines',
-                incidentSettlementLine._id,
-                `Posted incident settlement line to expense ${expenseId}`
-            );
+            if (incidentSettlementLine) {
+                await addAuditLog(
+                    session,
+                    'UPDATE',
+                    'incident-settlement-lines',
+                    incidentSettlementLine._id,
+                    `Posted incident settlement line to expense ${expenseId}`
+                );
+            }
             return NextResponse.json({ data: expenseDoc, id: expenseId });
         } catch (err) {
             if (isMutationConflictError(err)) {
                 return NextResponse.json(
-                    { error: 'Pengeluaran atau detail insiden berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { error: 'Pengeluaran atau workflow terkait berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
                     { status: 409 }
                 );
             }
@@ -1940,6 +1964,22 @@ export async function handleExpenseCreate(
         }
         if (!bankAcc._rev) {
             return NextResponse.json({ error: 'Revisi rekening tidak tersedia' }, { status: 409 });
+        }
+        let linkedBoronganForAttempt = linkedBorongan;
+        if (boronganRef) {
+            linkedBoronganForAttempt = await sanityGetById<{
+                _id: string;
+                _rev?: string;
+            }>(boronganRef);
+            if (!linkedBoronganForAttempt) {
+                return NextResponse.json({ error: 'Slip borongan terkait pengeluaran tidak ditemukan' }, { status: 404 });
+            }
+            if (!linkedBoronganForAttempt._rev) {
+                return NextResponse.json(
+                    { error: 'Revisi slip borongan tidak tersedia. Refresh lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
         }
 
         const expenseId = crypto.randomUUID();
@@ -1988,6 +2028,12 @@ export async function handleExpenseCreate(
                 ifRevisionID: bankAcc._rev,
                 set: { currentBalance: newBalance },
             });
+        if (linkedBoronganForAttempt) {
+            transaction.patch(linkedBoronganForAttempt._id, {
+                ifRevisionID: linkedBoronganForAttempt._rev,
+                set: { updatedAt: new Date().toISOString() },
+            });
+        }
         if (incidentSettlementLine && typeof relatedIncidentSettlementLineRef === 'string') {
             const lineRef = relatedIncidentSettlementLineRef;
             const now = new Date().toISOString();
@@ -2040,7 +2086,7 @@ export async function handleExpenseCreate(
 
             if (attempt === 2) {
                 return NextResponse.json(
-                    { error: 'Pengeluaran berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { error: 'Pengeluaran, rekening, atau workflow terkait berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
                     { status: 409 }
                 );
             }
@@ -2048,7 +2094,7 @@ export async function handleExpenseCreate(
     }
 
     return NextResponse.json(
-        { error: 'Pengeluaran berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+        { error: 'Pengeluaran, rekening, atau workflow terkait berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
         { status: 409 }
     );
 }
