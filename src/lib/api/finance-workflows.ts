@@ -1792,11 +1792,34 @@ export async function handleExpenseCreate(
         relatedIncidentRef = incidentSettlementLine.incidentRef;
     }
 
+    let linkedIncident:
+        | {
+            _id: string;
+            _rev?: string;
+            vehicleRef?: string;
+            vehiclePlate?: string;
+        }
+        | null = null;
+    let linkedMaintenance:
+        | {
+            _id: string;
+            _rev?: string;
+            vehicleRef?: string;
+            vehiclePlate?: string;
+        }
+        | null = null;
     if (relatedIncidentRef) {
-        const incident = await sanityGetById<{ _id: string; vehicleRef?: string; vehiclePlate?: string }>(relatedIncidentRef);
+        const incident = await sanityGetById<{ _id: string; _rev?: string; vehicleRef?: string; vehiclePlate?: string }>(relatedIncidentRef);
         if (!incident) {
             return NextResponse.json({ error: 'Insiden terkait pengeluaran tidak ditemukan' }, { status: 404 });
         }
+        if (!incident._rev) {
+            return NextResponse.json(
+                { error: 'Revisi insiden tidak tersedia. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        linkedIncident = incident;
         if (incident.vehicleRef) {
             if (relatedVehicleRef && incident.vehicleRef !== relatedVehicleRef) {
                 return NextResponse.json(
@@ -1810,10 +1833,17 @@ export async function handleExpenseCreate(
     }
 
     if (relatedMaintenanceRef) {
-        const maintenance = await sanityGetById<{ _id: string; vehicleRef?: string; vehiclePlate?: string }>(relatedMaintenanceRef);
+        const maintenance = await sanityGetById<{ _id: string; _rev?: string; vehicleRef?: string; vehiclePlate?: string }>(relatedMaintenanceRef);
         if (!maintenance) {
             return NextResponse.json({ error: 'Maintenance terkait pengeluaran tidak ditemukan' }, { status: 404 });
         }
+        if (!maintenance._rev) {
+            return NextResponse.json(
+                { error: 'Revisi maintenance tidak tersedia. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        linkedMaintenance = maintenance;
         if (maintenance.vehicleRef) {
             if (relatedVehicleRef && maintenance.vehicleRef !== relatedVehicleRef) {
                 return NextResponse.json(
@@ -1842,11 +1872,26 @@ export async function handleExpenseCreate(
         }
     }
 
+    let linkedVoucher:
+        | {
+            _id: string;
+            _rev?: string;
+            vehicleRef?: string;
+            vehiclePlate?: string;
+        }
+        | null = null;
     if (voucherRef) {
-        const voucher = await sanityGetById<{ _id: string; vehicleRef?: string; vehiclePlate?: string }>(voucherRef);
+        const voucher = await sanityGetById<{ _id: string; _rev?: string; vehicleRef?: string; vehiclePlate?: string }>(voucherRef);
         if (!voucher) {
             return NextResponse.json({ error: 'Bon trip terkait pengeluaran tidak ditemukan' }, { status: 404 });
         }
+        if (!voucher._rev) {
+            return NextResponse.json(
+                { error: 'Revisi bon trip tidak tersedia. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        linkedVoucher = voucher;
         if (voucher.vehicleRef) {
             if (relatedVehicleRef && voucher.vehicleRef !== relatedVehicleRef) {
                 return NextResponse.json(
@@ -1949,6 +1994,24 @@ export async function handleExpenseCreate(
                 ifRevisionID: category._rev,
                 set: { updatedAt: now },
             });
+        if (linkedIncident) {
+            transaction.patch(linkedIncident._id, {
+                ifRevisionID: linkedIncident._rev,
+                set: { updatedAt: now },
+            });
+        }
+        if (linkedMaintenance) {
+            transaction.patch(linkedMaintenance._id, {
+                ifRevisionID: linkedMaintenance._rev,
+                set: { updatedAt: now },
+            });
+        }
+        if (linkedVoucher) {
+            transaction.patch(linkedVoucher._id, {
+                ifRevisionID: linkedVoucher._rev,
+                set: { updatedAt: now },
+            });
+        }
         if (linkedVehicle) {
             transaction.patch(linkedVehicle._id, {
                 ifRevisionID: linkedVehicle._rev,
@@ -2097,6 +2160,24 @@ export async function handleExpenseCreate(
                 ifRevisionID: bankAcc._rev,
                 set: { currentBalance: newBalance },
             });
+        if (linkedIncident) {
+            transaction.patch(linkedIncident._id, {
+                ifRevisionID: linkedIncident._rev,
+                set: { updatedAt: new Date().toISOString() },
+            });
+        }
+        if (linkedMaintenance) {
+            transaction.patch(linkedMaintenance._id, {
+                ifRevisionID: linkedMaintenance._rev,
+                set: { updatedAt: new Date().toISOString() },
+            });
+        }
+        if (linkedVoucher) {
+            transaction.patch(linkedVoucher._id, {
+                ifRevisionID: linkedVoucher._rev,
+                set: { updatedAt: new Date().toISOString() },
+            });
+        }
         if (linkedVehicle) {
             transaction.patch(linkedVehicle._id, {
                 ifRevisionID: linkedVehicle._rev,
