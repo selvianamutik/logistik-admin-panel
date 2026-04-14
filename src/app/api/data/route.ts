@@ -6,6 +6,7 @@
 import { getSession } from '@/lib/auth';
 import {
     ensureCashAccount,
+    isMutationConflictError,
     isPlainObject,
     sanitizeCompanyProfileForRole,
     sanitizeUserForClient,
@@ -1480,7 +1481,12 @@ export async function POST(request: Request) {
         return await handleGenericCreate(session, entity, docType, data, addAuditLog);
     } catch (err) {
         const message = err instanceof Error ? err.message : 'Server error';
-        const status = message === 'Forbidden' ? 403 : 400;
+        const status =
+            message === 'Forbidden'
+                ? 403
+                : isMutationConflictError(err)
+                    ? 409
+                    : 400;
         console.error('API POST Error:', err);
         return jsonNoStore({ error: message }, { status });
     }

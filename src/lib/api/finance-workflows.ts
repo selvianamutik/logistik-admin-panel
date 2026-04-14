@@ -1211,22 +1211,32 @@ async function finalizeInvoiceAdjustmentDelete(
         return refundConflict;
     }
 
-    await getSanityClient()
-        .transaction()
-        .patch(adjustmentId, {
-            ifRevisionID: adjustment._rev,
-            set: {
-                status: 'VOID',
-                voidedAt: new Date().toISOString(),
-                voidedBy: session._id,
-                voidedByName: session.name,
-            },
-        })
-        .patch(invoiceRef, {
-            ifRevisionID: snapshot.doc._rev,
-            set: buildReceivablePatch(snapshot, snapshot.totalPaid, nextAdjustmentAmount),
-        })
-        .commit();
+    try {
+        await getSanityClient()
+            .transaction()
+            .patch(adjustmentId, {
+                ifRevisionID: adjustment._rev,
+                set: {
+                    status: 'VOID',
+                    voidedAt: new Date().toISOString(),
+                    voidedBy: session._id,
+                    voidedByName: session.name,
+                },
+            })
+            .patch(invoiceRef, {
+                ifRevisionID: snapshot.doc._rev,
+                set: buildReceivablePatch(snapshot, snapshot.totalPaid, nextAdjustmentAmount),
+            })
+            .commit();
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Adjustment atau tagihan berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
 
     await addAuditLog(
         session,
