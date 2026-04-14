@@ -59,6 +59,8 @@ type AuditLogFn = (
     summary: string
 ) => void | Promise<void>;
 
+type SanityMutations = Parameters<ReturnType<typeof getSanityClient>['mutate']>[0];
+
 type ReceiptCustomerSource = {
     _id: string;
     _rev?: string;
@@ -3042,17 +3044,25 @@ export async function handleFreightNotaDelete(
         return NextResponse.json({ error: 'Nota yang sudah punya klaim/potongan tidak boleh dihapus' }, { status: 409 });
     }
 
-    const itemIds = await getSanityClient().fetch<string[]>(
-        `*[_type == "freightNotaItem" && notaRef == $ref]._id`,
+    const notaItems = await getSanityClient().fetch<Array<{ _id: string; _rev?: string }>>(
+        `*[_type == "freightNotaItem" && notaRef == $ref]{ _id, _rev }`,
         { ref: id }
     );
+    if (notaItems.some(item => !item._rev)) {
+        return NextResponse.json({ error: 'Revisi item nota tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
     const relatedDeliveryOrders = await getSanityClient().fetch<Array<{ _id: string; _rev?: string; freightNotaRef?: unknown }>>(
         `*[_type == "deliveryOrder" && freightNotaRef == $ref]{ _id, _rev, freightNotaRef }`,
         { ref: id }
     );
-    const transaction = getSanityClient().transaction();
-    for (const itemId of itemIds) {
-        transaction.delete(itemId);
+    const mutations: Array<Record<string, unknown>> = [];
+    for (const item of notaItems) {
+        mutations.push({
+            delete: {
+                id: item._id,
+                ifRevisionID: item._rev as string,
+            },
+        });
     }
     for (const deliveryOrder of relatedDeliveryOrders) {
         if (!deliveryOrder._rev) {
@@ -3061,18 +3071,22 @@ export async function handleFreightNotaDelete(
                 { status: 409 }
             );
         }
-        transaction.patch(deliveryOrder._id, {
-            ifRevisionID: deliveryOrder._rev,
-            unset: ['freightNotaRef', 'freightNotaNumber'],
+        mutations.push({
+            patch: {
+                id: deliveryOrder._id,
+                ifRevisionID: deliveryOrder._rev,
+                unset: ['freightNotaRef', 'freightNotaNumber'],
+            },
         });
     }
-    transaction.patch(id, {
-        ifRevisionID: nota._rev,
-        set: { updatedAt: new Date().toISOString() },
+    mutations.push({
+        delete: {
+            id,
+            ifRevisionID: nota._rev,
+        },
     });
-    transaction.delete(id);
     try {
-        await transaction.commit();
+        await getSanityClient().mutate(mutations as unknown as SanityMutations);
     } catch (error) {
         const message = error instanceof Error ? error.message : '';
         if (/revision|conflict|document/i.test(message)) {

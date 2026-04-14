@@ -552,15 +552,19 @@ export async function handleDriverBoronganDelete(
         return NextResponse.json({ error: 'Slip borongan yang sudah punya pengeluaran tidak boleh dihapus' }, { status: 409 });
     }
 
-    const itemIds = await getSanityClient().fetch<string[]>(
-        `*[_type == "driverBoronganItem" && boronganRef == $ref]._id`,
+    const itemDocs = await getSanityClient().fetch<Array<{ _id: string; _rev?: string }>>(
+        `*[_type == "driverBoronganItem" && boronganRef == $ref]{ _id, _rev }`,
         { ref: id }
     );
+    if (itemDocs.some(item => !item._rev)) {
+        return NextResponse.json({ error: 'Revisi item slip borongan tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
     const mutations: Array<Record<string, unknown>> = [];
-    for (const itemId of itemIds) {
+    for (const item of itemDocs) {
         mutations.push({
             delete: {
-                id: itemId,
+                id: item._id,
+                ifRevisionID: item._rev as string,
             },
         });
     }

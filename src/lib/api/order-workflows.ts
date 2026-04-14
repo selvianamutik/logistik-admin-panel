@@ -71,6 +71,8 @@ type AuditLogFn = (
     summary: string
 ) => void | Promise<void>;
 
+type SanityMutations = Parameters<ReturnType<typeof getSanityClient>['mutate']>[0];
+
 async function releaseDriverTrackingLockIfOwned(driverRef: unknown, deliveryOrderRef: string, timestamp: string) {
     const driverId = extractRefId(driverRef);
     if (!driverId) {
@@ -820,23 +822,21 @@ export async function handleOrderUpdateWithItems(
         });
     }
 
-    for (const item of existingItems) {
-        transaction.patch(item._id, {
-            ifRevisionID: item._rev as string,
-            set: {
-                description: item.description,
-                status: item.status,
-            },
-        });
-        transaction.delete(item._id);
-    }
-
     for (const item of items) {
         transaction.create(buildOrderItemDraftDocument(id, item));
     }
 
     try {
-        await transaction.commit();
+        const mutations = transaction.serialize() as unknown as Array<Record<string, unknown>>;
+        for (const item of existingItems) {
+            mutations.push({
+                delete: {
+                    id: item._id,
+                    ifRevisionID: item._rev as string,
+                },
+            });
+        }
+        await getSanityClient().mutate(mutations as unknown as SanityMutations);
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
@@ -3411,26 +3411,23 @@ export async function handleOrderDelete(
         return NextResponse.json({ error: 'Revisi item order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
-    const transaction = getSanityClient().transaction();
-    transaction.patch(id, {
-        ifRevisionID: order._rev,
-        set: {
-            masterResi: order.masterResi,
-        },
-    });
+    const mutations: Array<Record<string, unknown>> = [];
     for (const orderItem of orderItems) {
-        transaction.patch(orderItem._id, {
-            ifRevisionID: orderItem._rev as string,
-            set: {
-                description: orderItem.description,
-                status: orderItem.status,
+        mutations.push({
+            delete: {
+                id: orderItem._id,
+                ifRevisionID: orderItem._rev as string,
             },
         });
-        transaction.delete(orderItem._id);
     }
-    transaction.delete(id);
+    mutations.push({
+        delete: {
+            id,
+            ifRevisionID: order._rev,
+        },
+    });
     try {
-        await transaction.commit();
+        await getSanityClient().mutate(mutations as unknown as SanityMutations);
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(

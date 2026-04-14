@@ -5,7 +5,6 @@ import { createSession, setSessionCookie } from '@/lib/auth';
 import {
     getSanityClient,
     sanityCreate,
-    sanityDelete,
     sanityGetById,
     sanityGetCompanyProfile,
     sanityGetNextNumber,
@@ -1868,7 +1867,33 @@ export async function handleGenericDelete(
         return NextResponse.json({ success: true });
     }
 
-    await sanityDelete(id);
+    const existing = await sanityGetById<{ _id: string; _rev?: string }>(id);
+    if (!existing) {
+        return NextResponse.json({ error: 'Dokumen tidak ditemukan' }, { status: 404 });
+    }
+    if (!existing._rev) {
+        return NextResponse.json({ error: 'Revisi dokumen tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
+
+    try {
+        await getSanityClient().mutate([
+            {
+                delete: {
+                    id,
+                    ifRevisionID: existing._rev,
+                },
+            },
+        ] as unknown as SanityMutations);
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Dokumen berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
+
     await addAuditLog(session, 'DELETE', entity, id, `Deleted ${entity} ${id}`);
     return NextResponse.json({ success: true });
 }
