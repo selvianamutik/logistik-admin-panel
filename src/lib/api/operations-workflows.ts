@@ -1046,9 +1046,15 @@ export async function handleVehicleDelete(
         return NextResponse.json({ error: 'Kendaraan tidak valid' }, { status: 400 });
     }
 
-    const vehicle = await sanityGetById<{ _id: string; plateNumber?: string }>(id);
+    const vehicle = await sanityGetById<{ _id: string; _rev?: string; plateNumber?: string }>(id);
     if (!vehicle) {
         return NextResponse.json({ error: 'Kendaraan tidak ditemukan' }, { status: 404 });
+    }
+    if (!vehicle._rev) {
+        return NextResponse.json(
+            { error: 'Revisi kendaraan tidak tersedia. Refresh lalu coba lagi.' },
+            { status: 409 }
+        );
     }
 
     const relatedDeliveryOrder = await getSanityClient().fetch<{ _id: string } | null>(
@@ -1099,7 +1105,24 @@ export async function handleVehicleDelete(
         return NextResponse.json({ error: 'Kendaraan yang sudah dipakai pada pengeluaran tidak boleh dihapus' }, { status: 409 });
     }
 
-    await sanityDelete(id);
-    await addAuditLog(session, 'DELETE', 'vehicles', id, `Deleted vehicles ${vehicle.plateNumber || id}`);
-    return NextResponse.json({ success: true });
+    try {
+        await getSanityClient()
+            .transaction()
+            .patch(id, {
+                ifRevisionID: vehicle._rev,
+                set: { updatedAt: new Date().toISOString() },
+            })
+            .delete(id)
+            .commit();
+        await addAuditLog(session, 'DELETE', 'vehicles', id, `Deleted vehicles ${vehicle.plateNumber || id}`);
+        return NextResponse.json({ success: true });
+    } catch (err) {
+        if (isMutationConflictError(err)) {
+            return NextResponse.json(
+                { error: 'Kendaraan berubah atau baru dipakai pada transaksi lain. Muat ulang lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw err;
+    }
 }

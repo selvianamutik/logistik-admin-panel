@@ -1841,6 +1841,31 @@ export async function handleExpenseCreate(
         }
     }
 
+    let linkedVehicle:
+        | {
+            _id: string;
+            _rev?: string;
+            plateNumber?: string;
+        }
+        | null = null;
+    if (relatedVehicleRef) {
+        linkedVehicle = await sanityGetById<{
+            _id: string;
+            _rev?: string;
+            plateNumber?: string;
+        }>(relatedVehicleRef);
+        if (!linkedVehicle) {
+            return NextResponse.json({ error: 'Kendaraan terkait pengeluaran tidak ditemukan' }, { status: 404 });
+        }
+        if (!linkedVehicle._rev) {
+            return NextResponse.json(
+                { error: 'Revisi kendaraan tidak tersedia. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        relatedVehiclePlate = linkedVehicle.plateNumber || relatedVehiclePlate;
+    }
+
     const hasPrivacyLevel = Object.prototype.hasOwnProperty.call(data, 'privacyLevel');
     const rawPrivacyLevel = normalizeOptionalText(data.privacyLevel);
     if (hasPrivacyLevel && rawPrivacyLevel && rawPrivacyLevel !== 'ownerOnly' && rawPrivacyLevel !== 'internal') {
@@ -1906,6 +1931,12 @@ export async function handleExpenseCreate(
                 ifRevisionID: category._rev,
                 set: { updatedAt: now },
             });
+        if (linkedVehicle) {
+            transaction.patch(linkedVehicle._id, {
+                ifRevisionID: linkedVehicle._rev,
+                set: { updatedAt: now },
+            });
+        }
         if (linkedBorongan) {
             if (!linkedBorongan._rev) {
                 return NextResponse.json(
@@ -1965,7 +1996,7 @@ export async function handleExpenseCreate(
         } catch (err) {
             if (isMutationConflictError(err)) {
                 return NextResponse.json(
-                    { error: 'Pengeluaran, kategori, atau workflow terkait berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { error: 'Pengeluaran, kategori, kendaraan, atau workflow terkait berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
                     { status: 409 }
                 );
             }
@@ -2048,6 +2079,12 @@ export async function handleExpenseCreate(
                 ifRevisionID: bankAcc._rev,
                 set: { currentBalance: newBalance },
             });
+        if (linkedVehicle) {
+            transaction.patch(linkedVehicle._id, {
+                ifRevisionID: linkedVehicle._rev,
+                set: { updatedAt: new Date().toISOString() },
+            });
+        }
         if (linkedBoronganForAttempt) {
             transaction.patch(linkedBoronganForAttempt._id, {
                 ifRevisionID: linkedBoronganForAttempt._rev,
@@ -2106,7 +2143,7 @@ export async function handleExpenseCreate(
 
             if (attempt === 2) {
                 return NextResponse.json(
-                    { error: 'Pengeluaran, kategori, rekening, atau workflow terkait berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { error: 'Pengeluaran, kategori, kendaraan, rekening, atau workflow terkait berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
                     { status: 409 }
                 );
             }
@@ -2114,7 +2151,7 @@ export async function handleExpenseCreate(
     }
 
     return NextResponse.json(
-        { error: 'Pengeluaran, kategori, rekening, atau workflow terkait berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+        { error: 'Pengeluaran, kategori, kendaraan, rekening, atau workflow terkait berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
         { status: 409 }
     );
 }
