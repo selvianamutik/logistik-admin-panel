@@ -684,6 +684,52 @@ function buildTireEventResponseError(error: unknown, fallbackMessage: string) {
     return NextResponse.json({ error: message }, { status });
 }
 
+function buildUniqueConstraintId(entityType: string, fieldName: string, value: string) {
+    const normalizedValue = value.trim().toLowerCase();
+    const encodedValue = Buffer.from(normalizedValue, 'utf8').toString('base64url');
+    return `unique-constraint.${entityType}.${fieldName}.${encodedValue}`;
+}
+
+function buildTireCodeUniqueConstraintDoc(tireId: string, tireCode: string) {
+    const timestamp = new Date().toISOString();
+    const normalizedCode = tireCode.trim().toUpperCase();
+    return {
+        _id: buildUniqueConstraintId('tireEvent', 'tireCode', normalizedCode),
+        _type: 'uniqueConstraint',
+        entityType: 'tireEvent',
+        fieldName: 'tireCode',
+        value: normalizedCode,
+        valueLower: normalizedCode.toLowerCase(),
+        ownerRef: tireId,
+        ownerType: 'tireEvent',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+    } as const;
+}
+
+function isDocumentAlreadyExistsError(error: unknown, documentId?: string) {
+    const statusCode =
+        isPlainObject(error) && typeof error.statusCode === 'number'
+            ? error.statusCode
+            : isPlainObject(error) && typeof error.status === 'number'
+                ? error.status
+                : undefined;
+    const message =
+        error instanceof Error
+            ? error.message
+            : isPlainObject(error) && typeof error.message === 'string'
+                ? error.message
+                : '';
+
+    if (statusCode !== 409 && !/already exists/i.test(message)) {
+        return false;
+    }
+    if (!documentId) {
+        return /already exists/i.test(message);
+    }
+    return message.includes(documentId) && /already exists/i.test(message);
+}
+
 export async function handleGenericUpdate(
     session: ApiSession,
     entity: string,
@@ -1191,6 +1237,15 @@ export async function handleGenericUpdate(
                 ...(tireUnsetFields.length > 0 ? { unset: tireUnsetFields } : {}),
             })
             .create(historyLogDoc);
+        const currentTireCode = normalizeOptionalText(existingTire.tireCode)?.toUpperCase();
+        const nextTireCode = normalizeOptionalText(nextTireDoc.tireCode)?.toUpperCase();
+        const nextTireCodeConstraint =
+            nextTireCode && nextTireCode !== currentTireCode
+                ? buildTireCodeUniqueConstraintDoc(id, nextTireCode)
+                : null;
+        if (nextTireCodeConstraint) {
+            transaction.create(nextTireCodeConstraint);
+        }
         try {
             await appendTrackedTireWarehouseSync({
                 transaction,
@@ -1200,6 +1255,9 @@ export async function handleGenericUpdate(
             });
             await transaction.commit();
         } catch (error) {
+            if (isDocumentAlreadyExistsError(error, nextTireCodeConstraint?._id)) {
+                return NextResponse.json({ error: 'Kode ban sudah digunakan' }, { status: 409 });
+            }
             if (isMutationConflictError(error)) {
                 return NextResponse.json(
                     { error: 'Catatan ban atau stok gudang ban berubah karena ada update lain. Refresh lalu coba lagi.' },
@@ -2339,8 +2397,13 @@ export async function handleGenericCreate(
             session,
             note: normalizeOptionalText(createdTireDoc.notes),
         });
+        const tireCodeConstraint = buildTireCodeUniqueConstraintDoc(
+            newId,
+            normalizeOptionalText(createdTireDoc.tireCode) || newId
+        );
         const transaction = getSanityClient()
             .transaction()
+            .create(tireCodeConstraint)
             .create(createdTireDoc)
             .create(historyLogDoc);
         try {
@@ -2352,6 +2415,9 @@ export async function handleGenericCreate(
             });
             await transaction.commit();
         } catch (error) {
+            if (isDocumentAlreadyExistsError(error, tireCodeConstraint._id)) {
+                return NextResponse.json({ error: 'Kode ban sudah digunakan' }, { status: 409 });
+            }
             if (isMutationConflictError(error)) {
                 return NextResponse.json(
                     { error: 'Catatan ban atau stok gudang ban berubah karena ada update lain. Refresh lalu coba lagi.' },
