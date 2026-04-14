@@ -47,6 +47,21 @@ export function getAvailableIncidentStatuses(status: Incident['status']) {
     return INCIDENT_NEXT_STATUS_MAP[status] || [];
 }
 
+export function hasUnsettledIncidentSettlementLines(lines: IncidentSettlementLine[]) {
+    return lines.some(line => line.status !== 'POSTED' && line.status !== 'VOID');
+}
+
+export function getAvailableIncidentStatusesForContext(
+    status: Incident['status'],
+    settlementLines: IncidentSettlementLine[] = []
+) {
+    const nextStatuses = getAvailableIncidentStatuses(status);
+    if (status === 'RESOLVED' && hasUnsettledIncidentSettlementLines(settlementLines)) {
+        return nextStatuses.filter(nextStatus => nextStatus !== 'CLOSED');
+    }
+    return nextStatuses;
+}
+
 export function sortIncidentSettlementLines(lines: IncidentSettlementLine[]) {
     return [...lines].sort((left, right) => {
         const dateCompare = String(right.date || '').localeCompare(String(left.date || ''));

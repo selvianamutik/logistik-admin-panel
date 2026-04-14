@@ -303,6 +303,20 @@ export async function handleIncidentStatusUpdate(
     if (!allowedStatuses.includes(status)) {
         return NextResponse.json({ error: 'Transisi status insiden tidak valid' }, { status: 400 });
     }
+    if (status === 'CLOSED') {
+        const pendingSettlement = await getSanityClient().fetch<{ _id: string } | null>(
+            `*[_type == "incidentSettlementLine" && incidentRef == $incidentRef && !(status in ["POSTED", "VOID"])][0]{ _id }`,
+            { incidentRef: id }
+        );
+        if (pendingSettlement) {
+            return NextResponse.json(
+                {
+                    error: 'Insiden belum bisa ditutup karena masih ada detail biaya, santunan, atau recovery yang belum diposting atau di-void.',
+                },
+                { status: 409 }
+            );
+        }
+    }
 
     const timestamp = new Date().toISOString();
     try {

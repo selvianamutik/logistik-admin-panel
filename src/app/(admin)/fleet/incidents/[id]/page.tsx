@@ -15,8 +15,9 @@ import {
     canPostIncidentSettlementLine,
     createDefaultIncidentExpensePostForm,
     createDefaultIncidentSettlementForm,
-    getAvailableIncidentStatuses,
+    getAvailableIncidentStatusesForContext,
     getIncidentSettlementCategoryOptions,
+    hasUnsettledIncidentSettlementLines,
     sortIncidentActionLogs,
     sortIncidentSettlementLines,
     summarizeIncidentSettlements,
@@ -114,7 +115,8 @@ export default function IncidentDetailPage() {
     const summary = useMemo(() => summarizeIncidentSettlements(lines), [lines]);
     const grossExposure = summary.totalCost + summary.totalCompensation;
     const netExposure = grossExposure - summary.postedRecovery;
-    const availableStatuses = incident ? getAvailableIncidentStatuses(incident.status) : [];
+    const hasPendingSettlement = useMemo(() => hasUnsettledIncidentSettlementLines(lines), [lines]);
+    const availableStatuses = incident ? getAvailableIncidentStatusesForContext(incident.status, lines) : [];
     const lineCategories = getIncidentSettlementCategoryOptions(lineForm.lineType);
 
     const resetLineModal = () => {
@@ -331,6 +333,11 @@ export default function IncidentDetailPage() {
                     <div className="detail-item"><div className="detail-label">Recovery Belum Diterima</div><div className="detail-value">{formatCurrency(summary.pendingRecovery)}</div></div>
                 </div>
                 <div style={{ marginTop: '0.85rem', fontSize: '0.82rem', color: 'var(--color-text-secondary)' }}>Recovery baru mengurangi exposure ketika statusnya sudah ditandai diterima.</div>
+                {incident.status === 'RESOLVED' && hasPendingSettlement && (
+                    <div style={{ marginTop: '0.85rem', fontSize: '0.82rem', color: 'var(--color-warning)' }}>
+                        Insiden belum bisa ditutup karena masih ada detail biaya, santunan, atau recovery yang belum diposting atau di-void.
+                    </div>
+                )}
             </div></div>
 
             <div className="card mt-6"><div className="card-header"><span className="card-header-title">Detail Biaya, Santunan, dan Recovery</span></div><div className="card-body">
