@@ -7,7 +7,7 @@ import {
     normalizeFreightNotaBillingMode,
     resolveFreightNotaBillingModeInput,
 } from '@/lib/freight-nota-billing';
-import { getSanityClient, sanityCreate, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
+import { getSanityClient, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
 import { buildFreightNotaDisplayNumberFromParts } from '@/lib/nota-numbering';
 import { DEFAULT_PPH23_RATE_PERCENT, normalizePph23BaseMode, normalizePph23Enabled, normalizePph23RatePercent } from '@/lib/pph23';
 import type {
@@ -1652,12 +1652,18 @@ export async function handleExpenseCreate(
         return expenseDateError;
     }
 
-    const category = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(categoryRef);
+    const category = await sanityGetById<{ _id: string; _rev?: string; name?: string; active?: boolean }>(categoryRef);
     if (!category) {
         return NextResponse.json({ error: 'Kategori pengeluaran tidak ditemukan' }, { status: 404 });
     }
     if (category.active === false) {
         return NextResponse.json({ error: 'Kategori pengeluaran tidak aktif' }, { status: 409 });
+    }
+    if (!category._rev) {
+        return NextResponse.json(
+            { error: 'Revisi kategori pengeluaran tidak tersedia. Refresh lalu coba lagi.' },
+            { status: 409 }
+        );
     }
 
     let relatedVehicleRef =
@@ -1887,20 +1893,19 @@ export async function handleExpenseCreate(
     });
 
     if (!selectedAccountRef) {
-        if (!incidentSettlementLine && !linkedBorongan) {
-            const created = await sanityCreate(expenseDocBase);
-            const expenseId = (created as Record<string, unknown>)._id as string;
-            await addAuditLog(session, 'CREATE', 'expenses', expenseId, expenseAuditSummary);
-            return NextResponse.json({ data: created, id: expenseId });
-        }
-
         const expenseId = crypto.randomUUID();
         const now = new Date().toISOString();
         const expenseDoc = {
             _id: expenseId,
             ...expenseDocBase,
         };
-        const transaction = getSanityClient().transaction().create(expenseDoc);
+        const transaction = getSanityClient()
+            .transaction()
+            .create(expenseDoc)
+            .patch(categoryRef, {
+                ifRevisionID: category._rev,
+                set: { updatedAt: now },
+            });
         if (linkedBorongan) {
             if (!linkedBorongan._rev) {
                 return NextResponse.json(
@@ -1945,6 +1950,7 @@ export async function handleExpenseCreate(
         }
         try {
             await transaction.commit();
+            const created = await sanityGetById<Record<string, unknown>>(expenseId);
             await addAuditLog(session, 'CREATE', 'expenses', expenseId, expenseAuditSummary);
             if (incidentSettlementLine) {
                 await addAuditLog(
@@ -1955,11 +1961,11 @@ export async function handleExpenseCreate(
                     `Posted incident settlement line to expense ${expenseId}`
                 );
             }
-            return NextResponse.json({ data: expenseDoc, id: expenseId });
+            return NextResponse.json({ data: created ?? expenseDoc, id: expenseId });
         } catch (err) {
             if (isMutationConflictError(err)) {
                 return NextResponse.json(
-                    { error: 'Pengeluaran atau workflow terkait berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { error: 'Pengeluaran, kategori, atau workflow terkait berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
                     { status: 409 }
                 );
             }
@@ -2034,6 +2040,10 @@ export async function handleExpenseCreate(
                 balanceAfter: newBalance,
                 relatedExpenseRef: expenseId,
             })
+            .patch(categoryRef, {
+                ifRevisionID: category._rev,
+                set: { updatedAt: new Date().toISOString() },
+            })
             .patch(selectedAccountRef, {
                 ifRevisionID: bankAcc._rev,
                 set: { currentBalance: newBalance },
@@ -2096,7 +2106,7 @@ export async function handleExpenseCreate(
 
             if (attempt === 2) {
                 return NextResponse.json(
-                    { error: 'Pengeluaran, rekening, atau workflow terkait berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { error: 'Pengeluaran, kategori, rekening, atau workflow terkait berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
                     { status: 409 }
                 );
             }
@@ -2104,7 +2114,7 @@ export async function handleExpenseCreate(
     }
 
     return NextResponse.json(
-        { error: 'Pengeluaran, rekening, atau workflow terkait berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+        { error: 'Pengeluaran, kategori, rekening, atau workflow terkait berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
         { status: 409 }
     );
 }

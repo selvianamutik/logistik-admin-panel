@@ -729,9 +729,15 @@ export async function handleExpenseCategoryDelete(
         return NextResponse.json({ error: 'Kategori biaya tidak valid' }, { status: 400 });
     }
 
-    const category = await sanityGetById<{ _id: string; name?: string }>(id);
+    const category = await sanityGetById<{ _id: string; _rev?: string; name?: string }>(id);
     if (!category) {
         return NextResponse.json({ error: 'Kategori biaya tidak ditemukan' }, { status: 404 });
+    }
+    if (!category._rev) {
+        return NextResponse.json(
+            { error: 'Revisi kategori biaya tidak tersedia. Refresh lalu coba lagi.' },
+            { status: 409 }
+        );
     }
 
     const relatedExpense = await getSanityClient().fetch<{ _id: string } | null>(
@@ -742,9 +748,26 @@ export async function handleExpenseCategoryDelete(
         return NextResponse.json({ error: 'Kategori biaya yang sudah dipakai pada pengeluaran tidak boleh dihapus' }, { status: 409 });
     }
 
-    await sanityDelete(id);
-    await addAuditLog(session, 'DELETE', 'expense-categories', id, `Deleted expense-categories ${category.name || id}`);
-    return NextResponse.json({ success: true });
+    try {
+        await getSanityClient()
+            .transaction()
+            .patch(id, {
+                ifRevisionID: category._rev,
+                set: { updatedAt: new Date().toISOString() },
+            })
+            .delete(id)
+            .commit();
+        await addAuditLog(session, 'DELETE', 'expense-categories', id, `Deleted expense-categories ${category.name || id}`);
+        return NextResponse.json({ success: true });
+    } catch (err) {
+        if (isMutationConflictError(err)) {
+            return NextResponse.json(
+                { error: 'Kategori biaya berubah atau baru dipakai pada pengeluaran lain. Muat ulang lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw err;
+    }
 }
 
 export async function handleDriverDelete(
