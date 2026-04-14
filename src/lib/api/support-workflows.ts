@@ -6,6 +6,7 @@ import { getSanityClient, sanityDelete, sanityGetById, sanityGetNextNumber } fro
 
 import {
     assertIsoDate,
+    isMutationConflictError,
     isPlainObject,
     normalizeCurrencyNumber,
     normalizeNumber,
@@ -306,14 +307,14 @@ export async function handleInvoiceCreate(
     const notes = normalizeOptionalText(data.notes);
 
     const orderDoc = orderRef
-        ? await sanityGetById<{ _id: string; customerRef?: unknown; masterResi?: string }>(orderRef)
+        ? await sanityGetById<{ _id: string; _rev?: string; customerRef?: unknown; masterResi?: string }>(orderRef)
         : null;
     if (orderRef && !orderDoc) {
         return NextResponse.json({ error: 'Order invoice tidak ditemukan' }, { status: 404 });
     }
 
     const deliveryOrderDoc = doRef
-        ? await sanityGetById<{ _id: string; orderRef?: unknown; customerRef?: unknown; doNumber?: string }>(doRef)
+        ? await sanityGetById<{ _id: string; _rev?: string; orderRef?: unknown; customerRef?: unknown; doNumber?: string }>(doRef)
         : null;
     if (doRef && !deliveryOrderDoc) {
         return NextResponse.json({ error: 'Surat jalan invoice tidak ditemukan' }, { status: 404 });
@@ -337,6 +338,12 @@ export async function handleInvoiceCreate(
     }
     if (orderCustomerRef && doCustomerRef && orderCustomerRef !== doCustomerRef) {
         return NextResponse.json({ error: 'Order dan surat jalan invoice tidak berasal dari customer yang sama' }, { status: 400 });
+    }
+    if (orderDoc && !orderDoc._rev) {
+        return NextResponse.json({ error: 'Revisi order invoice tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
+    if (deliveryOrderDoc && !deliveryOrderDoc._rev) {
+        return NextResponse.json({ error: 'Revisi surat jalan invoice tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
     const invoiceId = crypto.randomUUID();
@@ -412,8 +419,31 @@ export async function handleInvoiceCreate(
     if (itemSubtotalTotal !== totalAmount) {
         return NextResponse.json({ error: 'Total invoice harus sama dengan jumlah subtotal item' }, { status: 400 });
     }
+    const mutationTimestamp = new Date().toISOString();
+    if (orderDoc) {
+        transaction.patch(orderDoc._id, {
+            ifRevisionID: orderDoc._rev,
+            set: { updatedAt: mutationTimestamp },
+        });
+    }
+    if (deliveryOrderDoc) {
+        transaction.patch(deliveryOrderDoc._id, {
+            ifRevisionID: deliveryOrderDoc._rev,
+            set: { updatedAt: mutationTimestamp },
+        });
+    }
 
-    await transaction.commit();
+    try {
+        await transaction.commit();
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Invoice atau dokumen sumber berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
     await addAuditLog(session, 'CREATE', 'invoices', invoiceId, `Created invoices: ${invoiceNumber}`);
     return NextResponse.json({ data: invoiceDoc, id: invoiceId });
 }
