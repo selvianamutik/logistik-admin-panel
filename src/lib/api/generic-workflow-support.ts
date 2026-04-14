@@ -922,7 +922,7 @@ export async function resolveTripRouteRateSelection(
             tripRouteRateRef: undefined,
             tripOriginArea: undefined,
             tripDestinationArea: undefined,
-            matchedTripRouteRate: null as TripRouteRate | null,
+            matchedTripRouteRate: null as (TripRouteRate & { _rev?: string }) | null,
         };
     }
 
@@ -930,10 +930,10 @@ export async function resolveTripRouteRateSelection(
         throw new Error('Asal dan tujuan area trip harus diisi berpasangan');
     }
 
-    let matchedTripRouteRate: TripRouteRate | null = null;
+    let matchedTripRouteRate: (TripRouteRate & { _rev?: string }) | null = null;
 
     if (requestedTripRouteRateRef) {
-        matchedTripRouteRate = await sanityGetById<TripRouteRate>(requestedTripRouteRateRef);
+        matchedTripRouteRate = await sanityGetById<TripRouteRate & { _rev?: string }>(requestedTripRouteRateRef);
         if (!matchedTripRouteRate || matchedTripRouteRate._type !== 'tripRouteRate') {
             throw new Error('Master biaya rute trip tidak ditemukan');
         }
@@ -944,7 +944,7 @@ export async function resolveTripRouteRateSelection(
             throw new Error('Master biaya rute trip tidak cocok dengan kategori armada surat jalan');
         }
     } else if (requestedTripOriginArea && requestedTripDestinationArea) {
-        const candidateRates = await getSanityClient().fetch<TripRouteRate[]>(
+        const candidateRates = await getSanityClient().fetch<Array<TripRouteRate & { _rev?: string }>>(
             `*[
                 _type == "tripRouteRate" &&
                 active != false &&
@@ -952,6 +952,7 @@ export async function resolveTripRouteRateSelection(
                 lower(destinationArea) == $destinationArea
             ]{
                 _id,
+                _rev,
                 _type,
                 originArea,
                 destinationArea,

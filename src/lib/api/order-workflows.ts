@@ -2398,6 +2398,12 @@ export async function handleDeliveryOrderCreate(
         );
     }
     const matchedTripRouteRateFee = normalizeCurrencyNumber(tripRouteSelection?.matchedTripRouteRate?.rate ?? 0);
+    if (tripRouteSelection?.matchedTripRouteRate && !tripRouteSelection.matchedTripRouteRate._rev) {
+        return NextResponse.json(
+            { error: 'Revisi master biaya rute trip tidak tersedia. Refresh lalu coba lagi.' },
+            { status: 409 }
+        );
+    }
     if (
         matchedTripRouteRateFee > 0 &&
         taripBorongan > 0 &&
@@ -2738,6 +2744,12 @@ export async function handleDeliveryOrderCreate(
     };
 
     const transaction = getSanityClient().transaction().create(doDoc);
+    if (tripRouteSelection?.matchedTripRouteRate?._id && tripRouteSelection.matchedTripRouteRate._rev) {
+        transaction.patch(tripRouteSelection.matchedTripRouteRate._id, {
+            ifRevisionID: tripRouteSelection.matchedTripRouteRate._rev,
+            set: { updatedAt: new Date().toISOString() },
+        });
+    }
     if (usingDirectCargoInput) {
         if (order.cargoEntryMode !== 'DELIVERY_ORDER') {
             if (!order._rev) {
@@ -2891,7 +2903,7 @@ export async function handleDeliveryOrderCreate(
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
-                { error: 'Data order, barang customer, atau item surat jalan berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { error: 'Data order, barang customer, master biaya rute trip, atau item surat jalan berubah karena ada update lain. Refresh lalu coba lagi.' },
                 { status: 409 }
             );
         }

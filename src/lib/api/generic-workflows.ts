@@ -635,6 +635,7 @@ export async function handleGenericUpdate(
     }
     const updates: Record<string, unknown> = { ...updatesInput };
     let sanitizedEntityUpdates: Record<string, unknown> | null = null;
+    let selectedTripRouteRateRevision: { _id: string; _rev: string } | null = null;
 
     if (isProtectedLedgerEntity(entity)) {
         return NextResponse.json({ error: 'Entri keuangan yang sudah terposting tidak boleh diubah lewat API umum' }, { status: 409 });
@@ -766,6 +767,20 @@ export async function handleGenericUpdate(
                     updates.tripRouteRateRef = tripRouteSelection.tripRouteRateRef;
                     updates.tripOriginArea = tripRouteSelection.tripOriginArea;
                     updates.tripDestinationArea = tripRouteSelection.tripDestinationArea;
+                    if (tripRouteSelection.matchedTripRouteRate?._id) {
+                        if (!tripRouteSelection.matchedTripRouteRate._rev) {
+                            return NextResponse.json(
+                                { error: 'Revisi master biaya rute trip tidak tersedia. Refresh lalu coba lagi.' },
+                                { status: 409 }
+                            );
+                        }
+                        selectedTripRouteRateRevision = {
+                            _id: tripRouteSelection.matchedTripRouteRate._id,
+                            _rev: tripRouteSelection.matchedTripRouteRate._rev,
+                        };
+                    } else {
+                        selectedTripRouteRateRevision = null;
+                    }
                     if (matchedTripRouteRateFee > 0) {
                         updates.taripBorongan = matchedTripRouteRateFee;
                     }
@@ -1238,6 +1253,19 @@ export async function handleGenericUpdate(
             }
             await transaction.commit();
             updated = await sanityGetById(id);
+        } else if (entity === 'delivery-orders' && selectedTripRouteRateRevision) {
+            const transaction = getSanityClient()
+                .transaction()
+                .patch(selectedTripRouteRateRevision._id, {
+                    ifRevisionID: selectedTripRouteRateRevision._rev,
+                    set: { updatedAt: new Date().toISOString() },
+                })
+                .patch(id, {
+                    ifRevisionID: currentDoc._rev,
+                    set: normalizedUpdates,
+                });
+            await transaction.commit();
+            updated = await sanityGetById(id);
         } else {
             updated = await getSanityClient()
                 .patch(id)
@@ -1608,12 +1636,47 @@ export async function handleGenericDelete(
             return NextResponse.json({ error: 'Master biaya rute trip tidak valid' }, { status: 400 });
         }
 
+        const tripRouteRate = await sanityGetById<{ _id: string; _rev?: string; originArea?: string; destinationArea?: string }>(id);
+        if (!tripRouteRate) {
+            return NextResponse.json({ error: 'Master biaya rute trip tidak ditemukan' }, { status: 404 });
+        }
+        if (!tripRouteRate._rev) {
+            return NextResponse.json({ error: 'Revisi master biaya rute trip tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+        }
+
         const relatedDeliveryOrder = await getSanityClient().fetch<{ _id: string } | null>(
             `*[_type == "deliveryOrder" && tripRouteRateRef == $ref][0]{ _id }`,
             { ref: id }
         );
         if (relatedDeliveryOrder) {
             return NextResponse.json({ error: 'Master biaya rute trip yang sudah dipakai surat jalan tidak boleh dihapus' }, { status: 409 });
+        }
+
+        try {
+            await getSanityClient()
+                .transaction()
+                .patch(id, {
+                    ifRevisionID: tripRouteRate._rev,
+                    set: { updatedAt: new Date().toISOString() },
+                })
+                .delete(id)
+                .commit();
+            await addAuditLog(
+                session,
+                'DELETE',
+                entity,
+                id,
+                `Deleted trip route rate ${tripRouteRate.originArea || '-'} -> ${tripRouteRate.destinationArea || '-'}`
+            );
+            return NextResponse.json({ success: true });
+        } catch (error) {
+            if (isMutationConflictError(error)) {
+                return NextResponse.json(
+                    { error: 'Master biaya rute trip berubah atau baru dipakai pada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+            throw error;
         }
     }
 
