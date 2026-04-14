@@ -49,6 +49,7 @@ type PurchaseCreateLine = {
     notes?: string;
 };
 
+type SupplierDocument = Supplier & { _rev?: string };
 type PurchaseDocument = Purchase & { _rev?: string };
 type PurchaseItemDocument = PurchaseItem & { _rev?: string };
 type WarehouseItemDocument = WarehouseItem & { _rev?: string };
@@ -126,7 +127,7 @@ function buildStockMovementAuditSummary(input: {
 }
 
 async function resolveSupplierSnapshot(supplierRef: string) {
-    const supplier = await sanityGetById<Supplier>(supplierRef);
+    const supplier = await sanityGetById<SupplierDocument>(supplierRef);
     if (!supplier || supplier._type !== 'supplier') {
         throw new Error('Supplier tidak ditemukan');
     }
@@ -231,6 +232,12 @@ export async function handlePurchaseCreate(
         }
 
         const supplier = await resolveSupplierSnapshot(supplierRef);
+        if (!supplier._rev) {
+            return NextResponse.json(
+                { error: 'Revisi supplier tidak tersedia. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
         const itemSnapshots = await Promise.all(lines.map(line => resolveWarehouseItemSnapshot(line.warehouseItemRef)));
         itemSnapshots.forEach((item, index) => {
             if (isTireTrackedWarehouseItem(item)) {
@@ -291,11 +298,27 @@ export async function handlePurchaseCreate(
             updatedAt: new Date().toISOString(),
         };
 
-        const transaction = getSanityClient().transaction().create(purchaseDoc);
+        const transaction = getSanityClient()
+            .transaction()
+            .create(purchaseDoc)
+            .patch(supplier._id, {
+                ifRevisionID: supplier._rev,
+                set: { updatedAt: purchaseDoc.updatedAt },
+            });
         for (const item of items) {
             transaction.create(item);
         }
-        await transaction.commit();
+        try {
+            await transaction.commit();
+        } catch (error) {
+            if (isMutationConflictError(error)) {
+                return NextResponse.json(
+                    { error: 'Pembelian atau supplier berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+            throw error;
+        }
 
         await addAuditLog(
             session,

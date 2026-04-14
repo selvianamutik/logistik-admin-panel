@@ -1367,6 +1367,14 @@ export async function handleGenericDelete(
             return NextResponse.json({ error: 'Supplier tidak valid' }, { status: 400 });
         }
 
+        const supplier = await sanityGetById<{ _id: string; _rev?: string; name?: string }>(id);
+        if (!supplier) {
+            return NextResponse.json({ error: 'Supplier tidak ditemukan' }, { status: 404 });
+        }
+        if (!supplier._rev) {
+            return NextResponse.json({ error: 'Revisi supplier tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+        }
+
         const [relatedPurchase, defaultWarehouseItem] = await Promise.all([
             getSanityClient().fetch<{ _id: string } | null>(
                 `*[_type == "purchase" && supplierRef == $ref][0]{ _id }`,
@@ -1379,6 +1387,27 @@ export async function handleGenericDelete(
         ]);
         if (relatedPurchase || defaultWarehouseItem) {
             return NextResponse.json({ error: 'Supplier yang sudah dipakai pembelian atau default barang tidak boleh dihapus' }, { status: 409 });
+        }
+
+        try {
+            await getSanityClient()
+                .transaction()
+                .patch(id, {
+                    ifRevisionID: supplier._rev,
+                    set: { updatedAt: new Date().toISOString() },
+                })
+                .delete(id)
+                .commit();
+            await addAuditLog(session, 'DELETE', entity, id, `Deleted supplier ${supplier.name || id}`);
+            return NextResponse.json({ success: true });
+        } catch (error) {
+            if (isMutationConflictError(error)) {
+                return NextResponse.json(
+                    { error: 'Supplier berubah atau baru dipakai pada transaksi lain. Muat ulang lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+            throw error;
         }
     }
 
