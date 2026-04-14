@@ -165,7 +165,8 @@ export type ActualCargoTotals = {
 };
 
 export type ResolvedOrderPartyData = {
-    customer: { _id: string; name?: string; address?: string; active?: boolean };
+    customer: { _id: string; _rev?: string; name?: string; address?: string; active?: boolean };
+    service?: { _id: string; _rev?: string; name?: string; active?: boolean };
     serviceName?: string;
 };
 
@@ -276,7 +277,7 @@ export function deriveOrderStatusFromItems(items: OrderItemStatusSummary[]) {
 }
 
 export async function resolveOrderPartyData(customerRef: string, serviceRef?: string) {
-    const customer = await sanityGetById<{ _id: string; name?: string; address?: string; active?: boolean }>(customerRef);
+    const customer = await sanityGetById<{ _id: string; _rev?: string; name?: string; address?: string; active?: boolean }>(customerRef);
     if (!customer) {
         throw new Error('Customer order tidak ditemukan');
     }
@@ -285,19 +286,22 @@ export async function resolveOrderPartyData(customerRef: string, serviceRef?: st
     }
 
     let serviceName: string | undefined;
+    let service: ResolvedOrderPartyData['service'];
     if (serviceRef) {
-        const service = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(serviceRef);
-        if (!service) {
+        const serviceDoc = await sanityGetById<{ _id: string; _rev?: string; name?: string; active?: boolean }>(serviceRef);
+        if (!serviceDoc) {
             throw new Error('Kategori armada order tidak ditemukan');
         }
-        if (service.active === false) {
+        if (serviceDoc.active === false) {
             throw new Error('Kategori armada order tidak aktif');
         }
-        serviceName = service.name || undefined;
+        service = serviceDoc;
+        serviceName = serviceDoc.name || undefined;
     }
 
     return {
         customer,
+        service,
         serviceName,
     } satisfies ResolvedOrderPartyData;
 }

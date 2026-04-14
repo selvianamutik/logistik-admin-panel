@@ -485,6 +485,7 @@ export async function handleOrderCreate(
     }
 
     let customer: ResolvedOrderPartyData['customer'];
+    let service: ResolvedOrderPartyData['service'];
     let serviceName: string | undefined;
     let customerRecipient: ResolvedCustomerRecipientData | null = null;
     let customerPickup: ResolvedCustomerPickupData | null = null;
@@ -492,6 +493,7 @@ export async function handleOrderCreate(
     try {
         const party = await resolveOrderPartyData(customerRef, serviceRef);
         customer = party.customer;
+        service = party.service;
         serviceName = party.serviceName;
         customerRecipient = await resolveOrderRecipientData(customerRef, customerRecipientRef);
         customerPickup = await resolveOrderPickupData(customerRef, customerPickupRef);
@@ -507,6 +509,12 @@ export async function handleOrderCreate(
     const receiverAddress = normalizeText(data.receiverAddress) || normalizeOptionalText(customerRecipient?.receiverAddress) || '';
     if (!receiverName || !receiverAddress) {
         return NextResponse.json({ error: 'Customer, penerima, dan alamat tujuan wajib diisi' }, { status: 400 });
+    }
+    if (!customer._rev) {
+        return NextResponse.json({ error: 'Revisi customer tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
+    if (serviceRef && !service?._rev) {
+        return NextResponse.json({ error: 'Revisi kategori armada tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
     const orderId = crypto.randomUUID();
@@ -534,12 +542,34 @@ export async function handleOrderCreate(
         createdBy: session._id,
     };
 
-    const transaction = getSanityClient().transaction().create(orderDoc);
+    const transaction = getSanityClient()
+        .transaction()
+        .create(orderDoc)
+        .patch(customer._id, {
+            ifRevisionID: customer._rev,
+            set: { updatedAt: createdAt },
+        });
+    if (serviceRef && service?._rev) {
+        transaction.patch(service._id, {
+            ifRevisionID: service._rev,
+            set: { updatedAt: createdAt },
+        });
+    }
     for (const item of items) {
         transaction.create(buildOrderItemDraftDocument(orderId, item));
     }
 
-    await transaction.commit();
+    try {
+        await transaction.commit();
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Order, customer, atau kategori armada berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
     await addAuditLog(
         session,
         'CREATE',
@@ -643,6 +673,7 @@ export async function handleOrderUpdateWithItems(
     }
 
     let customer: ResolvedOrderPartyData['customer'];
+    let service: ResolvedOrderPartyData['service'];
     let serviceName: string | undefined;
     let customerRecipient: ResolvedCustomerRecipientData | null = null;
     let customerPickup: ResolvedCustomerPickupData | null = null;
@@ -650,6 +681,7 @@ export async function handleOrderUpdateWithItems(
     try {
         const party = await resolveOrderPartyData(customerRef, serviceRef);
         customer = party.customer;
+        service = party.service;
         serviceName = party.serviceName;
         customerRecipient = await resolveOrderRecipientData(customerRef, customerRecipientRef);
         customerPickup = await resolveOrderPickupData(customerRef, customerPickupRef);
@@ -676,9 +708,19 @@ export async function handleOrderUpdateWithItems(
     if (existingItems.some(item => !item._rev)) {
         return NextResponse.json({ error: 'Revisi item order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
+    if (!customer._rev) {
+        return NextResponse.json({ error: 'Revisi customer tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
+    if (serviceRef && !service?._rev) {
+        return NextResponse.json({ error: 'Revisi kategori armada tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
 
     const transaction = getSanityClient()
         .transaction()
+        .patch(customer._id, {
+            ifRevisionID: customer._rev,
+            set: { updatedAt: new Date().toISOString() },
+        })
         .patch(id, {
             ifRevisionID: order._rev,
             set: {
@@ -697,6 +739,12 @@ export async function handleOrderUpdateWithItems(
                 notes: normalizeOptionalText(data.notes),
             },
         });
+    if (serviceRef && service?._rev) {
+        transaction.patch(service._id, {
+            ifRevisionID: service._rev,
+            set: { updatedAt: new Date().toISOString() },
+        });
+    }
 
     for (const item of existingItems) {
         transaction.patch(item._id, {
@@ -718,7 +766,7 @@ export async function handleOrderUpdateWithItems(
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
-                { error: 'Data order atau item target berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { error: 'Data order, customer, kategori armada, atau item target berubah karena ada update lain. Refresh lalu coba lagi.' },
                 { status: 409 }
             );
         }
@@ -835,12 +883,14 @@ export async function handleOrderHeaderBookingUpdate(
     }
 
     let customer: ResolvedOrderPartyData['customer'];
+    let service: ResolvedOrderPartyData['service'];
     let serviceName: string | undefined;
     let customerRecipient: ResolvedCustomerRecipientData | null = null;
     let customerPickup: ResolvedCustomerPickupData | null = null;
     try {
         const party = await resolveOrderPartyData(customerRef, serviceRef);
         customer = party.customer;
+        service = party.service;
         serviceName = party.serviceName;
         customerRecipient = await resolveOrderRecipientData(customerRef, customerRecipientRef);
         customerPickup = await resolveOrderPickupData(customerRef, customerPickupRef);
@@ -859,32 +909,51 @@ export async function handleOrderHeaderBookingUpdate(
     if (!order._rev) {
         return NextResponse.json({ error: 'Revisi order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
+    if (!customer._rev) {
+        return NextResponse.json({ error: 'Revisi customer tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
+    if (serviceRef && !service?._rev) {
+        return NextResponse.json({ error: 'Revisi kategori armada tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
 
     let updatedOrder: unknown;
     try {
-        updatedOrder = await getSanityClient()
-            .patch(id)
-            .ifRevisionId(order._rev)
-            .set({
-                cargoEntryMode: 'DELIVERY_ORDER',
-                customerRef,
-                customerName: customer.name,
-                customerRecipientRef: customerRecipientRef || undefined,
-                customerPickupRef: customerPickupRef || undefined,
-                receiverName,
-                receiverPhone: normalizeOptionalText(data.receiverPhone) || normalizeOptionalText(customerRecipient?.receiverPhone) || '',
-                receiverAddress,
-                receiverCompany: normalizeOptionalText(data.receiverCompany) || normalizeOptionalText(customerRecipient?.receiverCompany),
-                pickupAddress: normalizeOptionalText(data.pickupAddress) || normalizeOptionalText(customerPickup?.pickupAddress) || customer.address || undefined,
-                serviceRef: serviceRef || '',
-                serviceName,
-                notes,
+        const mutationTimestamp = new Date().toISOString();
+        const transaction = getSanityClient()
+            .transaction()
+            .patch(customer._id, {
+                ifRevisionID: customer._rev,
+                set: { updatedAt: mutationTimestamp },
             })
-            .commit();
+            .patch(id, {
+                ifRevisionID: order._rev,
+                set: {
+                    cargoEntryMode: 'DELIVERY_ORDER',
+                    customerRef,
+                    customerName: customer.name,
+                    customerRecipientRef: customerRecipientRef || undefined,
+                    customerPickupRef: customerPickupRef || undefined,
+                    receiverName,
+                    receiverPhone: normalizeOptionalText(data.receiverPhone) || normalizeOptionalText(customerRecipient?.receiverPhone) || '',
+                    receiverAddress,
+                    receiverCompany: normalizeOptionalText(data.receiverCompany) || normalizeOptionalText(customerRecipient?.receiverCompany),
+                    pickupAddress: normalizeOptionalText(data.pickupAddress) || normalizeOptionalText(customerPickup?.pickupAddress) || customer.address || undefined,
+                    serviceRef: serviceRef || '',
+                    serviceName,
+                    notes,
+                },
+            });
+        if (serviceRef && service?._rev) {
+            transaction.patch(service._id, {
+                ifRevisionID: service._rev,
+                set: { updatedAt: mutationTimestamp },
+            });
+        }
+        updatedOrder = await transaction.commit();
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
-                { error: 'Header booking berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { error: 'Header booking, customer, atau kategori armada berubah karena ada update lain. Refresh lalu coba lagi.' },
                 { status: 409 }
             );
         }

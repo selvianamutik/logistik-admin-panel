@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { getBusinessDateValue } from '@/lib/business-date';
 import { hashPassword, verifyPassword } from '@/lib/auth';
-import { getSanityClient, sanityDelete, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
+import { getSanityClient, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
 
 import {
     assertIsoDate,
@@ -458,9 +458,12 @@ export async function handleCustomerDelete(
         return NextResponse.json({ error: 'Customer tidak valid' }, { status: 400 });
     }
 
-    const customer = await sanityGetById<{ _id: string; name?: string }>(id);
+    const customer = await sanityGetById<{ _id: string; _rev?: string; name?: string }>(id);
     if (!customer) {
         return NextResponse.json({ error: 'Customer tidak ditemukan' }, { status: 404 });
+    }
+    if (!customer._rev) {
+        return NextResponse.json({ error: 'Revisi customer tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
     const relatedOrder = await getSanityClient().fetch<{ _id: string } | null>(
@@ -527,7 +530,24 @@ export async function handleCustomerDelete(
         return NextResponse.json({ error: 'Customer yang sudah dipakai pada penerimaan tidak boleh dihapus' }, { status: 409 });
     }
 
-    await sanityDelete(id);
-    await addAuditLog(session, 'DELETE', 'customers', id, `Deleted customers ${customer.name || id}`);
-    return NextResponse.json({ success: true });
+    try {
+        await getSanityClient()
+            .transaction()
+            .patch(id, {
+                ifRevisionID: customer._rev,
+                set: { updatedAt: new Date().toISOString() },
+            })
+            .delete(id)
+            .commit();
+        await addAuditLog(session, 'DELETE', 'customers', id, `Deleted customers ${customer.name || id}`);
+        return NextResponse.json({ success: true });
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Customer berubah atau baru dipakai pada transaksi lain. Muat ulang lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
 }
