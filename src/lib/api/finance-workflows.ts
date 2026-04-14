@@ -3018,9 +3018,12 @@ export async function handleFreightNotaDelete(
         return NextResponse.json({ error: 'Nota tidak valid' }, { status: 400 });
     }
 
-    const nota = await sanityGetById<{ _id: string; notaNumber?: string }>(id);
+    const nota = await sanityGetById<{ _id: string; _rev?: string; notaNumber?: string }>(id);
     if (!nota) {
         return NextResponse.json({ error: 'Nota tidak ditemukan' }, { status: 404 });
+    }
+    if (!nota._rev) {
+        return NextResponse.json({ error: 'Revisi nota tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
     const existingPayments = await getSanityClient().fetch<Array<{ _id: string }>>(
@@ -3063,6 +3066,10 @@ export async function handleFreightNotaDelete(
             unset: ['freightNotaRef', 'freightNotaNumber'],
         });
     }
+    transaction.patch(id, {
+        ifRevisionID: nota._rev,
+        set: { updatedAt: new Date().toISOString() },
+    });
     transaction.delete(id);
     try {
         await transaction.commit();
