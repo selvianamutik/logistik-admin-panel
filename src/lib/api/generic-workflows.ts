@@ -604,7 +604,7 @@ function buildCreateAuditSummary(entity: string, newDoc: Record<string, unknown>
 }
 
 async function resolveTrackedTireWarehouseItem(itemRef: string) {
-    const item = await sanityGetById<WarehouseItem>(itemRef);
+    const item = await sanityGetById<WarehouseItem & { _rev?: string }>(itemRef);
     if (!item || item._type !== 'warehouseItem') {
         throw new Error('Master barang gudang ban tidak ditemukan');
     }
@@ -631,6 +631,9 @@ async function appendTrackedTireWarehouseSync(params: {
     }
 
     const warehouseItem = await resolveTrackedTireWarehouseItem(itemRef);
+    if (!warehouseItem._rev) {
+        throw new Error('Revisi master barang gudang ban tidak tersedia. Refresh lalu coba lagi.');
+    }
     const countedBefore = countsTowardTrackedTireWarehouseStock(params.previousDoc || {});
     const countedAfter = countsTowardTrackedTireWarehouseStock(params.nextDoc);
     if (countedBefore === countedAfter) {
@@ -647,7 +650,10 @@ async function appendTrackedTireWarehouseSync(params: {
     const nextPlacement = resolveTrackedTirePlacementLabel(params.nextDoc);
     const tireCode = normalizeOptionalText(params.nextDoc.tireCode) || normalizeOptionalText(params.previousDoc?.tireCode) || itemRef;
 
-    params.transaction.patch(warehouseItem._id, patch => patch.set({ currentStockQty: nextStockQty }));
+    params.transaction.patch(warehouseItem._id, {
+        ifRevisionID: warehouseItem._rev,
+        set: { currentStockQty: nextStockQty },
+    });
     params.transaction.create(buildTrackedTireStockMovementDoc({
         warehouseItem,
         quantity: 1,
@@ -665,6 +671,17 @@ async function appendTrackedTireWarehouseSync(params: {
         createdBy: params.session._id,
         createdByName: params.session.name,
     }));
+}
+
+function buildTireEventResponseError(error: unknown, fallbackMessage: string) {
+    const message = error instanceof Error ? error.message : fallbackMessage;
+    const status =
+        message.includes('tidak ditemukan')
+            ? 404
+            : message.includes('tidak aktif') || message.includes('tidak cukup') || message.includes('tidak tersedia')
+                ? 409
+                : 400;
+    return NextResponse.json({ error: message }, { status });
 }
 
 export async function handleGenericUpdate(
@@ -1115,19 +1132,31 @@ export async function handleGenericUpdate(
     }
 
     if (entity === 'tire-events') {
-        const existingTire = await sanityGetById<Record<string, unknown>>(id);
+        const existingTire = await sanityGetById<Record<string, unknown> & { _rev?: string }>(id);
         if (!existingTire) {
             return NextResponse.json({ error: 'Catatan ban tidak ditemukan' }, { status: 404 });
         }
-        const normalizedTireUpdates = await normalizeTireEventPayload({ ...existingTire, ...updates }, id);
+        if (!existingTire._rev) {
+            return NextResponse.json({ error: 'Revisi catatan ban tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+        }
+        let normalizedTireUpdates: Record<string, unknown>;
+        try {
+            normalizedTireUpdates = await normalizeTireEventPayload({ ...existingTire, ...updates }, id);
+        } catch (error) {
+            return buildTireEventResponseError(error, 'Data ban tidak valid');
+        }
         const nextTireDoc: Record<string, unknown> = { ...existingTire, ...normalizedTireUpdates };
         if (Object.prototype.hasOwnProperty.call(updates, 'linkedWarehouseItemRef')) {
             nextTireDoc.linkedWarehouseItemRef = normalizeOptionalText(updates.linkedWarehouseItemRef);
         }
         if (nextTireDoc.linkedWarehouseItemRef) {
-            const linkedItem = await resolveTrackedTireWarehouseItem(String(nextTireDoc.linkedWarehouseItemRef));
-            nextTireDoc.linkedWarehouseItemCode = linkedItem.itemCode;
-            nextTireDoc.linkedWarehouseItemName = linkedItem.name;
+            try {
+                const linkedItem = await resolveTrackedTireWarehouseItem(String(nextTireDoc.linkedWarehouseItemRef));
+                nextTireDoc.linkedWarehouseItemCode = linkedItem.itemCode;
+                nextTireDoc.linkedWarehouseItemName = linkedItem.name;
+            } catch (error) {
+                return buildTireEventResponseError(error, 'Master barang gudang ban tidak valid');
+            }
         } else {
             nextTireDoc.linkedWarehouseItemCode = undefined;
             nextTireDoc.linkedWarehouseItemName = undefined;
@@ -1157,17 +1186,28 @@ export async function handleGenericUpdate(
         const transaction = getSanityClient()
             .transaction()
             .patch(id, {
+                ifRevisionID: existingTire._rev,
                 set: tireSetPayload,
                 ...(tireUnsetFields.length > 0 ? { unset: tireUnsetFields } : {}),
             })
             .create(historyLogDoc);
-        await appendTrackedTireWarehouseSync({
-            transaction,
-            previousDoc: existingTire,
-            nextDoc: { ...nextTireDoc, _id: id },
-            session,
-        });
-        await transaction.commit();
+        try {
+            await appendTrackedTireWarehouseSync({
+                transaction,
+                previousDoc: existingTire,
+                nextDoc: { ...nextTireDoc, _id: id },
+                session,
+            });
+            await transaction.commit();
+        } catch (error) {
+            if (isMutationConflictError(error)) {
+                return NextResponse.json(
+                    { error: 'Catatan ban atau stok gudang ban berubah karena ada update lain. Refresh lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+            return buildTireEventResponseError(error, 'Data ban tidak valid');
+        }
         const updated = await sanityGetById<Record<string, unknown>>(id);
         await addAuditLog(
             session,
@@ -2242,12 +2282,21 @@ export async function handleGenericCreate(
 
     if (entity === 'tire-events') {
         shouldMergeRawCreatePayload = false;
-        const normalizedTireEvent: Record<string, unknown> = { ...(await normalizeTireEventPayload(data)) };
+        let normalizedTireEvent: Record<string, unknown>;
+        try {
+            normalizedTireEvent = { ...(await normalizeTireEventPayload(data)) };
+        } catch (error) {
+            return buildTireEventResponseError(error, 'Data ban tidak valid');
+        }
         if (typeof data.linkedWarehouseItemRef === 'string' && data.linkedWarehouseItemRef.trim()) {
-            const linkedItem = await resolveTrackedTireWarehouseItem(data.linkedWarehouseItemRef.trim());
-            normalizedTireEvent.linkedWarehouseItemRef = linkedItem._id;
-            normalizedTireEvent.linkedWarehouseItemCode = linkedItem.itemCode;
-            normalizedTireEvent.linkedWarehouseItemName = linkedItem.name;
+            try {
+                const linkedItem = await resolveTrackedTireWarehouseItem(data.linkedWarehouseItemRef.trim());
+                normalizedTireEvent.linkedWarehouseItemRef = linkedItem._id;
+                normalizedTireEvent.linkedWarehouseItemCode = linkedItem.itemCode;
+                normalizedTireEvent.linkedWarehouseItemName = linkedItem.name;
+            } catch (error) {
+                return buildTireEventResponseError(error, 'Master barang gudang ban tidak valid');
+            }
         }
         Object.assign(newDoc, normalizedTireEvent);
     }
@@ -2294,13 +2343,23 @@ export async function handleGenericCreate(
             .transaction()
             .create(createdTireDoc)
             .create(historyLogDoc);
-        await appendTrackedTireWarehouseSync({
-            transaction,
-            previousDoc: null,
-            nextDoc: createdTireDoc,
-            session,
-        });
-        await transaction.commit();
+        try {
+            await appendTrackedTireWarehouseSync({
+                transaction,
+                previousDoc: null,
+                nextDoc: createdTireDoc,
+                session,
+            });
+            await transaction.commit();
+        } catch (error) {
+            if (isMutationConflictError(error)) {
+                return NextResponse.json(
+                    { error: 'Catatan ban atau stok gudang ban berubah karena ada update lain. Refresh lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+            return buildTireEventResponseError(error, 'Data ban tidak valid');
+        }
 
         await addAuditLog(
             session,

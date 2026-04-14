@@ -25,6 +25,22 @@ type TireLike = Pick<
 >;
 
 export function countsTowardTrackedTireWarehouseStock(tire: Partial<TireLike> | Record<string, unknown>) {
+  const hasPlacementSignal = Boolean(
+    tire &&
+    (
+      'status' in tire ||
+      'holderType' in tire ||
+      'vehicleRef' in tire ||
+      'vehiclePlate' in tire ||
+      'externalPartyName' in tire ||
+      'externalPlateNumber' in tire ||
+      'linkedWarehouseItemRef' in tire ||
+      'posisi' in tire
+    )
+  );
+  if (!hasPlacementSignal) {
+    return false;
+  }
   const holderType = resolveTireHolderType(tire);
   const status = resolveTireAssetStatus(tire);
   return holderType === 'WAREHOUSE' && status === 'IN_WAREHOUSE';
