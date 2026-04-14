@@ -67,12 +67,15 @@ async function validateDriverAccountLink(driverRef: unknown, excludeUserId?: str
         throw new Error('Supir untuk akun mobile wajib dipilih');
     }
 
-    const driver = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(normalizedDriverRef);
+    const driver = await sanityGetById<{ _id: string; _rev?: string; name?: string; active?: boolean }>(normalizedDriverRef);
     if (!driver) {
         throw new Error('Data supir untuk akun mobile tidak ditemukan');
     }
     if (driver.active === false) {
         throw new Error('Supir tidak aktif dan tidak bisa diberi akun mobile');
+    }
+    if (!driver._rev) {
+        throw new Error('Revisi supir untuk akun mobile tidak tersedia. Refresh lalu coba lagi.');
     }
 
     const duplicateDriverAccount = await getSanityClient().fetch<{ _id: string } | null>(
@@ -86,6 +89,7 @@ async function validateDriverAccountLink(driverRef: unknown, excludeUserId?: str
     return {
         driverRef: normalizedDriverRef,
         driverName: driver.name || undefined,
+        driverRevision: driver._rev,
     };
 }
 
@@ -117,7 +121,7 @@ export async function normalizeUserCreatePayload(data: Record<string, unknown>) 
 
     const driverLink = role === 'DRIVER'
         ? await validateDriverAccountLink(data.driverRef)
-        : { driverRef: undefined, driverName: undefined };
+        : { driverRef: undefined, driverName: undefined, driverRevision: undefined };
 
     return {
         name,
@@ -125,6 +129,7 @@ export async function normalizeUserCreatePayload(data: Record<string, unknown>) 
         role,
         driverRef: driverLink.driverRef,
         driverName: driverLink.driverName,
+        driverRevision: driverLink.driverRevision,
         passwordHash: await hashPassword(password),
         active: true,
         createdAt: new Date().toISOString(),
@@ -222,9 +227,11 @@ export async function normalizeUserUpdates(
             );
             nextUpdates.driverRef = driverLink.driverRef;
             nextUpdates.driverName = driverLink.driverName;
+            nextUpdates.driverRevision = driverLink.driverRevision;
         } else {
             nextUpdates.driverRef = undefined;
             nextUpdates.driverName = undefined;
+            nextUpdates.driverRevision = undefined;
         }
     }
 

@@ -1199,6 +1199,21 @@ export async function handleGenericUpdate(
                     : entity === 'vehicles'
                             ? await normalizeVehiclePayload(session, updates, { partial: true, excludeId: id })
                             : sanitizedEntityUpdates ?? updates;
+    const userDriverRevision =
+        entity === 'users' &&
+        typeof normalizedUpdates.driverRef === 'string' &&
+        typeof normalizedUpdates.driverRevision === 'string'
+            ? {
+                _id: normalizedUpdates.driverRef,
+                _rev: normalizedUpdates.driverRevision,
+            }
+            : null;
+    const persistedNormalizedUpdates =
+        entity === 'users'
+            ? Object.fromEntries(
+                Object.entries(normalizedUpdates).filter(([key]) => key !== 'driverRevision')
+            )
+            : normalizedUpdates;
 
     const currentDoc = await sanityGetById<Record<string, unknown> & { _id: string; _rev?: string }>(id);
     if (!currentDoc) {
@@ -1263,14 +1278,41 @@ export async function handleGenericUpdate(
                 .patch(id, {
                     ifRevisionID: currentDoc._rev,
                     set: normalizedUpdates,
+            });
+            await transaction.commit();
+            updated = await sanityGetById(id);
+        } else if (entity === 'users') {
+            const mutationTimestamp = new Date().toISOString();
+            const userUnsetFields = Object.entries(persistedNormalizedUpdates)
+                .filter(([, value]) => value === undefined)
+                .map(([key]) => key);
+            const userSetUpdates = Object.fromEntries(
+                Object.entries(persistedNormalizedUpdates).filter(([, value]) => value !== undefined)
+            );
+            const transaction = getSanityClient().transaction();
+            if (userDriverRevision) {
+                transaction.patch(userDriverRevision._id, {
+                    ifRevisionID: userDriverRevision._rev,
+                    set: { updatedAt: mutationTimestamp },
                 });
+            }
+            transaction.patch(id, patch => {
+                let nextPatch = patch.ifRevisionId(currentDoc._rev as string);
+                if (userUnsetFields.length > 0) {
+                    nextPatch = nextPatch.unset(userUnsetFields);
+                }
+                if (Object.keys(userSetUpdates).length > 0) {
+                    nextPatch = nextPatch.set(userSetUpdates);
+                }
+                return nextPatch;
+            });
             await transaction.commit();
             updated = await sanityGetById(id);
         } else {
             updated = await getSanityClient()
                 .patch(id)
                 .ifRevisionId(currentDoc._rev)
-                .set(normalizedUpdates)
+                .set(persistedNormalizedUpdates)
                 .commit();
         }
     } catch (error) {
@@ -1312,9 +1354,9 @@ export async function handleGenericUpdate(
                 ? `Perbarui absensi ${buildEmployeeAttendanceSummary(updated as Record<string, unknown>, id)}`
                 : entity === 'suppliers'
                     ? `Perbarui supplier ${buildCreateSummary(updated as Record<string, unknown>, id)}`
-                    : entity === 'warehouse-items'
-                        ? `Perbarui barang gudang ${buildCreateSummary(updated as Record<string, unknown>, id)}`
-                : `Updated ${entity}: ${JSON.stringify(normalizedUpdates).slice(0, 200)}`;
+                : entity === 'warehouse-items'
+                    ? `Perbarui barang gudang ${buildCreateSummary(updated as Record<string, unknown>, id)}`
+                : `Updated ${entity}: ${JSON.stringify(persistedNormalizedUpdates).slice(0, 200)}`;
     await addAuditLog(session, 'UPDATE', entity, id, updateSummary);
 
     if (entity === 'order-items' && typeof normalizedUpdates.status === 'string') {
@@ -1890,6 +1932,7 @@ export async function handleGenericCreate(
     }
 
     const newDoc: { _type: string; [key: string]: unknown } = { _type: docType };
+    let userDriverRevision: string | undefined;
     let shouldMergeRawCreatePayload = true;
 
     if (entity === 'delivery-order-items') {
@@ -2079,9 +2122,12 @@ export async function handleGenericCreate(
         newDoc.name = normalizedUser.name;
         newDoc.email = normalizedUser.email;
         newDoc.role = normalizedUser.role;
+        newDoc.driverRef = normalizedUser.driverRef;
+        newDoc.driverName = normalizedUser.driverName;
         newDoc.passwordHash = normalizedUser.passwordHash;
         newDoc.active = normalizedUser.active;
         newDoc.createdAt = normalizedUser.createdAt;
+        userDriverRevision = typeof normalizedUser.driverRevision === 'string' ? normalizedUser.driverRevision : undefined;
         delete newDoc.password;
     }
 
@@ -2185,8 +2231,41 @@ export async function handleGenericCreate(
         });
     }
 
-    const created = await sanityCreate(newDoc);
-    const newId = (created as Record<string, unknown>)._id as string;
+    const newId = crypto.randomUUID();
+    newDoc._id = newId;
+    let created: Record<string, unknown> | null;
+    if (entity === 'users' && typeof newDoc.driverRef === 'string') {
+        if (!userDriverRevision) {
+            return NextResponse.json(
+                { error: 'Revisi supir untuk akun mobile tidak tersedia. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        try {
+            await getSanityClient()
+                .transaction()
+                .create(newDoc)
+                .patch(newDoc.driverRef, {
+                    ifRevisionID: userDriverRevision,
+                    set: { updatedAt: new Date().toISOString() },
+                })
+                .commit();
+        } catch (error) {
+            if (isMutationConflictError(error)) {
+                return NextResponse.json(
+                    { error: 'User atau supir untuk akun mobile berubah karena ada update lain. Refresh lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+            throw error;
+        }
+        created = await sanityGetById<Record<string, unknown> & { _id: string }>(newId);
+    } else {
+        created = await sanityCreate(newDoc);
+    }
+    if (!created) {
+        return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
 
     if (entity === 'customer-recipients' && newDoc.isDefault === true && typeof newDoc.customerRef === 'string') {
         await clearOtherCustomerScopedDefaults('customerRecipient', newDoc.customerRef, newId);
