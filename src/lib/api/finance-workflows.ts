@@ -68,6 +68,13 @@ type ReceiptCustomerSource = {
     active?: boolean;
 };
 
+function resolveCustomerDisplayName(
+    customer: Pick<ReceiptCustomerSource, 'name'> | null | undefined,
+    fallbackName?: string
+) {
+    return normalizeText(customer?.name) || normalizeText(fallbackName) || '-';
+}
+
 function validateIsoDateOrResponse(dateValue: string, label: string, fallbackMessage: string) {
     try {
         assertIsoDate(dateValue, label);
@@ -801,6 +808,7 @@ export async function handleCustomerReceiptCreate(
                 return NextResponse.json({ error: 'Customer penerimaan tidak ditemukan' }, { status: 404 });
             }
         }
+        customerName = resolveCustomerDisplayName(linkedCustomer, customerName);
         if (linkedCustomer && !linkedCustomer._rev) {
             return NextResponse.json({ error: 'Revisi customer penerimaan tidak tersedia' }, { status: 409 });
         }
@@ -1342,6 +1350,7 @@ export async function handleCustomerOverpaymentRefund(
 
         let customerRef: string | undefined;
         let customerName = '-';
+        let linkedCustomer: ReceiptCustomerSource | null = null;
         let sourceReceiptRef: string | undefined;
         let sourceReceiptNumber: string | undefined;
         let sourceInvoiceRef: string | undefined;
@@ -1414,6 +1423,11 @@ export async function handleCustomerOverpaymentRefund(
                 snapshot,
             };
         }
+
+        if (customerRef) {
+            linkedCustomer = await sanityGetById<ReceiptCustomerSource>(customerRef);
+        }
+        customerName = resolveCustomerDisplayName(linkedCustomer, customerName);
 
         if (openRefundableAmount <= 0) {
             return NextResponse.json({ error: 'Tidak ada kelebihan bayar terbuka untuk ditransfer balik' }, { status: 409 });
