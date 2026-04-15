@@ -707,6 +707,23 @@ function buildTireCodeUniqueConstraintDoc(tireId: string, tireCode: string) {
     } as const;
 }
 
+function buildUserEmailUniqueConstraintDoc(userId: string, email: string) {
+    const timestamp = new Date().toISOString();
+    const normalizedEmail = email.trim().toLowerCase();
+    return {
+        _id: buildUniqueConstraintId('user', 'email', normalizedEmail),
+        _type: 'uniqueConstraint',
+        entityType: 'user',
+        fieldName: 'email',
+        value: normalizedEmail,
+        valueLower: normalizedEmail,
+        ownerRef: userId,
+        ownerType: 'user',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+    } as const;
+}
+
 function isDocumentAlreadyExistsError(error: unknown, documentId?: string) {
     const statusCode =
         isPlainObject(error) && typeof error.statusCode === 'number'
@@ -1239,11 +1256,17 @@ export async function handleGenericUpdate(
             .create(historyLogDoc);
         const currentTireCode = normalizeOptionalText(existingTire.tireCode)?.toUpperCase();
         const nextTireCode = normalizeOptionalText(nextTireDoc.tireCode)?.toUpperCase();
+        const currentTireCodeConstraintId = currentTireCode
+            ? buildUniqueConstraintId('tireEvent', 'tireCode', currentTireCode)
+            : null;
         const nextTireCodeConstraint =
             nextTireCode && nextTireCode !== currentTireCode
                 ? buildTireCodeUniqueConstraintDoc(id, nextTireCode)
                 : null;
         if (nextTireCodeConstraint) {
+            if (currentTireCodeConstraintId) {
+                transaction.delete(currentTireCodeConstraintId);
+            }
             transaction.create(nextTireCodeConstraint);
         }
         try {
@@ -1433,11 +1456,30 @@ export async function handleGenericUpdate(
                 Object.entries(persistedNormalizedUpdates).filter(([, value]) => value !== undefined)
             );
             const transaction = getSanityClient().transaction();
+            const currentEmail = normalizeOptionalText(currentDoc.email)?.toLowerCase();
+            const nextEmail = (
+                typeof userSetUpdates.email === 'string'
+                    ? normalizeOptionalText(userSetUpdates.email)
+                    : currentEmail
+            )?.toLowerCase();
+            const currentEmailConstraintId = currentEmail
+                ? buildUniqueConstraintId('user', 'email', currentEmail)
+                : null;
+            const nextEmailConstraint =
+                nextEmail && nextEmail !== currentEmail
+                    ? buildUserEmailUniqueConstraintDoc(id, nextEmail)
+                    : null;
             if (userDriverRevision) {
                 transaction.patch(userDriverRevision._id, {
                     ifRevisionID: userDriverRevision._rev,
                     set: { updatedAt: mutationTimestamp },
                 });
+            }
+            if (nextEmailConstraint) {
+                if (currentEmailConstraintId) {
+                    transaction.delete(currentEmailConstraintId);
+                }
+                transaction.create(nextEmailConstraint);
             }
             transaction.patch(id, patch => {
                 let nextPatch = patch.ifRevisionId(currentDoc._rev as string);
@@ -1459,6 +1501,16 @@ export async function handleGenericUpdate(
                 .commit();
         }
     } catch (error) {
+        if (
+            entity === 'users'
+            && typeof normalizedUpdates.email === 'string'
+            && isDocumentAlreadyExistsError(
+                error,
+                buildUserEmailUniqueConstraintDoc(id, normalizedUpdates.email)._id
+            )
+        ) {
+            return NextResponse.json({ error: 'Email user sudah digunakan' }, { status: 409 });
+        }
         if (isMutationConflictError(error)) {
             return NextResponse.json(
                 { error: 'Dokumen berubah karena ada update lain. Refresh lalu coba lagi.' },
@@ -1953,6 +2005,68 @@ export async function handleGenericDelete(
         return NextResponse.json({ error: 'Invalid delete payload' }, { status: 400 });
     }
 
+    if (entity === 'users') {
+        if (id === session._id) {
+            return NextResponse.json({ error: 'Anda tidak dapat menghapus akun sendiri' }, { status: 409 });
+        }
+
+        const existingUser = await sanityGetById<{ _id: string; _rev?: string; email?: string; name?: string; role?: string; active?: boolean }>(id);
+        if (!existingUser) {
+            return NextResponse.json({ error: 'User tidak ditemukan' }, { status: 404 });
+        }
+        if (!existingUser._rev) {
+            return NextResponse.json({ error: 'Revisi user tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+        }
+
+        if (existingUser.role === 'OWNER' && existingUser.active !== false) {
+            const otherActiveOwners = await getSanityClient().fetch<number>(
+                `count(*[_type == "user" && role == "OWNER" && active == true && _id != $excludeId])`,
+                { excludeId: id }
+            );
+            if (otherActiveOwners === 0) {
+                return NextResponse.json({ error: 'Minimal harus ada satu OWNER aktif' }, { status: 409 });
+            }
+        }
+
+        const emailConstraintId = normalizeOptionalText(existingUser.email)
+            ? buildUniqueConstraintId('user', 'email', normalizeOptionalText(existingUser.email) as string)
+            : null;
+
+        try {
+            const mutations: Array<Record<string, unknown>> = [];
+            if (emailConstraintId) {
+                mutations.push({
+                    delete: {
+                        id: emailConstraintId,
+                    },
+                });
+            }
+            mutations.push({
+                delete: {
+                    id,
+                    ifRevisionID: existingUser._rev,
+                },
+            });
+            await getSanityClient().mutate(mutations as unknown as SanityMutations);
+            await addAuditLog(
+                session,
+                'DELETE',
+                entity,
+                id,
+                `Deleted user ${existingUser.name || existingUser.email || id}`
+            );
+            return NextResponse.json({ success: true });
+        } catch (error) {
+            if (isMutationConflictError(error)) {
+                return NextResponse.json(
+                    { error: 'User berubah karena ada update lain. Refresh lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+            throw error;
+        }
+    }
+
     if (entity === 'bank-accounts') {
         const existingAccount = await sanityGetById<BankAccountSummary & { active?: boolean }>(id);
         if (!existingAccount) {
@@ -2444,23 +2558,30 @@ export async function handleGenericCreate(
     const newId = crypto.randomUUID();
     newDoc._id = newId;
     let created: Record<string, unknown> | null;
-    if (entity === 'users' && typeof newDoc.driverRef === 'string') {
-        if (!userDriverRevision) {
+    if (entity === 'users') {
+        if (typeof newDoc.driverRef === 'string' && !userDriverRevision) {
             return NextResponse.json(
                 { error: 'Revisi supir untuk akun mobile tidak tersedia. Refresh lalu coba lagi.' },
                 { status: 409 }
             );
         }
+        const emailConstraintDoc = buildUserEmailUniqueConstraintDoc(newId, String(newDoc.email || ''));
         try {
-            await getSanityClient()
+            const transaction = getSanityClient()
                 .transaction()
-                .create(newDoc)
-                .patch(newDoc.driverRef, {
+                .create(emailConstraintDoc)
+                .create(newDoc);
+            if (typeof newDoc.driverRef === 'string' && userDriverRevision) {
+                transaction.patch(newDoc.driverRef, {
                     ifRevisionID: userDriverRevision,
                     set: { updatedAt: new Date().toISOString() },
-                })
-                .commit();
+                });
+            }
+            await transaction.commit();
         } catch (error) {
+            if (isDocumentAlreadyExistsError(error, emailConstraintDoc._id)) {
+                return NextResponse.json({ error: 'Email user sudah digunakan' }, { status: 409 });
+            }
             if (isMutationConflictError(error)) {
                 return NextResponse.json(
                     { error: 'User atau supir untuk akun mobile berubah karena ada update lain. Refresh lalu coba lagi.' },
