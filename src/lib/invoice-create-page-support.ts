@@ -97,7 +97,7 @@ export function buildNotaRowsFromDeliveryOrder(params: {
         doNumber: deliveryOrder.doNumber || '',
         vehiclePlate: deliveryOrder.vehiclePlate || '',
         date: deliveryOrder.date || getBusinessDateValue(),
-        noSJ: deliveryOrder.customerDoNumber || '',
+        noSJ: deliveryOrder.customerDoNumber || deliveryOrder.doNumber || '',
         dari: deliveryOrder.pickupAddress || relatedOrder?.pickupAddress || '',
         tujuan: deliveryOrder.receiverAddress || relatedOrder?.receiverAddress || '',
         tarip: 0,

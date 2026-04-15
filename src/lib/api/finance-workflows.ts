@@ -2475,6 +2475,7 @@ export async function handleFreightNotaCreate(
         row.doNumber = normalizeOptionalText(deliveryOrder.doNumber) || row.doNumber;
         row.noSJ =
             normalizeOptionalText(deliveryOrder.customerDoNumber) ||
+            normalizeOptionalText(deliveryOrder.doNumber) ||
             row.noSJ ||
             '';
         row.vehiclePlate = normalizeOptionalText(deliveryOrder.vehiclePlate) || row.vehiclePlate;
