@@ -1225,6 +1225,12 @@ export async function handleGenericUpdate(
             'keteranganBorongan',
         ]);
         const updateKeys = Object.keys(updates);
+        if (updateKeys.includes('customerDoNumber')) {
+            return NextResponse.json(
+                { error: 'No. SJ pengirim hanya boleh diubah lewat aksi update resmi surat jalan' },
+                { status: 409 }
+            );
+        }
         if (updateKeys.some(key => !allowedDeliveryOrderFields.has(key))) {
             return NextResponse.json({ error: 'Field surat jalan ini tidak boleh diubah lewat API umum' }, { status: 400 });
         }

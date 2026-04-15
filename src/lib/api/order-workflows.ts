@@ -31,6 +31,8 @@ import {
     type WeightInputUnit,
 } from '@/lib/measurement';
 import {
+    buildDeliveryOrderCustomerDoConstraintDoc,
+    buildDeliveryOrderCustomerDoConstraintId,
     DO_STATUS_TRANSITIONS,
     DRIVER_APPROVAL_REQUESTABLE_DO_STATUSES,
     DRIVER_STATUS_REQUEST_FIELDS,
@@ -72,6 +74,29 @@ type AuditLogFn = (
 ) => void | Promise<void>;
 
 type SanityMutations = Parameters<ReturnType<typeof getSanityClient>['mutate']>[0];
+
+function isDocumentAlreadyExistsError(error: unknown, documentId?: string) {
+    const statusCode =
+        error && typeof error === 'object' && 'statusCode' in error && typeof (error as { statusCode?: unknown }).statusCode === 'number'
+            ? (error as { statusCode: number }).statusCode
+            : error && typeof error === 'object' && 'status' in error && typeof (error as { status?: unknown }).status === 'number'
+                ? (error as { status: number }).status
+                : undefined;
+    const message =
+        error instanceof Error
+            ? error.message
+            : error && typeof error === 'object' && 'message' in error && typeof (error as { message?: unknown }).message === 'string'
+                ? (error as { message: string }).message
+                : '';
+
+    if (statusCode !== 409 && !/already exists/i.test(message)) {
+        return false;
+    }
+    if (!documentId) {
+        return /already exists/i.test(message);
+    }
+    return message.includes(documentId) && /already exists/i.test(message);
+}
 
 async function releaseDriverTrackingLockIfOwned(driverRef: unknown, deliveryOrderRef: string, timestamp: string) {
     const driverId = extractRefId(driverRef);
@@ -2756,7 +2781,15 @@ export async function handleDeliveryOrderCreate(
         status: 'CREATED',
     };
 
-    const transaction = getSanityClient().transaction().create(doDoc);
+    const customerDoConstraint =
+        customerDoNumber && orderCustomerRef
+            ? buildDeliveryOrderCustomerDoConstraintDoc(doId, orderCustomerRef, customerDoNumber)
+            : null;
+    const transaction = getSanityClient().transaction();
+    if (customerDoConstraint) {
+        transaction.create(customerDoConstraint);
+    }
+    transaction.create(doDoc);
     const mutationTimestamp = new Date().toISOString();
     if (tripRouteSelection?.matchedTripRouteRate?._id && tripRouteSelection.matchedTripRouteRate._rev) {
         transaction.patch(tripRouteSelection.matchedTripRouteRate._id, {
@@ -2933,6 +2966,12 @@ export async function handleDeliveryOrderCreate(
     try {
         await transaction.commit();
     } catch (error) {
+        if (isDocumentAlreadyExistsError(error, customerDoConstraint?._id)) {
+            return NextResponse.json(
+                { error: `No. SJ pengirim ${customerDoNumber} sudah dipakai untuk customer ini.` },
+                { status: 409 }
+            );
+        }
         if (isMutationConflictError(error)) {
             return NextResponse.json(
                 { error: 'Data order, barang customer, master biaya rute trip, kendaraan, supir, atau item surat jalan berubah karena ada update lain. Refresh lalu coba lagi.' },
@@ -3331,14 +3370,36 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
         return NextResponse.json({ error: 'Revisi surat jalan tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
+    const currentConstraintId =
+        customerRef && existingCustomerDoNumber
+            ? buildDeliveryOrderCustomerDoConstraintId(customerRef, existingCustomerDoNumber)
+            : null;
+    const nextConstraintDoc =
+        customerRef
+            ? buildDeliveryOrderCustomerDoConstraintDoc(id, customerRef, customerDoNumber)
+            : null;
     let updatedDeliveryOrder: unknown;
     try {
-        updatedDeliveryOrder = await getSanityClient()
-            .patch(id)
-            .ifRevisionId(deliveryOrder._rev)
-            .set({ customerDoNumber })
-            .commit();
+        const transaction = getSanityClient().transaction();
+        if (currentConstraintId && currentConstraintId !== nextConstraintDoc?._id) {
+            transaction.delete(currentConstraintId);
+        }
+        if (nextConstraintDoc && currentConstraintId !== nextConstraintDoc._id) {
+            transaction.create(nextConstraintDoc);
+        }
+        transaction.patch(id, {
+            ifRevisionID: deliveryOrder._rev,
+            set: { customerDoNumber },
+        });
+        await transaction.commit();
+        updatedDeliveryOrder = await sanityGetById(id);
     } catch (error) {
+        if (isDocumentAlreadyExistsError(error, nextConstraintDoc?._id)) {
+            return NextResponse.json(
+                { error: `No. SJ pengirim ${customerDoNumber} sudah dipakai untuk customer ini.` },
+                { status: 409 }
+            );
+        }
         if (isMutationConflictError(error)) {
             return NextResponse.json(
                 { error: 'No. SJ pengirim berubah karena ada update lain. Refresh lalu coba lagi.' },

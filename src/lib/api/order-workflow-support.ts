@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
     roundQuantity,
 } from '@/lib/order-item-progress';
@@ -235,6 +236,42 @@ export function normalizeCustomerDoPrefix(value: unknown) {
         .replace(/[^A-Z0-9]+/g, '-')
         .replace(/^-+|-+$/g, '');
     return prefix || 'SJ';
+}
+
+export function buildDeliveryOrderCustomerDoConstraintId(customerRef: string, customerDoNumber: string) {
+    const normalizedValue = `${normalizeText(customerRef)}::${normalizeText(customerDoNumber).toLowerCase()}`;
+    const encodedValue = Buffer.from(normalizedValue, 'utf8').toString('base64url');
+    const directId = `unique-constraint.deliveryOrder.customerRefCustomerDoNumber.${encodedValue}`;
+    if (directId.length <= 128) {
+        return directId;
+    }
+    const hash = createHash('sha256')
+        .update(normalizedValue)
+        .digest('base64url')
+        .slice(0, 32);
+    return `unique-constraint.deliveryOrder.customerRefCustomerDoNumber.h${hash}`;
+}
+
+export function buildDeliveryOrderCustomerDoConstraintDoc(
+    deliveryOrderId: string,
+    customerRef: string,
+    customerDoNumber: string,
+) {
+    const normalizedValue = `${normalizeText(customerRef)}::${normalizeText(customerDoNumber).toLowerCase()}`;
+    const timestamp = new Date().toISOString();
+
+    return {
+        _id: buildDeliveryOrderCustomerDoConstraintId(customerRef, customerDoNumber),
+        _type: 'uniqueConstraint' as const,
+        entityType: 'deliveryOrder',
+        fieldName: 'customerRefCustomerDoNumber',
+        value: normalizedValue,
+        valueLower: normalizedValue,
+        ownerRef: deliveryOrderId,
+        ownerType: 'deliveryOrder',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+    };
 }
 
 export function resolvePayloadWeightInputUnit(value: unknown, label: string): WeightInputUnit {
