@@ -815,6 +815,42 @@ function buildExpenseCategoryConstraintSpecs(categoryId: string, doc: Record<str
         : [];
 }
 
+function buildCustomerRecipientConstraintSpecs(recipientId: string, doc: Record<string, unknown>) {
+    const customerRef = normalizeOptionalText(doc.customerRef);
+    const label = normalizeOptionalText(doc.label);
+    if (!customerRef || !label) {
+        return [];
+    }
+    return [
+        buildUniqueConstraintSpec({
+            entityType: 'customerRecipient',
+            fieldName: 'customerRefLabel',
+            ownerRef: recipientId,
+            ownerType: 'customerRecipient',
+            value: `${customerRef}::${label}`,
+            message: 'Label master penerima sudah digunakan untuk customer ini',
+        }),
+    ];
+}
+
+function buildCustomerPickupConstraintSpecs(pickupId: string, doc: Record<string, unknown>) {
+    const customerRef = normalizeOptionalText(doc.customerRef);
+    const label = normalizeOptionalText(doc.label);
+    if (!customerRef || !label) {
+        return [];
+    }
+    return [
+        buildUniqueConstraintSpec({
+            entityType: 'customerPickupLocation',
+            fieldName: 'customerRefLabel',
+            ownerRef: pickupId,
+            ownerType: 'customerPickupLocation',
+            value: `${customerRef}::${label}`,
+            message: 'Label master pickup sudah digunakan untuk customer ini',
+        }),
+    ];
+}
+
 function buildTripRouteRateConstraintSpecs(rateId: string, doc: Record<string, unknown>) {
     const originArea = normalizeOptionalText(doc.originArea)?.toLowerCase();
     const destinationArea = normalizeOptionalText(doc.destinationArea)?.toLowerCase();
@@ -886,6 +922,22 @@ function buildDriverConstraintSpecs(driverId: string, doc: Record<string, unknow
         }));
     }
     return specs;
+}
+
+function buildEmployeeConstraintSpecs(employeeId: string, doc: Record<string, unknown>) {
+    const employeeCode = normalizeOptionalText(doc.employeeCode)?.toUpperCase();
+    return employeeCode
+        ? [
+            buildUniqueConstraintSpec({
+                entityType: 'employee',
+                fieldName: 'employeeCode',
+                ownerRef: employeeId,
+                ownerType: 'employee',
+                value: employeeCode,
+                message: 'Kode karyawan sudah digunakan',
+            }),
+        ]
+        : [];
 }
 
 function buildCustomerProductConstraintSpecs(productId: string, doc: Record<string, unknown>) {
@@ -1770,6 +1822,9 @@ export async function handleGenericUpdate(
             updated = await sanityGetById(id);
         } else if (
             entity === 'expense-categories'
+            || entity === 'customer-recipients'
+            || entity === 'customer-pickups'
+            || entity === 'employees'
             || entity === 'warehouse-items'
             || entity === 'vehicles'
             || entity === 'suppliers'
@@ -1779,6 +1834,12 @@ export async function handleGenericUpdate(
             const currentConstraintSpecs =
                 entity === 'expense-categories'
                     ? buildExpenseCategoryConstraintSpecs(id, currentDoc)
+                    : entity === 'customer-recipients'
+                        ? buildCustomerRecipientConstraintSpecs(id, currentDoc)
+                        : entity === 'customer-pickups'
+                            ? buildCustomerPickupConstraintSpecs(id, currentDoc)
+                            : entity === 'employees'
+                                ? buildEmployeeConstraintSpecs(id, currentDoc)
                     : entity === 'warehouse-items'
                         ? buildWarehouseItemConstraintSpecs(id, currentDoc)
                         : entity === 'vehicles'
@@ -1789,6 +1850,12 @@ export async function handleGenericUpdate(
             const nextConstraintSpecs =
                 entity === 'expense-categories'
                     ? buildExpenseCategoryConstraintSpecs(id, nextDoc)
+                    : entity === 'customer-recipients'
+                        ? buildCustomerRecipientConstraintSpecs(id, nextDoc)
+                        : entity === 'customer-pickups'
+                            ? buildCustomerPickupConstraintSpecs(id, nextDoc)
+                            : entity === 'employees'
+                                ? buildEmployeeConstraintSpecs(id, nextDoc)
                     : entity === 'warehouse-items'
                         ? buildWarehouseItemConstraintSpecs(id, nextDoc)
                         : entity === 'vehicles'
@@ -1889,6 +1956,9 @@ export async function handleGenericUpdate(
         }
         if (
             entity === 'expense-categories'
+            || entity === 'customer-recipients'
+            || entity === 'customer-pickups'
+            || entity === 'employees'
             || entity === 'warehouse-items'
             || entity === 'vehicles'
             || entity === 'suppliers'
@@ -1898,6 +1968,12 @@ export async function handleGenericUpdate(
                 error,
                 entity === 'expense-categories'
                     ? buildExpenseCategoryConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
+                    : entity === 'customer-recipients'
+                        ? buildCustomerRecipientConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
+                        : entity === 'customer-pickups'
+                            ? buildCustomerPickupConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
+                            : entity === 'employees'
+                                ? buildEmployeeConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
                     : entity === 'warehouse-items'
                         ? buildWarehouseItemConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
                         : entity === 'vehicles'
@@ -2221,7 +2297,13 @@ export async function handleGenericDelete(
         }
 
         try {
+            const constraintSpecs = buildCustomerRecipientConstraintSpecs(id, recipient as unknown as Record<string, unknown>);
             await getSanityClient().mutate([
+                ...constraintSpecs.map(spec => ({
+                    delete: {
+                        id: spec.id,
+                    },
+                })),
                 {
                     delete: {
                         id,
@@ -2271,7 +2353,13 @@ export async function handleGenericDelete(
         }
 
         try {
+            const constraintSpecs = buildCustomerPickupConstraintSpecs(id, pickup as unknown as Record<string, unknown>);
             await getSanityClient().mutate([
+                ...constraintSpecs.map(spec => ({
+                    delete: {
+                        id: spec.id,
+                    },
+                })),
                 {
                     delete: {
                         id,
@@ -2422,6 +2510,47 @@ export async function handleGenericDelete(
                 { error: 'Karyawan yang sudah punya riwayat absensi tidak boleh dihapus. Nonaktifkan saja bila sudah tidak bekerja.' },
                 { status: 409 }
             );
+        }
+
+        const employee = await sanityGetById<{ _id: string; _rev?: string; employeeCode?: string; name?: string }>(id);
+        if (!employee) {
+            return NextResponse.json({ error: 'Karyawan tidak ditemukan' }, { status: 404 });
+        }
+        if (!employee._rev) {
+            return NextResponse.json({ error: 'Revisi karyawan tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+        }
+
+        try {
+            const constraintSpecs = buildEmployeeConstraintSpecs(id, employee as unknown as Record<string, unknown>);
+            await getSanityClient().mutate([
+                ...constraintSpecs.map(spec => ({
+                    delete: {
+                        id: spec.id,
+                    },
+                })),
+                {
+                    delete: {
+                        id,
+                        ifRevisionID: employee._rev,
+                    },
+                },
+            ] as unknown as SanityMutations);
+            await addAuditLog(
+                session,
+                'DELETE',
+                entity,
+                id,
+                `Deleted employee ${buildEmployeeSummary(employee as unknown as Record<string, unknown>, id)}`
+            );
+            return NextResponse.json({ success: true });
+        } catch (error) {
+            if (isMutationConflictError(error)) {
+                return NextResponse.json(
+                    { error: 'Karyawan berubah karena ada update lain. Muat ulang lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+            throw error;
         }
     }
 
@@ -3025,6 +3154,9 @@ export async function handleGenericCreate(
         created = await sanityGetById<Record<string, unknown> & { _id: string }>(newId);
     } else if (
         entity === 'expense-categories'
+        || entity === 'customer-recipients'
+        || entity === 'customer-pickups'
+        || entity === 'employees'
         || entity === 'warehouse-items'
         || entity === 'vehicles'
         || entity === 'suppliers'
@@ -3035,6 +3167,12 @@ export async function handleGenericCreate(
         const constraintSpecs =
             entity === 'expense-categories'
                 ? buildExpenseCategoryConstraintSpecs(newId, newDoc)
+                : entity === 'customer-recipients'
+                    ? buildCustomerRecipientConstraintSpecs(newId, newDoc)
+                    : entity === 'customer-pickups'
+                        ? buildCustomerPickupConstraintSpecs(newId, newDoc)
+                        : entity === 'employees'
+                            ? buildEmployeeConstraintSpecs(newId, newDoc)
                 : entity === 'warehouse-items'
                     ? buildWarehouseItemConstraintSpecs(newId, newDoc)
                     : entity === 'vehicles'
