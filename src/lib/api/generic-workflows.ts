@@ -690,38 +690,169 @@ function buildUniqueConstraintId(entityType: string, fieldName: string, value: s
     return `unique-constraint.${entityType}.${fieldName}.${encodedValue}`;
 }
 
-function buildTireCodeUniqueConstraintDoc(tireId: string, tireCode: string) {
+type UniqueConstraintMutationSpec = {
+    id: string;
+    message: string;
+    doc: {
+        _id: string;
+        _type: 'uniqueConstraint';
+        entityType: string;
+        fieldName: string;
+        value: string;
+        valueLower: string;
+        ownerRef: string;
+        ownerType: string;
+        createdAt: string;
+        updatedAt: string;
+    };
+};
+
+function buildUniqueConstraintSpec(params: {
+    entityType: string;
+    fieldName: string;
+    ownerRef: string;
+    ownerType: string;
+    value: string;
+    message: string;
+}) {
+    const normalizedValue = params.value.trim();
     const timestamp = new Date().toISOString();
-    const normalizedCode = tireCode.trim().toUpperCase();
+    const id = buildUniqueConstraintId(params.entityType, params.fieldName, normalizedValue);
     return {
-        _id: buildUniqueConstraintId('tireEvent', 'tireCode', normalizedCode),
-        _type: 'uniqueConstraint',
+        id,
+        message: params.message,
+        doc: {
+            _id: id,
+            _type: 'uniqueConstraint' as const,
+            entityType: params.entityType,
+            fieldName: params.fieldName,
+            value: normalizedValue,
+            valueLower: normalizedValue.toLowerCase(),
+            ownerRef: params.ownerRef,
+            ownerType: params.ownerType,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+        },
+    } satisfies UniqueConstraintMutationSpec;
+}
+
+function buildTireCodeUniqueConstraintDoc(tireId: string, tireCode: string) {
+    return buildUniqueConstraintSpec({
         entityType: 'tireEvent',
         fieldName: 'tireCode',
-        value: normalizedCode,
-        valueLower: normalizedCode.toLowerCase(),
         ownerRef: tireId,
         ownerType: 'tireEvent',
-        createdAt: timestamp,
-        updatedAt: timestamp,
-    } as const;
+        value: tireCode.trim().toUpperCase(),
+        message: 'Kode ban sudah digunakan',
+    }).doc;
 }
 
 function buildUserEmailUniqueConstraintDoc(userId: string, email: string) {
-    const timestamp = new Date().toISOString();
-    const normalizedEmail = email.trim().toLowerCase();
-    return {
-        _id: buildUniqueConstraintId('user', 'email', normalizedEmail),
-        _type: 'uniqueConstraint',
+    return buildUniqueConstraintSpec({
         entityType: 'user',
         fieldName: 'email',
-        value: normalizedEmail,
-        valueLower: normalizedEmail,
         ownerRef: userId,
         ownerType: 'user',
-        createdAt: timestamp,
-        updatedAt: timestamp,
-    } as const;
+        value: email.trim().toLowerCase(),
+        message: 'Email user sudah digunakan',
+    }).doc;
+}
+
+function buildWarehouseItemConstraintSpecs(itemId: string, doc: Record<string, unknown>) {
+    const itemCode = normalizeOptionalText(doc.itemCode)?.toUpperCase();
+    return itemCode
+        ? [
+            buildUniqueConstraintSpec({
+                entityType: 'warehouseItem',
+                fieldName: 'itemCode',
+                ownerRef: itemId,
+                ownerType: 'warehouseItem',
+                value: itemCode,
+                message: 'Kode barang gudang sudah digunakan',
+            }),
+        ]
+        : [];
+}
+
+function buildVehicleConstraintSpecs(vehicleId: string, doc: Record<string, unknown>) {
+    const specs: UniqueConstraintMutationSpec[] = [];
+    const plateNumber = normalizeOptionalText(doc.plateNumber)?.toUpperCase();
+    if (plateNumber) {
+        specs.push(buildUniqueConstraintSpec({
+            entityType: 'vehicle',
+            fieldName: 'plateNumber',
+            ownerRef: vehicleId,
+            ownerType: 'vehicle',
+            value: plateNumber,
+            message: 'Plat nomor kendaraan sudah digunakan',
+        }));
+    }
+    const unitCode = normalizeOptionalText(doc.unitCode)?.toUpperCase();
+    if (unitCode) {
+        specs.push(buildUniqueConstraintSpec({
+            entityType: 'vehicle',
+            fieldName: 'unitCode',
+            ownerRef: vehicleId,
+            ownerType: 'vehicle',
+            value: unitCode,
+            message: 'Kode unit kendaraan sudah digunakan',
+        }));
+    }
+    const chassisNumber = normalizeOptionalText(doc.chassisNumber)?.toUpperCase();
+    if (chassisNumber) {
+        specs.push(buildUniqueConstraintSpec({
+            entityType: 'vehicle',
+            fieldName: 'chassisNumber',
+            ownerRef: vehicleId,
+            ownerType: 'vehicle',
+            value: chassisNumber,
+            message: 'No. rangka kendaraan sudah digunakan',
+        }));
+    }
+    const engineNumber = normalizeOptionalText(doc.engineNumber)?.toUpperCase();
+    if (engineNumber) {
+        specs.push(buildUniqueConstraintSpec({
+            entityType: 'vehicle',
+            fieldName: 'engineNumber',
+            ownerRef: vehicleId,
+            ownerType: 'vehicle',
+            value: engineNumber,
+            message: 'No. mesin kendaraan sudah digunakan',
+        }));
+    }
+    return specs;
+}
+
+function appendUniqueConstraintMutations(
+    transaction: ReturnType<ReturnType<typeof getSanityClient>['transaction']>,
+    currentSpecs: UniqueConstraintMutationSpec[],
+    nextSpecs: UniqueConstraintMutationSpec[]
+) {
+    const currentByField = new Map(currentSpecs.map(spec => [spec.doc.fieldName, spec]));
+    const nextByField = new Map(nextSpecs.map(spec => [spec.doc.fieldName, spec]));
+
+    for (const [fieldName, currentSpec] of currentByField.entries()) {
+        const nextSpec = nextByField.get(fieldName);
+        if (!nextSpec || nextSpec.id !== currentSpec.id) {
+            transaction.delete(currentSpec.id);
+        }
+    }
+
+    for (const [fieldName, nextSpec] of nextByField.entries()) {
+        const currentSpec = currentByField.get(fieldName);
+        if (!currentSpec || currentSpec.id !== nextSpec.id) {
+            transaction.create(nextSpec.doc);
+        }
+    }
+}
+
+function resolveUniqueConstraintConflictMessage(error: unknown, specs: UniqueConstraintMutationSpec[]) {
+    for (const spec of specs) {
+        if (isDocumentAlreadyExistsError(error, spec.id)) {
+            return spec.message;
+        }
+    }
+    return null;
 }
 
 function isDocumentAlreadyExistsError(error: unknown, documentId?: string) {
@@ -1447,6 +1578,25 @@ export async function handleGenericUpdate(
             });
             await transaction.commit();
             updated = await sanityGetById(id);
+        } else if (entity === 'warehouse-items' || entity === 'vehicles') {
+            const nextDoc = { ...currentDoc, ...persistedNormalizedUpdates };
+            const currentConstraintSpecs =
+                entity === 'warehouse-items'
+                    ? buildWarehouseItemConstraintSpecs(id, currentDoc)
+                    : buildVehicleConstraintSpecs(id, currentDoc);
+            const nextConstraintSpecs =
+                entity === 'warehouse-items'
+                    ? buildWarehouseItemConstraintSpecs(id, nextDoc)
+                    : buildVehicleConstraintSpecs(id, nextDoc);
+            const transaction = getSanityClient()
+                .transaction()
+                .patch(id, {
+                    ifRevisionID: currentDoc._rev,
+                    set: persistedNormalizedUpdates,
+                });
+            appendUniqueConstraintMutations(transaction, currentConstraintSpecs, nextConstraintSpecs);
+            await transaction.commit();
+            updated = await sanityGetById(id);
         } else if (entity === 'users') {
             const mutationTimestamp = new Date().toISOString();
             const userUnsetFields = Object.entries(persistedNormalizedUpdates)
@@ -1510,6 +1660,17 @@ export async function handleGenericUpdate(
             )
         ) {
             return NextResponse.json({ error: 'Email user sudah digunakan' }, { status: 409 });
+        }
+        if (entity === 'warehouse-items' || entity === 'vehicles') {
+            const conflictMessage = resolveUniqueConstraintConflictMessage(
+                error,
+                entity === 'warehouse-items'
+                    ? buildWarehouseItemConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
+                    : buildVehicleConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
+            );
+            if (conflictMessage) {
+                return NextResponse.json({ error: conflictMessage }, { status: 409 });
+            }
         }
         if (isMutationConflictError(error)) {
             return NextResponse.json(
@@ -1754,7 +1915,13 @@ export async function handleGenericDelete(
         }
 
         try {
+            const constraintSpecs = buildWarehouseItemConstraintSpecs(id, warehouseItem as Record<string, unknown>);
             await getSanityClient().mutate([
+                ...constraintSpecs.map(spec => ({
+                    delete: {
+                        id: spec.id,
+                    },
+                })),
                 {
                     delete: {
                         id,
@@ -2558,7 +2725,33 @@ export async function handleGenericCreate(
     const newId = crypto.randomUUID();
     newDoc._id = newId;
     let created: Record<string, unknown> | null;
-    if (entity === 'users') {
+    if (entity === 'warehouse-items' || entity === 'vehicles') {
+        const constraintSpecs =
+            entity === 'warehouse-items'
+                ? buildWarehouseItemConstraintSpecs(newId, newDoc)
+                : buildVehicleConstraintSpecs(newId, newDoc);
+        try {
+            const transaction = getSanityClient().transaction();
+            for (const spec of constraintSpecs) {
+                transaction.create(spec.doc);
+            }
+            transaction.create(newDoc);
+            await transaction.commit();
+        } catch (error) {
+            const conflictMessage = resolveUniqueConstraintConflictMessage(error, constraintSpecs);
+            if (conflictMessage) {
+                return NextResponse.json({ error: conflictMessage }, { status: 409 });
+            }
+            if (isMutationConflictError(error)) {
+                return NextResponse.json(
+                    { error: 'Dokumen master berubah karena ada update lain. Refresh lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+            throw error;
+        }
+        created = await sanityGetById<Record<string, unknown> & { _id: string }>(newId);
+    } else if (entity === 'users') {
         if (typeof newDoc.driverRef === 'string' && !userDriverRevision) {
             return NextResponse.json(
                 { error: 'Revisi supir untuk akun mobile tidak tersedia. Refresh lalu coba lagi.' },

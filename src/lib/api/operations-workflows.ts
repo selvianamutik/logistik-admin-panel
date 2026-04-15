@@ -49,6 +49,12 @@ const INCIDENT_SETTLEMENT_ALLOWED_CATEGORIES: Record<string, Set<string>> = {
 const ALLOWED_INCIDENT_TYPES = new Set(['BLOWOUT_TIRE', 'ENGINE_TROUBLE', 'ACCIDENT_MINOR', 'ACCIDENT_MAJOR', 'OTHER']);
 const ALLOWED_INCIDENT_URGENCY = new Set(['LOW', 'MEDIUM', 'HIGH']);
 
+function buildUniqueConstraintId(entityType: string, fieldName: string, value: string) {
+    const normalizedValue = value.trim().toLowerCase();
+    const encodedValue = Buffer.from(normalizedValue, 'utf8').toString('base64url');
+    return `unique-constraint.${entityType}.${fieldName}.${encodedValue}`;
+}
+
 function requireIncidentSettlementRevision(
     providedRevision: unknown,
     currentRevision?: string
@@ -1101,7 +1107,7 @@ export async function handleVehicleDelete(
         return NextResponse.json({ error: 'Kendaraan tidak valid' }, { status: 400 });
     }
 
-    const vehicle = await sanityGetById<{ _id: string; _rev?: string; plateNumber?: string }>(id);
+    const vehicle = await sanityGetById<{ _id: string; _rev?: string; plateNumber?: string; unitCode?: string; chassisNumber?: string; engineNumber?: string }>(id);
     if (!vehicle) {
         return NextResponse.json({ error: 'Kendaraan tidak ditemukan' }, { status: 404 });
     }
@@ -1161,7 +1167,26 @@ export async function handleVehicleDelete(
     }
 
     try {
+        const constraintIds = [
+            typeof vehicle.plateNumber === 'string' && vehicle.plateNumber.trim()
+                ? buildUniqueConstraintId('vehicle', 'plateNumber', vehicle.plateNumber)
+                : null,
+            typeof vehicle.unitCode === 'string' && vehicle.unitCode.trim()
+                ? buildUniqueConstraintId('vehicle', 'unitCode', vehicle.unitCode)
+                : null,
+            typeof vehicle.chassisNumber === 'string' && vehicle.chassisNumber.trim()
+                ? buildUniqueConstraintId('vehicle', 'chassisNumber', vehicle.chassisNumber)
+                : null,
+            typeof vehicle.engineNumber === 'string' && vehicle.engineNumber.trim()
+                ? buildUniqueConstraintId('vehicle', 'engineNumber', vehicle.engineNumber)
+                : null,
+        ].filter((value): value is string => typeof value === 'string');
         await getSanityClient().mutate([
+            ...constraintIds.map(constraintId => ({
+                delete: {
+                    id: constraintId,
+                },
+            })),
             {
                 delete: {
                     id,
