@@ -428,8 +428,9 @@ export function normalizeCustomerPayload(data: Record<string, unknown>, existing
     return next;
 }
 
-export function normalizeBankAccountPayload(data: Record<string, unknown>, existing?: Record<string, unknown>) {
+export async function normalizeBankAccountPayload(data: Record<string, unknown>, existing?: Record<string, unknown>) {
     const next: Record<string, unknown> = {};
+    const existingId = typeof existing?._id === 'string' ? existing._id : undefined;
 
     if (Object.prototype.hasOwnProperty.call(data, 'bankName') || !existing) {
         const bankName = normalizeText(data.bankName);
@@ -445,6 +446,20 @@ export function normalizeBankAccountPayload(data: Record<string, unknown>, exist
             throw new Error('Nomor rekening / kode kas wajib diisi');
         }
         next.accountNumber = accountNumber;
+    }
+
+    const effectiveAccountNumber =
+        typeof next.accountNumber === 'string'
+            ? next.accountNumber
+            : normalizeOptionalText(existing?.accountNumber);
+    if (effectiveAccountNumber) {
+        const duplicateAccountNumber = await getSanityClient().fetch<{ _id: string } | null>(
+            `*[_type == "bankAccount" && lower(accountNumber) == $accountNumber && _id != $excludeId][0]{ _id }`,
+            { accountNumber: effectiveAccountNumber.toLowerCase(), excludeId: existingId || '' }
+        );
+        if (duplicateAccountNumber) {
+            throw new Error('Nomor rekening / kode kas sudah digunakan');
+        }
     }
 
     if (Object.prototype.hasOwnProperty.call(data, 'accountHolder') || !existing) {

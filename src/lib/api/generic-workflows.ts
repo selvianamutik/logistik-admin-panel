@@ -800,6 +800,22 @@ function buildWarehouseItemConstraintSpecs(itemId: string, doc: Record<string, u
         : [];
 }
 
+function buildBankAccountConstraintSpecs(accountId: string, doc: Record<string, unknown>) {
+    const accountNumber = normalizeOptionalText(doc.accountNumber)?.toUpperCase();
+    return accountNumber
+        ? [
+            buildUniqueConstraintSpec({
+                entityType: 'bankAccount',
+                fieldName: 'accountNumber',
+                ownerRef: accountId,
+                ownerType: 'bankAccount',
+                value: accountNumber,
+                message: 'Nomor rekening / kode kas sudah digunakan',
+            }),
+        ]
+        : [];
+}
+
 function buildSupplierConstraintSpecs(supplierId: string, doc: Record<string, unknown>) {
     const supplierCode = normalizeOptionalText(doc.supplierCode)?.toUpperCase();
     return supplierCode
@@ -1745,7 +1761,7 @@ export async function handleGenericUpdate(
         }
 
         try {
-            sanitizedEntityUpdates = normalizeBankAccountPayload(updates, existingAccount as unknown as Record<string, unknown>);
+            sanitizedEntityUpdates = await normalizeBankAccountPayload(updates, existingAccount as unknown as Record<string, unknown>);
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Data rekening / kas tidak valid' },
@@ -1931,7 +1947,8 @@ export async function handleGenericUpdate(
             await transaction.commit();
             updated = await sanityGetById(id);
         } else if (
-            entity === 'expense-categories'
+            entity === 'bank-accounts'
+            || entity === 'expense-categories'
             || entity === 'customer-recipients'
             || entity === 'customer-pickups'
             || entity === 'employees'
@@ -1943,8 +1960,10 @@ export async function handleGenericUpdate(
         ) {
             const nextDoc = { ...currentDoc, ...persistedNormalizedUpdates };
             const currentConstraintSpecs =
-                entity === 'expense-categories'
-                    ? buildExpenseCategoryConstraintSpecs(id, currentDoc)
+                entity === 'bank-accounts'
+                    ? buildBankAccountConstraintSpecs(id, currentDoc)
+                    : entity === 'expense-categories'
+                        ? buildExpenseCategoryConstraintSpecs(id, currentDoc)
                     : entity === 'customer-recipients'
                         ? buildCustomerRecipientConstraintSpecs(id, currentDoc)
                     : entity === 'customer-pickups'
@@ -1961,8 +1980,10 @@ export async function handleGenericUpdate(
                                 ? buildSupplierConstraintSpecs(id, currentDoc)
                                 : buildCustomerProductConstraintSpecs(id, currentDoc);
             const nextConstraintSpecs =
-                entity === 'expense-categories'
-                    ? buildExpenseCategoryConstraintSpecs(id, nextDoc)
+                entity === 'bank-accounts'
+                    ? buildBankAccountConstraintSpecs(id, nextDoc)
+                    : entity === 'expense-categories'
+                        ? buildExpenseCategoryConstraintSpecs(id, nextDoc)
                     : entity === 'customer-recipients'
                         ? buildCustomerRecipientConstraintSpecs(id, nextDoc)
                     : entity === 'customer-pickups'
@@ -2075,7 +2096,8 @@ export async function handleGenericUpdate(
             }
         }
         if (
-            entity === 'expense-categories'
+            entity === 'bank-accounts'
+            || entity === 'expense-categories'
             || entity === 'customer-recipients'
             || entity === 'customer-pickups'
             || entity === 'employees'
@@ -2087,8 +2109,10 @@ export async function handleGenericUpdate(
         ) {
             const conflictMessage = resolveUniqueConstraintConflictMessage(
                 error,
-                entity === 'expense-categories'
-                    ? buildExpenseCategoryConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
+                entity === 'bank-accounts'
+                    ? buildBankAccountConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
+                    : entity === 'expense-categories'
+                        ? buildExpenseCategoryConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
                     : entity === 'customer-recipients'
                         ? buildCustomerRecipientConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
                     : entity === 'customer-pickups'
@@ -3237,7 +3261,7 @@ export async function handleGenericCreate(
             return NextResponse.json({ error: 'Akun sistem tidak boleh dibuat manual' }, { status: 409 });
         }
         try {
-            Object.assign(newDoc, normalizeBankAccountPayload(data));
+            Object.assign(newDoc, await normalizeBankAccountPayload(data));
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Data rekening / kas tidak valid' },
@@ -3348,7 +3372,8 @@ export async function handleGenericCreate(
         }
         created = await sanityGetById<Record<string, unknown> & { _id: string }>(newId);
     } else if (
-        entity === 'expense-categories'
+        entity === 'bank-accounts'
+        || entity === 'expense-categories'
         || entity === 'customer-recipients'
         || entity === 'customer-pickups'
         || entity === 'employees'
@@ -3361,7 +3386,9 @@ export async function handleGenericCreate(
         || entity === 'drivers'
     ) {
         const constraintSpecs =
-            entity === 'expense-categories'
+            entity === 'bank-accounts'
+                ? buildBankAccountConstraintSpecs(newId, newDoc)
+                : entity === 'expense-categories'
                 ? buildExpenseCategoryConstraintSpecs(newId, newDoc)
                 : entity === 'customer-recipients'
                     ? buildCustomerRecipientConstraintSpecs(newId, newDoc)
