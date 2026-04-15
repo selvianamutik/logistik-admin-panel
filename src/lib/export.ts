@@ -6,7 +6,7 @@
 import ExcelJS from 'exceljs';
 import { resolveCompanyLogoUrl } from './branding';
 import { formatBusinessDateTime, getBusinessDateValue } from './business-date';
-import { EMPLOYEE_ATTENDANCE_STATUS_LABELS } from './employee-attendance';
+import { buildEmployeeAttendanceRecapRows, EMPLOYEE_ATTENDANCE_STATUS_LABELS, type EmployeeAttendanceRecapRow } from './employee-attendance';
 import {
     formatFreightNotaDisplayWeight,
     getFreightNotaRateColumnLabel,
@@ -26,7 +26,7 @@ import {
     resolveInvoiceInstructionAccounts,
     type InvoiceInstructionAccount,
 } from './print';
-import type { CompanyProfile, EmployeeAttendanceRecord, FreightNota, FreightNotaItem } from './types';
+import type { CompanyProfile, Employee, EmployeeAttendanceRecord, FreightNota, FreightNotaItem } from './types';
 import { parseFormattedNumberish } from './formatted-number';
 import { getReceivableNetAmount } from './utils';
 
@@ -508,6 +508,7 @@ export async function exportEmployeeAttendanceReport(input: {
     filters: EmployeeAttendanceExportFilters;
     filename?: string;
     company?: CompanyProfile | null;
+    employees?: Array<Pick<Employee, '_id' | 'employeeCode' | 'name' | 'division' | 'position'>>;
 }) {
     const company = input.company ?? await fetchCompanyProfile();
     const workbook = new ExcelJS.Workbook();
@@ -519,6 +520,7 @@ export async function exportEmployeeAttendanceReport(input: {
     const statusLabel = input.filters.statusLabel || 'Semua Status';
     const employeeLabel = input.filters.employeeLabel || 'Semua Karyawan';
     const anchorLabel = input.filters.anchorDate ? fmtDate(input.filters.anchorDate) : fmtDate(getBusinessDateValue());
+    const recapEmployeeRows = buildEmployeeAttendanceRecapRows(input.records, input.employees || []);
 
     workbook.creator = company?.name || 'PT Gading Mas Surya';
     workbook.company = company?.name || 'PT Gading Mas Surya';
@@ -575,15 +577,15 @@ export async function exportEmployeeAttendanceReport(input: {
     currentRow += 1;
     applyAttendanceSectionHeading(summarySheet, currentRow, 4, 'Rekap Periode');
     currentRow += 1;
-    const recapRows: Array<[string, ExportValue, string, ExportValue]> = [
+    const recapSummaryRows: Array<[string, ExportValue, string, ExportValue]> = [
         ['Karyawan Aktif', input.summary.activeEmployeeCount, 'Tercatat', input.summary.recordedEmployeeCount],
         ['Belum Tercatat', input.summary.unrecordedEmployeeCount, 'Total Record', input.summary.totalRecords],
-        ['Hadir', input.summary.presentCount, 'Pulang Lebih Awal', input.summary.earlyLeaveCount],
+        ['Masuk', input.summary.presentCount, 'Pulang Lebih Awal', input.summary.earlyLeaveCount],
         ['Izin', input.summary.permissionCount, 'Sakit', input.summary.sickCount],
         ['Cuti', input.summary.leaveCount, 'Alpha', input.summary.absentCount],
         ['Libur', input.summary.offCount, '', ''],
     ];
-    recapRows.forEach(([labelA, valueA, labelB, valueB]) => {
+    recapSummaryRows.forEach(([labelA, valueA, labelB, valueB]) => {
         summarySheet.getCell(`A${currentRow}`).value = labelA;
         summarySheet.getCell(`B${currentRow}`).value = valueA;
         summarySheet.getCell(`C${currentRow}`).value = labelB;
@@ -616,6 +618,107 @@ export async function exportEmployeeAttendanceReport(input: {
     }
 
     summarySheet.views = [{ state: 'frozen', ySplit: 5 }];
+
+    const recapSheet = workbook.addWorksheet(sanitizeSheetName('Rekap Karyawan'));
+    recapSheet.columns = [
+        { key: 'employeeCode', width: 16 },
+        { key: 'employeeName', width: 26 },
+        { key: 'division', width: 18 },
+        { key: 'position', width: 22 },
+        { key: 'recordedDays', width: 14 },
+        { key: 'presentCount', width: 12 },
+        { key: 'earlyLeaveCount', width: 18 },
+        { key: 'permissionCount', width: 12 },
+        { key: 'sickCount', width: 12 },
+        { key: 'leaveCount', width: 12 },
+        { key: 'absentCount', width: 12 },
+        { key: 'offCount', width: 12 },
+        { key: 'lastAttendanceDate', width: 16 },
+    ];
+
+    recapSheet.addRow([
+        `Rekap Absensi per Karyawan - ${input.summary.periodLabel}`,
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+    ]);
+    recapSheet.mergeCells(1, 1, 1, 13);
+    recapSheet.getCell('A1').font = { bold: true, size: 14, color: { argb: 'FF111827' } };
+
+    recapSheet.addRow([
+        `Rentang: ${rangeLabel} | Status: ${statusLabel} | Karyawan: ${employeeLabel} | Cari: ${searchLabel}`,
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+    ]);
+    recapSheet.mergeCells(2, 1, 2, 13);
+    recapSheet.getCell('A2').font = { size: 10, color: { argb: 'FF4B5563' } };
+
+    const recapHeaderRow = recapSheet.addRow([
+        'Kode Karyawan',
+        'Nama Karyawan',
+        'Divisi',
+        'Jabatan',
+        'Hari Tercatat',
+        'Masuk',
+        'Pulang Lebih Awal',
+        'Izin',
+        'Sakit',
+        'Cuti',
+        'Alpha',
+        'Libur',
+        'Tanggal Terakhir',
+    ]);
+    applyAttendanceTableHeaderStyle(recapHeaderRow);
+
+    if (recapEmployeeRows.length === 0) {
+        const emptyRow = recapSheet.addRow(['Tidak ada rekap absensi untuk periode ini']);
+        recapSheet.mergeCells(emptyRow.number, 1, emptyRow.number, 13);
+        emptyRow.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
+    } else {
+        recapEmployeeRows.forEach((row: EmployeeAttendanceRecapRow) => {
+            const recapRow = recapSheet.addRow([
+                row.employeeCode || '-',
+                row.employeeName || '-',
+                row.division || '-',
+                row.position || '-',
+                row.recordedDays,
+                row.presentCount,
+                row.earlyLeaveCount,
+                row.permissionCount,
+                row.sickCount,
+                row.leaveCount,
+                row.absentCount,
+                row.offCount,
+                row.lastAttendanceDate ? fmtDate(row.lastAttendanceDate) : '-',
+            ]);
+            applyAttendanceBodyBorder(recapRow);
+        });
+    }
+
+    recapSheet.views = [{ state: 'frozen', ySplit: 3 }];
+    recapSheet.autoFilter = {
+        from: { row: 3, column: 1 },
+        to: { row: Math.max(3, recapEmployeeRows.length + 3), column: 13 },
+    };
 
     const detailSheet = workbook.addWorksheet(sanitizeSheetName('Detail Absensi'));
     detailSheet.columns = [

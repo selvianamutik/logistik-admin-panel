@@ -7,9 +7,11 @@ import AppPagination from '@/components/AppPagination';
 import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { formatBusinessDate, getBusinessDateValue } from '@/lib/business-date';
 import {
+    buildEmployeeAttendanceRecapRows,
     EMPLOYEE_ATTENDANCE_PERIOD_LABELS,
     EMPLOYEE_ATTENDANCE_STATUS_LABELS,
     EMPLOYEE_ATTENDANCE_STATUS_OPTIONS,
+    summarizeEmployeeAttendanceRecords,
     type EmployeeAttendancePeriod,
     type EmployeeAttendanceStatus,
 } from '@/lib/employee-attendance';
@@ -122,7 +124,6 @@ export default function AttendancePage() {
     const [inputDivisionFilter, setInputDivisionFilter] = useState('');
     const [inputCoverageFilter, setInputCoverageFilter] = useState<AttendanceInputCoverage>('PENDING');
     const [inputStatusFilter, setInputStatusFilter] = useState('');
-    const [totalRecords, setTotalRecords] = useState(0);
     const [showModal, setShowModal] = useState(false);
     const [editRecord, setEditRecord] = useState<EmployeeAttendanceRecord | null>(null);
     const [saving, setSaving] = useState(false);
@@ -244,27 +245,29 @@ export default function AttendancePage() {
     }, [dailyAttendanceRows, dailyPage]);
     const dailyAttendanceSummary = useMemo(() => {
         const activeDailyRecords = dailyRecords.filter(record => activeEmployeeRefSet.has(record.employeeRef));
-        const counts = activeDailyRecords.reduce(
-            (totals, record) => {
-                if (record.status === 'HADIR') totals.present += 1;
-                if (record.status === 'PULANG_LEBIH_AWAL') totals.earlyLeave += 1;
-                if (record.status === 'IZIN') totals.permission += 1;
-                if (record.status === 'SAKIT') totals.sick += 1;
-                if (record.status === 'CUTI') totals.leave += 1;
-                if (record.status === 'ALPHA') totals.absent += 1;
-                if (record.status === 'LIBUR') totals.off += 1;
-                return totals;
-            },
-            { present: 0, earlyLeave: 0, permission: 0, sick: 0, leave: 0, absent: 0, off: 0 }
-        );
+        const counts = summarizeEmployeeAttendanceRecords(activeDailyRecords);
 
         return {
             activeEmployeeCount: activeEmployees.length,
             recordedEmployeeCount: activeDailyRecords.length,
             unrecordedEmployeeCount: Math.max(activeEmployees.length - activeDailyRecords.length, 0),
-            ...counts,
+            present: counts.presentCount,
+            earlyLeave: counts.earlyLeaveCount,
+            permission: counts.permissionCount,
+            sick: counts.sickCount,
+            leave: counts.leaveCount,
+            absent: counts.absentCount,
+            off: counts.offCount,
         };
     }, [activeEmployeeRefSet, activeEmployees.length, dailyRecords]);
+    const recapRows = useMemo(
+        () => buildEmployeeAttendanceRecapRows(records, employees),
+        [employees, records],
+    );
+    const paginatedRecapRows = useMemo(() => {
+        const offset = Math.max(page - 1, 0) * DEFAULT_PAGE_SIZE;
+        return recapRows.slice(offset, offset + DEFAULT_PAGE_SIZE);
+    }, [page, recapRows]);
     const selectedEmployeeOption = useMemo(
         () => employeeOptions.find(employee => employee._id === employeeFilter) || null,
         [employeeFilter, employeeOptions],
@@ -365,22 +368,25 @@ export default function AttendancePage() {
                 'Gagal memuat input absensi harian',
                 200,
             ).catch(() => []);
-            const [listRes, summaryRes, employeeRows, dailyRows] = await Promise.all([
-                fetch(`/api/data?${buildAttendanceQuery()}`),
+            const recapRowsPromise = viewMode === 'recap'
+                ? fetchAllAdminCollectionData<EmployeeAttendanceRecord>(
+                    `/api/data?${buildAttendanceQuery(1, 500)}`,
+                    'Gagal memuat rekap absensi',
+                    500,
+                )
+                : Promise.resolve([] as EmployeeAttendanceRecord[]);
+            const [summaryRes, employeeRows, dailyRows, recapRecordRows] = await Promise.all([
                 fetch(`/api/data?entity=employee-attendance-summary&period=${encodeURIComponent(period)}&date=${encodeURIComponent(selectedDate)}${search.trim() ? `&q=${encodeURIComponent(search.trim())}&searchFields=${encodeURIComponent('employeeCode,employeeName,division,position,note,date')}` : ''}${statusFilter ? `&status=${encodeURIComponent(statusFilter)}` : ''}${employeeFilter ? `&employeeRef=${encodeURIComponent(employeeFilter)}` : ''}`),
                 employeesPromise,
                 dailyRecordsPromise,
+                recapRowsPromise,
             ]);
-            const [listPayload, summaryPayload] = await Promise.all([listRes.json(), summaryRes.json()]);
-            if (!listRes.ok) {
-                throw new Error(listPayload.error || 'Gagal memuat data absensi');
-            }
+            const summaryPayload = await summaryRes.json();
             if (!summaryRes.ok) {
                 throw new Error(summaryPayload.error || 'Gagal memuat ringkasan absensi');
             }
 
-            setRecords((listPayload.data || []) as EmployeeAttendanceRecord[]);
-            setTotalRecords(listPayload.meta?.total || 0);
+            setRecords(recapRecordRows || []);
             setSummary(summaryPayload.data as AttendanceSummary);
             setEmployees(employeeRows || []);
             setDailyRecords(dailyRows || []);
@@ -389,7 +395,7 @@ export default function AttendancePage() {
         } finally {
             setLoading(false);
         }
-    }, [addToast, buildAttendanceQuery, employeeFilter, period, search, selectedDate, statusFilter]);
+    }, [addToast, buildAttendanceQuery, employeeFilter, period, search, selectedDate, statusFilter, viewMode]);
 
     useEffect(() => {
         void loadAttendance();
@@ -397,7 +403,7 @@ export default function AttendancePage() {
 
     useEffect(() => {
         setPage(1);
-    }, [search, period, selectedDate, statusFilter, employeeFilter]);
+    }, [search, period, selectedDate, statusFilter, employeeFilter, viewMode]);
 
     useEffect(() => {
         setDailyPage(1);
@@ -557,6 +563,7 @@ export default function AttendancePage() {
                     anchorDate: selectedDate,
                 },
                 filename: `absensi-${period}-${selectedDate}`,
+                employees,
             });
             addToast('success', 'Excel absensi berhasil di-download');
         } catch (error) {
@@ -572,6 +579,7 @@ export default function AttendancePage() {
         search,
         selectedDate,
         selectedEmployeeOption,
+        employees,
         statusFilter,
         summary,
     ]);
@@ -582,10 +590,12 @@ export default function AttendancePage() {
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Karyawan Aktif</div><div className="kpi-value">{dailyAttendanceSummary.activeEmployeeCount}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Sudah Tercatat</div><div className="kpi-value">{dailyAttendanceSummary.recordedEmployeeCount}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Belum Tercatat</div><div className="kpi-value">{dailyAttendanceSummary.unrecordedEmployeeCount}</div></div></div>
-                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Hadir</div><div className="kpi-value">{dailyAttendanceSummary.present}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Masuk</div><div className="kpi-value">{dailyAttendanceSummary.present}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Pulang Cepat</div><div className="kpi-value">{dailyAttendanceSummary.earlyLeave}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Izin</div><div className="kpi-value">{dailyAttendanceSummary.permission}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Sakit</div><div className="kpi-value">{dailyAttendanceSummary.sick}</div></div></div>
-                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Alpha / Cuti</div><div className="kpi-value">{dailyAttendanceSummary.absent + dailyAttendanceSummary.leave}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Cuti</div><div className="kpi-value">{dailyAttendanceSummary.leave}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Alpha</div><div className="kpi-value">{dailyAttendanceSummary.absent}</div></div></div>
             </div>
 
             <div className="table-container" style={{ marginBottom: '1rem' }}>
@@ -816,7 +826,7 @@ export default function AttendancePage() {
             <div className="kpi-grid attendance-kpi-grid" style={{ marginBottom: '1.5rem' }}>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Karyawan Aktif</div><div className="kpi-value">{summary?.activeEmployeeCount || activeEmployees.length}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Tercatat</div><div className="kpi-value">{summary?.recordedEmployeeCount || 0}</div></div></div>
-                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Hadir</div><div className="kpi-value">{summary?.presentCount || 0}</div></div></div>
+                <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Masuk</div><div className="kpi-value">{summary?.presentCount || 0}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Pulang Cepat</div><div className="kpi-value">{summary?.earlyLeaveCount || 0}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Izin</div><div className="kpi-value">{summary?.permissionCount || 0}</div></div></div>
                 <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Sakit</div><div className="kpi-value">{summary?.sickCount || 0}</div></div></div>
@@ -888,10 +898,10 @@ export default function AttendancePage() {
                         </div>
                         <div className="attendance-overview-item">
                             <div className="attendance-overview-label">Data Ditampilkan</div>
-                            <div className="attendance-overview-value">{totalRecords}</div>
+                            <div className="attendance-overview-value">{recapRows.length}</div>
                             <div className="attendance-overview-note">
                                 {summary
-                                    ? `${summary.recordedEmployeeCount} karyawan tercatat dari ${summary.activeEmployeeCount} aktif.`
+                                    ? `${summary.recordedEmployeeCount} karyawan tercatat dari ${summary.activeEmployeeCount} aktif, total ${summary.totalRecords} record pada periode ini.`
                                     : 'Menunggu ringkasan absensi.'}
                             </div>
                         </div>
@@ -904,65 +914,54 @@ export default function AttendancePage() {
                     <table>
                         <thead>
                             <tr>
-                                <th>Tanggal</th>
                                 <th>Karyawan</th>
                                 <th>Divisi / Jabatan</th>
-                                <th>Status</th>
-                                <th>Jam Masuk</th>
-                                <th>Jam Pulang</th>
-                                <th>Catatan</th>
-                                <th>Input Terakhir</th>
-                                <th>Aksi</th>
+                                <th>Hari Tercatat</th>
+                                <th>Masuk</th>
+                                <th>Pulang Cepat</th>
+                                <th>Izin</th>
+                                <th>Sakit</th>
+                                <th>Cuti</th>
+                                <th>Alpha</th>
+                                <th>Libur</th>
+                                <th>Tanggal Terakhir</th>
                             </tr>
                         </thead>
                         <tbody>
                             {loading ? [1, 2, 3].map(index => (
                                 <tr key={index}>
-                                    {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(cell => (
+                                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(cell => (
                                         <td key={cell}><div className="skeleton skeleton-text" /></td>
                                     ))}
                                 </tr>
-                            )) : totalRecords === 0 ? (
+                            )) : recapRows.length === 0 ? (
                                 <tr>
-                                    <td colSpan={9}>
+                                    <td colSpan={11}>
                                         <div className="empty-state">
                                             <ScrollText size={48} className="empty-state-icon" />
                                             <div className="empty-state-title">Belum ada absensi pada periode ini</div>
                                         </div>
                                     </td>
                                 </tr>
-                            ) : records.map(record => (
-                                <tr key={record._id}>
-                                    <td className="text-muted">{formatBusinessDate(record.date, 'id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                            ) : paginatedRecapRows.map(row => (
+                                <tr key={row.employeeRef}>
                                     <td>
-                                        <div className="font-semibold">{record.employeeName || '-'}</div>
-                                        <div className="text-muted text-xs">{record.employeeCode || '-'}</div>
-                                    </td>
-                                    <td>
-                                        <div>{record.division || '-'}</div>
-                                        <div className="text-muted text-xs">{record.position || '-'}</div>
+                                        <div className="font-semibold">{row.employeeName || '-'}</div>
+                                        <div className="text-muted text-xs">{row.employeeCode || '-'}</div>
                                     </td>
                                     <td>
-                                        <span className={`badge ${STATUS_BADGE_CLASS[record.status] || 'badge-gray'}`}>
-                                            {EMPLOYEE_ATTENDANCE_STATUS_LABELS[record.status]}
-                                        </span>
+                                        <div>{row.division || '-'}</div>
+                                        <div className="text-muted text-xs">{row.position || '-'}</div>
                                     </td>
-                                    <td>{record.checkInTime || '-'}</td>
-                                    <td>{record.checkOutTime || '-'}</td>
-                                    <td className="text-muted" style={{ minWidth: 220 }}>{record.note || '-'}</td>
-                                    <td className="text-muted">
-                                        <div>{record.updatedAt ? formatDateTime(record.updatedAt) : '-'}</div>
-                                        <div className="text-xs">{record.updatedByName || record.createdByName || '-'}</div>
-                                    </td>
-                                    <td>
-                                        {canManageAttendance ? (
-                                            <button className="table-action-btn" onClick={() => openEditModal(record)}>
-                                                <Pencil size={14} /> Edit
-                                            </button>
-                                        ) : (
-                                            <span className="text-muted">Lihat saja</span>
-                                        )}
-                                    </td>
+                                    <td>{row.recordedDays}</td>
+                                    <td>{row.presentCount}</td>
+                                    <td>{row.earlyLeaveCount}</td>
+                                    <td>{row.permissionCount}</td>
+                                    <td>{row.sickCount}</td>
+                                    <td>{row.leaveCount}</td>
+                                    <td>{row.absentCount}</td>
+                                    <td>{row.offCount}</td>
+                                    <td className="text-muted">{row.lastAttendanceDate ? formatBusinessDate(row.lastAttendanceDate, 'id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}</td>
                                 </tr>
                             ))}
                         </tbody>
@@ -970,57 +969,50 @@ export default function AttendancePage() {
                 </div>
                 {!loading && (
                     <div className="mobile-record-list">
-                        {totalRecords === 0 ? (
+                        {recapRows.length === 0 ? (
                             <div className="mobile-record-card">
                                 <div className="mobile-record-title">Belum ada absensi pada periode ini</div>
                             </div>
-                        ) : records.map(record => (
-                            <div key={record._id} className="mobile-record-card">
+                        ) : paginatedRecapRows.map(row => (
+                            <div key={row.employeeRef} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
-                                        <div className="mobile-record-title">{record.employeeName || '-'}</div>
-                                        <div className="mobile-record-subtitle">
-                                            {record.employeeCode || '-'} | {formatBusinessDate(record.date, 'id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
-                                        </div>
+                                        <div className="mobile-record-title">{row.employeeName || '-'}</div>
+                                        <div className="mobile-record-subtitle">{row.employeeCode || '-'} | {row.division || '-'} / {row.position || '-'}</div>
                                     </div>
-                                    <span className={`badge ${STATUS_BADGE_CLASS[record.status] || 'badge-gray'}`}>
-                                        {EMPLOYEE_ATTENDANCE_STATUS_LABELS[record.status]}
-                                    </span>
+                                    <span className="badge badge-info">{row.recordedDays} Hari</span>
                                 </div>
                                 <div className="mobile-record-meta">
                                     <div className="mobile-record-kv">
-                                        <span className="mobile-record-label">Divisi / Jabatan</span>
-                                        <span className="mobile-record-value">{record.division || '-'} / {record.position || '-'}</span>
+                                        <span className="mobile-record-label">Masuk / Pulang Cepat</span>
+                                        <span className="mobile-record-value">{row.presentCount} / {row.earlyLeaveCount}</span>
                                     </div>
                                     <div className="mobile-record-kv">
-                                        <span className="mobile-record-label">Jam</span>
-                                        <span className="mobile-record-value">{record.checkInTime || '-'} - {record.checkOutTime || '-'}</span>
+                                        <span className="mobile-record-label">Izin / Sakit / Cuti</span>
+                                        <span className="mobile-record-value">{row.permissionCount} / {row.sickCount} / {row.leaveCount}</span>
                                     </div>
                                     <div className="mobile-record-kv">
-                                        <span className="mobile-record-label">Catatan</span>
-                                        <span className="mobile-record-value">{record.note || '-'}</span>
+                                        <span className="mobile-record-label">Alpha / Libur</span>
+                                        <span className="mobile-record-value">{row.absentCount} / {row.offCount}</span>
+                                    </div>
+                                    <div className="mobile-record-kv">
+                                        <span className="mobile-record-label">Tanggal Terakhir</span>
+                                        <span className="mobile-record-value">{row.lastAttendanceDate ? formatBusinessDate(row.lastAttendanceDate, 'id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}</span>
                                     </div>
                                 </div>
-                                {canManageAttendance && (
-                                    <div className="mobile-record-actions">
-                                        <button className="btn btn-secondary" onClick={() => openEditModal(record)}>
-                                            <Pencil size={14} /> Edit
-                                        </button>
-                                    </div>
-                                )}
                             </div>
                         ))}
                     </div>
                 )}
 
-                {totalRecords > 0 && (
+                {recapRows.length > 0 && (
                     <AppPagination
                         page={page}
                         pageSize={DEFAULT_PAGE_SIZE}
-                        totalItems={totalRecords}
+                        totalItems={recapRows.length}
                         onPageChange={setPage}
                         info={({ startIndex, endIndex, totalItems }) => (
-                            <>{startIndex}-{endIndex} dari {totalItems} record absensi periode {summary?.periodLabel || PERIOD_OPTIONS.find(option => option.value === period)?.label || ''}</>
+                            <>{startIndex}-{endIndex} dari {totalItems} karyawan pada rekap absensi periode {summary?.periodLabel || PERIOD_OPTIONS.find(option => option.value === period)?.label || ''}</>
                         )}
                     />
                 )}

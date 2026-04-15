@@ -2,6 +2,7 @@ import type { ApiSession } from '@/lib/api/data-helpers';
 import { addDaysToDateValue, getBusinessCalendarDateParts, getBusinessDateValue } from '@/lib/business-date';
 import {
     EMPLOYEE_ATTENDANCE_PERIOD_LABELS,
+    summarizeEmployeeAttendanceRecords,
     getEmployeeAttendancePeriodRange,
     isDateWithinEmployeeAttendanceRange,
     normalizeEmployeeAttendanceStatus,
@@ -466,6 +467,7 @@ export async function getEmployeeAttendanceSummary(params?: {
             }))
         : [];
     const unrecordedEmployeeCount = Math.max(activeEmployees.length - recordedActiveEmployeeRefs.size, 0);
+    const attendanceCounts = summarizeEmployeeAttendanceRecords(records);
 
     return {
         period,
@@ -476,13 +478,13 @@ export async function getEmployeeAttendanceSummary(params?: {
         recordedEmployeeCount: recordedActiveEmployeeRefs.size,
         unrecordedEmployeeCount,
         totalRecords: records.length,
-        presentCount: records.filter(record => record.status === 'HADIR').length,
-        earlyLeaveCount: records.filter(record => record.status === 'PULANG_LEBIH_AWAL').length,
-        permissionCount: records.filter(record => record.status === 'IZIN').length,
-        sickCount: records.filter(record => record.status === 'SAKIT').length,
-        leaveCount: records.filter(record => record.status === 'CUTI').length,
-        absentCount: records.filter(record => record.status === 'ALPHA').length,
-        offCount: records.filter(record => record.status === 'LIBUR').length,
+        presentCount: attendanceCounts.presentCount,
+        earlyLeaveCount: attendanceCounts.earlyLeaveCount,
+        permissionCount: attendanceCounts.permissionCount,
+        sickCount: attendanceCounts.sickCount,
+        leaveCount: attendanceCounts.leaveCount,
+        absentCount: attendanceCounts.absentCount,
+        offCount: attendanceCounts.offCount,
         pendingEmployees,
     };
 }
