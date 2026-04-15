@@ -1,12 +1,149 @@
+import { createHash } from 'node:crypto';
 import { hashPassword } from '@/lib/auth';
 import { isMutationConflictError, sanitizeUserForClient } from '@/lib/api/data-helpers';
 import { requireInternalSession } from '@/lib/api/driver-portal';
 import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
-import { getSanityClient, sanityCreate, sanityGetById, sanityUpdate } from '@/lib/sanity';
+import { getSanityClient, sanityCreate, sanityGetById } from '@/lib/sanity';
 import type { Driver, User } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
+
+type UniqueConstraintMutationSpec = {
+    id: string;
+    message: string;
+    doc: {
+        _id: string;
+        _type: 'uniqueConstraint';
+        entityType: string;
+        fieldName: string;
+        value: string;
+        valueLower: string;
+        ownerRef: string;
+        ownerType: string;
+        createdAt: string;
+        updatedAt: string;
+    };
+};
+
+function buildUniqueConstraintId(entityType: string, fieldName: string, value: string) {
+    const normalizedValue = value.trim().toLowerCase();
+    const encodedValue = Buffer.from(normalizedValue, 'utf8').toString('base64url');
+    const directId = `unique-constraint.${entityType}.${fieldName}.${encodedValue}`;
+    if (directId.length <= 128) {
+        return directId;
+    }
+    const hash = createHash('sha256')
+        .update(`${entityType}:${fieldName}:${normalizedValue}`)
+        .digest('base64url')
+        .slice(0, 32);
+    return `unique-constraint.${entityType}.${fieldName}.h${hash}`;
+}
+
+function buildUniqueConstraintSpec(params: {
+    entityType: string;
+    fieldName: string;
+    ownerRef: string;
+    ownerType: string;
+    value: string;
+    message: string;
+}) {
+    const normalizedValue = params.value.trim();
+    const timestamp = new Date().toISOString();
+    const id = buildUniqueConstraintId(params.entityType, params.fieldName, normalizedValue);
+    return {
+        id,
+        message: params.message,
+        doc: {
+            _id: id,
+            _type: 'uniqueConstraint' as const,
+            entityType: params.entityType,
+            fieldName: params.fieldName,
+            value: normalizedValue,
+            valueLower: normalizedValue.toLowerCase(),
+            ownerRef: params.ownerRef,
+            ownerType: params.ownerType,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+        },
+    } satisfies UniqueConstraintMutationSpec;
+}
+
+function buildDriverUserConstraintSpecs(userId: string, doc: Record<string, unknown>) {
+    const specs: UniqueConstraintMutationSpec[] = [];
+    const email = normalizeText(doc.email).toLowerCase();
+    if (email) {
+        specs.push(buildUniqueConstraintSpec({
+            entityType: 'user',
+            fieldName: 'email',
+            ownerRef: userId,
+            ownerType: 'user',
+            value: email,
+            message: 'Email user sudah digunakan',
+        }));
+    }
+    const driverRef = normalizeText(doc.driverRef);
+    if (driverRef) {
+        specs.push(buildUniqueConstraintSpec({
+            entityType: 'user',
+            fieldName: 'driverRef',
+            ownerRef: userId,
+            ownerType: 'user',
+            value: driverRef,
+            message: 'Supir ini sudah memiliki akun mobile',
+        }));
+    }
+    return specs;
+}
+
+function appendUniqueConstraintMutations(
+    transaction: ReturnType<ReturnType<typeof getSanityClient>['transaction']>,
+    currentSpecs: UniqueConstraintMutationSpec[],
+    nextSpecs: UniqueConstraintMutationSpec[],
+) {
+    const currentByField = new Map(currentSpecs.map(spec => [spec.doc.fieldName, spec]));
+    const nextByField = new Map(nextSpecs.map(spec => [spec.doc.fieldName, spec]));
+
+    for (const [fieldName, currentSpec] of currentByField.entries()) {
+        const nextSpec = nextByField.get(fieldName);
+        if (!nextSpec || nextSpec.id !== currentSpec.id) {
+            transaction.delete(currentSpec.id);
+        }
+    }
+
+    for (const [fieldName, nextSpec] of nextByField.entries()) {
+        const currentSpec = currentByField.get(fieldName);
+        if (!currentSpec || currentSpec.id !== nextSpec.id) {
+            transaction.create(nextSpec.doc);
+        }
+    }
+}
+
+function resolveUniqueConstraintConflictMessage(error: unknown, specs: UniqueConstraintMutationSpec[]) {
+    const message =
+        error instanceof Error
+            ? error.message
+            : error && typeof error === 'object' && 'message' in error && typeof (error as { message?: unknown }).message === 'string'
+                ? (error as { message: string }).message
+                : '';
+    const statusCode =
+        error && typeof error === 'object' && 'statusCode' in error && typeof (error as { statusCode?: unknown }).statusCode === 'number'
+            ? (error as { statusCode: number }).statusCode
+            : error && typeof error === 'object' && 'status' in error && typeof (error as { status?: unknown }).status === 'number'
+                ? (error as { status: number }).status
+                : undefined;
+
+    if (statusCode !== 409 && !/already exists/i.test(message)) {
+        return null;
+    }
+
+    for (const spec of specs) {
+        if (message.includes(spec.id) && /already exists/i.test(message)) {
+            return spec.message;
+        }
+    }
+    return null;
+}
 
 async function addAuditLog(actor: { _id: string; name: string; email?: string; role?: string }, action: string, entityRef: string, summary: string) {
     try {
@@ -66,7 +203,10 @@ async function deactivateDriverAccountAtomically(input: {
     accountRev?: string;
     accountUpdates: Record<string, unknown>;
     driverRef: string;
+    driverRev?: string;
     driverName: string;
+    currentConstraintSpecs: UniqueConstraintMutationSpec[];
+    nextConstraintSpecs: UniqueConstraintMutationSpec[];
 }) {
     if (!input.accountRev) {
         return {
@@ -93,7 +233,7 @@ async function deactivateDriverAccountAtomically(input: {
         ),
     ]);
 
-    if (driver && !driver._rev) {
+    if (input.driverRev && (!driver || !driver._rev)) {
         return {
             stoppedTrackingCount: 0,
             conflictMessage: 'Revisi supir tidak tersedia. Refresh lalu coba lagi.',
@@ -117,9 +257,11 @@ async function deactivateDriverAccountAtomically(input: {
         });
     }
 
-    if (driver) {
+    appendUniqueConstraintMutations(transaction, input.currentConstraintSpecs, input.nextConstraintSpecs);
+
+    if (driver && input.driverRev) {
         transaction.patch(input.driverRef, {
-            ifRevisionID: driver._rev,
+            ifRevisionID: input.driverRev,
             set: { activeTrackingUpdatedAt: now },
             unset: ['activeTrackingDeliveryOrderRef'],
         });
@@ -261,6 +403,9 @@ export async function POST(request: Request) {
         if (driver.active === false) {
             return jsonNoStore({ error: 'Supir tidak aktif dan tidak bisa diberi akun mobile' }, { status: 409 });
         }
+        if (!driver._rev) {
+            return jsonNoStore({ error: 'Revisi supir untuk akun mobile tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+        }
 
         if (action === 'create') {
             if (password.length < 8) {
@@ -277,7 +422,9 @@ export async function POST(request: Request) {
                 return jsonNoStore({ error: 'Supir ini sudah memiliki akun mobile' }, { status: 409 });
             }
 
-            const created = await sanityCreate<User>({
+            const newId = crypto.randomUUID();
+            const createdDoc: User = {
+                _id: newId,
                 _type: 'user',
                 name,
                 email,
@@ -287,7 +434,34 @@ export async function POST(request: Request) {
                 passwordHash: await hashPassword(password),
                 active: typeof body.active === 'boolean' ? body.active : true,
                 createdAt: new Date().toISOString(),
-            });
+            };
+            const constraintSpecs = buildDriverUserConstraintSpecs(newId, createdDoc as unknown as Record<string, unknown>);
+            try {
+                const transaction = getSanityClient().transaction();
+                transaction.patch(driverRef, {
+                    ifRevisionID: driver._rev,
+                    set: { updatedAt: new Date().toISOString() },
+                });
+                for (const spec of constraintSpecs) {
+                    transaction.create(spec.doc);
+                }
+                transaction.create(createdDoc);
+                await transaction.commit();
+            } catch (error) {
+                const conflictMessage = resolveUniqueConstraintConflictMessage(error, constraintSpecs);
+                if (conflictMessage) {
+                    return jsonNoStore({ error: conflictMessage }, { status: 409 });
+                }
+                if (isMutationConflictError(error)) {
+                    return jsonNoStore({ error: 'User atau supir untuk akun mobile berubah karena ada update lain. Refresh lalu coba lagi.' }, { status: 409 });
+                }
+                throw error;
+            }
+
+            const created = await sanityGetById<User>(newId);
+            if (!created) {
+                return jsonNoStore({ error: 'Akun driver tidak ditemukan setelah dibuat' }, { status: 404 });
+            }
 
             await addAuditLog(auth.session, 'CREATE', created._id, `Membuat akun driver mobile untuk ${driver.name}`);
             return jsonNoStore({ data: sanitizeUserForClient(created) });
@@ -301,6 +475,9 @@ export async function POST(request: Request) {
         const existing = await sanityGetById<User & { _rev?: string }>(id);
         if (!existing || existing.role !== 'DRIVER') {
             return jsonNoStore({ error: 'Akun driver tidak ditemukan' }, { status: 404 });
+        }
+        if (!existing._rev) {
+            return jsonNoStore({ error: 'Revisi akun driver tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
         }
 
         const duplicateEmail = await getDuplicateEmail(email, id);
@@ -332,17 +509,33 @@ export async function POST(request: Request) {
         }
 
         const isDeactivatingAccount = existing.active !== false && updates.active === false;
+        const isDriverRefChanging = normalizeText(existing.driverRef) !== driverRef;
         let stoppedTrackingCount = 0;
+        const currentConstraintSpecs = buildDriverUserConstraintSpecs(id, existing as unknown as Record<string, unknown>);
+        const nextConstraintSpecs = buildDriverUserConstraintSpecs(id, {
+            ...existing,
+            ...updates,
+            role: 'DRIVER',
+        });
 
         let updated: User;
         if (isDeactivatingAccount) {
+            if (isDriverRefChanging) {
+                return jsonNoStore(
+                    { error: 'Driver akun mobile tidak boleh dipindah bersamaan dengan proses nonaktifkan akun' },
+                    { status: 409 }
+                );
+            }
             const trackingResult = await deactivateDriverAccountAtomically({
                 session: auth.session,
                 accountId: id,
                 accountRev: existing._rev,
                 accountUpdates: updates,
                 driverRef,
+                driverRev: driver._rev,
                 driverName: driver.name,
+                currentConstraintSpecs,
+                nextConstraintSpecs,
             });
             if ('conflictMessage' in trackingResult) {
                 return jsonNoStore({ error: trackingResult.conflictMessage }, { status: 409 });
@@ -354,7 +547,33 @@ export async function POST(request: Request) {
             }
             updated = refreshed;
         } else {
-            updated = await sanityUpdate<User>(id, updates);
+            try {
+                const transaction = getSanityClient().transaction();
+                transaction.patch(id, {
+                    ifRevisionID: existing._rev,
+                    set: updates,
+                });
+                transaction.patch(driverRef, {
+                    ifRevisionID: driver._rev,
+                    set: { updatedAt: new Date().toISOString() },
+                });
+                appendUniqueConstraintMutations(transaction, currentConstraintSpecs, nextConstraintSpecs);
+                await transaction.commit();
+            } catch (error) {
+                const conflictMessage = resolveUniqueConstraintConflictMessage(error, nextConstraintSpecs);
+                if (conflictMessage) {
+                    return jsonNoStore({ error: conflictMessage }, { status: 409 });
+                }
+                if (isMutationConflictError(error)) {
+                    return jsonNoStore({ error: 'Data akun driver atau supir berubah karena ada update lain. Refresh lalu coba lagi.' }, { status: 409 });
+                }
+                throw error;
+            }
+            const refreshed = await sanityGetById<User>(id);
+            if (!refreshed) {
+                return jsonNoStore({ error: 'Akun driver tidak ditemukan setelah diperbarui' }, { status: 404 });
+            }
+            updated = refreshed;
         }
 
         await addAuditLog(auth.session, 'UPDATE', id, `Memperbarui akun driver mobile untuk ${driver.name}`);

@@ -756,15 +756,32 @@ function buildTireCodeUniqueConstraintDoc(tireId: string, tireCode: string) {
     }).doc;
 }
 
-function buildUserEmailUniqueConstraintDoc(userId: string, email: string) {
-    return buildUniqueConstraintSpec({
-        entityType: 'user',
-        fieldName: 'email',
-        ownerRef: userId,
-        ownerType: 'user',
-        value: email.trim().toLowerCase(),
-        message: 'Email user sudah digunakan',
-    }).doc;
+function buildUserConstraintSpecs(userId: string, doc: Record<string, unknown>) {
+    const specs: UniqueConstraintMutationSpec[] = [];
+    const email = normalizeOptionalText(doc.email)?.toLowerCase();
+    if (email) {
+        specs.push(buildUniqueConstraintSpec({
+            entityType: 'user',
+            fieldName: 'email',
+            ownerRef: userId,
+            ownerType: 'user',
+            value: email,
+            message: 'Email user sudah digunakan',
+        }));
+    }
+    const role = normalizeOptionalText(doc.role);
+    const driverRef = normalizeOptionalText(doc.driverRef);
+    if (role === 'DRIVER' && driverRef) {
+        specs.push(buildUniqueConstraintSpec({
+            entityType: 'user',
+            fieldName: 'driverRef',
+            ownerRef: userId,
+            ownerType: 'user',
+            value: driverRef,
+            message: 'Supir ini sudah memiliki akun mobile',
+        }));
+    }
+    return specs;
 }
 
 function buildWarehouseItemConstraintSpecs(itemId: string, doc: Record<string, unknown>) {
@@ -1991,31 +2008,19 @@ export async function handleGenericUpdate(
                 Object.entries(persistedNormalizedUpdates).filter(([, value]) => value !== undefined)
             );
             const transaction = getSanityClient().transaction();
-            const currentEmail = normalizeOptionalText(currentDoc.email)?.toLowerCase();
-            const nextEmail = (
-                typeof userSetUpdates.email === 'string'
-                    ? normalizeOptionalText(userSetUpdates.email)
-                    : currentEmail
-            )?.toLowerCase();
-            const currentEmailConstraintId = currentEmail
-                ? buildUniqueConstraintId('user', 'email', currentEmail)
-                : null;
-            const nextEmailConstraint =
-                nextEmail && nextEmail !== currentEmail
-                    ? buildUserEmailUniqueConstraintDoc(id, nextEmail)
-                    : null;
+            const nextUserDoc = { ...currentDoc, ...userSetUpdates } as Record<string, unknown>;
+            for (const unsetField of userUnsetFields) {
+                delete nextUserDoc[unsetField];
+            }
+            const currentConstraintSpecs = buildUserConstraintSpecs(id, currentDoc);
+            const nextConstraintSpecs = buildUserConstraintSpecs(id, nextUserDoc);
             if (userDriverRevision) {
                 transaction.patch(userDriverRevision._id, {
                     ifRevisionID: userDriverRevision._rev,
                     set: { updatedAt: mutationTimestamp },
                 });
             }
-            if (nextEmailConstraint) {
-                if (currentEmailConstraintId) {
-                    transaction.delete(currentEmailConstraintId);
-                }
-                transaction.create(nextEmailConstraint);
-            }
+            appendUniqueConstraintMutations(transaction, currentConstraintSpecs, nextConstraintSpecs);
             transaction.patch(id, patch => {
                 let nextPatch = patch.ifRevisionId(currentDoc._rev as string);
                 if (userUnsetFields.length > 0) {
@@ -2036,15 +2041,20 @@ export async function handleGenericUpdate(
                 .commit();
         }
     } catch (error) {
-        if (
-            entity === 'users'
-            && typeof normalizedUpdates.email === 'string'
-            && isDocumentAlreadyExistsError(
+        if (entity === 'users') {
+            const nextUserDoc = { ...currentDoc, ...persistedNormalizedUpdates } as Record<string, unknown>;
+            for (const [key, value] of Object.entries(persistedNormalizedUpdates)) {
+                if (value === undefined) {
+                    delete nextUserDoc[key];
+                }
+            }
+            const conflictMessage = resolveUniqueConstraintConflictMessage(
                 error,
-                buildUserEmailUniqueConstraintDoc(id, normalizedUpdates.email)._id
-            )
-        ) {
-            return NextResponse.json({ error: 'Email user sudah digunakan' }, { status: 409 });
+                buildUserConstraintSpecs(id, nextUserDoc)
+            );
+            if (conflictMessage) {
+                return NextResponse.json({ error: conflictMessage }, { status: 409 });
+            }
         }
         if (entity === 'services') {
             const conflictMessage = resolveUniqueConstraintConflictMessage(
@@ -2754,26 +2764,21 @@ export async function handleGenericDelete(
             );
         }
 
-        const emailConstraintId = normalizeOptionalText(existingUser.email)
-            ? buildUniqueConstraintId('user', 'email', normalizeOptionalText(existingUser.email) as string)
-            : null;
-
         try {
-            const mutations: Array<Record<string, unknown>> = [];
-            if (emailConstraintId) {
-                mutations.push({
+            const constraintSpecs = buildUserConstraintSpecs(id, existingUser as unknown as Record<string, unknown>);
+            await getSanityClient().mutate([
+                ...constraintSpecs.map(spec => ({
                     delete: {
-                        id: emailConstraintId,
+                        id: spec.id,
                     },
-                });
-            }
-            mutations.push({
-                delete: {
-                    id,
-                    ifRevisionID: existingUser._rev,
+                })),
+                {
+                    delete: {
+                        id,
+                        ifRevisionID: existingUser._rev,
+                    },
                 },
-            });
-            await getSanityClient().mutate(mutations as unknown as SanityMutations);
+            ] as unknown as SanityMutations);
             await addAuditLog(
                 session,
                 'DELETE',
@@ -3417,22 +3422,24 @@ export async function handleGenericCreate(
                 { status: 409 }
             );
         }
-        const emailConstraintDoc = buildUserEmailUniqueConstraintDoc(newId, String(newDoc.email || ''));
+        const constraintSpecs = buildUserConstraintSpecs(newId, newDoc);
         try {
-            const transaction = getSanityClient()
-                .transaction()
-                .create(emailConstraintDoc)
-                .create(newDoc);
+            const transaction = getSanityClient().transaction();
             if (typeof newDoc.driverRef === 'string' && userDriverRevision) {
                 transaction.patch(newDoc.driverRef, {
                     ifRevisionID: userDriverRevision,
                     set: { updatedAt: new Date().toISOString() },
                 });
             }
+            for (const spec of constraintSpecs) {
+                transaction.create(spec.doc);
+            }
+            transaction.create(newDoc);
             await transaction.commit();
         } catch (error) {
-            if (isDocumentAlreadyExistsError(error, emailConstraintDoc._id)) {
-                return NextResponse.json({ error: 'Email user sudah digunakan' }, { status: 409 });
+            const conflictMessage = resolveUniqueConstraintConflictMessage(error, constraintSpecs);
+            if (conflictMessage) {
+                return NextResponse.json({ error: conflictMessage }, { status: 409 });
             }
             if (isMutationConflictError(error)) {
                 return NextResponse.json(
