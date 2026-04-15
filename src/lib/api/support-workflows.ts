@@ -307,7 +307,6 @@ export async function handleInvoiceCreate(
     if (hasMode && modeValue !== 'ORDER' && modeValue !== 'DO') {
         return NextResponse.json({ error: 'Mode invoice tidak valid' }, { status: 400 });
     }
-    const mode = modeValue === 'DO' ? 'DO' : 'ORDER';
     const orderRef = normalizeOptionalText(data.orderRef);
     const doRef = normalizeOptionalText(data.doRef);
     const customerRef = normalizeOptionalText(data.customerRef);
@@ -315,33 +314,52 @@ export async function handleInvoiceCreate(
     const masterResi = normalizeOptionalText(data.masterResi);
     const notes = normalizeOptionalText(data.notes);
 
-    const orderDoc = orderRef
-        ? await sanityGetById<{ _id: string; _rev?: string; customerRef?: unknown; masterResi?: string }>(orderRef)
+    const requestedOrderDoc = orderRef
+        ? await sanityGetById<{ _id: string; _rev?: string; customerRef?: unknown; customerName?: string; masterResi?: string }>(orderRef)
         : null;
-    if (orderRef && !orderDoc) {
+    if (orderRef && !requestedOrderDoc) {
         return NextResponse.json({ error: 'Order invoice tidak ditemukan' }, { status: 404 });
     }
 
     const deliveryOrderDoc = doRef
-        ? await sanityGetById<{ _id: string; _rev?: string; orderRef?: unknown; customerRef?: unknown; doNumber?: string }>(doRef)
+        ? await sanityGetById<{
+            _id: string;
+            _rev?: string;
+            orderRef?: unknown;
+            customerRef?: unknown;
+            customerName?: string;
+            doNumber?: string;
+            masterResi?: string;
+        }>(doRef)
         : null;
     if (doRef && !deliveryOrderDoc) {
         return NextResponse.json({ error: 'Surat jalan invoice tidak ditemukan' }, { status: 404 });
     }
 
-    const customerDoc = customerRef
+    const requestedCustomerDoc = customerRef
         ? await sanityGetById<{ _id: string; _rev?: string; name?: string }>(customerRef)
         : null;
-    if (customerRef && !customerDoc) {
+    if (customerRef && !requestedCustomerDoc) {
         return NextResponse.json({ error: 'Customer invoice tidak ditemukan' }, { status: 404 });
     }
 
-    const orderCustomerRef = extractRefId(orderDoc?.customerRef);
     const doOrderRef = extractRefId(deliveryOrderDoc?.orderRef);
-    const doCustomerRef = extractRefId(deliveryOrderDoc?.customerRef);
     if (orderRef && doOrderRef && doOrderRef !== orderRef) {
         return NextResponse.json({ error: 'Surat jalan tidak berasal dari order invoice yang dipilih' }, { status: 400 });
     }
+
+    const resolvedOrderDoc =
+        requestedOrderDoc ||
+        (doOrderRef
+            ? await sanityGetById<{ _id: string; _rev?: string; customerRef?: unknown; customerName?: string; masterResi?: string }>(doOrderRef)
+            : null);
+
+    if (doOrderRef && !resolvedOrderDoc) {
+        return NextResponse.json({ error: 'Order sumber surat jalan invoice tidak ditemukan' }, { status: 404 });
+    }
+
+    const orderCustomerRef = extractRefId(resolvedOrderDoc?.customerRef);
+    const doCustomerRef = extractRefId(deliveryOrderDoc?.customerRef);
     if (customerRef && orderCustomerRef && orderCustomerRef !== customerRef) {
         return NextResponse.json({ error: 'Customer invoice tidak cocok dengan order yang dipilih' }, { status: 400 });
     }
@@ -351,15 +369,40 @@ export async function handleInvoiceCreate(
     if (orderCustomerRef && doCustomerRef && orderCustomerRef !== doCustomerRef) {
         return NextResponse.json({ error: 'Order dan surat jalan invoice tidak berasal dari customer yang sama' }, { status: 400 });
     }
-    if (orderDoc && !orderDoc._rev) {
+    if (resolvedOrderDoc && !resolvedOrderDoc._rev) {
         return NextResponse.json({ error: 'Revisi order invoice tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
     if (deliveryOrderDoc && !deliveryOrderDoc._rev) {
         return NextResponse.json({ error: 'Revisi surat jalan invoice tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
-    if (customerDoc && !customerDoc._rev) {
+
+    const inferredCustomerRef = customerRef || orderCustomerRef || doCustomerRef;
+    const resolvedCustomerDoc =
+        requestedCustomerDoc ||
+        (inferredCustomerRef
+            ? await sanityGetById<{ _id: string; _rev?: string; name?: string }>(inferredCustomerRef)
+            : null);
+
+    if (resolvedCustomerDoc && !resolvedCustomerDoc._rev) {
         return NextResponse.json({ error: 'Revisi customer invoice tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
+
+    const resolvedMode = hasMode
+        ? modeValue as 'ORDER' | 'DO'
+        : doRef
+            ? 'DO'
+            : 'ORDER';
+    const resolvedOrderRef = orderRef || doOrderRef;
+    const resolvedCustomerRef = resolvedCustomerDoc?._id || '';
+    const resolvedCustomerName =
+        customerName ||
+        normalizeOptionalText(resolvedCustomerDoc?.name) ||
+        normalizeOptionalText(resolvedOrderDoc?.customerName) ||
+        normalizeOptionalText(deliveryOrderDoc?.customerName);
+    const resolvedMasterResi =
+        masterResi ||
+        normalizeOptionalText(resolvedOrderDoc?.masterResi) ||
+        normalizeOptionalText(deliveryOrderDoc?.masterResi);
 
     const invoiceId = crypto.randomUUID();
     const invoiceNumber = await sanityGetNextNumber('invoice', issueDate);
@@ -367,7 +410,7 @@ export async function handleInvoiceCreate(
         _id: invoiceId,
         _type: 'invoice',
         invoiceNumber,
-        mode,
+        mode: resolvedMode,
         issueDate,
         dueDate,
         status: 'UNPAID',
@@ -375,20 +418,20 @@ export async function handleInvoiceCreate(
         totalAdjustmentAmount: 0,
         netAmount: totalAmount,
     };
-    if (orderRef) {
-        invoiceDoc.orderRef = orderRef;
+    if (resolvedOrderRef) {
+        invoiceDoc.orderRef = resolvedOrderRef;
     }
     if (doRef) {
         invoiceDoc.doRef = doRef;
     }
-    if (customerRef) {
-        invoiceDoc.customerRef = customerRef;
+    if (resolvedCustomerRef) {
+        invoiceDoc.customerRef = resolvedCustomerRef;
     }
-    if (customerName) {
-        invoiceDoc.customerName = customerName;
+    if (resolvedCustomerName) {
+        invoiceDoc.customerName = resolvedCustomerName;
     }
-    if (masterResi) {
-        invoiceDoc.masterResi = masterResi;
+    if (resolvedMasterResi) {
+        invoiceDoc.masterResi = resolvedMasterResi;
     }
     if (notes) {
         invoiceDoc.notes = notes;
@@ -435,15 +478,15 @@ export async function handleInvoiceCreate(
         return NextResponse.json({ error: 'Total invoice harus sama dengan jumlah subtotal item' }, { status: 400 });
     }
     const mutationTimestamp = new Date().toISOString();
-    if (customerDoc) {
-        transaction.patch(customerDoc._id, {
-            ifRevisionID: customerDoc._rev,
+    if (resolvedCustomerDoc) {
+        transaction.patch(resolvedCustomerDoc._id, {
+            ifRevisionID: resolvedCustomerDoc._rev,
             set: { updatedAt: mutationTimestamp },
         });
     }
-    if (orderDoc) {
-        transaction.patch(orderDoc._id, {
-            ifRevisionID: orderDoc._rev,
+    if (resolvedOrderDoc) {
+        transaction.patch(resolvedOrderDoc._id, {
+            ifRevisionID: resolvedOrderDoc._rev,
             set: { updatedAt: mutationTimestamp },
         });
     }
