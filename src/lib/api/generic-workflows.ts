@@ -925,19 +925,48 @@ function buildDriverConstraintSpecs(driverId: string, doc: Record<string, unknow
 }
 
 function buildEmployeeConstraintSpecs(employeeId: string, doc: Record<string, unknown>) {
+    const specs: UniqueConstraintMutationSpec[] = [];
     const employeeCode = normalizeOptionalText(doc.employeeCode)?.toUpperCase();
-    return employeeCode
-        ? [
-            buildUniqueConstraintSpec({
+    if (employeeCode) {
+        specs.push(buildUniqueConstraintSpec({
                 entityType: 'employee',
                 fieldName: 'employeeCode',
                 ownerRef: employeeId,
                 ownerType: 'employee',
                 value: employeeCode,
                 message: 'Kode karyawan sudah digunakan',
-            }),
-        ]
-        : [];
+            }));
+    }
+    const userRef = normalizeOptionalText(doc.userRef);
+    if (userRef) {
+        specs.push(buildUniqueConstraintSpec({
+            entityType: 'employee',
+            fieldName: 'userRef',
+            ownerRef: employeeId,
+            ownerType: 'employee',
+            value: userRef,
+            message: 'Akun user ini sudah terhubung ke karyawan lain',
+        }));
+    }
+    return specs;
+}
+
+function buildEmployeeAttendanceConstraintSpecs(recordId: string, doc: Record<string, unknown>) {
+    const employeeRef = normalizeOptionalText(doc.employeeRef);
+    const date = normalizeOptionalText(doc.date);
+    if (!employeeRef || !date) {
+        return [];
+    }
+    return [
+        buildUniqueConstraintSpec({
+            entityType: 'employeeAttendanceRecord',
+            fieldName: 'employeeDate',
+            ownerRef: recordId,
+            ownerType: 'employeeAttendanceRecord',
+            value: `${employeeRef}::${date}`,
+            message: 'Absensi karyawan pada tanggal ini sudah tercatat',
+        }),
+    ];
 }
 
 function buildCustomerProductConstraintSpecs(productId: string, doc: Record<string, unknown>) {
@@ -1024,6 +1053,40 @@ async function resolveTripRouteRateServiceRevision(serviceRef: unknown) {
     };
 }
 
+async function resolveEmployeeUserRevision(userRef: unknown) {
+    const normalizedUserRef = normalizeOptionalText(userRef);
+    if (!normalizedUserRef) {
+        return null;
+    }
+
+    const user = await sanityGetById<{ _id: string; _rev?: string }>(normalizedUserRef);
+    if (!user?._id || !user._rev) {
+        throw new Error('Revisi akun user karyawan tidak tersedia. Refresh lalu coba lagi.');
+    }
+
+    return {
+        _id: user._id,
+        _rev: user._rev,
+    };
+}
+
+async function resolveEmployeeRevision(employeeRef: unknown) {
+    const normalizedEmployeeRef = normalizeOptionalText(employeeRef);
+    if (!normalizedEmployeeRef) {
+        return null;
+    }
+
+    const employee = await sanityGetById<{ _id: string; _rev?: string }>(normalizedEmployeeRef);
+    if (!employee?._id || !employee._rev) {
+        throw new Error('Revisi karyawan tidak tersedia. Refresh lalu coba lagi.');
+    }
+
+    return {
+        _id: employee._id,
+        _rev: employee._rev,
+    };
+}
+
 function appendUniqueConstraintMutations(
     transaction: ReturnType<ReturnType<typeof getSanityClient>['transaction']>,
     currentSpecs: UniqueConstraintMutationSpec[],
@@ -1094,6 +1157,8 @@ export async function handleGenericUpdate(
     let sanitizedEntityUpdates: Record<string, unknown> | null = null;
     let selectedTripRouteRateRevision: { _id: string; _rev: string } | null = null;
     let tripRouteRateServiceRevision: { _id: string; _rev: string } | null = null;
+    let employeeUserRevision: { _id: string; _rev: string } | null = null;
+    let attendanceEmployeeRevision: { _id: string; _rev: string } | null = null;
 
     if (isProtectedLedgerEntity(entity)) {
         return NextResponse.json({ error: 'Entri keuangan yang sudah terposting tidak boleh diubah lewat API umum' }, { status: 409 });
@@ -1735,6 +1800,34 @@ export async function handleGenericUpdate(
             );
         }
     }
+    if (entity === 'employees') {
+        try {
+            employeeUserRevision = await resolveEmployeeUserRevision(
+                Object.prototype.hasOwnProperty.call(persistedNormalizedUpdates, 'userRef')
+                    ? persistedNormalizedUpdates.userRef
+                    : currentDoc.userRef
+            );
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Akun user karyawan berubah. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+    }
+    if (entity === 'employee-attendance-records') {
+        try {
+            attendanceEmployeeRevision = await resolveEmployeeRevision(
+                Object.prototype.hasOwnProperty.call(persistedNormalizedUpdates, 'employeeRef')
+                    ? persistedNormalizedUpdates.employeeRef
+                    : currentDoc.employeeRef
+            );
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Karyawan absensi berubah. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+    }
 
     let updated: unknown;
     try {
@@ -1825,6 +1918,7 @@ export async function handleGenericUpdate(
             || entity === 'customer-recipients'
             || entity === 'customer-pickups'
             || entity === 'employees'
+            || entity === 'employee-attendance-records'
             || entity === 'warehouse-items'
             || entity === 'vehicles'
             || entity === 'suppliers'
@@ -1836,10 +1930,12 @@ export async function handleGenericUpdate(
                     ? buildExpenseCategoryConstraintSpecs(id, currentDoc)
                     : entity === 'customer-recipients'
                         ? buildCustomerRecipientConstraintSpecs(id, currentDoc)
-                        : entity === 'customer-pickups'
-                            ? buildCustomerPickupConstraintSpecs(id, currentDoc)
-                            : entity === 'employees'
-                                ? buildEmployeeConstraintSpecs(id, currentDoc)
+                    : entity === 'customer-pickups'
+                        ? buildCustomerPickupConstraintSpecs(id, currentDoc)
+                        : entity === 'employees'
+                            ? buildEmployeeConstraintSpecs(id, currentDoc)
+                            : entity === 'employee-attendance-records'
+                                ? buildEmployeeAttendanceConstraintSpecs(id, currentDoc)
                     : entity === 'warehouse-items'
                         ? buildWarehouseItemConstraintSpecs(id, currentDoc)
                         : entity === 'vehicles'
@@ -1852,10 +1948,12 @@ export async function handleGenericUpdate(
                     ? buildExpenseCategoryConstraintSpecs(id, nextDoc)
                     : entity === 'customer-recipients'
                         ? buildCustomerRecipientConstraintSpecs(id, nextDoc)
-                        : entity === 'customer-pickups'
-                            ? buildCustomerPickupConstraintSpecs(id, nextDoc)
-                            : entity === 'employees'
-                                ? buildEmployeeConstraintSpecs(id, nextDoc)
+                    : entity === 'customer-pickups'
+                        ? buildCustomerPickupConstraintSpecs(id, nextDoc)
+                        : entity === 'employees'
+                            ? buildEmployeeConstraintSpecs(id, nextDoc)
+                            : entity === 'employee-attendance-records'
+                                ? buildEmployeeAttendanceConstraintSpecs(id, nextDoc)
                     : entity === 'warehouse-items'
                         ? buildWarehouseItemConstraintSpecs(id, nextDoc)
                         : entity === 'vehicles'
@@ -1869,6 +1967,18 @@ export async function handleGenericUpdate(
                     ifRevisionID: currentDoc._rev,
                     set: persistedNormalizedUpdates,
                 });
+            if (entity === 'employees' && employeeUserRevision) {
+                transaction.patch(employeeUserRevision._id, {
+                    ifRevisionID: employeeUserRevision._rev,
+                    set: { updatedAt: new Date().toISOString() },
+                });
+            }
+            if (entity === 'employee-attendance-records' && attendanceEmployeeRevision) {
+                transaction.patch(attendanceEmployeeRevision._id, {
+                    ifRevisionID: attendanceEmployeeRevision._rev,
+                    set: { updatedAt: new Date().toISOString() },
+                });
+            }
             appendUniqueConstraintMutations(transaction, currentConstraintSpecs, nextConstraintSpecs);
             await transaction.commit();
             updated = await sanityGetById(id);
@@ -1959,6 +2069,7 @@ export async function handleGenericUpdate(
             || entity === 'customer-recipients'
             || entity === 'customer-pickups'
             || entity === 'employees'
+            || entity === 'employee-attendance-records'
             || entity === 'warehouse-items'
             || entity === 'vehicles'
             || entity === 'suppliers'
@@ -1970,10 +2081,12 @@ export async function handleGenericUpdate(
                     ? buildExpenseCategoryConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
                     : entity === 'customer-recipients'
                         ? buildCustomerRecipientConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
-                        : entity === 'customer-pickups'
-                            ? buildCustomerPickupConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
-                            : entity === 'employees'
-                                ? buildEmployeeConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
+                    : entity === 'customer-pickups'
+                        ? buildCustomerPickupConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
+                        : entity === 'employees'
+                            ? buildEmployeeConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
+                            : entity === 'employee-attendance-records'
+                                ? buildEmployeeAttendanceConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
                     : entity === 'warehouse-items'
                         ? buildWarehouseItemConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
                         : entity === 'vehicles'
@@ -2554,6 +2667,54 @@ export async function handleGenericDelete(
         }
     }
 
+    if (entity === 'employee-attendance-records') {
+        const id = typeof data.id === 'string' ? data.id : '';
+        if (!id) {
+            return NextResponse.json({ error: 'Absensi karyawan tidak valid' }, { status: 400 });
+        }
+
+        const attendance = await sanityGetById<{ _id: string; _rev?: string; employeeCode?: string; employeeName?: string; date?: string; status?: string }>(id);
+        if (!attendance) {
+            return NextResponse.json({ error: 'Absensi karyawan tidak ditemukan' }, { status: 404 });
+        }
+        if (!attendance._rev) {
+            return NextResponse.json({ error: 'Revisi absensi karyawan tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+        }
+
+        try {
+            const constraintSpecs = buildEmployeeAttendanceConstraintSpecs(id, attendance as unknown as Record<string, unknown>);
+            await getSanityClient().mutate([
+                ...constraintSpecs.map(spec => ({
+                    delete: {
+                        id: spec.id,
+                    },
+                })),
+                {
+                    delete: {
+                        id,
+                        ifRevisionID: attendance._rev,
+                    },
+                },
+            ] as unknown as SanityMutations);
+            await addAuditLog(
+                session,
+                'DELETE',
+                entity,
+                id,
+                `Deleted attendance ${buildEmployeeAttendanceSummary(attendance as unknown as Record<string, unknown>, id)}`
+            );
+            return NextResponse.json({ success: true });
+        } catch (error) {
+            if (isMutationConflictError(error)) {
+                return NextResponse.json(
+                    { error: 'Absensi karyawan berubah karena ada update lain. Muat ulang lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+            throw error;
+        }
+    }
+
     const id = typeof data.id === 'string' ? data.id : '';
     if (!id) {
         return NextResponse.json({ error: 'Invalid delete payload' }, { status: 400 });
@@ -2580,6 +2741,17 @@ export async function handleGenericDelete(
             if (otherActiveOwners === 0) {
                 return NextResponse.json({ error: 'Minimal harus ada satu OWNER aktif' }, { status: 409 });
             }
+        }
+
+        const linkedEmployee = await getSanityClient().fetch<{ _id: string } | null>(
+            `*[_type == "employee" && userRef == $ref][0]{ _id }`,
+            { ref: id }
+        );
+        if (linkedEmployee) {
+            return NextResponse.json(
+                { error: 'User yang masih terhubung ke master karyawan tidak boleh dihapus' },
+                { status: 409 }
+            );
         }
 
         const emailConstraintId = normalizeOptionalText(existingUser.email)
@@ -2785,6 +2957,8 @@ export async function handleGenericCreate(
     const newDoc: { _type: string; [key: string]: unknown } = { _type: docType };
     let userDriverRevision: string | undefined;
     let tripRouteRateServiceRevision: { _id: string; _rev: string } | null = null;
+    let employeeUserRevision: { _id: string; _rev: string } | null = null;
+    let attendanceEmployeeRevision: { _id: string; _rev: string } | null = null;
     let shouldMergeRawCreatePayload = true;
 
     if (entity === 'delivery-order-items') {
@@ -3001,6 +3175,14 @@ export async function handleGenericCreate(
                 { status: 400 }
             );
         }
+        try {
+            employeeUserRevision = await resolveEmployeeUserRevision(newDoc.userRef);
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Akun user karyawan berubah. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
     }
 
     if (entity === 'employee-attendance-records') {
@@ -3011,6 +3193,14 @@ export async function handleGenericCreate(
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Data absensi karyawan tidak valid' },
                 { status: 400 }
+            );
+        }
+        try {
+            attendanceEmployeeRevision = await resolveEmployeeRevision(newDoc.employeeRef);
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Karyawan absensi berubah. Refresh lalu coba lagi.' },
+                { status: 409 }
             );
         }
     }
@@ -3157,6 +3347,7 @@ export async function handleGenericCreate(
         || entity === 'customer-recipients'
         || entity === 'customer-pickups'
         || entity === 'employees'
+        || entity === 'employee-attendance-records'
         || entity === 'warehouse-items'
         || entity === 'vehicles'
         || entity === 'suppliers'
@@ -3169,10 +3360,12 @@ export async function handleGenericCreate(
                 ? buildExpenseCategoryConstraintSpecs(newId, newDoc)
                 : entity === 'customer-recipients'
                     ? buildCustomerRecipientConstraintSpecs(newId, newDoc)
-                    : entity === 'customer-pickups'
-                        ? buildCustomerPickupConstraintSpecs(newId, newDoc)
-                        : entity === 'employees'
-                            ? buildEmployeeConstraintSpecs(newId, newDoc)
+                : entity === 'customer-pickups'
+                    ? buildCustomerPickupConstraintSpecs(newId, newDoc)
+                    : entity === 'employees'
+                        ? buildEmployeeConstraintSpecs(newId, newDoc)
+                        : entity === 'employee-attendance-records'
+                            ? buildEmployeeAttendanceConstraintSpecs(newId, newDoc)
                 : entity === 'warehouse-items'
                     ? buildWarehouseItemConstraintSpecs(newId, newDoc)
                     : entity === 'vehicles'
@@ -3186,6 +3379,18 @@ export async function handleGenericCreate(
                                     : buildDriverConstraintSpecs(newId, newDoc);
         try {
             const transaction = getSanityClient().transaction();
+            if (entity === 'employees' && employeeUserRevision) {
+                transaction.patch(employeeUserRevision._id, {
+                    ifRevisionID: employeeUserRevision._rev,
+                    set: { updatedAt: new Date().toISOString() },
+                });
+            }
+            if (entity === 'employee-attendance-records' && attendanceEmployeeRevision) {
+                transaction.patch(attendanceEmployeeRevision._id, {
+                    ifRevisionID: attendanceEmployeeRevision._rev,
+                    set: { updatedAt: new Date().toISOString() },
+                });
+            }
             for (const spec of constraintSpecs) {
                 transaction.create(spec.doc);
             }
