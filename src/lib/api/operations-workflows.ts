@@ -8,6 +8,7 @@ import type { Driver, IncidentSettlementLine, User } from '@/lib/types';
 import {
     assertIsoDateTime,
     isMutationConflictError,
+    normalizeOptionalText,
     type ApiSession,
 } from './data-helpers';
 import {
@@ -53,6 +54,157 @@ function buildUniqueConstraintId(entityType: string, fieldName: string, value: s
     const normalizedValue = value.trim().toLowerCase();
     const encodedValue = Buffer.from(normalizedValue, 'utf8').toString('base64url');
     return `unique-constraint.${entityType}.${fieldName}.${encodedValue}`;
+}
+
+type UniqueConstraintMutationSpec = {
+    id: string;
+    message: string;
+    doc: {
+        _id: string;
+        _type: 'uniqueConstraint';
+        entityType: string;
+        fieldName: string;
+        value: string;
+        valueLower: string;
+        ownerRef: string;
+        ownerType: string;
+        createdAt: string;
+        updatedAt: string;
+    };
+};
+
+function buildServiceConstraintSpecs(serviceId: string, doc: Record<string, unknown>) {
+    const specs: UniqueConstraintMutationSpec[] = [];
+    const code = normalizeOptionalText(doc.code)?.toUpperCase();
+    if (code) {
+        const timestamp = new Date().toISOString();
+        specs.push({
+            id: buildUniqueConstraintId('service', 'code', code),
+            message: 'Kode kategori armada sudah digunakan',
+            doc: {
+                _id: buildUniqueConstraintId('service', 'code', code),
+                _type: 'uniqueConstraint',
+                entityType: 'service',
+                fieldName: 'code',
+                value: code,
+                valueLower: code.toLowerCase(),
+                ownerRef: serviceId,
+                ownerType: 'service',
+                createdAt: timestamp,
+                updatedAt: timestamp,
+            },
+        });
+    }
+    const name = normalizeOptionalText(doc.name);
+    if (name) {
+        const timestamp = new Date().toISOString();
+        specs.push({
+            id: buildUniqueConstraintId('service', 'name', name),
+            message: 'Nama kategori truk/armada sudah digunakan',
+            doc: {
+                _id: buildUniqueConstraintId('service', 'name', name),
+                _type: 'uniqueConstraint',
+                entityType: 'service',
+                fieldName: 'name',
+                value: name,
+                valueLower: name.toLowerCase(),
+                ownerRef: serviceId,
+                ownerType: 'service',
+                createdAt: timestamp,
+                updatedAt: timestamp,
+            },
+        });
+    }
+    return specs;
+}
+
+function buildDriverConstraintSpecs(driverId: string, doc: Record<string, unknown>) {
+    const specs: UniqueConstraintMutationSpec[] = [];
+    const licenseNumber = normalizeOptionalText(doc.licenseNumber)?.toUpperCase();
+    if (licenseNumber) {
+        const timestamp = new Date().toISOString();
+        specs.push({
+            id: buildUniqueConstraintId('driver', 'licenseNumber', licenseNumber),
+            message: 'No. SIM sudah digunakan supir lain',
+            doc: {
+                _id: buildUniqueConstraintId('driver', 'licenseNumber', licenseNumber),
+                _type: 'uniqueConstraint',
+                entityType: 'driver',
+                fieldName: 'licenseNumber',
+                value: licenseNumber,
+                valueLower: licenseNumber.toLowerCase(),
+                ownerRef: driverId,
+                ownerType: 'driver',
+                createdAt: timestamp,
+                updatedAt: timestamp,
+            },
+        });
+    }
+    const ktpNumber = normalizeOptionalText(doc.ktpNumber)?.toUpperCase();
+    if (ktpNumber) {
+        const timestamp = new Date().toISOString();
+        specs.push({
+            id: buildUniqueConstraintId('driver', 'ktpNumber', ktpNumber),
+            message: 'No. KTP sudah digunakan supir lain',
+            doc: {
+                _id: buildUniqueConstraintId('driver', 'ktpNumber', ktpNumber),
+                _type: 'uniqueConstraint',
+                entityType: 'driver',
+                fieldName: 'ktpNumber',
+                value: ktpNumber,
+                valueLower: ktpNumber.toLowerCase(),
+                ownerRef: driverId,
+                ownerType: 'driver',
+                createdAt: timestamp,
+                updatedAt: timestamp,
+            },
+        });
+    }
+    return specs;
+}
+
+function appendUniqueConstraintMutations(
+    transaction: ReturnType<ReturnType<typeof getSanityClient>['transaction']>,
+    currentSpecs: UniqueConstraintMutationSpec[],
+    nextSpecs: UniqueConstraintMutationSpec[]
+) {
+    const currentById = new Map(currentSpecs.map(spec => [spec.id, spec]));
+    const nextById = new Map(nextSpecs.map(spec => [spec.id, spec]));
+
+    for (const spec of currentById.values()) {
+        if (!nextById.has(spec.id)) {
+            transaction.delete(spec.id);
+        }
+    }
+    for (const spec of nextById.values()) {
+        if (!currentById.has(spec.id)) {
+            transaction.create(spec.doc);
+        }
+    }
+}
+
+function resolveUniqueConstraintConflictMessage(error: unknown, specs: UniqueConstraintMutationSpec[]) {
+    const message =
+        error instanceof Error
+            ? error.message
+            : error && typeof error === 'object' && 'message' in error && typeof (error as { message?: unknown }).message === 'string'
+                ? (error as { message: string }).message
+                : '';
+    const statusCode =
+        error && typeof error === 'object' && 'statusCode' in error && typeof (error as { statusCode?: unknown }).statusCode === 'number'
+            ? (error as { statusCode: number }).statusCode
+            : error && typeof error === 'object' && 'status' in error && typeof (error as { status?: unknown }).status === 'number'
+                ? (error as { status: number }).status
+                : undefined;
+    if (statusCode !== 409 && !/already exists/i.test(message)) {
+        return null;
+    }
+    for (const spec of specs) {
+        if (message.includes(spec.id) && /already exists/i.test(message)) {
+            return spec.message;
+        }
+    }
+    return null;
 }
 
 function requireIncidentSettlementRevision(
@@ -700,7 +852,7 @@ export async function handleServiceDelete(
         return NextResponse.json({ error: 'Kategori truk/armada tidak valid' }, { status: 400 });
     }
 
-    const service = await sanityGetById<{ _id: string; _rev?: string; name?: string }>(id);
+    const service = await sanityGetById<{ _id: string; _rev?: string; name?: string; code?: string }>(id);
     if (!service) {
         return NextResponse.json({ error: 'Kategori truk/armada tidak ditemukan' }, { status: 404 });
     }
@@ -737,6 +889,11 @@ export async function handleServiceDelete(
 
     try {
         await getSanityClient().mutate([
+            ...buildServiceConstraintSpecs(id, service as unknown as Record<string, unknown>).map(spec => ({
+                delete: {
+                    id: spec.id,
+                },
+            })),
             {
                 delete: {
                     id,
@@ -822,7 +979,7 @@ export async function handleDriverDelete(
         return NextResponse.json({ error: 'Supir tidak valid' }, { status: 400 });
     }
 
-    const driver = await sanityGetById<{ _id: string; _rev?: string; name?: string }>(id);
+    const driver = await sanityGetById<{ _id: string; _rev?: string; name?: string; licenseNumber?: string; ktpNumber?: string }>(id);
     if (!driver) {
         return NextResponse.json({ error: 'Supir tidak ditemukan' }, { status: 404 });
     }
@@ -875,6 +1032,11 @@ export async function handleDriverDelete(
 
     try {
         await getSanityClient().mutate([
+            ...buildDriverConstraintSpecs(id, driver as unknown as Record<string, unknown>).map(spec => ({
+                delete: {
+                    id: spec.id,
+                },
+            })),
             {
                 delete: {
                     id,
@@ -907,6 +1069,11 @@ export async function handleDriverUpdate(
     }
 
     const normalizedUpdates = await normalizeDriverPayload(updates, { partial: true, excludeId: id });
+    const currentDriverConstraintSpecs = buildDriverConstraintSpecs(id, existingDriver as unknown as Record<string, unknown>);
+    const nextDriverConstraintSpecs = buildDriverConstraintSpecs(id, {
+        ...(existingDriver as unknown as Record<string, unknown>),
+        ...normalizedUpdates,
+    });
     const nextDriverName =
         typeof normalizedUpdates.name === 'string' && normalizedUpdates.name.trim()
             ? normalizedUpdates.name.trim()
@@ -942,6 +1109,7 @@ export async function handleDriverUpdate(
                 ifRevisionID: existingDriver._rev,
                 set: normalizedUpdates,
             });
+            appendUniqueConstraintMutations(transaction, currentDriverConstraintSpecs, nextDriverConstraintSpecs);
             for (const user of linkedUsersToRename) {
                 transaction.patch(user._id, {
                     ifRevisionID: user._rev as string,
@@ -952,6 +1120,10 @@ export async function handleDriverUpdate(
             }
             await transaction.commit();
         } catch (error) {
+            const conflictMessage = resolveUniqueConstraintConflictMessage(error, nextDriverConstraintSpecs);
+            if (conflictMessage) {
+                return NextResponse.json({ error: conflictMessage }, { status: 409 });
+            }
             if (isMutationConflictError(error)) {
                 return NextResponse.json(
                     { error: 'Data supir atau akun mobile driver berubah karena ada update lain. Refresh lalu coba lagi.' },
@@ -1010,6 +1182,7 @@ export async function handleDriverUpdate(
         },
         unset: ['activeTrackingDeliveryOrderRef'],
     });
+    appendUniqueConstraintMutations(transaction, currentDriverConstraintSpecs, nextDriverConstraintSpecs);
 
     for (const deliveryOrder of trackedDeliveryOrders) {
         transaction.patch(deliveryOrder._id, {
@@ -1053,6 +1226,10 @@ export async function handleDriverUpdate(
     try {
         await transaction.commit();
     } catch (error) {
+        const conflictMessage = resolveUniqueConstraintConflictMessage(error, nextDriverConstraintSpecs);
+        if (conflictMessage) {
+            return NextResponse.json({ error: conflictMessage }, { status: 409 });
+        }
         if (isMutationConflictError(error)) {
             return NextResponse.json(
                 { error: 'Data supir atau tracking berubah karena ada update lain. Refresh lalu coba lagi.' },

@@ -790,6 +790,60 @@ function buildSupplierConstraintSpecs(supplierId: string, doc: Record<string, un
         : [];
 }
 
+function buildServiceConstraintSpecs(serviceId: string, doc: Record<string, unknown>) {
+    const specs: UniqueConstraintMutationSpec[] = [];
+    const code = normalizeOptionalText(doc.code)?.toUpperCase();
+    if (code) {
+        specs.push(buildUniqueConstraintSpec({
+            entityType: 'service',
+            fieldName: 'code',
+            ownerRef: serviceId,
+            ownerType: 'service',
+            value: code,
+            message: 'Kode kategori armada sudah digunakan',
+        }));
+    }
+    const name = normalizeOptionalText(doc.name);
+    if (name) {
+        specs.push(buildUniqueConstraintSpec({
+            entityType: 'service',
+            fieldName: 'name',
+            ownerRef: serviceId,
+            ownerType: 'service',
+            value: name,
+            message: 'Nama kategori truk/armada sudah digunakan',
+        }));
+    }
+    return specs;
+}
+
+function buildDriverConstraintSpecs(driverId: string, doc: Record<string, unknown>) {
+    const specs: UniqueConstraintMutationSpec[] = [];
+    const licenseNumber = normalizeOptionalText(doc.licenseNumber)?.toUpperCase();
+    if (licenseNumber) {
+        specs.push(buildUniqueConstraintSpec({
+            entityType: 'driver',
+            fieldName: 'licenseNumber',
+            ownerRef: driverId,
+            ownerType: 'driver',
+            value: licenseNumber,
+            message: 'No. SIM sudah digunakan supir lain',
+        }));
+    }
+    const ktpNumber = normalizeOptionalText(doc.ktpNumber)?.toUpperCase();
+    if (ktpNumber) {
+        specs.push(buildUniqueConstraintSpec({
+            entityType: 'driver',
+            fieldName: 'ktpNumber',
+            ownerRef: driverId,
+            ownerType: 'driver',
+            value: ktpNumber,
+            message: 'No. KTP sudah digunakan supir lain',
+        }));
+    }
+    return specs;
+}
+
 function buildCustomerProductConstraintSpecs(productId: string, doc: Record<string, unknown>) {
     const customerRef = normalizeOptionalText(doc.customerRef);
     const code = normalizeOptionalText(doc.code)?.toUpperCase();
@@ -1585,6 +1639,11 @@ export async function handleGenericUpdate(
                 ifRevisionID: currentDoc._rev,
                 set: normalizedUpdates,
             });
+            appendUniqueConstraintMutations(
+                transaction,
+                buildServiceConstraintSpecs(id, currentDoc),
+                buildServiceConstraintSpecs(id, { ...currentDoc, ...normalizedUpdates })
+            );
             for (const vehicle of relatedVehicles) {
                 transaction.patch(vehicle._id, {
                     ifRevisionID: vehicle._rev as string,
@@ -1707,6 +1766,15 @@ export async function handleGenericUpdate(
             )
         ) {
             return NextResponse.json({ error: 'Email user sudah digunakan' }, { status: 409 });
+        }
+        if (entity === 'services') {
+            const conflictMessage = resolveUniqueConstraintConflictMessage(
+                error,
+                buildServiceConstraintSpecs(id, { ...currentDoc, ...normalizedUpdates })
+            );
+            if (conflictMessage) {
+                return NextResponse.json({ error: conflictMessage }, { status: 409 });
+            }
         }
         if (
             entity === 'warehouse-items'
@@ -2798,6 +2866,8 @@ export async function handleGenericCreate(
         || entity === 'vehicles'
         || entity === 'suppliers'
         || entity === 'customer-products'
+        || entity === 'services'
+        || entity === 'drivers'
     ) {
         const constraintSpecs =
             entity === 'warehouse-items'
@@ -2806,7 +2876,11 @@ export async function handleGenericCreate(
                     ? buildVehicleConstraintSpecs(newId, newDoc)
                     : entity === 'suppliers'
                         ? buildSupplierConstraintSpecs(newId, newDoc)
-                        : buildCustomerProductConstraintSpecs(newId, newDoc);
+                        : entity === 'customer-products'
+                            ? buildCustomerProductConstraintSpecs(newId, newDoc)
+                            : entity === 'services'
+                                ? buildServiceConstraintSpecs(newId, newDoc)
+                                : buildDriverConstraintSpecs(newId, newDoc);
         try {
             const transaction = getSanityClient().transaction();
             for (const spec of constraintSpecs) {
