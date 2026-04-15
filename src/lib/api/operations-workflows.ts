@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { NextResponse } from 'next/server';
 
 import { resolveCompanyLogoUrl } from '@/lib/branding';
@@ -53,7 +54,15 @@ const ALLOWED_INCIDENT_URGENCY = new Set(['LOW', 'MEDIUM', 'HIGH']);
 function buildUniqueConstraintId(entityType: string, fieldName: string, value: string) {
     const normalizedValue = value.trim().toLowerCase();
     const encodedValue = Buffer.from(normalizedValue, 'utf8').toString('base64url');
-    return `unique-constraint.${entityType}.${fieldName}.${encodedValue}`;
+    const directId = `unique-constraint.${entityType}.${fieldName}.${encodedValue}`;
+    if (directId.length <= 128) {
+        return directId;
+    }
+    const hash = createHash('sha256')
+        .update(`${entityType}:${fieldName}:${normalizedValue}`)
+        .digest('base64url')
+        .slice(0, 32);
+    return `unique-constraint.${entityType}.${fieldName}.h${hash}`;
 }
 
 type UniqueConstraintMutationSpec = {
@@ -161,6 +170,32 @@ function buildDriverConstraintSpecs(driverId: string, doc: Record<string, unknow
         });
     }
     return specs;
+}
+
+function buildExpenseCategoryConstraintSpecs(categoryId: string, doc: Record<string, unknown>) {
+    const name = normalizeOptionalText(doc.name);
+    if (!name) {
+        return [];
+    }
+    const timestamp = new Date().toISOString();
+    return [
+        {
+            id: buildUniqueConstraintId('expenseCategory', 'name', name),
+            message: 'Nama kategori biaya sudah digunakan',
+            doc: {
+                _id: buildUniqueConstraintId('expenseCategory', 'name', name),
+                _type: 'uniqueConstraint',
+                entityType: 'expenseCategory',
+                fieldName: 'name',
+                value: name,
+                valueLower: name.toLowerCase(),
+                ownerRef: categoryId,
+                ownerType: 'expenseCategory',
+                createdAt: timestamp,
+                updatedAt: timestamp,
+            },
+        },
+    ];
 }
 
 function appendUniqueConstraintMutations(
@@ -944,14 +979,21 @@ export async function handleExpenseCategoryDelete(
     }
 
     try {
-        await getSanityClient().mutate([
-            {
-                delete: {
-                    id,
-                    ifRevisionID: category._rev,
+        await getSanityClient().mutate(
+            [
+                ...buildExpenseCategoryConstraintSpecs(id, category as unknown as Record<string, unknown>).map(spec => ({
+                    delete: {
+                        id: spec.id,
+                    },
+                })),
+                {
+                    delete: {
+                        id,
+                        ifRevisionID: category._rev,
+                    },
                 },
-            },
-        ] as unknown as SanityMutations);
+            ] as unknown as SanityMutations
+        );
         await addAuditLog(session, 'DELETE', 'expense-categories', id, `Deleted expense-categories ${category.name || id}`);
         return NextResponse.json({ success: true });
     } catch (err) {

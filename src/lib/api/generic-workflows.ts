@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { NextResponse } from 'next/server';
 
 import { getBusinessDateValue } from '@/lib/business-date';
@@ -687,7 +688,15 @@ function buildTireEventResponseError(error: unknown, fallbackMessage: string) {
 function buildUniqueConstraintId(entityType: string, fieldName: string, value: string) {
     const normalizedValue = value.trim().toLowerCase();
     const encodedValue = Buffer.from(normalizedValue, 'utf8').toString('base64url');
-    return `unique-constraint.${entityType}.${fieldName}.${encodedValue}`;
+    const directId = `unique-constraint.${entityType}.${fieldName}.${encodedValue}`;
+    if (directId.length <= 128) {
+        return directId;
+    }
+    const hash = createHash('sha256')
+        .update(`${entityType}:${fieldName}:${normalizedValue}`)
+        .digest('base64url')
+        .slice(0, 32);
+    return `unique-constraint.${entityType}.${fieldName}.h${hash}`;
 }
 
 type UniqueConstraintMutationSpec = {
@@ -788,6 +797,41 @@ function buildSupplierConstraintSpecs(supplierId: string, doc: Record<string, un
             }),
         ]
         : [];
+}
+
+function buildExpenseCategoryConstraintSpecs(categoryId: string, doc: Record<string, unknown>) {
+    const name = normalizeOptionalText(doc.name);
+    return name
+        ? [
+            buildUniqueConstraintSpec({
+                entityType: 'expenseCategory',
+                fieldName: 'name',
+                ownerRef: categoryId,
+                ownerType: 'expenseCategory',
+                value: name,
+                message: 'Nama kategori biaya sudah digunakan',
+            }),
+        ]
+        : [];
+}
+
+function buildTripRouteRateConstraintSpecs(rateId: string, doc: Record<string, unknown>) {
+    const originArea = normalizeOptionalText(doc.originArea)?.toLowerCase();
+    const destinationArea = normalizeOptionalText(doc.destinationArea)?.toLowerCase();
+    if (!originArea || !destinationArea) {
+        return [];
+    }
+    const serviceRef = normalizeOptionalText(doc.serviceRef) || '__all__';
+    return [
+        buildUniqueConstraintSpec({
+            entityType: 'tripRouteRate',
+            fieldName: 'originDestinationService',
+            ownerRef: rateId,
+            ownerType: 'tripRouteRate',
+            value: `${originArea}::${destinationArea}::${serviceRef}`,
+            message: 'Master biaya rute trip untuk kombinasi area dan kategori ini sudah ada',
+        }),
+    ];
 }
 
 function buildServiceConstraintSpecs(serviceId: string, doc: Record<string, unknown>) {
@@ -911,6 +955,23 @@ function buildVehicleConstraintSpecs(vehicleId: string, doc: Record<string, unkn
     return specs;
 }
 
+async function resolveTripRouteRateServiceRevision(serviceRef: unknown) {
+    const normalizedServiceRef = normalizeOptionalText(serviceRef);
+    if (!normalizedServiceRef) {
+        return null;
+    }
+
+    const service = await sanityGetById<{ _id: string; _rev?: string }>(normalizedServiceRef);
+    if (!service?._id || !service._rev) {
+        throw new Error('Revisi kategori armada tarif trip tidak tersedia. Refresh lalu coba lagi.');
+    }
+
+    return {
+        _id: service._id,
+        _rev: service._rev,
+    };
+}
+
 function appendUniqueConstraintMutations(
     transaction: ReturnType<ReturnType<typeof getSanityClient>['transaction']>,
     currentSpecs: UniqueConstraintMutationSpec[],
@@ -980,6 +1041,7 @@ export async function handleGenericUpdate(
     const updates: Record<string, unknown> = { ...updatesInput };
     let sanitizedEntityUpdates: Record<string, unknown> | null = null;
     let selectedTripRouteRateRevision: { _id: string; _rev: string } | null = null;
+    let tripRouteRateServiceRevision: { _id: string; _rev: string } | null = null;
 
     if (isProtectedLedgerEntity(entity)) {
         return NextResponse.json({ error: 'Entri keuangan yang sudah terposting tidak boleh diubah lewat API umum' }, { status: 409 });
@@ -1607,6 +1669,20 @@ export async function handleGenericUpdate(
     if (!currentDoc._rev) {
         return NextResponse.json({ error: 'Revisi dokumen tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
+    if (entity === 'trip-route-rates') {
+        try {
+            tripRouteRateServiceRevision = await resolveTripRouteRateServiceRevision(
+                Object.prototype.hasOwnProperty.call(persistedNormalizedUpdates, 'serviceRef')
+                    ? persistedNormalizedUpdates.serviceRef
+                    : currentDoc.serviceRef
+            );
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Kategori armada tarif trip berubah. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+    }
 
     let updated: unknown;
     try {
@@ -1671,29 +1747,55 @@ export async function handleGenericUpdate(
             });
             await transaction.commit();
             updated = await sanityGetById(id);
+        } else if (entity === 'trip-route-rates') {
+            const nextDoc = { ...currentDoc, ...persistedNormalizedUpdates };
+            const transaction = getSanityClient()
+                .transaction()
+                .patch(id, {
+                    ifRevisionID: currentDoc._rev,
+                    set: persistedNormalizedUpdates,
+                });
+            if (tripRouteRateServiceRevision) {
+                transaction.patch(tripRouteRateServiceRevision._id, {
+                    ifRevisionID: tripRouteRateServiceRevision._rev,
+                    set: { updatedAt: new Date().toISOString() },
+                });
+            }
+            appendUniqueConstraintMutations(
+                transaction,
+                buildTripRouteRateConstraintSpecs(id, currentDoc),
+                buildTripRouteRateConstraintSpecs(id, nextDoc)
+            );
+            await transaction.commit();
+            updated = await sanityGetById(id);
         } else if (
-            entity === 'warehouse-items'
+            entity === 'expense-categories'
+            || entity === 'warehouse-items'
             || entity === 'vehicles'
             || entity === 'suppliers'
             || entity === 'customer-products'
         ) {
             const nextDoc = { ...currentDoc, ...persistedNormalizedUpdates };
             const currentConstraintSpecs =
-                entity === 'warehouse-items'
-                    ? buildWarehouseItemConstraintSpecs(id, currentDoc)
-                    : entity === 'vehicles'
-                        ? buildVehicleConstraintSpecs(id, currentDoc)
-                        : entity === 'suppliers'
-                            ? buildSupplierConstraintSpecs(id, currentDoc)
-                            : buildCustomerProductConstraintSpecs(id, currentDoc);
+                entity === 'expense-categories'
+                    ? buildExpenseCategoryConstraintSpecs(id, currentDoc)
+                    : entity === 'warehouse-items'
+                        ? buildWarehouseItemConstraintSpecs(id, currentDoc)
+                        : entity === 'vehicles'
+                            ? buildVehicleConstraintSpecs(id, currentDoc)
+                            : entity === 'suppliers'
+                                ? buildSupplierConstraintSpecs(id, currentDoc)
+                                : buildCustomerProductConstraintSpecs(id, currentDoc);
             const nextConstraintSpecs =
-                entity === 'warehouse-items'
-                    ? buildWarehouseItemConstraintSpecs(id, nextDoc)
-                    : entity === 'vehicles'
-                        ? buildVehicleConstraintSpecs(id, nextDoc)
-                        : entity === 'suppliers'
-                            ? buildSupplierConstraintSpecs(id, nextDoc)
-                            : buildCustomerProductConstraintSpecs(id, nextDoc);
+                entity === 'expense-categories'
+                    ? buildExpenseCategoryConstraintSpecs(id, nextDoc)
+                    : entity === 'warehouse-items'
+                        ? buildWarehouseItemConstraintSpecs(id, nextDoc)
+                        : entity === 'vehicles'
+                            ? buildVehicleConstraintSpecs(id, nextDoc)
+                            : entity === 'suppliers'
+                                ? buildSupplierConstraintSpecs(id, nextDoc)
+                                : buildCustomerProductConstraintSpecs(id, nextDoc);
             const transaction = getSanityClient()
                 .transaction()
                 .patch(id, {
@@ -1776,21 +1878,33 @@ export async function handleGenericUpdate(
                 return NextResponse.json({ error: conflictMessage }, { status: 409 });
             }
         }
+        if (entity === 'trip-route-rates') {
+            const conflictMessage = resolveUniqueConstraintConflictMessage(
+                error,
+                buildTripRouteRateConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
+            );
+            if (conflictMessage) {
+                return NextResponse.json({ error: conflictMessage }, { status: 409 });
+            }
+        }
         if (
-            entity === 'warehouse-items'
+            entity === 'expense-categories'
+            || entity === 'warehouse-items'
             || entity === 'vehicles'
             || entity === 'suppliers'
             || entity === 'customer-products'
         ) {
             const conflictMessage = resolveUniqueConstraintConflictMessage(
                 error,
-                entity === 'warehouse-items'
-                    ? buildWarehouseItemConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
-                    : entity === 'vehicles'
-                        ? buildVehicleConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
-                        : entity === 'suppliers'
-                            ? buildSupplierConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
-                            : buildCustomerProductConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
+                entity === 'expense-categories'
+                    ? buildExpenseCategoryConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
+                    : entity === 'warehouse-items'
+                        ? buildWarehouseItemConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
+                        : entity === 'vehicles'
+                            ? buildVehicleConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
+                            : entity === 'suppliers'
+                                ? buildSupplierConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
+                                : buildCustomerProductConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
             );
             if (conflictMessage) {
                 return NextResponse.json({ error: conflictMessage }, { status: 409 });
@@ -2190,7 +2304,7 @@ export async function handleGenericDelete(
             return NextResponse.json({ error: 'Master biaya rute trip tidak valid' }, { status: 400 });
         }
 
-        const tripRouteRate = await sanityGetById<{ _id: string; _rev?: string; originArea?: string; destinationArea?: string }>(id);
+        const tripRouteRate = await sanityGetById<{ _id: string; _rev?: string; originArea?: string; destinationArea?: string; serviceRef?: string }>(id);
         if (!tripRouteRate) {
             return NextResponse.json({ error: 'Master biaya rute trip tidak ditemukan' }, { status: 404 });
         }
@@ -2207,14 +2321,22 @@ export async function handleGenericDelete(
         }
 
         try {
-            await getSanityClient().mutate([
-                {
-                    delete: {
-                        id,
-                        ifRevisionID: tripRouteRate._rev,
+            const constraintSpecs = buildTripRouteRateConstraintSpecs(id, tripRouteRate as unknown as Record<string, unknown>);
+            await getSanityClient().mutate(
+                [
+                    ...constraintSpecs.map(spec => ({
+                        delete: {
+                            id: spec.id,
+                        },
+                    })),
+                    {
+                        delete: {
+                            id,
+                            ifRevisionID: tripRouteRate._rev,
+                        },
                     },
-                },
-            ] as unknown as SanityMutations);
+                ] as unknown as SanityMutations
+            );
             await addAuditLog(
                 session,
                 'DELETE',
@@ -2533,6 +2655,7 @@ export async function handleGenericCreate(
 
     const newDoc: { _type: string; [key: string]: unknown } = { _type: docType };
     let userDriverRevision: string | undefined;
+    let tripRouteRateServiceRevision: { _id: string; _rev: string } | null = null;
     let shouldMergeRawCreatePayload = true;
 
     if (entity === 'delivery-order-items') {
@@ -2693,6 +2816,14 @@ export async function handleGenericCreate(
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Data biaya rute trip tidak valid' },
                 { status: 400 }
+            );
+        }
+        try {
+            tripRouteRateServiceRevision = await resolveTripRouteRateServiceRevision(newDoc.serviceRef);
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Kategori armada tarif trip berubah. Refresh lalu coba lagi.' },
+                { status: 409 }
             );
         }
     }
@@ -2862,7 +2993,39 @@ export async function handleGenericCreate(
     newDoc._id = newId;
     let created: Record<string, unknown> | null;
     if (
-        entity === 'warehouse-items'
+        entity === 'trip-route-rates'
+    ) {
+        const constraintSpecs = buildTripRouteRateConstraintSpecs(newId, newDoc);
+        try {
+            const transaction = getSanityClient().transaction();
+            if (tripRouteRateServiceRevision) {
+                transaction.patch(tripRouteRateServiceRevision._id, {
+                    ifRevisionID: tripRouteRateServiceRevision._rev,
+                    set: { updatedAt: new Date().toISOString() },
+                });
+            }
+            for (const spec of constraintSpecs) {
+                transaction.create(spec.doc);
+            }
+            transaction.create(newDoc);
+            await transaction.commit();
+        } catch (error) {
+            const conflictMessage = resolveUniqueConstraintConflictMessage(error, constraintSpecs);
+            if (conflictMessage) {
+                return NextResponse.json({ error: conflictMessage }, { status: 409 });
+            }
+            if (isMutationConflictError(error)) {
+                return NextResponse.json(
+                    { error: 'Master biaya rute trip atau kategori armada berubah karena ada update lain. Refresh lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+            throw error;
+        }
+        created = await sanityGetById<Record<string, unknown> & { _id: string }>(newId);
+    } else if (
+        entity === 'expense-categories'
+        || entity === 'warehouse-items'
         || entity === 'vehicles'
         || entity === 'suppliers'
         || entity === 'customer-products'
@@ -2870,17 +3033,19 @@ export async function handleGenericCreate(
         || entity === 'drivers'
     ) {
         const constraintSpecs =
-            entity === 'warehouse-items'
-                ? buildWarehouseItemConstraintSpecs(newId, newDoc)
-                : entity === 'vehicles'
-                    ? buildVehicleConstraintSpecs(newId, newDoc)
-                    : entity === 'suppliers'
-                        ? buildSupplierConstraintSpecs(newId, newDoc)
-                        : entity === 'customer-products'
-                            ? buildCustomerProductConstraintSpecs(newId, newDoc)
-                            : entity === 'services'
-                                ? buildServiceConstraintSpecs(newId, newDoc)
-                                : buildDriverConstraintSpecs(newId, newDoc);
+            entity === 'expense-categories'
+                ? buildExpenseCategoryConstraintSpecs(newId, newDoc)
+                : entity === 'warehouse-items'
+                    ? buildWarehouseItemConstraintSpecs(newId, newDoc)
+                    : entity === 'vehicles'
+                        ? buildVehicleConstraintSpecs(newId, newDoc)
+                        : entity === 'suppliers'
+                            ? buildSupplierConstraintSpecs(newId, newDoc)
+                            : entity === 'customer-products'
+                                ? buildCustomerProductConstraintSpecs(newId, newDoc)
+                                : entity === 'services'
+                                    ? buildServiceConstraintSpecs(newId, newDoc)
+                                    : buildDriverConstraintSpecs(newId, newDoc);
         try {
             const transaction = getSanityClient().transaction();
             for (const spec of constraintSpecs) {
