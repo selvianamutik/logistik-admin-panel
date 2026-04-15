@@ -774,6 +774,40 @@ function buildWarehouseItemConstraintSpecs(itemId: string, doc: Record<string, u
         : [];
 }
 
+function buildSupplierConstraintSpecs(supplierId: string, doc: Record<string, unknown>) {
+    const supplierCode = normalizeOptionalText(doc.supplierCode)?.toUpperCase();
+    return supplierCode
+        ? [
+            buildUniqueConstraintSpec({
+                entityType: 'supplier',
+                fieldName: 'supplierCode',
+                ownerRef: supplierId,
+                ownerType: 'supplier',
+                value: supplierCode,
+                message: 'Kode supplier sudah digunakan',
+            }),
+        ]
+        : [];
+}
+
+function buildCustomerProductConstraintSpecs(productId: string, doc: Record<string, unknown>) {
+    const customerRef = normalizeOptionalText(doc.customerRef);
+    const code = normalizeOptionalText(doc.code)?.toUpperCase();
+    if (!customerRef || !code) {
+        return [];
+    }
+    return [
+        buildUniqueConstraintSpec({
+            entityType: 'customerProduct',
+            fieldName: 'customerRefCode',
+            ownerRef: productId,
+            ownerType: 'customerProduct',
+            value: `${customerRef}::${code}`,
+            message: 'Kode barang customer sudah digunakan',
+        }),
+    ];
+}
+
 function buildVehicleConstraintSpecs(vehicleId: string, doc: Record<string, unknown>) {
     const specs: UniqueConstraintMutationSpec[] = [];
     const plateNumber = normalizeOptionalText(doc.plateNumber)?.toUpperCase();
@@ -1578,16 +1612,29 @@ export async function handleGenericUpdate(
             });
             await transaction.commit();
             updated = await sanityGetById(id);
-        } else if (entity === 'warehouse-items' || entity === 'vehicles') {
+        } else if (
+            entity === 'warehouse-items'
+            || entity === 'vehicles'
+            || entity === 'suppliers'
+            || entity === 'customer-products'
+        ) {
             const nextDoc = { ...currentDoc, ...persistedNormalizedUpdates };
             const currentConstraintSpecs =
                 entity === 'warehouse-items'
                     ? buildWarehouseItemConstraintSpecs(id, currentDoc)
-                    : buildVehicleConstraintSpecs(id, currentDoc);
+                    : entity === 'vehicles'
+                        ? buildVehicleConstraintSpecs(id, currentDoc)
+                        : entity === 'suppliers'
+                            ? buildSupplierConstraintSpecs(id, currentDoc)
+                            : buildCustomerProductConstraintSpecs(id, currentDoc);
             const nextConstraintSpecs =
                 entity === 'warehouse-items'
                     ? buildWarehouseItemConstraintSpecs(id, nextDoc)
-                    : buildVehicleConstraintSpecs(id, nextDoc);
+                    : entity === 'vehicles'
+                        ? buildVehicleConstraintSpecs(id, nextDoc)
+                        : entity === 'suppliers'
+                            ? buildSupplierConstraintSpecs(id, nextDoc)
+                            : buildCustomerProductConstraintSpecs(id, nextDoc);
             const transaction = getSanityClient()
                 .transaction()
                 .patch(id, {
@@ -1661,12 +1708,21 @@ export async function handleGenericUpdate(
         ) {
             return NextResponse.json({ error: 'Email user sudah digunakan' }, { status: 409 });
         }
-        if (entity === 'warehouse-items' || entity === 'vehicles') {
+        if (
+            entity === 'warehouse-items'
+            || entity === 'vehicles'
+            || entity === 'suppliers'
+            || entity === 'customer-products'
+        ) {
             const conflictMessage = resolveUniqueConstraintConflictMessage(
                 error,
                 entity === 'warehouse-items'
                     ? buildWarehouseItemConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
-                    : buildVehicleConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
+                    : entity === 'vehicles'
+                        ? buildVehicleConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
+                        : entity === 'suppliers'
+                            ? buildSupplierConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
+                            : buildCustomerProductConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
             );
             if (conflictMessage) {
                 return NextResponse.json({ error: conflictMessage }, { status: 409 });
@@ -1809,7 +1865,13 @@ export async function handleGenericDelete(
         }
 
         try {
+            const constraintSpecs = buildCustomerProductConstraintSpecs(id, customerProduct as Record<string, unknown>);
             await getSanityClient().mutate([
+                ...constraintSpecs.map(spec => ({
+                    delete: {
+                        id: spec.id,
+                    },
+                })),
                 {
                     delete: {
                         id,
@@ -1865,7 +1927,13 @@ export async function handleGenericDelete(
         }
 
         try {
+            const constraintSpecs = buildSupplierConstraintSpecs(id, supplier as Record<string, unknown>);
             await getSanityClient().mutate([
+                ...constraintSpecs.map(spec => ({
+                    delete: {
+                        id: spec.id,
+                    },
+                })),
                 {
                     delete: {
                         id,
@@ -2725,11 +2793,20 @@ export async function handleGenericCreate(
     const newId = crypto.randomUUID();
     newDoc._id = newId;
     let created: Record<string, unknown> | null;
-    if (entity === 'warehouse-items' || entity === 'vehicles') {
+    if (
+        entity === 'warehouse-items'
+        || entity === 'vehicles'
+        || entity === 'suppliers'
+        || entity === 'customer-products'
+    ) {
         const constraintSpecs =
             entity === 'warehouse-items'
                 ? buildWarehouseItemConstraintSpecs(newId, newDoc)
-                : buildVehicleConstraintSpecs(newId, newDoc);
+                : entity === 'vehicles'
+                    ? buildVehicleConstraintSpecs(newId, newDoc)
+                    : entity === 'suppliers'
+                        ? buildSupplierConstraintSpecs(newId, newDoc)
+                        : buildCustomerProductConstraintSpecs(newId, newDoc);
         try {
             const transaction = getSanityClient().transaction();
             for (const spec of constraintSpecs) {
