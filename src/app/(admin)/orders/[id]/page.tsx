@@ -26,6 +26,7 @@ import {
     buildDefaultShipmentSelection,
     buildHoldFormState,
     buildOrderDetailMetrics,
+    addCargoAggregate,
     buildSelectedNonKoliCargo,
     createCargoAggregate,
     formatProgressLine,
@@ -83,6 +84,65 @@ function formatDeliveryOrderShipperReferencePreview(
     return `${references.slice(0, limit).join(', ')} +${references.length - limit} lagi`;
 }
 
+type DirectCargoGroupItem = Omit<OrderItemForm, 'pickupStopKey' | 'shipperReferenceNumber'>;
+
+type DirectCargoGroup = {
+    id: string;
+    pickupStopKey: string;
+    shipperReferenceNumber: string;
+    items: DirectCargoGroupItem[];
+};
+
+function toDirectCargoGroupItem(item: OrderItemForm): DirectCargoGroupItem {
+    return {
+        customerProductRef: item.customerProductRef,
+        description: item.description,
+        qtyKoli: item.qtyKoli,
+        weightInputValue: item.weightInputValue,
+        weightInputUnit: item.weightInputUnit,
+        volumeInputValue: item.volumeInputValue,
+        volumeInputUnit: item.volumeInputUnit,
+        value: item.value,
+    };
+}
+
+function createDefaultDirectCargoGroupItem(): DirectCargoGroupItem {
+    return toDirectCargoGroupItem(createDefaultOrderItemForm());
+}
+
+function createDefaultDirectCargoGroup(pickupStopKey = ''): DirectCargoGroup {
+    return {
+        id: crypto.randomUUID(),
+        pickupStopKey,
+        shipperReferenceNumber: '',
+        items: [createDefaultDirectCargoGroupItem()],
+    };
+}
+
+function isDirectCargoGroupItemDraft(item: DirectCargoGroupItem) {
+    return Boolean(
+        item.description.trim() ||
+        item.customerProductRef ||
+        item.qtyKoli > 0 ||
+        item.weightInputValue > 0 ||
+        item.volumeInputValue > 0
+    );
+}
+
+function getDirectCargoGroupDraftItems(group: DirectCargoGroup) {
+    return group.items.filter(isDirectCargoGroupItemDraft);
+}
+
+function flattenDirectCargoGroups(groups: DirectCargoGroup[]): OrderItemForm[] {
+    return groups.flatMap(group =>
+        group.items.map(item => ({
+            ...item,
+            pickupStopKey: group.pickupStopKey,
+            shipperReferenceNumber: group.shipperReferenceNumber,
+        }))
+    );
+}
+
 export default function OrderDetailPage() {
     const params = useParams();
     const router = useRouter();
@@ -112,7 +172,7 @@ export default function OrderDetailPage() {
     const [selectedPickupStopKeys, setSelectedPickupStopKeys] = useState<string[]>([]);
     const [shipperReferenceFormat, setShipperReferenceFormat] = useState('SJ');
     const [selectedShipments, setSelectedShipments] = useState<SelectedShipmentMap>({});
-    const [directCargoItems, setDirectCargoItems] = useState<OrderItemForm[]>([createDefaultOrderItemForm()]);
+    const [directCargoGroups, setDirectCargoGroups] = useState<DirectCargoGroup[]>([createDefaultDirectCargoGroup()]);
     const [vehicles, setVehicles] = useState<Array<Pick<Vehicle, '_id' | 'unitCode' | 'plateNumber' | 'serviceRef' | 'serviceName' | 'capacityMin' | 'capacityMax' | 'capacityKg'>>>([]);
     const [busyVehicleIds, setBusyVehicleIds] = useState<string[]>([]);
     const [showHoldModal, setShowHoldModal] = useState(false);
@@ -229,33 +289,106 @@ export default function OrderDetailPage() {
         setSelectedShipments(nextSelections);
     };
 
-    const updateDirectCargoItem = <K extends keyof OrderItemForm>(idx: number, field: K, value: OrderItemForm[K]) => {
-        setDirectCargoItems(prev => prev.map((item, i) => (i === idx ? { ...item, [field]: value } : item)));
+    const updateDirectCargoGroup = <K extends keyof Pick<DirectCargoGroup, 'pickupStopKey' | 'shipperReferenceNumber'>>(
+        groupId: string,
+        field: K,
+        value: DirectCargoGroup[K]
+    ) => {
+        setDirectCargoGroups(previous =>
+            previous.map(group => (
+                group.id === groupId
+                    ? { ...group, [field]: value }
+                    : group
+            ))
+        );
     };
 
-    const addDirectCargoItem = () => {
-        setDirectCargoItems(prev => [...prev, createDefaultOrderItemForm(selectedPickupStopKeys[0] || '')]);
+    const updateDirectCargoGroupItem = <K extends keyof DirectCargoGroupItem>(
+        groupId: string,
+        itemIndex: number,
+        field: K,
+        value: DirectCargoGroupItem[K]
+    ) => {
+        setDirectCargoGroups(previous =>
+            previous.map(group => (
+                group.id === groupId
+                    ? {
+                        ...group,
+                        items: group.items.map((item, index) => (
+                            index === itemIndex
+                                ? { ...item, [field]: value }
+                                : item
+                        )),
+                    }
+                    : group
+            ))
+        );
     };
 
-    const removeDirectCargoItem = (idx: number) => {
-        setDirectCargoItems(prev => {
-            const next = prev.filter((_, i) => i !== idx);
-            return next.length > 0 ? next : [createDefaultOrderItemForm(selectedPickupStopKeys[0] || '')];
+    const addDirectCargoGroup = () => {
+        const defaultPickupStopKey = selectedTripPickupStops[0]?._key || selectedPickupStopKeys[0] || '';
+        setDirectCargoGroups(previous => [...previous, createDefaultDirectCargoGroup(defaultPickupStopKey)]);
+    };
+
+    const removeDirectCargoGroup = (groupId: string) => {
+        setDirectCargoGroups(previous => {
+            const next = previous.filter(group => group.id !== groupId);
+            return next.length > 0 ? next : [createDefaultDirectCargoGroup(selectedTripPickupStops[0]?._key || selectedPickupStopKeys[0] || '')];
         });
     };
 
-    const applyDirectCargoProductSelection = (idx: number, nextProductRef: string) => {
+    const addDirectCargoGroupItem = (groupId: string) => {
+        setDirectCargoGroups(previous =>
+            previous.map(group => (
+                group.id === groupId
+                    ? { ...group, items: [...group.items, createDefaultDirectCargoGroupItem()] }
+                    : group
+            ))
+        );
+    };
+
+    const removeDirectCargoGroupItem = (groupId: string, itemIndex: number) => {
+        setDirectCargoGroups(previous =>
+            previous.map(group => {
+                if (group.id !== groupId) {
+                    return group;
+                }
+                const nextItems = group.items.filter((_, index) => index !== itemIndex);
+                return {
+                    ...group,
+                    items: nextItems.length > 0 ? nextItems : [createDefaultDirectCargoGroupItem()],
+                };
+            })
+        );
+    };
+
+    const applyDirectCargoProductSelection = (groupId: string, itemIndex: number, nextProductRef: string) => {
         const selectedProduct = customerProducts.find(product => product._id === nextProductRef);
-        setDirectCargoItems(prev => prev.map((item, i) => (
-            i === idx ? applyCustomerProductToOrderItem(item, selectedProduct) : item
-        )));
+        setDirectCargoGroups(previous =>
+            previous.map(group => (
+                group.id === groupId
+                    ? {
+                        ...group,
+                        items: group.items.map((item, index) => (
+                            index === itemIndex
+                                ? applyCustomerProductToOrderItem({
+                                    ...item,
+                                    pickupStopKey: group.pickupStopKey,
+                                    shipperReferenceNumber: group.shipperReferenceNumber,
+                                }, selectedProduct)
+                                : { ...item, pickupStopKey: group.pickupStopKey, shipperReferenceNumber: group.shipperReferenceNumber }
+                        )).map(item => toDirectCargoGroupItem(item)),
+                    }
+                    : group
+            ))
+        );
     };
 
     const openCreateDOModal = (tripPlanKey?: string) => {
         const tripPlan = orderTripPlans.find(plan => plan._key === tripPlanKey) || null;
         const defaultPickupStopKey = tripPlan?.pickupStopKeys[0] || resolvedOrderPickupStops[0]?._key || '';
         setSelectedShipments({});
-        setDirectCargoItems([createDefaultOrderItemForm(defaultPickupStopKey)]);
+        setDirectCargoGroups([createDefaultDirectCargoGroup(defaultPickupStopKey)]);
         setSelectedPickupStopKeys(
             tripPlan?.pickupStopKeys && tripPlan.pickupStopKeys.length > 0
                 ? tripPlan.pickupStopKeys
@@ -271,7 +404,7 @@ export default function OrderDetailPage() {
         setDoNotes(tripPlan?.notes || '');
         setSelectedOrderTripPlanKey(tripPlan?._key || '');
         setDoCustomerDoNumber('');
-        if (!doCustomerDoNumber.trim() && normalizedShipperReferenceFormat !== 'SJ') {
+        if (!isHeaderOnlyOrder && !doCustomerDoNumber.trim() && normalizedShipperReferenceFormat !== 'SJ') {
             setDoCustomerDoNumber(normalizedShipperReferenceFormat);
         }
         setShowDOModal(true);
@@ -346,9 +479,78 @@ export default function OrderDetailPage() {
         }
     }, [busyVehicleIds, doVehicle, selectedOrderTripPlan]);
     const canCreateDeliveryOrder = availableItems.length > 0 || isHeaderOnlyOrder;
-    const draftDirectCargoItems = getDraftOrderItems(directCargoItems);
-    const directCargoSummary = summarizeDraftOrderCargo(directCargoItems);
+    const flattenedDirectCargoItems = flattenDirectCargoGroups(directCargoGroups);
+    const draftDirectCargoItems = getDraftOrderItems(flattenedDirectCargoItems);
+    const draftDirectCargoGroups = directCargoGroups
+        .map(group => ({
+            ...group,
+            draftItems: getDirectCargoGroupDraftItems(group),
+        }))
+        .filter(group => group.shipperReferenceNumber.trim() || group.draftItems.length > 0);
+    const directCargoSummary = summarizeDraftOrderCargo(flattenedDirectCargoItems);
     const selectedTripPickupStops = resolvedOrderPickupStops.filter(stop => selectedPickupStopKeys.includes(stop._key));
+    const headerOnlyManifestByDo = isHeaderOnlyOrder
+        ? dos.map(deliveryOrder => {
+            const pickupMap = new Map(
+                (deliveryOrder.pickupStops || []).map((pickupStop, index) => [
+                    pickupStop._key || pickupStop.orderPickupStopKey || `pickup-stop-${index + 1}`,
+                    pickupStop,
+                ])
+            );
+            const manifestMap = new Map<string, {
+                referenceNumber: string;
+                pickupLabel?: string;
+                pickupAddress?: string;
+                itemCount: number;
+                cargo: ReturnType<typeof createCargoAggregate>;
+            }>();
+            const ensureManifestEntry = (referenceNumber: string, pickupStopKey?: string, pickupAddress?: string) => {
+                const matchedPickup = pickupStopKey ? pickupMap.get(pickupStopKey) : undefined;
+                const manifestKey = `${referenceNumber}::${pickupStopKey || pickupAddress || ''}`;
+                if (!manifestMap.has(manifestKey)) {
+                    manifestMap.set(manifestKey, {
+                        referenceNumber,
+                        pickupLabel: matchedPickup ? `Pickup ${matchedPickup.sequence}${matchedPickup.pickupLabel ? ` - ${matchedPickup.pickupLabel}` : ''}` : undefined,
+                        pickupAddress: matchedPickup?.pickupAddress || pickupAddress,
+                        itemCount: 0,
+                        cargo: createCargoAggregate(),
+                    });
+                }
+                return manifestMap.get(manifestKey)!;
+            };
+
+            (deliveryOrder.shipperReferences || []).forEach(reference => {
+                ensureManifestEntry(reference.referenceNumber, reference.pickupStopKey, reference.pickupAddress);
+            });
+
+            doItems
+                .filter(item => item.deliveryOrderRef === deliveryOrder._id)
+                .forEach(item => {
+                    const referenceNumber = item.shipperReferenceNumber?.trim() || deliveryOrder.customerDoNumber || 'TANPA-SJ';
+                    const manifestEntry = ensureManifestEntry(referenceNumber, item.pickupStopKey, item.pickupAddress);
+                    manifestEntry.itemCount += 1;
+                    manifestEntry.cargo = addCargoAggregate(
+                        manifestEntry.cargo,
+                        deliveryOrder.status === 'DELIVERED'
+                            ? {
+                                qtyKoli: item.actualQtyKoli ?? item.orderItemQtyKoli,
+                                weightKg: item.actualWeightKg ?? item.orderItemWeight,
+                                volumeM3: item.actualVolumeM3 ?? item.orderItemVolumeM3,
+                            }
+                            : {
+                                qtyKoli: item.orderItemQtyKoli,
+                                weightKg: item.orderItemWeight,
+                                volumeM3: item.orderItemVolumeM3,
+                            }
+                    );
+                });
+
+            return {
+                deliveryOrder,
+                shipperManifests: Array.from(manifestMap.values()),
+            };
+        }).filter(entry => entry.shipperManifests.length > 0)
+        : [];
     const headerOnlyDeliveredMatchesTotal =
         isHeaderOnlyOrder &&
         totalDeliveredActualCargo.qtyKoli === totalOrderCargo.qtyKoli &&
@@ -390,30 +592,29 @@ export default function OrderDetailPage() {
             return;
         }
         if (isHeaderOnlyOrder && draftDirectCargoItems.length > 0) {
-            const defaultShipperReference = doCustomerDoNumber.trim().toUpperCase();
-            const invalidReferenceRow = draftDirectCargoItems.findIndex(item => !(item.shipperReferenceNumber.trim() || defaultShipperReference));
-            if (invalidReferenceRow >= 0) {
-                addToast('error', `No. SJ pengirim wajib diisi pada barang baris ${invalidReferenceRow + 1}`);
+            const invalidReferenceGroup = draftDirectCargoGroups.findIndex(group => group.draftItems.length > 0 && !group.shipperReferenceNumber.trim());
+            if (invalidReferenceGroup >= 0) {
+                addToast('error', `No. SJ pengirim wajib diisi pada SJ ${invalidReferenceGroup + 1}`);
                 return;
             }
-            const invalidPickupRow = draftDirectCargoItems.findIndex(item => {
-                const resolvedPickupStopKey = item.pickupStopKey || (selectedTripPickupStops.length === 1 ? selectedTripPickupStops[0]._key : '');
+            const invalidPickupGroup = draftDirectCargoGroups.findIndex(group => {
+                const resolvedPickupStopKey = group.pickupStopKey || (selectedTripPickupStops.length === 1 ? selectedTripPickupStops[0]._key : '');
                 return resolvedOrderPickupStops.length > 0 && !resolvedPickupStopKey;
             });
-            if (invalidPickupRow >= 0) {
-                addToast('error', `Titik pickup wajib dipilih pada barang baris ${invalidPickupRow + 1}`);
+            if (invalidPickupGroup >= 0) {
+                addToast('error', `Titik pickup wajib dipilih pada SJ ${invalidPickupGroup + 1}`);
                 return;
             }
-            const outOfScopePickupRow = draftDirectCargoItems.findIndex(item => {
-                const resolvedPickupStopKey = item.pickupStopKey || (selectedTripPickupStops.length === 1 ? selectedTripPickupStops[0]._key : '');
+            const outOfScopePickupGroup = draftDirectCargoGroups.findIndex(group => {
+                const resolvedPickupStopKey = group.pickupStopKey || (selectedTripPickupStops.length === 1 ? selectedTripPickupStops[0]._key : '');
                 return Boolean(
                     resolvedPickupStopKey &&
                     selectedPickupStopKeys.length > 0 &&
                     !selectedPickupStopKeys.includes(resolvedPickupStopKey)
                 );
             });
-            if (outOfScopePickupRow >= 0) {
-                addToast('error', `Titik pickup pada barang baris ${outOfScopePickupRow + 1} belum dicentang di trip ini`);
+            if (outOfScopePickupGroup >= 0) {
+                addToast('error', `Titik pickup pada SJ ${outOfScopePickupGroup + 1} belum dicentang di trip ini`);
                 return;
             }
         }
@@ -426,13 +627,17 @@ export default function OrderDetailPage() {
             return;
         }
         const selVeh = vehicles.find(v => v._id === effectiveDoVehicleRef);
-        const defaultShipperReference = doCustomerDoNumber.trim().toUpperCase() || undefined;
+        const normalizedDirectCargoGroups = draftDirectCargoGroups.map(group => ({
+            ...group,
+            resolvedPickupStopKey: group.pickupStopKey || (selectedTripPickupStops.length === 1 ? selectedTripPickupStops[0]._key : ''),
+            resolvedShipperReferenceNumber: group.shipperReferenceNumber.trim().toUpperCase(),
+        }));
         const deliveryOrderPayload = (isHeaderOnlyOrder
             ? {
                 orderRef: order?._id,
                 orderTripPlanKey: selectedOrderTripPlan?._key,
                 masterResi: order?.masterResi,
-                customerDoNumber: defaultShipperReference,
+                customerDoNumber: normalizedDirectCargoGroups[0]?.resolvedShipperReferenceNumber,
                 pickupStopKeys: selectedPickupStopKeys,
                 vehicleRef: effectiveDoVehicleRef || undefined,
                 vehiclePlate: selVeh?.plateNumber || '',
@@ -451,11 +656,13 @@ export default function OrderDetailPage() {
                 receiverPhone: doReceiverPhone.trim() || undefined,
                 receiverAddress: doReceiverAddress.trim() || undefined,
                 receiverCompany: doReceiverCompany.trim() || undefined,
-                cargoItems: draftDirectCargoItems.map(item => ({
-                    ...item,
-                    shipperReferenceNumber: item.shipperReferenceNumber.trim().toUpperCase() || defaultShipperReference,
-                    pickupStopKey: item.pickupStopKey || (selectedTripPickupStops.length === 1 ? selectedTripPickupStops[0]._key : ''),
-                })),
+                cargoItems: normalizedDirectCargoGroups.flatMap(group =>
+                    group.draftItems.map(item => ({
+                        ...item,
+                        shipperReferenceNumber: group.resolvedShipperReferenceNumber,
+                        pickupStopKey: group.resolvedPickupStopKey,
+                    }))
+                ),
             }
             : buildCreateDeliveryOrderRequestData({
                 order,
@@ -509,7 +716,7 @@ export default function OrderDetailPage() {
             );
             setShowDOModal(false);
             setSelectedShipments({});
-            setDirectCargoItems([createDefaultOrderItemForm()]);
+            setDirectCargoGroups([createDefaultDirectCargoGroup()]);
             setDoCustomerDoNumber('');
             setDoVehicle('');
             setDoVehicleOverrideReason('');
@@ -916,11 +1123,49 @@ export default function OrderDetailPage() {
                 </div>
                 {isHeaderOnlyOrder ? (
                     <div className="card-body">
-                        <div style={{ padding: '1rem 1.1rem', borderRadius: '0.75rem', background: 'var(--color-gray-50)', border: '1px solid var(--color-gray-200)', fontSize: '0.85rem', color: 'var(--color-gray-700)' }}>
-                            {dos.length > 0
-                                ? 'Order ini tidak menyimpan item target di header. Lihat detail Surat Jalan untuk manifest barang, koli, dan muatan yang sudah dicatat admin.'
-                                : 'Belum ada item target di order ini. Barang akan dicatat saat admin membuat Surat Jalan berdasarkan dokumen dari pengirim.'}
-                        </div>
+                        {headerOnlyManifestByDo.length === 0 ? (
+                            <div style={{ padding: '1rem 1.1rem', borderRadius: '0.75rem', background: 'var(--color-gray-50)', border: '1px solid var(--color-gray-200)', fontSize: '0.85rem', color: 'var(--color-gray-700)' }}>
+                                {dos.length > 0
+                                    ? 'Trip sudah ada, tapi nomor SJ atau barangnya belum dicatat.'
+                                    : 'Belum ada item target di order ini. Barang akan dicatat saat admin membuat Surat Jalan berdasarkan dokumen dari pengirim.'}
+                            </div>
+                        ) : (
+                            <div style={{ display: 'grid', gap: '1rem' }}>
+                                {headerOnlyManifestByDo.map(({ deliveryOrder, shipperManifests }) => (
+                                    <div key={deliveryOrder._id} style={{ display: 'grid', gap: '0.85rem', padding: '1rem', border: '1px solid var(--color-gray-200)', borderRadius: '0.9rem', background: 'var(--color-gray-50)' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                            <div>
+                                                <Link href={`/delivery-orders/${deliveryOrder._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>
+                                                    {formatInternalDeliveryOrderNumber(deliveryOrder)}
+                                                </Link>
+                                                <div className="text-muted text-sm">
+                                                    {deliveryOrder.driverName || '-'}{deliveryOrder.vehiclePlate ? ` / ${deliveryOrder.vehiclePlate}` : ''}
+                                                </div>
+                                            </div>
+                                            <div className="text-muted text-sm">{shipperManifests.length} SJ pengirim</div>
+                                        </div>
+                                        <div style={{ display: 'grid', gap: '0.75rem' }}>
+                                            {shipperManifests.map(manifest => (
+                                                <div key={`${deliveryOrder._id}-${manifest.referenceNumber}-${manifest.pickupAddress || '-'}`} style={{ padding: '0.85rem 1rem', borderRadius: '0.8rem', background: 'var(--color-white)', border: '1px solid var(--color-gray-200)' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                                        <div className="font-semibold font-mono">{manifest.referenceNumber}</div>
+                                                        <div className="text-muted text-sm">{manifest.itemCount} barang</div>
+                                                    </div>
+                                                    {(manifest.pickupLabel || manifest.pickupAddress) && (
+                                                        <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
+                                                            {manifest.pickupLabel || 'Pickup'}{manifest.pickupAddress ? ` · ${manifest.pickupAddress}` : ''}
+                                                        </div>
+                                                    )}
+                                                    <div style={{ marginTop: '0.35rem', fontWeight: 600 }}>
+                                                        {hasCargoAggregate(manifest.cargo) ? formatCargoSummary(manifest.cargo) : 'Barang belum dicatat'}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 ) : (
                     <div className="table-wrapper">
@@ -1155,19 +1400,21 @@ export default function OrderDetailPage() {
                                         No. DO internal akan otomatis memakai format tanggal <strong>{internalDoPreviewPeriod}</strong>.
                                     </div>
                                 </div>
-                                <div className="form-group">
-                                    <label className="form-label">No. SJ Pengirim</label>
-                                    <input
-                                        className="form-input"
-                                        value={doCustomerDoNumber}
-                                        onChange={e => setDoCustomerDoNumber(e.target.value.toUpperCase())}
-                                        placeholder="Isi sesuai surat jalan dari pengirim"
-                                        disabled={creatingDO}
-                                    />
-                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                        Format referensi customer: <strong>{normalizedShipperReferenceFormat}</strong>. Kalau SJ pengirim belum turun, field ini boleh dikosongkan dulu lalu diisi belakangan, misalnya <strong>{shipperReferenceExample}</strong>.
+                                {!isHeaderOnlyOrder && (
+                                    <div className="form-group">
+                                        <label className="form-label">No. SJ Pengirim</label>
+                                        <input
+                                            className="form-input"
+                                            value={doCustomerDoNumber}
+                                            onChange={e => setDoCustomerDoNumber(e.target.value.toUpperCase())}
+                                            placeholder="Isi sesuai surat jalan dari pengirim"
+                                            disabled={creatingDO}
+                                        />
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                            Format referensi customer: <strong>{normalizedShipperReferenceFormat}</strong>. Kalau SJ pengirim belum turun, field ini boleh dikosongkan dulu lalu diisi belakangan, misalnya <strong>{shipperReferenceExample}</strong>.
+                                        </div>
                                     </div>
-                                </div>
+                                )}
                             </div>
                             {selectedOrderTripPlan && (
                                 <div style={{ display: 'grid', gap: '0.75rem', marginBottom: '1rem' }}>
@@ -1188,9 +1435,6 @@ export default function OrderDetailPage() {
                                             <div className="text-muted text-sm">Uang Jalan Awal</div>
                                             <div className="font-semibold" style={{ marginTop: '0.2rem' }}>{formatCurrency(selectedOrderTripPlan.cashGiven || 0)}</div>
                                         </div>
-                                    </div>
-                                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                                        Armada, supir, upah trip, dan uang jalan sudah melekat di order. Di langkah ini admin tinggal input nomor Surat Jalan pengirim dan barangnya.
                                     </div>
                                 </div>
                             )}
@@ -1353,8 +1597,12 @@ export default function OrderDetailPage() {
                                 <>
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
                                         <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
+                                            <div className="text-muted text-sm">SJ pengirim</div>
+                                            <div className="font-semibold" style={{ fontSize: '1.1rem', marginTop: '0.2rem' }}>{draftDirectCargoGroups.length} SJ</div>
+                                        </div>
+                                        <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
                                             <div className="text-muted text-sm">Barang dicatat</div>
-                                            <div className="font-semibold" style={{ fontSize: '1.1rem', marginTop: '0.2rem' }}>{draftDirectCargoItems.length} item</div>
+                                            <div className="font-semibold" style={{ fontSize: '1.1rem', marginTop: '0.2rem' }}>{draftDirectCargoItems.length} barang</div>
                                         </div>
                                         <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
                                             <div className="text-muted text-sm">Muatan rencana</div>
@@ -1363,136 +1611,177 @@ export default function OrderDetailPage() {
                                             </div>
                                         </div>
                                     </div>
-                                    <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '0.85rem 1rem', marginBottom: '1rem', fontSize: '0.82rem', color: 'var(--color-gray-700)', border: '1px solid var(--color-gray-200)' }}>
-                                        Karena order ini masih berupa header booking, barang boleh diisi sekarang atau menyusul setelah Surat Jalan terbit. Jika barang diisi sekarang, setiap baris harus jelas berasal dari titik pickup mana dan memakai nomor SJ pengirim yang mana.
-                                    </div>
                                     <div style={{ display: 'grid', gap: '0.85rem' }}>
-                                        {directCargoItems.map((item, idx) => (
-                                            <div key={`direct-cargo-${idx}`} style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', padding: 12, background: 'var(--color-gray-50)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-gray-200)' }}>
-                                                {resolvedOrderPickupStops.length > 0 && (
-                                                    <div style={{ flex: '1 1 220px' }}>
-                                                        <label className="form-label">Titik Pickup</label>
-                                                        <select
-                                                            className="form-select"
-                                                            value={item.pickupStopKey}
-                                                            onChange={e => updateDirectCargoItem(idx, 'pickupStopKey', e.target.value)}
-                                                            disabled={creatingDO}
-                                                        >
-                                                            <option value="">Pilih titik pickup</option>
-                                                            {selectedTripPickupStops.map((pickupStop, pickupIndex) => (
-                                                                <option key={pickupStop._key} value={pickupStop._key}>
-                                                                    {`Pickup ${pickupIndex + 1}${pickupStop.pickupLabel ? ` - ${pickupStop.pickupLabel}` : ''}`}
-                                                                </option>
-                                                            ))}
-                                                        </select>
+                                        {directCargoGroups.map((group, groupIndex) => {
+                                            const draftItemsInGroup = getDirectCargoGroupDraftItems(group);
+                                            return (
+                                                <div key={group.id} style={{ display: 'grid', gap: '0.85rem', padding: '1rem', background: 'var(--color-gray-50)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-gray-200)' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                        <div>
+                                                            <div className="font-semibold">SJ {groupIndex + 1}</div>
+                                                            <div className="text-muted text-sm">{draftItemsInGroup.length} barang</div>
+                                                        </div>
+                                                        {directCargoGroups.length > 1 && (
+                                                            <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeDirectCargoGroup(group.id)} disabled={creatingDO}>
+                                                                <X size={14} /> Hapus SJ
+                                                            </button>
+                                                        )}
                                                     </div>
-                                                )}
-                                                <div style={{ flex: '1 1 220px' }}>
-                                                    <label className="form-label">No. SJ Pengirim</label>
-                                                    <input
-                                                        className="form-input"
-                                                        value={item.shipperReferenceNumber}
-                                                        onChange={e => updateDirectCargoItem(idx, 'shipperReferenceNumber', e.target.value.toUpperCase())}
-                                                        placeholder={doCustomerDoNumber.trim() ? `Kosong = ikut ${doCustomerDoNumber.trim().toUpperCase()}` : 'Isi nomor SJ pengirim'}
-                                                        disabled={creatingDO}
-                                                    />
-                                                </div>
-                                                <div style={{ flex: '1 1 240px' }}>
-                                                    <label className="form-label">Barang Customer</label>
-                                                    <select
-                                                        className="form-select"
-                                                        value={item.customerProductRef}
-                                                        onChange={e => applyDirectCargoProductSelection(idx, e.target.value)}
-                                                        disabled={creatingDO || !order.customerRef}
-                                                    >
-                                                        <option value="">{customerProducts.length > 0 ? 'Pilih dari master barang customer (opsional)' : 'Belum ada master barang customer'}</option>
-                                                        {customerProducts.map(product => (
-                                                            <option key={product._id} value={product._id}>
-                                                                {product.code ? `${product.code} - ` : ''}{product.name}
-                                                            </option>
+                                                    {resolvedOrderPickupStops.length > 0 && (
+                                                        <div className="form-group" style={{ marginBottom: 0 }}>
+                                                            <label className="form-label">Titik Pickup</label>
+                                                            <select
+                                                                className="form-select"
+                                                                value={group.pickupStopKey}
+                                                                onChange={e => updateDirectCargoGroup(group.id, 'pickupStopKey', e.target.value)}
+                                                                disabled={creatingDO}
+                                                            >
+                                                                <option value="">Pilih titik pickup</option>
+                                                                {selectedTripPickupStops.map((pickupStop, pickupIndex) => (
+                                                                    <option key={pickupStop._key} value={pickupStop._key}>
+                                                                        {`Pickup ${pickupIndex + 1}${pickupStop.pickupLabel ? ` - ${pickupStop.pickupLabel}` : ''}`}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                    )}
+                                                    <div className="form-group" style={{ marginBottom: 0 }}>
+                                                        <label className="form-label">No. SJ Pengirim</label>
+                                                        <input
+                                                            className="form-input"
+                                                            value={group.shipperReferenceNumber}
+                                                            onChange={e => updateDirectCargoGroup(group.id, 'shipperReferenceNumber', e.target.value.toUpperCase())}
+                                                            placeholder={`Mis. ${shipperReferenceExample}`}
+                                                            disabled={creatingDO}
+                                                        />
+                                                    </div>
+                                                    <div style={{ display: 'grid', gap: '0.75rem' }}>
+                                                        {group.items.map((item, itemIndex) => (
+                                                            <div key={`${group.id}-item-${itemIndex}`} style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', padding: 12, background: 'var(--color-white)', borderRadius: '0.8rem', border: '1px solid var(--color-gray-200)' }}>
+                                                                <div style={{ flex: '1 1 240px' }}>
+                                                                    <label className="form-label">Barang Customer</label>
+                                                                    <select
+                                                                        className="form-select"
+                                                                        value={item.customerProductRef}
+                                                                        onChange={e => applyDirectCargoProductSelection(group.id, itemIndex, e.target.value)}
+                                                                        disabled={creatingDO || !order.customerRef}
+                                                                    >
+                                                                        <option value="">{customerProducts.length > 0 ? 'Pilih dari master barang customer (opsional)' : 'Belum ada master barang customer'}</option>
+                                                                        {customerProducts.map(product => (
+                                                                            <option key={product._id} value={product._id}>
+                                                                                {product.code ? `${product.code} - ` : ''}{product.name}
+                                                                            </option>
+                                                                        ))}
+                                                                    </select>
+                                                                </div>
+                                                                <div style={{ flex: '2 1 260px' }}>
+                                                                    <label className="form-label">Deskripsi Barang</label>
+                                                                    <input
+                                                                        className="form-input"
+                                                                        value={item.description}
+                                                                        onChange={e => updateDirectCargoGroupItem(group.id, itemIndex, 'description', e.target.value)}
+                                                                        placeholder="Mis. Oli Diesel 10W-40 / Beras 50 kg / Keramik"
+                                                                        disabled={creatingDO}
+                                                                    />
+                                                                </div>
+                                                                <div style={{ flex: '0 1 110px' }}>
+                                                                    <label className="form-label">Koli</label>
+                                                                    <FormattedNumberInput
+                                                                        min={0}
+                                                                        allowDecimal={false}
+                                                                        value={item.qtyKoli}
+                                                                        onValueChange={value => updateDirectCargoGroupItem(group.id, itemIndex, 'qtyKoli', value)}
+                                                                        disabled={creatingDO}
+                                                                    />
+                                                                </div>
+                                                                <div style={{ flex: '1 1 180px' }}>
+                                                                    <label className="form-label">Berat</label>
+                                                                    <div style={{ display: 'flex', gap: 8 }}>
+                                                                        <FormattedNumberInput
+                                                                            min={0}
+                                                                            maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
+                                                                            value={item.weightInputValue}
+                                                                            onValueChange={value => updateDirectCargoGroupItem(group.id, itemIndex, 'weightInputValue', value)}
+                                                                            disabled={creatingDO}
+                                                                        />
+                                                                        <select
+                                                                            className="form-select"
+                                                                            value={item.weightInputUnit}
+                                                                            onChange={e => setDirectCargoGroups(previous => previous.map(entry => (
+                                                                                entry.id === group.id
+                                                                                    ? {
+                                                                                        ...entry,
+                                                                                        items: entry.items.map((groupItem, currentItemIndex) => (
+                                                                                            currentItemIndex === itemIndex
+                                                                                                ? updateOrderItemWeightUnit({ ...groupItem, pickupStopKey: entry.pickupStopKey, shipperReferenceNumber: entry.shipperReferenceNumber }, e.target.value as WeightInputUnit)
+                                                                                                : { ...groupItem, pickupStopKey: entry.pickupStopKey, shipperReferenceNumber: entry.shipperReferenceNumber }
+                                                                                        )).map(groupItem => toDirectCargoGroupItem(groupItem)),
+                                                                                    }
+                                                                                    : entry
+                                                                            )))}
+                                                                            style={{ width: 92 }}
+                                                                            disabled={creatingDO}
+                                                                        >
+                                                                            {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                                                        </select>
+                                                                    </div>
+                                                                </div>
+                                                                <div style={{ flex: '1 1 180px' }}>
+                                                                    <label className="form-label">Volume</label>
+                                                                    <div style={{ display: 'flex', gap: 8 }}>
+                                                                        <FormattedNumberInput
+                                                                            min={0}
+                                                                            maxFractionDigits={item.volumeInputUnit === 'LITER' ? 0 : 3}
+                                                                            value={item.volumeInputValue}
+                                                                            onValueChange={value => updateDirectCargoGroupItem(group.id, itemIndex, 'volumeInputValue', value)}
+                                                                            disabled={creatingDO}
+                                                                        />
+                                                                        <select
+                                                                            className="form-select"
+                                                                            value={item.volumeInputUnit}
+                                                                            onChange={e => setDirectCargoGroups(previous => previous.map(entry => (
+                                                                                entry.id === group.id
+                                                                                    ? {
+                                                                                        ...entry,
+                                                                                        items: entry.items.map((groupItem, currentItemIndex) => (
+                                                                                            currentItemIndex === itemIndex
+                                                                                                ? updateOrderItemVolumeUnit({ ...groupItem, pickupStopKey: entry.pickupStopKey, shipperReferenceNumber: entry.shipperReferenceNumber }, e.target.value as VolumeInputUnit)
+                                                                                                : { ...groupItem, pickupStopKey: entry.pickupStopKey, shipperReferenceNumber: entry.shipperReferenceNumber }
+                                                                                        )).map(groupItem => toDirectCargoGroupItem(groupItem)),
+                                                                                    }
+                                                                                    : entry
+                                                                            )))}
+                                                                            style={{ width: 92 }}
+                                                                            disabled={creatingDO}
+                                                                        >
+                                                                            {VOLUME_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                                                        </select>
+                                                                    </div>
+                                                                </div>
+                                                                {group.items.length > 1 && (
+                                                                    <button type="button" className="btn btn-ghost btn-icon-only" onClick={() => removeDirectCargoGroupItem(group.id, itemIndex)} disabled={creatingDO} style={{ marginBottom: 4 }}>
+                                                                        <X size={18} />
+                                                                    </button>
+                                                                )}
+                                                            </div>
                                                         ))}
-                                                    </select>
-                                                </div>
-                                                <div style={{ flex: '2 1 260px' }}>
-                                                    <label className="form-label">Deskripsi Barang</label>
-                                                    <input
-                                                        className="form-input"
-                                                        value={item.description}
-                                                        onChange={e => updateDirectCargoItem(idx, 'description', e.target.value)}
-                                                        placeholder="Mis. Oli Diesel 10W-40 / Beras 50 kg / Keramik"
-                                                        disabled={creatingDO}
-                                                    />
-                                                </div>
-                                                <div style={{ flex: '0 1 110px' }}>
-                                                    <label className="form-label">Koli</label>
-                                                    <FormattedNumberInput
-                                                        min={0}
-                                                        allowDecimal={false}
-                                                        value={item.qtyKoli}
-                                                        onValueChange={value => updateDirectCargoItem(idx, 'qtyKoli', value)}
-                                                        disabled={creatingDO}
-                                                    />
-                                                </div>
-                                                <div style={{ flex: '1 1 180px' }}>
-                                                    <label className="form-label">Berat</label>
-                                                    <div style={{ display: 'flex', gap: 8 }}>
-                                                        <FormattedNumberInput
-                                                            min={0}
-                                                            maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
-                                                            value={item.weightInputValue}
-                                                            onValueChange={value => updateDirectCargoItem(idx, 'weightInputValue', value)}
-                                                            disabled={creatingDO}
-                                                        />
-                                                        <select
-                                                            className="form-select"
-                                                            value={item.weightInputUnit}
-                                                            onChange={e => setDirectCargoItems(prev => prev.map((entry, i) => (
-                                                                i === idx ? updateOrderItemWeightUnit(entry, e.target.value as WeightInputUnit) : entry
-                                                            )))}
-                                                            style={{ width: 92 }}
-                                                            disabled={creatingDO}
-                                                        >
-                                                            {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                                                        </select>
+                                                    </div>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => addDirectCargoGroupItem(group.id)} disabled={creatingDO}>
+                                                            <Plus size={14} /> Tambah Barang di SJ Ini
+                                                        </button>
+                                                        <div className="text-muted text-sm">Satu SJ bisa berisi banyak barang.</div>
                                                     </div>
                                                 </div>
-                                                <div style={{ flex: '1 1 180px' }}>
-                                                    <label className="form-label">Volume</label>
-                                                    <div style={{ display: 'flex', gap: 8 }}>
-                                                        <FormattedNumberInput
-                                                            min={0}
-                                                            maxFractionDigits={item.volumeInputUnit === 'LITER' ? 0 : 3}
-                                                            value={item.volumeInputValue}
-                                                            onValueChange={value => updateDirectCargoItem(idx, 'volumeInputValue', value)}
-                                                            disabled={creatingDO}
-                                                        />
-                                                        <select
-                                                            className="form-select"
-                                                            value={item.volumeInputUnit}
-                                                            onChange={e => setDirectCargoItems(prev => prev.map((entry, i) => (
-                                                                i === idx ? updateOrderItemVolumeUnit(entry, e.target.value as VolumeInputUnit) : entry
-                                                            )))}
-                                                            style={{ width: 92 }}
-                                                            disabled={creatingDO}
-                                                        >
-                                                            {VOLUME_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                                                        </select>
-                                                    </div>
-                                                </div>
-                                                {directCargoItems.length > 1 && (
-                                                    <button type="button" className="btn btn-ghost btn-icon-only" onClick={() => removeDirectCargoItem(idx)} disabled={creatingDO} style={{ marginBottom: 4 }}>
-                                                        <X size={18} />
-                                                    </button>
-                                                )}
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginTop: '1rem' }}>
                                         <div className="text-muted text-sm">
-                                            Kalau manifest belum final, Surat Jalan tetap boleh dibuat dulu. Barang bisa ditambahkan lagi setelah driver menerima tugas.
+                                            Kalau manifest belum final, trip tetap boleh dibuat dulu lalu SJ dan barang bisa dilengkapi lagi dari detail DO.
                                         </div>
-                                        <button type="button" className="btn btn-secondary btn-sm" onClick={addDirectCargoItem} disabled={creatingDO}>
-                                            <Plus size={14} /> Tambah Barang
+                                        <button type="button" className="btn btn-secondary btn-sm" onClick={addDirectCargoGroup} disabled={creatingDO}>
+                                            <Plus size={14} /> Tambah SJ
                                         </button>
                                     </div>
                                 </>
