@@ -462,11 +462,11 @@ export default function NewOrderPage() {
                                         </option>
                                     ))}
                                 </select>
-                                <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
-                                    {selectedService
-                                        ? `Kategori ${selectedService.name} memuat kisaran ${selectedServiceCapacityLabel}.`
-                                        : 'Pilih kategori armada untuk melihat kisaran muatan per layanan.'}
-                                </div>
+                                {selectedService && (
+                                    <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
+                                        {selectedServiceCapacityLabel}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -474,12 +474,6 @@ export default function NewOrderPage() {
                     <div className="card">
                         <div className="card-header"><span className="card-header-title">Titik Pickup Order</span></div>
                         <div className="card-body" style={{ display: 'grid', gap: '0.9rem' }}>
-                            <div className="info-banner">
-                                <div className="info-banner-title">Order bisa memuat beberapa titik ambil</div>
-                                <div className="info-banner-text">
-                                    Booking ini menyimpan semua lokasi pickup. Di bagian trip di bawah, admin langsung memilih titik pickup mana saja yang dipegang truck dan driver pada masing-masing trip.
-                                </div>
-                            </div>
                             {pickupStops.map((stop, index) => (
                                 <div
                                     key={stop.id}
@@ -533,15 +527,12 @@ export default function NewOrderPage() {
                                             className="form-input"
                                             value={stop.notes}
                                             onChange={event => updatePickupStop(index, 'notes', event.target.value)}
-                                            placeholder="Opsional, mis. gate masuk, PIC gudang, jam loading"
+                                            placeholder="Catatan pickup"
                                         />
                                     </div>
                                 </div>
                             ))}
-                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                                <div className="text-muted text-sm">
-                                    Tambah titik pickup kalau satu order ditangani dari beberapa gudang, pabrik, atau lokasi ambil.
-                                </div>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
                                 <button type="button" className="btn btn-secondary btn-sm" onClick={addPickupStop}>
                                     <Plus size={14} /> Tambah Pickup
                                 </button>
@@ -555,12 +546,6 @@ export default function NewOrderPage() {
                         <span className="card-header-title">Assign Trip Saat Order Dibuat</span>
                     </div>
                     <div className="card-body" style={{ display: 'grid', gap: '1rem' }}>
-                        <div className="info-banner">
-                            <div className="info-banner-title">Order langsung membuat trip aktif</div>
-                            <div className="info-banner-text">
-                                Di langkah ini admin langsung assign truck, driver, upah trip, dan uang jalan awal. Setelah order tersimpan, trip sudah aktif dan driver tinggal melengkapi nomor SJ pengirim serta barangnya di Surat Jalan masing-masing.
-                            </div>
-                        </div>
                         {tripDrafts.map((trip, index) => {
                             const otherTripVehicleIds = tripDrafts.filter(other => other.id !== trip.id).map(other => other.vehicleRef).filter(Boolean);
                             const otherTripDriverIds = tripDrafts.filter(other => other.id !== trip.id).map(other => other.driverRef).filter(Boolean);
@@ -616,8 +601,8 @@ export default function NewOrderPage() {
                                     </div>
 
                                     <div className="form-group" style={{ marginBottom: 0 }}>
-                                        <label className="form-label">Pickup untuk Trip Ini <span className="required">*</span></label>
-                                        <div style={{ display: 'grid', gap: '0.6rem' }}>
+                                        <label className="form-label">Pickup Trip <span className="required">*</span></label>
+                                        <div style={{ display: 'grid', gap: '0.6rem', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
                                             {pickupStops.map((stop, pickupIndex) => (
                                                 <label
                                                     key={stop.id}
@@ -680,7 +665,7 @@ export default function NewOrderPage() {
                                                 rows={2}
                                                 value={trip.vehicleOverrideReason}
                                                 onChange={event => updateTripDraft(index, 'vehicleOverrideReason', event.target.value)}
-                                                placeholder="Mis. armada sesuai tidak tersedia atau load harus dipecah"
+                                                placeholder="Alasan override armada"
                                                 disabled={loading}
                                             />
                                         </div>
@@ -715,7 +700,7 @@ export default function NewOrderPage() {
 
                                     {matchedTripRate && (
                                         <div style={{ fontSize: '0.8rem', color: 'var(--color-primary-700)', background: 'var(--color-primary-50)', border: '1px solid var(--color-primary-100)', padding: '0.75rem 0.9rem', borderRadius: '0.75rem' }}>
-                                            Tarif master ditemukan: {formatTripRouteRateLabel(matchedTripRate)} | {matchedTripRate.rate.toLocaleString('id-ID')}
+                                            Tarif master: {formatTripRouteRateLabel(matchedTripRate)} | Rp {matchedTripRate.rate.toLocaleString('id-ID')}
                                         </div>
                                     )}
 
@@ -771,7 +756,7 @@ export default function NewOrderPage() {
                                             rows={2}
                                             value={trip.notes}
                                             onChange={event => updateTripDraft(index, 'notes', event.target.value)}
-                                            placeholder="Opsional. Nomor SJ pengirim dan barang akan dilengkapi per Surat Jalan setelah trip aktif."
+                                            placeholder="Catatan trip"
                                             disabled={loading}
                                         />
                                     </div>
@@ -779,10 +764,7 @@ export default function NewOrderPage() {
                             );
                         })}
 
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                            <div className="text-muted text-sm">
-                                Tambah trip kalau order ini langsung dibagi ke beberapa truck dan driver. Setiap trip akan otomatis membuat DO aktif dan bon uang jalan awal.
-                            </div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
                             <button type="button" className="btn btn-secondary btn-sm" onClick={addTripDraft}>
                                 <Plus size={14} /> Tambah Trip
                             </button>
