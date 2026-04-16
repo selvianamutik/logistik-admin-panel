@@ -208,7 +208,6 @@ export default function OrderDetailPage() {
         serviceRef: order?.serviceRef,
     });
     const isDoTripFeeLockedToMaster = Boolean(matchedDoTripRouteRate);
-    const shouldAutoIssueTripCash = canCreateTripCash;
     const activeIssueBankAccounts = bankAccounts.filter(account => account.active !== false);
 
     const applyDoTripRouteSelection = (nextOriginArea: string, nextDestinationArea: string) => {
@@ -299,13 +298,13 @@ export default function OrderDetailPage() {
     };
 
     const addDirectCargoItem = () => {
-        setDirectCargoItems(prev => [...prev, createDefaultOrderItemForm()]);
+        setDirectCargoItems(prev => [...prev, createDefaultOrderItemForm(selectedPickupStopKeys[0] || '')]);
     };
 
     const removeDirectCargoItem = (idx: number) => {
         setDirectCargoItems(prev => {
             const next = prev.filter((_, i) => i !== idx);
-            return next.length > 0 ? next : [createDefaultOrderItemForm()];
+            return next.length > 0 ? next : [createDefaultOrderItemForm(selectedPickupStopKeys[0] || '')];
         });
     };
 
@@ -317,8 +316,9 @@ export default function OrderDetailPage() {
     };
 
     const openCreateDOModal = () => {
+        const defaultPickupStopKey = resolvedOrderPickupStops[0]?._key || '';
         setSelectedShipments({});
-        setDirectCargoItems([createDefaultOrderItemForm()]);
+        setDirectCargoItems([createDefaultOrderItemForm(defaultPickupStopKey)]);
         setSelectedPickupStopKeys(resolvedOrderPickupStops.map(stop => stop._key));
         setDoTripRouteRateRef('');
         setDoTripOriginArea('');
@@ -377,6 +377,7 @@ export default function OrderDetailPage() {
     const canCreateDeliveryOrder = availableItems.length > 0 || isHeaderOnlyOrder;
     const draftDirectCargoItems = getDraftOrderItems(directCargoItems);
     const directCargoSummary = summarizeDraftOrderCargo(directCargoItems);
+    const selectedTripPickupStops = resolvedOrderPickupStops.filter(stop => selectedPickupStopKeys.includes(stop._key));
     const headerOnlyDeliveredMatchesTotal =
         isHeaderOnlyOrder &&
         totalDeliveredActualCargo.qtyKoli === totalOrderCargo.qtyKoli &&
@@ -425,6 +426,34 @@ export default function OrderDetailPage() {
             addToast('error', 'Pilih minimal 1 titik pickup untuk trip ini');
             return;
         }
+        if (isHeaderOnlyOrder && draftDirectCargoItems.length > 0) {
+            const defaultShipperReference = doCustomerDoNumber.trim().toUpperCase();
+            const invalidReferenceRow = draftDirectCargoItems.findIndex(item => !(item.shipperReferenceNumber.trim() || defaultShipperReference));
+            if (invalidReferenceRow >= 0) {
+                addToast('error', `No. SJ pengirim wajib diisi pada barang baris ${invalidReferenceRow + 1}`);
+                return;
+            }
+            const invalidPickupRow = draftDirectCargoItems.findIndex(item => {
+                const resolvedPickupStopKey = item.pickupStopKey || (selectedTripPickupStops.length === 1 ? selectedTripPickupStops[0]._key : '');
+                return resolvedOrderPickupStops.length > 0 && !resolvedPickupStopKey;
+            });
+            if (invalidPickupRow >= 0) {
+                addToast('error', `Titik pickup wajib dipilih pada barang baris ${invalidPickupRow + 1}`);
+                return;
+            }
+            const outOfScopePickupRow = draftDirectCargoItems.findIndex(item => {
+                const resolvedPickupStopKey = item.pickupStopKey || (selectedTripPickupStops.length === 1 ? selectedTripPickupStops[0]._key : '');
+                return Boolean(
+                    resolvedPickupStopKey &&
+                    selectedPickupStopKeys.length > 0 &&
+                    !selectedPickupStopKeys.includes(resolvedPickupStopKey)
+                );
+            });
+            if (outOfScopePickupRow >= 0) {
+                addToast('error', `Titik pickup pada barang baris ${outOfScopePickupRow + 1} belum dicentang di trip ini`);
+                return;
+            }
+        }
         if (!isHeaderOnlyOrder && selectedItems.length === 0) {
             addToast('error', 'Pilih minimal 1 item untuk surat jalan');
             return;
@@ -445,62 +474,71 @@ export default function OrderDetailPage() {
             addToast('error', 'Isi upah trip terlebih dahulu sebelum menerbitkan uang jalan awal');
             return;
         }
+        const selVeh = vehicles.find(v => v._id === doVehicle);
+        const selDriver = drivers.find(driver => driver._id === doDriver);
+        const defaultShipperReference = doCustomerDoNumber.trim().toUpperCase() || undefined;
+        const deliveryOrderPayload = (isHeaderOnlyOrder
+            ? {
+                orderRef: order?._id,
+                masterResi: order?.masterResi,
+                customerDoNumber: defaultShipperReference,
+                pickupStopKeys: selectedPickupStopKeys,
+                tripRouteRateRef: doTripRouteRateRef || undefined,
+                tripOriginArea: doTripOriginArea || undefined,
+                tripDestinationArea: doTripDestinationArea || undefined,
+                vehicleRef: doVehicle || undefined,
+                vehiclePlate: selVeh?.plateNumber || '',
+                vehicleCategoryOverrideReason: requiresVehicleOverrideReason ? doVehicleOverrideReason.trim() : undefined,
+                driverRef: doDriver || undefined,
+                driverName: selDriver?.name || '',
+                taripBorongan: matchedDoTripRouteRate?.rate ?? doTripFee,
+                date: doDate,
+                notes: doNotes,
+                customerName: order?.customerName,
+                receiverName: doReceiverName.trim() || undefined,
+                receiverPhone: doReceiverPhone.trim() || undefined,
+                receiverAddress: doReceiverAddress.trim() || undefined,
+                receiverCompany: doReceiverCompany.trim() || undefined,
+                cargoItems: draftDirectCargoItems.map(item => ({
+                    ...item,
+                    shipperReferenceNumber: item.shipperReferenceNumber.trim().toUpperCase() || defaultShipperReference,
+                    pickupStopKey: item.pickupStopKey || (selectedTripPickupStops.length === 1 ? selectedTripPickupStops[0]._key : ''),
+                })),
+            }
+            : buildCreateDeliveryOrderRequestData({
+                order,
+                items: selectedItems,
+                customerDoNumber: doCustomerDoNumber,
+                pickupStopKeys: selectedPickupStopKeys,
+                tripRouteRateRef: doTripRouteRateRef,
+                tripOriginArea: doTripOriginArea,
+                tripDestinationArea: doTripDestinationArea,
+                vehicleRef: doVehicle,
+                selectedVehicle: selVeh,
+                driverRef: doDriver,
+                selectedDriver: selDriver,
+                taripBorongan: matchedDoTripRouteRate?.rate ?? doTripFee,
+                date: doDate,
+                notes: doNotes,
+                requiresVehicleOverrideReason,
+                vehicleOverrideReason: doVehicleOverrideReason,
+                receiverName: doReceiverName,
+                receiverPhone: doReceiverPhone,
+                receiverAddress: doReceiverAddress,
+                receiverCompany: doReceiverCompany,
+            })) as Record<string, unknown>;
+        deliveryOrderPayload.cashGiven = tripCashCashGiven;
+        deliveryOrderPayload.issueBankRef = tripCashBankRef;
+
         setCreatingDO(true);
         try {
-            const selVeh = vehicles.find(v => v._id === doVehicle);
-            const selDriver = drivers.find(driver => driver._id === doDriver);
             const doRes = await fetch('/api/data', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     entity: 'delivery-orders',
                     action: 'create-with-items',
-                    data: isHeaderOnlyOrder
-                        ? {
-                            orderRef: order?._id,
-                            masterResi: order?.masterResi,
-                            customerDoNumber: doCustomerDoNumber.trim() || undefined,
-                            pickupStopKeys: selectedPickupStopKeys,
-                            tripRouteRateRef: doTripRouteRateRef || undefined,
-                            tripOriginArea: doTripOriginArea || undefined,
-                            tripDestinationArea: doTripDestinationArea || undefined,
-                            vehicleRef: doVehicle || undefined,
-                            vehiclePlate: selVeh?.plateNumber || '',
-                            vehicleCategoryOverrideReason: requiresVehicleOverrideReason ? doVehicleOverrideReason.trim() : undefined,
-                            driverRef: doDriver || undefined,
-                            driverName: selDriver?.name || '',
-                            taripBorongan: matchedDoTripRouteRate?.rate ?? doTripFee,
-                            date: doDate,
-                            notes: doNotes,
-                            customerName: order?.customerName,
-                            receiverName: doReceiverName.trim() || undefined,
-                            receiverPhone: doReceiverPhone.trim() || undefined,
-                            receiverAddress: doReceiverAddress.trim() || undefined,
-                            receiverCompany: doReceiverCompany.trim() || undefined,
-                            cargoItems: draftDirectCargoItems,
-                        }
-                        : buildCreateDeliveryOrderRequestData({
-                            order,
-                            items: selectedItems,
-                            customerDoNumber: doCustomerDoNumber,
-                            pickupStopKeys: selectedPickupStopKeys,
-                            tripRouteRateRef: doTripRouteRateRef,
-                            tripOriginArea: doTripOriginArea,
-                            tripDestinationArea: doTripDestinationArea,
-                            vehicleRef: doVehicle,
-                            selectedVehicle: selVeh,
-                            driverRef: doDriver,
-                            selectedDriver: selDriver,
-                            taripBorongan: matchedDoTripRouteRate?.rate ?? doTripFee,
-                            date: doDate,
-                            notes: doNotes,
-                            requiresVehicleOverrideReason,
-                            vehicleOverrideReason: doVehicleOverrideReason,
-                            receiverName: doReceiverName,
-                            receiverPhone: doReceiverPhone,
-                            receiverAddress: doReceiverAddress,
-                            receiverCompany: doReceiverCompany,
-                        }),
+                    data: deliveryOrderPayload,
                 }),
             });
             const doData = await doRes.json();
@@ -509,33 +547,11 @@ export default function OrderDetailPage() {
                 return;
             }
 
-            let issuedVoucherNumber = '';
-            let voucherIssueError = '';
-            if (shouldAutoIssueTripCash && doData.data?._id) {
-                const voucherRes = await fetch('/api/data', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        entity: 'driver-vouchers',
-                        data: {
-                            deliveryOrderRef: doData.data._id,
-                            issuedDate: doDate,
-                            cashGiven: tripCashCashGiven,
-                            issueBankRef: tripCashBankRef,
-                        },
-                    }),
-                });
-                const voucherData = await voucherRes.json();
-                if (!voucherRes.ok) {
-                    voucherIssueError = voucherData.error || 'Gagal menerbitkan uang jalan trip';
-                } else {
-                    issuedVoucherNumber = voucherData.data?.bonNumber || '';
-                }
-            }
+            const issuedVoucherNumber = doData.issuedVoucherBonNumber || '';
 
             addToast(
-                voucherIssueError ? 'info' : 'success',
-                `Surat Jalan dibuat: ${formatInternalDeliveryOrderNumber(doData.data || {})}${doData.data?.customerDoNumber ? ` | SJ Pengirim ${formatShipperDeliveryOrderNumber(doData.data || {})}` : ''}${isHeaderOnlyOrder && draftDirectCargoItems.length === 0 ? ' | Barang menyusul' : ''}${issuedVoucherNumber ? ` | Bon ${issuedVoucherNumber}` : ''}${voucherIssueError ? ` | Bon gagal: ${voucherIssueError}` : ''}`
+                'success',
+                `Surat Jalan dibuat: ${formatInternalDeliveryOrderNumber(doData.data || {})}${doData.data?.customerDoNumber ? ` | SJ Pengirim ${formatShipperDeliveryOrderNumber(doData.data || {})}` : ''}${isHeaderOnlyOrder && draftDirectCargoItems.length === 0 ? ' | Barang menyusul' : ''}${issuedVoucherNumber ? ` | Bon ${issuedVoucherNumber}` : ''}`
             );
             setShowDOModal(false);
             setSelectedShipments({});
@@ -1374,11 +1390,39 @@ export default function OrderDetailPage() {
                                         </div>
                                     </div>
                                     <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '0.85rem 1rem', marginBottom: '1rem', fontSize: '0.82rem', color: 'var(--color-gray-700)', border: '1px solid var(--color-gray-200)' }}>
-                                        Karena order ini masih berupa header booking, barang boleh diisi sekarang atau menyusul setelah Surat Jalan terbit. Yang wajib saat buat Surat Jalan adalah armada, supir, dan struktur trip-nya.
+                                        Karena order ini masih berupa header booking, barang boleh diisi sekarang atau menyusul setelah Surat Jalan terbit. Jika barang diisi sekarang, setiap baris harus jelas berasal dari titik pickup mana dan memakai nomor SJ pengirim yang mana.
                                     </div>
                                     <div style={{ display: 'grid', gap: '0.85rem' }}>
                                         {directCargoItems.map((item, idx) => (
                                             <div key={`direct-cargo-${idx}`} style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', padding: 12, background: 'var(--color-gray-50)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-gray-200)' }}>
+                                                {resolvedOrderPickupStops.length > 0 && (
+                                                    <div style={{ flex: '1 1 220px' }}>
+                                                        <label className="form-label">Titik Pickup</label>
+                                                        <select
+                                                            className="form-select"
+                                                            value={item.pickupStopKey}
+                                                            onChange={e => updateDirectCargoItem(idx, 'pickupStopKey', e.target.value)}
+                                                            disabled={creatingDO}
+                                                        >
+                                                            <option value="">Pilih titik pickup</option>
+                                                            {selectedTripPickupStops.map((pickupStop, pickupIndex) => (
+                                                                <option key={pickupStop._key} value={pickupStop._key}>
+                                                                    {`Pickup ${pickupIndex + 1}${pickupStop.pickupLabel ? ` - ${pickupStop.pickupLabel}` : ''}`}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                )}
+                                                <div style={{ flex: '1 1 220px' }}>
+                                                    <label className="form-label">No. SJ Pengirim</label>
+                                                    <input
+                                                        className="form-input"
+                                                        value={item.shipperReferenceNumber}
+                                                        onChange={e => updateDirectCargoItem(idx, 'shipperReferenceNumber', e.target.value.toUpperCase())}
+                                                        placeholder={doCustomerDoNumber.trim() ? `Kosong = ikut ${doCustomerDoNumber.trim().toUpperCase()}` : 'Isi nomor SJ pengirim'}
+                                                        disabled={creatingDO}
+                                                    />
+                                                </div>
                                                 <div style={{ flex: '1 1 240px' }}>
                                                     <label className="form-label">Barang Customer</label>
                                                     <select

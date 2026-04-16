@@ -124,6 +124,8 @@ export function mapOrderItemToOrderEditForm(item: OrderItem): OrderItemForm {
                     ? convertM3ToVolumeInputValue(normalizedVolumeM3, nextVolumeUnit)
                     : 0,
         volumeInputUnit: nextVolumeUnit,
+        pickupStopKey: '',
+        shipperReferenceNumber: '',
         value: normalizedValue,
     };
 }

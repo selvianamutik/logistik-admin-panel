@@ -13,7 +13,9 @@ import { getSanityClient, sanityGetById, sanityGetNextNumber } from '@/lib/sanit
 
 import {
     assertIsoDate,
+    computeLedgerDebitBalance,
     extractRefId,
+    getLedgerAccount,
     isMutationConflictError,
     isPlainObject,
     normalizeCurrencyNumber,
@@ -61,7 +63,7 @@ import {
 } from './order-workflow-support';
 import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
 import { resolveTripRouteRateSelection } from './generic-workflow-support';
-import { computeDriverVoucherTotals } from './driver-workflow-support';
+import { buildRouteLabel, computeDriverVoucherTotals } from './driver-workflow-support';
 import { computeDeliveryOrderOvertonage } from '@/lib/delivery-order-overtonage';
 import type {
     CompanyProfile,
@@ -352,6 +354,50 @@ function normalizeExistingShipperReferences(existing: DeliveryOrderShipperRefere
     return normalizedReferences;
 }
 
+function describePickupStop(stop?: { pickupLabel?: string; pickupAddress?: string }) {
+    return normalizeOptionalText(stop?.pickupLabel) || normalizeOptionalText(stop?.pickupAddress) || 'titik pickup';
+}
+
+function upsertShipperReferenceForPickup(
+    references: NormalizedDeliveryOrderShipperReference[],
+    referenceNumber: string,
+    pickupStopKey: string | undefined,
+    pickupMap: Map<string, NormalizedDeliveryOrderPickupStop>,
+    referenceLabel = 'SJ pengirim'
+) {
+    const existingIndex = references.findIndex(reference => reference.referenceNumber === referenceNumber);
+    if (existingIndex >= 0) {
+        const current = references[existingIndex];
+        if (
+            pickupStopKey &&
+            current.pickupStopKey &&
+            current.pickupStopKey !== pickupStopKey
+        ) {
+            throw new Error(
+                `${referenceLabel} ${referenceNumber} tidak boleh dipakai di dua titik pickup berbeda dalam satu surat jalan (${describePickupStop(pickupMap.get(current.pickupStopKey))} dan ${describePickupStop(pickupMap.get(pickupStopKey))}).`
+            );
+        }
+        if (pickupStopKey && !current.pickupStopKey) {
+            references[existingIndex] = {
+                ...current,
+                pickupStopKey,
+                pickupAddress: pickupMap.get(pickupStopKey)?.pickupAddress || current.pickupAddress,
+            };
+        }
+        return references[existingIndex];
+    }
+
+    const createdReference: NormalizedDeliveryOrderShipperReference = {
+        _key: crypto.randomUUID(),
+        sequence: references.length + 1,
+        referenceNumber,
+        pickupStopKey,
+        pickupAddress: pickupStopKey ? pickupMap.get(pickupStopKey)?.pickupAddress : undefined,
+    };
+    references.push(createdReference);
+    return createdReference;
+}
+
 function normalizeIncomingShipperReferences(
     data: Record<string, unknown>,
     pickupStops: NormalizedDeliveryOrderPickupStop[],
@@ -385,6 +431,21 @@ function normalizeIncomingShipperReferences(
             throw new Error(`Titik pickup untuk SJ pengirim ${referenceNumber} tidak ditemukan di surat jalan`);
         }
         if (seen.has(referenceNumber)) {
+            const currentReference = normalized.find(reference => reference.referenceNumber === referenceNumber);
+            if (
+                currentReference &&
+                pickupStopKey &&
+                currentReference.pickupStopKey &&
+                currentReference.pickupStopKey !== pickupStopKey
+            ) {
+                throw new Error(
+                    `SJ pengirim ${referenceNumber} tidak boleh dipakai di dua titik pickup berbeda dalam satu surat jalan (${describePickupStop(pickupMap.get(currentReference.pickupStopKey))} dan ${describePickupStop(pickupMap.get(pickupStopKey))}).`
+                );
+            }
+            if (currentReference && pickupStopKey && !currentReference.pickupStopKey) {
+                currentReference.pickupStopKey = pickupStopKey;
+                currentReference.pickupAddress = pickupMap.get(pickupStopKey)?.pickupAddress || currentReference.pickupAddress;
+            }
             continue;
         }
         seen.add(referenceNumber);
@@ -929,6 +990,383 @@ export async function handleOrderCreate(
     const orderId = crypto.randomUUID();
     const masterResi = await sanityGetNextNumber('resi');
     const createdAt = new Date().toISOString();
+    const customerDoPrefix = normalizeCustomerDoPrefix((customer as { deliveryOrderPrefix?: string }).deliveryOrderPrefix);
+    const rawTripDrafts = Array.isArray(data.tripDrafts) ? data.tripDrafts.filter(isPlainObject) : [];
+    const companyProfile =
+        rawTripDrafts.length > 0
+            ? await getSanityClient().fetch<Pick<CompanyProfile, 'name' | 'address' | 'phone' | 'email' | 'logoUrl'> | null>(
+                `*[_type == "companyProfile"][0]{
+                    name,
+                    address,
+                    phone,
+                    email,
+                    logoUrl
+                }`
+            )
+            : null;
+    const preparedTripDrafts: Array<{
+        doId: string;
+        doNumber: string;
+        doDoc: { _id: string; _type: string } & Record<string, unknown>;
+        bonNumber: string;
+        voucherDoc: { _id: string; _type: string } & Record<string, unknown>;
+        initialDisbursementDoc: { _id: string; _type: string } & Record<string, unknown>;
+        issueTransactionDoc: { _id: string; _type: string } & Record<string, unknown>;
+        tripRouteRateRef?: string;
+        tripRouteRateRev?: string;
+        vehicleId: string;
+        vehicleRev: string;
+        driverId: string;
+        driverRev: string;
+        issueBankRef: string;
+    }> = [];
+    const usedVehicleRefs = new Set<string>();
+    const usedDriverRefs = new Set<string>();
+    const bankUsageState = new Map<string, {
+        account: {
+            _id: string;
+            _rev?: string;
+            bankName: string;
+            accountNumber?: string;
+            currentBalance: number;
+        };
+        nextBalance: number;
+    }>();
+
+    for (const [index, rawTripDraft] of rawTripDrafts.entries()) {
+        const tripLabel = `trip ${index + 1}`;
+        const vehicleRef = normalizeOptionalText(rawTripDraft.vehicleRef);
+        const driverRef = normalizeOptionalText(rawTripDraft.driverRef);
+        const issueBankRef = normalizeOptionalText(rawTripDraft.issueBankRef);
+        const cashGiven = normalizeCurrencyNumber(rawTripDraft.cashGiven ?? 0);
+        const vehicleCategoryOverrideReason = normalizeOptionalText(rawTripDraft.vehicleCategoryOverrideReason);
+
+        if (!vehicleRef) {
+            return NextResponse.json({ error: `Kendaraan wajib dipilih pada ${tripLabel}` }, { status: 400 });
+        }
+        if (!driverRef) {
+            return NextResponse.json({ error: `Supir wajib dipilih pada ${tripLabel}` }, { status: 400 });
+        }
+        if (!issueBankRef) {
+            return NextResponse.json({ error: `Rekening atau kas sumber wajib dipilih pada ${tripLabel}` }, { status: 400 });
+        }
+        if (!Number.isFinite(cashGiven) || cashGiven <= 0) {
+            return NextResponse.json({ error: `Nominal uang jalan awal wajib diisi pada ${tripLabel}` }, { status: 400 });
+        }
+        if (usedVehicleRefs.has(vehicleRef)) {
+            return NextResponse.json({ error: `Kendaraan ${vehicleRef} dipakai dua kali pada draft trip order yang sama` }, { status: 409 });
+        }
+        if (usedDriverRefs.has(driverRef)) {
+            return NextResponse.json({ error: `Supir ${driverRef} dipakai dua kali pada draft trip order yang sama` }, { status: 409 });
+        }
+
+        const selectedPickupStops = resolveDeliveryOrderPickupStops(
+            {
+                pickupStops,
+                customerPickupRef: pickupStops[0]?.customerPickupRef,
+                pickupAddress: buildPickupSummary(pickupStops, customer.address),
+            },
+            rawTripDraft
+        );
+        if (selectedPickupStops.length === 0) {
+            return NextResponse.json({ error: `Minimal 1 titik pickup wajib dipilih pada ${tripLabel}` }, { status: 400 });
+        }
+
+        const doDate =
+            typeof rawTripDraft.date === 'string' && rawTripDraft.date
+                ? rawTripDraft.date
+                : getBusinessDateValue();
+        try {
+            assertIsoDate(doDate, `Tanggal ${tripLabel}`);
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : `Tanggal ${tripLabel} tidak valid` },
+                { status: 400 }
+            );
+        }
+
+        const selectedVehicle = await sanityGetById<{
+            _id: string;
+            _rev?: string;
+            plateNumber?: string;
+            status?: string;
+            serviceRef?: string;
+            serviceName?: string;
+            capacityKg?: number;
+        }>(vehicleRef);
+        if (!selectedVehicle) {
+            return NextResponse.json({ error: `Kendaraan pada ${tripLabel} tidak ditemukan` }, { status: 404 });
+        }
+        if (!selectedVehicle._rev) {
+            return NextResponse.json({ error: `Revisi kendaraan pada ${tripLabel} tidak tersedia. Refresh lalu coba lagi.` }, { status: 409 });
+        }
+        if (selectedVehicle.status === 'SOLD') {
+            return NextResponse.json({ error: `Kendaraan ${selectedVehicle.plateNumber || vehicleRef} sudah dijual dan tidak bisa dipakai di ${tripLabel}` }, { status: 409 });
+        }
+        if (selectedVehicle.status === 'OUT_OF_SERVICE') {
+            return NextResponse.json({ error: `Kendaraan ${selectedVehicle.plateNumber || vehicleRef} sedang out of service dan tidak bisa dipakai di ${tripLabel}` }, { status: 409 });
+        }
+        const conflictingVehicleDo = await getSanityClient().fetch<{
+            _id: string;
+            doNumber?: string;
+            customerDoNumber?: string;
+        } | null>(
+            `*[
+                _type == "deliveryOrder" &&
+                status in ["CREATED", "HEADING_TO_PICKUP", "ON_DELIVERY", "ARRIVED"] &&
+                ((vehicleRef == $ref || vehicleRef._ref == $ref) || lower(coalesce(vehiclePlate, "")) == $plate)
+            ][0]{
+                _id,
+                doNumber,
+                customerDoNumber
+            }`,
+            {
+                ref: vehicleRef,
+                plate: (selectedVehicle.plateNumber || '').toLowerCase(),
+            }
+        );
+        if (conflictingVehicleDo) {
+            const conflictingNumber =
+                conflictingVehicleDo.doNumber ||
+                conflictingVehicleDo.customerDoNumber ||
+                conflictingVehicleDo._id;
+            return NextResponse.json(
+                { error: `Kendaraan ${selectedVehicle.plateNumber || vehicleRef} masih dipakai di surat jalan aktif ${conflictingNumber}` },
+                { status: 409 }
+            );
+        }
+        const orderServiceRef = extractRefId(serviceRef);
+        const vehicleServiceRef = extractRefId(selectedVehicle.serviceRef) || undefined;
+        const vehicleServiceName = selectedVehicle.serviceName || undefined;
+        let vehicleCategoryOverrideReasonToStore: string | undefined;
+        if (orderServiceRef && !vehicleServiceRef && !vehicleCategoryOverrideReason) {
+            return NextResponse.json(
+                { error: `Kendaraan ${selectedVehicle.plateNumber || vehicleRef} belum punya kategori armada yang cocok. Isi alasan override pada ${tripLabel}.` },
+                { status: 400 }
+            );
+        }
+        if (orderServiceRef && vehicleServiceRef !== orderServiceRef && !vehicleCategoryOverrideReason) {
+            return NextResponse.json(
+                { error: `Kendaraan ${selectedVehicle.plateNumber || vehicleRef} tidak sesuai kategori order. Isi alasan override pada ${tripLabel}.` },
+                { status: 400 }
+            );
+        }
+        if (orderServiceRef && vehicleServiceRef !== orderServiceRef) {
+            vehicleCategoryOverrideReasonToStore = vehicleCategoryOverrideReason || undefined;
+        }
+
+        const selectedDriver = await sanityGetById<{ _id: string; _rev?: string; name?: string; active?: boolean }>(driverRef);
+        if (!selectedDriver) {
+            return NextResponse.json({ error: `Supir pada ${tripLabel} tidak ditemukan` }, { status: 404 });
+        }
+        if (!selectedDriver._rev) {
+            return NextResponse.json({ error: `Revisi supir pada ${tripLabel} tidak tersedia. Refresh lalu coba lagi.` }, { status: 409 });
+        }
+        if (selectedDriver.active === false) {
+            return NextResponse.json({ error: `Supir ${selectedDriver.name || driverRef} tidak aktif dan tidak bisa dipakai di ${tripLabel}` }, { status: 409 });
+        }
+        const conflictingDriverDo = await getSanityClient().fetch<{
+            _id: string;
+            doNumber?: string;
+            customerDoNumber?: string;
+        } | null>(
+            `*[
+                _type == "deliveryOrder" &&
+                status in ["CREATED", "HEADING_TO_PICKUP", "ON_DELIVERY", "ARRIVED"] &&
+                ((driverRef == $ref || driverRef._ref == $ref) || lower(coalesce(driverName, "")) == $driverName)
+            ][0]{
+                _id,
+                doNumber,
+                customerDoNumber
+            }`,
+            {
+                ref: driverRef,
+                driverName: (selectedDriver.name || '').toLowerCase(),
+            }
+        );
+        if (conflictingDriverDo) {
+            const conflictingNumber =
+                conflictingDriverDo.doNumber ||
+                conflictingDriverDo.customerDoNumber ||
+                conflictingDriverDo._id;
+            return NextResponse.json(
+                { error: `Supir ${selectedDriver.name || driverRef} masih terikat di surat jalan aktif ${conflictingNumber}` },
+                { status: 409 }
+            );
+        }
+
+        let tripRouteSelection: Awaited<ReturnType<typeof resolveTripRouteRateSelection>>;
+        try {
+            tripRouteSelection = await resolveTripRouteRateSelection(rawTripDraft, {
+                serviceRef: serviceRef || '',
+            });
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : `Master biaya rute trip pada ${tripLabel} tidak valid` },
+                { status: 400 }
+            );
+        }
+        const matchedTripRouteRateFee = normalizeCurrencyNumber(tripRouteSelection?.matchedTripRouteRate?.rate ?? 0);
+        const manualTripFee = normalizeCurrencyNumber(rawTripDraft.taripBorongan ?? 0);
+        if (!Number.isFinite(manualTripFee) || manualTripFee < 0) {
+            return NextResponse.json({ error: `Upah trip pada ${tripLabel} tidak valid` }, { status: 400 });
+        }
+        if (
+            matchedTripRouteRateFee > 0 &&
+            manualTripFee > 0 &&
+            Math.abs(manualTripFee - matchedTripRouteRateFee) > 0.01
+        ) {
+            return NextResponse.json(
+                { error: `Upah trip pada ${tripLabel} harus mengikuti master biaya rute trip yang dipilih` },
+                { status: 409 }
+            );
+        }
+        const effectiveTripFee = matchedTripRouteRateFee > 0 ? matchedTripRouteRateFee : manualTripFee;
+        if (!Number.isFinite(effectiveTripFee) || effectiveTripFee <= 0) {
+            return NextResponse.json({ error: `Upah trip wajib diisi pada ${tripLabel}` }, { status: 400 });
+        }
+
+        let bankState = bankUsageState.get(issueBankRef);
+        if (!bankState) {
+            const account = await getLedgerAccount(issueBankRef);
+            if (!account) {
+                return NextResponse.json({ error: `Rekening sumber pada ${tripLabel} tidak ditemukan` }, { status: 404 });
+            }
+            if (!account._rev) {
+                return NextResponse.json({ error: `Revisi rekening sumber pada ${tripLabel} tidak tersedia` }, { status: 409 });
+            }
+            bankState = {
+                account,
+                nextBalance: account.currentBalance,
+            };
+            bankUsageState.set(issueBankRef, bankState);
+        }
+        const { startingBalance, nextBalance } = computeLedgerDebitBalance(bankState.nextBalance, cashGiven);
+        if (nextBalance < 0) {
+            return NextResponse.json(
+                { error: `Saldo ${bankState.account.bankName} tidak cukup untuk ${tripLabel}. Saldo tersedia ${startingBalance}` },
+                { status: 409 }
+            );
+        }
+        bankState.nextBalance = nextBalance;
+
+        const doId = crypto.randomUUID();
+        const doNumber = await sanityGetNextNumber('do', doDate);
+        const bonNumber = await sanityGetNextNumber('bon', doDate);
+        const voucherId = crypto.randomUUID();
+        const initialDisbursementId = crypto.randomUUID();
+        const issueTransactionId = crypto.randomUUID();
+        const pickupSummary = buildPickupSummary(selectedPickupStops, customer.address);
+        const voucherTotals = computeDriverVoucherTotals(cashGiven, 0, effectiveTripFee);
+
+        preparedTripDrafts.push({
+            doId,
+            doNumber,
+            doDoc: {
+                _id: doId,
+                _type: 'deliveryOrder',
+                issuerCompanyName: companyProfile?.name,
+                issuerCompanyAddress: companyProfile?.address,
+                issuerCompanyPhone: companyProfile?.phone,
+                issuerCompanyEmail: companyProfile?.email,
+                issuerCompanyLogoUrl: resolveCompanyLogoUrl(companyProfile),
+                orderRef: orderId,
+                masterResi,
+                customerRef,
+                customerName: customer.name,
+                customerDoPrefix,
+                pickupAddress: pickupSummary,
+                pickupStops: selectedPickupStops,
+                serviceRef: serviceRef || '',
+                serviceName,
+                vehicleServiceRef,
+                vehicleServiceName,
+                vehicleCategoryOverrideReason: vehicleCategoryOverrideReasonToStore,
+                vehicleRef,
+                vehiclePlate: selectedVehicle.plateNumber || undefined,
+                driverRef,
+                driverName: selectedDriver.name || undefined,
+                tripRouteRateRef: tripRouteSelection?.tripRouteRateRef,
+                tripOriginArea: tripRouteSelection?.tripOriginArea,
+                tripDestinationArea: tripRouteSelection?.tripDestinationArea,
+                baseTaripBorongan: effectiveTripFee,
+                taripBorongan: effectiveTripFee,
+                vehicleCapacityKg: normalizeNumber(selectedVehicle.capacityKg ?? 0) || undefined,
+                date: doDate,
+                notes: normalizeOptionalText(rawTripDraft.notes),
+                doNumber,
+                status: 'CREATED',
+            },
+            bonNumber,
+            voucherDoc: {
+                _id: voucherId,
+                _type: 'driverVoucher',
+                issuerCompanyName: companyProfile?.name,
+                issuerCompanyAddress: companyProfile?.address,
+                issuerCompanyPhone: companyProfile?.phone,
+                issuerCompanyEmail: companyProfile?.email,
+                issuerCompanyLogoUrl: resolveCompanyLogoUrl(companyProfile),
+                driverRef,
+                driverName: selectedDriver.name || '',
+                deliveryOrderRef: doId,
+                doNumber,
+                vehicleRef,
+                vehiclePlate: selectedVehicle.plateNumber || undefined,
+                route: buildRouteLabel(pickupSummary, receiverAddress || undefined) || undefined,
+                bonNumber,
+                issuedDate: doDate,
+                cashGiven,
+                initialCashGiven: cashGiven,
+                totalIssuedAmount: cashGiven,
+                topUpCount: 0,
+                driverFeeAmount: voucherTotals.driverFeeAmount,
+                totalClaimAmount: voucherTotals.totalClaimAmount,
+                issueBankRef,
+                issueBankName: bankState.account.bankName,
+                totalSpent: voucherTotals.totalSpent,
+                balance: voucherTotals.balance,
+                status: 'ISSUED',
+            },
+            initialDisbursementDoc: {
+                _id: initialDisbursementId,
+                _type: 'driverVoucherDisbursement',
+                voucherRef: voucherId,
+                date: doDate,
+                amount: cashGiven,
+                kind: 'INITIAL',
+                bankAccountRef: issueBankRef,
+                bankAccountName: bankState.account.bankName,
+                bankAccountNumber: bankState.account.accountNumber,
+                bankTransactionRef: issueTransactionId,
+                createdBy: session._id,
+                createdByName: session.name,
+            },
+            issueTransactionDoc: {
+                _id: issueTransactionId,
+                _type: 'bankTransaction',
+                bankAccountRef: issueBankRef,
+                bankAccountName: bankState.account.bankName,
+                bankAccountNumber: bankState.account.accountNumber,
+                type: 'DEBIT',
+                amount: cashGiven,
+                date: doDate,
+                description: `Pencairan uang jalan trip ${bonNumber}`,
+                balanceAfter: nextBalance,
+                relatedVoucherRef: voucherId,
+            },
+            tripRouteRateRef: tripRouteSelection?.matchedTripRouteRate?._id,
+            tripRouteRateRev: tripRouteSelection?.matchedTripRouteRate?._rev,
+            vehicleId: selectedVehicle._id,
+            vehicleRev: selectedVehicle._rev,
+            driverId: selectedDriver._id,
+            driverRev: selectedDriver._rev,
+            issueBankRef,
+        });
+
+        usedVehicleRefs.add(vehicleRef);
+        usedDriverRefs.add(driverRef);
+    }
+
     const orderDoc = {
         _id: orderId,
         _type: 'order',
@@ -982,13 +1420,39 @@ export async function handleOrderCreate(
     for (const item of items) {
         transaction.create(buildOrderItemDraftDocument(orderId, item));
     }
+    for (const trip of preparedTripDrafts) {
+        transaction.create(trip.doDoc);
+        transaction.create(trip.voucherDoc);
+        transaction.create(trip.initialDisbursementDoc);
+        transaction.create(trip.issueTransactionDoc);
+        if (trip.tripRouteRateRef && trip.tripRouteRateRev) {
+            transaction.patch(trip.tripRouteRateRef, {
+                ifRevisionID: trip.tripRouteRateRev,
+                set: { updatedAt: createdAt },
+            });
+        }
+        transaction.patch(trip.vehicleId, {
+            ifRevisionID: trip.vehicleRev,
+            set: { updatedAt: createdAt },
+        });
+        transaction.patch(trip.driverId, {
+            ifRevisionID: trip.driverRev,
+            set: { updatedAt: createdAt },
+        });
+    }
+    for (const [issueBankRef, bankState] of bankUsageState.entries()) {
+        transaction.patch(issueBankRef, {
+            ifRevisionID: bankState.account._rev,
+            set: { currentBalance: bankState.nextBalance },
+        });
+    }
 
     try {
         await transaction.commit();
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
-                { error: 'Order, customer, barang customer, pickup, atau kategori armada berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { error: 'Order, customer, barang customer, pickup, armada trip, supir, atau rekening sumber berubah karena ada update lain. Refresh lalu coba lagi.' },
                 { status: 409 }
             );
         }
@@ -999,9 +1463,26 @@ export async function handleOrderCreate(
         'CREATE',
         'orders',
         orderId,
-        `Created orders: ${masterResi}${items.length > 0 ? ` (${items.length} item target)` : ' (header booking tanpa item)'}`
+        `Created orders: ${masterResi}${items.length > 0 ? ` (${items.length} item target)` : ' (header booking tanpa item)'}${preparedTripDrafts.length > 0 ? ` | ${preparedTripDrafts.length} trip langsung diterbitkan` : ''}`
     );
-    return NextResponse.json({ data: orderDoc, id: orderId });
+    for (const trip of preparedTripDrafts) {
+        await addAuditLog(
+            session,
+            'CREATE',
+            'delivery-orders',
+            trip.doId,
+            `Created delivery-orders from order create: ${trip.doNumber} | bon ${trip.bonNumber}`
+        );
+    }
+    return NextResponse.json({
+        data: orderDoc,
+        id: orderId,
+        createdDeliveryOrders: preparedTripDrafts.map(trip => ({
+            _id: trip.doId,
+            doNumber: trip.doNumber,
+            bonNumber: trip.bonNumber,
+        })),
+    });
 }
 
 export async function handleOrderUpdateWithItems(
@@ -2876,6 +3357,17 @@ export async function handleDeliveryOrderCreate(
         matchedTripRouteRateFee > 0
             ? matchedTripRouteRateFee
             : taripBorongan;
+    const tripCashIssueBankRef = typeof data.issueBankRef === 'string' ? data.issueBankRef : '';
+    const tripCashCashGiven = normalizeCurrencyNumber(data.cashGiven ?? 0);
+    if (!tripCashIssueBankRef) {
+        return NextResponse.json({ error: 'Rekening atau kas sumber uang jalan trip wajib dipilih' }, { status: 400 });
+    }
+    if (!Number.isFinite(tripCashCashGiven) || tripCashCashGiven <= 0) {
+        return NextResponse.json({ error: 'Nominal uang jalan awal wajib diisi' }, { status: 400 });
+    }
+    if (!Number.isFinite(effectiveTripFee) || effectiveTripFee <= 0) {
+        return NextResponse.json({ error: 'Upah trip wajib diisi sebelum menerbitkan uang jalan awal' }, { status: 400 });
+    }
     let selectedPickupStops: NormalizedDeliveryOrderPickupStop[] = [];
     try {
         selectedPickupStops = resolveDeliveryOrderPickupStops(order, data);
@@ -2910,16 +3402,7 @@ export async function handleDeliveryOrderCreate(
             { status: 400 }
         );
     }
-    const customerDoNumber = shipperReferences[0]?.referenceNumber || undefined;
-    if (orderCustomerRef && shipperReferences.length > 0) {
-        const duplicateCustomerDoNumber = await findDuplicateCustomerDoReference(orderCustomerRef, shipperReferences);
-        if (duplicateCustomerDoNumber) {
-            return NextResponse.json(
-                { error: `No. SJ pengirim ${duplicateCustomerDoNumber.referenceNumber} sudah dipakai untuk customer ini.` },
-                { status: 409 }
-            );
-        }
-    }
+    let customerDoNumber = shipperReferences[0]?.referenceNumber || undefined;
 
     const existingOrderItemCount = await getSanityClient().fetch<number>(
         `count(*[_type == "orderItem" && orderRef == $ref])`,
@@ -2956,6 +3439,7 @@ export async function handleDeliveryOrderCreate(
     let normalizedSelections: ReturnType<typeof normalizeDeliveryOrderSelections> = [];
     let selectionByItemId = new Map<string, ReturnType<typeof normalizeDeliveryOrderSelections>[number]>();
     let directCargoItems: NormalizedOrderItemInput[] = [];
+    let draftCargoRows: Array<Record<string, unknown>> = [];
     const selectionSummaries: string[] = [];
     let plannedShipmentWeightKgTotal = 0;
 
@@ -2976,6 +3460,15 @@ export async function handleDeliveryOrderCreate(
             const message = error instanceof Error ? error.message : 'Barang surat jalan tidak valid';
             return NextResponse.json({ error: message }, { status: 400 });
         }
+        draftCargoRows = (Array.isArray(data.cargoItems) ? data.cargoItems : [])
+            .filter(isPlainObject)
+            .filter(hasDraftCargoPayloadRow);
+        if (draftCargoRows.length !== directCargoItems.length) {
+            return NextResponse.json(
+                { error: 'Draft barang surat jalan berubah. Refresh lalu isi lagi.' },
+                { status: 409 }
+            );
+        }
         const plannedWeightKg = roundQuantity(
             directCargoItems.reduce((sum, item) => sum + normalizeNumber(item.weight || 0), 0)
         );
@@ -2988,7 +3481,39 @@ export async function handleDeliveryOrderCreate(
                 { status: 409 }
             );
         }
-        for (const item of directCargoItems) {
+        const pickupStopMap = new Map(selectedPickupStops.map(stop => [stop._key, stop]));
+        for (const [index, item] of directCargoItems.entries()) {
+            const cargoDraft = draftCargoRows[index];
+            const pickupStopKey =
+                normalizeOptionalText(cargoDraft?.pickupStopKey)
+                || (selectedPickupStops.length === 1 ? selectedPickupStops[0]._key : undefined);
+            if (selectedPickupStops.length > 0 && !pickupStopKey) {
+                return NextResponse.json(
+                    { error: `Titik pickup wajib dipilih untuk barang ${item.description || `baris ${index + 1}`}` },
+                    { status: 400 }
+                );
+            }
+            if (pickupStopKey && !pickupStopMap.has(pickupStopKey)) {
+                return NextResponse.json(
+                    { error: `Titik pickup untuk barang ${item.description || `baris ${index + 1}`} tidak ditemukan di trip ini` },
+                    { status: 400 }
+                );
+            }
+            const shipperReferenceNumber = normalizeReferenceNumber(cargoDraft?.shipperReferenceNumber || manualCustomerDoNumber);
+            if (!shipperReferenceNumber) {
+                return NextResponse.json(
+                    { error: `No. SJ pengirim wajib diisi untuk barang ${item.description || `baris ${index + 1}`}` },
+                    { status: 400 }
+                );
+            }
+            try {
+                upsertShipperReferenceForPickup(shipperReferences, shipperReferenceNumber, pickupStopKey, pickupStopMap);
+            } catch (error) {
+                return NextResponse.json(
+                    { error: error instanceof Error ? error.message : 'Referensi SJ pengirim tidak valid' },
+                    { status: 400 }
+                );
+            }
             selectionSummaries.push(
                 summarizeSelection({
                     orderItemRef: item.description,
@@ -2998,7 +3523,7 @@ export async function handleDeliveryOrderCreate(
                     volumeInputValue: item.volumeInputValue,
                     volumeInputUnit: item.volumeInputUnit,
                     holdRemaining: false,
-                }, item.description)
+                }, `${shipperReferenceNumber}${item.description ? ` - ${item.description}` : ''}`)
             );
         }
         if (directCargoItems.length === 0) {
@@ -3175,6 +3700,17 @@ export async function handleDeliveryOrderCreate(
         }
     }
 
+    customerDoNumber = shipperReferences[0]?.referenceNumber || undefined;
+    if (orderCustomerRef && shipperReferences.length > 0) {
+        const duplicateCustomerDoNumber = await findDuplicateCustomerDoReference(orderCustomerRef, shipperReferences);
+        if (duplicateCustomerDoNumber) {
+            return NextResponse.json(
+                { error: `No. SJ pengirim ${duplicateCustomerDoNumber.referenceNumber} sudah dipakai untuk customer ini.` },
+                { status: 409 }
+            );
+        }
+    }
+
     const doId = crypto.randomUUID();
     const doNumber = await sanityGetNextNumber('do', doDate);
     const companyProfile = await getSanityClient().fetch<Pick<CompanyProfile, 'name' | 'address' | 'phone' | 'email' | 'logoUrl'> | null>(
@@ -3227,6 +3763,58 @@ export async function handleDeliveryOrderCreate(
         doNumber,
         status: 'CREATED',
     };
+    const bonNumber = await sanityGetNextNumber('bon', doDate);
+    const voucherId = crypto.randomUUID();
+    const initialDisbursementId = crypto.randomUUID();
+    const issueTransactionId = crypto.randomUUID();
+    const issueBank = await getLedgerAccount(tripCashIssueBankRef);
+    if (!issueBank) {
+        return NextResponse.json({ error: 'Rekening sumber uang jalan trip tidak ditemukan' }, { status: 404 });
+    }
+    if (!issueBank._rev) {
+        return NextResponse.json({ error: 'Revisi rekening sumber uang jalan trip tidak tersedia' }, { status: 409 });
+    }
+    const { startingBalance: issueStartingBalance, nextBalance: issueBankNextBalance } = computeLedgerDebitBalance(issueBank.currentBalance, tripCashCashGiven);
+    if (issueBankNextBalance < 0) {
+        return NextResponse.json(
+            { error: `Saldo ${issueBank.bankName} tidak cukup untuk pencairan bon. Saldo tersedia ${issueStartingBalance}` },
+            { status: 409 }
+        );
+    }
+    const tripRouteLabel = buildRouteLabel(
+        buildPickupSummary(selectedPickupStops, order.pickupAddress),
+        doReceiverAddress || order.receiverAddress,
+    );
+    const voucherTotals = computeDriverVoucherTotals(tripCashCashGiven, 0, effectiveTripFee);
+    const voucherDoc = {
+        _id: voucherId,
+        _type: 'driverVoucher',
+        issuerCompanyName: companyProfile?.name,
+        issuerCompanyAddress: companyProfile?.address,
+        issuerCompanyPhone: companyProfile?.phone,
+        issuerCompanyEmail: companyProfile?.email,
+        issuerCompanyLogoUrl: resolveCompanyLogoUrl(companyProfile),
+        driverRef,
+        driverName,
+        deliveryOrderRef: doId,
+        doNumber,
+        vehicleRef: vehicleRef || undefined,
+        vehiclePlate: vehiclePlate || undefined,
+        route: tripRouteLabel || undefined,
+        bonNumber,
+        issuedDate: doDate,
+        cashGiven: tripCashCashGiven,
+        initialCashGiven: tripCashCashGiven,
+        totalIssuedAmount: tripCashCashGiven,
+        topUpCount: 0,
+        driverFeeAmount: voucherTotals.driverFeeAmount,
+        totalClaimAmount: voucherTotals.totalClaimAmount,
+        issueBankRef: tripCashIssueBankRef,
+        issueBankName: issueBank.bankName,
+        totalSpent: voucherTotals.totalSpent,
+        balance: voucherTotals.balance,
+        status: 'ISSUED',
+    };
 
     const customerDoConstraints =
         orderCustomerRef && shipperReferences.length > 0
@@ -3235,6 +3823,38 @@ export async function handleDeliveryOrderCreate(
     const transaction = getSanityClient().transaction();
     customerDoConstraints.forEach(constraint => transaction.create(constraint));
     transaction.create(doDoc);
+    transaction.create(voucherDoc);
+    transaction.create({
+        _id: initialDisbursementId,
+        _type: 'driverVoucherDisbursement',
+        voucherRef: voucherId,
+        date: doDate,
+        amount: tripCashCashGiven,
+        kind: 'INITIAL',
+        bankAccountRef: tripCashIssueBankRef,
+        bankAccountName: issueBank.bankName,
+        bankAccountNumber: issueBank.accountNumber,
+        bankTransactionRef: issueTransactionId,
+        createdBy: session._id,
+        createdByName: session.name,
+    });
+    transaction.create({
+        _id: issueTransactionId,
+        _type: 'bankTransaction',
+        bankAccountRef: tripCashIssueBankRef,
+        bankAccountName: issueBank.bankName,
+        bankAccountNumber: issueBank.accountNumber,
+        type: 'DEBIT',
+        amount: tripCashCashGiven,
+        date: doDate,
+        description: `Pencairan uang jalan trip ${bonNumber}`,
+        balanceAfter: issueBankNextBalance,
+        relatedVoucherRef: voucherId,
+    });
+    transaction.patch(tripCashIssueBankRef, {
+        ifRevisionID: issueBank._rev,
+        set: { currentBalance: issueBankNextBalance },
+    });
     const mutationTimestamp = new Date().toISOString();
     if (tripRouteSelection?.matchedTripRouteRate?._id && tripRouteSelection.matchedTripRouteRate._rev) {
         transaction.patch(tripRouteSelection.matchedTripRouteRate._id, {
@@ -3280,7 +3900,15 @@ export async function handleDeliveryOrderCreate(
                 { status: 409 }
             );
         }
-        for (const item of directCargoItems) {
+        const pickupStopMap = new Map(selectedPickupStops.map(stop => [stop._key, stop]));
+        const shipperReferenceMap = new Map(shipperReferences.map(reference => [reference.referenceNumber, reference]));
+        for (const [index, item] of directCargoItems.entries()) {
+            const cargoDraft = draftCargoRows[index];
+            const pickupStopKey =
+                normalizeOptionalText(cargoDraft?.pickupStopKey)
+                || (selectedPickupStops.length === 1 ? selectedPickupStops[0]._key : undefined);
+            const shipperReferenceNumber = normalizeReferenceNumber(cargoDraft?.shipperReferenceNumber || manualCustomerDoNumber);
+            const shipperReference = shipperReferenceNumber ? shipperReferenceMap.get(shipperReferenceNumber) : undefined;
             const orderItemId = crypto.randomUUID();
             const usesQtyBasis = item.qtyKoli > 0;
             transaction.create({
@@ -3299,6 +3927,10 @@ export async function handleDeliveryOrderCreate(
                 _type: 'deliveryOrderItem',
                 deliveryOrderRef: doId,
                 orderItemRef: orderItemId,
+                pickupStopKey: pickupStopKey || undefined,
+                pickupAddress: pickupStopKey ? pickupStopMap.get(pickupStopKey)?.pickupAddress : undefined,
+                shipperReferenceKey: shipperReference?._key,
+                shipperReferenceNumber: shipperReference?.referenceNumber,
                 orderItemDescription: item.description,
                 orderItemQtyKoli: usesQtyBasis ? item.qtyKoli : undefined,
                 orderItemWeight: item.weight,
@@ -3419,7 +4051,7 @@ export async function handleDeliveryOrderCreate(
         }
         if (isMutationConflictError(error)) {
             return NextResponse.json(
-                { error: 'Data order, barang customer, master biaya rute trip, kendaraan, supir, atau item surat jalan berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { error: 'Data order, barang customer, master biaya rute trip, kendaraan, supir, rekening sumber, atau item surat jalan berubah karena ada update lain. Refresh lalu coba lagi.' },
                 { status: 409 }
             );
         }
@@ -3431,9 +4063,9 @@ export async function handleDeliveryOrderCreate(
         'CREATE',
         'delivery-orders',
         doId,
-        `Created delivery-orders: ${doNumber}${shipperReferences.length > 0 ? ` / ${shipperReferences.map(reference => reference.referenceNumber).join(', ')}` : ''} (${selectionSummaries.join('; ')})${vehicleCategoryOverrideReasonToStore ? ` | override armada: ${order.serviceName || '-'} -> ${vehicleServiceName || vehiclePlate || '-'} | alasan: ${vehicleCategoryOverrideReasonToStore}` : ''}`
+        `Created delivery-orders: ${doNumber}${shipperReferences.length > 0 ? ` / ${shipperReferences.map(reference => reference.referenceNumber).join(', ')}` : ''} (${selectionSummaries.join('; ')}) | bon ${bonNumber}${vehicleCategoryOverrideReasonToStore ? ` | override armada: ${order.serviceName || '-'} -> ${vehicleServiceName || vehiclePlate || '-'} | alasan: ${vehicleCategoryOverrideReasonToStore}` : ''}`
     );
-    return NextResponse.json({ data: doDoc, id: doId });
+    return NextResponse.json({ data: doDoc, id: doId, issuedVoucherBonNumber: bonNumber });
 }
 
 export async function handleDeliveryOrderAppendCargoItems(
@@ -3541,31 +4173,6 @@ export async function handleDeliveryOrderAppendCargoItems(
             : []
     );
 
-    const ensureShipperReference = (referenceNumber: string, pickupStopKey?: string) => {
-        const existingIndex = nextShipperReferences.findIndex(reference => reference.referenceNumber === referenceNumber);
-        if (existingIndex >= 0) {
-            const current = nextShipperReferences[existingIndex];
-            if (pickupStopKey && !current.pickupStopKey) {
-                nextShipperReferences[existingIndex] = {
-                    ...current,
-                    pickupStopKey,
-                    pickupAddress: pickupStopMap.get(pickupStopKey)?.pickupAddress || current.pickupAddress,
-                };
-            }
-            return nextShipperReferences[existingIndex];
-        }
-
-        const createdReference: NormalizedDeliveryOrderShipperReference = {
-            _key: crypto.randomUUID(),
-            sequence: nextShipperReferences.length + 1,
-            referenceNumber,
-            pickupStopKey,
-            pickupAddress: pickupStopKey ? pickupStopMap.get(pickupStopKey)?.pickupAddress : undefined,
-        };
-        nextShipperReferences.push(createdReference);
-        return createdReference;
-    };
-
     const existingDoItems = await getSanityClient().fetch<Array<{
         orderItemWeight?: number;
         shippedWeight?: number;
@@ -3651,7 +4258,15 @@ export async function handleDeliveryOrderAppendCargoItems(
                 { status: 400 }
             );
         }
-        const shipperReference = ensureShipperReference(shipperReferenceNumber, pickupStopKey);
+        let shipperReference: NormalizedDeliveryOrderShipperReference;
+        try {
+            shipperReference = upsertShipperReferenceForPickup(nextShipperReferences, shipperReferenceNumber, pickupStopKey, pickupStopMap);
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Referensi SJ pengirim tidak valid' },
+                { status: 400 }
+            );
+        }
         const orderItemId = crypto.randomUUID();
         const usesQtyBasis = item.qtyKoli > 0;
         transaction.create({

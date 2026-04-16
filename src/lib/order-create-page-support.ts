@@ -18,6 +18,8 @@ export type OrderItemForm = {
     weightInputUnit: WeightInputUnit;
     volumeInputValue: number;
     volumeInputUnit: VolumeInputUnit;
+    pickupStopKey: string;
+    shipperReferenceNumber: string;
     value: number;
 };
 
@@ -37,11 +39,13 @@ export const DEFAULT_ORDER_ITEM_FORM: OrderItemForm = {
     weightInputUnit: 'KG',
     volumeInputValue: 0,
     volumeInputUnit: 'M3',
+    pickupStopKey: '',
+    shipperReferenceNumber: '',
     value: 0,
 };
 
-export function createDefaultOrderItemForm(): OrderItemForm {
-    return { ...DEFAULT_ORDER_ITEM_FORM };
+export function createDefaultOrderItemForm(pickupStopKey = ''): OrderItemForm {
+    return { ...DEFAULT_ORDER_ITEM_FORM, pickupStopKey };
 }
 
 export function createDefaultPickupStopForm(pickupAddress = ''): PickupStopForm {
