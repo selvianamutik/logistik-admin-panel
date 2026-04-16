@@ -9,6 +9,8 @@ import type {
     DeliveryOrderItem,
     Driver,
     DriverScore,
+    OrderPickupStop,
+    OrderTripPlan,
     SessionUser,
     User,
 } from '@/lib/types';
@@ -24,6 +26,39 @@ export type DriverAssignedDeliveryOrderCargoItem = DeliveryOrderItem;
 
 export type DriverAssignedDeliveryOrder = DeliveryOrder & {
     driverCargoItems?: DriverAssignedDeliveryOrderCargoItem[];
+};
+
+export type DriverAssignedTripPlanPickupStop = {
+    _key: string;
+    sequence: number;
+    pickupLabel?: string;
+    pickupAddress: string;
+    notes?: string;
+};
+
+export type DriverAssignedTripPlan = {
+    orderRef: string;
+    masterResi?: string;
+    customerName?: string;
+    serviceName?: string;
+    pickupAddress?: string;
+    tripPlanKey: string;
+    tripSequence: number;
+    pickupStops: DriverAssignedTripPlanPickupStop[];
+    vehicleRef?: string;
+    vehiclePlate?: string;
+    driverRef?: string;
+    driverName?: string;
+    tripOriginArea?: string;
+    tripDestinationArea?: string;
+    taripBorongan?: number;
+    cashGiven?: number;
+    issueBankName?: string;
+    date?: string;
+    notes?: string;
+    linkedDeliveryOrderRef?: string;
+    linkedDeliveryOrderNumber?: string;
+    linkedDeliveryOrderStatus?: DeliveryOrder['status'] | 'UNKNOWN';
 };
 
 export type DriverPortalAccessNotice = {
@@ -193,6 +228,153 @@ export async function getDriverAssignedDeliveryOrders(driverRef: string) {
         }`,
         { driverRef }
     );
+}
+
+function normalizeTripPlanPickupStops(
+    pickupStops: OrderPickupStop[] | undefined,
+    pickupAddress: string | undefined,
+    pickupStopKeys: string[] | undefined
+): DriverAssignedTripPlanPickupStop[] {
+    const normalizedStops: DriverAssignedTripPlanPickupStop[] = [];
+    for (const [index, stop] of (pickupStops || []).entries()) {
+        const pickupAddressValue = stop.pickupAddress?.trim();
+        if (!pickupAddressValue) {
+            continue;
+        }
+        normalizedStops.push({
+            _key: stop._key || `pickup-stop-${index + 1}`,
+            sequence: stop.sequence || index + 1,
+            pickupLabel: stop.pickupLabel,
+            pickupAddress: pickupAddressValue,
+            notes: stop.notes,
+        });
+    }
+    normalizedStops.sort((left, right) => left.sequence - right.sequence);
+
+    const resolvedStops = normalizedStops.length > 0
+        ? normalizedStops
+        : pickupAddress?.trim()
+            ? [{
+                _key: 'pickup-stop-1',
+                sequence: 1,
+                pickupLabel: '',
+                pickupAddress: pickupAddress.trim(),
+                notes: '',
+            }]
+            : [];
+
+    const selectedPickupStopKeys = new Set((pickupStopKeys || []).filter(Boolean));
+    if (selectedPickupStopKeys.size === 0) {
+        return resolvedStops;
+    }
+
+    const filteredStops = resolvedStops.filter(stop => stop._key && selectedPickupStopKeys.has(stop._key));
+    return filteredStops.length > 0 ? filteredStops : resolvedStops;
+}
+
+export async function getDriverAssignedTripPlans(driverRef: string) {
+    const orders = await getSanityClient().fetch<Array<{
+        _id: string;
+        masterResi?: string;
+        customerName?: string;
+        serviceName?: string;
+        pickupAddress?: string;
+        pickupStops?: OrderPickupStop[];
+        tripPlans?: OrderTripPlan[];
+    }>>(
+        `*[
+            _type == "order" &&
+            count(tripPlans[driverRef == $driverRef]) > 0
+        ] | order(createdAt desc, _createdAt desc){
+            _id,
+            masterResi,
+            customerName,
+            serviceName,
+            pickupAddress,
+            pickupStops,
+            "tripPlans": tripPlans[driverRef == $driverRef]{
+                _key,
+                sequence,
+                pickupStopKeys,
+                vehicleRef,
+                vehiclePlate,
+                driverRef,
+                driverName,
+                tripOriginArea,
+                tripDestinationArea,
+                taripBorongan,
+                cashGiven,
+                issueBankName,
+                date,
+                notes,
+                linkedDeliveryOrderRef,
+                linkedDeliveryOrderNumber
+            }
+        }`,
+        { driverRef }
+    );
+
+    const linkedDeliveryOrderRefs = [
+        ...new Set(
+            orders.flatMap(order =>
+                (order.tripPlans || [])
+                    .map(plan => plan.linkedDeliveryOrderRef)
+                    .filter((ref): ref is string => typeof ref === 'string' && ref.trim().length > 0)
+            )
+        ),
+    ];
+
+    const linkedDeliveryOrders = linkedDeliveryOrderRefs.length > 0
+        ? await getSanityClient().fetch<Array<Pick<DeliveryOrder, '_id' | 'status' | 'doNumber'>>>(
+            `*[_type == "deliveryOrder" && _id in $ids]{
+                _id,
+                status,
+                doNumber
+            }`,
+            { ids: linkedDeliveryOrderRefs }
+        )
+        : [];
+    const linkedDeliveryOrderMap = new Map(linkedDeliveryOrders.map(item => [item._id, item]));
+
+    const plannedTrips: DriverAssignedTripPlan[] = [];
+    for (const order of orders) {
+        for (const [index, plan] of (order.tripPlans || []).entries()) {
+            const tripPlanKey = plan._key || `order-trip-${index + 1}`;
+            const linkedDeliveryOrder = plan.linkedDeliveryOrderRef
+                ? linkedDeliveryOrderMap.get(plan.linkedDeliveryOrderRef) || null
+                : null;
+            if (linkedDeliveryOrder && linkedDeliveryOrder.status !== 'CANCELLED') {
+                continue;
+            }
+
+            plannedTrips.push({
+                orderRef: order._id,
+                masterResi: order.masterResi,
+                customerName: order.customerName,
+                serviceName: order.serviceName,
+                pickupAddress: order.pickupAddress,
+                tripPlanKey,
+                tripSequence: plan.sequence || index + 1,
+                pickupStops: normalizeTripPlanPickupStops(order.pickupStops, order.pickupAddress, plan.pickupStopKeys),
+                vehicleRef: plan.vehicleRef,
+                vehiclePlate: plan.vehiclePlate,
+                driverRef: plan.driverRef,
+                driverName: plan.driverName,
+                tripOriginArea: plan.tripOriginArea,
+                tripDestinationArea: plan.tripDestinationArea,
+                taripBorongan: plan.taripBorongan,
+                cashGiven: plan.cashGiven,
+                issueBankName: plan.issueBankName,
+                date: plan.date,
+                notes: plan.notes,
+                linkedDeliveryOrderRef: plan.linkedDeliveryOrderRef,
+                linkedDeliveryOrderNumber: linkedDeliveryOrder?.doNumber || plan.linkedDeliveryOrderNumber,
+                linkedDeliveryOrderStatus: linkedDeliveryOrder?.status || (plan.linkedDeliveryOrderRef ? 'UNKNOWN' : undefined),
+            });
+        }
+    }
+
+    return plannedTrips;
 }
 
 export function sanitizeDriverForMobile(driver: Driver) {

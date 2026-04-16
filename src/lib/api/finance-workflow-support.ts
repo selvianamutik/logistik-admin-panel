@@ -10,6 +10,7 @@ import {
 export type NormalizedFreightNotaRow = {
     doRef?: string;
     deliveryOrderItemRef?: string;
+    deliveryOrderItemRefs?: string[];
     doNumber?: string;
     vehiclePlate?: string;
     date: string;

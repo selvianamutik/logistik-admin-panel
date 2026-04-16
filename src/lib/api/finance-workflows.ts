@@ -2293,6 +2293,18 @@ export async function handleFreightNotaCreate(
                 const date = normalizeText(row.date);
                 const doRef = normalizeOptionalText(row.doRef);
                 const deliveryOrderItemRef = normalizeOptionalText(row.deliveryOrderItemRef);
+                const deliveryOrderItemRefs = Array.isArray(row.deliveryOrderItemRefs)
+                    ? [...new Set(
+                        row.deliveryOrderItemRefs
+                            .map(value => normalizeOptionalText(value))
+                            .filter((value): value is string => Boolean(value))
+                    )]
+                    : [];
+                const normalizedDeliveryOrderItemRefs = deliveryOrderItemRefs.length > 0
+                    ? deliveryOrderItemRefs
+                    : deliveryOrderItemRef
+                        ? [deliveryOrderItemRef]
+                        : [];
                 const doNumber = normalizeOptionalText(row.doNumber);
                 const noSJ = normalizeText(row.noSJ);
                 const tujuan = normalizeText(row.tujuan);
@@ -2324,7 +2336,8 @@ export async function handleFreightNotaCreate(
 
                 return {
                     doRef,
-                    deliveryOrderItemRef,
+                    deliveryOrderItemRef: normalizedDeliveryOrderItemRefs[0],
+                    deliveryOrderItemRefs: normalizedDeliveryOrderItemRefs.length > 0 ? normalizedDeliveryOrderItemRefs : undefined,
                     doNumber,
                     vehiclePlate: normalizeOptionalText(row.vehiclePlate),
                     date,
@@ -2406,9 +2419,13 @@ export async function handleFreightNotaCreate(
         : [];
     const referencedDeliveryOrderItemRefs = [
         ...new Set(
-            rows
-                .map(row => row.deliveryOrderItemRef)
-                .filter((ref): ref is string => Boolean(ref))
+            rows.flatMap(row => (
+                Array.isArray(row.deliveryOrderItemRefs) && row.deliveryOrderItemRefs.length > 0
+                    ? row.deliveryOrderItemRefs
+                    : row.deliveryOrderItemRef
+                        ? [row.deliveryOrderItemRef]
+                        : []
+            ))
         ),
     ];
     const deliveryOrderItems = uniqueDoRefs.length > 0 || referencedDeliveryOrderItemRefs.length > 0
@@ -2462,35 +2479,42 @@ export async function handleFreightNotaCreate(
         }
         const orderRef = extractRefId(deliveryOrder.orderRef);
         const sourceOrder = orderRef ? orderMap.get(orderRef) : undefined;
-        const itemSource = row.deliveryOrderItemRef ? doItemById.get(row.deliveryOrderItemRef) : undefined;
-        if (row.deliveryOrderItemRef && !itemSource) {
+        const selectedDeliveryOrderItemRefs = Array.isArray(row.deliveryOrderItemRefs) && row.deliveryOrderItemRefs.length > 0
+            ? row.deliveryOrderItemRefs
+            : row.deliveryOrderItemRef
+                ? [row.deliveryOrderItemRef]
+                : [];
+        const selectedItemSources = selectedDeliveryOrderItemRefs.map(itemRef => doItemById.get(itemRef));
+        const missingItemRef = selectedItemSources.findIndex(item => !item);
+        if (missingItemRef >= 0) {
+            const itemRef = selectedDeliveryOrderItemRefs[missingItemRef];
             return NextResponse.json(
                 {
-                    error: `Item DO ${row.deliveryOrderItemRef} tidak ditemukan untuk pembuatan nota`,
+                    error: `Item DO ${itemRef} tidak ditemukan untuk pembuatan nota`,
                 },
                 { status: 404 }
             );
         }
-        if (itemSource) {
+        for (const itemSource of selectedItemSources as FreightNotaDeliveryOrderItemSource[]) {
             const itemDeliveryOrderRef = normalizeOptionalText(itemSource.deliveryOrderRef);
             if (itemDeliveryOrderRef !== row.doRef) {
                 return NextResponse.json(
                     {
-                        error: `Item DO ${row.deliveryOrderItemRef} bukan milik surat jalan ${deliveryOrder.doNumber || row.doRef}`,
+                        error: `Item DO ${normalizeOptionalText(itemSource._id) || '-'} bukan milik surat jalan ${deliveryOrder.doNumber || row.doRef}`,
                     },
                     { status: 409 }
                 );
             }
         }
-        const itemSummary = itemSource
-            ? summarizeDeliveryOrderItems([itemSource])
+        const itemSummary = selectedItemSources.length > 0
+            ? summarizeDeliveryOrderItems(selectedItemSources as FreightNotaDeliveryOrderItemSource[])
             : summarizeDeliveryOrderItems(doItemMap.get(row.doRef) || []);
 
         row.doNumber = normalizeOptionalText(deliveryOrder.doNumber) || row.doNumber;
         row.noSJ =
+            row.noSJ ||
             normalizeOptionalText(deliveryOrder.customerDoNumber) ||
             normalizeOptionalText(deliveryOrder.doNumber) ||
-            row.noSJ ||
             '';
         row.vehiclePlate = normalizeOptionalText(deliveryOrder.vehiclePlate) || row.vehiclePlate;
         row.date = normalizeOptionalText(deliveryOrder.date) || row.date || '';
@@ -2504,6 +2528,8 @@ export async function handleFreightNotaCreate(
             normalizeOptionalText(sourceOrder?.receiverAddress) ||
             row.tujuan ||
             '';
+        row.deliveryOrderItemRef = selectedDeliveryOrderItemRefs[0];
+        row.deliveryOrderItemRefs = selectedDeliveryOrderItemRefs.length > 0 ? selectedDeliveryOrderItemRefs : undefined;
         row.barang = itemSummary.barang || row.barang || undefined;
         if (itemSummary.collie > 0) {
             row.collie = itemSummary.collie;
@@ -2530,13 +2556,18 @@ export async function handleFreightNotaCreate(
     for (const row of rows) {
         if (!row.doRef) continue;
         const deliveryOrder = deliveryOrderMap.get(row.doRef);
+        const rowItemRefs = Array.isArray(row.deliveryOrderItemRefs) && row.deliveryOrderItemRefs.length > 0
+            ? row.deliveryOrderItemRefs
+            : row.deliveryOrderItemRef
+                ? [row.deliveryOrderItemRef]
+                : [];
         const coverage =
             payloadCoverageByDoRef.get(row.doRef) ||
             {
                 fullDoIncluded: false,
                 deliveryOrderItemRefs: new Set<string>(),
             };
-        if (!row.deliveryOrderItemRef) {
+        if (rowItemRefs.length === 0) {
             if (coverage.fullDoIncluded || coverage.deliveryOrderItemRefs.size > 0) {
                 return NextResponse.json(
                     {
@@ -2558,15 +2589,17 @@ export async function handleFreightNotaCreate(
                 { status: 409 }
             );
         }
-        if (coverage.deliveryOrderItemRefs.has(row.deliveryOrderItemRef)) {
-            return NextResponse.json(
-                {
-                    error: `Item DO ${row.deliveryOrderItemRef} duplikat dalam payload nota`,
-                },
-                { status: 400 }
-            );
+        for (const itemRef of rowItemRefs) {
+            if (coverage.deliveryOrderItemRefs.has(itemRef)) {
+                return NextResponse.json(
+                    {
+                        error: `Item DO ${itemRef} duplikat dalam payload nota`,
+                    },
+                    { status: 400 }
+                );
+            }
         }
-        coverage.deliveryOrderItemRefs.add(row.deliveryOrderItemRef);
+        rowItemRefs.forEach(itemRef => coverage.deliveryOrderItemRefs.add(itemRef));
         payloadCoverageByDoRef.set(row.doRef, coverage);
     }
     for (const [doRef, coverage] of payloadCoverageByDoRef.entries()) {
@@ -2914,6 +2947,7 @@ export async function handleFreightNotaCreate(
             notaRef: notaId,
             doRef: row.doRef,
             deliveryOrderItemRef: row.deliveryOrderItemRef,
+            deliveryOrderItemRefs: row.deliveryOrderItemRefs,
             doNumber: row.doNumber,
             vehiclePlate: row.vehiclePlate,
             date: row.date,

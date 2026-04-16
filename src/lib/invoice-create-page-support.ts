@@ -6,6 +6,7 @@ export interface NotaItemRow {
     id: string;
     doRef: string;
     deliveryOrderItemRef?: string;
+    deliveryOrderItemRefs?: string[];
     doNumber: string;
     vehiclePlate: string;
     date: string;
@@ -115,12 +116,22 @@ export function buildNotaRowsFromDeliveryOrder(params: {
         }];
     }
 
-    return relatedItems.map(item => ({
+    const groupedItems = relatedItems.reduce<Map<string, DeliveryOrderItem[]>>((acc, item) => {
+        const key = item.shipperReferenceNumber?.trim() || deliveryOrder.customerDoNumber || deliveryOrder.doNumber || 'TANPA-SJ';
+        const current = acc.get(key) || [];
+        current.push(item);
+        acc.set(key, current);
+        return acc;
+    }, new Map());
+
+    return [...groupedItems.entries()].map(([shipperReferenceNumber, items]) => ({
         id: Math.random().toString(36).slice(2),
         ...baseRow,
-        deliveryOrderItemRef: item._id,
-        barang: item.orderItemDescription?.trim() || '',
-        collie: parseFormattedNumberish(item.actualQtyKoli ?? item.orderItemQtyKoli ?? 0),
-        beratKg: parseFormattedNumberish(item.actualWeightKg ?? item.orderItemWeight ?? 0),
+        deliveryOrderItemRef: items[0]?._id,
+        deliveryOrderItemRefs: items.map(item => item._id).filter(Boolean),
+        noSJ: shipperReferenceNumber,
+        barang: [...new Set(items.map(item => item.orderItemDescription?.trim()).filter((value): value is string => Boolean(value)))].join(', '),
+        collie: items.reduce((sum, item) => sum + parseFormattedNumberish(item.actualQtyKoli ?? item.orderItemQtyKoli ?? 0), 0),
+        beratKg: items.reduce((sum, item) => sum + parseFormattedNumberish(item.actualWeightKg ?? item.orderItemWeight ?? 0), 0),
     }));
 }

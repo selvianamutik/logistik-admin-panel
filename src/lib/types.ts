@@ -214,6 +214,30 @@ export interface OrderPickupStop {
   notes?: string;
 }
 
+export interface OrderTripPlan {
+  _key?: string;
+  sequence: number;
+  pickupStopKeys?: string[];
+  vehicleRef: string;
+  vehiclePlate?: string;
+  vehicleServiceRef?: string;
+  vehicleServiceName?: string;
+  vehicleCategoryOverrideReason?: string;
+  driverRef: string;
+  driverName?: string;
+  tripRouteRateRef?: string;
+  tripOriginArea?: string;
+  tripDestinationArea?: string;
+  taripBorongan?: number;
+  issueBankRef: string;
+  issueBankName?: string;
+  cashGiven: number;
+  date: string;
+  notes?: string;
+  linkedDeliveryOrderRef?: string;
+  linkedDeliveryOrderNumber?: string;
+}
+
 export interface DeliveryOrderPickupStop {
   _key?: string;
   sequence: number;
@@ -531,6 +555,7 @@ export interface Order {
   receiverCompany?: string;
   pickupAddress?: string;
   pickupStops?: OrderPickupStop[];
+  tripPlans?: OrderTripPlan[];
   serviceRef: string;
   serviceName?: string;
   status: OrderStatus;
@@ -794,6 +819,7 @@ export interface FreightNotaItem {
   notaRef: string;
   doRef?: string;
   deliveryOrderItemRef?: string;
+  deliveryOrderItemRefs?: string[];
   doNumber?: string;
   vehiclePlate?: string;
   date: string;

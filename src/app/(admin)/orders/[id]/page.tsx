@@ -65,6 +65,7 @@ export default function OrderDetailPage() {
     const [notas, setNotas] = useState<FreightNota[]>([]);
     const [loading, setLoading] = useState(true);
     const [showDOModal, setShowDOModal] = useState(false);
+    const [selectedOrderTripPlanKey, setSelectedOrderTripPlanKey] = useState('');
     const [creatingDO, setCreatingDO] = useState(false);
     const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
     // DO form
@@ -153,7 +154,6 @@ export default function OrderDetailPage() {
 
     const sortedVehicles = sortOrderDetailVehicles(vehicles, order);
     const availableVehicles = getAvailableVehicles(sortedVehicles, busyVehicleIds);
-    const selectedVehicleData = vehicles.find(vehicle => vehicle._id === doVehicle);
     const serviceCapacityRangeMap = buildServiceCapacityRangeMap(
         order?.serviceRef ? [{ _id: order.serviceRef, _type: 'service', code: '', name: order.serviceName || '', description: '', active: true }] : [],
         vehicles
@@ -161,27 +161,11 @@ export default function OrderDetailPage() {
     const requestedServiceCapacityLabel = order?.serviceRef
         ? serviceCapacityRangeMap[order.serviceRef] || 'Kapasitas belum diisi'
         : 'Kategori order belum diisi';
-    const selectedVehicleCapacityLabel = selectedVehicleData
-        ? formatCapacityRangeLabel(selectedVehicleData)
-        : 'Belum dipilih';
-    const requiresVehicleOverrideReason = shouldRequireVehicleOverrideReason(order, selectedVehicleData);
     const internalDoPreviewPeriod = /^\d{4}-\d{2}-\d{2}$/.test(doDate)
         ? `${doDate.slice(8, 10)}${doDate.slice(5, 7)}${doDate.slice(0, 4)}`
         : 'ddmmyyyy';
     const normalizedShipperReferenceFormat = shipperReferenceFormat.trim().toUpperCase() || 'SJ';
     const shipperReferenceExample = `${normalizedShipperReferenceFormat}/27032026/001`;
-    useEffect(() => {
-        if (!requiresVehicleOverrideReason && doVehicleOverrideReason) {
-            setDoVehicleOverrideReason('');
-        }
-    }, [requiresVehicleOverrideReason, doVehicleOverrideReason]);
-
-    useEffect(() => {
-        if (doVehicle && busyVehicleIds.includes(doVehicle)) {
-            setDoVehicle('');
-            setDoVehicleOverrideReason('');
-        }
-    }, [busyVehicleIds, doVehicle]);
 
     const {
         activeAssignmentByItemId,
@@ -236,15 +220,26 @@ export default function OrderDetailPage() {
         )));
     };
 
-    const openCreateDOModal = () => {
-        const defaultPickupStopKey = resolvedOrderPickupStops[0]?._key || '';
+    const openCreateDOModal = (tripPlanKey?: string) => {
+        const tripPlan = orderTripPlans.find(plan => plan._key === tripPlanKey) || null;
+        const defaultPickupStopKey = tripPlan?.pickupStopKeys[0] || resolvedOrderPickupStops[0]?._key || '';
         setSelectedShipments({});
         setDirectCargoItems([createDefaultOrderItemForm(defaultPickupStopKey)]);
-        setSelectedPickupStopKeys(resolvedOrderPickupStops.map(stop => stop._key));
+        setSelectedPickupStopKeys(
+            tripPlan?.pickupStopKeys && tripPlan.pickupStopKeys.length > 0
+                ? tripPlan.pickupStopKeys
+                : resolvedOrderPickupStops.map(stop => stop._key)
+        );
         setDoReceiverName(order?.receiverName || '');
         setDoReceiverPhone(order?.receiverPhone || '');
         setDoReceiverAddress(order?.receiverAddress || '');
         setDoReceiverCompany(order?.receiverCompany || '');
+        setDoDate(tripPlan?.date || getBusinessDateValue());
+        setDoVehicle(tripPlan?.vehicleRef || '');
+        setDoVehicleOverrideReason(tripPlan?.vehicleCategoryOverrideReason || '');
+        setDoNotes(tripPlan?.notes || '');
+        setSelectedOrderTripPlanKey(tripPlan?._key || '');
+        setDoCustomerDoNumber('');
         if (!doCustomerDoNumber.trim() && normalizedShipperReferenceFormat !== 'SJ') {
             setDoCustomerDoNumber(normalizedShipperReferenceFormat);
         }
@@ -289,6 +284,36 @@ export default function OrderDetailPage() {
                     notes: '',
                 }]
                 : [];
+    const orderTripPlans = ((order?.tripPlans || []) as NonNullable<Order['tripPlans']>)
+        .map((plan, index) => ({
+            ...plan,
+            _key: plan._key || `order-trip-${index + 1}`,
+            sequence: plan.sequence || index + 1,
+            pickupStopKeys: Array.isArray(plan.pickupStopKeys) ? plan.pickupStopKeys.filter(Boolean) : [],
+        }))
+        .filter(plan => plan.vehicleRef && plan.driverRef && plan.issueBankRef && Number(plan.cashGiven || 0) > 0)
+        .sort((left, right) => left.sequence - right.sequence);
+    const selectedOrderTripPlan = orderTripPlans.find(plan => plan._key === selectedOrderTripPlanKey) || null;
+    const effectiveDoVehicleRef = selectedOrderTripPlan?.vehicleRef || doVehicle;
+    const selectedVehicleData = vehicles.find(vehicle => vehicle._id === effectiveDoVehicleRef);
+    const selectedVehicleCapacityLabel = selectedVehicleData
+        ? formatCapacityRangeLabel(selectedVehicleData)
+        : 'Belum dipilih';
+    const requiresVehicleOverrideReason = !selectedOrderTripPlan && shouldRequireVehicleOverrideReason(order, selectedVehicleData);
+    const deliveryOrderById = new Map(dos.map(deliveryOrder => [deliveryOrder._id, deliveryOrder]));
+    const hasPlannedTrips = orderTripPlans.length > 0;
+    useEffect(() => {
+        if (!requiresVehicleOverrideReason && doVehicleOverrideReason) {
+            setDoVehicleOverrideReason('');
+        }
+    }, [requiresVehicleOverrideReason, doVehicleOverrideReason]);
+
+    useEffect(() => {
+        if (!selectedOrderTripPlan && doVehicle && busyVehicleIds.includes(doVehicle)) {
+            setDoVehicle('');
+            setDoVehicleOverrideReason('');
+        }
+    }, [busyVehicleIds, doVehicle, selectedOrderTripPlan]);
     const canCreateDeliveryOrder = availableItems.length > 0 || isHeaderOnlyOrder;
     const draftDirectCargoItems = getDraftOrderItems(directCargoItems);
     const directCargoSummary = summarizeDraftOrderCargo(directCargoItems);
@@ -325,7 +350,7 @@ export default function OrderDetailPage() {
                 itemProgressById
             );
 
-        if (!doVehicle) {
+        if (!effectiveDoVehicleRef) {
             addToast('error', 'Pilih kendaraan sebelum membuat surat jalan');
             return;
         }
@@ -369,17 +394,25 @@ export default function OrderDetailPage() {
             addToast('error', 'Isi alasan override armada jika trip ini memakai kendaraan dengan kategori berbeda');
             return;
         }
-        const selVeh = vehicles.find(v => v._id === doVehicle);
+        const selVeh = vehicles.find(v => v._id === effectiveDoVehicleRef);
         const defaultShipperReference = doCustomerDoNumber.trim().toUpperCase() || undefined;
         const deliveryOrderPayload = (isHeaderOnlyOrder
             ? {
                 orderRef: order?._id,
+                orderTripPlanKey: selectedOrderTripPlan?._key,
                 masterResi: order?.masterResi,
                 customerDoNumber: defaultShipperReference,
                 pickupStopKeys: selectedPickupStopKeys,
-                vehicleRef: doVehicle || undefined,
+                vehicleRef: effectiveDoVehicleRef || undefined,
                 vehiclePlate: selVeh?.plateNumber || '',
-                vehicleCategoryOverrideReason: requiresVehicleOverrideReason ? doVehicleOverrideReason.trim() : undefined,
+                driverRef: selectedOrderTripPlan?.driverRef || undefined,
+                vehicleCategoryOverrideReason: selectedOrderTripPlan?.vehicleCategoryOverrideReason || (requiresVehicleOverrideReason ? doVehicleOverrideReason.trim() : undefined),
+                tripRouteRateRef: selectedOrderTripPlan?.tripRouteRateRef || undefined,
+                tripOriginArea: selectedOrderTripPlan?.tripOriginArea || undefined,
+                tripDestinationArea: selectedOrderTripPlan?.tripDestinationArea || undefined,
+                taripBorongan: selectedOrderTripPlan?.taripBorongan,
+                issueBankRef: selectedOrderTripPlan?.issueBankRef || undefined,
+                cashGiven: selectedOrderTripPlan?.cashGiven,
                 date: doDate,
                 notes: doNotes,
                 customerName: order?.customerName,
@@ -398,7 +431,7 @@ export default function OrderDetailPage() {
                 items: selectedItems,
                 customerDoNumber: doCustomerDoNumber,
                 pickupStopKeys: selectedPickupStopKeys,
-                vehicleRef: doVehicle,
+                vehicleRef: effectiveDoVehicleRef,
                 selectedVehicle: selVeh,
                 date: doDate,
                 notes: doNotes,
@@ -409,6 +442,17 @@ export default function OrderDetailPage() {
                 receiverAddress: doReceiverAddress,
                 receiverCompany: doReceiverCompany,
             })) as Record<string, unknown>;
+        if (selectedOrderTripPlan) {
+            deliveryOrderPayload.orderTripPlanKey = selectedOrderTripPlan._key;
+            deliveryOrderPayload.driverRef = selectedOrderTripPlan.driverRef;
+            deliveryOrderPayload.tripRouteRateRef = selectedOrderTripPlan.tripRouteRateRef || undefined;
+            deliveryOrderPayload.tripOriginArea = selectedOrderTripPlan.tripOriginArea || undefined;
+            deliveryOrderPayload.tripDestinationArea = selectedOrderTripPlan.tripDestinationArea || undefined;
+            deliveryOrderPayload.taripBorongan = selectedOrderTripPlan.taripBorongan;
+            deliveryOrderPayload.issueBankRef = selectedOrderTripPlan.issueBankRef;
+            deliveryOrderPayload.cashGiven = selectedOrderTripPlan.cashGiven;
+            deliveryOrderPayload.vehicleCategoryOverrideReason = selectedOrderTripPlan.vehicleCategoryOverrideReason || undefined;
+        }
 
         setCreatingDO(true);
         try {
@@ -443,6 +487,7 @@ export default function OrderDetailPage() {
             setDoReceiverAddress('');
             setDoReceiverCompany('');
             setDoDate(getBusinessDateValue());
+            setSelectedOrderTripPlanKey('');
             await loadOrderDetail();
         } catch {
             addToast('error', 'Gagal membuat surat jalan');
@@ -562,9 +607,11 @@ export default function OrderDetailPage() {
                     </div>
                 </div>
                 <div className="page-actions">
-                    <button className="btn btn-primary" onClick={openCreateDOModal} disabled={!canCreateDeliveryOrder}>
-                        <Truck size={16} /> {isHeaderOnlyOrder && dos.length > 0 ? 'Tambah Surat Jalan' : 'Buat Surat Jalan'}
-                    </button>
+                    {!hasPlannedTrips && (
+                        <button className="btn btn-primary" onClick={() => openCreateDOModal()} disabled={!canCreateDeliveryOrder}>
+                            <Truck size={16} /> {isHeaderOnlyOrder && dos.length > 0 ? 'Tambah Surat Jalan' : 'Buat Surat Jalan'}
+                        </button>
+                    )}
                     {canCreateInvoice && (
                         <button className="btn btn-secondary" onClick={() => router.push('/invoices/new')}>
                             <FileText size={16} /> Buat Nota
@@ -726,6 +773,94 @@ export default function OrderDetailPage() {
                     </div>
                 </div>
             </div>
+
+            {hasPlannedTrips && (
+                <div className="card mt-6">
+                    <div className="card-header">
+                        <span className="card-header-title">Rencana Trip ({orderTripPlans.length})</span>
+                    </div>
+                    <div className="card-body" style={{ display: 'grid', gap: '1rem' }}>
+                        {orderTripPlans.map(tripPlan => {
+                            const linkedDeliveryOrder = tripPlan.linkedDeliveryOrderRef ? deliveryOrderById.get(tripPlan.linkedDeliveryOrderRef) : undefined;
+                            const tripPlanPickupStops = resolvedOrderPickupStops.filter(stop => tripPlan.pickupStopKeys.includes(stop._key));
+                            const canInputSuratJalan =
+                                !linkedDeliveryOrder || linkedDeliveryOrder.status === 'CANCELLED';
+                            return (
+                                <div
+                                    key={tripPlan._key}
+                                    style={{
+                                        display: 'grid',
+                                        gap: '0.85rem',
+                                        padding: '1rem',
+                                        border: '1px solid var(--color-gray-200)',
+                                        borderRadius: '0.9rem',
+                                        background: 'var(--color-gray-50)',
+                                    }}
+                                >
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                        <div style={{ fontWeight: 700 }}>Trip {tripPlan.sequence}</div>
+                                        {linkedDeliveryOrder ? (
+                                            <span className={`badge badge-${DO_STATUS_MAP[linkedDeliveryOrder.status]?.color || 'gray'}`}>
+                                                <span className="badge-dot" /> {linkedDeliveryOrder.status === 'CANCELLED' ? 'Bisa dibuat ulang' : `Sudah jadi SJ ${formatInternalDeliveryOrderNumber(linkedDeliveryOrder)}`}
+                                            </span>
+                                        ) : (
+                                            <span className="badge badge-blue"><span className="badge-dot" /> Siap input Surat Jalan</span>
+                                        )}
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem' }}>
+                                        <div>
+                                            <div className="detail-label">Kendaraan</div>
+                                            <div className="detail-value">{tripPlan.vehiclePlate || '-'}</div>
+                                        </div>
+                                        <div>
+                                            <div className="detail-label">Supir</div>
+                                            <div className="detail-value">{tripPlan.driverName || '-'}</div>
+                                        </div>
+                                        <div>
+                                            <div className="detail-label">Upah Trip</div>
+                                            <div className="detail-value">{formatCurrency(tripPlan.taripBorongan || 0)}</div>
+                                        </div>
+                                        <div>
+                                            <div className="detail-label">Uang Jalan Awal</div>
+                                            <div className="detail-value">{formatCurrency(tripPlan.cashGiven || 0)}</div>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div className="detail-label">Pickup Trip</div>
+                                        <div style={{ display: 'grid', gap: '0.45rem', marginTop: '0.45rem' }}>
+                                            {(tripPlanPickupStops.length > 0 ? tripPlanPickupStops : resolvedOrderPickupStops).map((pickupStop, index) => (
+                                                <div key={`${tripPlan._key}-${pickupStop._key}`} style={{ padding: '0.7rem 0.85rem', borderRadius: '0.75rem', background: 'var(--color-white)', border: '1px solid var(--color-gray-200)' }}>
+                                                    <div className="detail-label">Pickup {index + 1}{pickupStop.pickupLabel ? ` · ${pickupStop.pickupLabel}` : ''}</div>
+                                                    <div className="detail-value">{pickupStop.pickupAddress}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                        <div className="text-muted text-sm">
+                                            {tripPlan.tripOriginArea || tripPlan.tripDestinationArea
+                                                ? `${tripPlan.tripOriginArea || '-'} → ${tripPlan.tripDestinationArea || '-'}`
+                                                : 'Area trip belum diisi'}
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                            {linkedDeliveryOrder && (
+                                                <Link href={`/delivery-orders/${linkedDeliveryOrder._id}`} className="btn btn-secondary btn-sm">
+                                                    <Eye size={14} /> Lihat Surat Jalan
+                                                </Link>
+                                            )}
+                                            {canInputSuratJalan && (
+                                                <button type="button" className="btn btn-primary btn-sm" onClick={() => openCreateDOModal(tripPlan._key)}>
+                                                    <Truck size={14} /> {linkedDeliveryOrder?.status === 'CANCELLED' ? 'Buat Ulang Surat Jalan' : 'Input Surat Jalan'}
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
 
             {/* Items */}
             <div className="card mt-6">
@@ -935,11 +1070,11 @@ export default function OrderDetailPage() {
 
             {/* Create DO Modal */}
             {showDOModal && (
-                <div className="modal-overlay" onClick={() => { if (!creatingDO) setShowDOModal(false); }}>
+                <div className="modal-overlay" onClick={() => { if (!creatingDO) { setShowDOModal(false); setSelectedOrderTripPlanKey(''); } }}>
                     <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
-                            <h3 className="modal-title">Buat Surat Jalan</h3>
-                            <button className="modal-close" onClick={() => setShowDOModal(false)} disabled={creatingDO}>&times;</button>
+                            <h3 className="modal-title">{selectedOrderTripPlan ? `Input Surat Jalan Trip ${selectedOrderTripPlan.sequence}` : 'Buat Surat Jalan'}</h3>
+                            <button className="modal-close" onClick={() => { setShowDOModal(false); setSelectedOrderTripPlanKey(''); }} disabled={creatingDO}>&times;</button>
                         </div>
                         <div className="modal-body">
                             <div className="form-row">
@@ -964,7 +1099,32 @@ export default function OrderDetailPage() {
                                     </div>
                                 </div>
                             </div>
-                            {resolvedOrderPickupStops.length > 0 && (
+                            {selectedOrderTripPlan && (
+                                <div style={{ display: 'grid', gap: '0.75rem', marginBottom: '1rem' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem' }}>
+                                        <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
+                                            <div className="text-muted text-sm">Kendaraan</div>
+                                            <div className="font-semibold" style={{ marginTop: '0.2rem' }}>{selectedOrderTripPlan.vehiclePlate || '-'}</div>
+                                        </div>
+                                        <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
+                                            <div className="text-muted text-sm">Supir</div>
+                                            <div className="font-semibold" style={{ marginTop: '0.2rem' }}>{selectedOrderTripPlan.driverName || '-'}</div>
+                                        </div>
+                                        <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
+                                            <div className="text-muted text-sm">Upah Trip</div>
+                                            <div className="font-semibold" style={{ marginTop: '0.2rem' }}>{formatCurrency(selectedOrderTripPlan.taripBorongan || 0)}</div>
+                                        </div>
+                                        <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
+                                            <div className="text-muted text-sm">Uang Jalan Awal</div>
+                                            <div className="font-semibold" style={{ marginTop: '0.2rem' }}>{formatCurrency(selectedOrderTripPlan.cashGiven || 0)}</div>
+                                        </div>
+                                    </div>
+                                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                                        Armada, supir, upah trip, dan uang jalan sudah melekat di order. Di langkah ini admin tinggal input nomor Surat Jalan pengirim dan barangnya.
+                                    </div>
+                                </div>
+                            )}
+                            {!selectedOrderTripPlan && resolvedOrderPickupStops.length > 0 && (
                                 <div className="form-group">
                                     <label className="form-label">Titik Pickup untuk Trip Ini</label>
                                     <div style={{ display: 'grid', gap: '0.75rem' }}>
@@ -1009,33 +1169,35 @@ export default function OrderDetailPage() {
                                     </div>
                                 </div>
                             )}
-                            <div className="form-row">
-                                <div className="form-group">
-                                    <label className="form-label">Kendaraan</label>
-                                    <select className="form-select" value={doVehicle} onChange={e => setDoVehicle(e.target.value)} disabled={creatingDO}>
-                                        <option value="">Pilih kendaraan</option>
-                                        {availableVehicles.map(vehicle => (
-                                            <option key={vehicle._id} value={vehicle._id}>
-                                                {vehicle.unitCode ? `${vehicle.unitCode} - ` : ''}{vehicle.plateNumber}
-                                                {vehicle.serviceName ? ` (${vehicle.serviceName})` : ' (Kategori belum diisi)'} | {formatCapacityRangeLabel(vehicle)}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                        {availableVehicles.length === 0
-                                            ? 'Tidak ada kendaraan kosong. Semua kendaraan operasional sedang dipakai DO aktif atau belum selesai.'
-                                            : order.serviceRef
-                                                ? `Order meminta kategori ${order.serviceName || '-'} dengan kisaran muatan ${requestedServiceCapacityLabel}. Kendaraan kosong yang cocok ditampilkan lebih dulu, tetapi override tetap boleh jika alasannya dicatat.`
-                                                : 'Hanya kendaraan yang sedang kosong yang ditampilkan. Order ini belum punya kategori armada, jadi semua kendaraan operasional yang tidak sedang dipakai tetap tersedia.'}
-                                    </div>
-                                    {selectedVehicleData && (
-                                        <div style={{ fontSize: '0.75rem', color: 'var(--color-primary-700)', marginTop: '0.35rem', fontWeight: 600 }}>
-                                            Kendaraan terpilih: {selectedVehicleCapacityLabel}
+                            {!selectedOrderTripPlan && (
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Kendaraan</label>
+                                        <select className="form-select" value={doVehicle} onChange={e => setDoVehicle(e.target.value)} disabled={creatingDO}>
+                                            <option value="">Pilih kendaraan</option>
+                                            {availableVehicles.map(vehicle => (
+                                                <option key={vehicle._id} value={vehicle._id}>
+                                                    {vehicle.unitCode ? `${vehicle.unitCode} - ` : ''}{vehicle.plateNumber}
+                                                    {vehicle.serviceName ? ` (${vehicle.serviceName})` : ' (Kategori belum diisi)'} | {formatCapacityRangeLabel(vehicle)}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                            {availableVehicles.length === 0
+                                                ? 'Tidak ada kendaraan kosong. Semua kendaraan operasional sedang dipakai DO aktif atau belum selesai.'
+                                                : order.serviceRef
+                                                    ? `Order meminta kategori ${order.serviceName || '-'} dengan kisaran muatan ${requestedServiceCapacityLabel}. Kendaraan kosong yang cocok ditampilkan lebih dulu, tetapi override tetap boleh jika alasannya dicatat.`
+                                                    : 'Hanya kendaraan yang sedang kosong yang ditampilkan. Order ini belum punya kategori armada, jadi semua kendaraan operasional yang tidak sedang dipakai tetap tersedia.'}
                                         </div>
-                                    )}
+                                        {selectedVehicleData && (
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--color-primary-700)', marginTop: '0.35rem', fontWeight: 600 }}>
+                                                Kendaraan terpilih: {selectedVehicleCapacityLabel}
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
-                            {requiresVehicleOverrideReason && (
+                            )}
+                            {!selectedOrderTripPlan && requiresVehicleOverrideReason && (
                                 <div
                                     style={{
                                         background: 'var(--color-warning-light)',
@@ -1668,7 +1830,7 @@ export default function OrderDetailPage() {
                             )}
                         </div>
                         <div className="modal-footer">
-                            <button className="btn btn-secondary" onClick={() => setShowDOModal(false)} disabled={creatingDO}>Batal</button>
+                            <button className="btn btn-secondary" onClick={() => { setShowDOModal(false); setSelectedOrderTripPlanKey(''); }} disabled={creatingDO}>Batal</button>
                             <button
                                 className="btn btn-primary"
                                 onClick={handleCreateDO}
@@ -1676,9 +1838,11 @@ export default function OrderDetailPage() {
                             >
                                 <Truck size={16} /> {creatingDO
                                     ? 'Membuat Surat Jalan...'
-                                    : isHeaderOnlyOrder
-                                        ? (draftDirectCargoItems.length > 0 ? `Buat Surat Jalan (${draftDirectCargoItems.length} barang)` : 'Buat Surat Jalan (barang menyusul)')
-                                        : `Buat Surat Jalan (${Object.keys(selectedShipments).length} item)`}
+                                    : selectedOrderTripPlan
+                                        ? (draftDirectCargoItems.length > 0 ? `Input Surat Jalan (${draftDirectCargoItems.length} barang)` : 'Input Surat Jalan (barang menyusul)')
+                                        : isHeaderOnlyOrder
+                                            ? (draftDirectCargoItems.length > 0 ? `Buat Surat Jalan (${draftDirectCargoItems.length} barang)` : 'Buat Surat Jalan (barang menyusul)')
+                                            : `Buat Surat Jalan (${Object.keys(selectedShipments).length} item)`}
                             </button>
                         </div>
                     </div>

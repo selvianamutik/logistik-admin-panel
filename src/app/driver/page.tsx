@@ -29,9 +29,9 @@ import {
     updateOrderItemWeightUnit,
     type OrderItemForm,
 } from '@/lib/order-create-page-support';
-import { DO_STATUS_MAP, formatDate, formatDateTime } from '@/lib/utils';
+import { DO_STATUS_MAP, formatCurrency, formatDate, formatDateTime } from '@/lib/utils';
 import type { Driver, SessionUser } from '@/lib/types';
-import type { DriverAssignedDeliveryOrder } from '@/lib/api/driver-portal';
+import type { DriverAssignedDeliveryOrder, DriverAssignedTripPlan } from '@/lib/api/driver-portal';
 
 type DriverSessionResponse = {
     user: SessionUser;
@@ -45,6 +45,10 @@ type DriverCargoInputItem = OrderItemForm & {
     shipperReferenceNumber: string;
     pickupStopKey: string;
 };
+
+function getDriverTripPlanId(plan: Pick<DriverAssignedTripPlan, 'orderRef' | 'tripPlanKey'>) {
+    return `${plan.orderRef}::${plan.tripPlanKey}`;
+}
 
 function createDefaultDriverCargoInputItem(defaultPickupStopKey = ''): DriverCargoInputItem {
     return {
@@ -171,6 +175,7 @@ export default function DriverPortalPage() {
     const [driver, setDriver] = useState<Driver | null>(null);
     const [companyName, setCompanyName] = useState('PT Gading Mas Surya');
     const [orders, setOrders] = useState<DriverAssignedDeliveryOrder[]>([]);
+    const [plannedTrips, setPlannedTrips] = useState<DriverAssignedTripPlan[]>([]);
     const [loading, setLoading] = useState(true);
     const [loggingOut, setLoggingOut] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
@@ -183,6 +188,9 @@ export default function DriverPortalPage() {
     const [showCargoInputModal, setShowCargoInputModal] = useState(false);
     const [cargoInputOrderId, setCargoInputOrderId] = useState<string | null>(null);
     const [cargoInputItems, setCargoInputItems] = useState<DriverCargoInputItem[]>([createDefaultDriverCargoInputItem()]);
+    const [showTripCreateModal, setShowTripCreateModal] = useState(false);
+    const [tripCreateTargetId, setTripCreateTargetId] = useState<string | null>(null);
+    const [tripCreateItems, setTripCreateItems] = useState<DriverCargoInputItem[]>([createDefaultDriverCargoInputItem()]);
 
     const handleDriverAuthFailure = useCallback((message = 'Sesi driver berakhir. Silakan login ulang.') => {
         setFeedback({ type: 'error', message });
@@ -206,6 +214,10 @@ export default function DriverPortalPage() {
         () => orders.find(item => item._id === cargoInputOrderId) || null,
         [cargoInputOrderId, orders]
     );
+    const tripCreateTarget = useMemo(
+        () => plannedTrips.find(item => getDriverTripPlanId(item) === tripCreateTargetId) || null,
+        [plannedTrips, tripCreateTargetId]
+    );
     const completionCargoReady = useMemo(
         () => areActualCargoDraftsReady(completionCargoItems),
         [completionCargoItems]
@@ -217,6 +229,14 @@ export default function DriverPortalPage() {
     const cargoInputSummary = useMemo(
         () => summarizeDraftOrderCargo(cargoInputItems),
         [cargoInputItems]
+    );
+    const tripCreateDraftItems = useMemo(
+        () => getDraftDriverCargoInputItems(tripCreateItems),
+        [tripCreateItems]
+    );
+    const tripCreateSummary = useMemo(
+        () => summarizeDraftOrderCargo(tripCreateItems),
+        [tripCreateItems]
     );
     const completionCargoSummary = useMemo(
         () => formatCargoSummary({
@@ -255,6 +275,7 @@ export default function DriverPortalPage() {
                 throw createDriverPortalError(res.status, payload.error || 'Gagal memuat surat jalan driver');
             }
             setOrders(payload.data || []);
+            setPlannedTrips(payload.plannedTrips || []);
         } catch (error) {
             if (error instanceof Error && 'status' in error && (error.status === 401 || error.status === 403)) {
                 handleDriverAuthFailure();
@@ -562,6 +583,22 @@ export default function DriverPortalPage() {
         setCargoInputItems([createDefaultDriverCargoInputItem()]);
     }, [actionLoadingId]);
 
+    const openTripCreateModal = useCallback((tripPlan: DriverAssignedTripPlan) => {
+        const defaultPickupStopKey = tripPlan.pickupStops?.[0]?._key || '';
+        setTripCreateTargetId(getDriverTripPlanId(tripPlan));
+        setTripCreateItems([createDefaultDriverCargoInputItem(defaultPickupStopKey)]);
+        setShowTripCreateModal(true);
+    }, []);
+
+    const closeTripCreateModal = useCallback(() => {
+        if (actionLoadingId) {
+            return;
+        }
+        setShowTripCreateModal(false);
+        setTripCreateTargetId(null);
+        setTripCreateItems([createDefaultDriverCargoInputItem()]);
+    }, [actionLoadingId]);
+
     const updateCargoInputItem = useCallback((
         index: number,
         field: keyof Pick<DriverCargoInputItem, 'description' | 'qtyKoli' | 'weightInputValue' | 'volumeInputValue' | 'shipperReferenceNumber' | 'pickupStopKey'>,
@@ -591,6 +628,36 @@ export default function DriverPortalPage() {
             return previous.filter((_, itemIndex) => itemIndex !== index);
         });
     }, [cargoInputOrder]);
+
+    const updateTripCreateItem = useCallback((
+        index: number,
+        field: keyof Pick<DriverCargoInputItem, 'description' | 'qtyKoli' | 'weightInputValue' | 'volumeInputValue' | 'shipperReferenceNumber' | 'pickupStopKey'>,
+        value: string | number
+    ) => {
+        setTripCreateItems(previous =>
+            previous.map((item, itemIndex) => (
+                itemIndex === index
+                    ? { ...item, [field]: value }
+                    : item
+            ))
+        );
+    }, []);
+
+    const addTripCreateItem = useCallback(() => {
+        setTripCreateItems(previous => [
+            ...previous,
+            createDefaultDriverCargoInputItem(tripCreateTarget?.pickupStops?.[0]?._key || ''),
+        ]);
+    }, [tripCreateTarget]);
+
+    const removeTripCreateItem = useCallback((index: number) => {
+        setTripCreateItems(previous => {
+            if (previous.length <= 1) {
+                return [createDefaultDriverCargoInputItem(tripCreateTarget?.pickupStops?.[0]?._key || '')];
+            }
+            return previous.filter((_, itemIndex) => itemIndex !== index);
+        });
+    }, [tripCreateTarget]);
 
     const updateCompletionCargoDraft = useCallback((
         deliveryOrderItemRef: string,
@@ -752,6 +819,72 @@ export default function DriverPortalPage() {
         }
     }, [cargoInputDraftItems, cargoInputOrder, handleDriverAuthFailure, loadOrders]);
 
+    const submitTripCreate = useCallback(async () => {
+        if (!tripCreateTarget) {
+            return;
+        }
+        if ((tripCreateTarget.pickupStops?.length || 0) > 1) {
+            const invalidPickupRow = tripCreateDraftItems.findIndex(item => !item.pickupStopKey);
+            if (invalidPickupRow >= 0) {
+                setFeedback({ type: 'error', message: `Titik pickup wajib dipilih pada baris barang ${invalidPickupRow + 1}.` });
+                return;
+            }
+        }
+        const invalidReferenceRow = tripCreateDraftItems.findIndex(item => !item.shipperReferenceNumber.trim());
+        if (invalidReferenceRow >= 0) {
+            setFeedback({ type: 'error', message: `No. SJ pengirim wajib diisi pada baris barang ${invalidReferenceRow + 1}.` });
+            return;
+        }
+
+        const actionId = getDriverTripPlanId(tripCreateTarget);
+        setActionLoadingId(actionId);
+        try {
+            const response = await fetch('/api/driver/delivery-orders/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    orderRef: tripCreateTarget.orderRef,
+                    orderTripPlanKey: tripCreateTarget.tripPlanKey,
+                    cargoItems: tripCreateDraftItems.map(item => ({
+                        customerProductRef: item.customerProductRef || undefined,
+                        description: item.description,
+                        qtyKoli: item.qtyKoli,
+                        weightInputValue: item.weightInputValue,
+                        weightInputUnit: item.weightInputUnit,
+                        volumeInputValue: item.volumeInputValue,
+                        volumeInputUnit: item.volumeInputUnit,
+                        shipperReferenceNumber: item.shipperReferenceNumber.trim().toUpperCase(),
+                        pickupStopKey: item.pickupStopKey || undefined,
+                    })),
+                }),
+            });
+            const payload = await response.json().catch(() => null);
+            if (!response.ok) {
+                throw createDriverPortalError(response.status, payload?.error || 'Gagal membuat surat jalan dari trip driver');
+            }
+
+            setFeedback({
+                type: 'success',
+                message: `${payload?.data?.doNumber || 'Surat jalan'} berhasil dibuat${tripCreateDraftItems.length === 0 ? ' | barang menyusul' : ''}.`,
+            });
+            await loadOrders();
+            setShowTripCreateModal(false);
+            setTripCreateTargetId(null);
+            setTripCreateItems([createDefaultDriverCargoInputItem()]);
+        } catch (error) {
+            if (error instanceof Error && 'status' in error && (error.status === 401 || error.status === 403)) {
+                handleDriverAuthFailure(error.message);
+                return;
+            }
+            setFeedback({
+                type: 'error',
+                message: error instanceof Error ? error.message : 'Gagal membuat surat jalan dari trip driver',
+            });
+        } finally {
+            setActionLoadingId(null);
+        }
+    }, [handleDriverAuthFailure, loadOrders, tripCreateDraftItems, tripCreateTarget]);
+
     const handleDeliveryProgress = useCallback(
         async (deliveryOrderRef: string, nextStatus: DriverProgressStatus) => {
             if (nextStatus === 'DELIVERED') {
@@ -834,14 +967,63 @@ export default function DriverPortalPage() {
                 </button>
             </section>
 
+            {plannedTrips.length > 0 && (
+                <section className="driver-do-grid" style={{ marginBottom: '1rem' }}>
+                    {plannedTrips.map(item => {
+                        const tripId = getDriverTripPlanId(item);
+                        const isBusy = actionLoadingId === tripId;
+                        const pickupLabel = item.pickupStops.length > 0
+                            ? `${item.pickupStops.length} titik pickup`
+                            : (item.pickupAddress || '-');
+
+                        return (
+                            <div key={tripId} className="card driver-do-card">
+                                <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center' }}>
+                                    <div>
+                                        <div className="card-header-title">Trip {item.tripSequence} Siap Input Surat Jalan</div>
+                                        <div className="text-muted text-sm">{item.masterResi || '-'} | {formatDate(item.date || '')}</div>
+                                    </div>
+                                    <span className="badge badge-warning">Belum jadi SJ</span>
+                                </div>
+                                <div className="card-body">
+                                    <div className="driver-do-meta"><span>Customer</span><strong>{item.customerName || '-'}</strong></div>
+                                    <div className="driver-do-meta"><span>Kendaraan</span><strong>{item.vehiclePlate || '-'}</strong></div>
+                                    <div className="driver-do-meta"><span>Pickup</span><strong>{pickupLabel}</strong></div>
+                                    <div className="driver-do-meta"><span>Uang Jalan</span><strong>{formatCurrency(item.cashGiven || 0)}</strong></div>
+                                    <div className="driver-do-meta"><span>Borongan</span><strong>{formatCurrency(item.taripBorongan || 0)}</strong></div>
+                                    <div className="driver-action-row">
+                                        <button
+                                            className="btn btn-primary btn-sm"
+                                            onClick={() => openTripCreateModal(item)}
+                                            disabled={isActionInFlight}
+                                        >
+                                            <Plus size={15} /> {isBusy ? 'Memproses...' : 'Input Surat Jalan'}
+                                        </button>
+                                        {item.tripOriginArea && item.tripDestinationArea && (
+                                            <div className="text-muted text-sm" style={{ flex: 1, lineHeight: 1.5 }}>
+                                                Rute {item.tripOriginArea} - {item.tripDestinationArea}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </section>
+            )}
+
             <section className="driver-do-grid">
                 {orders.length === 0 ? (
                     <div className="card">
                         <div className="card-body">
                             <div className="empty-state" style={{ padding: '1rem 0' }}>
                                 <Truck size={40} className="empty-state-icon" />
-                                <div className="empty-state-title">Belum ada surat jalan untuk akun driver ini</div>
-                                <div className="empty-state-text">Hubungi admin jika seharusnya kamu sudah mendapat penugasan DO.</div>
+                                <div className="empty-state-title">{plannedTrips.length > 0 ? 'Belum ada Surat Jalan aktif' : 'Belum ada surat jalan untuk akun driver ini'}</div>
+                                <div className="empty-state-text">
+                                    {plannedTrips.length > 0
+                                        ? 'Trip yang sudah di-assign ada di kartu atas. Input Surat Jalan dulu supaya perjalanan aktif.'
+                                        : 'Hubungi admin jika seharusnya kamu sudah mendapat penugasan DO.'}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -941,6 +1123,189 @@ export default function DriverPortalPage() {
                     })
                 )}
             </section>
+
+            {showTripCreateModal && tripCreateTarget && (
+                <div className="modal-overlay" onClick={closeTripCreateModal}>
+                    <div className="modal modal-lg" onClick={event => event.stopPropagation()}>
+                        <div className="modal-header">
+                            <div>
+                                <h3 className="modal-title">Input Surat Jalan Trip {tripCreateTarget.tripSequence}</h3>
+                                <div className="text-muted text-sm" style={{ marginTop: '0.3rem' }}>
+                                    Trip ini sudah menempel ke driver, kendaraan, dan uang jalan. Isi nomor SJ pengirim per barang.
+                                </div>
+                            </div>
+                            <button className="modal-close" onClick={closeTripCreateModal} disabled={isActionInFlight}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="driver-completion-summary">
+                                <div className="driver-completion-summary-card">
+                                    <span>Order</span>
+                                    <strong>{tripCreateTarget.masterResi || '-'}</strong>
+                                </div>
+                                <div className="driver-completion-summary-card">
+                                    <span>Kendaraan</span>
+                                    <strong>{tripCreateTarget.vehiclePlate || '-'}</strong>
+                                </div>
+                                <div className="driver-completion-summary-card">
+                                    <span>Pickup</span>
+                                    <strong>{tripCreateTarget.pickupStops.length > 0 ? `${tripCreateTarget.pickupStops.length} titik` : (tripCreateTarget.pickupAddress || '-')}</strong>
+                                </div>
+                                <div className="driver-completion-summary-card">
+                                    <span>Ringkasan Barang</span>
+                                    <strong>{tripCreateDraftItems.length > 0 ? formatCargoSummary(tripCreateSummary) : 'Belum ada barang'}</strong>
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'grid', gap: '0.85rem' }}>
+                                {tripCreateItems.map((item, index) => (
+                                    <div
+                                        key={`driver-trip-create-${index}`}
+                                        style={{
+                                            display: 'flex',
+                                            gap: 12,
+                                            alignItems: 'flex-end',
+                                            flexWrap: 'wrap',
+                                            padding: 12,
+                                            background: 'var(--color-gray-50)',
+                                            borderRadius: 'var(--radius-md)',
+                                            border: '1px solid var(--color-gray-200)',
+                                        }}
+                                    >
+                                        {tripCreateTarget.pickupStops.length > 0 && (
+                                            <div style={{ flex: '1 1 240px' }}>
+                                                <label className="form-label">Titik Pickup</label>
+                                                <select
+                                                    className="form-select"
+                                                    value={item.pickupStopKey}
+                                                    onChange={event => updateTripCreateItem(index, 'pickupStopKey', event.target.value)}
+                                                    disabled={isActionInFlight}
+                                                >
+                                                    <option value="">Pilih titik pickup</option>
+                                                    {tripCreateTarget.pickupStops.map((pickupStop, pickupIndex) => (
+                                                        <option key={pickupStop._key || `${pickupIndex}-${pickupStop.pickupAddress}`} value={pickupStop._key || ''}>
+                                                            {`Pickup ${pickupIndex + 1}${pickupStop.pickupLabel ? ` - ${pickupStop.pickupLabel}` : ''}`}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        )}
+                                        <div style={{ flex: '1 1 220px' }}>
+                                            <label className="form-label">No. SJ Pengirim</label>
+                                            <input
+                                                className="form-input"
+                                                value={item.shipperReferenceNumber}
+                                                onChange={event => updateTripCreateItem(index, 'shipperReferenceNumber', event.target.value.toUpperCase())}
+                                                placeholder="Masukkan nomor surat jalan pengirim"
+                                                disabled={isActionInFlight}
+                                            />
+                                        </div>
+                                        <div style={{ flex: '2 1 260px' }}>
+                                            <label className="form-label">Deskripsi Barang</label>
+                                            <input
+                                                className="form-input"
+                                                value={item.description}
+                                                onChange={event => updateTripCreateItem(index, 'description', event.target.value)}
+                                                placeholder="Mis. Oli 50 liter / Ban luar / Pupuk"
+                                                disabled={isActionInFlight}
+                                            />
+                                        </div>
+                                        <div style={{ flex: '0 1 110px' }}>
+                                            <label className="form-label">Koli</label>
+                                            <FormattedNumberInput
+                                                min={0}
+                                                allowDecimal={false}
+                                                value={item.qtyKoli}
+                                                onValueChange={value => updateTripCreateItem(index, 'qtyKoli', value)}
+                                                disabled={isActionInFlight}
+                                            />
+                                        </div>
+                                        <div style={{ flex: '1 1 180px' }}>
+                                            <label className="form-label">Berat</label>
+                                            <div className="driver-completion-unit-row">
+                                                <FormattedNumberInput
+                                                    min={0}
+                                                    maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
+                                                    value={item.weightInputValue}
+                                                    onValueChange={value => updateTripCreateItem(index, 'weightInputValue', value)}
+                                                    disabled={isActionInFlight}
+                                                />
+                                                <select
+                                                    className="form-select"
+                                                    value={item.weightInputUnit}
+                                                    onChange={event => setTripCreateItems(previous => previous.map((entry, entryIndex) => (
+                                                        entryIndex === index ? { ...entry, ...updateOrderItemWeightUnit(entry, event.target.value as DriverCargoInputItem['weightInputUnit']) } : entry
+                                                    )))}
+                                                    disabled={isActionInFlight}
+                                                >
+                                                    {WEIGHT_INPUT_UNIT_OPTIONS.map(option => (
+                                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div style={{ flex: '1 1 180px' }}>
+                                            <label className="form-label">Volume</label>
+                                            <div className="driver-completion-unit-row">
+                                                <FormattedNumberInput
+                                                    min={0}
+                                                    maxFractionDigits={item.volumeInputUnit === 'LITER' ? 0 : 3}
+                                                    value={item.volumeInputValue}
+                                                    onValueChange={value => updateTripCreateItem(index, 'volumeInputValue', value)}
+                                                    disabled={isActionInFlight}
+                                                />
+                                                <select
+                                                    className="form-select"
+                                                    value={item.volumeInputUnit}
+                                                    onChange={event => setTripCreateItems(previous => previous.map((entry, entryIndex) => (
+                                                        entryIndex === index ? { ...entry, ...updateOrderItemVolumeUnit(entry, event.target.value as DriverCargoInputItem['volumeInputUnit']) } : entry
+                                                    )))}
+                                                    disabled={isActionInFlight}
+                                                >
+                                                    {VOLUME_INPUT_UNIT_OPTIONS.map(option => (
+                                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        </div>
+                                        {tripCreateItems.length > 1 && (
+                                            <button
+                                                type="button"
+                                                className="btn btn-ghost btn-icon-only"
+                                                onClick={() => removeTripCreateItem(index)}
+                                                disabled={isActionInFlight}
+                                                style={{ marginBottom: 4 }}
+                                            >
+                                                &times;
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginTop: '1rem' }}>
+                                <div className="text-muted text-sm">
+                                    Surat Jalan boleh dibuat dulu. Kalau barang belum final, kosongkan baris ini dan tambah nanti dari DO aktif.
+                                </div>
+                                <button type="button" className="btn btn-secondary btn-sm" onClick={addTripCreateItem} disabled={isActionInFlight}>
+                                    <Plus size={14} /> Tambah Baris
+                                </button>
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={closeTripCreateModal} disabled={isActionInFlight}>
+                                Batal
+                            </button>
+                            <button
+                                className="btn btn-primary"
+                                onClick={() => void submitTripCreate()}
+                                disabled={isActionInFlight}
+                            >
+                                <Truck size={15} /> {actionLoadingId === getDriverTripPlanId(tripCreateTarget) ? 'Menyimpan...' : 'Simpan Surat Jalan'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {showCargoInputModal && cargoInputOrder && (
                 <div className="modal-overlay" onClick={closeCargoInputModal}>

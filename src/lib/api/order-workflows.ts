@@ -70,6 +70,7 @@ import type {
     DeliveryOrderPickupStop,
     DeliveryOrderShipperReference,
     OrderPickupStop,
+    OrderTripPlan,
 } from '@/lib/types';
 
 type AuditLogFn = (
@@ -110,6 +111,24 @@ type NormalizedOrderPickupStop = Required<Pick<OrderPickupStop, 'sequence' | 'pi
     customerPickupRef?: string;
     pickupLabel?: string;
     notes?: string;
+};
+
+type NormalizedOrderTripPlan = Required<Pick<OrderTripPlan, 'sequence' | 'vehicleRef' | 'driverRef' | 'issueBankRef' | 'cashGiven' | 'date'>> & {
+    _key: string;
+    pickupStopKeys: string[];
+    vehiclePlate?: string;
+    vehicleServiceRef?: string;
+    vehicleServiceName?: string;
+    vehicleCategoryOverrideReason?: string;
+    driverName?: string;
+    tripRouteRateRef?: string;
+    tripOriginArea?: string;
+    tripDestinationArea?: string;
+    taripBorongan?: number;
+    issueBankName?: string;
+    notes?: string;
+    linkedDeliveryOrderRef?: string;
+    linkedDeliveryOrderNumber?: string;
 };
 
 type NormalizedDeliveryOrderPickupStop = Required<Pick<DeliveryOrderPickupStop, 'sequence' | 'pickupAddress'>> & {
@@ -267,6 +286,47 @@ function getOrderPickupStopsSnapshot(order: {
         customerPickupRef: normalizeOptionalText(order.customerPickupRef) || undefined,
         pickupAddress,
     }];
+}
+
+function normalizeOrderTripPlansSnapshot(tripPlans: OrderTripPlan[] | undefined) {
+    const normalizedPlans: NormalizedOrderTripPlan[] = [];
+    for (const [index, plan] of (tripPlans || []).entries()) {
+        const vehicleRef = normalizeOptionalText(plan.vehicleRef);
+        const driverRef = normalizeOptionalText(plan.driverRef);
+        const issueBankRef = normalizeOptionalText(plan.issueBankRef);
+        const cashGiven = normalizeCurrencyNumber(plan.cashGiven ?? 0);
+        const date = normalizeOptionalText(plan.date) || getBusinessDateValue();
+        if (!vehicleRef || !driverRef || !issueBankRef || !Number.isFinite(cashGiven) || cashGiven <= 0) {
+            continue;
+        }
+
+        normalizedPlans.push({
+            _key: normalizeOptionalText(plan._key) || crypto.randomUUID(),
+            sequence: Number.isFinite(plan.sequence) && plan.sequence > 0 ? plan.sequence : index + 1,
+            pickupStopKeys: Array.isArray(plan.pickupStopKeys)
+                ? plan.pickupStopKeys.map(value => normalizeOptionalText(value)).filter((value): value is string => Boolean(value))
+                : [],
+            vehicleRef,
+            vehiclePlate: normalizeOptionalText(plan.vehiclePlate) || undefined,
+            vehicleServiceRef: normalizeOptionalText(plan.vehicleServiceRef) || undefined,
+            vehicleServiceName: normalizeOptionalText(plan.vehicleServiceName) || undefined,
+            vehicleCategoryOverrideReason: normalizeOptionalText(plan.vehicleCategoryOverrideReason) || undefined,
+            driverRef,
+            driverName: normalizeOptionalText(plan.driverName) || undefined,
+            tripRouteRateRef: normalizeOptionalText(plan.tripRouteRateRef) || undefined,
+            tripOriginArea: normalizeOptionalText(plan.tripOriginArea) || undefined,
+            tripDestinationArea: normalizeOptionalText(plan.tripDestinationArea) || undefined,
+            taripBorongan: normalizeCurrencyNumber(plan.taripBorongan ?? 0) || undefined,
+            issueBankRef,
+            issueBankName: normalizeOptionalText(plan.issueBankName) || undefined,
+            cashGiven,
+            date,
+            notes: normalizeOptionalText(plan.notes) || undefined,
+            linkedDeliveryOrderRef: normalizeOptionalText(plan.linkedDeliveryOrderRef) || undefined,
+            linkedDeliveryOrderNumber: normalizeOptionalText(plan.linkedDeliveryOrderNumber) || undefined,
+        });
+    }
+    return normalizedPlans.sort((left, right) => left.sequence - right.sequence);
 }
 
 function resolveDeliveryOrderPickupStops(
@@ -990,36 +1050,8 @@ export async function handleOrderCreate(
     const orderId = crypto.randomUUID();
     const masterResi = await sanityGetNextNumber('resi');
     const createdAt = new Date().toISOString();
-    const customerDoPrefix = normalizeCustomerDoPrefix((customer as { deliveryOrderPrefix?: string }).deliveryOrderPrefix);
     const rawTripDrafts = Array.isArray(data.tripDrafts) ? data.tripDrafts.filter(isPlainObject) : [];
-    const companyProfile =
-        rawTripDrafts.length > 0
-            ? await getSanityClient().fetch<Pick<CompanyProfile, 'name' | 'address' | 'phone' | 'email' | 'logoUrl'> | null>(
-                `*[_type == "companyProfile"][0]{
-                    name,
-                    address,
-                    phone,
-                    email,
-                    logoUrl
-                }`
-            )
-            : null;
-    const preparedTripDrafts: Array<{
-        doId: string;
-        doNumber: string;
-        doDoc: { _id: string; _type: string } & Record<string, unknown>;
-        bonNumber: string;
-        voucherDoc: { _id: string; _type: string } & Record<string, unknown>;
-        initialDisbursementDoc: { _id: string; _type: string } & Record<string, unknown>;
-        issueTransactionDoc: { _id: string; _type: string } & Record<string, unknown>;
-        tripRouteRateRef?: string;
-        tripRouteRateRev?: string;
-        vehicleId: string;
-        vehicleRev: string;
-        driverId: string;
-        driverRev: string;
-        issueBankRef: string;
-    }> = [];
+    const preparedTripPlans: OrderTripPlan[] = [];
     const usedVehicleRefs = new Set<string>();
     const usedDriverRefs = new Set<string>();
     const bankUsageState = new Map<string, {
@@ -1249,118 +1281,26 @@ export async function handleOrderCreate(
             );
         }
         bankState.nextBalance = nextBalance;
-
-        const doId = crypto.randomUUID();
-        const doNumber = await sanityGetNextNumber('do', doDate);
-        const bonNumber = await sanityGetNextNumber('bon', doDate);
-        const voucherId = crypto.randomUUID();
-        const initialDisbursementId = crypto.randomUUID();
-        const issueTransactionId = crypto.randomUUID();
-        const pickupSummary = buildPickupSummary(selectedPickupStops, customer.address);
-        const voucherTotals = computeDriverVoucherTotals(cashGiven, 0, effectiveTripFee);
-
-        preparedTripDrafts.push({
-            doId,
-            doNumber,
-            doDoc: {
-                _id: doId,
-                _type: 'deliveryOrder',
-                issuerCompanyName: companyProfile?.name,
-                issuerCompanyAddress: companyProfile?.address,
-                issuerCompanyPhone: companyProfile?.phone,
-                issuerCompanyEmail: companyProfile?.email,
-                issuerCompanyLogoUrl: resolveCompanyLogoUrl(companyProfile),
-                orderRef: orderId,
-                masterResi,
-                customerRef,
-                customerName: customer.name,
-                customerDoPrefix,
-                pickupAddress: pickupSummary,
-                pickupStops: selectedPickupStops,
-                serviceRef: serviceRef || '',
-                serviceName,
-                vehicleServiceRef,
-                vehicleServiceName,
-                vehicleCategoryOverrideReason: vehicleCategoryOverrideReasonToStore,
-                vehicleRef,
-                vehiclePlate: selectedVehicle.plateNumber || undefined,
-                driverRef,
-                driverName: selectedDriver.name || undefined,
-                tripRouteRateRef: tripRouteSelection?.tripRouteRateRef,
-                tripOriginArea: tripRouteSelection?.tripOriginArea,
-                tripDestinationArea: tripRouteSelection?.tripDestinationArea,
-                baseTaripBorongan: effectiveTripFee,
-                taripBorongan: effectiveTripFee,
-                vehicleCapacityKg: normalizeNumber(selectedVehicle.capacityKg ?? 0) || undefined,
-                date: doDate,
-                notes: normalizeOptionalText(rawTripDraft.notes),
-                doNumber,
-                status: 'CREATED',
-            },
-            bonNumber,
-            voucherDoc: {
-                _id: voucherId,
-                _type: 'driverVoucher',
-                issuerCompanyName: companyProfile?.name,
-                issuerCompanyAddress: companyProfile?.address,
-                issuerCompanyPhone: companyProfile?.phone,
-                issuerCompanyEmail: companyProfile?.email,
-                issuerCompanyLogoUrl: resolveCompanyLogoUrl(companyProfile),
-                driverRef,
-                driverName: selectedDriver.name || '',
-                deliveryOrderRef: doId,
-                doNumber,
-                vehicleRef,
-                vehiclePlate: selectedVehicle.plateNumber || undefined,
-                route: buildRouteLabel(pickupSummary, receiverAddress || undefined) || undefined,
-                bonNumber,
-                issuedDate: doDate,
-                cashGiven,
-                initialCashGiven: cashGiven,
-                totalIssuedAmount: cashGiven,
-                topUpCount: 0,
-                driverFeeAmount: voucherTotals.driverFeeAmount,
-                totalClaimAmount: voucherTotals.totalClaimAmount,
-                issueBankRef,
-                issueBankName: bankState.account.bankName,
-                totalSpent: voucherTotals.totalSpent,
-                balance: voucherTotals.balance,
-                status: 'ISSUED',
-            },
-            initialDisbursementDoc: {
-                _id: initialDisbursementId,
-                _type: 'driverVoucherDisbursement',
-                voucherRef: voucherId,
-                date: doDate,
-                amount: cashGiven,
-                kind: 'INITIAL',
-                bankAccountRef: issueBankRef,
-                bankAccountName: bankState.account.bankName,
-                bankAccountNumber: bankState.account.accountNumber,
-                bankTransactionRef: issueTransactionId,
-                createdBy: session._id,
-                createdByName: session.name,
-            },
-            issueTransactionDoc: {
-                _id: issueTransactionId,
-                _type: 'bankTransaction',
-                bankAccountRef: issueBankRef,
-                bankAccountName: bankState.account.bankName,
-                bankAccountNumber: bankState.account.accountNumber,
-                type: 'DEBIT',
-                amount: cashGiven,
-                date: doDate,
-                description: `Pencairan uang jalan trip ${bonNumber}`,
-                balanceAfter: nextBalance,
-                relatedVoucherRef: voucherId,
-            },
-            tripRouteRateRef: tripRouteSelection?.matchedTripRouteRate?._id,
-            tripRouteRateRev: tripRouteSelection?.matchedTripRouteRate?._rev,
-            vehicleId: selectedVehicle._id,
-            vehicleRev: selectedVehicle._rev,
-            driverId: selectedDriver._id,
-            driverRev: selectedDriver._rev,
+        preparedTripPlans.push({
+            _key: normalizeOptionalText(rawTripDraft._key) || normalizeOptionalText(rawTripDraft.id) || crypto.randomUUID(),
+            sequence: index + 1,
+            pickupStopKeys: selectedPickupStops.map(stop => stop._key),
+            vehicleRef,
+            vehiclePlate: selectedVehicle.plateNumber || undefined,
+            vehicleServiceRef,
+            vehicleServiceName,
+            vehicleCategoryOverrideReason: vehicleCategoryOverrideReasonToStore,
+            driverRef,
+            driverName: selectedDriver.name || undefined,
+            tripRouteRateRef: tripRouteSelection?.tripRouteRateRef,
+            tripOriginArea: tripRouteSelection?.tripOriginArea,
+            tripDestinationArea: tripRouteSelection?.tripDestinationArea,
+            taripBorongan: effectiveTripFee,
             issueBankRef,
+            issueBankName: bankState.account.bankName,
+            cashGiven,
+            date: doDate,
+            notes: normalizeOptionalText(rawTripDraft.notes),
         });
 
         usedVehicleRefs.add(vehicleRef);
@@ -1381,6 +1321,7 @@ export async function handleOrderCreate(
         receiverCompany: receiverCompany || undefined,
         pickupAddress: buildPickupSummary(pickupStops, customer.address),
         pickupStops,
+        tripPlans: preparedTripPlans.length > 0 ? preparedTripPlans : undefined,
         serviceRef: serviceRef || '',
         serviceName,
         notes: normalizeOptionalText(data.notes),
@@ -1420,32 +1361,6 @@ export async function handleOrderCreate(
     for (const item of items) {
         transaction.create(buildOrderItemDraftDocument(orderId, item));
     }
-    for (const trip of preparedTripDrafts) {
-        transaction.create(trip.doDoc);
-        transaction.create(trip.voucherDoc);
-        transaction.create(trip.initialDisbursementDoc);
-        transaction.create(trip.issueTransactionDoc);
-        if (trip.tripRouteRateRef && trip.tripRouteRateRev) {
-            transaction.patch(trip.tripRouteRateRef, {
-                ifRevisionID: trip.tripRouteRateRev,
-                set: { updatedAt: createdAt },
-            });
-        }
-        transaction.patch(trip.vehicleId, {
-            ifRevisionID: trip.vehicleRev,
-            set: { updatedAt: createdAt },
-        });
-        transaction.patch(trip.driverId, {
-            ifRevisionID: trip.driverRev,
-            set: { updatedAt: createdAt },
-        });
-    }
-    for (const [issueBankRef, bankState] of bankUsageState.entries()) {
-        transaction.patch(issueBankRef, {
-            ifRevisionID: bankState.account._rev,
-            set: { currentBalance: bankState.nextBalance },
-        });
-    }
 
     try {
         await transaction.commit();
@@ -1463,24 +1378,15 @@ export async function handleOrderCreate(
         'CREATE',
         'orders',
         orderId,
-        `Created orders: ${masterResi}${items.length > 0 ? ` (${items.length} item target)` : ' (header booking tanpa item)'}${preparedTripDrafts.length > 0 ? ` | ${preparedTripDrafts.length} trip langsung diterbitkan` : ''}`
+        `Created orders: ${masterResi}${items.length > 0 ? ` (${items.length} item target)` : ' (header booking tanpa item)'}${preparedTripPlans.length > 0 ? ` | ${preparedTripPlans.length} trip direncanakan` : ''}`
     );
-    for (const trip of preparedTripDrafts) {
-        await addAuditLog(
-            session,
-            'CREATE',
-            'delivery-orders',
-            trip.doId,
-            `Created delivery-orders from order create: ${trip.doNumber} | bon ${trip.bonNumber}`
-        );
-    }
     return NextResponse.json({
         data: orderDoc,
         id: orderId,
-        createdDeliveryOrders: preparedTripDrafts.map(trip => ({
-            _id: trip.doId,
-            doNumber: trip.doNumber,
-            bonNumber: trip.bonNumber,
+        plannedTrips: preparedTripPlans.map(trip => ({
+            _key: trip._key,
+            vehiclePlate: trip.vehiclePlate,
+            driverName: trip.driverName,
         })),
     });
 }
@@ -3111,6 +3017,7 @@ export async function handleDeliveryOrderCreate(
     addAuditLog: AuditLogFn
 ) {
     const orderRef = typeof data.orderRef === 'string' ? data.orderRef : '';
+    const orderTripPlanKey = normalizeOptionalText(data.orderTripPlanKey);
     if (!orderRef) {
         return NextResponse.json({ error: 'Order surat jalan wajib diisi' }, { status: 400 });
     }
@@ -3132,11 +3039,31 @@ export async function handleDeliveryOrderCreate(
         receiverCompany?: string;
         pickupAddress?: string;
         pickupStops?: OrderPickupStop[];
+        tripPlans?: OrderTripPlan[];
         serviceRef?: string;
         serviceName?: string;
     }>(orderRef);
     if (!order) {
         return NextResponse.json({ error: 'Order tidak ditemukan' }, { status: 404 });
+    }
+    const orderTripPlans = normalizeOrderTripPlansSnapshot(order.tripPlans);
+    const selectedOrderTripPlan =
+        orderTripPlanKey
+            ? orderTripPlans.find(plan => plan._key === orderTripPlanKey) || null
+            : null;
+    if (orderTripPlanKey && !selectedOrderTripPlan) {
+        return NextResponse.json({ error: 'Rencana trip order tidak ditemukan atau sudah berubah' }, { status: 409 });
+    }
+    if (selectedOrderTripPlan?.linkedDeliveryOrderRef) {
+        const linkedDeliveryOrder = await sanityGetById<{ _id: string; doNumber?: string; status?: string }>(selectedOrderTripPlan.linkedDeliveryOrderRef);
+        if (linkedDeliveryOrder && linkedDeliveryOrder.status !== 'CANCELLED') {
+            return NextResponse.json(
+                {
+                    error: `Rencana trip ini sudah dipakai di surat jalan ${linkedDeliveryOrder.doNumber || selectedOrderTripPlan.linkedDeliveryOrderNumber || linkedDeliveryOrder._id}`,
+                },
+                { status: 409 }
+            );
+        }
     }
 
     const orderCustomerRef = extractRefId(order.customerRef);
@@ -3155,11 +3082,12 @@ export async function handleDeliveryOrderCreate(
         return NextResponse.json({ error: 'Customer order tidak ditemukan' }, { status: 404 });
     }
 
-    const vehicleRef = typeof data.vehicleRef === 'string' ? data.vehicleRef : '';
+    const vehicleRef = selectedOrderTripPlan?.vehicleRef || (typeof data.vehicleRef === 'string' ? data.vehicleRef : '');
     let vehiclePlate =
-        typeof data.vehiclePlate === 'string' && data.vehiclePlate.trim()
+        selectedOrderTripPlan?.vehiclePlate ||
+        (typeof data.vehiclePlate === 'string' && data.vehiclePlate.trim()
             ? data.vehiclePlate.trim()
-            : '';
+            : '');
     let vehicleCapacityKg = 0;
     let selectedVehicle: {
         _id: string;
@@ -3170,12 +3098,13 @@ export async function handleDeliveryOrderCreate(
         serviceName?: string;
         capacityKg?: number;
     } | null = null;
-    const vehicleCategoryOverrideReason = normalizeOptionalText(data.vehicleCategoryOverrideReason);
-    const driverRef = typeof data.driverRef === 'string' ? data.driverRef : '';
+    const vehicleCategoryOverrideReason = selectedOrderTripPlan?.vehicleCategoryOverrideReason || normalizeOptionalText(data.vehicleCategoryOverrideReason);
+    const driverRef = selectedOrderTripPlan?.driverRef || (typeof data.driverRef === 'string' ? data.driverRef : '');
     let driverName =
-        typeof data.driverName === 'string' && data.driverName.trim()
+        selectedOrderTripPlan?.driverName ||
+        (typeof data.driverName === 'string' && data.driverName.trim()
             ? data.driverName.trim()
-            : '';
+            : '');
     let selectedDriver: { _id: string; _rev?: string; name?: string; active?: boolean } | null = null;
     let vehicleServiceRef: string | undefined;
     let vehicleServiceName: string | undefined;
@@ -3304,9 +3233,10 @@ export async function handleDeliveryOrderCreate(
     }
 
     const doDate =
-        typeof data.date === 'string' && data.date
+        selectedOrderTripPlan?.date ||
+        (typeof data.date === 'string' && data.date
             ? data.date
-            : getBusinessDateValue();
+            : getBusinessDateValue());
     try {
         assertIsoDate(doDate, 'Tanggal surat jalan');
     } catch (error) {
@@ -3316,13 +3246,13 @@ export async function handleDeliveryOrderCreate(
         );
     }
     const manualCustomerDoNumber = normalizeOptionalText(data.customerDoNumber)?.toUpperCase();
-    const taripBorongan = normalizeCurrencyNumber(data.taripBorongan ?? 0);
+    const taripBorongan = normalizeCurrencyNumber(selectedOrderTripPlan?.taripBorongan ?? data.taripBorongan ?? 0);
     if (!Number.isFinite(taripBorongan) || taripBorongan < 0) {
         return NextResponse.json({ error: 'Upah trip pada surat jalan tidak valid' }, { status: 400 });
     }
     let tripRouteSelection: Awaited<ReturnType<typeof resolveTripRouteRateSelection>>;
     try {
-        tripRouteSelection = await resolveTripRouteRateSelection(data, {
+        tripRouteSelection = await resolveTripRouteRateSelection(selectedOrderTripPlan || data, {
             serviceRef: order.serviceRef,
         });
     } catch (error) {
@@ -3353,8 +3283,8 @@ export async function handleDeliveryOrderCreate(
         matchedTripRouteRateFee > 0
             ? matchedTripRouteRateFee
             : taripBorongan;
-    const tripCashIssueBankRef = typeof data.issueBankRef === 'string' ? data.issueBankRef : '';
-    const tripCashCashGiven = normalizeCurrencyNumber(data.cashGiven ?? 0);
+    const tripCashIssueBankRef = selectedOrderTripPlan?.issueBankRef || (typeof data.issueBankRef === 'string' ? data.issueBankRef : '');
+    const tripCashCashGiven = normalizeCurrencyNumber(selectedOrderTripPlan?.cashGiven ?? data.cashGiven ?? 0);
     const wantsInitialTripCash = Boolean(tripCashIssueBankRef) || tripCashCashGiven > 0;
     if (wantsInitialTripCash && !driverRef) {
         return NextResponse.json({ error: 'Supir wajib dipilih sebelum uang jalan awal diterbitkan' }, { status: 400 });
@@ -3378,7 +3308,12 @@ export async function handleDeliveryOrderCreate(
         effectiveTripFee > 0;
     let selectedPickupStops: NormalizedDeliveryOrderPickupStop[] = [];
     try {
-        selectedPickupStops = resolveDeliveryOrderPickupStops(order, data);
+        selectedPickupStops = resolveDeliveryOrderPickupStops(
+            order,
+            selectedOrderTripPlan
+                ? { pickupStopKeys: selectedOrderTripPlan.pickupStopKeys }
+                : data
+        );
     } catch (error) {
         return NextResponse.json(
             { error: error instanceof Error ? error.message : 'Titik pickup surat jalan tidak valid' },
@@ -3898,18 +3833,31 @@ export async function handleDeliveryOrderCreate(
             set: { updatedAt: mutationTimestamp },
         });
     }
-    if (usingDirectCargoInput) {
-        if (order.cargoEntryMode !== 'DELIVERY_ORDER') {
-            if (!order._rev) {
-                return NextResponse.json({ error: 'Revisi order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
-            }
-            transaction.patch(orderRef, {
-                ifRevisionID: order._rev,
-                set: {
-                    cargoEntryMode: 'DELIVERY_ORDER',
-                },
-            });
+    const nextOrderPatchSet: Record<string, unknown> = {};
+    if (usingDirectCargoInput && order.cargoEntryMode !== 'DELIVERY_ORDER') {
+        nextOrderPatchSet.cargoEntryMode = 'DELIVERY_ORDER';
+    }
+    if (selectedOrderTripPlan) {
+        nextOrderPatchSet.tripPlans = orderTripPlans.map(plan => (
+            plan._key === selectedOrderTripPlan._key
+                ? {
+                    ...plan,
+                    linkedDeliveryOrderRef: doId,
+                    linkedDeliveryOrderNumber: doNumber,
+                }
+                : plan
+        ));
+    }
+    if (Object.keys(nextOrderPatchSet).length > 0) {
+        if (!order._rev) {
+            return NextResponse.json({ error: 'Revisi order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
         }
+        transaction.patch(orderRef, {
+            ifRevisionID: order._rev,
+            set: nextOrderPatchSet,
+        });
+    }
+    if (usingDirectCargoInput) {
         try {
             patchLinkedCustomerProducts(transaction, directCargoItems, mutationTimestamp);
         } catch (error) {
@@ -4081,7 +4029,7 @@ export async function handleDeliveryOrderCreate(
         'CREATE',
         'delivery-orders',
         doId,
-        `Created delivery-orders: ${doNumber}${shipperReferences.length > 0 ? ` / ${shipperReferences.map(reference => reference.referenceNumber).join(', ')}` : ''} (${selectionSummaries.join('; ')})${bonNumber ? ` | bon ${bonNumber}` : ''}${vehicleCategoryOverrideReasonToStore ? ` | override armada: ${order.serviceName || '-'} -> ${vehicleServiceName || vehiclePlate || '-'} | alasan: ${vehicleCategoryOverrideReasonToStore}` : ''}`
+        `Created delivery-orders: ${doNumber}${shipperReferences.length > 0 ? ` / ${shipperReferences.map(reference => reference.referenceNumber).join(', ')}` : ''} (${selectionSummaries.join('; ')})${selectedOrderTripPlan ? ` | dari rencana trip ${selectedOrderTripPlan.sequence}` : ''}${bonNumber ? ` | bon ${bonNumber}` : ''}${vehicleCategoryOverrideReasonToStore ? ` | override armada: ${order.serviceName || '-'} -> ${vehicleServiceName || vehiclePlate || '-'} | alasan: ${vehicleCategoryOverrideReasonToStore}` : ''}`
     );
     return NextResponse.json({ data: doDoc, id: doId, issuedVoucherBonNumber: bonNumber });
 }
