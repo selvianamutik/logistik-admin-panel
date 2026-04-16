@@ -469,7 +469,7 @@ export default function SuppliersPage() {
             </div>
 
             {showModal && (
-                <div className="modal-backdrop" onClick={closeModal}>
+                <div className="modal-overlay" onClick={closeModal}>
                     <div className="modal" onClick={event => event.stopPropagation()}>
                         <div className="modal-header">
                             <div>

@@ -3,19 +3,22 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { History, Receipt } from 'lucide-react';
+import { Edit, History, Receipt, Save, X } from 'lucide-react';
 
+import CurrencyInput from '@/components/CurrencyInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import {
   formatInventoryQuantity,
+  INVENTORY_UNIT_OPTIONS,
   isTireTrackedWarehouseItem,
   PURCHASE_STATUS_LABELS,
   STOCK_MOVEMENT_SOURCE_LABELS,
   STOCK_MOVEMENT_TYPE_LABELS,
   WAREHOUSE_ITEM_TRACKING_MODE_LABELS,
+  WAREHOUSE_ITEM_TRACKING_MODE_OPTIONS,
 } from '@/lib/inventory';
-import { hasPageAccess } from '@/lib/rbac';
+import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import type { Maintenance, Purchase, PurchaseItem, StockMovement, Supplier, TireEvent, WarehouseItem } from '@/lib/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
 
@@ -48,6 +51,42 @@ type MaintenanceUsageRow = {
   note?: string;
 };
 
+type DetailTab = 'detail' | 'purchases' | 'movements';
+
+type ItemFormState = {
+  itemCode: string;
+  name: string;
+  category: string;
+  unit: WarehouseItem['unit'];
+  trackingMode: NonNullable<WarehouseItem['trackingMode']>;
+  minStockQty: string;
+  defaultSupplierRef: string;
+  defaultPurchasePrice: number;
+  tireTypeDefault: string;
+  tireBrandDefault: string;
+  tireSizeDefault: string;
+  notes: string;
+  active: boolean;
+};
+
+const TIRE_TYPE_OPTIONS = ['Tubeless', 'Tube Type', 'Solid'] as const;
+
+const createItemForm = (item?: Partial<WarehouseItem>): ItemFormState => ({
+  itemCode: item?.itemCode || '',
+  name: item?.name || '',
+  category: item?.category || '',
+  unit: item?.unit || 'PCS',
+  trackingMode: item?.trackingMode || 'STANDARD',
+  minStockQty: item?.minStockQty !== undefined ? String(item.minStockQty) : '',
+  defaultSupplierRef: item?.defaultSupplierRef || '',
+  defaultPurchasePrice: typeof item?.defaultPurchasePrice === 'number' ? item.defaultPurchasePrice : 0,
+  tireTypeDefault: item?.tireTypeDefault || 'Tubeless',
+  tireBrandDefault: item?.tireBrandDefault || '',
+  tireSizeDefault: item?.tireSizeDefault || '',
+  notes: item?.notes || '',
+  active: item?.active !== false,
+});
+
 export default function WarehouseItemDetailPage() {
   const params = useParams();
   const { user } = useApp();
@@ -56,18 +95,25 @@ export default function WarehouseItemDetailPage() {
 
   const [item, setItem] = useState<WarehouseItem | null>(null);
   const [supplier, setSupplier] = useState<Supplier | null>(null);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([]);
   const [purchasesById, setPurchasesById] = useState<Record<string, Purchase>>({});
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [maintenancesById, setMaintenancesById] = useState<Record<string, Maintenance>>({});
   const [linkedTires, setLinkedTires] = useState<TireEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<DetailTab>('detail');
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState<ItemFormState>(createItemForm());
 
   const canOpenSuppliers = user ? hasPageAccess(user.role, 'suppliers') : false;
   const canOpenPurchases = user ? hasPageAccess(user.role, 'purchases') : false;
   const canOpenVehicles = user ? hasPageAccess(user.role, 'vehicles') : false;
   const canOpenMaintenance = user ? hasPageAccess(user.role, 'maintenance') : false;
   const canOpenTires = user ? hasPageAccess(user.role, 'tires') : false;
+  const canManage = user ? hasPermission(user.role, 'warehouseItems', 'create') || hasPermission(user.role, 'warehouseItems', 'update') : false;
+  const activeSuppliers = useMemo(() => suppliers.filter((supplierItem) => supplierItem.active !== false), [suppliers]);
 
   const loadItemDetail = useCallback(async () => {
     setLoading(true);
@@ -78,7 +124,7 @@ export default function WarehouseItemDetailPage() {
         return;
       }
 
-      const [supplierRow, purchaseItemRows, movementRows, tireRows] = await Promise.all([
+      const [supplierRow, purchaseItemRows, movementRows, tireRows, supplierRows] = await Promise.all([
         itemData.defaultSupplierRef
           ? fetchAdminData<Supplier | null>(`/api/data?entity=suppliers&id=${itemData.defaultSupplierRef}`, 'Gagal memuat supplier').catch(() => null)
           : Promise.resolve(null),
@@ -97,6 +143,9 @@ export default function WarehouseItemDetailPage() {
               'Gagal memuat ban terhubung',
               200
             )
+          : Promise.resolve([]),
+        canManage
+          ? fetchAllAdminCollectionData<Supplier>('/api/data?entity=suppliers&pageSize=200', 'Gagal memuat supplier', 200)
           : Promise.resolve([]),
       ]);
 
@@ -127,6 +176,8 @@ export default function WarehouseItemDetailPage() {
 
       setItem(itemData);
       setSupplier(supplierRow || null);
+      setSuppliers(supplierRows || []);
+      setForm(createItemForm(itemData));
       setPurchaseItems((purchaseItemRows || []).sort((a, b) => `${b.purchaseRef || ''}-${b._id}`.localeCompare(`${a.purchaseRef || ''}-${a._id}`)));
       setMovements((movementRows || []).sort((a, b) => `${b.movementDate || ''}-${b._id}`.localeCompare(`${a.movementDate || ''}-${a._id}`)));
       setLinkedTires((tireRows || []).sort((a, b) => String(a.tireCode || '').localeCompare(String(b.tireCode || ''))));
@@ -149,7 +200,7 @@ export default function WarehouseItemDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [addToast, canOpenMaintenance, canOpenTires, itemId]);
+  }, [addToast, canManage, canOpenMaintenance, canOpenTires, itemId]);
 
   useEffect(() => {
     void loadItemDetail();
@@ -226,6 +277,56 @@ export default function WarehouseItemDetailPage() {
     };
   };
 
+  const closeEditModal = () => {
+    if (saving || !item) return;
+    setShowEditModal(false);
+    setForm(createItemForm(item));
+  };
+
+  const openEditModal = () => {
+    if (!item) return;
+    setForm(createItemForm(item));
+    setShowEditModal(true);
+  };
+
+  const handleSave = async () => {
+    if (!canManage || !item) return addToast('error', 'Anda tidak punya hak mengubah barang gudang');
+    if (!form.itemCode || !form.name || !form.unit) return addToast('error', 'Kode, nama barang, dan satuan wajib diisi');
+
+    setSaving(true);
+    try {
+      const payload = {
+        itemCode: form.itemCode,
+        name: form.name,
+        category: form.category,
+        unit: form.unit,
+        trackingMode: form.trackingMode,
+        minStockQty: form.minStockQty,
+        defaultSupplierRef: form.defaultSupplierRef || undefined,
+        defaultPurchasePrice: form.defaultPurchasePrice,
+        tireTypeDefault: form.trackingMode === 'TIRE_ASSET' ? form.tireTypeDefault : undefined,
+        tireBrandDefault: form.trackingMode === 'TIRE_ASSET' ? form.tireBrandDefault : undefined,
+        tireSizeDefault: form.trackingMode === 'TIRE_ASSET' ? form.tireSizeDefault : undefined,
+        notes: form.notes,
+        active: form.active,
+      };
+      const res = await fetch('/api/data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entity: 'warehouse-items', action: 'update', data: { id: item._id, updates: payload } }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Gagal menyimpan barang gudang');
+      addToast('success', 'Barang gudang diperbarui');
+      setShowEditModal(false);
+      await loadItemDetail();
+    } catch (error) {
+      addToast('error', error instanceof Error ? error.message : 'Gagal menyimpan barang gudang');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <div>
@@ -253,6 +354,18 @@ export default function WarehouseItemDetailPage() {
         </div>
       </div>
 
+      <div className="segmented-tabs" aria-label="Menu barang gudang" style={{ marginBottom: '1.5rem' }}>
+        <button type="button" className={`segmented-tab ${activeTab === 'detail' ? 'active' : ''}`} onClick={() => setActiveTab('detail')}>
+          Detail
+        </button>
+        <button type="button" className={`segmented-tab ${activeTab === 'purchases' ? 'active' : ''}`} onClick={() => setActiveTab('purchases')}>
+          Pembelian Terkait
+        </button>
+        <button type="button" className={`segmented-tab ${activeTab === 'movements' ? 'active' : ''}`} onClick={() => setActiveTab('movements')}>
+          Riwayat Mutasi Stok
+        </button>
+      </div>
+
       <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
         <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Stok Saat Ini</div><div className="kpi-value">{formatInventoryQuantity(item.currentStockQty || 0)} {item.unit}</div></div></div>
         <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Min. Stok</div><div className="kpi-value">{formatInventoryQuantity(item.minStockQty || 0)} {item.unit}</div></div></div>
@@ -260,8 +373,16 @@ export default function WarehouseItemDetailPage() {
         <div className="kpi-card"><div className="kpi-content"><div className="kpi-label">Total Keluar</div><div className="kpi-value">{formatInventoryQuantity(totalOutQty)} {item.unit}</div></div></div>
       </div>
 
+      {activeTab === 'detail' && (
       <div className="card" style={{ marginBottom: '1.5rem' }}>
-        <div className="card-header"><span className="card-header-title">{item.itemCode} - {item.name}</span></div>
+        <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+          <span className="card-header-title">{item.itemCode} - {item.name}</span>
+          {canManage ? (
+            <button className="btn btn-secondary btn-sm" onClick={openEditModal}>
+              <Edit size={14} /> Edit
+            </button>
+          ) : null}
+        </div>
         <div className="card-body">
           <div className="detail-grid">
             <div className="detail-row"><span className="detail-label">Kategori</span><span className="detail-value">{item.category || '-'}</span></div>
@@ -284,7 +405,9 @@ export default function WarehouseItemDetailPage() {
           </div>
         </div>
       </div>
+      )}
 
+      {activeTab === 'purchases' && (
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <div className="card-header"><span className="card-header-title">Pembelian Terkait</span></div>
         <div className="card-body">
@@ -336,8 +459,9 @@ export default function WarehouseItemDetailPage() {
           )}
         </div>
       </div>
+      )}
 
-      {canOpenMaintenance && maintenanceUsageRows.length > 0 && (
+      {activeTab === 'movements' && canOpenMaintenance && maintenanceUsageRows.length > 0 && (
         <div className="card" style={{ marginBottom: '1.5rem' }}>
           <div className="card-header"><span className="card-header-title">Pemakaian di Maintenance</span></div>
           <div className="card-body">
@@ -380,7 +504,7 @@ export default function WarehouseItemDetailPage() {
         </div>
       )}
 
-      {isTireTrackedWarehouseItem(item) && linkedTires.length > 0 && (
+      {activeTab === 'detail' && isTireTrackedWarehouseItem(item) && linkedTires.length > 0 && (
         <div className="card" style={{ marginBottom: '1.5rem' }}>
           <div className="card-header"><span className="card-header-title">Ban Terhubung</span></div>
           <div className="card-body">
@@ -419,6 +543,7 @@ export default function WarehouseItemDetailPage() {
         </div>
       )}
 
+      {activeTab === 'movements' && (
       <div className="card">
         <div className="card-header"><span className="card-header-title">Riwayat Mutasi Stok</span></div>
         <div className="card-body">
@@ -486,6 +611,53 @@ export default function WarehouseItemDetailPage() {
           )}
         </div>
       </div>
+      )}
+
+      {showEditModal && item && (
+        <div className="modal-overlay" onClick={closeEditModal}>
+          <div className="modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <div className="modal-title">Edit Barang Gudang</div>
+                <div className="modal-subtitle">{item.itemCode} - {item.name}</div>
+              </div>
+              <button className="icon-btn" onClick={closeEditModal} disabled={saving}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="form-row"><div className="form-group"><label className="form-label">Kode Barang</label><input className="form-input" value={form.itemCode} onChange={(event) => setForm((current) => ({ ...current, itemCode: event.target.value }))} /></div><div className="form-group"><label className="form-label">Nama Barang</label><input className="form-input" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} /></div></div>
+              <div className="form-row"><div className="form-group"><label className="form-label">Kategori</label><input className="form-input" value={form.category} onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))} /></div><div className="form-group"><label className="form-label">Mode Tracking</label><select className="form-select" value={form.trackingMode} onChange={(event) => setForm((current) => ({ ...current, trackingMode: event.target.value as ItemFormState['trackingMode'], unit: event.target.value === 'TIRE_ASSET' && current.unit !== 'PCS' && current.unit !== 'UNIT' ? 'PCS' : current.unit }))}>{WAREHOUSE_ITEM_TRACKING_MODE_OPTIONS.map((option) => <option key={option} value={option}>{WAREHOUSE_ITEM_TRACKING_MODE_LABELS[option]}</option>)}</select></div></div>
+              <div className="form-row"><div className="form-group"><label className="form-label">Satuan</label><select className="form-select" value={form.unit} onChange={(event) => setForm((current) => ({ ...current, unit: event.target.value as WarehouseItem['unit'] }))}>{INVENTORY_UNIT_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></div><div className="form-group"><label className="form-label">Min. Stok</label><input type="number" min={0} step={form.trackingMode === 'TIRE_ASSET' ? '1' : '0.001'} className="form-input" value={form.minStockQty} onChange={(event) => setForm((current) => ({ ...current, minStockQty: event.target.value }))} /></div></div>
+              <div className="form-row"><div className="form-group"><label className="form-label">Supplier Default</label><select className="form-select" value={form.defaultSupplierRef} onChange={(event) => setForm((current) => ({ ...current, defaultSupplierRef: event.target.value }))}><option value="">-- Tidak dipilih --</option>{activeSuppliers.map((supplierItem) => <option key={supplierItem._id} value={supplierItem._id}>{supplierItem.supplierCode} - {supplierItem.name}</option>)}</select></div><div className="form-group"><label className="form-label">Harga Beli Default (Rp)</label><CurrencyInput value={form.defaultPurchasePrice} onValueChange={(value) => setForm((current) => ({ ...current, defaultPurchasePrice: value }))} placeholder="Ketik harga beli default" /></div></div>
+              <div className="form-row"><div className="form-group"><label className="form-label">Status</label><select className="form-select" value={form.active ? 'active' : 'inactive'} onChange={(event) => setForm((current) => ({ ...current, active: event.target.value === 'active' }))}><option value="active">Aktif</option><option value="inactive">Nonaktif</option></select></div></div>
+              {form.trackingMode === 'TIRE_ASSET' && (
+                <>
+                  <div className="info-banner" style={{ marginBottom: '1rem' }}>
+                    <div className="info-banner-title">Barang Gudang Ban Tertracking</div>
+                    <div className="info-banner-text">
+                      Barang ini dipakai sebagai master ban individual. Penerimaan pembelian akan otomatis membuat kartu ban satu per satu, dan perpindahan ban ke unit akan mengurangi stok gudang otomatis.
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group"><label className="form-label">Jenis Ban Default</label><select className="form-select" value={form.tireTypeDefault} onChange={(event) => setForm((current) => ({ ...current, tireTypeDefault: event.target.value }))}>{TIRE_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></div>
+                    <div className="form-group"><label className="form-label">Merk Ban Default</label><input className="form-input" value={form.tireBrandDefault} onChange={(event) => setForm((current) => ({ ...current, tireBrandDefault: event.target.value }))} /></div>
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group"><label className="form-label">Ukuran Ban Default</label><input className="form-input" value={form.tireSizeDefault} onChange={(event) => setForm((current) => ({ ...current, tireSizeDefault: event.target.value }))} /></div>
+                    <div className="form-group"><label className="form-label">Petunjuk</label><input className="form-input" value="Harga ban tidak ditampilkan di modul Ban" readOnly /></div>
+                  </div>
+                </>
+              )}
+              <div className="form-group"><label className="form-label">Catatan</label><textarea className="form-textarea" rows={3} value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} /></div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={closeEditModal} disabled={saving}>Batal</button>
+              <button className="btn btn-primary" onClick={handleSave} disabled={saving}><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

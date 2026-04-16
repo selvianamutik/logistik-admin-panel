@@ -3,17 +3,41 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { CreditCard, Package, Receipt } from 'lucide-react';
+import { CreditCard, Edit, Package, Receipt, Save, X } from 'lucide-react';
 
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
 import { PURCHASE_STATUS_LABELS } from '@/lib/inventory';
-import { hasPageAccess } from '@/lib/rbac';
+import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import type { Purchase, PurchasePayment, Supplier, WarehouseItem } from '@/lib/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
 
 import { useApp, useToast } from '../../layout';
+
+type SupplierDetailTab = 'detail' | 'purchases' | 'payments' | 'items';
+
+type SupplierFormState = {
+  supplierCode: string;
+  name: string;
+  contactPerson: string;
+  phone: string;
+  address: string;
+  defaultTermDays: string;
+  notes: string;
+  active: boolean;
+};
+
+const createDefaultForm = (supplier?: Partial<Supplier>): SupplierFormState => ({
+  supplierCode: supplier?.supplierCode || '',
+  name: supplier?.name || '',
+  contactPerson: supplier?.contactPerson || '',
+  phone: supplier?.phone || '',
+  address: supplier?.address || '',
+  defaultTermDays: supplier?.defaultTermDays !== undefined ? String(supplier.defaultTermDays) : '14',
+  notes: supplier?.notes || '',
+  active: supplier?.active !== false,
+});
 
 function getPurchaseStatusBadge(status: Purchase['status']) {
   if (status === 'PAID') return 'badge-success';
@@ -32,6 +56,11 @@ export default function SupplierDetailPage() {
   const [payments, setPayments] = useState<PurchasePayment[]>([]);
   const [items, setItems] = useState<WarehouseItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<SupplierDetailTab>('detail');
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState<SupplierFormState>(createDefaultForm());
+  const canManage = user ? hasPermission(user.role, 'suppliers', 'create') || hasPermission(user.role, 'suppliers', 'update') : false;
   const canOpenPurchases = user ? hasPageAccess(user.role, 'purchases') : false;
   const canOpenItems = user ? hasPageAccess(user.role, 'warehouseItems') : false;
   const canOpenBankAccounts = user ? hasPageAccess(user.role, 'bankAccounts') : false;
@@ -53,6 +82,7 @@ export default function SupplierDetailPage() {
       ]);
 
       setSupplier(supplierData);
+      setForm(createDefaultForm(supplierData));
       setPurchases((purchaseRows || []).sort((a, b) => String(b.orderDate || '').localeCompare(String(a.orderDate || ''))));
       setPayments((paymentRows || []).sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))));
       setItems((itemRows || []).sort((a, b) => String(a.itemCode || '').localeCompare(String(b.itemCode || ''))));
@@ -86,6 +116,64 @@ export default function SupplierDetailPage() {
     [openPurchases, today]
   );
 
+  const openEditModal = () => {
+    if (!supplier || !canManage) return;
+    setForm(createDefaultForm(supplier));
+    setShowEditModal(true);
+  };
+
+  const closeEditModal = () => {
+    if (saving) return;
+    setShowEditModal(false);
+    setForm(createDefaultForm(supplier || undefined));
+  };
+
+  const handleSave = async () => {
+    if (!supplier || !canManage) {
+      addToast('error', 'Anda tidak punya hak mengubah supplier');
+      return;
+    }
+    if (!form.supplierCode || !form.name) {
+      addToast('error', 'Kode dan nama supplier wajib diisi');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const payload = {
+        supplierCode: form.supplierCode,
+        name: form.name,
+        contactPerson: form.contactPerson,
+        phone: form.phone,
+        address: form.address,
+        defaultTermDays: form.defaultTermDays,
+        notes: form.notes,
+        active: form.active,
+      };
+      const res = await fetch('/api/data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entity: 'suppliers',
+          action: 'update',
+          data: {
+            id: supplier._id,
+            updates: payload,
+          },
+        }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Gagal menyimpan supplier');
+      addToast('success', 'Supplier diperbarui');
+      setShowEditModal(false);
+      await loadSupplierDetail();
+    } catch (error) {
+      addToast('error', error instanceof Error ? error.message : 'Gagal menyimpan supplier');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <div>
@@ -111,6 +199,21 @@ export default function SupplierDetailPage() {
           <PageBackButton href="/suppliers" />
           <h1 className="page-title">Detail Supplier</h1>
         </div>
+      </div>
+
+      <div className="segmented-tabs" aria-label="Menu supplier" style={{ marginBottom: '1.5rem' }}>
+        <button type="button" className={`segmented-tab ${activeTab === 'detail' ? 'active' : ''}`} onClick={() => setActiveTab('detail')}>
+          Detail
+        </button>
+        <button type="button" className={`segmented-tab ${activeTab === 'purchases' ? 'active' : ''}`} onClick={() => setActiveTab('purchases')}>
+          Pembelian Supplier
+        </button>
+        <button type="button" className={`segmented-tab ${activeTab === 'payments' ? 'active' : ''}`} onClick={() => setActiveTab('payments')}>
+          Pembayaran Supplier
+        </button>
+        <button type="button" className={`segmented-tab ${activeTab === 'items' ? 'active' : ''}`} onClick={() => setActiveTab('items')}>
+          Barang Gudang Terkait
+        </button>
       </div>
 
       <div className="kpi-grid" style={{ marginBottom: '1.5rem' }}>
@@ -140,9 +243,15 @@ export default function SupplierDetailPage() {
         </div>
       </div>
 
+      {activeTab === 'detail' && (
       <div className="card" style={{ marginBottom: '1.5rem' }}>
-        <div className="card-header">
+        <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
           <span className="card-header-title">{supplier.supplierCode} - {supplier.name}</span>
+          {canManage && (
+            <button type="button" className="btn btn-secondary" onClick={openEditModal}>
+              <Edit size={16} /> Edit
+            </button>
+          )}
         </div>
         <div className="card-body">
           <div className="detail-grid">
@@ -185,7 +294,9 @@ export default function SupplierDetailPage() {
           </div>
         </div>
       </div>
+      )}
 
+      {activeTab === 'purchases' && (
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <div className="card-header">
           <span className="card-header-title">Pembelian Supplier</span>
@@ -273,7 +384,9 @@ export default function SupplierDetailPage() {
           )}
         </div>
       </div>
+      )}
 
+      {activeTab === 'payments' && (
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <div className="card-header">
           <span className="card-header-title">Pembayaran Supplier</span>
@@ -364,7 +477,9 @@ export default function SupplierDetailPage() {
           )}
         </div>
       </div>
+      )}
 
+      {activeTab === 'items' && (
       <div className="card">
         <div className="card-header">
           <span className="card-header-title">Barang Gudang Terkait</span>
@@ -446,6 +561,72 @@ export default function SupplierDetailPage() {
           )}
         </div>
       </div>
+      )}
+
+      {showEditModal && (
+        <div className="modal-overlay" onClick={closeEditModal}>
+          <div className="modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <div className="modal-title">Edit Supplier</div>
+                <div className="modal-subtitle">Kelola master supplier untuk pembelian barang gudang.</div>
+              </div>
+              <button className="icon-btn" onClick={closeEditModal} disabled={saving}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Kode Supplier</label>
+                  <input className="form-input" value={form.supplierCode} onChange={(event) => setForm((current) => ({ ...current, supplierCode: event.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Nama Supplier</label>
+                  <input className="form-input" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">PIC</label>
+                  <input className="form-input" value={form.contactPerson} onChange={(event) => setForm((current) => ({ ...current, contactPerson: event.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Telepon</label>
+                  <input className="form-input" value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Termin Default (hari)</label>
+                  <input type="number" min={0} className="form-input" value={form.defaultTermDays} onChange={(event) => setForm((current) => ({ ...current, defaultTermDays: event.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Status</label>
+                  <select className="form-select" value={form.active ? 'active' : 'inactive'} onChange={(event) => setForm((current) => ({ ...current, active: event.target.value === 'active' }))}>
+                    <option value="active">Aktif</option>
+                    <option value="inactive">Nonaktif</option>
+                  </select>
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Alamat</label>
+                <textarea className="form-textarea" rows={3} value={form.address} onChange={(event) => setForm((current) => ({ ...current, address: event.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Catatan</label>
+                <textarea className="form-textarea" rows={3} value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={closeEditModal} disabled={saving}>Batal</button>
+              <button className="btn btn-primary" onClick={() => void handleSave()} disabled={saving}>
+                <Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
