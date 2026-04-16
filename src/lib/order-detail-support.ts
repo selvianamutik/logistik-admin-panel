@@ -49,7 +49,7 @@ export type CreateDeliveryOrderItemInput = {
     holdLocation: string;
 };
 
-export type VehicleSummary = Pick<Vehicle, '_id' | 'unitCode' | 'plateNumber' | 'serviceRef' | 'serviceName'>;
+export type VehicleSummary = Pick<Vehicle, '_id' | 'unitCode' | 'plateNumber' | 'serviceRef' | 'serviceName' | 'capacityMin' | 'capacityMax' | 'capacityKg'>;
 
 export type HoldFormState = {
     holdQtyKoli: string;

@@ -2288,6 +2288,13 @@ export async function handleDeliveryOrderCreate(
     let vehicleServiceName: string | undefined;
     let vehicleCategoryOverrideReasonToStore: string | undefined;
 
+    if (!vehicleRef) {
+        return NextResponse.json({ error: 'Kendaraan wajib dipilih saat membuat surat jalan' }, { status: 400 });
+    }
+    if (!driverRef) {
+        return NextResponse.json({ error: 'Supir wajib dipilih saat membuat surat jalan' }, { status: 400 });
+    }
+
     if (vehicleRef) {
         const vehicle = await sanityGetById<{
             _id: string;
@@ -2529,7 +2536,7 @@ export async function handleDeliveryOrderCreate(
             directCargoItems = await normalizeOrderItemsInput(
                 orderCustomerRef || normalizeText(order.customerRef),
                 Array.isArray(data.cargoItems) ? data.cargoItems : [],
-                { allowEmpty: false }
+                { allowEmpty: true }
             );
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Barang surat jalan tidak valid';
@@ -2559,6 +2566,9 @@ export async function handleDeliveryOrderCreate(
                     holdRemaining: false,
                 }, item.description)
             );
+        }
+        if (directCargoItems.length === 0) {
+            selectionSummaries.push('muatan menyusul');
         }
     } else if (resolvedCargoEntryMode === 'DELIVERY_ORDER') {
         return NextResponse.json(
@@ -2775,6 +2785,7 @@ export async function handleDeliveryOrderCreate(
         tripDestinationArea: tripRouteSelection?.tripDestinationArea,
         baseTaripBorongan: effectiveTripFee > 0 ? effectiveTripFee : undefined,
         taripBorongan: effectiveTripFee > 0 ? effectiveTripFee : undefined,
+        vehicleCapacityKg: vehicleCapacityKg > 0 ? vehicleCapacityKg : undefined,
         date: doDate,
         notes: normalizeOptionalText(data.notes),
         doNumber,
@@ -2989,6 +3000,223 @@ export async function handleDeliveryOrderCreate(
         `Created delivery-orders: ${doNumber}${customerDoNumber ? ` / ${customerDoNumber}` : ''} (${selectionSummaries.join('; ')})${vehicleCategoryOverrideReasonToStore ? ` | override armada: ${order.serviceName || '-'} -> ${vehicleServiceName || vehiclePlate || '-'} | alasan: ${vehicleCategoryOverrideReasonToStore}` : ''}`
     );
     return NextResponse.json({ data: doDoc, id: doId });
+}
+
+export async function handleDeliveryOrderAppendCargoItems(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const id = typeof data.id === 'string' ? data.id : '';
+    if (!id) {
+        return NextResponse.json({ error: 'Surat jalan tidak valid' }, { status: 400 });
+    }
+
+    const deliveryOrder = await sanityGetById<{
+        _id: string;
+        _rev?: string;
+        doNumber?: string;
+        status?: string;
+        orderRef?: unknown;
+        customerRef?: unknown;
+        vehicleRef?: unknown;
+    }>(id);
+    if (!deliveryOrder) {
+        return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
+    }
+    if (!['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status || '')) {
+        return NextResponse.json(
+            { error: 'Muatan hanya bisa ditambahkan saat surat jalan masih aktif sebelum trip selesai atau dibatalkan.' },
+            { status: 409 }
+        );
+    }
+
+    const orderRef = extractRefId(deliveryOrder.orderRef);
+    if (!orderRef) {
+        return NextResponse.json({ error: 'Order sumber surat jalan tidak ditemukan' }, { status: 409 });
+    }
+
+    const order = await sanityGetById<{
+        _id: string;
+        _rev?: string;
+        customerRef?: unknown;
+        cargoEntryMode?: 'ORDER' | 'DELIVERY_ORDER';
+    }>(orderRef);
+    if (!order) {
+        return NextResponse.json({ error: 'Order sumber surat jalan tidak ditemukan' }, { status: 404 });
+    }
+
+    const existingOrderItemCount = await getSanityClient().fetch<number>(
+        `count(*[_type == "orderItem" && orderRef == $ref])`,
+        { ref: orderRef }
+    );
+    const orderItemCargoModeHints =
+        !order.cargoEntryMode && existingOrderItemCount > 0
+            ? await getSanityClient().fetch<Array<{
+                _createdAt?: string;
+                entrySource?: 'ORDER' | 'DELIVERY_ORDER';
+                sourceDeliveryOrderRef?: string;
+            }>>(
+                `*[_type == "orderItem" && orderRef == $ref]{
+                    _createdAt,
+                    entrySource,
+                    sourceDeliveryOrderRef
+                }`,
+                { ref: orderRef }
+            )
+            : [];
+    const resolvedCargoEntryMode = resolveOrderCargoEntryMode(order, orderItemCargoModeHints);
+    const allowsDirectCargoInput = resolvedCargoEntryMode === 'DELIVERY_ORDER' || existingOrderItemCount === 0;
+    if (!allowsDirectCargoInput) {
+        return NextResponse.json(
+            { error: 'Order ini memakai flow item order. Muatan tambahan tidak boleh dimasukkan manual langsung ke surat jalan.' },
+            { status: 409 }
+        );
+    }
+
+    let directCargoItems: NormalizedOrderItemInput[] = [];
+    try {
+        directCargoItems = await normalizeOrderItemsInput(
+            extractRefId(order.customerRef) || extractRefId(deliveryOrder.customerRef) || '',
+            Array.isArray(data.cargoItems) ? data.cargoItems : [],
+            { allowEmpty: false }
+        );
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Barang surat jalan tidak valid';
+        return NextResponse.json({ error: message }, { status: 400 });
+    }
+
+    const existingDoItems = await getSanityClient().fetch<Array<{
+        orderItemWeight?: number;
+        shippedWeight?: number;
+    }>>(
+        `*[_type == "deliveryOrderItem" && deliveryOrderRef == $ref]{
+            orderItemWeight,
+            shippedWeight
+        }`,
+        { ref: id }
+    );
+    const existingPlannedWeightKg = roundQuantity(
+        (existingDoItems || []).reduce(
+            (sum, item) => sum + normalizeNumber(item.orderItemWeight ?? item.shippedWeight ?? 0),
+            0
+        )
+    );
+    const appendedWeightKg = roundQuantity(
+        directCargoItems.reduce((sum, item) => sum + normalizeNumber(item.weight || 0), 0)
+    );
+
+    const vehicleRef = extractRefId(deliveryOrder.vehicleRef);
+    if (vehicleRef) {
+        const vehicle = await sanityGetById<{ _id: string; capacityKg?: number }>(vehicleRef);
+        const vehicleCapacityKg = normalizeNumber(vehicle?.capacityKg ?? 0);
+        if (
+            vehicleCapacityKg > 0 &&
+            roundQuantity(existingPlannedWeightKg + appendedWeightKg) - vehicleCapacityKg > 0.00001
+        ) {
+            return NextResponse.json(
+                {
+                    error: `Muatan rencana ${roundQuantity(existingPlannedWeightKg + appendedWeightKg)} kg melebihi kapasitas kendaraan ${vehicleCapacityKg} kg.`,
+                },
+                { status: 409 }
+            );
+        }
+    }
+
+    const mutationTimestamp = new Date().toISOString();
+    const transaction = getSanityClient().transaction();
+    if (order.cargoEntryMode !== 'DELIVERY_ORDER') {
+        if (!order._rev) {
+            return NextResponse.json({ error: 'Revisi order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+        }
+        transaction.patch(orderRef, {
+            ifRevisionID: order._rev,
+            set: {
+                cargoEntryMode: 'DELIVERY_ORDER',
+            },
+        });
+    }
+
+    try {
+        patchLinkedCustomerProducts(transaction, directCargoItems, mutationTimestamp);
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Barang customer berubah karena ada update lain. Refresh lalu coba lagi.' },
+            { status: 409 }
+        );
+    }
+
+    const selectionSummaries: string[] = [];
+    for (const item of directCargoItems) {
+        const orderItemId = crypto.randomUUID();
+        const usesQtyBasis = item.qtyKoli > 0;
+        transaction.create({
+            ...buildOrderItemDraftDocument(orderRef, item, orderItemId, {
+                entrySource: 'DELIVERY_ORDER',
+                sourceDeliveryOrderRef: id,
+                sourceDeliveryOrderNumber: deliveryOrder.doNumber,
+            }),
+            assignedQtyKoli: usesQtyBasis ? item.qtyKoli : 0,
+            assignedWeight: item.weight,
+            assignedVolume: item.volume || 0,
+            status: 'ASSIGNED',
+        });
+        transaction.create({
+            _id: crypto.randomUUID(),
+            _type: 'deliveryOrderItem',
+            deliveryOrderRef: id,
+            orderItemRef: orderItemId,
+            orderItemDescription: item.description,
+            orderItemQtyKoli: usesQtyBasis ? item.qtyKoli : undefined,
+            orderItemWeight: item.weight,
+            orderItemVolumeM3: item.volume,
+            orderItemWeightInputValue: item.weightInputValue,
+            orderItemWeightInputUnit: item.weightInputUnit,
+            orderItemVolumeInputValue: item.volumeInputValue,
+            orderItemVolumeInputUnit: item.volumeInputUnit,
+            shippedQtyKoli: usesQtyBasis ? item.qtyKoli : undefined,
+            shippedWeight: item.weight,
+        });
+        selectionSummaries.push(
+            summarizeSelection({
+                orderItemRef: item.description,
+                qtyKoli: item.qtyKoli,
+                weightInputValue: item.weightInputValue,
+                weightInputUnit: item.weightInputUnit,
+                volumeInputValue: item.volumeInputValue,
+                volumeInputUnit: item.volumeInputUnit,
+                holdRemaining: false,
+            }, item.description)
+        );
+    }
+
+    try {
+        await transaction.commit();
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Data order, barang customer, atau surat jalan berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
+
+    await syncOrderStatusFromItems(orderRef, session, addAuditLog);
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'delivery-orders',
+        id,
+        `Tambah muatan Surat Jalan ${deliveryOrder.doNumber || id}: ${selectionSummaries.join('; ')}`
+    );
+
+    return NextResponse.json({
+        data: {
+            _id: id,
+            appendedCount: directCargoItems.length,
+        },
+    });
 }
 
 export async function handleDeliveryOrderTripResourceAssign(

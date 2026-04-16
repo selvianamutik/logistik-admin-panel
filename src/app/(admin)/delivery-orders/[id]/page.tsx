@@ -1415,58 +1415,69 @@ export default function DODetailPage() {
             {/* Items */}
             <div className="card">
                 <div className="card-header"><span className="card-header-title">Item dalam DO ({doItems.length})</span></div>
-                <div className="table-wrapper">
-                    <table>
-                        <thead><tr><th>Deskripsi</th><th>Koli</th><th>Muatan</th></tr></thead>
-                        <tbody>
-                            {doItems.map(item => (
-                                <tr key={item._id}>
-                                    <td className="font-medium">{item.orderItemDescription}</td>
-                                    <td>
-                                        <div className="text-muted text-xs">Rencana Trip (Estimasi)</div>
-                                        <div className="font-medium">{item.orderItemQtyKoli && item.orderItemQtyKoli > 0 ? `${item.orderItemQtyKoli} koli` : '-'}</div>
-                                        <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>Aktual Final</div>
-                                        <div className="font-medium" style={{ color: item.actualQtyKoli !== undefined ? 'var(--color-success)' : 'var(--color-gray-500)' }}>
-                                            {item.actualQtyKoli !== undefined
-                                                ? `${item.actualQtyKoli} koli`
-                                                : item.orderItemQtyKoli && item.orderItemQtyKoli > 0
-                                                    ? 'Belum final'
-                                                    : '-'}
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <div className="text-muted text-xs">Rencana Trip (Estimasi)</div>
-                                        <div className="font-medium">
-                                            {formatCargoSummary({
-                                                qtyKoli: item.orderItemQtyKoli,
-                                                weightKg: item.orderItemWeight,
-                                                weightInputValue: item.orderItemWeightInputValue,
-                                                weightInputUnit: item.orderItemWeightInputUnit,
-                                                volumeM3: item.orderItemVolumeM3,
-                                                volumeInputValue: item.orderItemVolumeInputValue,
-                                                volumeInputUnit: item.orderItemVolumeInputUnit,
-                                            })}
-                                        </div>
-                                        <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>Aktual Final</div>
-                                        <div className="font-medium" style={{ color: item.actualQtyKoli !== undefined ? 'var(--color-success)' : 'var(--color-gray-500)' }}>
-                                            {item.actualQtyKoli !== undefined || item.actualWeightKg !== undefined || item.actualVolumeM3 !== undefined
-                                                ? formatCargoSummary({
-                                                    qtyKoli: item.actualQtyKoli,
-                                                    weightKg: item.actualWeightKg,
-                                                    weightInputValue: item.actualWeightInputValue,
-                                                    weightInputUnit: item.actualWeightInputUnit,
-                                                    volumeM3: item.actualVolumeM3,
-                                                    volumeInputValue: item.actualVolumeInputValue,
-                                                    volumeInputUnit: item.actualVolumeInputUnit,
-                                                })
-                                                : 'Belum final'}
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                {doItems.length === 0 ? (
+                    <div className="card-body">
+                        <div className="empty-state" style={{ padding: '1rem 0' }}>
+                            <div className="empty-state-title">Muatan Surat Jalan belum diisi</div>
+                            <div className="empty-state-text">
+                                Surat Jalan ini sudah sah untuk assignment armada dan uang jalan. Barang bisa ditambahkan menyusul dari portal driver sebelum trip diajukan selesai.
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="table-wrapper">
+                        <table>
+                            <thead><tr><th>Deskripsi</th><th>Koli</th><th>Muatan</th></tr></thead>
+                            <tbody>
+                                {doItems.map(item => (
+                                    <tr key={item._id}>
+                                        <td className="font-medium">{item.orderItemDescription}</td>
+                                        <td>
+                                            <div className="text-muted text-xs">Rencana Trip (Estimasi)</div>
+                                            <div className="font-medium">{item.orderItemQtyKoli && item.orderItemQtyKoli > 0 ? `${item.orderItemQtyKoli} koli` : '-'}</div>
+                                            <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>Aktual Final</div>
+                                            <div className="font-medium" style={{ color: item.actualQtyKoli !== undefined ? 'var(--color-success)' : 'var(--color-gray-500)' }}>
+                                                {item.actualQtyKoli !== undefined
+                                                    ? `${item.actualQtyKoli} koli`
+                                                    : item.orderItemQtyKoli && item.orderItemQtyKoli > 0
+                                                        ? 'Belum final'
+                                                        : '-'}
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div className="text-muted text-xs">Rencana Trip (Estimasi)</div>
+                                            <div className="font-medium">
+                                                {formatCargoSummary({
+                                                    qtyKoli: item.orderItemQtyKoli,
+                                                    weightKg: item.orderItemWeight,
+                                                    weightInputValue: item.orderItemWeightInputValue,
+                                                    weightInputUnit: item.orderItemWeightInputUnit,
+                                                    volumeM3: item.orderItemVolumeM3,
+                                                    volumeInputValue: item.orderItemVolumeInputValue,
+                                                    volumeInputUnit: item.orderItemVolumeInputUnit,
+                                                })}
+                                            </div>
+                                            <div className="text-muted text-xs" style={{ marginTop: '0.35rem' }}>Aktual Final</div>
+                                            <div className="font-medium" style={{ color: item.actualQtyKoli !== undefined ? 'var(--color-success)' : 'var(--color-gray-500)' }}>
+                                                {item.actualQtyKoli !== undefined || item.actualWeightKg !== undefined || item.actualVolumeM3 !== undefined
+                                                    ? formatCargoSummary({
+                                                        qtyKoli: item.actualQtyKoli,
+                                                        weightKg: item.actualWeightKg,
+                                                        weightInputValue: item.actualWeightInputValue,
+                                                        weightInputUnit: item.actualWeightInputUnit,
+                                                        volumeM3: item.actualVolumeM3,
+                                                        volumeInputValue: item.actualVolumeInputValue,
+                                                        volumeInputUnit: item.actualVolumeInputUnit,
+                                                    })
+                                                    : 'Belum final'}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
             </div>
 
             <CollapsibleCard title="Riwayat Tracking">

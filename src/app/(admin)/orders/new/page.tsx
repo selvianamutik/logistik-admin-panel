@@ -6,7 +6,8 @@ import { useToast } from '../../layout';
 import { Save } from 'lucide-react';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
-import type { Customer, CustomerPickupLocation, CustomerRecipient, Service } from '@/lib/types';
+import { buildServiceCapacityRangeMap } from '@/lib/service-capacity-support';
+import type { Customer, CustomerPickupLocation, CustomerRecipient, Service, Vehicle } from '@/lib/types';
 import {
     applyCustomerPickupSnapshot,
     applyCustomerRecipientSnapshot,
@@ -24,6 +25,7 @@ export default function NewOrderPage() {
     const [customerPickups, setCustomerPickups] = useState<CustomerPickupLocation[]>([]);
     const [customerScopedMastersLoaded, setCustomerScopedMastersLoaded] = useState(false);
     const [services, setServices] = useState<Service[]>([]);
+    const [vehicles, setVehicles] = useState<Array<Pick<Vehicle, '_id' | 'serviceRef' | 'capacityMin' | 'capacityMax' | 'capacityKg'>>>([]);
     const [loading, setLoading] = useState(false);
 
     // Form state
@@ -49,14 +51,21 @@ export default function NewOrderPage() {
     const selectedService = services.find(service => service._id === serviceRef) || null;
     const sortedCustomerRecipients = sortCustomerRecipients(customerRecipients);
     const sortedCustomerPickups = sortCustomerPickups(customerPickups);
+    const serviceCapacityRangeMap = buildServiceCapacityRangeMap(services, vehicles);
+    const selectedServiceCapacityLabel = selectedService ? serviceCapacityRangeMap[selectedService._id] || 'Kapasitas belum diisi' : 'Belum dipilih';
 
     useEffect(() => {
         Promise.all([
             fetchAdminCollectionData<Customer[]>('/api/data?entity=customers', 'Gagal memuat form order'),
             fetchAdminCollectionData<Service[]>('/api/data?entity=services', 'Gagal memuat form order'),
-        ]).then(([customerRows, serviceRows]) => {
+            fetchAdminCollectionData<Array<Pick<Vehicle, '_id' | 'serviceRef' | 'capacityMin' | 'capacityMax' | 'capacityKg'>>>(
+                `/api/data?entity=vehicles&filter=${encodeURIComponent(JSON.stringify({ status: ['ACTIVE', 'IN_SERVICE'] }))}`,
+                'Gagal memuat form order'
+            ),
+        ]).then(([customerRows, serviceRows, vehicleRows]) => {
             setCustomers((customerRows || []).filter(customer => customer.active !== false));
             setServices((serviceRows || []).filter(service => service.active !== false));
+            setVehicles(vehicleRows || []);
         }).catch(error => {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat form order');
         });
@@ -336,6 +345,7 @@ export default function NewOrderPage() {
                         <div className="kpi-content">
                             <div className="kpi-label">Kategori Armada</div>
                             <div className="kpi-value" style={{ fontSize: '1rem' }}>{selectedService?.name || 'Opsional'}</div>
+                            <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>{selectedServiceCapacityLabel}</div>
                         </div>
                     </div>
                     <div className="kpi-card">
@@ -370,8 +380,17 @@ export default function NewOrderPage() {
                                 <label className="form-label">Kategori Truk / Armada</label>
                                 <select className="form-select" value={serviceRef} onChange={e => setServiceRef(e.target.value)}>
                                     <option value="">Pilih kategori armada</option>
-                                    {services.filter(s => s.active !== false).map(s => <option key={s._id} value={s._id}>{s.code} - {s.name}</option>)}
+                                    {services.filter(s => s.active !== false).map(service => (
+                                        <option key={service._id} value={service._id}>
+                                            {service.code} - {service.name} ({serviceCapacityRangeMap[service._id] || 'Kapasitas belum diisi'})
+                                        </option>
+                                    ))}
                                 </select>
+                                <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
+                                    {selectedService
+                                        ? `Kategori ${selectedService.name} memuat kisaran ${selectedServiceCapacityLabel}.`
+                                        : 'Pilih kategori armada untuk melihat kisaran muatan per layanan.'}
+                                </div>
                             </div>
                             {customerRef && (
                                 <div className="form-group">

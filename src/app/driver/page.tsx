@@ -6,6 +6,7 @@ import {
     Loader2,
     LogOut,
     MapPin,
+    Plus,
     PlayCircle,
     RefreshCw,
     Smartphone,
@@ -21,6 +22,14 @@ import {
 } from '@/lib/delivery-order-detail-support';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { VOLUME_INPUT_UNIT_OPTIONS, WEIGHT_INPUT_UNIT_OPTIONS, formatCargoSummary } from '@/lib/measurement';
+import {
+    createDefaultOrderItemForm,
+    getDraftOrderItems,
+    summarizeDraftOrderCargo,
+    updateOrderItemVolumeUnit,
+    updateOrderItemWeightUnit,
+    type OrderItemForm,
+} from '@/lib/order-create-page-support';
 import { DO_STATUS_MAP, formatDate, formatDateTime } from '@/lib/utils';
 import type { Driver, SessionUser } from '@/lib/types';
 import type { DriverAssignedDeliveryOrder } from '@/lib/api/driver-portal';
@@ -124,6 +133,14 @@ function areActualCargoDraftsReady(items: ActualCargoDraft[]) {
     });
 }
 
+function summarizeDriverOrderCargo(order: DriverAssignedDeliveryOrder) {
+    return formatCargoSummary({
+        qtyKoli: (order.driverCargoItems || []).reduce((sum, item) => sum + parseFormattedNumberish(item.orderItemQtyKoli ?? item.shippedQtyKoli ?? 0), 0),
+        weightKg: (order.driverCargoItems || []).reduce((sum, item) => sum + parseFormattedNumberish(item.orderItemWeight ?? item.shippedWeight ?? 0, { maxFractionDigits: 2 }), 0),
+        volumeM3: (order.driverCargoItems || []).reduce((sum, item) => sum + parseFormattedNumberish(item.orderItemVolumeM3 ?? 0, { maxFractionDigits: 3 }), 0),
+    });
+}
+
 export default function DriverPortalPage() {
     const router = useRouter();
     const intervalRef = useRef<number | null>(null);
@@ -142,6 +159,9 @@ export default function DriverPortalPage() {
     const [completionOrderId, setCompletionOrderId] = useState<string | null>(null);
     const [completionNote, setCompletionNote] = useState('');
     const [completionCargoItems, setCompletionCargoItems] = useState<ActualCargoDraft[]>([]);
+    const [showCargoInputModal, setShowCargoInputModal] = useState(false);
+    const [cargoInputOrderId, setCargoInputOrderId] = useState<string | null>(null);
+    const [cargoInputItems, setCargoInputItems] = useState<OrderItemForm[]>([createDefaultOrderItemForm()]);
 
     const handleDriverAuthFailure = useCallback((message = 'Sesi driver berakhir. Silakan login ulang.') => {
         setFeedback({ type: 'error', message });
@@ -161,9 +181,21 @@ export default function DriverPortalPage() {
         () => orders.find(item => item._id === completionOrderId) || null,
         [completionOrderId, orders]
     );
+    const cargoInputOrder = useMemo(
+        () => orders.find(item => item._id === cargoInputOrderId) || null,
+        [cargoInputOrderId, orders]
+    );
     const completionCargoReady = useMemo(
         () => areActualCargoDraftsReady(completionCargoItems),
         [completionCargoItems]
+    );
+    const cargoInputDraftItems = useMemo(
+        () => getDraftOrderItems(cargoInputItems),
+        [cargoInputItems]
+    );
+    const cargoInputSummary = useMemo(
+        () => summarizeDraftOrderCargo(cargoInputItems),
+        [cargoInputItems]
     );
     const completionCargoSummary = useMemo(
         () => formatCargoSummary({
@@ -493,6 +525,48 @@ export default function DriverPortalPage() {
         setCompletionCargoItems([]);
     }, [actionLoadingId]);
 
+    const openCargoInputModal = useCallback((order: DriverAssignedDeliveryOrder) => {
+        setCargoInputOrderId(order._id);
+        setCargoInputItems([createDefaultOrderItemForm()]);
+        setShowCargoInputModal(true);
+    }, []);
+
+    const closeCargoInputModal = useCallback(() => {
+        if (actionLoadingId) {
+            return;
+        }
+        setShowCargoInputModal(false);
+        setCargoInputOrderId(null);
+        setCargoInputItems([createDefaultOrderItemForm()]);
+    }, [actionLoadingId]);
+
+    const updateCargoInputItem = useCallback((
+        index: number,
+        field: keyof Pick<OrderItemForm, 'description' | 'qtyKoli' | 'weightInputValue' | 'volumeInputValue'>,
+        value: string | number
+    ) => {
+        setCargoInputItems(previous =>
+            previous.map((item, itemIndex) => (
+                itemIndex === index
+                    ? { ...item, [field]: value }
+                    : item
+            ))
+        );
+    }, []);
+
+    const addCargoInputItem = useCallback(() => {
+        setCargoInputItems(previous => [...previous, createDefaultOrderItemForm()]);
+    }, []);
+
+    const removeCargoInputItem = useCallback((index: number) => {
+        setCargoInputItems(previous => {
+            if (previous.length <= 1) {
+                return [createDefaultOrderItemForm()];
+            }
+            return previous.filter((_, itemIndex) => itemIndex !== index);
+        });
+    }, []);
+
     const updateCompletionCargoDraft = useCallback((
         deliveryOrderItemRef: string,
         field: keyof Pick<
@@ -584,6 +658,52 @@ export default function DriverPortalPage() {
         loadOrders,
         postDeliveryProgress,
     ]);
+
+    const submitCargoInput = useCallback(async () => {
+        if (!cargoInputOrder) {
+            return;
+        }
+        if (cargoInputDraftItems.length === 0) {
+            setFeedback({ type: 'error', message: 'Isi minimal 1 barang sebelum disimpan ke surat jalan.' });
+            return;
+        }
+
+        setActionLoadingId(cargoInputOrder._id);
+        try {
+            const response = await fetch('/api/driver/delivery-orders/cargo', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id: cargoInputOrder._id,
+                    cargoItems: cargoInputDraftItems,
+                }),
+            });
+            const payload = await response.json().catch(() => null);
+            if (!response.ok) {
+                throw createDriverPortalError(response.status, payload?.error || 'Gagal menambah barang ke surat jalan');
+            }
+
+            setFeedback({
+                type: 'success',
+                message: `${payload?.data?.appendedCount || cargoInputDraftItems.length} barang ditambahkan ke surat jalan.`,
+            });
+            await loadOrders();
+            setShowCargoInputModal(false);
+            setCargoInputOrderId(null);
+            setCargoInputItems([createDefaultOrderItemForm()]);
+        } catch (error) {
+            if (error instanceof Error && 'status' in error && (error.status === 401 || error.status === 403)) {
+                handleDriverAuthFailure(error.message);
+                return;
+            }
+            setFeedback({
+                type: 'error',
+                message: error instanceof Error ? error.message : 'Gagal menambah barang ke surat jalan',
+            });
+        } finally {
+            setActionLoadingId(null);
+        }
+    }, [cargoInputDraftItems, cargoInputOrder, handleDriverAuthFailure, loadOrders]);
 
     const handleDeliveryProgress = useCallback(
         async (deliveryOrderRef: string, nextStatus: DriverProgressStatus) => {
@@ -684,6 +804,12 @@ export default function DriverPortalPage() {
                         const isBusy = actionLoadingId === item._id;
                         const canStart = canDriverStartTracking(item.status);
                         const nextProgressStatus = getNextDriverProgressStatus(item);
+                        const canManageCargo =
+                            item.status !== 'DELIVERED' &&
+                            item.status !== 'CANCELLED' &&
+                            item.pendingDriverStatus !== 'DELIVERED';
+                        const cargoItemCount = item.driverCargoItems?.length || 0;
+                        const cargoButtonLabel = cargoItemCount > 0 ? 'Tambah Barang' : 'Input Barang';
                         const mapsUrl =
                             typeof item.trackingLastLat === 'number' && typeof item.trackingLastLng === 'number'
                                 ? `https://www.google.com/maps?q=${item.trackingLastLat},${item.trackingLastLng}`
@@ -705,6 +831,7 @@ export default function DriverPortalPage() {
                                     <div className="driver-do-meta"><span>Customer</span><strong>{item.customerName || '-'}</strong></div>
                                     <div className="driver-do-meta"><span>Tujuan</span><strong>{item.receiverAddress || '-'}</strong></div>
                                     <div className="driver-do-meta"><span>Kendaraan</span><strong>{item.vehiclePlate || '-'}</strong></div>
+                                    <div className="driver-do-meta"><span>Muatan</span><strong>{cargoItemCount > 0 ? summarizeDriverOrderCargo(item) : 'Belum diisi'}</strong></div>
                                     <div className="driver-do-meta"><span>Posisi terakhir</span><strong>{item.trackingLastSeenAt ? formatDateTime(item.trackingLastSeenAt) : '-'}</strong></div>
                                     <div className="driver-do-meta"><span>Koordinat</span><strong>{typeof item.trackingLastLat === 'number' && typeof item.trackingLastLng === 'number' ? `${item.trackingLastLat.toFixed(6)}, ${item.trackingLastLng.toFixed(6)}` : '-'}</strong></div>
                                     <div className="driver-do-meta"><span>Akurasi</span><strong>{typeof item.trackingLastAccuracyM === 'number' ? `${Math.round(item.trackingLastAccuracyM)} m` : '-'}</strong></div>
@@ -745,6 +872,16 @@ export default function DriverPortalPage() {
                                             </button>
                                         )}
 
+                                        {canManageCargo && (
+                                            <button
+                                                className="btn btn-secondary btn-sm"
+                                                onClick={() => openCargoInputModal(item)}
+                                                disabled={isActionInFlight}
+                                            >
+                                                <Plus size={15} /> {cargoButtonLabel}
+                                            </button>
+                                        )}
+
                                         {mapsUrl && (
                                             <a className="btn btn-secondary btn-sm" href={mapsUrl} target="_blank" rel="noreferrer">
                                                 <MapPin size={15} /> Maps
@@ -757,6 +894,157 @@ export default function DriverPortalPage() {
                     })
                 )}
             </section>
+
+            {showCargoInputModal && cargoInputOrder && (
+                <div className="modal-overlay" onClick={closeCargoInputModal}>
+                    <div className="modal modal-lg" onClick={event => event.stopPropagation()}>
+                        <div className="modal-header">
+                            <div>
+                                <h3 className="modal-title">{(cargoInputOrder.driverCargoItems?.length || 0) > 0 ? 'Tambah Barang' : 'Input Barang'} {cargoInputOrder.doNumber}</h3>
+                                <div className="text-muted text-sm" style={{ marginTop: '0.3rem' }}>
+                                    Isi manifest yang sudah driver terima. Barang ini akan langsung masuk ke Surat Jalan aktif.
+                                </div>
+                            </div>
+                            <button className="modal-close" onClick={closeCargoInputModal} disabled={isActionInFlight}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="driver-completion-summary">
+                                <div className="driver-completion-summary-card">
+                                    <span>Customer</span>
+                                    <strong>{cargoInputOrder.customerName || '-'}</strong>
+                                </div>
+                                <div className="driver-completion-summary-card">
+                                    <span>Tujuan</span>
+                                    <strong>{cargoInputOrder.receiverName || cargoInputOrder.receiverAddress || '-'}</strong>
+                                </div>
+                                <div className="driver-completion-summary-card">
+                                    <span>Ringkasan Tambahan</span>
+                                    <strong>{cargoInputDraftItems.length > 0 ? formatCargoSummary(cargoInputSummary) : 'Belum ada barang'}</strong>
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'grid', gap: '0.85rem' }}>
+                                {cargoInputItems.map((item, index) => (
+                                    <div
+                                        key={`driver-cargo-input-${index}`}
+                                        style={{
+                                            display: 'flex',
+                                            gap: 12,
+                                            alignItems: 'flex-end',
+                                            flexWrap: 'wrap',
+                                            padding: 12,
+                                            background: 'var(--color-gray-50)',
+                                            borderRadius: 'var(--radius-md)',
+                                            border: '1px solid var(--color-gray-200)',
+                                        }}
+                                    >
+                                        <div style={{ flex: '2 1 260px' }}>
+                                            <label className="form-label">Deskripsi Barang</label>
+                                            <input
+                                                className="form-input"
+                                                value={item.description}
+                                                onChange={event => updateCargoInputItem(index, 'description', event.target.value)}
+                                                placeholder="Mis. Oli 50 liter / Ban luar / Pupuk"
+                                                disabled={isActionInFlight}
+                                            />
+                                        </div>
+                                        <div style={{ flex: '0 1 110px' }}>
+                                            <label className="form-label">Koli</label>
+                                            <FormattedNumberInput
+                                                min={0}
+                                                allowDecimal={false}
+                                                value={item.qtyKoli}
+                                                onValueChange={value => updateCargoInputItem(index, 'qtyKoli', value)}
+                                                disabled={isActionInFlight}
+                                            />
+                                        </div>
+                                        <div style={{ flex: '1 1 180px' }}>
+                                            <label className="form-label">Berat</label>
+                                            <div className="driver-completion-unit-row">
+                                                <FormattedNumberInput
+                                                    min={0}
+                                                    maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
+                                                    value={item.weightInputValue}
+                                                    onValueChange={value => updateCargoInputItem(index, 'weightInputValue', value)}
+                                                    disabled={isActionInFlight}
+                                                />
+                                                <select
+                                                    className="form-select"
+                                                    value={item.weightInputUnit}
+                                                    onChange={event => setCargoInputItems(previous => previous.map((entry, entryIndex) => (
+                                                        entryIndex === index ? updateOrderItemWeightUnit(entry, event.target.value as OrderItemForm['weightInputUnit']) : entry
+                                                    )))}
+                                                    disabled={isActionInFlight}
+                                                >
+                                                    {WEIGHT_INPUT_UNIT_OPTIONS.map(option => (
+                                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div style={{ flex: '1 1 180px' }}>
+                                            <label className="form-label">Volume</label>
+                                            <div className="driver-completion-unit-row">
+                                                <FormattedNumberInput
+                                                    min={0}
+                                                    maxFractionDigits={item.volumeInputUnit === 'LITER' ? 0 : 3}
+                                                    value={item.volumeInputValue}
+                                                    onValueChange={value => updateCargoInputItem(index, 'volumeInputValue', value)}
+                                                    disabled={isActionInFlight}
+                                                />
+                                                <select
+                                                    className="form-select"
+                                                    value={item.volumeInputUnit}
+                                                    onChange={event => setCargoInputItems(previous => previous.map((entry, entryIndex) => (
+                                                        entryIndex === index ? updateOrderItemVolumeUnit(entry, event.target.value as OrderItemForm['volumeInputUnit']) : entry
+                                                    )))}
+                                                    disabled={isActionInFlight}
+                                                >
+                                                    {VOLUME_INPUT_UNIT_OPTIONS.map(option => (
+                                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        </div>
+                                        {cargoInputItems.length > 1 && (
+                                            <button
+                                                type="button"
+                                                className="btn btn-ghost btn-icon-only"
+                                                onClick={() => removeCargoInputItem(index)}
+                                                disabled={isActionInFlight}
+                                                style={{ marginBottom: 4 }}
+                                            >
+                                                &times;
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginTop: '1rem' }}>
+                                <div className="text-muted text-sm">
+                                    Barang boleh ditambah bertahap. Pastikan deskripsi dan muatan sesuai surat jalan yang driver pegang.
+                                </div>
+                                <button type="button" className="btn btn-secondary btn-sm" onClick={addCargoInputItem} disabled={isActionInFlight}>
+                                    <Plus size={14} /> Tambah Baris
+                                </button>
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={closeCargoInputModal} disabled={isActionInFlight}>
+                                Batal
+                            </button>
+                            <button
+                                className="btn btn-primary"
+                                onClick={() => void submitCargoInput()}
+                                disabled={isActionInFlight || cargoInputDraftItems.length === 0}
+                            >
+                                <Truck size={15} /> {actionLoadingId === cargoInputOrder._id ? 'Menyimpan...' : 'Simpan Barang'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {showDeliveredRequestModal && completionOrder && (
                 <div className="modal-overlay" onClick={closeDeliveredRequestModal}>
@@ -789,7 +1077,7 @@ export default function DriverPortalPage() {
                             <div className="driver-completion-list">
                                 {completionCargoItems.length === 0 ? (
                                     <div className="driver-completion-empty">
-                                        Belum ada item muatan di surat jalan ini. Hubungi admin sebelum mengajukan selesai.
+                                        Belum ada item muatan di surat jalan ini. Isi barang dulu dari tombol Input Barang sebelum mengajukan selesai.
                                     </div>
                                 ) : (
                                     completionCargoItems.map(item => (

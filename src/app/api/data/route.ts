@@ -59,6 +59,7 @@ import {
     handleIncidentStatusUpdate,
 } from '@/lib/api/operations-workflows';
 import {
+    handleDeliveryOrderAppendCargoItems,
     handleDeliveryOrderCreate,
     handleDeliveryOrderShipperReferenceUpdate,
     handleDeliveryOrderTripResourceAssign,
@@ -215,6 +216,7 @@ function getMutationPermissionAction(action?: string): keyof ModulePermissions {
         action === 'revise-targets' ||
         action === 'set-status' ||
         action === 'assign-trip-resources' ||
+        action === 'append-cargo-items' ||
         action === 'update-shipper-reference' ||
         action === 'reject-driver-status-request' ||
         action === 'set-hold-quantity' ||
@@ -236,6 +238,10 @@ function hasSpecialMutationPermission(session: Session, entity: string, action?:
     const role = normalizeUserRole(session.role);
 
     if (entity === 'delivery-orders' && action === 'assign-trip-resources') {
+        return role === 'OWNER' || role === 'OPERASIONAL' || role === 'ARMADA';
+    }
+
+    if (entity === 'delivery-orders' && action === 'append-cargo-items') {
         return role === 'OWNER' || role === 'OPERASIONAL' || role === 'ARMADA';
     }
 
@@ -1373,6 +1379,10 @@ export async function POST(request: Request) {
 
         if (entity === 'delivery-orders' && action === 'assign-trip-resources') {
             return await handleDeliveryOrderTripResourceAssign(session, data, addAuditLog);
+        }
+
+        if (entity === 'delivery-orders' && action === 'append-cargo-items') {
+            return await handleDeliveryOrderAppendCargoItems(session, data, addAuditLog);
         }
 
         if (entity === 'delivery-orders' && action === 'update-shipper-reference') {
