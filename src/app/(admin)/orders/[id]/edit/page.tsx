@@ -7,7 +7,7 @@ import { Plus, Save, X } from 'lucide-react';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData, fetchAdminData } from '@/lib/api/admin-client';
-import type { Order, Customer, CustomerPickupLocation, CustomerProduct, CustomerRecipient, Service, DeliveryOrder, OrderItem } from '@/lib/types';
+import type { Order, Customer, CustomerPickupLocation, CustomerProduct, Service, DeliveryOrder, OrderItem } from '@/lib/types';
 import {
     formatCargoSummary,
     VOLUME_INPUT_UNIT_OPTIONS,
@@ -17,13 +17,10 @@ import {
 } from '@/lib/measurement';
 import {
     applyCustomerPickupSnapshot,
-    applyCustomerRecipientSnapshot,
     applyCustomerProductToOrderItem,
     createDefaultOrderItemForm,
     findDefaultCustomerPickup,
-    findDefaultCustomerRecipient,
     sortCustomerPickups,
-    sortCustomerRecipients,
     updateOrderItemVolumeUnit,
     updateOrderItemWeightUnit,
     type OrderItemForm,
@@ -47,13 +44,11 @@ export default function OrderEditPage() {
     const [saving, setSaving] = useState(false);
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
-    const [customerRecipients, setCustomerRecipients] = useState<CustomerRecipient[]>([]);
     const [customerPickups, setCustomerPickups] = useState<CustomerPickupLocation[]>([]);
     const [customerScopedMastersLoaded, setCustomerScopedMastersLoaded] = useState(false);
     const [services, setServices] = useState<Service[]>([]);
     const [hasDeliveryOrders, setHasDeliveryOrders] = useState(false);
     const [hasOperationalProgress, setHasOperationalProgress] = useState(false);
-    const [shouldAutoApplyDefaultRecipient, setShouldAutoApplyDefaultRecipient] = useState(false);
     const [shouldAutoApplyDefaultPickup, setShouldAutoApplyDefaultPickup] = useState(false);
     const [revisionReason, setRevisionReason] = useState('');
     const [form, setForm] = useState<OrderEditFormState>(buildOrderEditForm(null));
@@ -87,7 +82,6 @@ export default function OrderEditPage() {
     useEffect(() => {
         if (!form.customerRef) {
             setCustomerProducts([]);
-            setCustomerRecipients([]);
             setCustomerPickups([]);
             setCustomerScopedMastersLoaded(false);
             return;
@@ -97,13 +91,9 @@ export default function OrderEditPage() {
         setCustomerScopedMastersLoaded(false);
         const loadCustomerScopedMasters = async () => {
             try {
-                const [products, recipients, pickups] = await Promise.all([
+                const [products, pickups] = await Promise.all([
                     fetchAdminCollectionData<CustomerProduct[]>(
                         `/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef: form.customerRef, active: true }))}`,
-                        'Gagal memuat master customer'
-                    ),
-                    fetchAdminCollectionData<CustomerRecipient[]>(
-                        `/api/data?entity=customer-recipients&filter=${encodeURIComponent(JSON.stringify({ customerRef: form.customerRef, active: true }))}`,
                         'Gagal memuat master customer'
                     ),
                     fetchAdminCollectionData<CustomerPickupLocation[]>(
@@ -113,14 +103,12 @@ export default function OrderEditPage() {
                 ]);
                 if (!cancelled) {
                     setCustomerProducts(products || []);
-                    setCustomerRecipients(recipients || []);
                     setCustomerPickups(pickups || []);
                     setCustomerScopedMastersLoaded(true);
                 }
             } catch (error) {
                 if (!cancelled) {
                     setCustomerProducts([]);
-                    setCustomerRecipients([]);
                     setCustomerPickups([]);
                     setCustomerScopedMastersLoaded(true);
                     addToast('error', error instanceof Error ? error.message : 'Gagal memuat master customer');
@@ -133,30 +121,6 @@ export default function OrderEditPage() {
             cancelled = true;
         };
     }, [addToast, form.customerRef]);
-
-    useEffect(() => {
-        if (!customerScopedMastersLoaded || !shouldAutoApplyDefaultRecipient || !form.customerRef || form.customerRecipientRef) {
-            return;
-        }
-        const defaultRecipient = findDefaultCustomerRecipient(customerRecipients);
-        if (!defaultRecipient) {
-            setShouldAutoApplyDefaultRecipient(false);
-            return;
-        }
-        const snapshot = applyCustomerRecipientSnapshot(defaultRecipient);
-        setForm(prev => ({
-            ...prev,
-            customerRecipientRef: defaultRecipient._id,
-            receiverName: snapshot.receiverName,
-            receiverPhone: snapshot.receiverPhone,
-            receiverAddress: snapshot.receiverAddress,
-            receiverCompany: snapshot.receiverCompany,
-            saveRecipientToMaster: false,
-            saveRecipientAsDefault: false,
-            recipientMasterLabel: '',
-        }));
-        setShouldAutoApplyDefaultRecipient(false);
-    }, [customerRecipients, customerScopedMastersLoaded, form.customerRecipientRef, form.customerRef, shouldAutoApplyDefaultRecipient]);
 
     useEffect(() => {
         if (!customerScopedMastersLoaded || !shouldAutoApplyDefaultPickup || !form.customerRef || form.customerPickupRef) {
@@ -197,7 +161,6 @@ export default function OrderEditPage() {
             ...prev,
             customerRef: nextCustomerRef,
             customerName: nextCustomer?.name || '',
-            customerRecipientRef: '',
             customerPickupRef: '',
             pickupAddress: resolvePickupAddressForCustomer({
                 nextCustomerRef,
@@ -205,40 +168,15 @@ export default function OrderEditPage() {
                 previousPickupAddress: prev.pickupAddress,
                 customers,
             }),
-            receiverName: '',
-            receiverPhone: '',
-            receiverAddress: '',
-            receiverCompany: '',
             savePickupToMaster: false,
             savePickupAsDefault: false,
             pickupMasterLabel: '',
-            saveRecipientToMaster: false,
-            saveRecipientAsDefault: false,
-            recipientMasterLabel: '',
         }));
-        setShouldAutoApplyDefaultRecipient(Boolean(nextCustomerRef));
         setShouldAutoApplyDefaultPickup(Boolean(nextCustomerRef));
         setItems(prev => prev.map(item => ({
             ...item,
             customerProductRef: '',
         })));
-    };
-
-    const handleCustomerRecipientChange = (nextRecipientRef: string) => {
-        setShouldAutoApplyDefaultRecipient(false);
-        const recipient = customerRecipients.find(item => item._id === nextRecipientRef);
-        const snapshot = applyCustomerRecipientSnapshot(recipient);
-        setForm(prev => ({
-            ...prev,
-            customerRecipientRef: nextRecipientRef,
-            receiverName: snapshot.receiverName,
-            receiverPhone: snapshot.receiverPhone,
-            receiverAddress: snapshot.receiverAddress,
-            receiverCompany: snapshot.receiverCompany,
-            saveRecipientToMaster: false,
-            saveRecipientAsDefault: false,
-            recipientMasterLabel: '',
-        }));
     };
 
     const handleCustomerPickupChange = (nextPickupRef: string) => {
@@ -252,15 +190,6 @@ export default function OrderEditPage() {
             savePickupToMaster: false,
             savePickupAsDefault: false,
             pickupMasterLabel: '',
-        }));
-    };
-
-    const updateReceiverField = (field: 'receiverName' | 'receiverPhone' | 'receiverAddress' | 'receiverCompany', value: string) => {
-        setShouldAutoApplyDefaultRecipient(false);
-        setForm(prev => ({
-            ...prev,
-            customerRecipientRef: prev.customerRecipientRef ? '' : prev.customerRecipientRef,
-            [field]: value,
         }));
     };
 
@@ -284,10 +213,6 @@ export default function OrderEditPage() {
         e.preventDefault();
         const usesDeliveryOrderCargoMode = form.cargoEntryMode === 'DELIVERY_ORDER';
         const isRevisionMode = !usesDeliveryOrderCargoMode && (hasDeliveryOrders || hasOperationalProgress);
-        if (!form.receiverName || !form.receiverAddress) {
-            addToast('error', 'Nama dan alamat penerima wajib');
-            return;
-        }
 
         const hasTargetItems = !usesDeliveryOrderCargoMode && items.length > 0;
         const validItems = items.filter(item => item.description.trim() || item.customerProductRef);
@@ -307,36 +232,6 @@ export default function OrderEditPage() {
                 : isRevisionMode
                     ? 'revise-targets'
                     : 'update-with-items';
-            let recipientRefForSubmit = form.customerRecipientRef;
-            if (!usesDeliveryOrderCargoMode && !isRevisionMode && form.saveRecipientToMaster && !recipientRefForSubmit) {
-                if (!form.recipientMasterLabel.trim()) {
-                    addToast('error', 'Label master penerima wajib diisi jika ingin disimpan ke master');
-                    setSaving(false);
-                    return;
-                }
-                const recipientRes = await fetch('/api/data', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        entity: 'customer-recipients',
-                        data: {
-                            customerRef: form.customerRef,
-                            label: form.recipientMasterLabel,
-                            receiverName: form.receiverName,
-                            receiverPhone: form.receiverPhone,
-                            receiverAddress: form.receiverAddress,
-                            receiverCompany: form.receiverCompany,
-                            active: true,
-                            isDefault: form.saveRecipientAsDefault,
-                        },
-                    }),
-                });
-                const recipientPayload = await recipientRes.json();
-                if (!recipientRes.ok) {
-                    throw new Error(recipientPayload.error || 'Gagal menyimpan master penerima');
-                }
-                recipientRefForSubmit = recipientPayload.data?._id || recipientPayload.id || '';
-            }
             let pickupRefForSubmit = form.customerPickupRef;
             if (!usesDeliveryOrderCargoMode && !isRevisionMode && form.savePickupToMaster && !pickupRefForSubmit) {
                 if (!form.pickupMasterLabel.trim()) {
@@ -364,12 +259,19 @@ export default function OrderEditPage() {
                 }
                 pickupRefForSubmit = pickupPayload.data?._id || pickupPayload.id || '';
             }
+            const headerPayload = {
+                customerRef: form.customerRef,
+                customerName: form.customerName,
+                customerPickupRef: pickupRefForSubmit,
+                pickupAddress: form.pickupAddress,
+                serviceRef: form.serviceRef,
+                serviceName: form.serviceName,
+                notes: form.notes,
+            };
             const payloadData = usesDeliveryOrderCargoMode
                 ? {
                     id: orderId,
-                    ...form,
-                    customerRecipientRef: recipientRefForSubmit,
-                    customerPickupRef: pickupRefForSubmit,
+                    ...headerPayload,
                     items: [],
                 }
                 : isRevisionMode
@@ -388,9 +290,7 @@ export default function OrderEditPage() {
                 }
                 : {
                     id: orderId,
-                    ...form,
-                    customerRecipientRef: recipientRefForSubmit,
-                    customerPickupRef: pickupRefForSubmit,
+                    ...headerPayload,
                     items: hasTargetItems ? validItems : [],
                 };
 
@@ -425,7 +325,6 @@ export default function OrderEditPage() {
     const targetCargo = summarizeOrderEditTargetCargo(items);
     const selectedCustomer = customers.find(customer => customer._id === form.customerRef) || null;
     const selectedService = services.find(service => service._id === form.serviceRef) || null;
-    const sortedCustomerRecipients = sortCustomerRecipients(customerRecipients);
     const sortedCustomerPickups = sortCustomerPickups(customerPickups);
 
     return (
@@ -566,86 +465,20 @@ export default function OrderEditPage() {
                             )}
                             {headerFieldsLocked && (
                                 <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '0.85rem 1rem', fontSize: '0.8rem', color: 'var(--color-gray-700)', border: '1px solid var(--color-gray-200)' }}>
-                                    Header booking ini sudah punya Surat Jalan. Customer, tujuan, dan layanan armada dikunci supaya snapshot di Surat Jalan tidak berubah. Yang masih bisa diubah di sini hanya catatan umum.
+                                    Header booking ini sudah punya Surat Jalan. Customer, asal/pickup, dan layanan armada dikunci supaya snapshot di Surat Jalan tidak berubah. Yang masih bisa diubah di sini hanya catatan umum.
                                 </div>
                             )}
                         </div>
                     </div>
 
                     <div className="card">
-                        <div className="card-header"><span className="card-header-title">Tujuan / Penerima</span></div>
+                        <div className="card-header"><span className="card-header-title">Tujuan Surat Jalan</span></div>
                         <div className="card-body">
-                            <div className="form-group">
-                                <label className="form-label">Tujuan / Penerima</label>
-                                <select
-                                    className="form-select"
-                                    value={form.customerRecipientRef}
-                                    onChange={e => handleCustomerRecipientChange(e.target.value)}
-                                    disabled={isRevisionMode || headerFieldsLocked || !form.customerRef}
-                                >
-                                    <option value="">
-                                        {form.customerRef
-                                            ? (customerRecipients.length > 0 ? 'Pilih dari tujuan customer (opsional)' : 'Belum ada tujuan customer')
-                                            : 'Pilih customer dulu'}
-                                    </option>
-                                    {sortedCustomerRecipients.map(recipient => (
-                                        <option key={recipient._id} value={recipient._id}>
-                                            {recipient.isDefault ? '[Default] ' : ''}{recipient.label} - {recipient.receiverName}
-                                        </option>
-                                    ))}
-                                </select>
+                            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', fontSize: '0.85rem', color: 'var(--color-gray-700)', border: '1px solid var(--color-gray-200)' }}>
+                                {headerFieldsLocked
+                                    ? 'Tujuan/penerima sekarang dikelola di Surat Jalan. Karena order ini sudah punya Surat Jalan, pembaruan tujuan dilakukan langsung dari detail Surat Jalan masing-masing.'
+                                    : 'Order tidak lagi menyimpan tujuan/penerima. Saat Surat Jalan dibuat, admin bisa mengisi atau melengkapi tujuan/penerima langsung di dokumen Surat Jalan.'}
                             </div>
-                            <div className="form-row">
-                                <div className="form-group">
-                                    <label className="form-label">Nama Penerima <span className="required">*</span></label>
-                                    <input className="form-input" value={form.receiverName} onChange={e => updateReceiverField('receiverName', e.target.value)} disabled={isRevisionMode || headerFieldsLocked} />
-                                </div>
-                                <div className="form-group">
-                                    <label className="form-label">Telepon</label>
-                                    <input className="form-input" value={form.receiverPhone} onChange={e => updateReceiverField('receiverPhone', e.target.value)} disabled={isRevisionMode || headerFieldsLocked} />
-                                </div>
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">Perusahaan Penerima</label>
-                                <input className="form-input" value={form.receiverCompany} onChange={e => updateReceiverField('receiverCompany', e.target.value)} disabled={isRevisionMode || headerFieldsLocked} />
-                            </div>
-                            <div className="form-group">
-                                <label className="form-label">Alamat Penerima <span className="required">*</span></label>
-                                <textarea className="form-textarea" rows={3} value={form.receiverAddress} onChange={e => updateReceiverField('receiverAddress', e.target.value)} disabled={isRevisionMode || headerFieldsLocked} />
-                            </div>
-                            {!isRevisionMode && !headerFieldsLocked && form.customerRef && !form.customerRecipientRef && (
-                                <div style={{ display: 'grid', gap: '0.75rem', padding: '0.85rem 1rem', border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', background: 'var(--color-gray-50)' }}>
-                                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={form.saveRecipientToMaster}
-                                            onChange={e => setForm(prev => ({ ...prev, saveRecipientToMaster: e.target.checked }))}
-                                        />
-                                        <span>Simpan tujuan ini ke customer</span>
-                                    </label>
-                                    {form.saveRecipientToMaster && (
-                                        <>
-                                            <div className="form-group" style={{ marginBottom: 0 }}>
-                                                <label className="form-label">Label Tujuan <span className="required">*</span></label>
-                                                <input
-                                                    className="form-input"
-                                                    value={form.recipientMasterLabel}
-                                                    onChange={e => setForm(prev => ({ ...prev, recipientMasterLabel: e.target.value }))}
-                                                    placeholder="Contoh: Gudang Gresik / Toko Cabang Waru"
-                                                />
-                                            </div>
-                                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={form.saveRecipientAsDefault}
-                                                    onChange={e => setForm(prev => ({ ...prev, saveRecipientAsDefault: e.target.checked }))}
-                                                />
-                                                <span>Jadikan tujuan default customer</span>
-                                            </label>
-                                        </>
-                                    )}
-                                </div>
-                            )}
                         </div>
                     </div>
                 </div>
@@ -659,7 +492,7 @@ export default function OrderEditPage() {
                             <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', fontSize: '0.85rem', color: 'var(--color-gray-700)', border: '1px solid var(--color-gray-200)' }}>
                                 {headerFieldsLocked
                                     ? 'Order ini memakai flow header booking dan sudah punya Surat Jalan. Barang tetap dicatat di Surat Jalan, sedangkan halaman ini hanya dipakai untuk melihat header order dan membetulkan catatan umum.'
-                                    : 'Order ini memakai flow header booking. Barang, koli, berat, truk, dan supir dicatat saat Surat Jalan dibuat, jadi halaman edit order hanya dipakai untuk membenahi customer, tujuan, layanan armada, dan catatan umum.'}
+                                    : 'Order ini memakai flow header booking. Barang, tujuan/penerima, truck, driver, dan uang jalan awal dicatat saat Surat Jalan dibuat, jadi halaman edit order hanya dipakai untuk membenahi customer, pickup, layanan armada, dan catatan umum.'}
                             </div>
                         </div>
                     </div>

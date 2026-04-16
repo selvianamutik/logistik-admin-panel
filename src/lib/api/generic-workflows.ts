@@ -1223,6 +1223,10 @@ export async function handleGenericUpdate(
             'tripDestinationArea',
             'taripBorongan',
             'keteranganBorongan',
+            'receiverName',
+            'receiverPhone',
+            'receiverAddress',
+            'receiverCompany',
         ]);
         const updateKeys = Object.keys(updates);
         if (updateKeys.includes('customerDoNumber')) {
@@ -1250,6 +1254,7 @@ export async function handleGenericUpdate(
         const updatesPod = updateKeys.some(key => key === 'podReceiverName' || key === 'podReceivedDate' || key === 'podNote');
         const updatesBoronganTariff = updateKeys.some(key => key === 'taripBorongan' || key === 'keteranganBorongan');
         const updatesTripRouteSelection = updateKeys.some(key => key === 'tripRouteRateRef' || key === 'tripOriginArea' || key === 'tripDestinationArea');
+        const updatesDeliveryTarget = updateKeys.some(key => key === 'receiverName' || key === 'receiverPhone' || key === 'receiverAddress' || key === 'receiverCompany');
 
         if (updatesPod) {
             if (existingDeliveryOrder.status !== 'DELIVERED') {
@@ -1365,6 +1370,23 @@ export async function handleGenericUpdate(
             }
             if (Object.prototype.hasOwnProperty.call(updates, 'keteranganBorongan')) {
                 updates.keteranganBorongan = normalizeOptionalText(updates.keteranganBorongan);
+            }
+        }
+        if (updatesDeliveryTarget) {
+            if (existingDeliveryOrder.status === 'CANCELLED') {
+                return NextResponse.json({ error: 'Tujuan surat jalan tidak bisa diubah untuk surat jalan yang dibatalkan' }, { status: 409 });
+            }
+            if (Object.prototype.hasOwnProperty.call(updates, 'receiverName')) {
+                updates.receiverName = normalizeOptionalText(updates.receiverName);
+            }
+            if (Object.prototype.hasOwnProperty.call(updates, 'receiverPhone')) {
+                updates.receiverPhone = normalizeOptionalText(updates.receiverPhone);
+            }
+            if (Object.prototype.hasOwnProperty.call(updates, 'receiverAddress')) {
+                updates.receiverAddress = normalizeOptionalText(updates.receiverAddress);
+            }
+            if (Object.prototype.hasOwnProperty.call(updates, 'receiverCompany')) {
+                updates.receiverCompany = normalizeOptionalText(updates.receiverCompany);
             }
         }
     }

@@ -497,9 +497,9 @@ export interface Order {
   customerName?: string;
   customerRecipientRef?: string;
   customerPickupRef?: string;
-  receiverName: string;
-  receiverPhone: string;
-  receiverAddress: string;
+  receiverName?: string;
+  receiverPhone?: string;
+  receiverAddress?: string;
   receiverCompany?: string;
   pickupAddress?: string;
   serviceRef: string;

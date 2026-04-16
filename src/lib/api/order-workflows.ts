@@ -529,7 +529,7 @@ export async function handleOrderCreate(
     const customerRecipientRef = normalizeOptionalText(data.customerRecipientRef);
     const customerPickupRef = normalizeOptionalText(data.customerPickupRef);
     if (!customerRef) {
-        return NextResponse.json({ error: 'Customer, penerima, dan alamat tujuan wajib diisi' }, { status: 400 });
+        return NextResponse.json({ error: 'Customer order wajib diisi' }, { status: 400 });
     }
 
     let customer: ResolvedOrderPartyData['customer'];
@@ -554,10 +554,9 @@ export async function handleOrderCreate(
         return NextResponse.json({ error: message }, { status });
     }
     const receiverName = normalizeText(data.receiverName) || normalizeOptionalText(customerRecipient?.receiverName) || '';
+    const receiverPhone = normalizeOptionalText(data.receiverPhone) || normalizeOptionalText(customerRecipient?.receiverPhone) || '';
     const receiverAddress = normalizeText(data.receiverAddress) || normalizeOptionalText(customerRecipient?.receiverAddress) || '';
-    if (!receiverName || !receiverAddress) {
-        return NextResponse.json({ error: 'Customer, penerima, dan alamat tujuan wajib diisi' }, { status: 400 });
-    }
+    const receiverCompany = normalizeOptionalText(data.receiverCompany) || normalizeOptionalText(customerRecipient?.receiverCompany);
     if (!customer._rev) {
         return NextResponse.json({ error: 'Revisi customer tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
@@ -582,10 +581,10 @@ export async function handleOrderCreate(
         customerName: customer.name,
         customerRecipientRef: customerRecipientRef || undefined,
         customerPickupRef: customerPickupRef || undefined,
-        receiverName,
-        receiverPhone: normalizeOptionalText(data.receiverPhone) || normalizeOptionalText(customerRecipient?.receiverPhone) || '',
-        receiverAddress,
-        receiverCompany: normalizeOptionalText(data.receiverCompany) || normalizeOptionalText(customerRecipient?.receiverCompany),
+        receiverName: receiverName || undefined,
+        receiverPhone: receiverPhone || undefined,
+        receiverAddress: receiverAddress || undefined,
+        receiverCompany: receiverCompany || undefined,
         pickupAddress: normalizeOptionalText(data.pickupAddress) || normalizeOptionalText(customerPickup?.pickupAddress) || customer.address || undefined,
         serviceRef: serviceRef || '',
         serviceName,
@@ -638,7 +637,7 @@ export async function handleOrderCreate(
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
-                { error: 'Order, customer, barang customer, tujuan, pickup, atau kategori armada berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { error: 'Order, customer, barang customer, pickup, atau kategori armada berubah karena ada update lain. Refresh lalu coba lagi.' },
                 { status: 409 }
             );
         }
@@ -666,7 +665,7 @@ export async function handleOrderUpdateWithItems(
     const customerPickupRef = normalizeOptionalText(data.customerPickupRef);
 
     if (!id || !customerRef) {
-        return NextResponse.json({ error: 'Order, customer, penerima, dan alamat tujuan wajib diisi' }, { status: 400 });
+        return NextResponse.json({ error: 'Order dan customer wajib diisi' }, { status: 400 });
     }
 
     const order = await sanityGetById<{
@@ -674,6 +673,12 @@ export async function handleOrderUpdateWithItems(
         _rev?: string;
         masterResi?: string;
         cargoEntryMode?: 'ORDER' | 'DELIVERY_ORDER';
+        customerRef?: string;
+        customerRecipientRef?: string;
+        receiverName?: string;
+        receiverPhone?: string;
+        receiverAddress?: string;
+        receiverCompany?: string;
     }>(id);
     if (!order) {
         return NextResponse.json({ error: 'Order tidak ditemukan' }, { status: 404 });
@@ -774,11 +779,26 @@ export async function handleOrderUpdateWithItems(
         );
     }
 
-    const receiverName = normalizeText(data.receiverName) || normalizeOptionalText(customerRecipient?.receiverName) || '';
-    const receiverAddress = normalizeText(data.receiverAddress) || normalizeOptionalText(customerRecipient?.receiverAddress) || '';
-    if (!receiverName || !receiverAddress) {
-        return NextResponse.json({ error: 'Order, customer, penerima, dan alamat tujuan wajib diisi' }, { status: 400 });
-    }
+    const receiverFieldsProvided =
+        Object.prototype.hasOwnProperty.call(data, 'customerRecipientRef') ||
+        Object.prototype.hasOwnProperty.call(data, 'receiverName') ||
+        Object.prototype.hasOwnProperty.call(data, 'receiverPhone') ||
+        Object.prototype.hasOwnProperty.call(data, 'receiverAddress') ||
+        Object.prototype.hasOwnProperty.call(data, 'receiverCompany');
+    const refreshReceiverSnapshot =
+        receiverFieldsProvided || normalizeOptionalText(order.customerRef) !== customerRef;
+    const receiverName = refreshReceiverSnapshot
+        ? normalizeText(data.receiverName) || normalizeOptionalText(customerRecipient?.receiverName) || ''
+        : normalizeOptionalText(order.receiverName) || '';
+    const receiverPhone = refreshReceiverSnapshot
+        ? normalizeOptionalText(data.receiverPhone) || normalizeOptionalText(customerRecipient?.receiverPhone) || ''
+        : normalizeOptionalText(order.receiverPhone) || '';
+    const receiverAddress = refreshReceiverSnapshot
+        ? normalizeText(data.receiverAddress) || normalizeOptionalText(customerRecipient?.receiverAddress) || ''
+        : normalizeOptionalText(order.receiverAddress) || '';
+    const receiverCompany = refreshReceiverSnapshot
+        ? normalizeOptionalText(data.receiverCompany) || normalizeOptionalText(customerRecipient?.receiverCompany)
+        : normalizeOptionalText(order.receiverCompany);
     if (existingItems.some(item => !item._rev)) {
         return NextResponse.json({ error: 'Revisi item order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
@@ -808,12 +828,12 @@ export async function handleOrderUpdateWithItems(
                 cargoEntryMode: 'ORDER',
                 customerRef,
                 customerName: customer.name,
-                customerRecipientRef: customerRecipientRef || undefined,
+                customerRecipientRef: refreshReceiverSnapshot ? (customerRecipientRef || undefined) : (normalizeOptionalText(order.customerRecipientRef) || undefined),
                 customerPickupRef: customerPickupRef || undefined,
-                receiverName,
-                receiverPhone: normalizeOptionalText(data.receiverPhone) || normalizeOptionalText(customerRecipient?.receiverPhone) || '',
-                receiverAddress,
-                receiverCompany: normalizeOptionalText(data.receiverCompany) || normalizeOptionalText(customerRecipient?.receiverCompany),
+                receiverName: receiverName || undefined,
+                receiverPhone: receiverPhone || undefined,
+                receiverAddress: receiverAddress || undefined,
+                receiverCompany: receiverCompany || undefined,
                 pickupAddress: normalizeOptionalText(data.pickupAddress) || normalizeOptionalText(customerPickup?.pickupAddress) || customer.address || undefined,
                 serviceRef: serviceRef || '',
                 serviceName,
@@ -865,7 +885,7 @@ export async function handleOrderUpdateWithItems(
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
-                { error: 'Data order, customer, barang customer, tujuan, pickup, kategori armada, atau item target berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { error: 'Data order, customer, barang customer, pickup, kategori armada, atau item target berubah karena ada update lain. Refresh lalu coba lagi.' },
                 { status: 409 }
             );
         }
@@ -896,7 +916,7 @@ export async function handleOrderHeaderBookingUpdate(
     const notes = normalizeOptionalText(data.notes);
 
     if (!id || !customerRef) {
-        return NextResponse.json({ error: 'Order, customer, penerima, dan alamat tujuan wajib diisi' }, { status: 400 });
+        return NextResponse.json({ error: 'Order dan customer wajib diisi' }, { status: 400 });
     }
 
     const order = await sanityGetById<{
@@ -933,16 +953,18 @@ export async function handleOrderHeaderBookingUpdate(
     );
 
     if (relatedDeliveryOrder) {
+        const touchesDeprecatedTargetFields =
+            Object.prototype.hasOwnProperty.call(data, 'customerRecipientRef') ||
+            Object.prototype.hasOwnProperty.call(data, 'receiverName') ||
+            Object.prototype.hasOwnProperty.call(data, 'receiverPhone') ||
+            Object.prototype.hasOwnProperty.call(data, 'receiverAddress') ||
+            Object.prototype.hasOwnProperty.call(data, 'receiverCompany');
         const attemptedHeaderChanges =
             normalizeText(order.customerRef) !== customerRef ||
             normalizeOptionalText(order.serviceRef) !== serviceRef ||
-            normalizeOptionalText(order.customerRecipientRef) !== customerRecipientRef ||
             normalizeOptionalText(order.customerPickupRef) !== customerPickupRef ||
-            normalizeText(order.receiverName) !== normalizeText(data.receiverName) ||
-            normalizeOptionalText(order.receiverPhone) !== normalizeOptionalText(data.receiverPhone) ||
-            normalizeText(order.receiverAddress) !== normalizeText(data.receiverAddress) ||
-            normalizeOptionalText(order.receiverCompany) !== normalizeOptionalText(data.receiverCompany) ||
-            normalizeOptionalText(order.pickupAddress) !== normalizeOptionalText(data.pickupAddress);
+            normalizeOptionalText(order.pickupAddress) !== normalizeOptionalText(data.pickupAddress) ||
+            touchesDeprecatedTargetFields;
 
         if (attemptedHeaderChanges) {
             return NextResponse.json(
@@ -999,11 +1021,26 @@ export async function handleOrderHeaderBookingUpdate(
         return NextResponse.json({ error: message }, { status });
     }
 
-    const receiverName = normalizeText(data.receiverName) || normalizeOptionalText(customerRecipient?.receiverName) || '';
-    const receiverAddress = normalizeText(data.receiverAddress) || normalizeOptionalText(customerRecipient?.receiverAddress) || '';
-    if (!receiverName || !receiverAddress) {
-        return NextResponse.json({ error: 'Order, customer, penerima, dan alamat tujuan wajib diisi' }, { status: 400 });
-    }
+    const receiverFieldsProvided =
+        Object.prototype.hasOwnProperty.call(data, 'customerRecipientRef') ||
+        Object.prototype.hasOwnProperty.call(data, 'receiverName') ||
+        Object.prototype.hasOwnProperty.call(data, 'receiverPhone') ||
+        Object.prototype.hasOwnProperty.call(data, 'receiverAddress') ||
+        Object.prototype.hasOwnProperty.call(data, 'receiverCompany');
+    const refreshReceiverSnapshot =
+        receiverFieldsProvided || normalizeOptionalText(order.customerRef) !== customerRef;
+    const receiverName = refreshReceiverSnapshot
+        ? normalizeText(data.receiverName) || normalizeOptionalText(customerRecipient?.receiverName) || ''
+        : normalizeOptionalText(order.receiverName) || '';
+    const receiverPhone = refreshReceiverSnapshot
+        ? normalizeOptionalText(data.receiverPhone) || normalizeOptionalText(customerRecipient?.receiverPhone) || ''
+        : normalizeOptionalText(order.receiverPhone) || '';
+    const receiverAddress = refreshReceiverSnapshot
+        ? normalizeText(data.receiverAddress) || normalizeOptionalText(customerRecipient?.receiverAddress) || ''
+        : normalizeOptionalText(order.receiverAddress) || '';
+    const receiverCompany = refreshReceiverSnapshot
+        ? normalizeOptionalText(data.receiverCompany) || normalizeOptionalText(customerRecipient?.receiverCompany)
+        : normalizeOptionalText(order.receiverCompany);
 
     if (!order._rev) {
         return NextResponse.json({ error: 'Revisi order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
@@ -1036,12 +1073,12 @@ export async function handleOrderHeaderBookingUpdate(
                     cargoEntryMode: 'DELIVERY_ORDER',
                     customerRef,
                     customerName: customer.name,
-                    customerRecipientRef: customerRecipientRef || undefined,
+                    customerRecipientRef: refreshReceiverSnapshot ? (customerRecipientRef || undefined) : (normalizeOptionalText(order.customerRecipientRef) || undefined),
                     customerPickupRef: customerPickupRef || undefined,
-                    receiverName,
-                    receiverPhone: normalizeOptionalText(data.receiverPhone) || normalizeOptionalText(customerRecipient?.receiverPhone) || '',
-                    receiverAddress,
-                    receiverCompany: normalizeOptionalText(data.receiverCompany) || normalizeOptionalText(customerRecipient?.receiverCompany),
+                    receiverName: receiverName || undefined,
+                    receiverPhone: receiverPhone || undefined,
+                    receiverAddress: receiverAddress || undefined,
+                    receiverCompany: receiverCompany || undefined,
                     pickupAddress: normalizeOptionalText(data.pickupAddress) || normalizeOptionalText(customerPickup?.pickupAddress) || customer.address || undefined,
                     serviceRef: serviceRef || '',
                     serviceName,
@@ -1070,7 +1107,7 @@ export async function handleOrderHeaderBookingUpdate(
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
-                { error: 'Header booking, customer, tujuan, pickup, atau kategori armada berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { error: 'Header booking, customer, pickup, atau kategori armada berubah karena ada update lain. Refresh lalu coba lagi.' },
                 { status: 409 }
             );
         }
@@ -1082,7 +1119,7 @@ export async function handleOrderHeaderBookingUpdate(
         'UPDATE',
         'orders',
         id,
-        `Update header booking ${order.masterResi || id}: customer, tujuan, armada, atau catatan diperbarui`
+        `Update header booking ${order.masterResi || id}: customer, armada, pickup, atau catatan diperbarui`
     );
     return NextResponse.json({ data: updatedOrder, id });
 }
@@ -2226,6 +2263,10 @@ export async function handleDeliveryOrderCreate(
     if (!orderRef) {
         return NextResponse.json({ error: 'Order surat jalan wajib diisi' }, { status: 400 });
     }
+    const doReceiverName = normalizeOptionalText(data.receiverName);
+    const doReceiverPhone = normalizeOptionalText(data.receiverPhone);
+    const doReceiverAddress = normalizeOptionalText(data.receiverAddress);
+    const doReceiverCompany = normalizeOptionalText(data.receiverCompany);
 
     const order = await sanityGetById<{
         _id: string;
@@ -2766,10 +2807,10 @@ export async function handleDeliveryOrderCreate(
         customerName: order.customerName,
         customerDoPrefix,
         customerDoNumber,
-        receiverName: order.receiverName,
-        receiverPhone: order.receiverPhone,
-        receiverAddress: order.receiverAddress,
-        receiverCompany: order.receiverCompany,
+        receiverName: doReceiverName || order.receiverName,
+        receiverPhone: doReceiverPhone || order.receiverPhone,
+        receiverAddress: doReceiverAddress || order.receiverAddress,
+        receiverCompany: doReceiverCompany || order.receiverCompany,
         pickupAddress: order.pickupAddress,
         serviceRef: order.serviceRef,
         serviceName: order.serviceName,

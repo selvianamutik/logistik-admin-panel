@@ -81,6 +81,7 @@ export default function DODetailPage() {
     const [showRejectRequestModal, setShowRejectRequestModal] = useState(false);
     const [showTripResourcesModal, setShowTripResourcesModal] = useState(false);
     const [showShipperReferenceModal, setShowShipperReferenceModal] = useState(false);
+    const [showTargetModal, setShowTargetModal] = useState(false);
     const [newStatus, setNewStatus] = useState('');
     const [statusNote, setStatusNote] = useState('');
     const [reviewingDriverRequest, setReviewingDriverRequest] = useState(false);
@@ -108,11 +109,16 @@ export default function DODetailPage() {
     const [loadingTripResources, setLoadingTripResources] = useState(false);
     const [savingTripResources, setSavingTripResources] = useState(false);
     const [savingShipperReference, setSavingShipperReference] = useState(false);
+    const [savingTarget, setSavingTarget] = useState(false);
     const [tripVehicleRef, setTripVehicleRef] = useState('');
     const [tripDriverRef, setTripDriverRef] = useState('');
     const [tripVehicleOverrideReason, setTripVehicleOverrideReason] = useState('');
     const [shipperReferenceValue, setShipperReferenceValue] = useState('');
     const [shipperReferenceFormat, setShipperReferenceFormat] = useState('SJ');
+    const [targetReceiverName, setTargetReceiverName] = useState('');
+    const [targetReceiverPhone, setTargetReceiverPhone] = useState('');
+    const [targetReceiverAddress, setTargetReceiverAddress] = useState('');
+    const [targetReceiverCompany, setTargetReceiverCompany] = useState('');
     const editingTaripRef = useRef(false);
     const normalizedRole = user ? normalizeUserRole(user.role) : null;
     const canManageDeliveryStatus = user ? hasPermission(user.role, 'deliveryOrders', 'update') : false;
@@ -128,6 +134,7 @@ export default function DODetailPage() {
     const canOpenTripCashPage = user ? hasPageAccess(user.role, 'driverVouchers') : false;
     const canAssignTripResources = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL' || normalizedRole === 'ARMADA';
     const canEditShipperReference = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL' || normalizedRole === 'FINANCE';
+    const canEditDeliveryTarget = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL' || normalizedRole === 'FINANCE';
     const canReviewDriverRequest = canManageDeliveryStatus;
     const canManageTripFee = canManageDeliveryStatus;
     const tripOriginAreaOptions = buildTripRateAreaOptions(tripRouteRates, 'originArea', {
@@ -272,6 +279,15 @@ export default function DODetailPage() {
         setShowShipperReferenceModal(true);
     };
 
+    const openTargetModal = () => {
+        if (!canEditDeliveryTarget) return;
+        setTargetReceiverName(doData?.receiverName || '');
+        setTargetReceiverPhone(doData?.receiverPhone || '');
+        setTargetReceiverAddress(doData?.receiverAddress || '');
+        setTargetReceiverCompany(doData?.receiverCompany || '');
+        setShowTargetModal(true);
+    };
+
     const openTripFeeEditor = () => {
         if (!canManageTripFee || linkedVoucherBonNumber) return;
         setEditingTarip(true);
@@ -332,6 +348,42 @@ export default function DODetailPage() {
             addToast('error', 'Gagal menolak permintaan driver');
         } finally {
             setRejectingRequest(false);
+        }
+    };
+
+    const saveDeliveryTarget = async () => {
+        if (!canEditDeliveryTarget || !doData?._id) return;
+        setSavingTarget(true);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'delivery-orders',
+                    action: 'update',
+                    data: {
+                        id: doData._id,
+                        updates: {
+                            receiverName: targetReceiverName,
+                            receiverPhone: targetReceiverPhone,
+                            receiverAddress: targetReceiverAddress,
+                            receiverCompany: targetReceiverCompany,
+                        },
+                    },
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menyimpan tujuan surat jalan');
+                return;
+            }
+            await loadDO();
+            setShowTargetModal(false);
+            addToast('success', 'Tujuan surat jalan berhasil diperbarui');
+        } catch {
+            addToast('error', 'Gagal menyimpan tujuan surat jalan');
+        } finally {
+            setSavingTarget(false);
         }
     };
 
@@ -1094,9 +1146,17 @@ export default function DODetailPage() {
                 </div>
 
                 <div className="card">
-                    <div className="card-header"><span className="card-header-title">Penerima</span></div>
+                    <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                        <span className="card-header-title">Tujuan / Penerima</span>
+                        {canEditDeliveryTarget && (
+                            <button className="btn btn-secondary btn-sm" onClick={openTargetModal}>
+                                <Edit size={14} /> Edit Tujuan
+                            </button>
+                        )}
+                    </div>
                     <div className="card-body">
                         <div className="detail-item"><div className="detail-label">Nama</div><div className="detail-value">{doData.receiverName || '-'}</div></div>
+                        <div className="detail-item mt-2"><div className="detail-label">Telepon</div><div className="detail-value">{doData.receiverPhone || '-'}</div></div>
                         <div className="detail-item mt-2"><div className="detail-label">Alamat</div><div className="detail-value">{doData.receiverAddress || '-'}</div></div>
                         {doData.receiverCompany && <div className="detail-item mt-2"><div className="detail-label">Perusahaan</div><div className="detail-value">{doData.receiverCompany}</div></div>}
                     </div>
@@ -1937,6 +1997,43 @@ export default function DODetailPage() {
                             <button className="btn btn-secondary" onClick={() => setShowRejectRequestModal(false)} disabled={rejectingRequest}>Batal</button>
                             <button className="btn btn-danger" onClick={rejectDriverStatusRequest} disabled={rejectingRequest || !rejectRequestNote.trim()}>
                                 <Save size={16} /> {rejectingRequest ? 'Menyimpan...' : 'Tolak Permintaan'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showTargetModal && (
+                <div className="modal-overlay" onClick={() => { if (!savingTarget) setShowTargetModal(false); }}>
+                    <div className="modal" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Edit Tujuan / Penerima Surat Jalan</h3>
+                            <button className="modal-close" onClick={() => setShowTargetModal(false)} disabled={savingTarget}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Nama Penerima / PIC</label>
+                                    <input className="form-input" value={targetReceiverName} onChange={e => setTargetReceiverName(e.target.value)} disabled={savingTarget} />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Telepon</label>
+                                    <input className="form-input" value={targetReceiverPhone} onChange={e => setTargetReceiverPhone(e.target.value)} disabled={savingTarget} />
+                                </div>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Perusahaan</label>
+                                <input className="form-input" value={targetReceiverCompany} onChange={e => setTargetReceiverCompany(e.target.value)} disabled={savingTarget} />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Alamat Tujuan</label>
+                                <textarea className="form-textarea" rows={3} value={targetReceiverAddress} onChange={e => setTargetReceiverAddress(e.target.value)} disabled={savingTarget} placeholder="Boleh dikosongkan jika tujuan final belum turun" />
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setShowTargetModal(false)} disabled={savingTarget}>Batal</button>
+                            <button className="btn btn-primary" onClick={saveDeliveryTarget} disabled={savingTarget}>
+                                <Save size={16} /> {savingTarget ? 'Menyimpan...' : 'Simpan Tujuan'}
                             </button>
                         </div>
                     </div>

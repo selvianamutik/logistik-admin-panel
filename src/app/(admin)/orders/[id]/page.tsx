@@ -81,6 +81,10 @@ export default function OrderDetailPage() {
     const [doTripDestinationArea, setDoTripDestinationArea] = useState('');
     const [doVehicleOverrideReason, setDoVehicleOverrideReason] = useState('');
     const [doNotes, setDoNotes] = useState('');
+    const [doReceiverName, setDoReceiverName] = useState('');
+    const [doReceiverPhone, setDoReceiverPhone] = useState('');
+    const [doReceiverAddress, setDoReceiverAddress] = useState('');
+    const [doReceiverCompany, setDoReceiverCompany] = useState('');
     const [shipperReferenceFormat, setShipperReferenceFormat] = useState('SJ');
     const [selectedShipments, setSelectedShipments] = useState<SelectedShipmentMap>({});
     const [directCargoItems, setDirectCargoItems] = useState<OrderItemForm[]>([createDefaultOrderItemForm()]);
@@ -104,7 +108,6 @@ export default function OrderDetailPage() {
     const canCreateTripCash = user ? hasPermission(user.role, 'driverVouchers', 'create') : false;
     const canOpenCustomerPage = user ? hasPageAccess(user.role, 'customers') : false;
     const canOpenVehiclePage = user ? hasPageAccess(user.role, 'vehicles') : false;
-    const [issueTripCashNow, setIssueTripCashNow] = useState(true);
     const [tripCashBankRef, setTripCashBankRef] = useState('');
     const [tripCashCashGiven, setTripCashCashGiven] = useState(0);
 
@@ -204,7 +207,7 @@ export default function OrderDetailPage() {
         serviceRef: order?.serviceRef,
     });
     const isDoTripFeeLockedToMaster = Boolean(matchedDoTripRouteRate);
-    const shouldAutoIssueTripCash = canCreateTripCash && issueTripCashNow;
+    const shouldAutoIssueTripCash = canCreateTripCash;
     const activeIssueBankAccounts = bankAccounts.filter(account => account.active !== false);
 
     const applyDoTripRouteSelection = (nextOriginArea: string, nextDestinationArea: string) => {
@@ -319,9 +322,12 @@ export default function OrderDetailPage() {
         setDoTripOriginArea('');
         setDoTripDestinationArea('');
         setDoTripFee(0);
-        setIssueTripCashNow(true);
         setTripCashBankRef('');
         setTripCashCashGiven(0);
+        setDoReceiverName(order?.receiverName || '');
+        setDoReceiverPhone(order?.receiverPhone || '');
+        setDoReceiverAddress(order?.receiverAddress || '');
+        setDoReceiverCompany(order?.receiverCompany || '');
         if (!doCustomerDoNumber.trim() && normalizedShipperReferenceFormat !== 'SJ') {
             setDoCustomerDoNumber(normalizedShipperReferenceFormat);
         }
@@ -373,6 +379,10 @@ export default function OrderDetailPage() {
                 itemProgressById
             );
 
+        if (!canCreateTripCash) {
+            addToast('error', 'Akun ini tidak punya izin menerbitkan uang jalan awal. Surat Jalan tidak boleh dibuat tanpa uang jalan trip.');
+            return;
+        }
         if (!doVehicle) {
             addToast('error', 'Pilih kendaraan sebelum membuat surat jalan');
             return;
@@ -389,19 +399,17 @@ export default function OrderDetailPage() {
             addToast('error', 'Isi alasan override armada jika trip ini memakai kendaraan dengan kategori berbeda');
             return;
         }
-        if (shouldAutoIssueTripCash) {
-            if (!tripCashBankRef) {
-                addToast('error', 'Pilih rekening atau kas sumber untuk uang jalan trip');
-                return;
-            }
-            if (!tripCashCashGiven || tripCashCashGiven <= 0) {
-                addToast('error', 'Isi nominal uang jalan awal sebelum Surat Jalan diterbitkan dengan bon');
-                return;
-            }
-            if ((matchedDoTripRouteRate?.rate ?? doTripFee) <= 0) {
-                addToast('error', 'Isi upah trip terlebih dahulu sebelum menerbitkan uang jalan otomatis');
-                return;
-            }
+        if (!tripCashBankRef) {
+            addToast('error', 'Pilih rekening atau kas sumber untuk uang jalan trip');
+            return;
+        }
+        if (!tripCashCashGiven || tripCashCashGiven <= 0) {
+            addToast('error', 'Isi nominal uang jalan awal sebelum Surat Jalan diterbitkan');
+            return;
+        }
+        if ((matchedDoTripRouteRate?.rate ?? doTripFee) <= 0) {
+            addToast('error', 'Isi upah trip terlebih dahulu sebelum menerbitkan uang jalan awal');
+            return;
         }
         setCreatingDO(true);
         try {
@@ -430,8 +438,10 @@ export default function OrderDetailPage() {
                             date: doDate,
                             notes: doNotes,
                             customerName: order?.customerName,
-                            receiverName: order?.receiverName,
-                            receiverAddress: order?.receiverAddress,
+                            receiverName: doReceiverName.trim() || undefined,
+                            receiverPhone: doReceiverPhone.trim() || undefined,
+                            receiverAddress: doReceiverAddress.trim() || undefined,
+                            receiverCompany: doReceiverCompany.trim() || undefined,
                             cargoItems: draftDirectCargoItems,
                         }
                         : buildCreateDeliveryOrderRequestData({
@@ -450,6 +460,10 @@ export default function OrderDetailPage() {
                             notes: doNotes,
                             requiresVehicleOverrideReason,
                             vehicleOverrideReason: doVehicleOverrideReason,
+                            receiverName: doReceiverName,
+                            receiverPhone: doReceiverPhone,
+                            receiverAddress: doReceiverAddress,
+                            receiverCompany: doReceiverCompany,
                         }),
                 }),
             });
@@ -499,9 +513,12 @@ export default function OrderDetailPage() {
             setDoTripFee(0);
             setDoVehicleOverrideReason('');
             setDoNotes('');
-            setIssueTripCashNow(true);
             setTripCashBankRef('');
             setTripCashCashGiven(0);
+            setDoReceiverName('');
+            setDoReceiverPhone('');
+            setDoReceiverAddress('');
+            setDoReceiverCompany('');
             setDoDate(getBusinessDateValue());
             await loadOrderDetail();
         } catch {
@@ -752,14 +769,22 @@ export default function OrderDetailPage() {
                 </div>
 
                 <div className="card">
-                    <div className="card-header"><span className="card-header-title">Penerima</span></div>
+                    <div className="card-header"><span className="card-header-title">Tujuan Surat Jalan</span></div>
                     <div className="card-body">
-                        <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">Nama</div><div className="detail-value">{order.receiverName}</div></div>
-                            <div className="detail-item"><div className="detail-label">Telepon</div><div className="detail-value">{order.receiverPhone}</div></div>
+                        <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', fontSize: '0.85rem', color: 'var(--color-gray-700)', border: '1px solid var(--color-gray-200)' }}>
+                            Tujuan/penerima tidak lagi melekat di order. Field ini sekarang diisi langsung di Surat Jalan supaya setiap trip bisa fleksibel, editable, dan tidak mengunci header resi.
                         </div>
-                        <div><div className="detail-label">Alamat</div><div className="detail-value">{order.receiverAddress}</div></div>
-                        {order.receiverCompany && <div className="mt-2"><div className="detail-label">Perusahaan</div><div className="detail-value">{order.receiverCompany}</div></div>}
+                        {(order.receiverName || order.receiverAddress || order.receiverCompany) && (
+                            <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--color-gray-200)' }}>
+                                <div className="detail-label" style={{ marginBottom: '0.5rem' }}>Snapshot lama pada order</div>
+                                <div className="detail-row">
+                                    <div className="detail-item"><div className="detail-label">Nama</div><div className="detail-value">{order.receiverName || '-'}</div></div>
+                                    <div className="detail-item"><div className="detail-label">Telepon</div><div className="detail-value">{order.receiverPhone || '-'}</div></div>
+                                </div>
+                                <div><div className="detail-label">Alamat</div><div className="detail-value">{order.receiverAddress || '-'}</div></div>
+                                {order.receiverCompany && <div className="mt-2"><div className="detail-label">Perusahaan</div><div className="detail-value">{order.receiverCompany}</div></div>}
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
@@ -1132,10 +1157,10 @@ export default function OrderDetailPage() {
                                         : 'Jika belum ada master rute yang cocok, upah trip boleh diisi manual sebelum voucher diterbitkan.'}
                                 </div>
                                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                    Setelah Surat Jalan jadi dan armada lengkap, uang jalan trip diterbitkan dari detail Surat Jalan.
+                                    Upah trip ini menjadi dasar bon uang jalan awal yang wajib terbit saat Surat Jalan dibuat.
                                 </div>
                             </div>
-                            {canCreateTripCash && (
+                            {canCreateTripCash ? (
                                 <div
                                     style={{
                                         background: 'var(--color-primary-50)',
@@ -1145,55 +1170,94 @@ export default function OrderDetailPage() {
                                         marginBottom: '1rem',
                                     }}
                                 >
-                                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontWeight: 600, marginBottom: issueTripCashNow ? '0.85rem' : 0 }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={issueTripCashNow}
-                                            onChange={event => setIssueTripCashNow(event.target.checked)}
-                                            disabled={creatingDO}
-                                        />
-                                        <span>Langsung terbitkan uang jalan trip setelah Surat Jalan dibuat</span>
-                                    </label>
-                                    {issueTripCashNow && (
-                                        <>
-                                            <div className="form-row">
-                                                <div className="form-group">
-                                                    <label className="form-label">Rekening / Kas Sumber</label>
-                                                    <select
-                                                        className="form-select"
-                                                        value={tripCashBankRef}
-                                                        onChange={event => setTripCashBankRef(event.target.value)}
-                                                        disabled={creatingDO}
-                                                    >
-                                                        <option value="">Pilih rekening atau kas</option>
-                                                        {activeIssueBankAccounts.map(account => (
-                                                            <option key={account._id} value={account._id}>
-                                                                {account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''}
-                                                            </option>
-                                                        ))}
-                                                    </select>
-                                                </div>
-                                                <div className="form-group">
-                                                    <label className="form-label">Uang Jalan Awal</label>
-                                                    <CurrencyInput
-                                                        value={tripCashCashGiven}
-                                                        onValueChange={setTripCashCashGiven}
-                                                        placeholder="Ketik nominal uang jalan awal"
-                                                    />
-                                                </div>
-                                            </div>
-                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                                                Setelah Surat Jalan berhasil dibuat, bon akan langsung diterbitkan memakai snapshot upah trip dari DO.
-                                            </div>
-                                            {activeIssueBankAccounts.length === 0 && (
-                                                <div style={{ fontSize: '0.75rem', color: 'var(--color-danger)', marginTop: '0.35rem' }}>
-                                                    Belum ada rekening / kas aktif. Nonaktifkan opsi ini atau buat rekening sumber dulu.
-                                                </div>
-                                            )}
-                                        </>
+                                    <div style={{ fontWeight: 600, marginBottom: '0.85rem' }}>Uang jalan awal wajib diterbitkan bersama Surat Jalan</div>
+                                    <div className="form-row">
+                                        <div className="form-group">
+                                            <label className="form-label">Rekening / Kas Sumber</label>
+                                            <select
+                                                className="form-select"
+                                                value={tripCashBankRef}
+                                                onChange={event => setTripCashBankRef(event.target.value)}
+                                                disabled={creatingDO}
+                                            >
+                                                <option value="">Pilih rekening atau kas</option>
+                                                {activeIssueBankAccounts.map(account => (
+                                                    <option key={account._id} value={account._id}>
+                                                        {account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Uang Jalan Awal</label>
+                                            <CurrencyInput
+                                                value={tripCashCashGiven}
+                                                onValueChange={setTripCashCashGiven}
+                                                placeholder="Ketik nominal uang jalan awal"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                        Surat Jalan baru boleh terbit setelah nominal uang jalan awal dan sumber kas/bank dipilih.
+                                    </div>
+                                    {activeIssueBankAccounts.length === 0 && (
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--color-danger)', marginTop: '0.35rem' }}>
+                                            Belum ada rekening / kas aktif. Buat rekening sumber dulu sebelum membuat Surat Jalan.
+                                        </div>
                                     )}
                                 </div>
+                            ) : (
+                                <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '0.75rem', padding: '0.85rem 1rem', marginBottom: '1rem', color: '#991b1b', fontSize: '0.82rem' }}>
+                                    Akun ini tidak punya izin membuat bon uang jalan. Karena uang jalan awal wajib terbit saat Surat Jalan dibuat, gunakan akun yang punya akses uang jalan terlebih dahulu.
+                                </div>
                             )}
+                            <div className="form-section-title">Tujuan / Penerima Surat Jalan</div>
+                            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '0.85rem 1rem', marginBottom: '1rem', fontSize: '0.82rem', color: 'var(--color-gray-700)', border: '1px solid var(--color-gray-200)' }}>
+                                Field ini opsional saat surat jalan awal diterbitkan. Jika dokumen tujuan belum turun, admin atau driver bisa melengkapinya belakangan dari detail Surat Jalan.
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Nama Penerima / PIC</label>
+                                    <input
+                                        className="form-input"
+                                        value={doReceiverName}
+                                        onChange={e => setDoReceiverName(e.target.value)}
+                                        placeholder="Opsional, isi jika sudah diketahui"
+                                        disabled={creatingDO}
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Telepon</label>
+                                    <input
+                                        className="form-input"
+                                        value={doReceiverPhone}
+                                        onChange={e => setDoReceiverPhone(e.target.value)}
+                                        placeholder="Opsional"
+                                        disabled={creatingDO}
+                                    />
+                                </div>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Perusahaan Penerima</label>
+                                <input
+                                    className="form-input"
+                                    value={doReceiverCompany}
+                                    onChange={e => setDoReceiverCompany(e.target.value)}
+                                    placeholder="Opsional"
+                                    disabled={creatingDO}
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Alamat Tujuan</label>
+                                <textarea
+                                    className="form-textarea"
+                                    rows={2}
+                                    value={doReceiverAddress}
+                                    onChange={e => setDoReceiverAddress(e.target.value)}
+                                    placeholder="Opsional, boleh dilengkapi setelah Surat Jalan terbit"
+                                    disabled={creatingDO}
+                                />
+                            </div>
                             <div className="form-group">
                                 <label className="form-label">Catatan</label>
                                 <textarea className="form-textarea" rows={2} value={doNotes} onChange={e => setDoNotes(e.target.value)} placeholder="Catatan opsional..." disabled={creatingDO} />
@@ -1726,12 +1790,12 @@ export default function OrderDetailPage() {
                             <button
                                 className="btn btn-primary"
                                 onClick={handleCreateDO}
-                                disabled={creatingDO || (isHeaderOnlyOrder ? draftDirectCargoItems.length === 0 : Object.keys(selectedShipments).length === 0)}
+                                disabled={creatingDO || !canCreateTripCash || (!isHeaderOnlyOrder && Object.keys(selectedShipments).length === 0)}
                             >
                                 <Truck size={16} /> {creatingDO
                                     ? 'Membuat Surat Jalan...'
                                     : isHeaderOnlyOrder
-                                        ? `Buat Surat Jalan (${draftDirectCargoItems.length} barang)`
+                                        ? (draftDirectCargoItems.length > 0 ? `Buat Surat Jalan (${draftDirectCargoItems.length} barang)` : 'Buat Surat Jalan (barang menyusul)')
                                         : `Buat Surat Jalan (${Object.keys(selectedShipments).length} item)`}
                             </button>
                         </div>

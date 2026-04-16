@@ -63,7 +63,7 @@ export default function OrdersPage() {
 
         if (search.trim()) {
             params.set('q', search.trim());
-            params.set('searchFields', 'masterResi,customerName,receiverName,serviceName');
+            params.set('searchFields', 'masterResi,customerName,pickupAddress,serviceName');
         }
 
         const filter: Record<string, string> = {};
@@ -215,8 +215,8 @@ export default function OrdersPage() {
                             const printableOrders = await fetchAllMatchingOrders();
                             openBrandedPrint({
                                 title: 'Daftar Order / Resi', company: co, targetWindow: printWindow, bodyHtml: `
-                                <table><thead><tr><th>Resi</th><th>Customer</th><th>Penerima</th><th>Alamat</th><th>Tanggal</th><th>Status</th></tr></thead>
-                                <tbody>${printableOrders.map(o => `<tr><td class="b">${o.masterResi}</td><td>${o.customerName || '-'}</td><td>${o.receiverName || '-'}</td><td>${o.receiverAddress || '-'}</td><td>${formatDate(o.createdAt)}</td><td>${ORDER_STATUS_MAP[o.status]?.label || o.status}</td></tr>`).join('')}</tbody></table>`
+                                <table><thead><tr><th>Resi</th><th>Customer</th><th>Pickup</th><th>Kategori</th><th>Tanggal</th><th>Status</th></tr></thead>
+                                <tbody>${printableOrders.map(o => `<tr><td class="b">${o.masterResi}</td><td>${o.customerName || '-'}</td><td>${o.pickupAddress || '-'}</td><td>${getServiceLabel(o)}</td><td>${formatDate(o.createdAt)}</td><td>${ORDER_STATUS_MAP[o.status]?.label || o.status}</td></tr>`).join('')}</tbody></table>`
                             });
                         } catch (error) {
                             try {
@@ -262,7 +262,7 @@ export default function OrdersPage() {
                             <Search size={16} className="table-search-icon" />
                             <input
                                 type="text"
-                                placeholder="Cari resi, customer, penerima, kategori..."
+                                placeholder="Cari resi, customer, pickup, kategori..."
                                 value={search}
                                 onChange={e => setSearch(e.target.value)}
                             />
@@ -298,7 +298,7 @@ export default function OrdersPage() {
                             <tr>
                                 <th>No. Resi</th>
                                 <th>Customer</th>
-                                <th>Penerima</th>
+                                <th>Pickup</th>
                                 <th>Kategori Armada</th>
                                 <th>Status</th>
                                 <th>Tindak Lanjut</th>
@@ -343,7 +343,7 @@ export default function OrdersPage() {
                                             </Link>
                                         </td>
                                         <td>{order.customerName}</td>
-                                        <td>{order.receiverName}</td>
+                                        <td>{order.pickupAddress || '-'}</td>
                                         <td>{getServiceLabel(order)}</td>
                                         <td>
                                             <span className={`badge badge-${ORDER_STATUS_MAP[order.status]?.color || 'gray'}`}>
@@ -399,8 +399,8 @@ export default function OrdersPage() {
                                 </div>
                                 <div className="mobile-record-meta">
                                     <div className="mobile-record-kv">
-                                        <span className="mobile-record-label">Penerima</span>
-                                        <span className="mobile-record-value">{order.receiverName || '-'}</span>
+                                        <span className="mobile-record-label">Pickup</span>
+                                        <span className="mobile-record-value">{order.pickupAddress || '-'}</span>
                                     </div>
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Kategori Armada</span>
