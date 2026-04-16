@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useEffect, type InputHTMLAttributes } from "react";
+import { useRef, useState, type InputHTMLAttributes } from "react";
 
 // ─── Formatter helpers ────────────────────────────────────────────────────────
 
@@ -67,7 +67,7 @@ export default function FormattedNumberInput({
 }: FormattedNumberInputProps) {
   const supportsFraction = allowDecimal && maxFractionDigits > 0;
   const inputRef = useRef<HTMLInputElement>(null);
-  const isFocused = useRef(false);
+  const [isFocused, setIsFocused] = useState(false);
 
   const valueAsDisplay = formatFormattedNumberValue(
     value,
@@ -77,13 +77,7 @@ export default function FormattedNumberInput({
   );
 
   const [display, setDisplay] = useState(valueAsDisplay);
-
-  // Sync incoming value changes only when the user isn't actively editing
-  useEffect(() => {
-    if (!isFocused.current) {
-      setDisplay(valueAsDisplay);
-    }
-  }, [valueAsDisplay]);
+  const inputDisplay = isFocused ? display : valueAsDisplay;
 
   function sanitizeRaw(raw: string): string {
     if (!supportsFraction) {
@@ -135,13 +129,13 @@ export default function FormattedNumberInput({
       className={["form-input", "currency-input", className]
         .filter(Boolean)
         .join(" ")}
-      value={display}
+      value={inputDisplay}
       onFocus={(event) => {
-        isFocused.current = true;
+        setIsFocused(true);
         props.onFocus?.(event);
       }}
       onBlur={(event) => {
-        isFocused.current = false;
+        setIsFocused(false);
         // On blur: fully normalize (drop trailing comma, trailing zeros, etc.)
         const normalized = formatFormattedNumberValue(
           parseFormattedNumberInput(display, supportsFraction, maxFractionDigits),

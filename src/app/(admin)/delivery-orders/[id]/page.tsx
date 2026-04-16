@@ -64,6 +64,11 @@ type DeliveryOrderTripCashLink = {
     issuedDate?: string;
 };
 
+type ShipperReferenceDraft = {
+    referenceNumber: string;
+    pickupStopKey: string;
+};
+
 export default function DODetailPage() {
     const params = useParams();
     const { addToast } = useToast();
@@ -113,7 +118,7 @@ export default function DODetailPage() {
     const [tripVehicleRef, setTripVehicleRef] = useState('');
     const [tripDriverRef, setTripDriverRef] = useState('');
     const [tripVehicleOverrideReason, setTripVehicleOverrideReason] = useState('');
-    const [shipperReferenceValues, setShipperReferenceValues] = useState<string[]>(['']);
+    const [shipperReferenceDrafts, setShipperReferenceDrafts] = useState<ShipperReferenceDraft[]>([{ referenceNumber: '', pickupStopKey: '' }]);
     const [shipperReferenceFormat, setShipperReferenceFormat] = useState('SJ');
     const [targetReceiverName, setTargetReceiverName] = useState('');
     const [targetReceiverPhone, setTargetReceiverPhone] = useState('');
@@ -276,12 +281,18 @@ export default function DODetailPage() {
         if (!canEditShipperReference) return;
         const normalizedFormat = shipperReferenceFormat.trim().toUpperCase() || 'SJ';
         const nextReferences = (doData?.shipperReferences || [])
-            .map(reference => reference.referenceNumber?.trim() || '')
-            .filter(Boolean);
-        setShipperReferenceValues(
+            .map(reference => ({
+                referenceNumber: reference.referenceNumber?.trim() || '',
+                pickupStopKey: reference.pickupStopKey || '',
+            }))
+            .filter(reference => Boolean(reference.referenceNumber));
+        setShipperReferenceDrafts(
             nextReferences.length > 0
                 ? nextReferences
-                : [doData?.customerDoNumber || (normalizedFormat !== 'SJ' ? normalizedFormat : '')]
+                : [{
+                    referenceNumber: doData?.customerDoNumber || (normalizedFormat !== 'SJ' ? normalizedFormat : ''),
+                    pickupStopKey: '',
+                }]
         );
         setShowShipperReferenceModal(true);
     };
@@ -682,12 +693,22 @@ export default function DODetailPage() {
     };
 
     const saveShipperReference = async () => {
-        const normalizedReferences = shipperReferenceValues
-            .map(value => value.trim().toUpperCase())
-            .filter(Boolean);
+        const normalizedReferences = shipperReferenceDrafts
+            .map(entry => ({
+                referenceNumber: entry.referenceNumber.trim().toUpperCase(),
+                pickupStopKey: entry.pickupStopKey.trim(),
+            }))
+            .filter(entry => Boolean(entry.referenceNumber));
         if (normalizedReferences.length === 0) {
             addToast('error', 'Minimal 1 SJ pengirim wajib diisi');
             return;
+        }
+        if (pickupStopList.length > 1) {
+            const invalidPickupIndex = normalizedReferences.findIndex(entry => !entry.pickupStopKey);
+            if (invalidPickupIndex >= 0) {
+                addToast('error', `Titik pickup wajib dipilih pada SJ pengirim baris ${invalidPickupIndex + 1}`);
+                return;
+            }
         }
 
         setSavingShipperReference(true);
@@ -700,7 +721,10 @@ export default function DODetailPage() {
                     action: 'update-shipper-reference',
                     data: {
                         id: doData?._id,
-                        shipperReferences: normalizedReferences.map(referenceNumber => ({ referenceNumber })),
+                        shipperReferences: normalizedReferences.map(reference => ({
+                            referenceNumber: reference.referenceNumber,
+                            pickupStopKey: reference.pickupStopKey || undefined,
+                        })),
                     },
                 }),
             });
@@ -750,6 +774,72 @@ export default function DODetailPage() {
     const hasShipperReference = shipperReferenceList.length > 0 || Boolean(doData.customerDoNumber?.trim());
     const normalizedShipperReferenceFormat = shipperReferenceFormat.trim().toUpperCase() || 'SJ';
     const shipperReferenceExample = `${normalizedShipperReferenceFormat}/27032026/001`;
+    const pickupStopList = (doData.pickupStops || [])
+        .map((pickupStop, index) => ({
+            _key: pickupStop._key || `pickup-stop-${index + 1}`,
+            sequence: pickupStop.sequence || index + 1,
+            pickupLabel: pickupStop.pickupLabel || '',
+            pickupAddress: pickupStop.pickupAddress || '',
+        }))
+        .sort((left, right) => left.sequence - right.sequence);
+    const pickupStopMap = new Map(pickupStopList.map(stop => [stop._key, stop]));
+    const shipperReferenceDisplayList = (doData.shipperReferences || [])
+        .map((reference, index) => {
+            const referenceNumber = reference.referenceNumber?.trim() || '';
+            if (!referenceNumber) return null;
+            const pickupStop = reference.pickupStopKey ? pickupStopMap.get(reference.pickupStopKey) : null;
+            return {
+                key: reference._key || `${referenceNumber}-${index}`,
+                referenceNumber,
+                pickupStopKey: reference.pickupStopKey || '',
+                pickupLabel: pickupStop
+                    ? `Pickup ${pickupStop.sequence}${pickupStop.pickupLabel ? ` - ${pickupStop.pickupLabel}` : ''}`
+                    : '',
+                pickupAddress: pickupStop?.pickupAddress || reference.pickupAddress || '',
+            };
+        })
+        .filter((reference): reference is {
+            key: string;
+            referenceNumber: string;
+            pickupStopKey: string;
+            pickupLabel: string;
+            pickupAddress: string;
+        } => Boolean(reference));
+    const cargoGroups = (() => {
+        const groups = new Map<string, {
+            key: string;
+            shipperReferenceNumber: string;
+            pickupStopKey: string;
+            pickupLabel: string;
+            pickupAddress: string;
+            items: DeliveryOrderItem[];
+        }>();
+        for (const item of doItems) {
+            const shipperReferenceNumber = item.shipperReferenceNumber?.trim() || doData.customerDoNumber || 'TANPA-SJ';
+            const pickupStop = item.pickupStopKey ? pickupStopMap.get(item.pickupStopKey) : null;
+            const pickupLabel = pickupStop
+                ? `Pickup ${pickupStop.sequence}${pickupStop.pickupLabel ? ` - ${pickupStop.pickupLabel}` : ''}`
+                : item.pickupAddress
+                    ? 'Pickup'
+                    : '';
+            const pickupAddress = pickupStop?.pickupAddress || item.pickupAddress || '';
+            const key = `${pickupStop?._key || item.pickupStopKey || 'tanpa-pickup'}::${shipperReferenceNumber}`;
+            const current = groups.get(key);
+            if (current) {
+                current.items.push(item);
+                continue;
+            }
+            groups.set(key, {
+                key,
+                shipperReferenceNumber,
+                pickupStopKey: pickupStop?._key || item.pickupStopKey || '',
+                pickupLabel,
+                pickupAddress,
+                items: [item],
+            });
+        }
+        return [...groups.values()];
+    })();
     const linkedVoucherSummary = linkedVoucher ? getDriverVoucherFinancialSummary(linkedVoucher) : null;
     const linkedTripCashVoucherId = linkedVoucher?._id || linkedTripCashLink?.voucherId || '';
     const linkedTripCashBonNumber = linkedVoucher?.bonNumber || linkedTripCashLink?.bonNumber || linkedVoucherBonNumber;
@@ -1119,9 +1209,22 @@ export default function DODetailPage() {
                         <div className="detail-row">
                             <div className="detail-item">
                                 <div className="detail-label">SJ Pengirim</div>
-                                <div className="detail-value font-mono">
-                                    {shipperReferenceList.length > 0 ? shipperReferenceList.join(', ') : formatShipperDeliveryOrderNumber(doData)}
-                                </div>
+                                {shipperReferenceDisplayList.length > 0 ? (
+                                    <div style={{ display: 'grid', gap: '0.5rem' }}>
+                                        {shipperReferenceDisplayList.map(reference => (
+                                            <div key={reference.key} style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.6rem 0.75rem', background: 'var(--color-gray-50)' }}>
+                                                <div className="detail-value font-mono">{reference.referenceNumber}</div>
+                                                {reference.pickupLabel && (
+                                                    <div className="text-muted text-sm" style={{ marginTop: '0.2rem' }}>
+                                                        {reference.pickupLabel}{reference.pickupAddress ? ` | ${reference.pickupAddress}` : ''}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="detail-value font-mono">{formatShipperDeliveryOrderNumber(doData)}</div>
+                                )}
                             </div>
                             <div className="detail-item"><div className="detail-label">Tanggal</div><div className="detail-value">{formatDate(doData.date)}</div></div>
                         </div>
@@ -1502,12 +1605,57 @@ export default function DODetailPage() {
                         </div>
                     </div>
                 ) : (
+                    <div className="card-body" style={{ display: 'grid', gap: '1rem' }}>
+                        {cargoGroups.length > 1 && (
+                            <div style={{ display: 'grid', gap: '0.75rem' }}>
+                                {cargoGroups.map(group => (
+                                    <div key={group.key} style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.8rem', padding: '0.85rem 1rem', background: 'var(--color-gray-50)' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                            <div>
+                                                <div className="detail-label">SJ Pengirim</div>
+                                                <div className="detail-value font-mono">{group.shipperReferenceNumber}</div>
+                                            </div>
+                                            <div>
+                                                <div className="detail-label">Pickup</div>
+                                                <div className="detail-value">{group.pickupLabel || '-'}</div>
+                                                {group.pickupAddress && (
+                                                    <div className="text-muted text-sm">{group.pickupAddress}</div>
+                                                )}
+                                            </div>
+                                            <div>
+                                                <div className="detail-label">Ringkasan</div>
+                                                <div className="detail-value">
+                                                    {formatCargoSummary({
+                                                        qtyKoli: group.items.reduce((sum, item) => sum + parseFormattedNumberish(item.orderItemQtyKoli ?? item.shippedQtyKoli ?? 0), 0),
+                                                        weightKg: group.items.reduce((sum, item) => sum + parseFormattedNumberish(item.orderItemWeight ?? item.shippedWeight ?? 0), 0),
+                                                        volumeM3: group.items.reduce((sum, item) => sum + parseFormattedNumberish(item.orderItemVolumeM3 ?? 0, { maxFractionDigits: 3 }), 0),
+                                                    })}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     <div className="table-wrapper">
                         <table>
-                            <thead><tr><th>Deskripsi</th><th>Koli</th><th>Muatan</th></tr></thead>
+                            <thead><tr><th>SJ Pengirim</th><th>Pickup</th><th>Deskripsi</th><th>Koli</th><th>Muatan</th></tr></thead>
                             <tbody>
                                 {doItems.map(item => (
                                     <tr key={item._id}>
+                                        <td>
+                                            <div className="font-mono">{item.shipperReferenceNumber || doData.customerDoNumber || '-'}</div>
+                                        </td>
+                                        <td>
+                                            <div className="font-medium">
+                                                {item.pickupStopKey && pickupStopMap.get(item.pickupStopKey)
+                                                    ? `Pickup ${pickupStopMap.get(item.pickupStopKey)?.sequence}${pickupStopMap.get(item.pickupStopKey)?.pickupLabel ? ` - ${pickupStopMap.get(item.pickupStopKey)?.pickupLabel}` : ''}`
+                                                    : item.pickupAddress
+                                                        ? 'Pickup'
+                                                        : '-'}
+                                            </div>
+                                            <div className="text-muted text-xs">{item.pickupAddress || pickupStopMap.get(item.pickupStopKey || '')?.pickupAddress || '-'}</div>
+                                        </td>
                                         <td className="font-medium">{item.orderItemDescription}</td>
                                         <td>
                                             <div className="text-muted text-xs">Rencana Trip (Estimasi)</div>
@@ -1553,6 +1701,7 @@ export default function DODetailPage() {
                                 ))}
                             </tbody>
                         </table>
+                    </div>
                     </div>
                 )}
             </div>
@@ -2068,42 +2217,77 @@ export default function DODetailPage() {
                             <div className="form-group">
                                 <label className="form-label">Daftar SJ Pengirim</label>
                                 <div style={{ display: 'grid', gap: '0.75rem' }}>
-                                    {shipperReferenceValues.map((value, index) => (
-                                        <div key={`shipper-reference-${index}`} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                                            <input
-                                                className="form-input"
-                                                value={value}
-                                                onChange={event => {
-                                                    const nextValue = event.target.value.toUpperCase();
-                                                    setShipperReferenceValues(previous => previous.map((entry, entryIndex) => (
-                                                        entryIndex === index ? nextValue : entry
-                                                    )));
-                                                }}
-                                                placeholder={`Contoh: ${shipperReferenceExample}`}
-                                                disabled={savingShipperReference}
-                                            />
-                                            {shipperReferenceValues.length > 1 && (
-                                                <button
-                                                    type="button"
-                                                    className="btn btn-ghost btn-icon-only"
-                                                    onClick={() => setShipperReferenceValues(previous => previous.filter((_, entryIndex) => entryIndex !== index))}
+                                    {shipperReferenceDrafts.map((entry, index) => (
+                                        <div key={`shipper-reference-${index}`} style={{ display: 'grid', gap: '0.6rem', padding: '0.85rem', border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', background: 'var(--color-gray-50)' }}>
+                                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                                <input
+                                                    className="form-input"
+                                                    value={entry.referenceNumber}
+                                                    onChange={event => {
+                                                        const nextValue = event.target.value.toUpperCase();
+                                                        setShipperReferenceDrafts(previous => previous.map((current, entryIndex) => (
+                                                            entryIndex === index ? { ...current, referenceNumber: nextValue } : current
+                                                        )));
+                                                    }}
+                                                    placeholder={`Contoh: ${shipperReferenceExample}`}
                                                     disabled={savingShipperReference}
-                                                    title="Hapus SJ pengirim"
-                                                >
-                                                    &times;
-                                                </button>
+                                                />
+                                                {shipperReferenceDrafts.length > 1 && (
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-ghost btn-icon-only"
+                                                        onClick={() => setShipperReferenceDrafts(previous => previous.filter((_, entryIndex) => entryIndex !== index))}
+                                                        disabled={savingShipperReference}
+                                                        title="Hapus SJ pengirim"
+                                                    >
+                                                        &times;
+                                                    </button>
+                                                )}
+                                            </div>
+                                            {pickupStopList.length > 1 && (
+                                                <div>
+                                                    <label className="form-label">Titik Pickup</label>
+                                                    <select
+                                                        className="form-select"
+                                                        value={entry.pickupStopKey}
+                                                        onChange={event => setShipperReferenceDrafts(previous => previous.map((current, entryIndex) => (
+                                                            entryIndex === index ? { ...current, pickupStopKey: event.target.value } : current
+                                                        )))}
+                                                        disabled={savingShipperReference}
+                                                    >
+                                                        <option value="">Pilih pickup untuk SJ ini</option>
+                                                        {pickupStopList.map(stop => (
+                                                            <option key={stop._key} value={stop._key}>
+                                                                {`Pickup ${stop.sequence}${stop.pickupLabel ? ` - ${stop.pickupLabel}` : ''}`}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            )}
+                                            {pickupStopList.length === 1 && (
+                                                <div className="text-muted text-sm">
+                                                    Pickup: {`Pickup ${pickupStopList[0].sequence}${pickupStopList[0].pickupLabel ? ` - ${pickupStopList[0].pickupLabel}` : ''}`}
+                                                </div>
+                                            )}
+                                            {entry.pickupStopKey && pickupStopMap.get(entry.pickupStopKey)?.pickupAddress && (
+                                                <div className="text-muted text-sm">
+                                                    {pickupStopMap.get(entry.pickupStopKey)?.pickupAddress}
+                                                </div>
                                             )}
                                         </div>
                                     ))}
                                 </div>
                                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                    Format referensi customer: <strong>{normalizedShipperReferenceFormat}</strong>. Satu trip bisa memuat beberapa SJ pengirim. Nomor final tetap diisi manual mengikuti dokumen pengirim.
+                                    Satu trip boleh memuat beberapa SJ pengirim. Kalau pickup lebih dari satu, kaitkan setiap SJ ke pickup yang benar.
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.75rem' }}>
                                     <button
                                         type="button"
                                         className="btn btn-secondary btn-sm"
-                                        onClick={() => setShipperReferenceValues(previous => [...previous, ''])}
+                                        onClick={() => setShipperReferenceDrafts(previous => [...previous, {
+                                            referenceNumber: '',
+                                            pickupStopKey: pickupStopList.length === 1 ? pickupStopList[0]._key : '',
+                                        }])}
                                         disabled={savingShipperReference}
                                     >
                                         Tambah SJ Pengirim
@@ -2113,7 +2297,7 @@ export default function DODetailPage() {
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setShowShipperReferenceModal(false)} disabled={savingShipperReference}>Batal</button>
-                            <button className="btn btn-primary" onClick={saveShipperReference} disabled={savingShipperReference || shipperReferenceValues.every(value => !value.trim())}>
+                            <button className="btn btn-primary" onClick={saveShipperReference} disabled={savingShipperReference || shipperReferenceDrafts.every(entry => !entry.referenceNumber.trim())}>
                                 <Save size={16} /> {savingShipperReference ? 'Menyimpan...' : 'Simpan'}
                             </button>
                         </div>

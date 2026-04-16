@@ -4706,10 +4706,20 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
 
     const doPickupStops = normalizeDeliveryOrderPickupStopsSnapshot(deliveryOrder.pickupStops);
     const nextShipperReferences = normalizeIncomingShipperReferences(data, doPickupStops, deliveryOrder.shipperReferences, false);
+    if (doPickupStops.length > 1 && nextShipperReferences.some(reference => !reference.pickupStopKey)) {
+        return NextResponse.json(
+            { error: 'Setiap SJ pengirim wajib dikaitkan ke titik pickup yang benar karena surat jalan ini punya lebih dari satu pickup' },
+            { status: 400 }
+        );
+    }
     const customerDoNumber = nextShipperReferences[0]?.referenceNumber || undefined;
     const existingShipperReferences = normalizeExistingShipperReferences(deliveryOrder.shipperReferences, doPickupStops);
-    const currentReferenceSnapshot = existingShipperReferences.map(reference => reference.referenceNumber).join('|');
-    const nextReferenceSnapshot = nextShipperReferences.map(reference => reference.referenceNumber).join('|');
+    const currentReferenceSnapshot = existingShipperReferences
+        .map(reference => `${reference.referenceNumber}::${reference.pickupStopKey || ''}`)
+        .join('|');
+    const nextReferenceSnapshot = nextShipperReferences
+        .map(reference => `${reference.referenceNumber}::${reference.pickupStopKey || ''}`)
+        .join('|');
     if (currentReferenceSnapshot === nextReferenceSnapshot) {
         const unchangedDeliveryOrder = await sanityGetById(id);
         return NextResponse.json({ data: unchangedDeliveryOrder, id });
