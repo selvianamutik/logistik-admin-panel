@@ -9,7 +9,7 @@ import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { fetchAdminCollectionData, fetchAdminData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
-import { formatDate, formatCurrency, formatNumber, getReceivableNetAmount, ORDER_STATUS_MAP, ITEM_STATUS_MAP, DO_STATUS_MAP, INVOICE_STATUS_MAP, formatInternalDeliveryOrderNumber, formatShipperDeliveryOrderNumber } from '@/lib/utils';
+import { formatDate, formatCurrency, formatNumber, getReceivableNetAmount, ORDER_STATUS_MAP, ITEM_STATUS_MAP, DO_STATUS_MAP, INVOICE_STATUS_MAP, formatInternalDeliveryOrderNumber } from '@/lib/utils';
 import {
     formatCargoSummary,
     formatVolumeDisplay,
@@ -51,6 +51,37 @@ import type { Customer, CustomerProduct, Order, OrderItem, DeliveryOrder, Delive
 import PageBackButton from '@/components/PageBackButton';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import { useApp } from '../../layout';
+
+function getDeliveryOrderShipperReferenceNumbers(
+    deliveryOrder: Pick<DeliveryOrder, 'customerDoNumber' | 'shipperReferences'>
+) {
+    const references =
+        Array.isArray(deliveryOrder.shipperReferences)
+            ? deliveryOrder.shipperReferences
+                .map(reference => reference.referenceNumber?.trim())
+                .filter((value): value is string => Boolean(value))
+            : [];
+
+    if (references.length === 0 && deliveryOrder.customerDoNumber?.trim()) {
+        references.push(deliveryOrder.customerDoNumber.trim());
+    }
+
+    return Array.from(new Set(references));
+}
+
+function formatDeliveryOrderShipperReferencePreview(
+    deliveryOrder: Pick<DeliveryOrder, 'customerDoNumber' | 'shipperReferences'>,
+    limit: number = 2
+) {
+    const references = getDeliveryOrderShipperReferenceNumbers(deliveryOrder);
+    if (references.length === 0) {
+        return null;
+    }
+    if (references.length <= limit) {
+        return references.join(', ');
+    }
+    return `${references.slice(0, limit).join(', ')} +${references.length - limit} lagi`;
+}
 
 export default function OrderDetailPage() {
     const params = useParams();
@@ -471,9 +502,10 @@ export default function OrderDetailPage() {
                 return;
             }
 
+            const createdShipperReferences = getDeliveryOrderShipperReferenceNumbers(doData.data || {});
             addToast(
                 'success',
-                `Surat Jalan dibuat: ${formatInternalDeliveryOrderNumber(doData.data || {})}${doData.data?.customerDoNumber ? ` | SJ Pengirim ${formatShipperDeliveryOrderNumber(doData.data || {})}` : ''}${isHeaderOnlyOrder && draftDirectCargoItems.length === 0 ? ' | Barang menyusul' : ''}`
+                `Trip dibuat: ${formatInternalDeliveryOrderNumber(doData.data || {})}${createdShipperReferences.length > 0 ? ` | ${createdShipperReferences.length} SJ: ${formatDeliveryOrderShipperReferencePreview(doData.data || {}, 3)}` : ''}${isHeaderOnlyOrder && draftDirectCargoItems.length === 0 ? ' | Barang menyusul' : ''}`
             );
             setShowDOModal(false);
             setSelectedShipments({});
@@ -783,6 +815,8 @@ export default function OrderDetailPage() {
                         {orderTripPlans.map(tripPlan => {
                             const linkedDeliveryOrder = tripPlan.linkedDeliveryOrderRef ? deliveryOrderById.get(tripPlan.linkedDeliveryOrderRef) : undefined;
                             const tripPlanPickupStops = resolvedOrderPickupStops.filter(stop => tripPlan.pickupStopKeys.includes(stop._key));
+                            const linkedShipperReferenceCount = linkedDeliveryOrder ? getDeliveryOrderShipperReferenceNumbers(linkedDeliveryOrder).length : 0;
+                            const linkedShipperReferencePreview = linkedDeliveryOrder ? formatDeliveryOrderShipperReferencePreview(linkedDeliveryOrder, 3) : null;
                             const canInputSuratJalan =
                                 !linkedDeliveryOrder || linkedDeliveryOrder.status === 'CANCELLED';
                             return (
@@ -801,7 +835,7 @@ export default function OrderDetailPage() {
                                         <div style={{ fontWeight: 700 }}>Trip {tripPlan.sequence}</div>
                                         {linkedDeliveryOrder ? (
                                             <span className={`badge badge-${DO_STATUS_MAP[linkedDeliveryOrder.status]?.color || 'gray'}`}>
-                                                <span className="badge-dot" /> {linkedDeliveryOrder.status === 'CANCELLED' ? 'Bisa dibuat ulang' : `Sudah jadi SJ ${formatInternalDeliveryOrderNumber(linkedDeliveryOrder)}`}
+                                                <span className="badge-dot" /> {linkedDeliveryOrder.status === 'CANCELLED' ? 'Bisa dibuat ulang' : `Sudah jadi DO ${formatInternalDeliveryOrderNumber(linkedDeliveryOrder)}`}
                                             </span>
                                         ) : (
                                             <span className="badge badge-blue"><span className="badge-dot" /> Siap input Surat Jalan</span>
@@ -825,6 +859,19 @@ export default function OrderDetailPage() {
                                             <div className="detail-value">{formatCurrency(tripPlan.cashGiven || 0)}</div>
                                         </div>
                                     </div>
+                                    {linkedDeliveryOrder && (
+                                        <div style={{ padding: '0.8rem 0.9rem', borderRadius: '0.75rem', background: 'var(--color-white)', border: '1px solid var(--color-gray-200)' }}>
+                                            <div className="detail-label">SJ Pengirim</div>
+                                            <div className="detail-value">
+                                                {linkedShipperReferenceCount > 0 ? `${formatNumber(linkedShipperReferenceCount)} SJ tercatat` : 'Belum ada SJ pengirim'}
+                                            </div>
+                                            {linkedShipperReferencePreview && (
+                                                <div className="text-muted text-sm font-mono" style={{ marginTop: '0.25rem', wordBreak: 'break-word' }}>
+                                                    {linkedShipperReferencePreview}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                     <div>
                                         <div className="detail-label">Pickup Trip</div>
                                         <div style={{ display: 'grid', gap: '0.45rem', marginTop: '0.45rem' }}>
@@ -845,7 +892,7 @@ export default function OrderDetailPage() {
                                         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                                             {linkedDeliveryOrder && (
                                                 <Link href={`/delivery-orders/${linkedDeliveryOrder._id}`} className="btn btn-secondary btn-sm">
-                                                    <Eye size={14} /> Lihat Surat Jalan
+                                                    <Eye size={14} /> Kelola Trip / SJ
                                                 </Link>
                                             )}
                                             {canInputSuratJalan && (
@@ -998,16 +1045,38 @@ export default function OrderDetailPage() {
 
             {/* DOs */}
             <div className="card mt-6" id="order-surat-jalan-section">
-                <div className="card-header"><span className="card-header-title">Surat Jalan ({dos.length})</span></div>
+                <div className="card-header"><span className="card-header-title">Trip / DO Internal ({dos.length})</span></div>
                 <div className="table-wrapper">
                     <table>
-                        <thead><tr><th>No. DO Internal</th><th>Tanggal</th><th>Kendaraan</th><th>Muatan</th><th>Status</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>Trip / DO Internal</th><th>SJ Pengirim</th><th>Tanggal</th><th>Kendaraan</th><th>Muatan</th><th>Status</th><th>Aksi</th></tr></thead>
                         <tbody>
                             {dos.length === 0 ? (
-                                <tr><td colSpan={6} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada surat jalan</td></tr>
-                            ) : dos.map(d => (
+                                <tr><td colSpan={7} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada trip / DO internal</td></tr>
+                            ) : dos.map(d => {
+                                const shipperReferenceNumbers = getDeliveryOrderShipperReferenceNumbers(d);
+                                const shipperReferencePreview = formatDeliveryOrderShipperReferencePreview(d, 3);
+                                return (
                                 <tr key={d._id}>
-                                    <td><Link href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{formatInternalDeliveryOrderNumber(d)}</Link>{d.customerDoNumber && <div className="text-muted text-sm font-mono">{formatShipperDeliveryOrderNumber(d)}</div>}</td>
+                                    <td>
+                                        <Link href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>
+                                            {formatInternalDeliveryOrderNumber(d)}
+                                        </Link>
+                                        <div className="text-muted text-sm">
+                                            {d.driverName || '-'}{d.vehiclePlate ? ` / ${d.vehiclePlate}` : ''}
+                                        </div>
+                                    </td>
+                                    <td>
+                                        {shipperReferenceNumbers.length > 0 ? (
+                                            <div style={{ display: 'grid', gap: '0.2rem' }}>
+                                                <div className="font-medium">{formatNumber(shipperReferenceNumbers.length)} SJ pengirim</div>
+                                                <div className="text-muted text-sm font-mono" style={{ wordBreak: 'break-word' }}>
+                                                    {shipperReferencePreview}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <span className="text-muted text-sm">Belum diinput</span>
+                                        )}
+                                    </td>
                                     <td>{formatDate(d.date)}</td>
                                     <td>{canOpenVehiclePage && d.vehicleRef ? <Link href={`/fleet/vehicles/${d.vehicleRef}`} style={{ color: 'var(--color-primary)' }}>{d.vehiclePlate || '-'}</Link> : (d.vehiclePlate || '-')}</td>
                                     <td>
@@ -1033,7 +1102,8 @@ export default function OrderDetailPage() {
                                     <td><span className={`badge badge-${DO_STATUS_MAP[d.status]?.color}`}><span className="badge-dot" /> {DO_STATUS_MAP[d.status]?.label}</span></td>
                                     <td><Link href={`/delivery-orders/${d._id}`} className="table-action-btn"><Eye size={14} /> Lihat</Link></td>
                                 </tr>
-                            ))}
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>
