@@ -466,6 +466,12 @@ export default function OrderDetailPage() {
     const requiresVehicleOverrideReason = !selectedOrderTripPlan && shouldRequireVehicleOverrideReason(order, selectedVehicleData);
     const deliveryOrderById = new Map(dos.map(deliveryOrder => [deliveryOrder._id, deliveryOrder]));
     const hasPlannedTrips = orderTripPlans.length > 0;
+    const linkedTripDoIds = new Set(
+        orderTripPlans
+            .map(plan => plan.linkedDeliveryOrderRef)
+            .filter((value): value is string => Boolean(value))
+    );
+    const unplannedDos = dos.filter(deliveryOrder => !linkedTripDoIds.has(deliveryOrder._id));
     useEffect(() => {
         if (!requiresVehicleOverrideReason && doVehicleOverrideReason) {
             setDoVehicleOverrideReason('');
@@ -1119,7 +1125,7 @@ export default function OrderDetailPage() {
             {/* Items */}
             <div className="card mt-6">
                 <div className="card-header">
-                    <span className="card-header-title">{isHeaderOnlyOrder ? `Barang / Manifest DO (${dos.length})` : `Item / Koli (${items.length})`}</span>
+                    <span className="card-header-title">{isHeaderOnlyOrder ? `Manifest Tersimpan per SJ (${dos.length})` : `Item / Koli (${items.length})`}</span>
                 </div>
                 {isHeaderOnlyOrder ? (
                     <div className="card-body">
@@ -1289,15 +1295,16 @@ export default function OrderDetailPage() {
             </div>
 
             {/* DOs */}
+            {(!hasPlannedTrips || unplannedDos.length > 0) && (
             <div className="card mt-6" id="order-surat-jalan-section">
                 <div className="card-header"><span className="card-header-title">Trip / DO Internal ({dos.length})</span></div>
                 <div className="table-wrapper">
                     <table>
                         <thead><tr><th>Trip / DO Internal</th><th>SJ Pengirim</th><th>Tanggal</th><th>Kendaraan</th><th>Muatan</th><th>Status</th><th>Aksi</th></tr></thead>
                         <tbody>
-                            {dos.length === 0 ? (
+                            {(hasPlannedTrips ? unplannedDos : dos).length === 0 ? (
                                 <tr><td colSpan={7} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada trip / DO internal</td></tr>
-                            ) : dos.map(d => {
+                            ) : (hasPlannedTrips ? unplannedDos : dos).map(d => {
                                 const shipperReferenceNumbers = getDeliveryOrderShipperReferenceNumbers(d);
                                 const shipperReferencePreview = formatDeliveryOrderShipperReferencePreview(d, 3);
                                 return (
@@ -1353,6 +1360,7 @@ export default function OrderDetailPage() {
                     </table>
                 </div>
             </div>
+            )}
 
             {/* Notas */}
             <div className="card mt-6">
@@ -1478,9 +1486,6 @@ export default function OrderDetailPage() {
                                             );
                                         })}
                                     </div>
-                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                        Satu order bisa punya banyak titik pickup. Surat Jalan ini hanya memakai pickup yang benar-benar dibawa truck ini.
-                                    </div>
                                 </div>
                             )}
                             {!selectedOrderTripPlan && (
@@ -1542,9 +1547,6 @@ export default function OrderDetailPage() {
                                 </div>
                             )}
                             <div className="form-section-title">Tujuan / Penerima Surat Jalan</div>
-                            <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '0.85rem 1rem', marginBottom: '1rem', fontSize: '0.82rem', color: 'var(--color-gray-700)', border: '1px solid var(--color-gray-200)' }}>
-                                Field ini opsional saat surat jalan awal diterbitkan. Jika dokumen tujuan belum turun, admin atau driver bisa melengkapinya belakangan dari detail Surat Jalan.
-                            </div>
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Nama Penerima / PIC</label>
@@ -1597,8 +1599,8 @@ export default function OrderDetailPage() {
                                 <>
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
                                         <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
-                                            <div className="text-muted text-sm">SJ pengirim</div>
-                                            <div className="font-semibold" style={{ fontSize: '1.1rem', marginTop: '0.2rem' }}>{draftDirectCargoGroups.length} SJ</div>
+                                            <div className="text-muted text-sm">Draft SJ</div>
+                                            <div className="font-semibold" style={{ fontSize: '1.1rem', marginTop: '0.2rem' }}>{directCargoGroups.length} SJ</div>
                                         </div>
                                         <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
                                             <div className="text-muted text-sm">Barang dicatat</div>

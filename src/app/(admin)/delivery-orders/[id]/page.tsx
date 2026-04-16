@@ -1031,8 +1031,7 @@ export default function DODetailPage() {
                     </div>
                     <div className="card-body" style={{ display: 'grid', gap: '0.85rem' }}>
                         <div className="text-muted text-sm">
-                            Surat Jalan adalah anchor trip. Armada, SJ pengirim, upah trip, dan uang jalan dikelola dari sini.
-                            Hard delete sengaja tidak dibuka agar histori tracking, bon, dan dokumen turunannya tetap utuh. Untuk membatalkan trip, gunakan workflow status.
+                            Edit trip, SJ pengirim, dan uang jalan dari halaman ini. Pembatalan tetap lewat status agar histori tidak putus.
                         </div>
                         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                             {doData.status === 'CREATED' && canAssignTripResources && !hasLinkedTripCash && (
@@ -1599,9 +1598,7 @@ export default function DODetailPage() {
                     <div className="card-body">
                         <div className="empty-state" style={{ padding: '1rem 0' }}>
                             <div className="empty-state-title">Muatan Surat Jalan belum diisi</div>
-                            <div className="empty-state-text">
-                                Surat Jalan ini sudah sah untuk assignment armada dan uang jalan. Barang bisa ditambahkan menyusul dari portal driver sebelum trip diajukan selesai.
-                            </div>
+                            <div className="empty-state-text">Barang masih bisa ditambahkan sebelum trip diajukan selesai.</div>
                         </div>
                     </div>
                 ) : (
