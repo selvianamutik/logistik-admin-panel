@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Save, Trash2 } from 'lucide-react';
+import { Pencil, Plus, Save, Trash2, X } from 'lucide-react';
 
 import CurrencyInput from '@/components/CurrencyInput';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
@@ -55,6 +55,7 @@ export default function NewNotaPage() {
     const [pph23Enabled, setPph23Enabled] = useState(false);
     const [pph23RatePercent, setPph23RatePercent] = useState(DEFAULT_PPH23_RATE_PERCENT);
     const [pph23BaseMode, setPph23BaseMode] = useState<'BEFORE_CLAIM' | 'AFTER_CLAIM'>('BEFORE_CLAIM');
+    const [editingRow, setEditingRow] = useState<NotaItemRow | null>(null);
 
     useEffect(() => {
         async function loadData() {
@@ -123,21 +124,51 @@ export default function NewNotaPage() {
         })));
     }, [billingMode]);
 
+    const buildCalculatedRow = (row: NotaItemRow) => ({
+        ...row,
+        uangRp: Math.round(calculateFreightNotaRowAmount({
+            beratKg: row.beratKg,
+            tarip: row.tarip,
+            billingMode,
+        })),
+    });
+
     const updateRow = (id: string, field: keyof NotaItemRow, value: string | number) => {
         setRows(previous =>
             previous.map(row => {
                 if (row.id !== id) return row;
                 const updated = { ...row, [field]: value };
-                if (field === 'beratKg' || field === 'tarip') {
-                    updated.uangRp = Math.round(calculateFreightNotaRowAmount({
-                        beratKg: updated.beratKg,
-                        tarip: updated.tarip,
-                        billingMode,
-                    }));
-                }
-                return updated;
+                return field === 'beratKg' || field === 'tarip'
+                    ? buildCalculatedRow(updated)
+                    : updated;
             })
         );
+    };
+
+    const updateEditingRow = (field: keyof NotaItemRow, value: string | number) => {
+        setEditingRow(previous => {
+            if (!previous) return previous;
+            const updated = { ...previous, [field]: value };
+            return field === 'beratKg' || field === 'tarip'
+                ? buildCalculatedRow(updated)
+                : updated;
+        });
+    };
+
+    const openEditRowModal = (row: NotaItemRow) => {
+        setEditingRow({ ...row });
+    };
+
+    const closeEditRowModal = () => {
+        setEditingRow(null);
+    };
+
+    const saveEditedRow = () => {
+        if (!editingRow) return;
+        setRows(previous => previous.map(row => (
+            row.id === editingRow.id ? buildCalculatedRow(editingRow) : row
+        )));
+        closeEditRowModal();
     };
 
     const addDORow = (doId: string) => {
@@ -590,7 +621,7 @@ export default function NewNotaPage() {
                                 <th style={{ minWidth: 100 }}>{getFreightNotaRateColumnLabel(billingMode)}</th>
                                 <th style={{ minWidth: 110 }}>UANG RP</th>
                                 <th style={{ minWidth: 80 }}>KET</th>
-                                <th style={{ width: 36 }} />
+                                <th style={{ width: 96 }}>AKSI</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -679,9 +710,14 @@ export default function NewNotaPage() {
                                         />
                                     </td>
                                     <td>
-                                        <button className="table-action-btn danger" onClick={() => removeRow(row.id)}>
-                                            <Trash2 size={13} />
-                                        </button>
+                                        <div style={{ display: 'flex', gap: '0.35rem' }}>
+                                            <button className="table-action-btn" onClick={() => openEditRowModal(row)} title="Edit detail perjalanan">
+                                                <Pencil size={13} />
+                                            </button>
+                                            <button className="table-action-btn danger" onClick={() => removeRow(row.id)} title="Hapus baris">
+                                                <Trash2 size={13} />
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
@@ -705,6 +741,141 @@ export default function NewNotaPage() {
                     </table>
                 </div>
             </div>
+
+            {editingRow && (
+                <div className="modal-overlay" onClick={closeEditRowModal}>
+                    <div className="modal" onClick={event => event.stopPropagation()} style={{ maxWidth: 860, width: '100%' }}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">Edit Detail Surat Jalan</h3>
+                            <button className="modal-close" onClick={closeEditRowModal}>
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">No. Truck</label>
+                                    <input
+                                        className="form-input"
+                                        value={editingRow.vehiclePlate}
+                                        onChange={event => updateEditingRow('vehiclePlate', event.target.value)}
+                                        placeholder="Plat kendaraan..."
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Tanggal</label>
+                                    <input
+                                        type="date"
+                                        className="form-input"
+                                        value={editingRow.date}
+                                        onChange={event => updateEditingRow('date', event.target.value)}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">No. SJ</label>
+                                    <input
+                                        className="form-input"
+                                        value={editingRow.noSJ}
+                                        onChange={event => updateEditingRow('noSJ', event.target.value)}
+                                        placeholder="Nomor surat jalan..."
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Barang</label>
+                                    <input
+                                        className="form-input"
+                                        value={editingRow.barang}
+                                        onChange={event => updateEditingRow('barang', event.target.value)}
+                                        placeholder="Deskripsi barang..."
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Dari</label>
+                                    <input
+                                        className="form-input"
+                                        value={editingRow.dari}
+                                        onChange={event => updateEditingRow('dari', event.target.value)}
+                                        placeholder="Lokasi asal..."
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Tujuan</label>
+                                    <input
+                                        className="form-input"
+                                        value={editingRow.tujuan}
+                                        onChange={event => updateEditingRow('tujuan', event.target.value)}
+                                        placeholder="Lokasi tujuan..."
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Collie</label>
+                                    <FormattedNumberInput
+                                        maxFractionDigits={2}
+                                        value={editingRow.collie}
+                                        onValueChange={value => updateEditingRow('collie', value)}
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">{getFreightNotaWeightColumnLabel(billingMode)}</label>
+                                    <FormattedNumberInput
+                                        maxFractionDigits={billingMode === 'PER_TON' ? 3 : 2}
+                                        value={getFreightNotaDisplayWeightValue(editingRow.beratKg, billingMode)}
+                                        onValueChange={value => updateEditingRow(
+                                            'beratKg',
+                                            convertWeightToKg(value, billingMode === 'PER_TON' ? 'TON' : 'KG'),
+                                        )}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">{getFreightNotaRateColumnLabel(billingMode)}</label>
+                                    <CurrencyInput
+                                        value={editingRow.tarip}
+                                        onValueChange={value => updateEditingRow('tarip', value)}
+                                        placeholder={billingMode === 'PER_TON' ? 'Ketik tarif per ton' : 'Ketik tarif per kg'}
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Uang Rp</label>
+                                    <input
+                                        className="form-input"
+                                        value={formatCurrency(editingRow.uangRp)}
+                                        readOnly
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Keterangan</label>
+                                <textarea
+                                    className="form-textarea"
+                                    rows={3}
+                                    value={editingRow.ket}
+                                    onChange={event => updateEditingRow('ket', event.target.value)}
+                                    placeholder="Catatan tambahan..."
+                                />
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={closeEditRowModal}>Batal</button>
+                            <button className="btn btn-primary" onClick={saveEditedRow}>
+                                <Save size={16} /> Simpan Perubahan
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
