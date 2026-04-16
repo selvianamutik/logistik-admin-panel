@@ -53,6 +53,8 @@ export async function POST(request: Request) {
                 weightInputUnit?: string;
                 volumeInputValue?: number;
                 volumeInputUnit?: string;
+                shipperReferenceNumber?: string;
+                pickupStopKey?: string;
             }>;
         }>(request);
         if ('error' in parsedBody) {

@@ -462,6 +462,7 @@ export function buildCreateDeliveryOrderRequestData(params: {
     order: Order | null;
     items: CreateDeliveryOrderItemInput[];
     customerDoNumber?: string;
+    pickupStopKeys?: string[];
     tripRouteRateRef?: string;
     tripOriginArea?: string;
     tripDestinationArea?: string;
@@ -484,6 +485,7 @@ export function buildCreateDeliveryOrderRequestData(params: {
         items: params.items,
         masterResi: params.order?.masterResi,
         customerDoNumber: params.customerDoNumber?.trim() || undefined,
+        pickupStopKeys: params.pickupStopKeys || [],
         tripRouteRateRef: params.tripRouteRateRef?.trim() || undefined,
         tripOriginArea: params.tripOriginArea?.trim() || undefined,
         tripDestinationArea: params.tripDestinationArea?.trim() || undefined,

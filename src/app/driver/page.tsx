@@ -24,7 +24,6 @@ import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { VOLUME_INPUT_UNIT_OPTIONS, WEIGHT_INPUT_UNIT_OPTIONS, formatCargoSummary } from '@/lib/measurement';
 import {
     createDefaultOrderItemForm,
-    getDraftOrderItems,
     summarizeDraftOrderCargo,
     updateOrderItemVolumeUnit,
     updateOrderItemWeightUnit,
@@ -42,6 +41,28 @@ type DriverSessionResponse = {
 
 type DriverPortalError = Error & { status?: number };
 type DriverProgressStatus = Extract<DriverAssignedDeliveryOrder['status'], 'ON_DELIVERY' | 'ARRIVED' | 'DELIVERED'>;
+type DriverCargoInputItem = OrderItemForm & {
+    shipperReferenceNumber: string;
+    pickupStopKey: string;
+};
+
+function createDefaultDriverCargoInputItem(defaultPickupStopKey = ''): DriverCargoInputItem {
+    return {
+        ...createDefaultOrderItemForm(),
+        shipperReferenceNumber: '',
+        pickupStopKey: defaultPickupStopKey,
+    };
+}
+
+function getDraftDriverCargoInputItems(items: DriverCargoInputItem[]) {
+    return items.filter(item =>
+        item.description.trim() ||
+        item.customerProductRef ||
+        item.qtyKoli > 0 ||
+        item.weightInputValue > 0 ||
+        item.volumeInputValue > 0
+    );
+}
 
 function createDriverPortalError(status: number, message: string) {
     const error = new Error(message) as DriverPortalError;
@@ -161,7 +182,7 @@ export default function DriverPortalPage() {
     const [completionCargoItems, setCompletionCargoItems] = useState<ActualCargoDraft[]>([]);
     const [showCargoInputModal, setShowCargoInputModal] = useState(false);
     const [cargoInputOrderId, setCargoInputOrderId] = useState<string | null>(null);
-    const [cargoInputItems, setCargoInputItems] = useState<OrderItemForm[]>([createDefaultOrderItemForm()]);
+    const [cargoInputItems, setCargoInputItems] = useState<DriverCargoInputItem[]>([createDefaultDriverCargoInputItem()]);
 
     const handleDriverAuthFailure = useCallback((message = 'Sesi driver berakhir. Silakan login ulang.') => {
         setFeedback({ type: 'error', message });
@@ -190,7 +211,7 @@ export default function DriverPortalPage() {
         [completionCargoItems]
     );
     const cargoInputDraftItems = useMemo(
-        () => getDraftOrderItems(cargoInputItems),
+        () => getDraftDriverCargoInputItems(cargoInputItems),
         [cargoInputItems]
     );
     const cargoInputSummary = useMemo(
@@ -526,8 +547,9 @@ export default function DriverPortalPage() {
     }, [actionLoadingId]);
 
     const openCargoInputModal = useCallback((order: DriverAssignedDeliveryOrder) => {
+        const defaultPickupStopKey = order.pickupStops?.[0]?._key || '';
         setCargoInputOrderId(order._id);
-        setCargoInputItems([createDefaultOrderItemForm()]);
+        setCargoInputItems([createDefaultDriverCargoInputItem(defaultPickupStopKey)]);
         setShowCargoInputModal(true);
     }, []);
 
@@ -537,12 +559,12 @@ export default function DriverPortalPage() {
         }
         setShowCargoInputModal(false);
         setCargoInputOrderId(null);
-        setCargoInputItems([createDefaultOrderItemForm()]);
+        setCargoInputItems([createDefaultDriverCargoInputItem()]);
     }, [actionLoadingId]);
 
     const updateCargoInputItem = useCallback((
         index: number,
-        field: keyof Pick<OrderItemForm, 'description' | 'qtyKoli' | 'weightInputValue' | 'volumeInputValue'>,
+        field: keyof Pick<DriverCargoInputItem, 'description' | 'qtyKoli' | 'weightInputValue' | 'volumeInputValue' | 'shipperReferenceNumber' | 'pickupStopKey'>,
         value: string | number
     ) => {
         setCargoInputItems(previous =>
@@ -555,17 +577,20 @@ export default function DriverPortalPage() {
     }, []);
 
     const addCargoInputItem = useCallback(() => {
-        setCargoInputItems(previous => [...previous, createDefaultOrderItemForm()]);
-    }, []);
+        setCargoInputItems(previous => [
+            ...previous,
+            createDefaultDriverCargoInputItem(cargoInputOrder?.pickupStops?.[0]?._key || ''),
+        ]);
+    }, [cargoInputOrder]);
 
     const removeCargoInputItem = useCallback((index: number) => {
         setCargoInputItems(previous => {
             if (previous.length <= 1) {
-                return [createDefaultOrderItemForm()];
+                return [createDefaultDriverCargoInputItem(cargoInputOrder?.pickupStops?.[0]?._key || '')];
             }
             return previous.filter((_, itemIndex) => itemIndex !== index);
         });
-    }, []);
+    }, [cargoInputOrder]);
 
     const updateCompletionCargoDraft = useCallback((
         deliveryOrderItemRef: string,
@@ -667,6 +692,18 @@ export default function DriverPortalPage() {
             setFeedback({ type: 'error', message: 'Isi minimal 1 barang sebelum disimpan ke surat jalan.' });
             return;
         }
+        const invalidReferenceRow = cargoInputDraftItems.findIndex(item => !item.shipperReferenceNumber.trim());
+        if (invalidReferenceRow >= 0) {
+            setFeedback({ type: 'error', message: `No. SJ pengirim wajib diisi pada baris barang ${invalidReferenceRow + 1}.` });
+            return;
+        }
+        if ((cargoInputOrder.pickupStops?.length || 0) > 1) {
+            const invalidPickupRow = cargoInputDraftItems.findIndex(item => !item.pickupStopKey);
+            if (invalidPickupRow >= 0) {
+                setFeedback({ type: 'error', message: `Titik pickup wajib dipilih pada baris barang ${invalidPickupRow + 1}.` });
+                return;
+            }
+        }
 
         setActionLoadingId(cargoInputOrder._id);
         try {
@@ -675,7 +712,17 @@ export default function DriverPortalPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     id: cargoInputOrder._id,
-                    cargoItems: cargoInputDraftItems,
+                    cargoItems: cargoInputDraftItems.map(item => ({
+                        customerProductRef: item.customerProductRef || undefined,
+                        description: item.description,
+                        qtyKoli: item.qtyKoli,
+                        weightInputValue: item.weightInputValue,
+                        weightInputUnit: item.weightInputUnit,
+                        volumeInputValue: item.volumeInputValue,
+                        volumeInputUnit: item.volumeInputUnit,
+                        shipperReferenceNumber: item.shipperReferenceNumber.trim().toUpperCase(),
+                        pickupStopKey: item.pickupStopKey || undefined,
+                    })),
                 }),
             });
             const payload = await response.json().catch(() => null);
@@ -690,7 +737,7 @@ export default function DriverPortalPage() {
             await loadOrders();
             setShowCargoInputModal(false);
             setCargoInputOrderId(null);
-            setCargoInputItems([createDefaultOrderItemForm()]);
+            setCargoInputItems([createDefaultDriverCargoInputItem()]);
         } catch (error) {
             if (error instanceof Error && 'status' in error && (error.status === 401 || error.status === 403)) {
                 handleDriverAuthFailure(error.message);
@@ -918,6 +965,10 @@ export default function DriverPortalPage() {
                                     <strong>{cargoInputOrder.receiverName || cargoInputOrder.receiverAddress || '-'}</strong>
                                 </div>
                                 <div className="driver-completion-summary-card">
+                                    <span>Pickup</span>
+                                    <strong>{cargoInputOrder.pickupStops?.length ? `${cargoInputOrder.pickupStops.length} titik` : (cargoInputOrder.pickupAddress || '-')}</strong>
+                                </div>
+                                <div className="driver-completion-summary-card">
                                     <span>Ringkasan Tambahan</span>
                                     <strong>{cargoInputDraftItems.length > 0 ? formatCargoSummary(cargoInputSummary) : 'Belum ada barang'}</strong>
                                 </div>
@@ -938,6 +989,34 @@ export default function DriverPortalPage() {
                                             border: '1px solid var(--color-gray-200)',
                                         }}
                                     >
+                                        {(cargoInputOrder.pickupStops?.length || 0) > 0 && (
+                                            <div style={{ flex: '1 1 240px' }}>
+                                                <label className="form-label">Titik Pickup</label>
+                                                <select
+                                                    className="form-select"
+                                                    value={item.pickupStopKey}
+                                                    onChange={event => updateCargoInputItem(index, 'pickupStopKey', event.target.value)}
+                                                    disabled={isActionInFlight}
+                                                >
+                                                    <option value="">Pilih titik pickup</option>
+                                                    {(cargoInputOrder.pickupStops || []).map((pickupStop, pickupIndex) => (
+                                                        <option key={pickupStop._key || `${pickupIndex}-${pickupStop.pickupAddress}`} value={pickupStop._key || ''}>
+                                                            {`Pickup ${pickupIndex + 1}${pickupStop.pickupLabel ? ` - ${pickupStop.pickupLabel}` : ''}`}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        )}
+                                        <div style={{ flex: '1 1 220px' }}>
+                                            <label className="form-label">No. SJ Pengirim</label>
+                                            <input
+                                                className="form-input"
+                                                value={item.shipperReferenceNumber}
+                                                onChange={event => updateCargoInputItem(index, 'shipperReferenceNumber', event.target.value.toUpperCase())}
+                                                placeholder="Masukkan nomor surat jalan pengirim"
+                                                disabled={isActionInFlight}
+                                            />
+                                        </div>
                                         <div style={{ flex: '2 1 260px' }}>
                                             <label className="form-label">Deskripsi Barang</label>
                                             <input
@@ -972,7 +1051,7 @@ export default function DriverPortalPage() {
                                                     className="form-select"
                                                     value={item.weightInputUnit}
                                                     onChange={event => setCargoInputItems(previous => previous.map((entry, entryIndex) => (
-                                                        entryIndex === index ? updateOrderItemWeightUnit(entry, event.target.value as OrderItemForm['weightInputUnit']) : entry
+                                                        entryIndex === index ? { ...entry, ...updateOrderItemWeightUnit(entry, event.target.value as DriverCargoInputItem['weightInputUnit']) } : entry
                                                     )))}
                                                     disabled={isActionInFlight}
                                                 >
@@ -996,7 +1075,7 @@ export default function DriverPortalPage() {
                                                     className="form-select"
                                                     value={item.volumeInputUnit}
                                                     onChange={event => setCargoInputItems(previous => previous.map((entry, entryIndex) => (
-                                                        entryIndex === index ? updateOrderItemVolumeUnit(entry, event.target.value as OrderItemForm['volumeInputUnit']) : entry
+                                                        entryIndex === index ? { ...entry, ...updateOrderItemVolumeUnit(entry, event.target.value as DriverCargoInputItem['volumeInputUnit']) } : entry
                                                     )))}
                                                     disabled={isActionInFlight}
                                                 >

@@ -63,7 +63,12 @@ import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
 import { resolveTripRouteRateSelection } from './generic-workflow-support';
 import { computeDriverVoucherTotals } from './driver-workflow-support';
 import { computeDeliveryOrderOvertonage } from '@/lib/delivery-order-overtonage';
-import type { CompanyProfile } from '@/lib/types';
+import type {
+    CompanyProfile,
+    DeliveryOrderPickupStop,
+    DeliveryOrderShipperReference,
+    OrderPickupStop,
+} from '@/lib/types';
 
 type AuditLogFn = (
     session: Pick<ApiSession, '_id' | 'name'>,
@@ -96,6 +101,355 @@ function isDocumentAlreadyExistsError(error: unknown, documentId?: string) {
         return /already exists/i.test(message);
     }
     return message.includes(documentId) && /already exists/i.test(message);
+}
+
+type NormalizedOrderPickupStop = Required<Pick<OrderPickupStop, 'sequence' | 'pickupAddress'>> & {
+    _key: string;
+    customerPickupRef?: string;
+    pickupLabel?: string;
+    notes?: string;
+};
+
+type NormalizedDeliveryOrderPickupStop = Required<Pick<DeliveryOrderPickupStop, 'sequence' | 'pickupAddress'>> & {
+    _key: string;
+    orderPickupStopKey?: string;
+    customerPickupRef?: string;
+    pickupLabel?: string;
+    notes?: string;
+};
+
+type NormalizedDeliveryOrderShipperReference = Required<Pick<DeliveryOrderShipperReference, 'sequence' | 'referenceNumber'>> & {
+    _key: string;
+    pickupStopKey?: string;
+    pickupAddress?: string;
+    notes?: string;
+};
+
+function normalizeReferenceNumber(value: unknown) {
+    return normalizeOptionalText(value)?.toUpperCase() || '';
+}
+
+function hasDraftCargoPayloadRow(row: Record<string, unknown>) {
+    return Boolean(
+        normalizeOptionalText(row.description) ||
+        normalizeOptionalText(row.customerProductRef) ||
+        normalizeNumber(row.qtyKoli) > 0 ||
+        normalizeNumber(row.weightInputValue) > 0 ||
+        normalizeNumber(row.volumeInputValue) > 0
+    );
+}
+
+function buildPickupSummary(stops: Array<{ pickupAddress?: string; pickupLabel?: string }>, fallback?: string) {
+    if (stops.length === 0) {
+        return normalizeOptionalText(fallback) || undefined;
+    }
+    if (stops.length === 1) {
+        return normalizeOptionalText(stops[0].pickupAddress) || normalizeOptionalText(stops[0].pickupLabel) || undefined;
+    }
+    return `${stops.length} titik pickup | ${normalizeOptionalText(stops[0].pickupLabel) || normalizeOptionalText(stops[0].pickupAddress) || 'Stop 1'}`;
+}
+
+async function resolveNormalizedOrderPickupStops(
+    customerRef: string,
+    data: Record<string, unknown>,
+    fallbackAddress?: string
+): Promise<NormalizedOrderPickupStop[]> {
+    const rawStops = Array.isArray(data.pickupStops) ? data.pickupStops.filter(isPlainObject) : [];
+    const fallbackRows =
+        rawStops.length > 0
+            ? rawStops
+            : [
+                {
+                    customerPickupRef: normalizeOptionalText(data.customerPickupRef),
+                    pickupAddress: normalizeOptionalText(data.pickupAddress) || normalizeOptionalText(fallbackAddress) || '',
+                },
+            ];
+
+    const pickupRefs = Array.from(
+        new Set(
+            fallbackRows
+                .map(row => normalizeOptionalText(row.customerPickupRef))
+                .filter((value): value is string => Boolean(value))
+        )
+    );
+    const resolvedPickupMap = new Map<string, ResolvedCustomerPickupData>();
+    if (pickupRefs.length > 0) {
+        const resolvedPickups = await Promise.all(
+            pickupRefs.map(async ref => ({
+                ref,
+                pickup: await resolveOrderPickupData(customerRef, ref),
+            }))
+        );
+        resolvedPickups.forEach(({ ref, pickup }) => {
+            if (pickup) {
+                resolvedPickupMap.set(ref, pickup);
+            }
+        });
+    }
+
+    const normalizedStops: NormalizedOrderPickupStop[] = [];
+    for (const [index, rawStop] of fallbackRows.entries()) {
+        const customerPickupRef = normalizeOptionalText(rawStop.customerPickupRef);
+        const matchedPickup = customerPickupRef ? resolvedPickupMap.get(customerPickupRef) || null : null;
+        const pickupLabel = normalizeOptionalText(rawStop.pickupLabel) || normalizeOptionalText(matchedPickup?.label) || undefined;
+        const pickupAddress = normalizeOptionalText(rawStop.pickupAddress) || normalizeOptionalText(matchedPickup?.pickupAddress) || '';
+        const notes = normalizeOptionalText(rawStop.notes) || undefined;
+
+        if (!customerPickupRef && !pickupLabel && !pickupAddress && !notes) {
+            continue;
+        }
+        if (!pickupAddress) {
+            throw new Error(`Alamat pickup pada titik ke-${index + 1} wajib diisi`);
+        }
+
+        normalizedStops.push({
+            _key: normalizeOptionalText(rawStop._key) || normalizeOptionalText(rawStop.id) || crypto.randomUUID(),
+            sequence: normalizedStops.length + 1,
+            customerPickupRef: customerPickupRef || undefined,
+            pickupLabel,
+            pickupAddress,
+            notes,
+        });
+    }
+
+    if (normalizedStops.length > 0) {
+        return normalizedStops;
+    }
+
+    const fallbackPickupAddress = normalizeOptionalText(data.pickupAddress) || normalizeOptionalText(fallbackAddress);
+    if (!fallbackPickupAddress) {
+        throw new Error('Minimal 1 titik pickup wajib diisi');
+    }
+
+    return [{
+        _key: crypto.randomUUID(),
+        sequence: 1,
+        pickupAddress: fallbackPickupAddress,
+    }];
+}
+
+function getOrderPickupStopsSnapshot(order: {
+    pickupStops?: OrderPickupStop[];
+    customerPickupRef?: string;
+    pickupAddress?: string;
+}) {
+    const normalizedStops: NormalizedOrderPickupStop[] = [];
+    for (const [index, stop] of (order.pickupStops || []).entries()) {
+        const pickupAddress = normalizeOptionalText(stop.pickupAddress);
+        if (!pickupAddress) {
+            continue;
+        }
+        normalizedStops.push({
+            _key: normalizeOptionalText(stop._key) || `pickup-stop-${index + 1}`,
+            sequence: Number.isFinite(stop.sequence) && stop.sequence > 0 ? stop.sequence : index + 1,
+            customerPickupRef: normalizeOptionalText(stop.customerPickupRef) || undefined,
+            pickupLabel: normalizeOptionalText(stop.pickupLabel) || undefined,
+            pickupAddress,
+            notes: normalizeOptionalText(stop.notes) || undefined,
+        });
+    }
+    normalizedStops.sort((left, right) => left.sequence - right.sequence);
+
+    if (normalizedStops.length > 0) {
+        return normalizedStops;
+    }
+
+    const pickupAddress = normalizeOptionalText(order.pickupAddress);
+    if (!pickupAddress) {
+        return [] as NormalizedOrderPickupStop[];
+    }
+
+    return [{
+        _key: 'pickup-stop-1',
+        sequence: 1,
+        customerPickupRef: normalizeOptionalText(order.customerPickupRef) || undefined,
+        pickupAddress,
+    }];
+}
+
+function resolveDeliveryOrderPickupStops(
+    order: {
+        pickupStops?: OrderPickupStop[];
+        customerPickupRef?: string;
+        pickupAddress?: string;
+    },
+    data: Record<string, unknown>
+): NormalizedDeliveryOrderPickupStop[] {
+    const orderPickupStops = getOrderPickupStopsSnapshot(order);
+    if (orderPickupStops.length === 0) {
+        return [];
+    }
+
+    const requestedKeys = Array.from(
+        new Set(
+            (Array.isArray(data.pickupStopKeys) ? data.pickupStopKeys : [])
+                .filter((value): value is string => typeof value === 'string')
+                .map(value => value.trim())
+                .filter(Boolean)
+        )
+    );
+
+    const selectedStops =
+        requestedKeys.length > 0
+            ? orderPickupStops.filter(stop => requestedKeys.includes(stop._key))
+            : orderPickupStops;
+
+    if (requestedKeys.length > 0 && selectedStops.length !== requestedKeys.length) {
+        throw new Error('Sebagian titik pickup order untuk surat jalan tidak ditemukan');
+    }
+
+    return selectedStops.map((stop, index) => ({
+        _key: stop._key,
+        sequence: index + 1,
+        orderPickupStopKey: stop._key,
+        customerPickupRef: stop.customerPickupRef,
+        pickupLabel: stop.pickupLabel,
+        pickupAddress: stop.pickupAddress,
+        notes: stop.notes,
+    }));
+}
+
+function normalizeDeliveryOrderPickupStopsSnapshot(pickupStops: DeliveryOrderPickupStop[] | undefined) {
+    const normalizedStops: NormalizedDeliveryOrderPickupStop[] = [];
+    for (const [index, stop] of (pickupStops || []).entries()) {
+        const pickupAddress = normalizeOptionalText(stop.pickupAddress);
+        if (!pickupAddress) {
+            continue;
+        }
+        normalizedStops.push({
+            _key: normalizeOptionalText(stop._key) || `pickup-stop-${index + 1}`,
+            sequence: Number.isFinite(stop.sequence) && stop.sequence > 0 ? stop.sequence : index + 1,
+            orderPickupStopKey: normalizeOptionalText(stop.orderPickupStopKey) || undefined,
+            customerPickupRef: normalizeOptionalText(stop.customerPickupRef) || undefined,
+            pickupLabel: normalizeOptionalText(stop.pickupLabel) || undefined,
+            pickupAddress,
+            notes: normalizeOptionalText(stop.notes) || undefined,
+        });
+    }
+    normalizedStops.sort((left, right) => left.sequence - right.sequence);
+    return normalizedStops;
+}
+
+function normalizeExistingShipperReferences(existing: DeliveryOrderShipperReference[] | undefined, pickupStops: NormalizedDeliveryOrderPickupStop[]) {
+    const pickupMap = new Map(pickupStops.map(stop => [stop._key, stop]));
+    const normalizedReferences: NormalizedDeliveryOrderShipperReference[] = [];
+    for (const [index, reference] of (existing || []).entries()) {
+        const referenceNumber = normalizeReferenceNumber(reference.referenceNumber);
+        if (!referenceNumber) {
+            continue;
+        }
+        const pickupStopKey = normalizeOptionalText(reference.pickupStopKey) || undefined;
+        const matchedStop = pickupStopKey ? pickupMap.get(pickupStopKey) : undefined;
+        normalizedReferences.push({
+            _key: normalizeOptionalText(reference._key) || crypto.randomUUID(),
+            sequence: Number.isFinite(reference.sequence) && reference.sequence > 0 ? reference.sequence : index + 1,
+            referenceNumber,
+            pickupStopKey,
+            pickupAddress: normalizeOptionalText(reference.pickupAddress) || matchedStop?.pickupAddress || undefined,
+            notes: normalizeOptionalText(reference.notes) || undefined,
+        });
+    }
+    return normalizedReferences;
+}
+
+function normalizeIncomingShipperReferences(
+    data: Record<string, unknown>,
+    pickupStops: NormalizedDeliveryOrderPickupStop[],
+    existing: DeliveryOrderShipperReference[] | undefined,
+    preserveWhenMissing = false
+) {
+    const hasExplicitArray = Array.isArray(data.shipperReferences);
+    const hasLegacySingle = Boolean(normalizeReferenceNumber(data.customerDoNumber));
+    if (!hasExplicitArray && !hasLegacySingle) {
+        return preserveWhenMissing ? normalizeExistingShipperReferences(existing, pickupStops) : [];
+    }
+
+    const pickupMap = new Map(pickupStops.map(stop => [stop._key, stop]));
+    const existingByNumber = new Map(
+        normalizeExistingShipperReferences(existing, pickupStops).map(reference => [reference.referenceNumber, reference])
+    );
+    const rows = hasExplicitArray
+        ? (data.shipperReferences as unknown[]).map(item => (isPlainObject(item) ? item : { referenceNumber: item }))
+        : [{ referenceNumber: data.customerDoNumber }];
+
+    const seen = new Set<string>();
+    const normalized: NormalizedDeliveryOrderShipperReference[] = [];
+    for (const row of rows) {
+        const referenceNumber = normalizeReferenceNumber(row.referenceNumber ?? row.customerDoNumber);
+        const pickupStopKey = normalizeOptionalText(row.pickupStopKey) || undefined;
+        const notes = normalizeOptionalText(row.notes) || undefined;
+        if (!referenceNumber) {
+            continue;
+        }
+        if (pickupStopKey && !pickupMap.has(pickupStopKey)) {
+            throw new Error(`Titik pickup untuk SJ pengirim ${referenceNumber} tidak ditemukan di surat jalan`);
+        }
+        if (seen.has(referenceNumber)) {
+            continue;
+        }
+        seen.add(referenceNumber);
+        const existingReference = existingByNumber.get(referenceNumber);
+        const matchedStop = pickupStopKey ? pickupMap.get(pickupStopKey) : undefined;
+        normalized.push({
+            _key: existingReference?._key || crypto.randomUUID(),
+            sequence: normalized.length + 1,
+            referenceNumber,
+            pickupStopKey: pickupStopKey || existingReference?.pickupStopKey,
+            pickupAddress:
+                normalizeOptionalText(row.pickupAddress) ||
+                matchedStop?.pickupAddress ||
+                existingReference?.pickupAddress ||
+                undefined,
+            notes: notes || existingReference?.notes,
+        });
+    }
+
+    return normalized;
+}
+
+function buildCustomerDoConstraintDocs(deliveryOrderId: string, customerRef: string, references: NormalizedDeliveryOrderShipperReference[]) {
+    return references.map(reference =>
+        buildDeliveryOrderCustomerDoConstraintDoc(deliveryOrderId, customerRef, reference.referenceNumber)
+    );
+}
+
+function buildCustomerDoConstraintIds(customerRef: string, references: Array<{ referenceNumber: string }>) {
+    return references.map(reference => buildDeliveryOrderCustomerDoConstraintId(customerRef, reference.referenceNumber));
+}
+
+async function findDuplicateCustomerDoReference(
+    customerRef: string,
+    references: Array<{ referenceNumber: string }>,
+    excludeDeliveryOrderId?: string
+) {
+    const normalizedCustomerRef = normalizeText(customerRef);
+    if (!normalizedCustomerRef || references.length === 0) {
+        return null;
+    }
+
+    const values = references.map(reference => `${normalizedCustomerRef}::${normalizeText(reference.referenceNumber).toLowerCase()}`);
+    const duplicates = await getSanityClient().fetch<Array<{ valueLower?: string }>>(
+        `*[
+            _type == "uniqueConstraint" &&
+            entityType == "deliveryOrder" &&
+            fieldName == "customerRefCustomerDoNumber" &&
+            valueLower in $values &&
+            (!defined(ownerRef) || ownerRef != $excludeDeliveryOrderId)
+        ]{
+            valueLower
+        }`,
+        {
+            values,
+            excludeDeliveryOrderId: excludeDeliveryOrderId || '',
+        }
+    );
+
+    if (duplicates.length === 0) {
+        return null;
+    }
+
+    const duplicateSet = new Set(duplicates.map(item => normalizeOptionalText(item.valueLower) || ''));
+    return references.find(reference => duplicateSet.has(`${normalizedCustomerRef}::${normalizeText(reference.referenceNumber).toLowerCase()}`)) || null;
 }
 
 async function releaseDriverTrackingLockIfOwned(driverRef: unknown, deliveryOrderRef: string, timestamp: string) {
@@ -536,7 +890,6 @@ export async function handleOrderCreate(
     let service: ResolvedOrderPartyData['service'];
     let serviceName: string | undefined;
     let customerRecipient: ResolvedCustomerRecipientData | null = null;
-    let customerPickup: ResolvedCustomerPickupData | null = null;
     let items: NormalizedOrderItemInput[];
     try {
         const party = await resolveOrderPartyData(customerRef, serviceRef);
@@ -544,7 +897,6 @@ export async function handleOrderCreate(
         service = party.service;
         serviceName = party.serviceName;
         customerRecipient = await resolveOrderRecipientData(customerRef, customerRecipientRef);
-        customerPickup = await resolveOrderPickupData(customerRef, customerPickupRef);
         items = await normalizeOrderItemsInput(customerRef, Array.isArray(data.items) ? data.items : [], {
             allowEmpty: true,
         });
@@ -557,6 +909,13 @@ export async function handleOrderCreate(
     const receiverPhone = normalizeOptionalText(data.receiverPhone) || normalizeOptionalText(customerRecipient?.receiverPhone) || '';
     const receiverAddress = normalizeText(data.receiverAddress) || normalizeOptionalText(customerRecipient?.receiverAddress) || '';
     const receiverCompany = normalizeOptionalText(data.receiverCompany) || normalizeOptionalText(customerRecipient?.receiverCompany);
+    let pickupStops: NormalizedOrderPickupStop[];
+    try {
+        pickupStops = await resolveNormalizedOrderPickupStops(customerRef, data, customer.address);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Titik pickup order tidak valid';
+        return NextResponse.json({ error: message }, { status: 400 });
+    }
     if (!customer._rev) {
         return NextResponse.json({ error: 'Revisi customer tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
@@ -565,9 +924,6 @@ export async function handleOrderCreate(
     }
     if (customerRecipientRef && !customerRecipient?._rev) {
         return NextResponse.json({ error: 'Revisi master penerima tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
-    }
-    if (customerPickupRef && !customerPickup?._rev) {
-        return NextResponse.json({ error: 'Revisi master pickup tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
     const orderId = crypto.randomUUID();
@@ -580,12 +936,13 @@ export async function handleOrderCreate(
         customerRef,
         customerName: customer.name,
         customerRecipientRef: customerRecipientRef || undefined,
-        customerPickupRef: customerPickupRef || undefined,
+        customerPickupRef: pickupStops[0]?.customerPickupRef || customerPickupRef || undefined,
         receiverName: receiverName || undefined,
         receiverPhone: receiverPhone || undefined,
         receiverAddress: receiverAddress || undefined,
         receiverCompany: receiverCompany || undefined,
-        pickupAddress: normalizeOptionalText(data.pickupAddress) || normalizeOptionalText(customerPickup?.pickupAddress) || customer.address || undefined,
+        pickupAddress: buildPickupSummary(pickupStops, customer.address),
+        pickupStops,
         serviceRef: serviceRef || '',
         serviceName,
         notes: normalizeOptionalText(data.notes),
@@ -619,12 +976,6 @@ export async function handleOrderCreate(
     if (customerRecipientRef && customerRecipient?._rev) {
         transaction.patch(customerRecipient._id, {
             ifRevisionID: customerRecipient._rev,
-            set: { updatedAt: createdAt },
-        });
-    }
-    if (customerPickupRef && customerPickup?._rev) {
-        transaction.patch(customerPickup._id, {
-            ifRevisionID: customerPickup._rev,
             set: { updatedAt: createdAt },
         });
     }
@@ -675,10 +1026,13 @@ export async function handleOrderUpdateWithItems(
         cargoEntryMode?: 'ORDER' | 'DELIVERY_ORDER';
         customerRef?: string;
         customerRecipientRef?: string;
+        customerPickupRef?: string;
         receiverName?: string;
         receiverPhone?: string;
         receiverAddress?: string;
         receiverCompany?: string;
+        pickupAddress?: string;
+        pickupStops?: OrderPickupStop[];
     }>(id);
     if (!order) {
         return NextResponse.json({ error: 'Order tidak ditemukan' }, { status: 404 });
@@ -755,7 +1109,6 @@ export async function handleOrderUpdateWithItems(
     let service: ResolvedOrderPartyData['service'];
     let serviceName: string | undefined;
     let customerRecipient: ResolvedCustomerRecipientData | null = null;
-    let customerPickup: ResolvedCustomerPickupData | null = null;
     let items: NormalizedOrderItemInput[];
     try {
         const party = await resolveOrderPartyData(customerRef, serviceRef);
@@ -763,7 +1116,6 @@ export async function handleOrderUpdateWithItems(
         service = party.service;
         serviceName = party.serviceName;
         customerRecipient = await resolveOrderRecipientData(customerRef, customerRecipientRef);
-        customerPickup = await resolveOrderPickupData(customerRef, customerPickupRef);
         items = await normalizeOrderItemsInput(customerRef, Array.isArray(data.items) ? data.items : [], {
             allowEmpty: true,
         });
@@ -799,6 +1151,16 @@ export async function handleOrderUpdateWithItems(
     const receiverCompany = refreshReceiverSnapshot
         ? normalizeOptionalText(data.receiverCompany) || normalizeOptionalText(customerRecipient?.receiverCompany)
         : normalizeOptionalText(order.receiverCompany);
+    let pickupStops: NormalizedOrderPickupStop[];
+    try {
+        pickupStops =
+            !Array.isArray(data.pickupStops) && getOrderPickupStopsSnapshot(order).length > 1
+                ? getOrderPickupStopsSnapshot(order)
+                : await resolveNormalizedOrderPickupStops(customerRef, data, customer.address);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Titik pickup order tidak valid';
+        return NextResponse.json({ error: message }, { status: 400 });
+    }
     if (existingItems.some(item => !item._rev)) {
         return NextResponse.json({ error: 'Revisi item order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
@@ -810,9 +1172,6 @@ export async function handleOrderUpdateWithItems(
     }
     if (customerRecipientRef && !customerRecipient?._rev) {
         return NextResponse.json({ error: 'Revisi master penerima tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
-    }
-    if (customerPickupRef && !customerPickup?._rev) {
-        return NextResponse.json({ error: 'Revisi master pickup tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
     const mutationTimestamp = new Date().toISOString();
@@ -829,12 +1188,13 @@ export async function handleOrderUpdateWithItems(
                 customerRef,
                 customerName: customer.name,
                 customerRecipientRef: refreshReceiverSnapshot ? (customerRecipientRef || undefined) : (normalizeOptionalText(order.customerRecipientRef) || undefined),
-                customerPickupRef: customerPickupRef || undefined,
+                customerPickupRef: pickupStops[0]?.customerPickupRef || customerPickupRef || undefined,
                 receiverName: receiverName || undefined,
                 receiverPhone: receiverPhone || undefined,
                 receiverAddress: receiverAddress || undefined,
                 receiverCompany: receiverCompany || undefined,
-                pickupAddress: normalizeOptionalText(data.pickupAddress) || normalizeOptionalText(customerPickup?.pickupAddress) || customer.address || undefined,
+                pickupAddress: buildPickupSummary(pickupStops, customer.address),
+                pickupStops,
                 serviceRef: serviceRef || '',
                 serviceName,
                 notes: normalizeOptionalText(data.notes),
@@ -857,12 +1217,6 @@ export async function handleOrderUpdateWithItems(
     if (customerRecipientRef && customerRecipient?._rev) {
         transaction.patch(customerRecipient._id, {
             ifRevisionID: customerRecipient._rev,
-            set: { updatedAt: mutationTimestamp },
-        });
-    }
-    if (customerPickupRef && customerPickup?._rev) {
-        transaction.patch(customerPickup._id, {
-            ifRevisionID: customerPickup._rev,
             set: { updatedAt: mutationTimestamp },
         });
     }
@@ -934,6 +1288,7 @@ export async function handleOrderHeaderBookingUpdate(
         receiverAddress?: string;
         receiverCompany?: string;
         pickupAddress?: string;
+        pickupStops?: OrderPickupStop[];
         serviceRef?: string;
         notes?: string;
     }>(id);
@@ -963,7 +1318,22 @@ export async function handleOrderHeaderBookingUpdate(
             normalizeText(order.customerRef) !== customerRef ||
             normalizeOptionalText(order.serviceRef) !== serviceRef ||
             normalizeOptionalText(order.customerPickupRef) !== customerPickupRef ||
-            normalizeOptionalText(order.pickupAddress) !== normalizeOptionalText(data.pickupAddress) ||
+            (
+                Array.isArray(data.pickupStops)
+                    ? JSON.stringify(getOrderPickupStopsSnapshot(order).map(stop => ({
+                        customerPickupRef: stop.customerPickupRef || '',
+                        pickupAddress: stop.pickupAddress,
+                    }))) !== JSON.stringify(
+                        (data.pickupStops as unknown[])
+                            .filter(isPlainObject)
+                            .map(stop => ({
+                                customerPickupRef: normalizeOptionalText(stop.customerPickupRef) || '',
+                                pickupAddress: normalizeOptionalText(stop.pickupAddress) || '',
+                            }))
+                            .filter(stop => stop.customerPickupRef || stop.pickupAddress)
+                    )
+                    : normalizeOptionalText(order.pickupAddress) !== normalizeOptionalText(data.pickupAddress)
+            ) ||
             touchesDeprecatedTargetFields;
 
         if (attemptedHeaderChanges) {
@@ -1007,14 +1377,12 @@ export async function handleOrderHeaderBookingUpdate(
     let service: ResolvedOrderPartyData['service'];
     let serviceName: string | undefined;
     let customerRecipient: ResolvedCustomerRecipientData | null = null;
-    let customerPickup: ResolvedCustomerPickupData | null = null;
     try {
         const party = await resolveOrderPartyData(customerRef, serviceRef);
         customer = party.customer;
         service = party.service;
         serviceName = party.serviceName;
         customerRecipient = await resolveOrderRecipientData(customerRef, customerRecipientRef);
-        customerPickup = await resolveOrderPickupData(customerRef, customerPickupRef);
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Data order tidak valid';
         const status = message.includes('tidak ditemukan') ? 404 : message.includes('tidak aktif') ? 409 : 400;
@@ -1041,6 +1409,16 @@ export async function handleOrderHeaderBookingUpdate(
     const receiverCompany = refreshReceiverSnapshot
         ? normalizeOptionalText(data.receiverCompany) || normalizeOptionalText(customerRecipient?.receiverCompany)
         : normalizeOptionalText(order.receiverCompany);
+    let pickupStops: NormalizedOrderPickupStop[];
+    try {
+        pickupStops =
+            !Array.isArray(data.pickupStops) && getOrderPickupStopsSnapshot(order).length > 1
+                ? getOrderPickupStopsSnapshot(order)
+                : await resolveNormalizedOrderPickupStops(customerRef, data, customer.address);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Titik pickup order tidak valid';
+        return NextResponse.json({ error: message }, { status: 400 });
+    }
 
     if (!order._rev) {
         return NextResponse.json({ error: 'Revisi order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
@@ -1053,9 +1431,6 @@ export async function handleOrderHeaderBookingUpdate(
     }
     if (customerRecipientRef && !customerRecipient?._rev) {
         return NextResponse.json({ error: 'Revisi master penerima tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
-    }
-    if (customerPickupRef && !customerPickup?._rev) {
-        return NextResponse.json({ error: 'Revisi master pickup tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
     let updatedOrder: unknown;
@@ -1074,12 +1449,13 @@ export async function handleOrderHeaderBookingUpdate(
                     customerRef,
                     customerName: customer.name,
                     customerRecipientRef: refreshReceiverSnapshot ? (customerRecipientRef || undefined) : (normalizeOptionalText(order.customerRecipientRef) || undefined),
-                    customerPickupRef: customerPickupRef || undefined,
+                    customerPickupRef: pickupStops[0]?.customerPickupRef || customerPickupRef || undefined,
                     receiverName: receiverName || undefined,
                     receiverPhone: receiverPhone || undefined,
                     receiverAddress: receiverAddress || undefined,
                     receiverCompany: receiverCompany || undefined,
-                    pickupAddress: normalizeOptionalText(data.pickupAddress) || normalizeOptionalText(customerPickup?.pickupAddress) || customer.address || undefined,
+                    pickupAddress: buildPickupSummary(pickupStops, customer.address),
+                    pickupStops,
                     serviceRef: serviceRef || '',
                     serviceName,
                     notes,
@@ -1094,12 +1470,6 @@ export async function handleOrderHeaderBookingUpdate(
         if (customerRecipientRef && customerRecipient?._rev) {
             transaction.patch(customerRecipient._id, {
                 ifRevisionID: customerRecipient._rev,
-                set: { updatedAt: mutationTimestamp },
-            });
-        }
-        if (customerPickupRef && customerPickup?._rev) {
-            transaction.patch(customerPickup._id, {
-                ifRevisionID: customerPickup._rev,
                 set: { updatedAt: mutationTimestamp },
             });
         }
@@ -2280,6 +2650,7 @@ export async function handleDeliveryOrderCreate(
         receiverAddress?: string;
         receiverCompany?: string;
         pickupAddress?: string;
+        pickupStops?: OrderPickupStop[];
         serviceRef?: string;
         serviceName?: string;
     }>(orderRef);
@@ -2501,28 +2872,50 @@ export async function handleDeliveryOrderCreate(
         );
     }
     const customerDoPrefix = normalizeCustomerDoPrefix(customer?.deliveryOrderPrefix);
-    const customerDoNumber = manualCustomerDoNumber || undefined;
     const effectiveTripFee =
         matchedTripRouteRateFee > 0
             ? matchedTripRouteRateFee
             : taripBorongan;
-
-    if (customerDoNumber && orderCustomerRef) {
-        const duplicateCustomerDoNumber = await getSanityClient().fetch<{ _id: string } | null>(
-            `*[
-                _type == "deliveryOrder" &&
-                customerRef == $customerRef &&
-                lower(coalesce(customerDoNumber, "")) == $customerDoNumber
-            ][0]{ _id }`,
-            {
-                customerRef: orderCustomerRef,
-                customerDoNumber: customerDoNumber.toLowerCase(),
-            }
+    let selectedPickupStops: NormalizedDeliveryOrderPickupStop[] = [];
+    try {
+        selectedPickupStops = resolveDeliveryOrderPickupStops(order, data);
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Titik pickup surat jalan tidak valid' },
+            { status: 400 }
         );
+    }
+    if (selectedPickupStops.length === 0 && normalizeOptionalText(order.pickupAddress)) {
+        selectedPickupStops = [{
+            _key: 'pickup-stop-1',
+            sequence: 1,
+            pickupAddress: normalizeOptionalText(order.pickupAddress) as string,
+        }];
+    }
 
+    let shipperReferences: NormalizedDeliveryOrderShipperReference[] = [];
+    try {
+        shipperReferences = normalizeIncomingShipperReferences(
+            {
+                ...data,
+                customerDoNumber: manualCustomerDoNumber,
+            },
+            selectedPickupStops,
+            undefined,
+            false
+        );
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Referensi SJ pengirim tidak valid' },
+            { status: 400 }
+        );
+    }
+    const customerDoNumber = shipperReferences[0]?.referenceNumber || undefined;
+    if (orderCustomerRef && shipperReferences.length > 0) {
+        const duplicateCustomerDoNumber = await findDuplicateCustomerDoReference(orderCustomerRef, shipperReferences);
         if (duplicateCustomerDoNumber) {
             return NextResponse.json(
-                { error: `No. SJ pengirim ${customerDoNumber} sudah dipakai untuk customer ini.` },
+                { error: `No. SJ pengirim ${duplicateCustomerDoNumber.referenceNumber} sudah dipakai untuk customer ini.` },
                 { status: 409 }
             );
         }
@@ -2807,11 +3200,13 @@ export async function handleDeliveryOrderCreate(
         customerName: order.customerName,
         customerDoPrefix,
         customerDoNumber,
+        shipperReferences: shipperReferences.length > 0 ? shipperReferences : undefined,
         receiverName: doReceiverName || order.receiverName,
         receiverPhone: doReceiverPhone || order.receiverPhone,
         receiverAddress: doReceiverAddress || order.receiverAddress,
         receiverCompany: doReceiverCompany || order.receiverCompany,
-        pickupAddress: order.pickupAddress,
+        pickupAddress: buildPickupSummary(selectedPickupStops, order.pickupAddress),
+        pickupStops: selectedPickupStops.length > 0 ? selectedPickupStops : undefined,
         serviceRef: order.serviceRef,
         serviceName: order.serviceName,
         vehicleServiceRef,
@@ -2833,14 +3228,12 @@ export async function handleDeliveryOrderCreate(
         status: 'CREATED',
     };
 
-    const customerDoConstraint =
-        customerDoNumber && orderCustomerRef
-            ? buildDeliveryOrderCustomerDoConstraintDoc(doId, orderCustomerRef, customerDoNumber)
-            : null;
+    const customerDoConstraints =
+        orderCustomerRef && shipperReferences.length > 0
+            ? buildCustomerDoConstraintDocs(doId, orderCustomerRef, shipperReferences)
+            : [];
     const transaction = getSanityClient().transaction();
-    if (customerDoConstraint) {
-        transaction.create(customerDoConstraint);
-    }
+    customerDoConstraints.forEach(constraint => transaction.create(constraint));
     transaction.create(doDoc);
     const mutationTimestamp = new Date().toISOString();
     if (tripRouteSelection?.matchedTripRouteRate?._id && tripRouteSelection.matchedTripRouteRate._rev) {
@@ -3018,9 +3411,9 @@ export async function handleDeliveryOrderCreate(
     try {
         await transaction.commit();
     } catch (error) {
-        if (isDocumentAlreadyExistsError(error, customerDoConstraint?._id)) {
+        if (customerDoConstraints.some(constraint => isDocumentAlreadyExistsError(error, constraint._id))) {
             return NextResponse.json(
-                { error: `No. SJ pengirim ${customerDoNumber} sudah dipakai untuk customer ini.` },
+                { error: `Salah satu SJ pengirim (${shipperReferences.map(reference => reference.referenceNumber).join(', ')}) sudah dipakai untuk customer ini.` },
                 { status: 409 }
             );
         }
@@ -3038,7 +3431,7 @@ export async function handleDeliveryOrderCreate(
         'CREATE',
         'delivery-orders',
         doId,
-        `Created delivery-orders: ${doNumber}${customerDoNumber ? ` / ${customerDoNumber}` : ''} (${selectionSummaries.join('; ')})${vehicleCategoryOverrideReasonToStore ? ` | override armada: ${order.serviceName || '-'} -> ${vehicleServiceName || vehiclePlate || '-'} | alasan: ${vehicleCategoryOverrideReasonToStore}` : ''}`
+        `Created delivery-orders: ${doNumber}${shipperReferences.length > 0 ? ` / ${shipperReferences.map(reference => reference.referenceNumber).join(', ')}` : ''} (${selectionSummaries.join('; ')})${vehicleCategoryOverrideReasonToStore ? ` | override armada: ${order.serviceName || '-'} -> ${vehicleServiceName || vehiclePlate || '-'} | alasan: ${vehicleCategoryOverrideReasonToStore}` : ''}`
     );
     return NextResponse.json({ data: doDoc, id: doId });
 }
@@ -3061,6 +3454,8 @@ export async function handleDeliveryOrderAppendCargoItems(
         orderRef?: unknown;
         customerRef?: unknown;
         vehicleRef?: unknown;
+        pickupStops?: DeliveryOrderPickupStop[];
+        shipperReferences?: DeliveryOrderShipperReference[];
     }>(id);
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
@@ -3126,6 +3521,50 @@ export async function handleDeliveryOrderAppendCargoItems(
         const message = error instanceof Error ? error.message : 'Barang surat jalan tidak valid';
         return NextResponse.json({ error: message }, { status: 400 });
     }
+    const draftCargoRows = (Array.isArray(data.cargoItems) ? data.cargoItems : [])
+        .filter(isPlainObject)
+        .filter(hasDraftCargoPayloadRow);
+    if (draftCargoRows.length !== directCargoItems.length) {
+        return NextResponse.json(
+            { error: 'Draft barang surat jalan berubah. Refresh lalu isi lagi.' },
+            { status: 409 }
+        );
+    }
+
+    const doPickupStops = normalizeDeliveryOrderPickupStopsSnapshot(deliveryOrder.pickupStops);
+    const pickupStopMap = new Map(doPickupStops.map(stop => [stop._key, stop]));
+    const existingShipperReferences = normalizeExistingShipperReferences(deliveryOrder.shipperReferences, doPickupStops);
+    const nextShipperReferences = [...existingShipperReferences];
+    const currentConstraintIds = new Set(
+        extractRefId(deliveryOrder.customerRef)
+            ? buildCustomerDoConstraintIds(extractRefId(deliveryOrder.customerRef) as string, existingShipperReferences)
+            : []
+    );
+
+    const ensureShipperReference = (referenceNumber: string, pickupStopKey?: string) => {
+        const existingIndex = nextShipperReferences.findIndex(reference => reference.referenceNumber === referenceNumber);
+        if (existingIndex >= 0) {
+            const current = nextShipperReferences[existingIndex];
+            if (pickupStopKey && !current.pickupStopKey) {
+                nextShipperReferences[existingIndex] = {
+                    ...current,
+                    pickupStopKey,
+                    pickupAddress: pickupStopMap.get(pickupStopKey)?.pickupAddress || current.pickupAddress,
+                };
+            }
+            return nextShipperReferences[existingIndex];
+        }
+
+        const createdReference: NormalizedDeliveryOrderShipperReference = {
+            _key: crypto.randomUUID(),
+            sequence: nextShipperReferences.length + 1,
+            referenceNumber,
+            pickupStopKey,
+            pickupAddress: pickupStopKey ? pickupStopMap.get(pickupStopKey)?.pickupAddress : undefined,
+        };
+        nextShipperReferences.push(createdReference);
+        return createdReference;
+    };
 
     const existingDoItems = await getSanityClient().fetch<Array<{
         orderItemWeight?: number;
@@ -3188,7 +3627,31 @@ export async function handleDeliveryOrderAppendCargoItems(
     }
 
     const selectionSummaries: string[] = [];
-    for (const item of directCargoItems) {
+    for (const [index, item] of directCargoItems.entries()) {
+        const cargoDraft = draftCargoRows[index];
+        const pickupStopKey =
+            normalizeOptionalText(cargoDraft?.pickupStopKey)
+            || (doPickupStops.length === 1 ? doPickupStops[0]._key : undefined);
+        if (doPickupStops.length > 0 && !pickupStopKey) {
+            return NextResponse.json(
+                { error: `Titik pickup wajib dipilih untuk barang ${item.description || `baris ${index + 1}`}` },
+                { status: 400 }
+            );
+        }
+        if (pickupStopKey && !pickupStopMap.has(pickupStopKey)) {
+            return NextResponse.json(
+                { error: `Titik pickup untuk barang ${item.description || `baris ${index + 1}`} tidak ditemukan` },
+                { status: 400 }
+            );
+        }
+        const shipperReferenceNumber = normalizeReferenceNumber(cargoDraft?.shipperReferenceNumber);
+        if (!shipperReferenceNumber) {
+            return NextResponse.json(
+                { error: `No. SJ pengirim wajib diisi untuk barang ${item.description || `baris ${index + 1}`}` },
+                { status: 400 }
+            );
+        }
+        const shipperReference = ensureShipperReference(shipperReferenceNumber, pickupStopKey);
         const orderItemId = crypto.randomUUID();
         const usesQtyBasis = item.qtyKoli > 0;
         transaction.create({
@@ -3207,6 +3670,10 @@ export async function handleDeliveryOrderAppendCargoItems(
             _type: 'deliveryOrderItem',
             deliveryOrderRef: id,
             orderItemRef: orderItemId,
+            pickupStopKey: pickupStopKey || undefined,
+            pickupAddress: pickupStopKey ? pickupStopMap.get(pickupStopKey)?.pickupAddress : undefined,
+            shipperReferenceKey: shipperReference._key,
+            shipperReferenceNumber: shipperReference.referenceNumber,
             orderItemDescription: item.description,
             orderItemQtyKoli: usesQtyBasis ? item.qtyKoli : undefined,
             orderItemWeight: item.weight,
@@ -3227,13 +3694,60 @@ export async function handleDeliveryOrderAppendCargoItems(
                 volumeInputValue: item.volumeInputValue,
                 volumeInputUnit: item.volumeInputUnit,
                 holdRemaining: false,
-            }, item.description)
+            }, `${shipperReference.referenceNumber}${item.description ? ` - ${item.description}` : ''}`)
         );
+    }
+
+    if (nextShipperReferences.length > 0 && extractRefId(deliveryOrder.customerRef)) {
+        const duplicateCustomerDoNumber = await findDuplicateCustomerDoReference(
+            extractRefId(deliveryOrder.customerRef) as string,
+            nextShipperReferences,
+            id
+        );
+        if (duplicateCustomerDoNumber) {
+            return NextResponse.json(
+                { error: `No. SJ pengirim ${duplicateCustomerDoNumber.referenceNumber} sudah dipakai untuk customer ini.` },
+                { status: 409 }
+            );
+        }
+    }
+    if (nextShipperReferences.length > 0) {
+        if (!deliveryOrder._rev) {
+            return NextResponse.json({ error: 'Revisi surat jalan tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+        }
+        const nextConstraintDocs =
+            extractRefId(deliveryOrder.customerRef)
+                ? buildCustomerDoConstraintDocs(id, extractRefId(deliveryOrder.customerRef) as string, nextShipperReferences)
+                : [];
+        nextConstraintDocs
+            .filter(constraint => !currentConstraintIds.has(constraint._id))
+            .forEach(constraint => transaction.create(constraint));
+        transaction.patch(id, {
+            ifRevisionID: deliveryOrder._rev,
+            set: {
+                customerDoNumber: nextShipperReferences[0]?.referenceNumber || undefined,
+                shipperReferences: nextShipperReferences,
+            },
+        });
     }
 
     try {
         await transaction.commit();
     } catch (error) {
+        if (
+            extractRefId(deliveryOrder.customerRef) &&
+            nextShipperReferences.some(reference =>
+                isDocumentAlreadyExistsError(
+                    error,
+                    buildDeliveryOrderCustomerDoConstraintId(extractRefId(deliveryOrder.customerRef) as string, reference.referenceNumber)
+                )
+            )
+        ) {
+            return NextResponse.json(
+                { error: 'Salah satu SJ pengirim yang diinput sudah dipakai untuk customer ini.' },
+                { status: 409 }
+            );
+        }
         if (isMutationConflictError(error)) {
             return NextResponse.json(
                 { error: 'Data order, barang customer, atau surat jalan berubah karena ada update lain. Refresh lalu coba lagi.' },
@@ -3563,13 +4077,9 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
     addAuditLog: AuditLogFn
 ) {
     const id = typeof data.id === 'string' ? data.id : '';
-    const customerDoNumber = normalizeOptionalText(data.customerDoNumber)?.toUpperCase();
 
     if (!id) {
         return NextResponse.json({ error: 'Surat jalan tidak valid' }, { status: 400 });
-    }
-    if (!customerDoNumber) {
-        return NextResponse.json({ error: 'No. SJ pengirim wajib diisi' }, { status: 400 });
     }
 
     const deliveryOrder = await sanityGetById<{
@@ -3579,15 +4089,11 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
         customerDoNumber?: string;
         customerRef?: unknown;
         customerName?: string;
+        pickupStops?: DeliveryOrderPickupStop[];
+        shipperReferences?: DeliveryOrderShipperReference[];
     }>(id);
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
-    }
-
-    const existingCustomerDoNumber = normalizeOptionalText(deliveryOrder.customerDoNumber)?.toUpperCase();
-    if (existingCustomerDoNumber === customerDoNumber) {
-        const unchangedDeliveryOrder = await sanityGetById(id);
-        return NextResponse.json({ data: unchangedDeliveryOrder, id });
     }
 
     const hasNotaReference = await getSanityClient().fetch<{ _id: string; notaRef?: string } | null>(
@@ -3613,59 +4119,60 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
     }
 
     const customerRef = extractRefId(deliveryOrder.customerRef);
-    if (customerRef) {
-        const duplicateCustomerDoNumber = await getSanityClient().fetch<{ _id: string } | null>(
-            `*[
-                _type == "deliveryOrder" &&
-                _id != $id &&
-                (customerRef == $customerRef || customerRef._ref == $customerRef) &&
-                lower(coalesce(customerDoNumber, "")) == $customerDoNumber
-            ][0]{ _id }`,
-            {
-                id,
-                customerRef,
-                customerDoNumber: customerDoNumber.toLowerCase(),
-            }
-        );
-        if (duplicateCustomerDoNumber) {
-            return NextResponse.json(
-                { error: `No. SJ pengirim ${customerDoNumber} sudah dipakai untuk customer ini.` },
-                { status: 409 }
-            );
-        }
-    }
-
     if (!deliveryOrder._rev) {
         return NextResponse.json({ error: 'Revisi surat jalan tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
+    const doPickupStops = normalizeDeliveryOrderPickupStopsSnapshot(deliveryOrder.pickupStops);
+    const nextShipperReferences = normalizeIncomingShipperReferences(data, doPickupStops, deliveryOrder.shipperReferences, false);
+    const customerDoNumber = nextShipperReferences[0]?.referenceNumber || undefined;
+    const existingShipperReferences = normalizeExistingShipperReferences(deliveryOrder.shipperReferences, doPickupStops);
+    const currentReferenceSnapshot = existingShipperReferences.map(reference => reference.referenceNumber).join('|');
+    const nextReferenceSnapshot = nextShipperReferences.map(reference => reference.referenceNumber).join('|');
+    if (currentReferenceSnapshot === nextReferenceSnapshot) {
+        const unchangedDeliveryOrder = await sanityGetById(id);
+        return NextResponse.json({ data: unchangedDeliveryOrder, id });
+    }
+
     const currentConstraintId =
-        customerRef && existingCustomerDoNumber
-            ? buildDeliveryOrderCustomerDoConstraintId(customerRef, existingCustomerDoNumber)
-            : null;
-    const nextConstraintDoc =
         customerRef
-            ? buildDeliveryOrderCustomerDoConstraintDoc(id, customerRef, customerDoNumber)
-            : null;
+            ? buildCustomerDoConstraintIds(customerRef, existingShipperReferences)
+            : [];
+    const nextConstraintDocs =
+        customerRef
+            ? buildCustomerDoConstraintDocs(id, customerRef, nextShipperReferences)
+            : [];
+    if (customerRef && nextShipperReferences.length > 0) {
+        const duplicateCustomerDoNumber = await findDuplicateCustomerDoReference(customerRef, nextShipperReferences, id);
+        if (duplicateCustomerDoNumber) {
+            return NextResponse.json(
+                { error: `No. SJ pengirim ${duplicateCustomerDoNumber.referenceNumber} sudah dipakai untuk customer ini.` },
+                { status: 409 }
+            );
+        }
+    }
     let updatedDeliveryOrder: unknown;
     try {
         const transaction = getSanityClient().transaction();
-        if (currentConstraintId && currentConstraintId !== nextConstraintDoc?._id) {
-            transaction.delete(currentConstraintId);
-        }
-        if (nextConstraintDoc && currentConstraintId !== nextConstraintDoc._id) {
-            transaction.create(nextConstraintDoc);
-        }
+        currentConstraintId
+            .filter(constraintId => !nextConstraintDocs.some(constraint => constraint._id === constraintId))
+            .forEach(constraintId => transaction.delete(constraintId));
+        nextConstraintDocs
+            .filter(constraint => !currentConstraintId.includes(constraint._id))
+            .forEach(constraint => transaction.create(constraint));
         transaction.patch(id, {
             ifRevisionID: deliveryOrder._rev,
-            set: { customerDoNumber },
+            set: {
+                customerDoNumber,
+                shipperReferences: nextShipperReferences,
+            },
         });
         await transaction.commit();
         updatedDeliveryOrder = await sanityGetById(id);
     } catch (error) {
-        if (isDocumentAlreadyExistsError(error, nextConstraintDoc?._id)) {
+        if (nextConstraintDocs.some(constraint => isDocumentAlreadyExistsError(error, constraint._id))) {
             return NextResponse.json(
-                { error: `No. SJ pengirim ${customerDoNumber} sudah dipakai untuk customer ini.` },
+                { error: `Salah satu SJ pengirim (${nextShipperReferences.map(reference => reference.referenceNumber).join(', ')}) sudah dipakai untuk customer ini.` },
                 { status: 409 }
             );
         }
@@ -3683,7 +4190,7 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
         'UPDATE',
         'delivery-orders',
         id,
-        `Update SJ pengirim ${deliveryOrder.doNumber || id}: ${existingCustomerDoNumber || '-'} -> ${customerDoNumber}`
+        `Update SJ pengirim ${deliveryOrder.doNumber || id}: ${existingShipperReferences.map(reference => reference.referenceNumber).join(', ') || '-'} -> ${nextShipperReferences.map(reference => reference.referenceNumber).join(', ') || '-'}`
     );
 
     return NextResponse.json({ data: updatedDeliveryOrder, id });

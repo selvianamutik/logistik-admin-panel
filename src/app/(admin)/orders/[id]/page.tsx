@@ -85,6 +85,7 @@ export default function OrderDetailPage() {
     const [doReceiverPhone, setDoReceiverPhone] = useState('');
     const [doReceiverAddress, setDoReceiverAddress] = useState('');
     const [doReceiverCompany, setDoReceiverCompany] = useState('');
+    const [selectedPickupStopKeys, setSelectedPickupStopKeys] = useState<string[]>([]);
     const [shipperReferenceFormat, setShipperReferenceFormat] = useState('SJ');
     const [selectedShipments, setSelectedShipments] = useState<SelectedShipmentMap>({});
     const [directCargoItems, setDirectCargoItems] = useState<OrderItemForm[]>([createDefaultOrderItemForm()]);
@@ -318,6 +319,7 @@ export default function OrderDetailPage() {
     const openCreateDOModal = () => {
         setSelectedShipments({});
         setDirectCargoItems([createDefaultOrderItemForm()]);
+        setSelectedPickupStopKeys(resolvedOrderPickupStops.map(stop => stop._key));
         setDoTripRouteRateRef('');
         setDoTripOriginArea('');
         setDoTripDestinationArea('');
@@ -344,6 +346,34 @@ export default function OrderDetailPage() {
         holdCount: selectedHoldCount,
     } = summarizeSelectedShipments(availableItems, selectedShipments, itemProgressById);
     const isHeaderOnlyOrder = resolveOrderCargoEntryMode(order, items) === 'DELIVERY_ORDER';
+    const orderPickupStops = (order?.pickupStops || [])
+        .map((stop, index) => {
+            const pickupAddress = stop.pickupAddress?.trim();
+            if (!pickupAddress) {
+                return null;
+            }
+            return {
+                _key: stop._key || `pickup-stop-${index + 1}`,
+                sequence: stop.sequence || index + 1,
+                pickupLabel: stop.pickupLabel || '',
+                pickupAddress,
+                notes: stop.notes || '',
+            };
+        })
+        .filter((stop): stop is { _key: string; sequence: number; pickupLabel: string; pickupAddress: string; notes: string } => Boolean(stop))
+        .sort((left, right) => left.sequence - right.sequence);
+    const resolvedOrderPickupStops =
+        orderPickupStops.length > 0
+            ? orderPickupStops
+            : order?.pickupAddress
+                ? [{
+                    _key: 'pickup-stop-1',
+                    sequence: 1,
+                    pickupLabel: '',
+                    pickupAddress: order.pickupAddress,
+                    notes: '',
+                }]
+                : [];
     const canCreateDeliveryOrder = availableItems.length > 0 || isHeaderOnlyOrder;
     const draftDirectCargoItems = getDraftOrderItems(directCargoItems);
     const directCargoSummary = summarizeDraftOrderCargo(directCargoItems);
@@ -391,6 +421,10 @@ export default function OrderDetailPage() {
             addToast('error', 'Pilih supir sebelum membuat surat jalan');
             return;
         }
+        if (resolvedOrderPickupStops.length > 0 && selectedPickupStopKeys.length === 0) {
+            addToast('error', 'Pilih minimal 1 titik pickup untuk trip ini');
+            return;
+        }
         if (!isHeaderOnlyOrder && selectedItems.length === 0) {
             addToast('error', 'Pilih minimal 1 item untuk surat jalan');
             return;
@@ -426,6 +460,7 @@ export default function OrderDetailPage() {
                             orderRef: order?._id,
                             masterResi: order?.masterResi,
                             customerDoNumber: doCustomerDoNumber.trim() || undefined,
+                            pickupStopKeys: selectedPickupStopKeys,
                             tripRouteRateRef: doTripRouteRateRef || undefined,
                             tripOriginArea: doTripOriginArea || undefined,
                             tripDestinationArea: doTripDestinationArea || undefined,
@@ -448,6 +483,7 @@ export default function OrderDetailPage() {
                             order,
                             items: selectedItems,
                             customerDoNumber: doCustomerDoNumber,
+                            pickupStopKeys: selectedPickupStopKeys,
                             tripRouteRateRef: doTripRouteRateRef,
                             tripOriginArea: doTripOriginArea,
                             tripDestinationArea: doTripDestinationArea,
@@ -763,7 +799,22 @@ export default function OrderDetailPage() {
                             <div className="detail-item"><div className="detail-label">Customer / Pengirim / Penagih</div><div className="detail-value">{canOpenCustomerPage && order.customerRef ? <Link href={`/customers/${order.customerRef}`}>{order.customerName}</Link> : order.customerName}</div></div>
                             <div className="detail-item"><div className="detail-label">Kategori Truk / Armada</div><div className="detail-value">{order.serviceName || '-'}</div></div>
                         </div>
-                        <div className="mt-2"><div className="detail-label">Alamat Pickup</div><div className="detail-value">{order.pickupAddress || '-'}</div></div>
+                        <div className="mt-2">
+                            <div className="detail-label">Titik Pickup</div>
+                            {resolvedOrderPickupStops.length === 0 ? (
+                                <div className="detail-value">-</div>
+                            ) : (
+                                <div style={{ display: 'grid', gap: '0.65rem' }}>
+                                    {resolvedOrderPickupStops.map((pickupStop, index) => (
+                                        <div key={pickupStop._key} style={{ padding: '0.8rem 0.9rem', borderRadius: '0.75rem', border: '1px solid var(--color-gray-200)', background: 'var(--color-gray-50)' }}>
+                                            <div className="detail-label">Pickup {index + 1}{pickupStop.pickupLabel ? ` · ${pickupStop.pickupLabel}` : ''}</div>
+                                            <div className="detail-value">{pickupStop.pickupAddress}</div>
+                                            {pickupStop.notes && <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>{pickupStop.notes}</div>}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                         {order.notes && <div className="mt-2"><div className="detail-label">Catatan</div><div className="detail-value">{order.notes}</div></div>}
                     </div>
                 </div>
@@ -1026,6 +1077,51 @@ export default function OrderDetailPage() {
                                     </div>
                                 </div>
                             </div>
+                            {resolvedOrderPickupStops.length > 0 && (
+                                <div className="form-group">
+                                    <label className="form-label">Titik Pickup untuk Trip Ini</label>
+                                    <div style={{ display: 'grid', gap: '0.75rem' }}>
+                                        {resolvedOrderPickupStops.map((pickupStop, index) => {
+                                            const checked = selectedPickupStopKeys.includes(pickupStop._key);
+                                            return (
+                                                <label
+                                                    key={pickupStop._key}
+                                                    style={{
+                                                        display: 'grid',
+                                                        gap: '0.25rem',
+                                                        padding: '0.85rem 1rem',
+                                                        borderRadius: '0.75rem',
+                                                        border: checked ? '1px solid var(--color-primary)' : '1px solid var(--color-gray-200)',
+                                                        background: checked ? 'var(--color-primary-50)' : 'var(--color-gray-50)',
+                                                        cursor: creatingDO ? 'default' : 'pointer',
+                                                    }}
+                                                >
+                                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={checked}
+                                                            disabled={creatingDO}
+                                                            onChange={event => {
+                                                                setSelectedPickupStopKeys(previous => (
+                                                                    event.target.checked
+                                                                        ? [...previous, pickupStop._key]
+                                                                        : previous.filter(value => value !== pickupStop._key)
+                                                                ));
+                                                            }}
+                                                        />
+                                                        <span style={{ fontWeight: 600 }}>Pickup {index + 1}{pickupStop.pickupLabel ? ` · ${pickupStop.pickupLabel}` : ''}</span>
+                                                    </span>
+                                                    <span className="text-muted text-sm">{pickupStop.pickupAddress}</span>
+                                                    {pickupStop.notes && <span className="text-muted text-sm">{pickupStop.notes}</span>}
+                                                </label>
+                                            );
+                                        })}
+                                    </div>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                                        Satu order bisa punya banyak titik pickup. Tiap Surat Jalan memilih titik mana saja yang benar-benar dijalankan oleh truck dan driver ini.
+                                    </div>
+                                </div>
+                            )}
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Kendaraan</label>

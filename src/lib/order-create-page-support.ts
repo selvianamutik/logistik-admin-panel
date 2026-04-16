@@ -21,6 +21,14 @@ export type OrderItemForm = {
     value: number;
 };
 
+export type PickupStopForm = {
+    id: string;
+    customerPickupRef: string;
+    pickupLabel: string;
+    pickupAddress: string;
+    notes: string;
+};
+
 export const DEFAULT_ORDER_ITEM_FORM: OrderItemForm = {
     customerProductRef: '',
     description: '',
@@ -34,6 +42,16 @@ export const DEFAULT_ORDER_ITEM_FORM: OrderItemForm = {
 
 export function createDefaultOrderItemForm(): OrderItemForm {
     return { ...DEFAULT_ORDER_ITEM_FORM };
+}
+
+export function createDefaultPickupStopForm(pickupAddress = ''): PickupStopForm {
+    return {
+        id: crypto.randomUUID(),
+        customerPickupRef: '',
+        pickupLabel: '',
+        pickupAddress,
+        notes: '',
+    };
 }
 
 export function getDraftOrderItems(items: OrderItemForm[]) {
@@ -174,7 +192,18 @@ export function findDefaultCustomerRecipient(recipients: CustomerRecipient[]) {
 
 export function applyCustomerPickupSnapshot(selectedPickup: CustomerPickupLocation | undefined) {
     return {
+        pickupLabel: selectedPickup?.label || '',
         pickupAddress: selectedPickup?.pickupAddress || '',
+    };
+}
+
+export function applyCustomerPickupToStop(stop: PickupStopForm, selectedPickup: CustomerPickupLocation | undefined): PickupStopForm {
+    const snapshot = applyCustomerPickupSnapshot(selectedPickup);
+    return {
+        ...stop,
+        customerPickupRef: selectedPickup?._id || '',
+        pickupLabel: snapshot.pickupLabel,
+        pickupAddress: snapshot.pickupAddress,
     };
 }
 
@@ -189,4 +218,24 @@ export function sortCustomerPickups(pickups: CustomerPickupLocation[]) {
 
 export function findDefaultCustomerPickup(pickups: CustomerPickupLocation[]) {
     return pickups.find(pickup => pickup.active !== false && pickup.isDefault) || null;
+}
+
+export function getDraftPickupStops(items: PickupStopForm[]) {
+    return items.filter(item =>
+        item.customerPickupRef ||
+        item.pickupAddress.trim() ||
+        item.pickupLabel.trim() ||
+        item.notes.trim()
+    );
+}
+
+export function summarizePickupStopList(items: PickupStopForm[]) {
+    const draftStops = getDraftPickupStops(items);
+    if (draftStops.length === 0) {
+        return 'Belum diisi';
+    }
+    if (draftStops.length === 1) {
+        return draftStops[0].pickupAddress || draftStops[0].pickupLabel || '1 titik pickup';
+    }
+    return `${draftStops.length} titik pickup`;
 }

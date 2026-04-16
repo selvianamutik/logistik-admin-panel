@@ -1,18 +1,23 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useToast } from '../../layout';
-import { Save } from 'lucide-react';
+import { Plus, Save, X } from 'lucide-react';
+
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import { buildServiceCapacityRangeMap } from '@/lib/service-capacity-support';
 import type { Customer, CustomerPickupLocation, Service, Vehicle } from '@/lib/types';
 import {
-    applyCustomerPickupSnapshot,
+    applyCustomerPickupToStop,
+    createDefaultPickupStopForm,
     findDefaultCustomerPickup,
+    getDraftPickupStops,
     sortCustomerPickups,
+    summarizePickupStopList,
+    type PickupStopForm,
 } from '@/lib/order-create-page-support';
+import { useToast } from '../../layout';
 
 export default function NewOrderPage() {
     const router = useRouter();
@@ -24,21 +29,18 @@ export default function NewOrderPage() {
     const [vehicles, setVehicles] = useState<Array<Pick<Vehicle, '_id' | 'serviceRef' | 'capacityMin' | 'capacityMax' | 'capacityKg'>>>([]);
     const [loading, setLoading] = useState(false);
 
-    // Form state
     const [customerRef, setCustomerRef] = useState('');
-    const [customerPickupRef, setCustomerPickupRef] = useState('');
-    const [shouldAutoApplyDefaultPickup, setShouldAutoApplyDefaultPickup] = useState(false);
-    const [savePickupToMaster, setSavePickupToMaster] = useState(false);
-    const [savePickupAsDefault, setSavePickupAsDefault] = useState(false);
-    const [pickupMasterLabel, setPickupMasterLabel] = useState('');
     const [serviceRef, setServiceRef] = useState('');
-    const [pickupAddress, setPickupAddress] = useState('');
+    const [pickupStops, setPickupStops] = useState<PickupStopForm[]>([createDefaultPickupStopForm()]);
+    const [shouldAutoApplyDefaultPickup, setShouldAutoApplyDefaultPickup] = useState(false);
     const [notes, setNotes] = useState('');
+
     const selectedCustomer = customers.find(customer => customer._id === customerRef) || null;
     const selectedService = services.find(service => service._id === serviceRef) || null;
     const sortedCustomerPickups = sortCustomerPickups(customerPickups);
     const serviceCapacityRangeMap = buildServiceCapacityRangeMap(services, vehicles);
     const selectedServiceCapacityLabel = selectedService ? serviceCapacityRangeMap[selectedService._id] || 'Kapasitas belum diisi' : 'Belum dipilih';
+    const pickupSummary = summarizePickupStopList(pickupStops);
 
     useEffect(() => {
         Promise.all([
@@ -92,7 +94,7 @@ export default function NewOrderPage() {
     }, [addToast, customerRef]);
 
     useEffect(() => {
-        if (!customerScopedMastersLoaded || !shouldAutoApplyDefaultPickup || !customerRef || customerPickupRef) {
+        if (!customerScopedMastersLoaded || !shouldAutoApplyDefaultPickup || !customerRef || pickupStops.length === 0) {
             return;
         }
         const defaultPickup = findDefaultCustomerPickup(customerPickups);
@@ -100,109 +102,117 @@ export default function NewOrderPage() {
             setShouldAutoApplyDefaultPickup(false);
             return;
         }
-        const snapshot = applyCustomerPickupSnapshot(defaultPickup);
-        setCustomerPickupRef(defaultPickup._id);
-        setPickupAddress(snapshot.pickupAddress);
-        setSavePickupToMaster(false);
-        setSavePickupAsDefault(false);
-        setPickupMasterLabel('');
+        setPickupStops(previous => previous.map((stop, index) => (
+            index === 0 ? applyCustomerPickupToStop(stop, defaultPickup) : stop
+        )));
         setShouldAutoApplyDefaultPickup(false);
-    }, [customerPickupRef, customerPickups, customerRef, customerScopedMastersLoaded, shouldAutoApplyDefaultPickup]);
+    }, [customerPickups, customerRef, customerScopedMastersLoaded, pickupStops.length, shouldAutoApplyDefaultPickup]);
 
     const handleCustomerChange = (nextCustomerRef: string) => {
-        const selectedCustomer = customers.find(customer => customer._id === nextCustomerRef);
+        const nextCustomer = customers.find(customer => customer._id === nextCustomerRef);
         setCustomerRef(nextCustomerRef);
-        setCustomerPickupRef('');
+        setPickupStops([createDefaultPickupStopForm(nextCustomer?.address || '')]);
         setShouldAutoApplyDefaultPickup(Boolean(nextCustomerRef));
-        setSavePickupToMaster(false);
-        setSavePickupAsDefault(false);
-        setPickupMasterLabel('');
-        setPickupAddress(selectedCustomer?.address || '');
     };
 
-    const handleCustomerPickupChange = (nextPickupRef: string) => {
-        setShouldAutoApplyDefaultPickup(false);
-        setCustomerPickupRef(nextPickupRef);
-        const pickup = customerPickups.find(item => item._id === nextPickupRef);
-        const snapshot = applyCustomerPickupSnapshot(pickup);
-        setPickupAddress(snapshot.pickupAddress);
-        setSavePickupToMaster(false);
-        setSavePickupAsDefault(false);
-        setPickupMasterLabel('');
+    const updatePickupStop = <K extends keyof PickupStopForm>(index: number, field: K, value: PickupStopForm[K]) => {
+        setPickupStops(previous => previous.map((stop, stopIndex) => (
+            stopIndex === index ? { ...stop, [field]: value } : stop
+        )));
     };
 
-    const updatePickupAddress = (value: string) => {
-        setShouldAutoApplyDefaultPickup(false);
-        if (customerPickupRef) {
-            setCustomerPickupRef('');
-        }
-        setPickupAddress(value);
+    const handlePickupStopMasterChange = (index: number, nextPickupRef: string) => {
+        const selectedPickup = customerPickups.find(item => item._id === nextPickupRef);
+        setPickupStops(previous => previous.map((stop, stopIndex) => (
+            stopIndex === index
+                ? applyCustomerPickupToStop(
+                    {
+                        ...stop,
+                        customerPickupRef: nextPickupRef,
+                    },
+                    selectedPickup
+                )
+                : stop
+        )));
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const handlePickupStopAddressChange = (index: number, value: string) => {
+        setPickupStops(previous => previous.map((stop, stopIndex) => (
+            stopIndex === index
+                ? {
+                    ...stop,
+                    customerPickupRef: '',
+                    pickupLabel: stop.customerPickupRef ? '' : stop.pickupLabel,
+                    pickupAddress: value,
+                }
+                : stop
+        )));
+    };
+
+    const addPickupStop = () => {
+        setPickupStops(previous => [...previous, createDefaultPickupStopForm()]);
+    };
+
+    const removePickupStop = (index: number) => {
+        setPickupStops(previous => {
+            const nextStops = previous.filter((_, stopIndex) => stopIndex !== index);
+            return nextStops.length > 0 ? nextStops : [createDefaultPickupStopForm(selectedCustomer?.address || '')];
+        });
+    };
+
+    const handleSubmit = async (event: React.FormEvent) => {
+        event.preventDefault();
         if (!customerRef) {
-            addToast('error', 'Mohon lengkapi data wajib');
+            addToast('error', 'Customer wajib dipilih');
             return;
         }
+
+        const draftPickupStops = getDraftPickupStops(pickupStops);
+        if (draftPickupStops.length === 0) {
+            addToast('error', 'Minimal 1 titik pickup wajib diisi');
+            return;
+        }
+
         setLoading(true);
-
         try {
-            const selCustomer = customers.find(c => c._id === customerRef);
-            const selService = services.find(s => s._id === serviceRef);
-            let pickupRefForSubmit = customerPickupRef;
-            if (savePickupToMaster && !pickupRefForSubmit) {
-                if (!pickupMasterLabel.trim()) {
-                    addToast('error', 'Label master pickup wajib diisi jika ingin disimpan ke master');
-                    setLoading(false);
-                    return;
-                }
-                const pickupRes = await fetch('/api/data', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        entity: 'customer-pickups',
-                        data: {
-                            customerRef,
-                            label: pickupMasterLabel,
-                            pickupAddress,
-                            active: true,
-                            isDefault: savePickupAsDefault,
-                        },
-                    }),
-                });
-                const pickupData = await pickupRes.json();
-                if (!pickupRes.ok) {
-                    addToast('error', pickupData.error || 'Gagal menyimpan master pickup');
-                    setLoading(false);
-                    return;
-                }
-                pickupRefForSubmit = pickupData.data?._id || pickupData.id || '';
-            }
+            const selectedCustomerRow = customers.find(customer => customer._id === customerRef);
+            const selectedServiceRow = services.find(service => service._id === serviceRef);
+            const payloadPickupStops = draftPickupStops.map((stop, index) => ({
+                _key: stop.id,
+                sequence: index + 1,
+                customerPickupRef: stop.customerPickupRef || undefined,
+                pickupLabel: stop.pickupLabel.trim() || undefined,
+                pickupAddress: stop.pickupAddress.trim(),
+                notes: stop.notes.trim() || undefined,
+            }));
 
-            const res = await fetch('/api/data', {
+            const response = await fetch('/api/data', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     entity: 'orders',
                     action: 'create-with-items',
                     data: {
-                        customerRef, customerName: selCustomer?.name || '',
-                        customerPickupRef: pickupRefForSubmit,
-                        pickupAddress, serviceRef, serviceName: selService?.name || '',
+                        customerRef,
+                        customerName: selectedCustomerRow?.name || '',
+                        customerPickupRef: payloadPickupStops[0]?.customerPickupRef,
+                        pickupAddress: payloadPickupStops[0]?.pickupAddress || '',
+                        pickupStops: payloadPickupStops,
+                        serviceRef,
+                        serviceName: selectedServiceRow?.name || '',
                         notes,
                         items: [],
                     },
                 }),
             });
 
-            const orderData = await res.json();
-            if (!res.ok) {
+            const orderData = await response.json();
+            if (!response.ok) {
                 addToast('error', orderData.error || 'Gagal membuat order');
                 return;
             }
-            const orderId = orderData.data?._id || orderData.id;
 
+            const orderId = orderData.data?._id || orderData.id;
             addToast('success', `Order dibuat: ${orderData.data?.masterResi || ''}`);
             router.push(`/orders/${orderId}`);
         } catch {
@@ -238,37 +248,34 @@ export default function NewOrderPage() {
                     </div>
                     <div className="kpi-card">
                         <div className="kpi-content">
-                            <div className="kpi-label">Lokasi Ambil</div>
-                            <div className="kpi-value" style={{ fontSize: '1rem' }}>{pickupAddress || 'Belum diisi'}</div>
+                            <div className="kpi-label">Pickup</div>
+                            <div className="kpi-value" style={{ fontSize: '1rem' }}>{pickupSummary}</div>
                         </div>
                     </div>
                     <div className="kpi-card">
                         <div className="kpi-content">
                             <div className="kpi-label">Input Barang</div>
-                            <div className="kpi-value" style={{ fontSize: '0.95rem' }}>
-                                Di Surat Jalan
-                            </div>
+                            <div className="kpi-value" style={{ fontSize: '0.95rem' }}>Di Surat Jalan</div>
                         </div>
                     </div>
                 </div>
 
                 <div className="detail-grid">
-                    {/* Customer / Pengirim */}
                     <div className="card">
                         <div className="card-header"><span className="card-header-title">Customer / Pengirim</span></div>
                         <div className="card-body">
                             <div className="form-group">
                                 <label className="form-label">Customer / Pengirim / Penagih <span className="required">*</span></label>
-                                <select className="form-select" value={customerRef} onChange={e => handleCustomerChange(e.target.value)} required>
+                                <select className="form-select" value={customerRef} onChange={event => handleCustomerChange(event.target.value)} required>
                                     <option value="">Pilih customer</option>
-                                    {customers.filter(c => c.active !== false).map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
+                                    {customers.map(customer => <option key={customer._id} value={customer._id}>{customer.name}</option>)}
                                 </select>
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Kategori Truk / Armada</label>
-                                <select className="form-select" value={serviceRef} onChange={e => setServiceRef(e.target.value)}>
+                                <select className="form-select" value={serviceRef} onChange={event => setServiceRef(event.target.value)}>
                                     <option value="">Pilih kategori armada</option>
-                                    {services.filter(s => s.active !== false).map(service => (
+                                    {services.map(service => (
                                         <option key={service._id} value={service._id}>
                                             {service.code} - {service.name} ({serviceCapacityRangeMap[service._id] || 'Kapasitas belum diisi'})
                                         </option>
@@ -280,54 +287,97 @@ export default function NewOrderPage() {
                                         : 'Pilih kategori armada untuk melihat kisaran muatan per layanan.'}
                                 </div>
                             </div>
-                            {customerRef && (
-                                <div className="form-group">
-                                    <label className="form-label">Lokasi Ambil</label>
-                                    <select className="form-select" value={customerPickupRef} onChange={e => handleCustomerPickupChange(e.target.value)}>
-                                        <option value="">{customerPickups.length > 0 ? 'Pilih dari lokasi ambil customer (opsional)' : 'Belum ada lokasi ambil customer'}</option>
-                                        {sortedCustomerPickups.map(pickup => (
-                                            <option key={pickup._id} value={pickup._id}>
-                                                {pickup.isDefault ? '[Default] ' : ''}{pickup.label}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                            )}
-                            <div className="form-group">
-                                <label className="form-label">Alamat Ambil (Opsional)</label>
-                                <input className="form-input" value={pickupAddress} onChange={e => updatePickupAddress(e.target.value)} placeholder="Alamat pengambilan barang" />
-                            </div>
-                            {customerRef && !customerPickupRef && (
-                                <div style={{ display: 'grid', gap: '0.75rem', padding: '0.85rem 1rem', border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', background: 'var(--color-gray-50)' }}>
-                                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                        <input type="checkbox" checked={savePickupToMaster} onChange={e => setSavePickupToMaster(e.target.checked)} />
-                                        <span>Simpan lokasi ambil ini ke customer</span>
-                                    </label>
-                                    {savePickupToMaster && (
-                                        <>
-                                            <div className="form-group" style={{ marginBottom: 0 }}>
-                                                <label className="form-label">Label Lokasi Ambil <span className="required">*</span></label>
-                                                <input className="form-input" value={pickupMasterLabel} onChange={e => setPickupMasterLabel(e.target.value)} placeholder="Contoh: Gudang Gresik / Pabrik Waru" />
-                                            </div>
-                                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                <input type="checkbox" checked={savePickupAsDefault} onChange={e => setSavePickupAsDefault(e.target.checked)} />
-                                                <span>Jadikan lokasi ambil default customer</span>
-                                            </label>
-                                        </>
-                                    )}
-                                </div>
-                            )}
                         </div>
                     </div>
 
                     <div className="card">
-                        <div className="card-header"><span className="card-header-title">Tujuan Surat Jalan</span></div>
-                        <div className="card-body">
+                        <div className="card-header"><span className="card-header-title">Titik Pickup Order</span></div>
+                        <div className="card-body" style={{ display: 'grid', gap: '0.9rem' }}>
                             <div className="info-banner">
-                                <div className="info-banner-title">Tujuan dan penerima tidak lagi disimpan di order</div>
+                                <div className="info-banner-title">Order bisa memuat beberapa titik ambil</div>
                                 <div className="info-banner-text">
-                                    Order hanya menyimpan header booking dari pengirim. Saat Surat Jalan dibuat, admin bisa assign driver, truck, uang jalan awal, lalu tujuan/penerima bisa diisi langsung di Surat Jalan atau dilengkapi belakangan.
+                                    Booking ini menyimpan semua lokasi pickup. Nanti saat Surat Jalan dibuat, admin bisa memilih titik pickup mana saja yang dipegang truck dan driver pada trip tersebut.
                                 </div>
+                            </div>
+                            {pickupStops.map((stop, index) => (
+                                <div
+                                    key={stop.id}
+                                    style={{
+                                        display: 'grid',
+                                        gap: '0.85rem',
+                                        padding: '1rem',
+                                        border: '1px solid var(--color-gray-200)',
+                                        borderRadius: '0.9rem',
+                                        background: 'var(--color-gray-50)',
+                                    }}
+                                >
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                        <div style={{ fontWeight: 600 }}>Pickup {index + 1}</div>
+                                        {pickupStops.length > 1 && (
+                                            <button type="button" className="btn btn-ghost btn-icon-only" onClick={() => removePickupStop(index)} title="Hapus pickup">
+                                                <X size={16} />
+                                            </button>
+                                        )}
+                                    </div>
+                                    {customerRef && (
+                                        <div className="form-group" style={{ marginBottom: 0 }}>
+                                            <label className="form-label">Master Pickup Customer</label>
+                                            <select
+                                                className="form-select"
+                                                value={stop.customerPickupRef}
+                                                onChange={event => handlePickupStopMasterChange(index, event.target.value)}
+                                            >
+                                                <option value="">{customerPickups.length > 0 ? 'Pilih master pickup (opsional)' : 'Belum ada master pickup customer'}</option>
+                                                {sortedCustomerPickups.map(pickup => (
+                                                    <option key={pickup._id} value={pickup._id}>
+                                                        {pickup.isDefault ? '[Default] ' : ''}{pickup.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    )}
+                                    <div className="form-group" style={{ marginBottom: 0 }}>
+                                        <label className="form-label">Alamat Pickup <span className="required">*</span></label>
+                                        <textarea
+                                            className="form-textarea"
+                                            rows={2}
+                                            value={stop.pickupAddress}
+                                            onChange={event => handlePickupStopAddressChange(index, event.target.value)}
+                                            placeholder="Alamat lokasi pengambilan barang"
+                                        />
+                                    </div>
+                                    <div className="form-group" style={{ marginBottom: 0 }}>
+                                        <label className="form-label">Catatan Pickup</label>
+                                        <input
+                                            className="form-input"
+                                            value={stop.notes}
+                                            onChange={event => updatePickupStop(index, 'notes', event.target.value)}
+                                            placeholder="Opsional, mis. gate masuk, PIC gudang, jam loading"
+                                        />
+                                    </div>
+                                </div>
+                            ))}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                <div className="text-muted text-sm">
+                                    Tambah titik pickup kalau satu order ditangani dari beberapa gudang, pabrik, atau lokasi ambil.
+                                </div>
+                                <button type="button" className="btn btn-secondary btn-sm" onClick={addPickupStop}>
+                                    <Plus size={14} /> Tambah Pickup
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="card mt-6">
+                    <div className="card-header">
+                        <span className="card-header-title">Tujuan Surat Jalan</span>
+                    </div>
+                    <div className="card-body">
+                        <div className="info-banner">
+                            <div className="info-banner-title">Tujuan dan penerima dikelola per trip</div>
+                            <div className="info-banner-text">
+                                Order hanya menyimpan booking pengirim dan pickup. Saat Surat Jalan dibuat, admin assign driver, truck, upah trip, uang jalan awal, lalu tujuan/penerima tetap hidup di Surat Jalan.
                             </div>
                         </div>
                     </div>
@@ -339,20 +389,25 @@ export default function NewOrderPage() {
                     </div>
                     <div className="card-body">
                         <div className="info-banner">
-                            <div className="info-banner-title">Order sekarang hanya menyimpan booking utama</div>
+                            <div className="info-banner-title">Order tetap ringan, trip tetap terkontrol</div>
                             <div className="info-banner-text">
-                                Barang, truck, driver, collie, dan muatan akan dicatat saat membuat Surat Jalan. Jalur ini menjaga order tetap ringan dan manifest pengiriman tetap mengikuti DO yang benar-benar jalan.
+                                Barang, nomor SJ pengirim, truck, driver, dan uang jalan awal tidak dicampur di header order. Semua itu dicatat saat Surat Jalan per trip diterbitkan, sehingga satu order bisa punya beberapa trip tanpa mencampur settlement driver.
                             </div>
                         </div>
                     </div>
                 </div>
 
-                {/* Notes & Submit */}
                 <div className="card mt-6">
                     <div className="card-body">
                         <div className="form-group">
                             <label className="form-label">Catatan Internal</label>
-                            <textarea className="form-textarea" rows={3} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Catatan opsional..." />
+                            <textarea
+                                className="form-textarea"
+                                rows={3}
+                                value={notes}
+                                onChange={event => setNotes(event.target.value)}
+                                placeholder="Catatan opsional..."
+                            />
                         </div>
                     </div>
                     <div className="card-footer">

@@ -205,6 +205,34 @@ export interface CustomerPickupLocation {
   isDefault?: boolean;
 }
 
+export interface OrderPickupStop {
+  _key?: string;
+  sequence: number;
+  customerPickupRef?: string;
+  pickupLabel?: string;
+  pickupAddress: string;
+  notes?: string;
+}
+
+export interface DeliveryOrderPickupStop {
+  _key?: string;
+  sequence: number;
+  orderPickupStopKey?: string;
+  customerPickupRef?: string;
+  pickupLabel?: string;
+  pickupAddress: string;
+  notes?: string;
+}
+
+export interface DeliveryOrderShipperReference {
+  _key?: string;
+  sequence: number;
+  referenceNumber: string;
+  pickupStopKey?: string;
+  pickupAddress?: string;
+  notes?: string;
+}
+
 // ── Supplier & Inventory ──
 export interface Supplier {
   _id: string;
@@ -502,6 +530,7 @@ export interface Order {
   receiverAddress?: string;
   receiverCompany?: string;
   pickupAddress?: string;
+  pickupStops?: OrderPickupStop[];
   serviceRef: string;
   serviceName?: string;
   status: OrderStatus;
@@ -617,6 +646,8 @@ export interface DeliveryOrder {
   receiverAddress?: string;
   receiverCompany?: string;
   pickupAddress?: string;
+  pickupStops?: DeliveryOrderPickupStop[];
+  shipperReferences?: DeliveryOrderShipperReference[];
   serviceRef?: string;
   serviceName?: string;
   vehicleServiceRef?: string;
@@ -661,6 +692,10 @@ export interface DeliveryOrderItem {
   _type: 'deliveryOrderItem';
   deliveryOrderRef: string;
   orderItemRef: string;
+  pickupStopKey?: string;
+  pickupAddress?: string;
+  shipperReferenceKey?: string;
+  shipperReferenceNumber?: string;
   orderItemDescription?: string;
   orderItemQtyKoli?: number;
   orderItemWeight?: number;

@@ -113,7 +113,7 @@ export default function DODetailPage() {
     const [tripVehicleRef, setTripVehicleRef] = useState('');
     const [tripDriverRef, setTripDriverRef] = useState('');
     const [tripVehicleOverrideReason, setTripVehicleOverrideReason] = useState('');
-    const [shipperReferenceValue, setShipperReferenceValue] = useState('');
+    const [shipperReferenceValues, setShipperReferenceValues] = useState<string[]>(['']);
     const [shipperReferenceFormat, setShipperReferenceFormat] = useState('SJ');
     const [targetReceiverName, setTargetReceiverName] = useState('');
     const [targetReceiverPhone, setTargetReceiverPhone] = useState('');
@@ -275,7 +275,14 @@ export default function DODetailPage() {
     const openShipperReferenceModal = () => {
         if (!canEditShipperReference) return;
         const normalizedFormat = shipperReferenceFormat.trim().toUpperCase() || 'SJ';
-        setShipperReferenceValue(doData?.customerDoNumber || (normalizedFormat !== 'SJ' ? normalizedFormat : ''));
+        const nextReferences = (doData?.shipperReferences || [])
+            .map(reference => reference.referenceNumber?.trim() || '')
+            .filter(Boolean);
+        setShipperReferenceValues(
+            nextReferences.length > 0
+                ? nextReferences
+                : [doData?.customerDoNumber || (normalizedFormat !== 'SJ' ? normalizedFormat : '')]
+        );
         setShowShipperReferenceModal(true);
     };
 
@@ -675,9 +682,11 @@ export default function DODetailPage() {
     };
 
     const saveShipperReference = async () => {
-        const normalizedReference = shipperReferenceValue.trim().toUpperCase();
-        if (!normalizedReference) {
-            addToast('error', 'No. SJ pengirim wajib diisi');
+        const normalizedReferences = shipperReferenceValues
+            .map(value => value.trim().toUpperCase())
+            .filter(Boolean);
+        if (normalizedReferences.length === 0) {
+            addToast('error', 'Minimal 1 SJ pengirim wajib diisi');
             return;
         }
 
@@ -691,7 +700,7 @@ export default function DODetailPage() {
                     action: 'update-shipper-reference',
                     data: {
                         id: doData?._id,
-                        customerDoNumber: normalizedReference,
+                        shipperReferences: normalizedReferences.map(referenceNumber => ({ referenceNumber })),
                     },
                 }),
             });
@@ -735,7 +744,10 @@ export default function DODetailPage() {
     const requiresTripVehicleOverrideReason = shouldRequireTripVehicleOverrideReason(doData, selectedTripVehicle);
     const isCompletingDelivery = newStatus === 'DELIVERED';
     const pendingDriverStatusMeta = doData.pendingDriverStatus ? DO_STATUS_MAP[doData.pendingDriverStatus] : null;
-    const hasShipperReference = Boolean(doData.customerDoNumber?.trim());
+    const shipperReferenceList = (doData.shipperReferences || [])
+        .map(reference => reference.referenceNumber?.trim() || '')
+        .filter(Boolean);
+    const hasShipperReference = shipperReferenceList.length > 0 || Boolean(doData.customerDoNumber?.trim());
     const normalizedShipperReferenceFormat = shipperReferenceFormat.trim().toUpperCase() || 'SJ';
     const shipperReferenceExample = `${normalizedShipperReferenceFormat}/27032026/001`;
     const linkedVoucherSummary = linkedVoucher ? getDriverVoucherFinancialSummary(linkedVoucher) : null;
@@ -1105,7 +1117,12 @@ export default function DODetailPage() {
                     </div>
                     <div className="card-body">
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">No. SJ Pengirim</div><div className="detail-value font-mono">{formatShipperDeliveryOrderNumber(doData)}</div></div>
+                            <div className="detail-item">
+                                <div className="detail-label">SJ Pengirim</div>
+                                <div className="detail-value font-mono">
+                                    {shipperReferenceList.length > 0 ? shipperReferenceList.join(', ') : formatShipperDeliveryOrderNumber(doData)}
+                                </div>
+                            </div>
                             <div className="detail-item"><div className="detail-label">Tanggal</div><div className="detail-value">{formatDate(doData.date)}</div></div>
                         </div>
                         <div className="detail-row">
@@ -2049,22 +2066,54 @@ export default function DODetailPage() {
                         </div>
                         <div className="modal-body">
                             <div className="form-group">
-                                <label className="form-label">No. SJ Pengirim</label>
-                                <input
-                                    className="form-input"
-                                    value={shipperReferenceValue}
-                                    onChange={e => setShipperReferenceValue(e.target.value.toUpperCase())}
-                                    placeholder={`Contoh: ${shipperReferenceExample}`}
-                                    disabled={savingShipperReference}
-                                />
+                                <label className="form-label">Daftar SJ Pengirim</label>
+                                <div style={{ display: 'grid', gap: '0.75rem' }}>
+                                    {shipperReferenceValues.map((value, index) => (
+                                        <div key={`shipper-reference-${index}`} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                            <input
+                                                className="form-input"
+                                                value={value}
+                                                onChange={event => {
+                                                    const nextValue = event.target.value.toUpperCase();
+                                                    setShipperReferenceValues(previous => previous.map((entry, entryIndex) => (
+                                                        entryIndex === index ? nextValue : entry
+                                                    )));
+                                                }}
+                                                placeholder={`Contoh: ${shipperReferenceExample}`}
+                                                disabled={savingShipperReference}
+                                            />
+                                            {shipperReferenceValues.length > 1 && (
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-ghost btn-icon-only"
+                                                    onClick={() => setShipperReferenceValues(previous => previous.filter((_, entryIndex) => entryIndex !== index))}
+                                                    disabled={savingShipperReference}
+                                                    title="Hapus SJ pengirim"
+                                                >
+                                                    &times;
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
                                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                    Format referensi customer: <strong>{normalizedShipperReferenceFormat}</strong>. Nomor final tetap diisi manual mengikuti surat jalan dari pengirim.
+                                    Format referensi customer: <strong>{normalizedShipperReferenceFormat}</strong>. Satu trip bisa memuat beberapa SJ pengirim. Nomor final tetap diisi manual mengikuti dokumen pengirim.
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.75rem' }}>
+                                    <button
+                                        type="button"
+                                        className="btn btn-secondary btn-sm"
+                                        onClick={() => setShipperReferenceValues(previous => [...previous, ''])}
+                                        disabled={savingShipperReference}
+                                    >
+                                        Tambah SJ Pengirim
+                                    </button>
                                 </div>
                             </div>
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setShowShipperReferenceModal(false)} disabled={savingShipperReference}>Batal</button>
-                            <button className="btn btn-primary" onClick={saveShipperReference} disabled={savingShipperReference || !shipperReferenceValue.trim()}>
+                            <button className="btn btn-primary" onClick={saveShipperReference} disabled={savingShipperReference || shipperReferenceValues.every(value => !value.trim())}>
                                 <Save size={16} /> {savingShipperReference ? 'Menyimpan...' : 'Simpan'}
                             </button>
                         </div>

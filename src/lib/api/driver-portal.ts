@@ -150,6 +150,8 @@ export async function getDriverAssignedDeliveryOrders(driverRef: string) {
             "receiverName": coalesce(receiverName, orderRef->receiverName),
             "receiverAddress": coalesce(receiverAddress, orderRef->receiverAddress),
             "pickupAddress": coalesce(pickupAddress, orderRef->pickupAddress),
+            pickupStops,
+            shipperReferences,
             notes,
             vehiclePlate,
             driverName,
