@@ -5,7 +5,6 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '../../layout';
 import { Truck, FileText, Edit, Eye, Plus, X } from 'lucide-react';
-import CurrencyInput from '@/components/CurrencyInput';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { fetchAdminCollectionData, fetchAdminData } from '@/lib/api/admin-client';
@@ -30,7 +29,6 @@ import {
     buildSelectedNonKoliCargo,
     createCargoAggregate,
     formatProgressLine,
-    getAvailableDrivers,
     getAvailableVehicles,
     hasCargoAggregate,
     shouldRequireVehicleOverrideReason,
@@ -49,8 +47,7 @@ import {
 } from '@/lib/order-create-page-support';
 import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
 import { buildServiceCapacityRangeMap, formatCapacityRangeLabel } from '@/lib/service-capacity-support';
-import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
-import type { BankAccount, Customer, CustomerProduct, Order, OrderItem, DeliveryOrder, DeliveryOrderItem, Driver, FreightNota, FreightNotaItem, TripRouteRate, Vehicle } from '@/lib/types';
+import type { Customer, CustomerProduct, Order, OrderItem, DeliveryOrder, DeliveryOrderItem, FreightNota, FreightNotaItem, Vehicle } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import { useApp } from '../../layout';
@@ -74,11 +71,6 @@ export default function OrderDetailPage() {
     const [doDate, setDoDate] = useState(getBusinessDateValue());
     const [doCustomerDoNumber, setDoCustomerDoNumber] = useState('');
     const [doVehicle, setDoVehicle] = useState('');
-    const [doDriver, setDoDriver] = useState('');
-    const [doTripFee, setDoTripFee] = useState(0);
-    const [doTripRouteRateRef, setDoTripRouteRateRef] = useState('');
-    const [doTripOriginArea, setDoTripOriginArea] = useState('');
-    const [doTripDestinationArea, setDoTripDestinationArea] = useState('');
     const [doVehicleOverrideReason, setDoVehicleOverrideReason] = useState('');
     const [doNotes, setDoNotes] = useState('');
     const [doReceiverName, setDoReceiverName] = useState('');
@@ -91,10 +83,6 @@ export default function OrderDetailPage() {
     const [directCargoItems, setDirectCargoItems] = useState<OrderItemForm[]>([createDefaultOrderItemForm()]);
     const [vehicles, setVehicles] = useState<Array<Pick<Vehicle, '_id' | 'unitCode' | 'plateNumber' | 'serviceRef' | 'serviceName' | 'capacityMin' | 'capacityMax' | 'capacityKg'>>>([]);
     const [busyVehicleIds, setBusyVehicleIds] = useState<string[]>([]);
-    const [busyDriverIds, setBusyDriverIds] = useState<string[]>([]);
-    const [drivers, setDrivers] = useState<Driver[]>([]);
-    const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
-    const [tripRouteRates, setTripRouteRates] = useState<TripRouteRate[]>([]);
     const [showHoldModal, setShowHoldModal] = useState(false);
     const [holdingItem, setHoldingItem] = useState<OrderItem | null>(null);
     const [holdQtyKoli, setHoldQtyKoli] = useState('');
@@ -106,26 +94,18 @@ export default function OrderDetailPage() {
     const [holdLocation, setHoldLocation] = useState('');
     const [savingHold, setSavingHold] = useState(false);
     const canCreateInvoice = user ? hasPermission(user.role, 'freightNotas', 'create') : false;
-    const canCreateTripCash = user ? hasPermission(user.role, 'driverVouchers', 'create') : false;
     const canOpenCustomerPage = user ? hasPageAccess(user.role, 'customers') : false;
     const canOpenVehiclePage = user ? hasPageAccess(user.role, 'vehicles') : false;
-    const [tripCashBankRef, setTripCashBankRef] = useState('');
-    const [tripCashCashGiven, setTripCashCashGiven] = useState(0);
 
     const loadOrderDetail = useCallback(async () => {
         setLoading(true);
         try {
-            const [orderData, itemData, deliveryOrders, vehicleData, driverData, activeDeliveryOrders, tripRateData, bankAccountRows] = await Promise.all([
+            const [orderData, itemData, deliveryOrders, vehicleData, activeDeliveryOrders] = await Promise.all([
                 fetchAdminData<Order | null>(`/api/data?entity=orders&id=${orderId}`, 'Gagal memuat detail order'),
                 fetchAdminCollectionData<OrderItem[]>(`/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`, 'Gagal memuat detail order'),
                 fetchAdminCollectionData<DeliveryOrder[]>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ orderRef: orderId }))}`, 'Gagal memuat detail order'),
                 fetchAdminCollectionData<Array<Pick<Vehicle, '_id' | 'unitCode' | 'plateNumber' | 'serviceRef' | 'serviceName' | 'capacityMin' | 'capacityMax' | 'capacityKg'>>>(`/api/data?entity=vehicles&filter=${encodeURIComponent(JSON.stringify({ status: ['ACTIVE', 'IN_SERVICE'] }))}`, 'Gagal memuat detail order'),
-                fetchAdminCollectionData<Driver[]>('/api/data?entity=drivers', 'Gagal memuat detail order'),
                 fetchAdminCollectionData<Array<Pick<DeliveryOrder, '_id' | 'vehicleRef' | 'driverRef' | 'status'>>>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ status: ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'] }))}`, 'Gagal memuat detail order'),
-                fetchAdminCollectionData<TripRouteRate[]>(`/api/data?entity=trip-route-rates&filter=${encodeURIComponent(JSON.stringify({ active: true }))}`, 'Gagal memuat detail order'),
-                canCreateTripCash
-                    ? fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat detail order')
-                    : Promise.resolve([] as BankAccount[]),
             ]);
             const deliveryOrderIds = (deliveryOrders || []).map(item => item._id);
             const [deliveryOrderItems, notaItems, customerData, customerProductData] = await Promise.all([
@@ -157,19 +137,15 @@ export default function OrderDetailPage() {
             setNotas([...(orderNotas || [])].sort((a, b) => `${b.issueDate || ''}-${b._id}`.localeCompare(`${a.issueDate || ''}-${a._id}`)));
             setShipperReferenceFormat((customerData?.deliveryOrderPrefix || 'SJ').toUpperCase());
             setCustomerProducts((customerProductData || []).filter(product => product.active !== false));
-            setTripRouteRates((tripRateData || []).filter(rate => rate.active !== false));
-            setBankAccounts((bankAccountRows || []).filter(account => account.active !== false));
-            const { busyVehicleIds: nextBusyVehicleIds, busyDriverIds: nextBusyDriverIds } = buildBusyAssignmentIds(activeDeliveryOrders || []);
+            const { busyVehicleIds: nextBusyVehicleIds } = buildBusyAssignmentIds(activeDeliveryOrders || []);
             setVehicles(vehicleData || []);
             setBusyVehicleIds(nextBusyVehicleIds);
-            setBusyDriverIds(nextBusyDriverIds);
-            setDrivers((driverData || []).filter(driver => driver.active !== false));
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail order');
         } finally {
             setLoading(false);
         }
-    }, [addToast, canCreateTripCash, orderId]);
+    }, [addToast, orderId]);
 
     useEffect(() => {
         void loadOrderDetail();
@@ -177,7 +153,6 @@ export default function OrderDetailPage() {
 
     const sortedVehicles = sortOrderDetailVehicles(vehicles, order);
     const availableVehicles = getAvailableVehicles(sortedVehicles, busyVehicleIds);
-    const availableDrivers = getAvailableDrivers(drivers, busyDriverIds);
     const selectedVehicleData = vehicles.find(vehicle => vehicle._id === doVehicle);
     const serviceCapacityRangeMap = buildServiceCapacityRangeMap(
         order?.serviceRef ? [{ _id: order.serviceRef, _type: 'service', code: '', name: order.serviceName || '', description: '', active: true }] : [],
@@ -195,54 +170,6 @@ export default function OrderDetailPage() {
         : 'ddmmyyyy';
     const normalizedShipperReferenceFormat = shipperReferenceFormat.trim().toUpperCase() || 'SJ';
     const shipperReferenceExample = `${normalizedShipperReferenceFormat}/27032026/001`;
-    const tripOriginAreaOptions = buildTripRateAreaOptions(tripRouteRates, 'originArea', {
-        serviceRef: order?.serviceRef,
-    });
-    const tripDestinationAreaOptions = buildTripRateAreaOptions(tripRouteRates, 'destinationArea', {
-        originArea: doTripOriginArea,
-        serviceRef: order?.serviceRef,
-    });
-    const matchedDoTripRouteRate = findMatchingTripRouteRate(tripRouteRates, {
-        originArea: doTripOriginArea,
-        destinationArea: doTripDestinationArea,
-        serviceRef: order?.serviceRef,
-    });
-    const isDoTripFeeLockedToMaster = Boolean(matchedDoTripRouteRate);
-    const activeIssueBankAccounts = bankAccounts.filter(account => account.active !== false);
-
-    const applyDoTripRouteSelection = (nextOriginArea: string, nextDestinationArea: string) => {
-        setDoTripOriginArea(nextOriginArea);
-        setDoTripDestinationArea(nextDestinationArea);
-
-        const matchedRate = findMatchingTripRouteRate(tripRouteRates, {
-            originArea: nextOriginArea,
-            destinationArea: nextDestinationArea,
-            serviceRef: order?.serviceRef,
-        });
-        setDoTripRouteRateRef(matchedRate?._id || '');
-        if (matchedRate) {
-            setDoTripFee(matchedRate.rate || 0);
-        } else {
-            setDoTripFee(0);
-        }
-    };
-
-    const handleTripOriginAreaChange = (nextOriginArea: string) => {
-        const nextDestinationOptions = buildTripRateAreaOptions(tripRouteRates, 'destinationArea', {
-            originArea: nextOriginArea,
-            serviceRef: order?.serviceRef,
-        });
-        const preservedDestination =
-            nextOriginArea && nextDestinationOptions.includes(doTripDestinationArea)
-                ? doTripDestinationArea
-                : '';
-        applyDoTripRouteSelection(nextOriginArea, preservedDestination);
-    };
-
-    const handleTripDestinationAreaChange = (nextDestinationArea: string) => {
-        applyDoTripRouteSelection(doTripOriginArea, nextDestinationArea);
-    };
-
     useEffect(() => {
         if (!requiresVehicleOverrideReason && doVehicleOverrideReason) {
             setDoVehicleOverrideReason('');
@@ -255,12 +182,6 @@ export default function OrderDetailPage() {
             setDoVehicleOverrideReason('');
         }
     }, [busyVehicleIds, doVehicle]);
-
-    useEffect(() => {
-        if (doDriver && busyDriverIds.includes(doDriver)) {
-            setDoDriver('');
-        }
-    }, [busyDriverIds, doDriver]);
 
     const {
         activeAssignmentByItemId,
@@ -320,12 +241,6 @@ export default function OrderDetailPage() {
         setSelectedShipments({});
         setDirectCargoItems([createDefaultOrderItemForm(defaultPickupStopKey)]);
         setSelectedPickupStopKeys(resolvedOrderPickupStops.map(stop => stop._key));
-        setDoTripRouteRateRef('');
-        setDoTripOriginArea('');
-        setDoTripDestinationArea('');
-        setDoTripFee(0);
-        setTripCashBankRef('');
-        setTripCashCashGiven(0);
         setDoReceiverName(order?.receiverName || '');
         setDoReceiverPhone(order?.receiverPhone || '');
         setDoReceiverAddress(order?.receiverAddress || '');
@@ -410,16 +325,8 @@ export default function OrderDetailPage() {
                 itemProgressById
             );
 
-        if (!canCreateTripCash) {
-            addToast('error', 'Akun ini tidak punya izin menerbitkan uang jalan awal. Surat Jalan tidak boleh dibuat tanpa uang jalan trip.');
-            return;
-        }
         if (!doVehicle) {
             addToast('error', 'Pilih kendaraan sebelum membuat surat jalan');
-            return;
-        }
-        if (!doDriver) {
-            addToast('error', 'Pilih supir sebelum membuat surat jalan');
             return;
         }
         if (resolvedOrderPickupStops.length > 0 && selectedPickupStopKeys.length === 0) {
@@ -462,20 +369,7 @@ export default function OrderDetailPage() {
             addToast('error', 'Isi alasan override armada jika trip ini memakai kendaraan dengan kategori berbeda');
             return;
         }
-        if (!tripCashBankRef) {
-            addToast('error', 'Pilih rekening atau kas sumber untuk uang jalan trip');
-            return;
-        }
-        if (!tripCashCashGiven || tripCashCashGiven <= 0) {
-            addToast('error', 'Isi nominal uang jalan awal sebelum Surat Jalan diterbitkan');
-            return;
-        }
-        if ((matchedDoTripRouteRate?.rate ?? doTripFee) <= 0) {
-            addToast('error', 'Isi upah trip terlebih dahulu sebelum menerbitkan uang jalan awal');
-            return;
-        }
         const selVeh = vehicles.find(v => v._id === doVehicle);
-        const selDriver = drivers.find(driver => driver._id === doDriver);
         const defaultShipperReference = doCustomerDoNumber.trim().toUpperCase() || undefined;
         const deliveryOrderPayload = (isHeaderOnlyOrder
             ? {
@@ -483,15 +377,9 @@ export default function OrderDetailPage() {
                 masterResi: order?.masterResi,
                 customerDoNumber: defaultShipperReference,
                 pickupStopKeys: selectedPickupStopKeys,
-                tripRouteRateRef: doTripRouteRateRef || undefined,
-                tripOriginArea: doTripOriginArea || undefined,
-                tripDestinationArea: doTripDestinationArea || undefined,
                 vehicleRef: doVehicle || undefined,
                 vehiclePlate: selVeh?.plateNumber || '',
                 vehicleCategoryOverrideReason: requiresVehicleOverrideReason ? doVehicleOverrideReason.trim() : undefined,
-                driverRef: doDriver || undefined,
-                driverName: selDriver?.name || '',
-                taripBorongan: matchedDoTripRouteRate?.rate ?? doTripFee,
                 date: doDate,
                 notes: doNotes,
                 customerName: order?.customerName,
@@ -510,14 +398,8 @@ export default function OrderDetailPage() {
                 items: selectedItems,
                 customerDoNumber: doCustomerDoNumber,
                 pickupStopKeys: selectedPickupStopKeys,
-                tripRouteRateRef: doTripRouteRateRef,
-                tripOriginArea: doTripOriginArea,
-                tripDestinationArea: doTripDestinationArea,
                 vehicleRef: doVehicle,
                 selectedVehicle: selVeh,
-                driverRef: doDriver,
-                selectedDriver: selDriver,
-                taripBorongan: matchedDoTripRouteRate?.rate ?? doTripFee,
                 date: doDate,
                 notes: doNotes,
                 requiresVehicleOverrideReason,
@@ -527,8 +409,6 @@ export default function OrderDetailPage() {
                 receiverAddress: doReceiverAddress,
                 receiverCompany: doReceiverCompany,
             })) as Record<string, unknown>;
-        deliveryOrderPayload.cashGiven = tripCashCashGiven;
-        deliveryOrderPayload.issueBankRef = tripCashBankRef;
 
         setCreatingDO(true);
         try {
@@ -547,26 +427,17 @@ export default function OrderDetailPage() {
                 return;
             }
 
-            const issuedVoucherNumber = doData.issuedVoucherBonNumber || '';
-
             addToast(
                 'success',
-                `Surat Jalan dibuat: ${formatInternalDeliveryOrderNumber(doData.data || {})}${doData.data?.customerDoNumber ? ` | SJ Pengirim ${formatShipperDeliveryOrderNumber(doData.data || {})}` : ''}${isHeaderOnlyOrder && draftDirectCargoItems.length === 0 ? ' | Barang menyusul' : ''}${issuedVoucherNumber ? ` | Bon ${issuedVoucherNumber}` : ''}`
+                `Surat Jalan dibuat: ${formatInternalDeliveryOrderNumber(doData.data || {})}${doData.data?.customerDoNumber ? ` | SJ Pengirim ${formatShipperDeliveryOrderNumber(doData.data || {})}` : ''}${isHeaderOnlyOrder && draftDirectCargoItems.length === 0 ? ' | Barang menyusul' : ''}`
             );
             setShowDOModal(false);
             setSelectedShipments({});
             setDirectCargoItems([createDefaultOrderItemForm()]);
             setDoCustomerDoNumber('');
             setDoVehicle('');
-            setDoDriver('');
-            setDoTripRouteRateRef('');
-            setDoTripOriginArea('');
-            setDoTripDestinationArea('');
-            setDoTripFee(0);
             setDoVehicleOverrideReason('');
             setDoNotes('');
-            setTripCashBankRef('');
-            setTripCashCashGiven(0);
             setDoReceiverName('');
             setDoReceiverPhone('');
             setDoReceiverAddress('');
@@ -991,7 +862,7 @@ export default function OrderDetailPage() {
             </div>
 
             {/* DOs */}
-            <div className="card mt-6">
+            <div className="card mt-6" id="order-surat-jalan-section">
                 <div className="card-header"><span className="card-header-title">Surat Jalan ({dos.length})</span></div>
                 <div className="table-wrapper">
                     <table>
@@ -1134,7 +1005,7 @@ export default function OrderDetailPage() {
                                         })}
                                     </div>
                                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                        Satu order bisa punya banyak titik pickup. Tiap Surat Jalan memilih titik mana saja yang benar-benar dijalankan oleh truck dan driver ini.
+                                        Satu order bisa punya banyak titik pickup. Surat Jalan ini hanya memakai pickup yang benar-benar dibawa truck ini.
                                     </div>
                                 </div>
                             )}
@@ -1192,135 +1063,6 @@ export default function OrderDetailPage() {
                                             disabled={creatingDO}
                                         />
                                     </div>
-                                </div>
-                            )}
-                            <div className="form-group">
-                                <label className="form-label">Supir</label>
-                                <select className="form-select" value={doDriver} onChange={e => setDoDriver(e.target.value)} disabled={creatingDO}>
-                                    <option value="">Pilih supir</option>
-                                    {availableDrivers.map(driver => <option key={driver._id} value={driver._id}>{driver.name}{driver.phone ? ` - ${driver.phone}` : ''}</option>)}
-                                </select>
-                                {availableDrivers.length === 0 ? (
-                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                        Tidak ada supir kosong. Semua supir aktif sedang dipakai DO yang belum selesai.
-                                    </div>
-                                ) : (
-                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                        Supir wajib diassign saat Surat Jalan dibuat supaya penugasan trip dan uang jalan langsung melekat ke DO yang benar.
-                                    </div>
-                                )}
-                            </div>
-                            <div className="form-row">
-                                <div className="form-group">
-                                    <label className="form-label">Asal Area Trip</label>
-                                    <select
-                                        className="form-select"
-                                        value={doTripOriginArea}
-                                        onChange={e => handleTripOriginAreaChange(e.target.value)}
-                                        disabled={creatingDO}
-                                    >
-                                        <option value="">Pilih asal area</option>
-                                        {tripOriginAreaOptions.map(area => <option key={area} value={area}>{area}</option>)}
-                                    </select>
-                                </div>
-                                <div className="form-group">
-                                    <label className="form-label">Tujuan Area Trip</label>
-                                    <select
-                                        className="form-select"
-                                        value={doTripDestinationArea}
-                                        onChange={e => handleTripDestinationAreaChange(e.target.value)}
-                                        disabled={creatingDO || !doTripOriginArea}
-                                    >
-                                        <option value="">Pilih tujuan area</option>
-                                        {tripDestinationAreaOptions.map(area => <option key={area} value={area}>{area}</option>)}
-                                    </select>
-                                </div>
-                            </div>
-                            {matchedDoTripRouteRate && (
-                                <div
-                                    style={{
-                                        background: 'var(--color-primary-50)',
-                                        border: '1px solid var(--color-primary-100)',
-                                        borderRadius: '0.75rem',
-                                        padding: '0.85rem 1rem',
-                                        marginBottom: '1rem',
-                                    }}
-                                >
-                                    <div style={{ fontWeight: 600, marginBottom: '0.25rem', color: 'var(--color-primary-700)' }}>
-                                        Tarif master ditemukan
-                                    </div>
-                                    <div style={{ fontSize: '0.8rem', color: 'var(--color-primary-700)' }}>
-                                        {formatTripRouteRateLabel(matchedDoTripRouteRate)} | {formatCurrency(matchedDoTripRouteRate.rate)}
-                                        {matchedDoTripRouteRate.notes ? ` | ${matchedDoTripRouteRate.notes}` : ''}
-                                    </div>
-                                </div>
-                            )}
-                            <div className="form-group">
-                                <label className="form-label">Upah Trip</label>
-                                <CurrencyInput
-                                    value={matchedDoTripRouteRate?.rate ?? doTripFee}
-                                    onValueChange={setDoTripFee}
-                                    placeholder={isDoTripFeeLockedToMaster ? 'Mengikuti master biaya rute trip' : 'Ketik upah trip bila sudah diketahui'}
-                                    disabled={creatingDO || isDoTripFeeLockedToMaster}
-                                />
-                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                    {isDoTripFeeLockedToMaster
-                                        ? 'Upah trip terkunci mengikuti master biaya rute trip yang dipilih.'
-                                        : 'Jika belum ada master rute yang cocok, upah trip boleh diisi manual sebelum voucher diterbitkan.'}
-                                </div>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                    Upah trip ini menjadi dasar bon uang jalan awal yang wajib terbit saat Surat Jalan dibuat.
-                                </div>
-                            </div>
-                            {canCreateTripCash ? (
-                                <div
-                                    style={{
-                                        background: 'var(--color-primary-50)',
-                                        border: '1px solid var(--color-primary-100)',
-                                        borderRadius: '0.75rem',
-                                        padding: '0.85rem 1rem',
-                                        marginBottom: '1rem',
-                                    }}
-                                >
-                                    <div style={{ fontWeight: 600, marginBottom: '0.85rem' }}>Uang jalan awal wajib diterbitkan bersama Surat Jalan</div>
-                                    <div className="form-row">
-                                        <div className="form-group">
-                                            <label className="form-label">Rekening / Kas Sumber</label>
-                                            <select
-                                                className="form-select"
-                                                value={tripCashBankRef}
-                                                onChange={event => setTripCashBankRef(event.target.value)}
-                                                disabled={creatingDO}
-                                            >
-                                                <option value="">Pilih rekening atau kas</option>
-                                                {activeIssueBankAccounts.map(account => (
-                                                    <option key={account._id} value={account._id}>
-                                                        {account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <div className="form-group">
-                                            <label className="form-label">Uang Jalan Awal</label>
-                                            <CurrencyInput
-                                                value={tripCashCashGiven}
-                                                onValueChange={setTripCashCashGiven}
-                                                placeholder="Ketik nominal uang jalan awal"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                                        Surat Jalan baru boleh terbit setelah nominal uang jalan awal dan sumber kas/bank dipilih.
-                                    </div>
-                                    {activeIssueBankAccounts.length === 0 && (
-                                        <div style={{ fontSize: '0.75rem', color: 'var(--color-danger)', marginTop: '0.35rem' }}>
-                                            Belum ada rekening / kas aktif. Buat rekening sumber dulu sebelum membuat Surat Jalan.
-                                        </div>
-                                    )}
-                                </div>
-                            ) : (
-                                <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '0.75rem', padding: '0.85rem 1rem', marginBottom: '1rem', color: '#991b1b', fontSize: '0.82rem' }}>
-                                    Akun ini tidak punya izin membuat bon uang jalan. Karena uang jalan awal wajib terbit saat Surat Jalan dibuat, gunakan akun yang punya akses uang jalan terlebih dahulu.
                                 </div>
                             )}
                             <div className="form-section-title">Tujuan / Penerima Surat Jalan</div>
@@ -1930,7 +1672,7 @@ export default function OrderDetailPage() {
                             <button
                                 className="btn btn-primary"
                                 onClick={handleCreateDO}
-                                disabled={creatingDO || !canCreateTripCash || (!isHeaderOnlyOrder && Object.keys(selectedShipments).length === 0)}
+                                disabled={creatingDO || (!isHeaderOnlyOrder && Object.keys(selectedShipments).length === 0)}
                             >
                                 <Truck size={16} /> {creatingDO
                                     ? 'Membuat Surat Jalan...'

@@ -3184,10 +3184,6 @@ export async function handleDeliveryOrderCreate(
     if (!vehicleRef) {
         return NextResponse.json({ error: 'Kendaraan wajib dipilih saat membuat surat jalan' }, { status: 400 });
     }
-    if (!driverRef) {
-        return NextResponse.json({ error: 'Supir wajib dipilih saat membuat surat jalan' }, { status: 400 });
-    }
-
     if (vehicleRef) {
         const vehicle = await sanityGetById<{
             _id: string;
@@ -3359,15 +3355,27 @@ export async function handleDeliveryOrderCreate(
             : taripBorongan;
     const tripCashIssueBankRef = typeof data.issueBankRef === 'string' ? data.issueBankRef : '';
     const tripCashCashGiven = normalizeCurrencyNumber(data.cashGiven ?? 0);
-    if (!tripCashIssueBankRef) {
+    const wantsInitialTripCash = Boolean(tripCashIssueBankRef) || tripCashCashGiven > 0;
+    if (wantsInitialTripCash && !driverRef) {
+        return NextResponse.json({ error: 'Supir wajib dipilih sebelum uang jalan awal diterbitkan' }, { status: 400 });
+    }
+    if (wantsInitialTripCash && !tripCashIssueBankRef) {
         return NextResponse.json({ error: 'Rekening atau kas sumber uang jalan trip wajib dipilih' }, { status: 400 });
     }
-    if (!Number.isFinite(tripCashCashGiven) || tripCashCashGiven <= 0) {
+    if (wantsInitialTripCash && (!Number.isFinite(tripCashCashGiven) || tripCashCashGiven <= 0)) {
         return NextResponse.json({ error: 'Nominal uang jalan awal wajib diisi' }, { status: 400 });
     }
-    if (!Number.isFinite(effectiveTripFee) || effectiveTripFee <= 0) {
+    if (wantsInitialTripCash && (!Number.isFinite(effectiveTripFee) || effectiveTripFee <= 0)) {
         return NextResponse.json({ error: 'Upah trip wajib diisi sebelum menerbitkan uang jalan awal' }, { status: 400 });
     }
+    const shouldIssueInitialTripCash =
+        wantsInitialTripCash &&
+        Boolean(driverRef) &&
+        Boolean(tripCashIssueBankRef) &&
+        Number.isFinite(tripCashCashGiven) &&
+        tripCashCashGiven > 0 &&
+        Number.isFinite(effectiveTripFee) &&
+        effectiveTripFee > 0;
     let selectedPickupStops: NormalizedDeliveryOrderPickupStop[] = [];
     try {
         selectedPickupStops = resolveDeliveryOrderPickupStops(order, data);
@@ -3763,58 +3771,33 @@ export async function handleDeliveryOrderCreate(
         doNumber,
         status: 'CREATED',
     };
-    const bonNumber = await sanityGetNextNumber('bon', doDate);
-    const voucherId = crypto.randomUUID();
-    const initialDisbursementId = crypto.randomUUID();
-    const issueTransactionId = crypto.randomUUID();
-    const issueBank = await getLedgerAccount(tripCashIssueBankRef);
-    if (!issueBank) {
-        return NextResponse.json({ error: 'Rekening sumber uang jalan trip tidak ditemukan' }, { status: 404 });
+    let bonNumber: string | undefined;
+    let voucherId: string | undefined;
+    let initialDisbursementId: string | undefined;
+    let issueTransactionId: string | undefined;
+    let issueBank: Awaited<ReturnType<typeof getLedgerAccount>> | null = null;
+    let issueBankNextBalance = 0;
+    if (shouldIssueInitialTripCash) {
+        bonNumber = await sanityGetNextNumber('bon', doDate);
+        voucherId = crypto.randomUUID();
+        initialDisbursementId = crypto.randomUUID();
+        issueTransactionId = crypto.randomUUID();
+        issueBank = await getLedgerAccount(tripCashIssueBankRef);
+        if (!issueBank) {
+            return NextResponse.json({ error: 'Rekening sumber uang jalan trip tidak ditemukan' }, { status: 404 });
+        }
+        if (!issueBank._rev) {
+            return NextResponse.json({ error: 'Revisi rekening sumber uang jalan trip tidak tersedia' }, { status: 409 });
+        }
+        const { startingBalance: issueStartingBalance, nextBalance } = computeLedgerDebitBalance(issueBank.currentBalance, tripCashCashGiven);
+        issueBankNextBalance = nextBalance;
+        if (issueBankNextBalance < 0) {
+            return NextResponse.json(
+                { error: `Saldo ${issueBank.bankName} tidak cukup untuk pencairan bon. Saldo tersedia ${issueStartingBalance}` },
+                { status: 409 }
+            );
+        }
     }
-    if (!issueBank._rev) {
-        return NextResponse.json({ error: 'Revisi rekening sumber uang jalan trip tidak tersedia' }, { status: 409 });
-    }
-    const { startingBalance: issueStartingBalance, nextBalance: issueBankNextBalance } = computeLedgerDebitBalance(issueBank.currentBalance, tripCashCashGiven);
-    if (issueBankNextBalance < 0) {
-        return NextResponse.json(
-            { error: `Saldo ${issueBank.bankName} tidak cukup untuk pencairan bon. Saldo tersedia ${issueStartingBalance}` },
-            { status: 409 }
-        );
-    }
-    const tripRouteLabel = buildRouteLabel(
-        buildPickupSummary(selectedPickupStops, order.pickupAddress),
-        doReceiverAddress || order.receiverAddress,
-    );
-    const voucherTotals = computeDriverVoucherTotals(tripCashCashGiven, 0, effectiveTripFee);
-    const voucherDoc = {
-        _id: voucherId,
-        _type: 'driverVoucher',
-        issuerCompanyName: companyProfile?.name,
-        issuerCompanyAddress: companyProfile?.address,
-        issuerCompanyPhone: companyProfile?.phone,
-        issuerCompanyEmail: companyProfile?.email,
-        issuerCompanyLogoUrl: resolveCompanyLogoUrl(companyProfile),
-        driverRef,
-        driverName,
-        deliveryOrderRef: doId,
-        doNumber,
-        vehicleRef: vehicleRef || undefined,
-        vehiclePlate: vehiclePlate || undefined,
-        route: tripRouteLabel || undefined,
-        bonNumber,
-        issuedDate: doDate,
-        cashGiven: tripCashCashGiven,
-        initialCashGiven: tripCashCashGiven,
-        totalIssuedAmount: tripCashCashGiven,
-        topUpCount: 0,
-        driverFeeAmount: voucherTotals.driverFeeAmount,
-        totalClaimAmount: voucherTotals.totalClaimAmount,
-        issueBankRef: tripCashIssueBankRef,
-        issueBankName: issueBank.bankName,
-        totalSpent: voucherTotals.totalSpent,
-        balance: voucherTotals.balance,
-        status: 'ISSUED',
-    };
 
     const customerDoConstraints =
         orderCustomerRef && shipperReferences.length > 0
@@ -3823,38 +3806,73 @@ export async function handleDeliveryOrderCreate(
     const transaction = getSanityClient().transaction();
     customerDoConstraints.forEach(constraint => transaction.create(constraint));
     transaction.create(doDoc);
-    transaction.create(voucherDoc);
-    transaction.create({
-        _id: initialDisbursementId,
-        _type: 'driverVoucherDisbursement',
-        voucherRef: voucherId,
-        date: doDate,
-        amount: tripCashCashGiven,
-        kind: 'INITIAL',
-        bankAccountRef: tripCashIssueBankRef,
-        bankAccountName: issueBank.bankName,
-        bankAccountNumber: issueBank.accountNumber,
-        bankTransactionRef: issueTransactionId,
-        createdBy: session._id,
-        createdByName: session.name,
-    });
-    transaction.create({
-        _id: issueTransactionId,
-        _type: 'bankTransaction',
-        bankAccountRef: tripCashIssueBankRef,
-        bankAccountName: issueBank.bankName,
-        bankAccountNumber: issueBank.accountNumber,
-        type: 'DEBIT',
-        amount: tripCashCashGiven,
-        date: doDate,
-        description: `Pencairan uang jalan trip ${bonNumber}`,
-        balanceAfter: issueBankNextBalance,
-        relatedVoucherRef: voucherId,
-    });
-    transaction.patch(tripCashIssueBankRef, {
-        ifRevisionID: issueBank._rev,
-        set: { currentBalance: issueBankNextBalance },
-    });
+    if (shouldIssueInitialTripCash && voucherId && initialDisbursementId && issueTransactionId && issueBank && bonNumber) {
+        const tripRouteLabel = buildRouteLabel(
+            buildPickupSummary(selectedPickupStops, order.pickupAddress),
+            doReceiverAddress || order.receiverAddress,
+        );
+        const voucherTotals = computeDriverVoucherTotals(tripCashCashGiven, 0, effectiveTripFee);
+        transaction.create({
+            _id: voucherId,
+            _type: 'driverVoucher',
+            issuerCompanyName: companyProfile?.name,
+            issuerCompanyAddress: companyProfile?.address,
+            issuerCompanyPhone: companyProfile?.phone,
+            issuerCompanyEmail: companyProfile?.email,
+            issuerCompanyLogoUrl: resolveCompanyLogoUrl(companyProfile),
+            driverRef,
+            driverName,
+            deliveryOrderRef: doId,
+            doNumber,
+            vehicleRef: vehicleRef || undefined,
+            vehiclePlate: vehiclePlate || undefined,
+            route: tripRouteLabel || undefined,
+            bonNumber,
+            issuedDate: doDate,
+            cashGiven: tripCashCashGiven,
+            initialCashGiven: tripCashCashGiven,
+            totalIssuedAmount: tripCashCashGiven,
+            topUpCount: 0,
+            driverFeeAmount: voucherTotals.driverFeeAmount,
+            totalClaimAmount: voucherTotals.totalClaimAmount,
+            issueBankRef: tripCashIssueBankRef,
+            issueBankName: issueBank.bankName,
+            totalSpent: voucherTotals.totalSpent,
+            balance: voucherTotals.balance,
+            status: 'ISSUED',
+        });
+        transaction.create({
+            _id: initialDisbursementId,
+            _type: 'driverVoucherDisbursement',
+            voucherRef: voucherId,
+            date: doDate,
+            amount: tripCashCashGiven,
+            kind: 'INITIAL',
+            bankAccountRef: tripCashIssueBankRef,
+            bankAccountName: issueBank.bankName,
+            bankAccountNumber: issueBank.accountNumber,
+            bankTransactionRef: issueTransactionId,
+            createdBy: session._id,
+            createdByName: session.name,
+        });
+        transaction.create({
+            _id: issueTransactionId,
+            _type: 'bankTransaction',
+            bankAccountRef: tripCashIssueBankRef,
+            bankAccountName: issueBank.bankName,
+            bankAccountNumber: issueBank.accountNumber,
+            type: 'DEBIT',
+            amount: tripCashCashGiven,
+            date: doDate,
+            description: `Pencairan uang jalan trip ${bonNumber}`,
+            balanceAfter: issueBankNextBalance,
+            relatedVoucherRef: voucherId,
+        });
+        transaction.patch(tripCashIssueBankRef, {
+            ifRevisionID: issueBank._rev,
+            set: { currentBalance: issueBankNextBalance },
+        });
+    }
     const mutationTimestamp = new Date().toISOString();
     if (tripRouteSelection?.matchedTripRouteRate?._id && tripRouteSelection.matchedTripRouteRate._rev) {
         transaction.patch(tripRouteSelection.matchedTripRouteRate._id, {
@@ -4051,7 +4069,7 @@ export async function handleDeliveryOrderCreate(
         }
         if (isMutationConflictError(error)) {
             return NextResponse.json(
-                { error: 'Data order, barang customer, master biaya rute trip, kendaraan, supir, rekening sumber, atau item surat jalan berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { error: 'Data order, barang customer, kendaraan, supir, rekening sumber, atau item surat jalan berubah karena ada update lain. Refresh lalu coba lagi.' },
                 { status: 409 }
             );
         }
@@ -4063,7 +4081,7 @@ export async function handleDeliveryOrderCreate(
         'CREATE',
         'delivery-orders',
         doId,
-        `Created delivery-orders: ${doNumber}${shipperReferences.length > 0 ? ` / ${shipperReferences.map(reference => reference.referenceNumber).join(', ')}` : ''} (${selectionSummaries.join('; ')}) | bon ${bonNumber}${vehicleCategoryOverrideReasonToStore ? ` | override armada: ${order.serviceName || '-'} -> ${vehicleServiceName || vehiclePlate || '-'} | alasan: ${vehicleCategoryOverrideReasonToStore}` : ''}`
+        `Created delivery-orders: ${doNumber}${shipperReferences.length > 0 ? ` / ${shipperReferences.map(reference => reference.referenceNumber).join(', ')}` : ''} (${selectionSummaries.join('; ')})${bonNumber ? ` | bon ${bonNumber}` : ''}${vehicleCategoryOverrideReasonToStore ? ` | override armada: ${order.serviceName || '-'} -> ${vehicleServiceName || vehiclePlate || '-'} | alasan: ${vehicleCategoryOverrideReasonToStore}` : ''}`
     );
     return NextResponse.json({ data: doDoc, id: doId, issuedVoucherBonNumber: bonNumber });
 }

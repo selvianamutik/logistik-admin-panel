@@ -4,13 +4,10 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Save, X } from 'lucide-react';
 
-import CurrencyInput from '@/components/CurrencyInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
-import { getBusinessDateValue } from '@/lib/business-date';
-import { formatCapacityRangeLabel, buildServiceCapacityRangeMap } from '@/lib/service-capacity-support';
-import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
-import type { BankAccount, Customer, CustomerPickupLocation, DeliveryOrder, Driver, Service, TripRouteRate, Vehicle } from '@/lib/types';
+import { buildServiceCapacityRangeMap } from '@/lib/service-capacity-support';
+import type { Customer, CustomerPickupLocation, Service, Vehicle } from '@/lib/types';
 import {
     applyCustomerPickupToStop,
     createDefaultPickupStopForm,
@@ -22,40 +19,6 @@ import {
 } from '@/lib/order-create-page-support';
 import { useToast } from '../../layout';
 
-type TripDraftForm = {
-    id: string;
-    pickupStopKeys: string[];
-    vehicleRef: string;
-    driverRef: string;
-    tripOriginArea: string;
-    tripDestinationArea: string;
-    tripRouteRateRef: string;
-    tripFee: number;
-    vehicleOverrideReason: string;
-    issueBankRef: string;
-    cashGiven: number;
-    notes: string;
-    date: string;
-};
-
-function createDefaultTripDraftForm(pickupStopKeys: string[] = []): TripDraftForm {
-    return {
-        id: crypto.randomUUID(),
-        pickupStopKeys,
-        vehicleRef: '',
-        driverRef: '',
-        tripOriginArea: '',
-        tripDestinationArea: '',
-        tripRouteRateRef: '',
-        tripFee: 0,
-        vehicleOverrideReason: '',
-        issueBankRef: '',
-        cashGiven: 0,
-        notes: '',
-        date: getBusinessDateValue(),
-    };
-}
-
 export default function NewOrderPage() {
     const router = useRouter();
     const { addToast } = useToast();
@@ -63,17 +26,12 @@ export default function NewOrderPage() {
     const [customerPickups, setCustomerPickups] = useState<CustomerPickupLocation[]>([]);
     const [customerScopedMastersLoaded, setCustomerScopedMastersLoaded] = useState(false);
     const [services, setServices] = useState<Service[]>([]);
-    const [vehicles, setVehicles] = useState<Array<Pick<Vehicle, '_id' | 'unitCode' | 'plateNumber' | 'serviceRef' | 'serviceName' | 'capacityMin' | 'capacityMax' | 'capacityKg'>>>([]);
-    const [drivers, setDrivers] = useState<Driver[]>([]);
-    const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
-    const [tripRouteRates, setTripRouteRates] = useState<TripRouteRate[]>([]);
-    const [activeDeliveryOrders, setActiveDeliveryOrders] = useState<Array<Pick<DeliveryOrder, '_id' | 'vehicleRef' | 'driverRef' | 'status'>>>([]);
+    const [vehicles, setVehicles] = useState<Array<Pick<Vehicle, '_id' | 'serviceRef' | 'capacityMin' | 'capacityMax' | 'capacityKg'>>>([]);
     const [loading, setLoading] = useState(false);
 
     const [customerRef, setCustomerRef] = useState('');
     const [serviceRef, setServiceRef] = useState('');
     const [pickupStops, setPickupStops] = useState<PickupStopForm[]>([createDefaultPickupStopForm()]);
-    const [tripDrafts, setTripDrafts] = useState<TripDraftForm[]>([createDefaultTripDraftForm()]);
     const [shouldAutoApplyDefaultPickup, setShouldAutoApplyDefaultPickup] = useState(false);
     const [notes, setNotes] = useState('');
 
@@ -83,31 +41,19 @@ export default function NewOrderPage() {
     const serviceCapacityRangeMap = buildServiceCapacityRangeMap(services, vehicles);
     const selectedServiceCapacityLabel = selectedService ? serviceCapacityRangeMap[selectedService._id] || 'Kapasitas belum diisi' : 'Belum dipilih';
     const pickupSummary = summarizePickupStopList(pickupStops);
-    const activeIssueBankAccounts = bankAccounts.filter(account => account.active !== false);
 
     useEffect(() => {
         Promise.all([
             fetchAdminCollectionData<Customer[]>('/api/data?entity=customers', 'Gagal memuat form order'),
             fetchAdminCollectionData<Service[]>('/api/data?entity=services', 'Gagal memuat form order'),
-            fetchAdminCollectionData<Array<Pick<Vehicle, '_id' | 'unitCode' | 'plateNumber' | 'serviceRef' | 'serviceName' | 'capacityMin' | 'capacityMax' | 'capacityKg'>>>(
+            fetchAdminCollectionData<Array<Pick<Vehicle, '_id' | 'serviceRef' | 'capacityMin' | 'capacityMax' | 'capacityKg'>>>(
                 `/api/data?entity=vehicles&filter=${encodeURIComponent(JSON.stringify({ status: ['ACTIVE', 'IN_SERVICE'] }))}`,
                 'Gagal memuat form order'
             ),
-            fetchAdminCollectionData<Driver[]>('/api/data?entity=drivers', 'Gagal memuat form order'),
-            fetchAdminCollectionData<BankAccount[]>('/api/data?entity=bank-accounts', 'Gagal memuat form order'),
-            fetchAdminCollectionData<TripRouteRate[]>(`/api/data?entity=trip-route-rates&filter=${encodeURIComponent(JSON.stringify({ active: true }))}`, 'Gagal memuat form order'),
-            fetchAdminCollectionData<Array<Pick<DeliveryOrder, '_id' | 'vehicleRef' | 'driverRef' | 'status'>>>(
-                `/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ status: ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'] }))}`,
-                'Gagal memuat form order'
-            ),
-        ]).then(([customerRows, serviceRows, vehicleRows, driverRows, bankRows, tripRateRows, activeDoRows]) => {
+        ]).then(([customerRows, serviceRows, vehicleRows]) => {
             setCustomers((customerRows || []).filter(customer => customer.active !== false));
             setServices((serviceRows || []).filter(service => service.active !== false));
             setVehicles(vehicleRows || []);
-            setDrivers((driverRows || []).filter(driver => driver.active !== false));
-            setBankAccounts(bankRows || []);
-            setTripRouteRates((tripRateRows || []).filter(rate => rate.active !== false));
-            setActiveDeliveryOrders(activeDoRows || []);
         }).catch(error => {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat form order');
         });
@@ -164,10 +110,8 @@ export default function NewOrderPage() {
 
     const handleCustomerChange = (nextCustomerRef: string) => {
         const nextCustomer = customers.find(customer => customer._id === nextCustomerRef);
-        const defaultStop = createDefaultPickupStopForm(nextCustomer?.address || '');
         setCustomerRef(nextCustomerRef);
-        setPickupStops([defaultStop]);
-        setTripDrafts([createDefaultTripDraftForm([defaultStop.id])]);
+        setPickupStops([createDefaultPickupStopForm(nextCustomer?.address || '')]);
         setShouldAutoApplyDefaultPickup(Boolean(nextCustomerRef));
     };
 
@@ -211,67 +155,8 @@ export default function NewOrderPage() {
 
     const removePickupStop = (index: number) => {
         setPickupStops(previous => {
-            const removedStop = previous[index];
             const nextStops = previous.filter((_, stopIndex) => stopIndex !== index);
-            setTripDrafts(currentTrips => currentTrips.map(trip => {
-                const nextPickupStopKeys = trip.pickupStopKeys.filter(key => key !== removedStop?.id);
-                return {
-                    ...trip,
-                    pickupStopKeys: nextPickupStopKeys.length > 0 ? nextPickupStopKeys : (nextStops[0] ? [nextStops[0].id] : []),
-                };
-            }));
             return nextStops.length > 0 ? nextStops : [createDefaultPickupStopForm(selectedCustomer?.address || '')];
-        });
-    };
-
-    const updateTripDraft = <K extends keyof TripDraftForm>(index: number, field: K, value: TripDraftForm[K]) => {
-        setTripDrafts(previous => previous.map((trip, tripIndex) => (
-            tripIndex === index ? { ...trip, [field]: value } : trip
-        )));
-    };
-
-    const toggleTripPickupStop = (index: number, pickupStopKey: string, checked: boolean) => {
-        setTripDrafts(previous => previous.map((trip, tripIndex) => {
-            if (tripIndex !== index) {
-                return trip;
-            }
-            const nextPickupStopKeys = checked
-                ? Array.from(new Set([...trip.pickupStopKeys, pickupStopKey]))
-                : trip.pickupStopKeys.filter(value => value !== pickupStopKey);
-            return {
-                ...trip,
-                pickupStopKeys: nextPickupStopKeys,
-            };
-        }));
-    };
-
-    const updateTripRouteSelection = (index: number, nextOriginArea: string, nextDestinationArea: string) => {
-        const matchedRate = findMatchingTripRouteRate(tripRouteRates, {
-            originArea: nextOriginArea,
-            destinationArea: nextDestinationArea,
-            serviceRef,
-        });
-        setTripDrafts(previous => previous.map((trip, tripIndex) => (
-            tripIndex === index
-                ? {
-                    ...trip,
-                    tripOriginArea: nextOriginArea,
-                    tripDestinationArea: nextDestinationArea,
-                    tripRouteRateRef: matchedRate?._id || '',
-                    tripFee: matchedRate?.rate || 0,
-                }
-                : trip
-        )));
-    };
-
-    const addTripDraft = () => {
-        setTripDrafts(previous => [...previous, createDefaultTripDraftForm(pickupStops[0] ? [pickupStops[0].id] : [])]);
-    };
-
-    const removeTripDraft = (index: number) => {
-        setTripDrafts(previous => {
-            const nextTrips = previous.filter((_, tripIndex) => tripIndex !== index);
-            return nextTrips.length > 0 ? nextTrips : [createDefaultTripDraftForm(pickupStops[0] ? [pickupStops[0].id] : [])];
         });
     };
 
@@ -287,10 +172,6 @@ export default function NewOrderPage() {
             addToast('error', 'Minimal 1 titik pickup wajib diisi');
             return;
         }
-        if (tripDrafts.length === 0) {
-            addToast('error', 'Minimal 1 trip wajib disiapkan saat membuat order');
-            return;
-        }
 
         setLoading(true);
         try {
@@ -304,45 +185,6 @@ export default function NewOrderPage() {
                 pickupAddress: stop.pickupAddress.trim(),
                 notes: stop.notes.trim() || undefined,
             }));
-            const tripPayloads = tripDrafts.map((trip, index) => {
-                const selectedTripVehicle = vehicles.find(vehicle => vehicle._id === trip.vehicleRef) || null;
-                const requiresOverrideReason = Boolean(serviceRef && selectedTripVehicle && (!selectedTripVehicle.serviceRef || selectedTripVehicle.serviceRef !== serviceRef));
-                if (trip.pickupStopKeys.length === 0) {
-                    throw new Error(`Minimal 1 titik pickup wajib dipilih pada trip ${index + 1}`);
-                }
-                if (!trip.vehicleRef) {
-                    throw new Error(`Kendaraan wajib dipilih pada trip ${index + 1}`);
-                }
-                if (!trip.driverRef) {
-                    throw new Error(`Supir wajib dipilih pada trip ${index + 1}`);
-                }
-                if (!trip.issueBankRef) {
-                    throw new Error(`Rekening atau kas sumber wajib dipilih pada trip ${index + 1}`);
-                }
-                if (!trip.cashGiven || trip.cashGiven <= 0) {
-                    throw new Error(`Nominal uang jalan awal wajib diisi pada trip ${index + 1}`);
-                }
-                if (!trip.tripFee || trip.tripFee <= 0) {
-                    throw new Error(`Upah trip wajib diisi pada trip ${index + 1}`);
-                }
-                if (requiresOverrideReason && !trip.vehicleOverrideReason.trim()) {
-                    throw new Error(`Alasan override armada wajib diisi pada trip ${index + 1}`);
-                }
-                return {
-                    pickupStopKeys: trip.pickupStopKeys,
-                    vehicleRef: trip.vehicleRef,
-                    driverRef: trip.driverRef,
-                    tripRouteRateRef: trip.tripRouteRateRef || undefined,
-                    tripOriginArea: trip.tripOriginArea || undefined,
-                    tripDestinationArea: trip.tripDestinationArea || undefined,
-                    taripBorongan: trip.tripFee,
-                    vehicleCategoryOverrideReason: trip.vehicleOverrideReason.trim() || undefined,
-                    issueBankRef: trip.issueBankRef,
-                    cashGiven: trip.cashGiven,
-                    notes: trip.notes.trim() || undefined,
-                    date: trip.date,
-                };
-            });
 
             const response = await fetch('/api/data', {
                 method: 'POST',
@@ -360,7 +202,6 @@ export default function NewOrderPage() {
                         serviceName: selectedServiceRow?.name || '',
                         notes,
                         items: [],
-                        tripDrafts: tripPayloads,
                     },
                 }),
             });
@@ -372,10 +213,7 @@ export default function NewOrderPage() {
             }
 
             const orderId = orderData.data?._id || orderData.id;
-            addToast(
-                'success',
-                `Order dibuat: ${orderData.data?.masterResi || ''}${Array.isArray(orderData.createdDeliveryOrders) && orderData.createdDeliveryOrders.length > 0 ? ` | ${orderData.createdDeliveryOrders.length} trip langsung terbit` : ''}`
-            );
+            addToast('success', `Order dibuat: ${orderData.data?.masterResi || ''}`);
             router.push(`/orders/${orderId}`);
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal membuat order');
@@ -416,8 +254,8 @@ export default function NewOrderPage() {
                     </div>
                     <div className="kpi-card">
                         <div className="kpi-content">
-                            <div className="kpi-label">Trip Awal</div>
-                            <div className="kpi-value" style={{ fontSize: '0.95rem' }}>{tripDrafts.length} trip</div>
+                            <div className="kpi-label">Barang</div>
+                            <div className="kpi-value" style={{ fontSize: '0.95rem' }}>Di Surat Jalan</div>
                         </div>
                     </div>
                 </div>
@@ -434,27 +272,8 @@ export default function NewOrderPage() {
                                 </select>
                             </div>
                             <div className="form-group">
-                                    <label className="form-label">Kategori Truk / Armada</label>
-                                <select
-                                    className="form-select"
-                                    value={serviceRef}
-                                    onChange={event => {
-                                        const nextServiceRef = event.target.value;
-                                        setServiceRef(nextServiceRef);
-                                        setTripDrafts(previous => previous.map(trip => {
-                                            const matchedRate = findMatchingTripRouteRate(tripRouteRates, {
-                                                originArea: trip.tripOriginArea,
-                                                destinationArea: trip.tripDestinationArea,
-                                                serviceRef: nextServiceRef,
-                                            });
-                                            return {
-                                                ...trip,
-                                                tripRouteRateRef: matchedRate?._id || '',
-                                                tripFee: matchedRate?.rate || trip.tripFee,
-                                            };
-                                        }));
-                                    }}
-                                >
+                                <label className="form-label">Kategori Truk / Armada</label>
+                                <select className="form-select" value={serviceRef} onChange={event => setServiceRef(event.target.value)}>
                                     <option value="">Pilih kategori armada</option>
                                     {services.map(service => (
                                         <option key={service._id} value={service._id}>
@@ -502,7 +321,7 @@ export default function NewOrderPage() {
                                                 value={stop.customerPickupRef}
                                                 onChange={event => handlePickupStopMasterChange(index, event.target.value)}
                                             >
-                                                <option value="">{customerPickups.length > 0 ? 'Pilih master pickup (opsional)' : 'Belum ada master pickup customer'}</option>
+                                                <option value="">{customerPickups.length > 0 ? 'Pilih master pickup' : 'Belum ada master pickup customer'}</option>
                                                 {sortedCustomerPickups.map(pickup => (
                                                     <option key={pickup._id} value={pickup._id}>
                                                         {pickup.isDefault ? '[Default] ' : ''}{pickup.label}
@@ -537,237 +356,6 @@ export default function NewOrderPage() {
                                     <Plus size={14} /> Tambah Pickup
                                 </button>
                             </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="card mt-6">
-                    <div className="card-header">
-                        <span className="card-header-title">Assign Trip Saat Order Dibuat</span>
-                    </div>
-                    <div className="card-body" style={{ display: 'grid', gap: '1rem' }}>
-                        {tripDrafts.map((trip, index) => {
-                            const otherTripVehicleIds = tripDrafts.filter(other => other.id !== trip.id).map(other => other.vehicleRef).filter(Boolean);
-                            const otherTripDriverIds = tripDrafts.filter(other => other.id !== trip.id).map(other => other.driverRef).filter(Boolean);
-                            const busyVehicleIds = new Set([
-                                ...activeDeliveryOrders.map(item => item.vehicleRef).filter((value): value is string => Boolean(value)),
-                                ...otherTripVehicleIds,
-                            ]);
-                            const busyDriverIds = new Set([
-                                ...activeDeliveryOrders.map(item => item.driverRef).filter((value): value is string => Boolean(value)),
-                                ...otherTripDriverIds,
-                            ]);
-                            const availableVehicles = vehicles
-                                .filter(vehicle => !busyVehicleIds.has(vehicle._id) || vehicle._id === trip.vehicleRef)
-                                .sort((left, right) => {
-                                    const leftMatches = serviceRef && left.serviceRef === serviceRef ? 1 : 0;
-                                    const rightMatches = serviceRef && right.serviceRef === serviceRef ? 1 : 0;
-                                    if (leftMatches !== rightMatches) {
-                                        return rightMatches - leftMatches;
-                                    }
-                                    return `${left.unitCode || ''} ${left.plateNumber || ''}`.localeCompare(`${right.unitCode || ''} ${right.plateNumber || ''}`, 'id');
-                                });
-                            const availableDrivers = drivers.filter(driver => !busyDriverIds.has(driver._id) || driver._id === trip.driverRef);
-                            const selectedVehicleData = vehicles.find(vehicle => vehicle._id === trip.vehicleRef) || null;
-                            const requiresOverrideReason = Boolean(serviceRef && selectedVehicleData && (!selectedVehicleData.serviceRef || selectedVehicleData.serviceRef !== serviceRef));
-                            const tripOriginAreaOptions = buildTripRateAreaOptions(tripRouteRates, 'originArea', { serviceRef });
-                            const tripDestinationAreaOptions = buildTripRateAreaOptions(tripRouteRates, 'destinationArea', { originArea: trip.tripOriginArea, serviceRef });
-                            const matchedTripRate = findMatchingTripRouteRate(tripRouteRates, {
-                                originArea: trip.tripOriginArea,
-                                destinationArea: trip.tripDestinationArea,
-                                serviceRef,
-                            });
-                            const isTripFeeLockedToMaster = Boolean(matchedTripRate);
-
-                            return (
-                                <div
-                                    key={trip.id}
-                                    style={{
-                                        display: 'grid',
-                                        gap: '0.95rem',
-                                        padding: '1rem',
-                                        border: '1px solid var(--color-gray-200)',
-                                        borderRadius: '0.9rem',
-                                        background: 'var(--color-gray-50)',
-                                    }}
-                                >
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                                        <div style={{ fontWeight: 600 }}>Trip {index + 1}</div>
-                                        {tripDrafts.length > 1 && (
-                                            <button type="button" className="btn btn-ghost btn-icon-only" onClick={() => removeTripDraft(index)} title="Hapus trip">
-                                                <X size={16} />
-                                            </button>
-                                        )}
-                                    </div>
-
-                                    <div className="form-group" style={{ marginBottom: 0 }}>
-                                        <label className="form-label">Pickup Trip <span className="required">*</span></label>
-                                        <div style={{ display: 'grid', gap: '0.6rem', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
-                                            {pickupStops.map((stop, pickupIndex) => (
-                                                <label
-                                                    key={stop.id}
-                                                    style={{
-                                                        display: 'grid',
-                                                        gap: '0.2rem',
-                                                        padding: '0.75rem 0.9rem',
-                                                        borderRadius: '0.75rem',
-                                                        border: trip.pickupStopKeys.includes(stop.id) ? '1px solid var(--color-primary)' : '1px solid var(--color-gray-200)',
-                                                        background: trip.pickupStopKeys.includes(stop.id) ? 'var(--color-primary-50)' : 'var(--color-white)',
-                                                        cursor: loading ? 'default' : 'pointer',
-                                                    }}
-                                                >
-                                                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={trip.pickupStopKeys.includes(stop.id)}
-                                                            onChange={event => toggleTripPickupStop(index, stop.id, event.target.checked)}
-                                                            disabled={loading}
-                                                        />
-                                                        <span style={{ fontWeight: 600 }}>Pickup {pickupIndex + 1}{stop.pickupLabel ? ` · ${stop.pickupLabel}` : ''}</span>
-                                                    </span>
-                                                    <span className="text-muted text-sm">{stop.pickupAddress || '-'}</span>
-                                                </label>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    <div className="form-row">
-                                        <div className="form-group">
-                                            <label className="form-label">Kendaraan <span className="required">*</span></label>
-                                            <select className="form-select" value={trip.vehicleRef} onChange={event => updateTripDraft(index, 'vehicleRef', event.target.value)} disabled={loading}>
-                                                <option value="">Pilih kendaraan</option>
-                                                {availableVehicles.map(vehicle => (
-                                                    <option key={vehicle._id} value={vehicle._id}>
-                                                        {vehicle.unitCode ? `${vehicle.unitCode} - ` : ''}{vehicle.plateNumber || vehicle._id}
-                                                        {vehicle.serviceName ? ` (${vehicle.serviceName})` : ''} | {formatCapacityRangeLabel(vehicle)}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <div className="form-group">
-                                            <label className="form-label">Supir <span className="required">*</span></label>
-                                            <select className="form-select" value={trip.driverRef} onChange={event => updateTripDraft(index, 'driverRef', event.target.value)} disabled={loading}>
-                                                <option value="">Pilih supir</option>
-                                                {availableDrivers.map(driver => (
-                                                    <option key={driver._id} value={driver._id}>
-                                                        {driver.name}{driver.phone ? ` - ${driver.phone}` : ''}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    {requiresOverrideReason && (
-                                        <div className="form-group" style={{ marginBottom: 0 }}>
-                                            <label className="form-label">Alasan Override Armada <span className="required">*</span></label>
-                                            <textarea
-                                                className="form-textarea"
-                                                rows={2}
-                                                value={trip.vehicleOverrideReason}
-                                                onChange={event => updateTripDraft(index, 'vehicleOverrideReason', event.target.value)}
-                                                placeholder="Alasan override armada"
-                                                disabled={loading}
-                                            />
-                                        </div>
-                                    )}
-
-                                    <div className="form-row">
-                                        <div className="form-group">
-                                            <label className="form-label">Asal Area Trip</label>
-                                            <select
-                                                className="form-select"
-                                                value={trip.tripOriginArea}
-                                                onChange={event => updateTripRouteSelection(index, event.target.value, '')}
-                                                disabled={loading}
-                                            >
-                                                <option value="">Pilih asal area</option>
-                                                {tripOriginAreaOptions.map(area => <option key={area} value={area}>{area}</option>)}
-                                            </select>
-                                        </div>
-                                        <div className="form-group">
-                                            <label className="form-label">Tujuan Area Trip</label>
-                                            <select
-                                                className="form-select"
-                                                value={trip.tripDestinationArea}
-                                                onChange={event => updateTripRouteSelection(index, trip.tripOriginArea, event.target.value)}
-                                                disabled={loading || !trip.tripOriginArea}
-                                            >
-                                                <option value="">Pilih tujuan area</option>
-                                                {tripDestinationAreaOptions.map(area => <option key={area} value={area}>{area}</option>)}
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    {matchedTripRate && (
-                                        <div style={{ fontSize: '0.8rem', color: 'var(--color-primary-700)', background: 'var(--color-primary-50)', border: '1px solid var(--color-primary-100)', padding: '0.75rem 0.9rem', borderRadius: '0.75rem' }}>
-                                            Tarif master: {formatTripRouteRateLabel(matchedTripRate)} | Rp {matchedTripRate.rate.toLocaleString('id-ID')}
-                                        </div>
-                                    )}
-
-                                    <div className="form-row">
-                                        <div className="form-group">
-                                            <label className="form-label">Upah Trip <span className="required">*</span></label>
-                                            <CurrencyInput
-                                                value={isTripFeeLockedToMaster ? (matchedTripRate?.rate || 0) : trip.tripFee}
-                                                onValueChange={value => updateTripDraft(index, 'tripFee', value)}
-                                                placeholder="Isi upah trip"
-                                                disabled={loading || isTripFeeLockedToMaster}
-                                            />
-                                        </div>
-                                        <div className="form-group">
-                                            <label className="form-label">Tanggal Trip</label>
-                                            <input
-                                                type="date"
-                                                className="form-input"
-                                                value={trip.date}
-                                                onChange={event => updateTripDraft(index, 'date', event.target.value)}
-                                                disabled={loading}
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <div className="form-row">
-                                        <div className="form-group">
-                                            <label className="form-label">Rekening / Kas Sumber <span className="required">*</span></label>
-                                            <select className="form-select" value={trip.issueBankRef} onChange={event => updateTripDraft(index, 'issueBankRef', event.target.value)} disabled={loading}>
-                                                <option value="">Pilih rekening atau kas</option>
-                                                {activeIssueBankAccounts.map(account => (
-                                                    <option key={account._id} value={account._id}>
-                                                        {account.bankName} - {account.accountNumber}{account.accountType === 'CASH' ? ' (Kas Tunai)' : ''}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <div className="form-group">
-                                            <label className="form-label">Uang Jalan Awal <span className="required">*</span></label>
-                                            <CurrencyInput
-                                                value={trip.cashGiven}
-                                                onValueChange={value => updateTripDraft(index, 'cashGiven', value)}
-                                                placeholder="Isi nominal uang jalan awal"
-                                                disabled={loading}
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <div className="form-group" style={{ marginBottom: 0 }}>
-                                        <label className="form-label">Catatan Trip</label>
-                                        <textarea
-                                            className="form-textarea"
-                                            rows={2}
-                                            value={trip.notes}
-                                            onChange={event => updateTripDraft(index, 'notes', event.target.value)}
-                                            placeholder="Catatan trip"
-                                            disabled={loading}
-                                        />
-                                    </div>
-                                </div>
-                            );
-                        })}
-
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                            <button type="button" className="btn btn-secondary btn-sm" onClick={addTripDraft}>
-                                <Plus size={14} /> Tambah Trip
-                            </button>
                         </div>
                     </div>
                 </div>
