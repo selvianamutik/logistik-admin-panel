@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useApp, useToast } from '../../layout';
-import { Printer, FileDown, Truck, Upload, Save, MapPin, Radio, Edit, Wallet } from 'lucide-react';
+import { Printer, FileDown, Truck, Upload, Save, MapPin, Radio, Edit, Wallet, Plus, X } from 'lucide-react';
 import CurrencyInput from '@/components/CurrencyInput';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
@@ -51,10 +51,22 @@ import {
     VOLUME_INPUT_UNIT_OPTIONS,
     WEIGHT_INPUT_UNIT_OPTIONS,
 } from '@/lib/measurement';
+import {
+    buildInitialDeliveryOrderCargoDraftGroups,
+    createDefaultDeliveryOrderCargoDraftItem,
+    createDefaultDeliveryOrderCargoDraftGroup,
+    flattenDeliveryOrderCargoDraftGroups,
+    getDraftDeliveryOrderCargoGroups,
+    getDeliveryOrderCargoDraftItems,
+    toDeliveryOrderCargoDraftItem,
+    type DeliveryOrderCargoDraftGroup,
+    type DeliveryOrderCargoDraftItem,
+} from '@/lib/delivery-order-cargo-draft-support';
+import { summarizeDraftOrderCargo, updateOrderItemVolumeUnit, updateOrderItemWeightUnit } from '@/lib/order-create-page-support';
 import { generateDOPdf } from '@/lib/pdf/doTemplate';
 import { hasPageAccess, hasPermission, normalizeUserRole } from '@/lib/rbac';
 import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
-import type { Customer, DeliveryOrder, DeliveryOrderItem, TrackingLog, CompanyProfile, Order, Driver, DriverVoucher, TripRouteRate, Vehicle } from '@/lib/types';
+import type { Customer, DeliveryOrder, DeliveryOrderItem, TrackingLog, CompanyProfile, Order, OrderItem, Driver, DriverVoucher, TripRouteRate, Vehicle } from '@/lib/types';
 
 type DeliveryOrderTripCashLink = {
     hasVoucher: true;
@@ -68,6 +80,93 @@ type ShipperReferenceDraft = {
     referenceNumber: string;
     pickupStopKey: string;
 };
+
+type ResolvedShipperReferenceEntry = {
+    key: string;
+    referenceNumber: string;
+    pickupStopKey: string;
+    pickupLabel: string;
+    pickupAddress: string;
+};
+
+function buildResolvedShipperReferenceEntries(
+    deliveryOrder: DeliveryOrder | null,
+    doItems: DeliveryOrderItem[]
+): ResolvedShipperReferenceEntry[] {
+    if (!deliveryOrder) {
+        return [];
+    }
+
+    const pickupStops = (deliveryOrder.pickupStops || [])
+        .map((pickupStop, index) => ({
+            _key: pickupStop._key || `pickup-stop-${index + 1}`,
+            sequence: pickupStop.sequence || index + 1,
+            pickupLabel: pickupStop.pickupLabel || '',
+            pickupAddress: pickupStop.pickupAddress || '',
+        }))
+        .sort((left, right) => left.sequence - right.sequence);
+    const pickupStopMap = new Map(pickupStops.map(stop => [stop._key, stop]));
+    const entries = new Map<string, ResolvedShipperReferenceEntry>();
+
+    const upsertEntry = (referenceNumber: string, pickupStopKey = '', pickupAddress = '', keyHint = '') => {
+        const normalizedReference = referenceNumber.trim();
+        if (!normalizedReference) {
+            return;
+        }
+        const matchedStop = pickupStopKey ? pickupStopMap.get(pickupStopKey) : null;
+        const resolvedPickupLabel = matchedStop
+            ? `Pickup ${matchedStop.sequence}${matchedStop.pickupLabel ? ` - ${matchedStop.pickupLabel}` : ''}`
+            : '';
+        const resolvedPickupAddress = matchedStop?.pickupAddress || pickupAddress || '';
+        const entryKey = `${pickupStopKey || 'tanpa-pickup'}::${normalizedReference}`;
+        if (entries.has(entryKey)) {
+            const current = entries.get(entryKey)!;
+            entries.set(entryKey, {
+                ...current,
+                key: current.key || keyHint || entryKey,
+                pickupLabel: current.pickupLabel || resolvedPickupLabel,
+                pickupAddress: current.pickupAddress || resolvedPickupAddress,
+            });
+            return;
+        }
+        entries.set(entryKey, {
+            key: keyHint || entryKey,
+            referenceNumber: normalizedReference,
+            pickupStopKey,
+            pickupLabel: resolvedPickupLabel,
+            pickupAddress: resolvedPickupAddress,
+        });
+    };
+
+    (deliveryOrder.shipperReferences || []).forEach((reference, index) => {
+        upsertEntry(
+            reference.referenceNumber || '',
+            reference.pickupStopKey || '',
+            reference.pickupAddress || '',
+            reference._key || `shipper-reference-${index + 1}`
+        );
+    });
+
+    doItems.forEach(item => {
+        upsertEntry(
+            item.shipperReferenceNumber || '',
+            item.pickupStopKey || '',
+            item.pickupAddress || '',
+            `delivery-order-item-${item._id}`
+        );
+    });
+
+    if (entries.size === 0 && deliveryOrder.customerDoNumber?.trim()) {
+        upsertEntry(
+            deliveryOrder.customerDoNumber,
+            deliveryOrder.pickupStops?.[0]?._key || '',
+            deliveryOrder.pickupAddress || '',
+            'legacy-customer-do-number'
+        );
+    }
+
+    return [...entries.values()];
+}
 
 export default function DODetailPage() {
     const params = useParams();
@@ -87,6 +186,7 @@ export default function DODetailPage() {
     const [showTripResourcesModal, setShowTripResourcesModal] = useState(false);
     const [showShipperReferenceModal, setShowShipperReferenceModal] = useState(false);
     const [showTargetModal, setShowTargetModal] = useState(false);
+    const [showCargoModal, setShowCargoModal] = useState(false);
     const [newStatus, setNewStatus] = useState('');
     const [statusNote, setStatusNote] = useState('');
     const [reviewingDriverRequest, setReviewingDriverRequest] = useState(false);
@@ -115,11 +215,16 @@ export default function DODetailPage() {
     const [savingTripResources, setSavingTripResources] = useState(false);
     const [savingShipperReference, setSavingShipperReference] = useState(false);
     const [savingTarget, setSavingTarget] = useState(false);
+    const [savingCargo, setSavingCargo] = useState(false);
+    const [removingCargoItemId, setRemovingCargoItemId] = useState<string | null>(null);
+    const [editingCargoItemId, setEditingCargoItemId] = useState<string | null>(null);
+    const [editableCargoItemMap, setEditableCargoItemMap] = useState<Record<string, boolean>>({});
     const [tripVehicleRef, setTripVehicleRef] = useState('');
     const [tripDriverRef, setTripDriverRef] = useState('');
     const [tripVehicleOverrideReason, setTripVehicleOverrideReason] = useState('');
     const [shipperReferenceDrafts, setShipperReferenceDrafts] = useState<ShipperReferenceDraft[]>([{ referenceNumber: '', pickupStopKey: '' }]);
     const [shipperReferenceFormat, setShipperReferenceFormat] = useState('SJ');
+    const [cargoDraftGroups, setCargoDraftGroups] = useState<DeliveryOrderCargoDraftGroup[]>([createDefaultDeliveryOrderCargoDraftGroup()]);
     const [targetReceiverName, setTargetReceiverName] = useState('');
     const [targetReceiverPhone, setTargetReceiverPhone] = useState('');
     const [targetReceiverAddress, setTargetReceiverAddress] = useState('');
@@ -139,6 +244,7 @@ export default function DODetailPage() {
     const canOpenTripCashPage = user ? hasPageAccess(user.role, 'driverVouchers') : false;
     const canAssignTripResources = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL' || normalizedRole === 'ARMADA';
     const canEditShipperReference = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL' || normalizedRole === 'FINANCE';
+    const canEditDeliveryCargo = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL' || normalizedRole === 'ARMADA';
     const canEditDeliveryTarget = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL' || normalizedRole === 'FINANCE';
     const canReviewDriverRequest = canManageDeliveryStatus;
     const canManageTripFee = canManageDeliveryStatus;
@@ -220,6 +326,31 @@ export default function DODetailPage() {
                     'Gagal memuat detail surat jalan'
                 ),
             ]);
+            const deliveryOrderItems = itemRows || [];
+            const linkedOrderItemRefs = Array.from(
+                new Set(
+                    deliveryOrderItems
+                        .map(item => item.orderItemRef)
+                        .filter((value): value is string => Boolean(value))
+                )
+            );
+            const linkedOrderItems = linkedOrderItemRefs.length > 0
+                ? await fetchAllAdminCollectionData<Pick<OrderItem, '_id' | 'entrySource' | 'sourceDeliveryOrderRef'>>(
+                    `/api/data?entity=order-items&filter=${encodeURIComponent(JSON.stringify({ _id: linkedOrderItemRefs }))}`,
+                    'Gagal memuat detail surat jalan'
+                )
+                : [];
+            const linkedOrderItemMap = new Map(
+                (linkedOrderItems || []).map(item => [item._id, item])
+            );
+            const nextEditableCargoItemMap = deliveryOrderItems.reduce<Record<string, boolean>>((acc, item) => {
+                const linkedOrderItem = linkedOrderItemMap.get(item.orderItemRef);
+                acc[item._id] = Boolean(
+                    linkedOrderItem?.entrySource === 'DELIVERY_ORDER' &&
+                    linkedOrderItem.sourceDeliveryOrderRef === doId
+                );
+                return acc;
+            }, {});
 
             const resolvedDeliveryOrder = buildResolvedDeliveryOrder(deliveryOrder, sourceOrder);
 
@@ -236,7 +367,8 @@ export default function DODetailPage() {
                 setTripOriginArea(resolvedDeliveryOrder?.tripOriginArea || '');
                 setTripDestinationArea(resolvedDeliveryOrder?.tripDestinationArea || '');
             }
-            setDoItems(itemRows || []);
+            setDoItems(deliveryOrderItems);
+            setEditableCargoItemMap(nextEditableCargoItemMap);
             setTrackingLogs(sortTrackingLogs(logRows || []));
         } catch (error) {
             addToast('error', error instanceof Error ? error.message : 'Gagal memuat detail surat jalan');
@@ -279,11 +411,12 @@ export default function DODetailPage() {
 
     const openShipperReferenceModal = () => {
         if (!canEditShipperReference) return;
+        const resolvedShipperReferences = buildResolvedShipperReferenceEntries(doData, doItems);
         const normalizedFormat = shipperReferenceFormat.trim().toUpperCase() || 'SJ';
-        const nextReferences = (doData?.shipperReferences || [])
+        const nextReferences = resolvedShipperReferences
             .map(reference => ({
-                referenceNumber: reference.referenceNumber?.trim() || '',
-                pickupStopKey: reference.pickupStopKey || '',
+                referenceNumber: reference.referenceNumber,
+                pickupStopKey: reference.pickupStopKey,
             }))
             .filter(reference => Boolean(reference.referenceNumber));
         setShipperReferenceDrafts(
@@ -304,6 +437,128 @@ export default function DODetailPage() {
         setTargetReceiverAddress(doData?.receiverAddress || '');
         setTargetReceiverCompany(doData?.receiverCompany || '');
         setShowTargetModal(true);
+    };
+
+    const openCargoModal = () => {
+        if (!canEditDeliveryCargo) return;
+        const resolvedShipperReferences = buildResolvedShipperReferenceEntries(doData, doItems);
+        setEditingCargoItemId(null);
+        setCargoDraftGroups(buildInitialDeliveryOrderCargoDraftGroups({
+            pickupStops: doData?.pickupStops,
+            shipperReferences: resolvedShipperReferences.length > 0
+                ? resolvedShipperReferences
+                : doData?.customerDoNumber
+                    ? [{ referenceNumber: doData.customerDoNumber, pickupStopKey: doData.pickupStops?.[0]?._key }]
+                    : undefined,
+        }));
+        setShowCargoModal(true);
+    };
+
+    const closeCargoModal = () => {
+        if (savingCargo) return;
+        setShowCargoModal(false);
+        setEditingCargoItemId(null);
+        setCargoDraftGroups([createDefaultDeliveryOrderCargoDraftGroup(doData?.pickupStops?.[0]?._key || '')]);
+    };
+
+    const openCargoEditModal = (item: DeliveryOrderItem) => {
+        if (!canEditDeliveryCargo || !editableCargoItemMap[item._id]) return;
+
+        const weightInputUnit = item.orderItemWeightInputUnit || 'KG';
+        const volumeInputUnit = item.orderItemVolumeInputUnit || 'M3';
+        setEditingCargoItemId(item._id);
+        setCargoDraftGroups([{
+            id: crypto.randomUUID(),
+            pickupStopKey: item.pickupStopKey || pickupStopList[0]?._key || '',
+            shipperReferenceNumber: item.shipperReferenceNumber || doData?.customerDoNumber || '',
+            items: [{
+                customerProductRef: '',
+                description: item.orderItemDescription || '',
+                qtyKoli: parseFormattedNumberish(item.orderItemQtyKoli ?? item.shippedQtyKoli ?? 0),
+                weightInputValue: parseFormattedNumberish(
+                    item.orderItemWeightInputValue ?? item.orderItemWeight ?? item.shippedWeight ?? 0,
+                    { maxFractionDigits: weightInputUnit === 'TON' ? 3 : 2 }
+                ),
+                weightInputUnit,
+                volumeInputValue: parseFormattedNumberish(
+                    item.orderItemVolumeInputValue ?? item.orderItemVolumeM3 ?? 0,
+                    { maxFractionDigits: volumeInputUnit === 'LITER' ? 0 : 3 }
+                ),
+                volumeInputUnit,
+                value: 0,
+                id: item.orderItemRef,
+            }],
+        }]);
+        setShowCargoModal(true);
+    };
+
+    const updateCargoDraftGroup = <K extends keyof Pick<DeliveryOrderCargoDraftGroup, 'pickupStopKey' | 'shipperReferenceNumber'>>(
+        groupId: string,
+        field: K,
+        value: DeliveryOrderCargoDraftGroup[K]
+    ) => {
+        setCargoDraftGroups(previous => previous.map(group => (
+            group.id === groupId
+                ? { ...group, [field]: value }
+                : group
+        )));
+    };
+
+    const updateCargoDraftItem = <K extends keyof DeliveryOrderCargoDraftItem>(
+        groupId: string,
+        itemIndex: number,
+        field: K,
+        value: DeliveryOrderCargoDraftItem[K]
+    ) => {
+        setCargoDraftGroups(previous => previous.map(group => (
+            group.id === groupId
+                ? {
+                    ...group,
+                    items: group.items.map((item, currentIndex) => (
+                        currentIndex === itemIndex
+                            ? { ...item, [field]: value }
+                            : item
+                    )),
+                }
+                : group
+        )));
+    };
+
+    const addCargoDraftGroup = () => {
+        setCargoDraftGroups(previous => [
+            ...previous,
+            createDefaultDeliveryOrderCargoDraftGroup(pickupStopList[0]?._key || ''),
+        ]);
+    };
+
+    const removeCargoDraftGroup = (groupId: string) => {
+        setCargoDraftGroups(previous => {
+            const nextGroups = previous.filter(group => group.id !== groupId);
+            return nextGroups.length > 0
+                ? nextGroups
+                : [createDefaultDeliveryOrderCargoDraftGroup(pickupStopList[0]?._key || '')];
+        });
+    };
+
+    const addCargoDraftItem = (groupId: string) => {
+        setCargoDraftGroups(previous => previous.map(group => (
+            group.id === groupId
+                ? { ...group, items: [...group.items, createDefaultDeliveryOrderCargoDraftItem()] }
+                : group
+        )));
+    };
+
+    const removeCargoDraftItem = (groupId: string, itemIndex: number) => {
+        setCargoDraftGroups(previous => previous.map(group => {
+            if (group.id !== groupId) {
+                return group;
+            }
+            const nextItems = group.items.filter((_, currentIndex) => currentIndex !== itemIndex);
+            return {
+                ...group,
+                items: nextItems.length > 0 ? nextItems : [createDefaultDeliveryOrderCargoDraftItem()],
+            };
+        }));
     };
 
     const openTripFeeEditor = () => {
@@ -402,6 +657,122 @@ export default function DODetailPage() {
             addToast('error', 'Gagal menyimpan tujuan surat jalan');
         } finally {
             setSavingTarget(false);
+        }
+    };
+
+    const saveCargoDrafts = async () => {
+        if (!canEditDeliveryCargo || !doData?._id) return;
+        if (cargoDraftItemCount === 0) {
+            addToast('error', 'Isi minimal 1 barang sebelum disimpan ke Surat Jalan.');
+            return;
+        }
+
+        const normalizedGroups = cargoDraftGroupsWithItems.map(group => ({
+            ...group,
+            resolvedPickupStopKey: group.pickupStopKey || (pickupStopList.length === 1 ? pickupStopList[0]._key : ''),
+            resolvedShipperReferenceNumber: group.shipperReferenceNumber.trim().toUpperCase(),
+        }));
+        const invalidReferenceIndex = normalizedGroups.findIndex(group => group.draftItems.length > 0 && !group.resolvedShipperReferenceNumber);
+        if (invalidReferenceIndex >= 0) {
+            addToast('error', `No. SJ pengirim wajib diisi pada SJ ${invalidReferenceIndex + 1}`);
+            return;
+        }
+        const invalidPickupIndex = normalizedGroups.findIndex(group => pickupStopList.length > 0 && !group.resolvedPickupStopKey);
+        if (invalidPickupIndex >= 0) {
+            addToast('error', `Titik pickup wajib dipilih pada SJ ${invalidPickupIndex + 1}`);
+            return;
+        }
+        if (editingCargoItemId) {
+            if (normalizedGroups.length !== 1 || normalizedGroups[0].draftItems.length !== 1) {
+                addToast('error', 'Mode edit barang hanya menerima 1 SJ dan 1 barang dalam satu kali simpan.');
+                return;
+            }
+        }
+
+        setSavingCargo(true);
+        try {
+            const action = editingCargoItemId ? 'update-cargo-item' : 'append-cargo-items';
+            const payloadData = editingCargoItemId
+                ? {
+                    id: doData._id,
+                    deliveryOrderItemId: editingCargoItemId,
+                    cargoItem: {
+                        ...normalizedGroups[0].draftItems[0],
+                        shipperReferenceNumber: normalizedGroups[0].resolvedShipperReferenceNumber,
+                        pickupStopKey: normalizedGroups[0].resolvedPickupStopKey || undefined,
+                    },
+                }
+                : {
+                    id: doData._id,
+                    cargoItems: normalizedGroups.flatMap(group =>
+                        group.draftItems.map(item => ({
+                            ...item,
+                            shipperReferenceNumber: group.resolvedShipperReferenceNumber,
+                            pickupStopKey: group.resolvedPickupStopKey || undefined,
+                        }))
+                    ),
+                };
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'delivery-orders',
+                    action,
+                    data: payloadData,
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || (editingCargoItemId ? 'Gagal memperbarui barang Surat Jalan' : 'Gagal menambah barang ke Surat Jalan'));
+                return;
+            }
+            await loadDO();
+            setShowCargoModal(false);
+            setEditingCargoItemId(null);
+            setCargoDraftGroups([createDefaultDeliveryOrderCargoDraftGroup(doData.pickupStops?.[0]?._key || '')]);
+            addToast(
+                'success',
+                editingCargoItemId
+                    ? 'Barang Surat Jalan berhasil diperbarui'
+                    : `${result.data?.appendedCount || cargoDraftItemCount} barang ditambahkan ke Surat Jalan`
+            );
+        } catch {
+            addToast('error', editingCargoItemId ? 'Gagal memperbarui barang Surat Jalan' : 'Gagal menambah barang ke Surat Jalan');
+        } finally {
+            setSavingCargo(false);
+        }
+    };
+
+    const removeCargoItem = async (deliveryOrderItemId: string, itemLabel: string) => {
+        if (!canEditDeliveryCargo || !doData?._id) return;
+        if (typeof window !== 'undefined' && !window.confirm(`Hapus barang "${itemLabel}" dari Surat Jalan ini?`)) {
+            return;
+        }
+        setRemovingCargoItemId(deliveryOrderItemId);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    entity: 'delivery-orders',
+                    action: 'remove-cargo-item',
+                    data: {
+                        id: doData._id,
+                        deliveryOrderItemId,
+                    },
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menghapus barang dari Surat Jalan');
+                return;
+            }
+            await loadDO();
+            addToast('success', 'Barang Surat Jalan berhasil dihapus');
+        } catch {
+            addToast('error', 'Gagal menghapus barang dari Surat Jalan');
+        } finally {
+            setRemovingCargoItemId(null);
         }
     };
 
@@ -764,14 +1135,13 @@ export default function DODetailPage() {
         busyDriverIds: tripResourceBusyIds.busyDriverIds,
         currentDriverRef: doData.driverRef,
     });
+    const resolvedShipperReferenceEntries = buildResolvedShipperReferenceEntries(doData, doItems);
     const selectedTripVehicle = assignableVehicles.find(vehicle => vehicle._id === tripVehicleRef) || null;
     const requiresTripVehicleOverrideReason = shouldRequireTripVehicleOverrideReason(doData, selectedTripVehicle);
     const isCompletingDelivery = newStatus === 'DELIVERED';
     const pendingDriverStatusMeta = doData.pendingDriverStatus ? DO_STATUS_MAP[doData.pendingDriverStatus] : null;
-    const shipperReferenceList = (doData.shipperReferences || [])
-        .map(reference => reference.referenceNumber?.trim() || '')
-        .filter(Boolean);
-    const hasShipperReference = shipperReferenceList.length > 0 || Boolean(doData.customerDoNumber?.trim());
+    const shipperReferenceList = Array.from(new Set(resolvedShipperReferenceEntries.map(reference => reference.referenceNumber)));
+    const hasShipperReference = shipperReferenceList.length > 0;
     const normalizedShipperReferenceFormat = shipperReferenceFormat.trim().toUpperCase() || 'SJ';
     const shipperReferenceExample = `${normalizedShipperReferenceFormat}/27032026/001`;
     const pickupStopList = (doData.pickupStops || [])
@@ -783,28 +1153,15 @@ export default function DODetailPage() {
         }))
         .sort((left, right) => left.sequence - right.sequence);
     const pickupStopMap = new Map(pickupStopList.map(stop => [stop._key, stop]));
-    const shipperReferenceDisplayList = (doData.shipperReferences || [])
-        .map((reference, index) => {
-            const referenceNumber = reference.referenceNumber?.trim() || '';
-            if (!referenceNumber) return null;
-            const pickupStop = reference.pickupStopKey ? pickupStopMap.get(reference.pickupStopKey) : null;
-            return {
-                key: reference._key || `${referenceNumber}-${index}`,
-                referenceNumber,
-                pickupStopKey: reference.pickupStopKey || '',
-                pickupLabel: pickupStop
-                    ? `Pickup ${pickupStop.sequence}${pickupStop.pickupLabel ? ` - ${pickupStop.pickupLabel}` : ''}`
-                    : '',
-                pickupAddress: pickupStop?.pickupAddress || reference.pickupAddress || '',
-            };
-        })
-        .filter((reference): reference is {
-            key: string;
-            referenceNumber: string;
-            pickupStopKey: string;
-            pickupLabel: string;
-            pickupAddress: string;
-        } => Boolean(reference));
+    const shipperReferenceDisplayList = resolvedShipperReferenceEntries.map(reference => ({
+        ...reference,
+        pickupLabel: reference.pickupStopKey && pickupStopMap.get(reference.pickupStopKey)
+            ? `Pickup ${pickupStopMap.get(reference.pickupStopKey)?.sequence}${pickupStopMap.get(reference.pickupStopKey)?.pickupLabel ? ` - ${pickupStopMap.get(reference.pickupStopKey)?.pickupLabel}` : ''}`
+            : reference.pickupLabel,
+        pickupAddress: reference.pickupStopKey && pickupStopMap.get(reference.pickupStopKey)
+            ? pickupStopMap.get(reference.pickupStopKey)?.pickupAddress || reference.pickupAddress
+            : reference.pickupAddress,
+    }));
     const cargoGroups = (() => {
         const groups = new Map<string, {
             key: string;
@@ -840,6 +1197,15 @@ export default function DODetailPage() {
         }
         return [...groups.values()];
     })();
+    const flattenedCargoDraftItems = flattenDeliveryOrderCargoDraftGroups(cargoDraftGroups);
+    const cargoDraftGroupsWithItems = getDraftDeliveryOrderCargoGroups(cargoDraftGroups);
+    const cargoDraftSummary = summarizeDraftOrderCargo(flattenedCargoDraftItems);
+    const cargoDraftItemCount = cargoDraftGroupsWithItems.reduce((sum, group) => sum + getDeliveryOrderCargoDraftItems(group).length, 0);
+    const isEditingCargoItem = Boolean(editingCargoItemId);
+    const canAppendCargoToDo =
+        canEditDeliveryCargo &&
+        ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(doData.status) &&
+        !doData.pendingDriverStatus;
     const linkedVoucherSummary = linkedVoucher ? getDriverVoucherFinancialSummary(linkedVoucher) : null;
     const linkedTripCashVoucherId = linkedVoucher?._id || linkedTripCashLink?.voucherId || '';
     const linkedTripCashBonNumber = linkedVoucher?.bonNumber || linkedTripCashLink?.bonNumber || linkedVoucherBonNumber;
@@ -1042,6 +1408,11 @@ export default function DODetailPage() {
                             {canEditShipperReference && (
                                 <button className="btn btn-secondary btn-sm" onClick={openShipperReferenceModal}>
                                     <Edit size={14} /> {hasShipperReference ? 'Edit SJ Pengirim' : 'Isi SJ Pengirim'}
+                                </button>
+                            )}
+                            {canAppendCargoToDo && (
+                                <button className="btn btn-secondary btn-sm" onClick={openCargoModal}>
+                                    <Plus size={14} /> Tambah Barang / SJ
                                 </button>
                             )}
                             {canManageTripFee && !hasLinkedTripCash && !editingTarip && (
@@ -1589,7 +1960,14 @@ export default function DODetailPage() {
 
             {/* Items */}
             <div className="card">
-                <div className="card-header"><span className="card-header-title">Item dalam DO ({doItems.length})</span></div>
+                <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <span className="card-header-title">Item dalam DO ({doItems.length})</span>
+                    {canAppendCargoToDo && (
+                        <button className="btn btn-secondary btn-sm" onClick={openCargoModal}>
+                            <Plus size={14} /> Tambah Barang / SJ
+                        </button>
+                    )}
+                </div>
                 {doItems.length === 0 ? (
                     <div className="card-body">
                         <div className="empty-state" style={{ padding: '1rem 0' }}>
@@ -1632,7 +2010,16 @@ export default function DODetailPage() {
                         )}
                     <div className="table-wrapper">
                         <table>
-                            <thead><tr><th>SJ Pengirim</th><th>Pickup</th><th>Deskripsi</th><th>Koli</th><th>Muatan</th></tr></thead>
+                            <thead>
+                                <tr>
+                                    <th>SJ Pengirim</th>
+                                    <th>Pickup</th>
+                                    <th>Deskripsi</th>
+                                    <th>Koli</th>
+                                    <th>Muatan</th>
+                                    {canAppendCargoToDo && <th>Aksi</th>}
+                                </tr>
+                            </thead>
                             <tbody>
                                 {doItems.map(item => (
                                     <tr key={item._id}>
@@ -1690,6 +2077,32 @@ export default function DODetailPage() {
                                                     : 'Belum final'}
                                             </div>
                                         </td>
+                                        {canAppendCargoToDo && (
+                                            <td>
+                                                {editableCargoItemMap[item._id] ? (
+                                                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-ghost btn-sm"
+                                                            onClick={() => openCargoEditModal(item)}
+                                                            disabled={Boolean(removingCargoItemId) || savingCargo}
+                                                        >
+                                                            Edit
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-ghost btn-sm"
+                                                            onClick={() => void removeCargoItem(item._id, item.orderItemDescription || 'barang ini')}
+                                                            disabled={Boolean(removingCargoItemId) || savingCargo}
+                                                        >
+                                                            {removingCargoItemId === item._id ? 'Menghapus...' : 'Hapus'}
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-muted text-sm">-</span>
+                                                )}
+                                            </td>
+                                        )}
                                     </tr>
                                 ))}
                             </tbody>
@@ -2292,6 +2705,224 @@ export default function DODetailPage() {
                             <button className="btn btn-secondary" onClick={() => setShowShipperReferenceModal(false)} disabled={savingShipperReference}>Batal</button>
                             <button className="btn btn-primary" onClick={saveShipperReference} disabled={savingShipperReference || shipperReferenceDrafts.every(entry => !entry.referenceNumber.trim())}>
                                 <Save size={16} /> {savingShipperReference ? 'Menyimpan...' : 'Simpan'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showCargoModal && (
+                <div className="modal-overlay" onClick={closeCargoModal}>
+                    <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <div>
+                                <h3 className="modal-title">{isEditingCargoItem ? 'Edit Barang / SJ' : 'Tambah Barang / SJ'}</h3>
+                                <div className="text-muted text-sm" style={{ marginTop: '0.3rem' }}>
+                                    {isEditingCargoItem
+                                        ? 'Koreksi 1 barang yang sudah tersimpan. Jika mau tambah manifest baru, tutup dulu mode edit ini.'
+                                        : 'Tambahkan manifest per SJ pengirim. Satu SJ bisa berisi banyak barang.'}
+                                </div>
+                            </div>
+                            <button className="modal-close" onClick={closeCargoModal} disabled={savingCargo}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
+                                <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
+                                    <div className="text-muted text-sm">Draft SJ</div>
+                                    <div className="font-semibold" style={{ fontSize: '1.1rem', marginTop: '0.2rem' }}>{cargoDraftGroups.length} SJ</div>
+                                </div>
+                                <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
+                                    <div className="text-muted text-sm">Barang dicatat</div>
+                                    <div className="font-semibold" style={{ fontSize: '1.1rem', marginTop: '0.2rem' }}>{cargoDraftItemCount} barang</div>
+                                </div>
+                                <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.85rem 1rem', background: 'var(--color-white)' }}>
+                                    <div className="text-muted text-sm">Muatan tambahan</div>
+                                    <div className="font-semibold" style={{ fontSize: '0.95rem', marginTop: '0.2rem' }}>
+                                        {cargoDraftItemCount > 0 ? formatCargoSummary(cargoDraftSummary) : 'Belum ada barang'}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'grid', gap: '0.85rem' }}>
+                                {cargoDraftGroups.map((group, groupIndex) => {
+                                    const draftItemsInGroup = getDeliveryOrderCargoDraftItems(group);
+                                    return (
+                                        <div key={group.id} style={{ display: 'grid', gap: '0.85rem', padding: '1rem', background: 'var(--color-gray-50)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-gray-200)' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                <div>
+                                                    <div className="font-semibold">SJ {groupIndex + 1}</div>
+                                                    <div className="text-muted text-sm">{draftItemsInGroup.length} barang</div>
+                                                </div>
+                                                {!isEditingCargoItem && cargoDraftGroups.length > 1 && (
+                                                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeCargoDraftGroup(group.id)} disabled={savingCargo}>
+                                                        <X size={14} /> Hapus SJ
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            {pickupStopList.length > 0 && (
+                                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                                    <label className="form-label">Titik Pickup</label>
+                                                    <select
+                                                        className="form-select"
+                                                        value={group.pickupStopKey}
+                                                        onChange={e => updateCargoDraftGroup(group.id, 'pickupStopKey', e.target.value)}
+                                                        disabled={savingCargo}
+                                                    >
+                                                        <option value="">Pilih titik pickup</option>
+                                                        {pickupStopList.map(stop => (
+                                                            <option key={stop._key} value={stop._key}>
+                                                                {`Pickup ${stop.sequence}${stop.pickupLabel ? ` - ${stop.pickupLabel}` : ''}`}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            )}
+
+                                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                                <label className="form-label">No. SJ Pengirim</label>
+                                                <input
+                                                    className="form-input"
+                                                    value={group.shipperReferenceNumber}
+                                                    onChange={e => updateCargoDraftGroup(group.id, 'shipperReferenceNumber', e.target.value.toUpperCase())}
+                                                    placeholder={`Mis. ${shipperReferenceExample}`}
+                                                    disabled={savingCargo}
+                                                />
+                                            </div>
+
+                                            <div style={{ display: 'grid', gap: '0.75rem' }}>
+                                                {group.items.map((item, itemIndex) => (
+                                                    <div key={`${group.id}-item-${itemIndex}`} style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', padding: 12, background: 'var(--color-white)', borderRadius: '0.8rem', border: '1px solid var(--color-gray-200)' }}>
+                                                        <div style={{ flex: '2 1 260px' }}>
+                                                            <label className="form-label">Deskripsi Barang</label>
+                                                            <input
+                                                                className="form-input"
+                                                                value={item.description}
+                                                                onChange={e => updateCargoDraftItem(group.id, itemIndex, 'description', e.target.value)}
+                                                                placeholder="Mis. Oli Diesel 10W-40 / Beras 50 kg / Keramik"
+                                                                disabled={savingCargo}
+                                                            />
+                                                        </div>
+                                                        <div style={{ flex: '0 1 110px' }}>
+                                                            <label className="form-label">Koli</label>
+                                                            <FormattedNumberInput
+                                                                min={0}
+                                                                allowDecimal={false}
+                                                                value={item.qtyKoli}
+                                                                onValueChange={value => updateCargoDraftItem(group.id, itemIndex, 'qtyKoli', value)}
+                                                                disabled={savingCargo}
+                                                            />
+                                                        </div>
+                                                        <div style={{ flex: '1 1 180px' }}>
+                                                            <label className="form-label">Berat</label>
+                                                            <div style={{ display: 'flex', gap: 8 }}>
+                                                                <FormattedNumberInput
+                                                                    min={0}
+                                                                    maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
+                                                                    value={item.weightInputValue}
+                                                                    onValueChange={value => updateCargoDraftItem(group.id, itemIndex, 'weightInputValue', value)}
+                                                                    disabled={savingCargo}
+                                                                />
+                                                                <select
+                                                                    className="form-select"
+                                                                    value={item.weightInputUnit}
+                                                                    onChange={e => setCargoDraftGroups(previous => previous.map(entry => (
+                                                                        entry.id === group.id
+                                                                            ? {
+                                                                                ...entry,
+                                                                                items: entry.items.map((groupItem, currentItemIndex) => (
+                                                                                    currentItemIndex === itemIndex
+                                                                                        ? toDeliveryOrderCargoDraftItem(updateOrderItemWeightUnit({
+                                                                                            ...groupItem,
+                                                                                            pickupStopKey: entry.pickupStopKey,
+                                                                                            shipperReferenceNumber: entry.shipperReferenceNumber,
+                                                                                        }, e.target.value as DeliveryOrderCargoDraftItem['weightInputUnit']))
+                                                                                        : groupItem
+                                                                                )),
+                                                                            }
+                                                                            : entry
+                                                                    )))}
+                                                                    style={{ width: 92 }}
+                                                                    disabled={savingCargo}
+                                                                >
+                                                                    {WEIGHT_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                                                </select>
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ flex: '1 1 180px' }}>
+                                                            <label className="form-label">Volume</label>
+                                                            <div style={{ display: 'flex', gap: 8 }}>
+                                                                <FormattedNumberInput
+                                                                    min={0}
+                                                                    maxFractionDigits={item.volumeInputUnit === 'LITER' ? 0 : 3}
+                                                                    value={item.volumeInputValue}
+                                                                    onValueChange={value => updateCargoDraftItem(group.id, itemIndex, 'volumeInputValue', value)}
+                                                                    disabled={savingCargo}
+                                                                />
+                                                                <select
+                                                                    className="form-select"
+                                                                    value={item.volumeInputUnit}
+                                                                    onChange={e => setCargoDraftGroups(previous => previous.map(entry => (
+                                                                        entry.id === group.id
+                                                                            ? {
+                                                                                ...entry,
+                                                                                items: entry.items.map((groupItem, currentItemIndex) => (
+                                                                                    currentItemIndex === itemIndex
+                                                                                        ? toDeliveryOrderCargoDraftItem(updateOrderItemVolumeUnit({
+                                                                                            ...groupItem,
+                                                                                            pickupStopKey: entry.pickupStopKey,
+                                                                                            shipperReferenceNumber: entry.shipperReferenceNumber,
+                                                                                        }, e.target.value as DeliveryOrderCargoDraftItem['volumeInputUnit']))
+                                                                                        : groupItem
+                                                                                )),
+                                                                            }
+                                                                            : entry
+                                                                    )))}
+                                                                    style={{ width: 92 }}
+                                                                    disabled={savingCargo}
+                                                                >
+                                                                    {VOLUME_INPUT_UNIT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                                                </select>
+                                                            </div>
+                                                        </div>
+                                                        {!isEditingCargoItem && group.items.length > 1 && (
+                                                            <button type="button" className="btn btn-ghost btn-icon-only" onClick={() => removeCargoDraftItem(group.id, itemIndex)} disabled={savingCargo} style={{ marginBottom: 4 }}>
+                                                                <X size={18} />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                                {!isEditingCargoItem ? (
+                                                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => addCargoDraftItem(group.id)} disabled={savingCargo}>
+                                                        <Plus size={14} /> Tambah Barang di SJ Ini
+                                                    </button>
+                                                ) : <span />}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginTop: '1rem' }}>
+                                <div className="text-muted text-sm">
+                                    {isEditingCargoItem
+                                        ? 'Perubahan akan langsung sinkron ke manifest trip, daftar SJ, dan penagihan per SJ.'
+                                        : 'Satu trip boleh memuat beberapa SJ pengirim dan setiap SJ boleh berisi banyak barang.'}
+                                </div>
+                                {!isEditingCargoItem && (
+                                    <button type="button" className="btn btn-secondary btn-sm" onClick={addCargoDraftGroup} disabled={savingCargo}>
+                                        <Plus size={14} /> Tambah SJ
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={closeCargoModal} disabled={savingCargo}>Batal</button>
+                            <button className="btn btn-primary" onClick={saveCargoDrafts} disabled={savingCargo}>
+                                <Save size={16} /> {savingCargo ? 'Menyimpan...' : (isEditingCargoItem ? 'Simpan Perubahan' : 'Simpan Barang')}
                             </button>
                         </div>
                     </div>

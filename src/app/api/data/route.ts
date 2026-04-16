@@ -60,6 +60,8 @@ import {
 } from '@/lib/api/operations-workflows';
 import {
     handleDeliveryOrderAppendCargoItems,
+    handleDeliveryOrderCargoItemUpdate,
+    handleDeliveryOrderCargoItemRemove,
     handleDeliveryOrderCreate,
     handleDeliveryOrderShipperReferenceUpdate,
     handleDeliveryOrderTripResourceAssign,
@@ -217,6 +219,8 @@ function getMutationPermissionAction(action?: string): keyof ModulePermissions {
         action === 'set-status' ||
         action === 'assign-trip-resources' ||
         action === 'append-cargo-items' ||
+        action === 'update-cargo-item' ||
+        action === 'remove-cargo-item' ||
         action === 'update-shipper-reference' ||
         action === 'reject-driver-status-request' ||
         action === 'set-hold-quantity' ||
@@ -242,6 +246,14 @@ function hasSpecialMutationPermission(session: Session, entity: string, action?:
     }
 
     if (entity === 'delivery-orders' && action === 'append-cargo-items') {
+        return role === 'OWNER' || role === 'OPERASIONAL' || role === 'ARMADA';
+    }
+
+    if (entity === 'delivery-orders' && action === 'update-cargo-item') {
+        return role === 'OWNER' || role === 'OPERASIONAL' || role === 'ARMADA';
+    }
+
+    if (entity === 'delivery-orders' && action === 'remove-cargo-item') {
         return role === 'OWNER' || role === 'OPERASIONAL' || role === 'ARMADA';
     }
 
@@ -1383,6 +1395,14 @@ export async function POST(request: Request) {
 
         if (entity === 'delivery-orders' && action === 'append-cargo-items') {
             return await handleDeliveryOrderAppendCargoItems(session, data, addAuditLog);
+        }
+
+        if (entity === 'delivery-orders' && action === 'update-cargo-item') {
+            return await handleDeliveryOrderCargoItemUpdate(session, data, addAuditLog);
+        }
+
+        if (entity === 'delivery-orders' && action === 'remove-cargo-item') {
+            return await handleDeliveryOrderCargoItemRemove(session, data, addAuditLog);
         }
 
         if (entity === 'delivery-orders' && action === 'update-shipper-reference') {

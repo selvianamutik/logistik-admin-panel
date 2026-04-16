@@ -11,6 +11,7 @@ import {
     RefreshCw,
     Smartphone,
     Truck,
+    X,
 } from 'lucide-react';
 
 import FormattedNumberInput from '@/components/FormattedNumberInput';
@@ -20,14 +21,23 @@ import {
     updateActualCargoDraftWeightUnit,
     type ActualCargoDraft,
 } from '@/lib/delivery-order-detail-support';
+import {
+    buildInitialDeliveryOrderCargoDraftGroups,
+    createDefaultDeliveryOrderCargoDraftGroup,
+    createDefaultDeliveryOrderCargoDraftItem,
+    flattenDeliveryOrderCargoDraftGroups,
+    getDraftDeliveryOrderCargoGroups,
+    getDeliveryOrderCargoDraftItems,
+    toDeliveryOrderCargoDraftItem,
+    type DeliveryOrderCargoDraftGroup,
+    type DeliveryOrderCargoDraftItem,
+} from '@/lib/delivery-order-cargo-draft-support';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { VOLUME_INPUT_UNIT_OPTIONS, WEIGHT_INPUT_UNIT_OPTIONS, formatCargoSummary } from '@/lib/measurement';
 import {
-    createDefaultOrderItemForm,
     summarizeDraftOrderCargo,
     updateOrderItemVolumeUnit,
     updateOrderItemWeightUnit,
-    type OrderItemForm,
 } from '@/lib/order-create-page-support';
 import { DO_STATUS_MAP, formatCurrency, formatDate, formatDateTime } from '@/lib/utils';
 import type { Driver, SessionUser } from '@/lib/types';
@@ -41,31 +51,9 @@ type DriverSessionResponse = {
 
 type DriverPortalError = Error & { status?: number };
 type DriverProgressStatus = Extract<DriverAssignedDeliveryOrder['status'], 'ON_DELIVERY' | 'ARRIVED' | 'DELIVERED'>;
-type DriverCargoInputItem = OrderItemForm & {
-    shipperReferenceNumber: string;
-    pickupStopKey: string;
-};
 
 function getDriverTripPlanId(plan: Pick<DriverAssignedTripPlan, 'orderRef' | 'tripPlanKey'>) {
     return `${plan.orderRef}::${plan.tripPlanKey}`;
-}
-
-function createDefaultDriverCargoInputItem(defaultPickupStopKey = ''): DriverCargoInputItem {
-    return {
-        ...createDefaultOrderItemForm(),
-        shipperReferenceNumber: '',
-        pickupStopKey: defaultPickupStopKey,
-    };
-}
-
-function getDraftDriverCargoInputItems(items: DriverCargoInputItem[]) {
-    return items.filter(item =>
-        item.description.trim() ||
-        item.customerProductRef ||
-        item.qtyKoli > 0 ||
-        item.weightInputValue > 0 ||
-        item.volumeInputValue > 0
-    );
 }
 
 function createDriverPortalError(status: number, message: string) {
@@ -187,10 +175,10 @@ export default function DriverPortalPage() {
     const [completionCargoItems, setCompletionCargoItems] = useState<ActualCargoDraft[]>([]);
     const [showCargoInputModal, setShowCargoInputModal] = useState(false);
     const [cargoInputOrderId, setCargoInputOrderId] = useState<string | null>(null);
-    const [cargoInputItems, setCargoInputItems] = useState<DriverCargoInputItem[]>([createDefaultDriverCargoInputItem()]);
+    const [cargoInputGroups, setCargoInputGroups] = useState<DeliveryOrderCargoDraftGroup[]>([createDefaultDeliveryOrderCargoDraftGroup()]);
     const [showTripCreateModal, setShowTripCreateModal] = useState(false);
     const [tripCreateTargetId, setTripCreateTargetId] = useState<string | null>(null);
-    const [tripCreateItems, setTripCreateItems] = useState<DriverCargoInputItem[]>([createDefaultDriverCargoInputItem()]);
+    const [tripCreateGroups, setTripCreateGroups] = useState<DeliveryOrderCargoDraftGroup[]>([createDefaultDeliveryOrderCargoDraftGroup()]);
 
     const handleDriverAuthFailure = useCallback((message = 'Sesi driver berakhir. Silakan login ulang.') => {
         setFeedback({ type: 'error', message });
@@ -222,21 +210,49 @@ export default function DriverPortalPage() {
         () => areActualCargoDraftsReady(completionCargoItems),
         [completionCargoItems]
     );
+    const flattenedCargoInputItems = useMemo(
+        () => flattenDeliveryOrderCargoDraftGroups(cargoInputGroups),
+        [cargoInputGroups]
+    );
+    const cargoInputDraftGroups = useMemo(
+        () => getDraftDeliveryOrderCargoGroups(cargoInputGroups),
+        [cargoInputGroups]
+    );
     const cargoInputDraftItems = useMemo(
-        () => getDraftDriverCargoInputItems(cargoInputItems),
-        [cargoInputItems]
+        () => cargoInputDraftGroups.flatMap(group =>
+            group.draftItems.map(item => ({
+                ...item,
+                pickupStopKey: group.pickupStopKey,
+                shipperReferenceNumber: group.shipperReferenceNumber,
+            }))
+        ),
+        [cargoInputDraftGroups]
     );
     const cargoInputSummary = useMemo(
-        () => summarizeDraftOrderCargo(cargoInputItems),
-        [cargoInputItems]
+        () => summarizeDraftOrderCargo(flattenedCargoInputItems),
+        [flattenedCargoInputItems]
+    );
+    const flattenedTripCreateItems = useMemo(
+        () => flattenDeliveryOrderCargoDraftGroups(tripCreateGroups),
+        [tripCreateGroups]
+    );
+    const tripCreateDraftGroups = useMemo(
+        () => getDraftDeliveryOrderCargoGroups(tripCreateGroups),
+        [tripCreateGroups]
     );
     const tripCreateDraftItems = useMemo(
-        () => getDraftDriverCargoInputItems(tripCreateItems),
-        [tripCreateItems]
+        () => tripCreateDraftGroups.flatMap(group =>
+            group.draftItems.map(item => ({
+                ...item,
+                pickupStopKey: group.pickupStopKey,
+                shipperReferenceNumber: group.shipperReferenceNumber,
+            }))
+        ),
+        [tripCreateDraftGroups]
     );
     const tripCreateSummary = useMemo(
-        () => summarizeDraftOrderCargo(tripCreateItems),
-        [tripCreateItems]
+        () => summarizeDraftOrderCargo(flattenedTripCreateItems),
+        [flattenedTripCreateItems]
     );
     const completionCargoSummary = useMemo(
         () => formatCargoSummary({
@@ -568,9 +584,15 @@ export default function DriverPortalPage() {
     }, [actionLoadingId]);
 
     const openCargoInputModal = useCallback((order: DriverAssignedDeliveryOrder) => {
-        const defaultPickupStopKey = order.pickupStops?.[0]?._key || '';
         setCargoInputOrderId(order._id);
-        setCargoInputItems([createDefaultDriverCargoInputItem(defaultPickupStopKey)]);
+        setCargoInputGroups(buildInitialDeliveryOrderCargoDraftGroups({
+            pickupStops: order.pickupStops,
+            shipperReferences: (order.shipperReferences && order.shipperReferences.length > 0)
+                ? order.shipperReferences
+                : order.customerDoNumber
+                    ? [{ referenceNumber: order.customerDoNumber, pickupStopKey: order.pickupStops?.[0]?._key }]
+                    : undefined,
+        }));
         setShowCargoInputModal(true);
     }, []);
 
@@ -580,13 +602,14 @@ export default function DriverPortalPage() {
         }
         setShowCargoInputModal(false);
         setCargoInputOrderId(null);
-        setCargoInputItems([createDefaultDriverCargoInputItem()]);
+        setCargoInputGroups([createDefaultDeliveryOrderCargoDraftGroup()]);
     }, [actionLoadingId]);
 
     const openTripCreateModal = useCallback((tripPlan: DriverAssignedTripPlan) => {
-        const defaultPickupStopKey = tripPlan.pickupStops?.[0]?._key || '';
         setTripCreateTargetId(getDriverTripPlanId(tripPlan));
-        setTripCreateItems([createDefaultDriverCargoInputItem(defaultPickupStopKey)]);
+        setTripCreateGroups(buildInitialDeliveryOrderCargoDraftGroups({
+            pickupStops: tripPlan.pickupStops,
+        }));
         setShowTripCreateModal(true);
     }, []);
 
@@ -596,68 +619,146 @@ export default function DriverPortalPage() {
         }
         setShowTripCreateModal(false);
         setTripCreateTargetId(null);
-        setTripCreateItems([createDefaultDriverCargoInputItem()]);
+        setTripCreateGroups([createDefaultDeliveryOrderCargoDraftGroup()]);
     }, [actionLoadingId]);
 
-    const updateCargoInputItem = useCallback((
-        index: number,
-        field: keyof Pick<DriverCargoInputItem, 'description' | 'qtyKoli' | 'weightInputValue' | 'volumeInputValue' | 'shipperReferenceNumber' | 'pickupStopKey'>,
-        value: string | number
+    const updateCargoInputGroup = useCallback((
+        groupId: string,
+        field: keyof Pick<DeliveryOrderCargoDraftGroup, 'pickupStopKey' | 'shipperReferenceNumber'>,
+        value: string
     ) => {
-        setCargoInputItems(previous =>
-            previous.map((item, itemIndex) => (
-                itemIndex === index
-                    ? { ...item, [field]: value }
-                    : item
-            ))
-        );
+        setCargoInputGroups(previous => previous.map(group => (
+            group.id === groupId
+                ? { ...group, [field]: value }
+                : group
+        )));
     }, []);
 
-    const addCargoInputItem = useCallback(() => {
-        setCargoInputItems(previous => [
+    const updateCargoInputItem = useCallback((
+        groupId: string,
+        itemIndex: number,
+        field: keyof DeliveryOrderCargoDraftItem,
+        value: string | number
+    ) => {
+        setCargoInputGroups(previous => previous.map(group => (
+            group.id === groupId
+                ? {
+                    ...group,
+                    items: group.items.map((item, currentIndex) => (
+                        currentIndex === itemIndex
+                            ? { ...item, [field]: value }
+                            : item
+                    )),
+                }
+                : group
+        )));
+    }, []);
+
+    const addCargoInputGroup = useCallback(() => {
+        setCargoInputGroups(previous => [
             ...previous,
-            createDefaultDriverCargoInputItem(cargoInputOrder?.pickupStops?.[0]?._key || ''),
+            createDefaultDeliveryOrderCargoDraftGroup(cargoInputOrder?.pickupStops?.[0]?._key || ''),
         ]);
     }, [cargoInputOrder]);
 
-    const removeCargoInputItem = useCallback((index: number) => {
-        setCargoInputItems(previous => {
-            if (previous.length <= 1) {
-                return [createDefaultDriverCargoInputItem(cargoInputOrder?.pickupStops?.[0]?._key || '')];
-            }
-            return previous.filter((_, itemIndex) => itemIndex !== index);
+    const removeCargoInputGroup = useCallback((groupId: string) => {
+        setCargoInputGroups(previous => {
+            const nextGroups = previous.filter(group => group.id !== groupId);
+            return nextGroups.length > 0
+                ? nextGroups
+                : [createDefaultDeliveryOrderCargoDraftGroup(cargoInputOrder?.pickupStops?.[0]?._key || '')];
         });
     }, [cargoInputOrder]);
+
+    const addCargoInputItem = useCallback((groupId: string) => {
+        setCargoInputGroups(previous => previous.map(group => (
+            group.id === groupId
+                ? { ...group, items: [...group.items, createDefaultDeliveryOrderCargoDraftItem()] }
+                : group
+        )));
+    }, []);
+
+    const removeCargoInputItem = useCallback((groupId: string, itemIndex: number) => {
+        setCargoInputGroups(previous => previous.map(group => {
+            if (group.id !== groupId) {
+                return group;
+            }
+            const nextItems = group.items.filter((_, currentIndex) => currentIndex !== itemIndex);
+            return {
+                ...group,
+                items: nextItems.length > 0 ? nextItems : [createDefaultDeliveryOrderCargoDraftItem()],
+            };
+        }));
+    }, []);
+
+    const updateTripCreateGroup = useCallback((
+        groupId: string,
+        field: keyof Pick<DeliveryOrderCargoDraftGroup, 'pickupStopKey' | 'shipperReferenceNumber'>,
+        value: string
+    ) => {
+        setTripCreateGroups(previous => previous.map(group => (
+            group.id === groupId
+                ? { ...group, [field]: value }
+                : group
+        )));
+    }, []);
 
     const updateTripCreateItem = useCallback((
-        index: number,
-        field: keyof Pick<DriverCargoInputItem, 'description' | 'qtyKoli' | 'weightInputValue' | 'volumeInputValue' | 'shipperReferenceNumber' | 'pickupStopKey'>,
+        groupId: string,
+        itemIndex: number,
+        field: keyof DeliveryOrderCargoDraftItem,
         value: string | number
     ) => {
-        setTripCreateItems(previous =>
-            previous.map((item, itemIndex) => (
-                itemIndex === index
-                    ? { ...item, [field]: value }
-                    : item
-            ))
-        );
+        setTripCreateGroups(previous => previous.map(group => (
+            group.id === groupId
+                ? {
+                    ...group,
+                    items: group.items.map((item, currentIndex) => (
+                        currentIndex === itemIndex
+                            ? { ...item, [field]: value }
+                            : item
+                    )),
+                }
+                : group
+        )));
     }, []);
 
-    const addTripCreateItem = useCallback(() => {
-        setTripCreateItems(previous => [
+    const addTripCreateGroup = useCallback(() => {
+        setTripCreateGroups(previous => [
             ...previous,
-            createDefaultDriverCargoInputItem(tripCreateTarget?.pickupStops?.[0]?._key || ''),
+            createDefaultDeliveryOrderCargoDraftGroup(tripCreateTarget?.pickupStops?.[0]?._key || ''),
         ]);
     }, [tripCreateTarget]);
 
-    const removeTripCreateItem = useCallback((index: number) => {
-        setTripCreateItems(previous => {
-            if (previous.length <= 1) {
-                return [createDefaultDriverCargoInputItem(tripCreateTarget?.pickupStops?.[0]?._key || '')];
-            }
-            return previous.filter((_, itemIndex) => itemIndex !== index);
+    const removeTripCreateGroup = useCallback((groupId: string) => {
+        setTripCreateGroups(previous => {
+            const nextGroups = previous.filter(group => group.id !== groupId);
+            return nextGroups.length > 0
+                ? nextGroups
+                : [createDefaultDeliveryOrderCargoDraftGroup(tripCreateTarget?.pickupStops?.[0]?._key || '')];
         });
     }, [tripCreateTarget]);
+
+    const addTripCreateItem = useCallback((groupId: string) => {
+        setTripCreateGroups(previous => previous.map(group => (
+            group.id === groupId
+                ? { ...group, items: [...group.items, createDefaultDeliveryOrderCargoDraftItem()] }
+                : group
+        )));
+    }, []);
+
+    const removeTripCreateItem = useCallback((groupId: string, itemIndex: number) => {
+        setTripCreateGroups(previous => previous.map(group => {
+            if (group.id !== groupId) {
+                return group;
+            }
+            const nextItems = group.items.filter((_, currentIndex) => currentIndex !== itemIndex);
+            return {
+                ...group,
+                items: nextItems.length > 0 ? nextItems : [createDefaultDeliveryOrderCargoDraftItem()],
+            };
+        }));
+    }, []);
 
     const updateCompletionCargoDraft = useCallback((
         deliveryOrderItemRef: string,
@@ -759,15 +860,20 @@ export default function DriverPortalPage() {
             setFeedback({ type: 'error', message: 'Isi minimal 1 barang sebelum disimpan ke surat jalan.' });
             return;
         }
-        const invalidReferenceRow = cargoInputDraftItems.findIndex(item => !item.shipperReferenceNumber.trim());
-        if (invalidReferenceRow >= 0) {
-            setFeedback({ type: 'error', message: `No. SJ pengirim wajib diisi pada baris barang ${invalidReferenceRow + 1}.` });
+        const normalizedGroups = cargoInputDraftGroups.map(group => ({
+            ...group,
+            resolvedPickupStopKey: group.pickupStopKey || ((cargoInputOrder.pickupStops?.length || 0) === 1 ? cargoInputOrder.pickupStops?.[0]?._key || '' : ''),
+            resolvedShipperReferenceNumber: group.shipperReferenceNumber.trim().toUpperCase(),
+        }));
+        const invalidReferenceGroup = normalizedGroups.findIndex(group => group.draftItems.length > 0 && !group.resolvedShipperReferenceNumber);
+        if (invalidReferenceGroup >= 0) {
+            setFeedback({ type: 'error', message: `No. SJ pengirim wajib diisi pada SJ ${invalidReferenceGroup + 1}.` });
             return;
         }
         if ((cargoInputOrder.pickupStops?.length || 0) > 1) {
-            const invalidPickupRow = cargoInputDraftItems.findIndex(item => !item.pickupStopKey);
-            if (invalidPickupRow >= 0) {
-                setFeedback({ type: 'error', message: `Titik pickup wajib dipilih pada baris barang ${invalidPickupRow + 1}.` });
+            const invalidPickupGroup = normalizedGroups.findIndex(group => !group.resolvedPickupStopKey);
+            if (invalidPickupGroup >= 0) {
+                setFeedback({ type: 'error', message: `Titik pickup wajib dipilih pada SJ ${invalidPickupGroup + 1}.` });
                 return;
             }
         }
@@ -779,17 +885,19 @@ export default function DriverPortalPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     id: cargoInputOrder._id,
-                    cargoItems: cargoInputDraftItems.map(item => ({
-                        customerProductRef: item.customerProductRef || undefined,
-                        description: item.description,
-                        qtyKoli: item.qtyKoli,
-                        weightInputValue: item.weightInputValue,
-                        weightInputUnit: item.weightInputUnit,
-                        volumeInputValue: item.volumeInputValue,
-                        volumeInputUnit: item.volumeInputUnit,
-                        shipperReferenceNumber: item.shipperReferenceNumber.trim().toUpperCase(),
-                        pickupStopKey: item.pickupStopKey || undefined,
-                    })),
+                    cargoItems: normalizedGroups.flatMap(group =>
+                        group.draftItems.map(item => ({
+                            customerProductRef: item.customerProductRef || undefined,
+                            description: item.description,
+                            qtyKoli: item.qtyKoli,
+                            weightInputValue: item.weightInputValue,
+                            weightInputUnit: item.weightInputUnit,
+                            volumeInputValue: item.volumeInputValue,
+                            volumeInputUnit: item.volumeInputUnit,
+                            shipperReferenceNumber: group.resolvedShipperReferenceNumber,
+                            pickupStopKey: group.resolvedPickupStopKey || undefined,
+                        }))
+                    ),
                 }),
             });
             const payload = await response.json().catch(() => null);
@@ -804,7 +912,7 @@ export default function DriverPortalPage() {
             await loadOrders();
             setShowCargoInputModal(false);
             setCargoInputOrderId(null);
-            setCargoInputItems([createDefaultDriverCargoInputItem()]);
+            setCargoInputGroups([createDefaultDeliveryOrderCargoDraftGroup()]);
         } catch (error) {
             if (error instanceof Error && 'status' in error && (error.status === 401 || error.status === 403)) {
                 handleDriverAuthFailure(error.message);
@@ -817,22 +925,27 @@ export default function DriverPortalPage() {
         } finally {
             setActionLoadingId(null);
         }
-    }, [cargoInputDraftItems, cargoInputOrder, handleDriverAuthFailure, loadOrders]);
+    }, [cargoInputDraftGroups, cargoInputDraftItems, cargoInputOrder, handleDriverAuthFailure, loadOrders]);
 
     const submitTripCreate = useCallback(async () => {
         if (!tripCreateTarget) {
             return;
         }
+        const normalizedGroups = tripCreateDraftGroups.map(group => ({
+            ...group,
+            resolvedPickupStopKey: group.pickupStopKey || ((tripCreateTarget.pickupStops?.length || 0) === 1 ? tripCreateTarget.pickupStops?.[0]?._key || '' : ''),
+            resolvedShipperReferenceNumber: group.shipperReferenceNumber.trim().toUpperCase(),
+        }));
         if ((tripCreateTarget.pickupStops?.length || 0) > 1) {
-            const invalidPickupRow = tripCreateDraftItems.findIndex(item => !item.pickupStopKey);
-            if (invalidPickupRow >= 0) {
-                setFeedback({ type: 'error', message: `Titik pickup wajib dipilih pada baris barang ${invalidPickupRow + 1}.` });
+            const invalidPickupGroup = normalizedGroups.findIndex(group => !group.resolvedPickupStopKey);
+            if (invalidPickupGroup >= 0) {
+                setFeedback({ type: 'error', message: `Titik pickup wajib dipilih pada SJ ${invalidPickupGroup + 1}.` });
                 return;
             }
         }
-        const invalidReferenceRow = tripCreateDraftItems.findIndex(item => !item.shipperReferenceNumber.trim());
-        if (invalidReferenceRow >= 0) {
-            setFeedback({ type: 'error', message: `No. SJ pengirim wajib diisi pada baris barang ${invalidReferenceRow + 1}.` });
+        const invalidReferenceGroup = normalizedGroups.findIndex(group => group.draftItems.length > 0 && !group.resolvedShipperReferenceNumber);
+        if (invalidReferenceGroup >= 0) {
+            setFeedback({ type: 'error', message: `No. SJ pengirim wajib diisi pada SJ ${invalidReferenceGroup + 1}.` });
             return;
         }
 
@@ -845,17 +958,19 @@ export default function DriverPortalPage() {
                 body: JSON.stringify({
                     orderRef: tripCreateTarget.orderRef,
                     orderTripPlanKey: tripCreateTarget.tripPlanKey,
-                    cargoItems: tripCreateDraftItems.map(item => ({
-                        customerProductRef: item.customerProductRef || undefined,
-                        description: item.description,
-                        qtyKoli: item.qtyKoli,
-                        weightInputValue: item.weightInputValue,
-                        weightInputUnit: item.weightInputUnit,
-                        volumeInputValue: item.volumeInputValue,
-                        volumeInputUnit: item.volumeInputUnit,
-                        shipperReferenceNumber: item.shipperReferenceNumber.trim().toUpperCase(),
-                        pickupStopKey: item.pickupStopKey || undefined,
-                    })),
+                    cargoItems: normalizedGroups.flatMap(group =>
+                        group.draftItems.map(item => ({
+                            customerProductRef: item.customerProductRef || undefined,
+                            description: item.description,
+                            qtyKoli: item.qtyKoli,
+                            weightInputValue: item.weightInputValue,
+                            weightInputUnit: item.weightInputUnit,
+                            volumeInputValue: item.volumeInputValue,
+                            volumeInputUnit: item.volumeInputUnit,
+                            shipperReferenceNumber: group.resolvedShipperReferenceNumber,
+                            pickupStopKey: group.resolvedPickupStopKey || undefined,
+                        }))
+                    ),
                 }),
             });
             const payload = await response.json().catch(() => null);
@@ -870,7 +985,7 @@ export default function DriverPortalPage() {
             await loadOrders();
             setShowTripCreateModal(false);
             setTripCreateTargetId(null);
-            setTripCreateItems([createDefaultDriverCargoInputItem()]);
+            setTripCreateGroups([createDefaultDeliveryOrderCargoDraftGroup()]);
         } catch (error) {
             if (error instanceof Error && 'status' in error && (error.status === 401 || error.status === 403)) {
                 handleDriverAuthFailure(error.message);
@@ -883,7 +998,7 @@ export default function DriverPortalPage() {
         } finally {
             setActionLoadingId(null);
         }
-    }, [handleDriverAuthFailure, loadOrders, tripCreateDraftItems, tripCreateTarget]);
+    }, [handleDriverAuthFailure, loadOrders, tripCreateDraftGroups, tripCreateDraftItems, tripCreateTarget]);
 
     const handleDeliveryProgress = useCallback(
         async (deliveryOrderRef: string, nextStatus: DriverProgressStatus) => {
@@ -1155,139 +1270,195 @@ export default function DriverPortalPage() {
                                     <strong>{tripCreateDraftItems.length > 0 ? formatCargoSummary(tripCreateSummary) : 'Belum ada barang'}</strong>
                                 </div>
                             </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginTop: '1rem', marginBottom: '1rem' }}>
+                                <div className="driver-completion-summary-card">
+                                    <span>Draft SJ</span>
+                                    <strong>{tripCreateGroups.length} SJ</strong>
+                                </div>
+                                <div className="driver-completion-summary-card">
+                                    <span>Barang Dicatat</span>
+                                    <strong>{tripCreateDraftItems.length} barang</strong>
+                                </div>
+                            </div>
 
                             <div style={{ display: 'grid', gap: '0.85rem' }}>
-                                {tripCreateItems.map((item, index) => (
-                                    <div
-                                        key={`driver-trip-create-${index}`}
-                                        style={{
-                                            display: 'flex',
-                                            gap: 12,
-                                            alignItems: 'flex-end',
-                                            flexWrap: 'wrap',
-                                            padding: 12,
-                                            background: 'var(--color-gray-50)',
-                                            borderRadius: 'var(--radius-md)',
-                                            border: '1px solid var(--color-gray-200)',
-                                        }}
-                                    >
-                                        {tripCreateTarget.pickupStops.length > 0 && (
-                                            <div style={{ flex: '1 1 240px' }}>
-                                                <label className="form-label">Titik Pickup</label>
-                                                <select
-                                                    className="form-select"
-                                                    value={item.pickupStopKey}
-                                                    onChange={event => updateTripCreateItem(index, 'pickupStopKey', event.target.value)}
-                                                    disabled={isActionInFlight}
-                                                >
-                                                    <option value="">Pilih titik pickup</option>
-                                                    {tripCreateTarget.pickupStops.map((pickupStop, pickupIndex) => (
-                                                        <option key={pickupStop._key || `${pickupIndex}-${pickupStop.pickupAddress}`} value={pickupStop._key || ''}>
-                                                            {`Pickup ${pickupIndex + 1}${pickupStop.pickupLabel ? ` - ${pickupStop.pickupLabel}` : ''}`}
-                                                        </option>
-                                                    ))}
-                                                </select>
+                                {tripCreateGroups.map((group, groupIndex) => {
+                                    const draftItemsInGroup = getDeliveryOrderCargoDraftItems(group);
+                                    return (
+                                        <div key={group.id} style={{ display: 'grid', gap: '0.85rem', padding: '1rem', background: 'var(--color-gray-50)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-gray-200)' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                <div>
+                                                    <div className="font-semibold">SJ {groupIndex + 1}</div>
+                                                    <div className="text-muted text-sm">{draftItemsInGroup.length} barang</div>
+                                                </div>
+                                                {tripCreateGroups.length > 1 && (
+                                                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeTripCreateGroup(group.id)} disabled={isActionInFlight}>
+                                                        <X size={14} /> Hapus SJ
+                                                    </button>
+                                                )}
                                             </div>
-                                        )}
-                                        <div style={{ flex: '1 1 220px' }}>
-                                            <label className="form-label">No. SJ Pengirim</label>
-                                            <input
-                                                className="form-input"
-                                                value={item.shipperReferenceNumber}
-                                                onChange={event => updateTripCreateItem(index, 'shipperReferenceNumber', event.target.value.toUpperCase())}
-                                                placeholder="Masukkan nomor surat jalan pengirim"
-                                                disabled={isActionInFlight}
-                                            />
-                                        </div>
-                                        <div style={{ flex: '2 1 260px' }}>
-                                            <label className="form-label">Deskripsi Barang</label>
-                                            <input
-                                                className="form-input"
-                                                value={item.description}
-                                                onChange={event => updateTripCreateItem(index, 'description', event.target.value)}
-                                                placeholder="Mis. Oli 50 liter / Ban luar / Pupuk"
-                                                disabled={isActionInFlight}
-                                            />
-                                        </div>
-                                        <div style={{ flex: '0 1 110px' }}>
-                                            <label className="form-label">Koli</label>
-                                            <FormattedNumberInput
-                                                min={0}
-                                                allowDecimal={false}
-                                                value={item.qtyKoli}
-                                                onValueChange={value => updateTripCreateItem(index, 'qtyKoli', value)}
-                                                disabled={isActionInFlight}
-                                            />
-                                        </div>
-                                        <div style={{ flex: '1 1 180px' }}>
-                                            <label className="form-label">Berat</label>
-                                            <div className="driver-completion-unit-row">
-                                                <FormattedNumberInput
-                                                    min={0}
-                                                    maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
-                                                    value={item.weightInputValue}
-                                                    onValueChange={value => updateTripCreateItem(index, 'weightInputValue', value)}
+
+                                            {tripCreateTarget.pickupStops.length > 0 && (
+                                                <div style={{ flex: '1 1 240px' }}>
+                                                    <label className="form-label">Titik Pickup</label>
+                                                    <select
+                                                        className="form-select"
+                                                        value={group.pickupStopKey}
+                                                        onChange={event => updateTripCreateGroup(group.id, 'pickupStopKey', event.target.value)}
+                                                        disabled={isActionInFlight}
+                                                    >
+                                                        <option value="">Pilih titik pickup</option>
+                                                        {tripCreateTarget.pickupStops.map((pickupStop, pickupIndex) => (
+                                                            <option key={pickupStop._key || `${pickupIndex}-${pickupStop.pickupAddress}`} value={pickupStop._key || ''}>
+                                                                {`Pickup ${pickupIndex + 1}${pickupStop.pickupLabel ? ` - ${pickupStop.pickupLabel}` : ''}`}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            )}
+
+                                            <div style={{ flex: '1 1 220px' }}>
+                                                <label className="form-label">No. SJ Pengirim</label>
+                                                <input
+                                                    className="form-input"
+                                                    value={group.shipperReferenceNumber}
+                                                    onChange={event => updateTripCreateGroup(group.id, 'shipperReferenceNumber', event.target.value.toUpperCase())}
+                                                    placeholder="Masukkan nomor surat jalan pengirim"
                                                     disabled={isActionInFlight}
                                                 />
-                                                <select
-                                                    className="form-select"
-                                                    value={item.weightInputUnit}
-                                                    onChange={event => setTripCreateItems(previous => previous.map((entry, entryIndex) => (
-                                                        entryIndex === index ? { ...entry, ...updateOrderItemWeightUnit(entry, event.target.value as DriverCargoInputItem['weightInputUnit']) } : entry
-                                                    )))}
-                                                    disabled={isActionInFlight}
-                                                >
-                                                    {WEIGHT_INPUT_UNIT_OPTIONS.map(option => (
-                                                        <option key={option.value} value={option.value}>{option.label}</option>
-                                                    ))}
-                                                </select>
+                                            </div>
+
+                                            <div style={{ display: 'grid', gap: '0.75rem' }}>
+                                                {group.items.map((item, itemIndex) => (
+                                                    <div key={`${group.id}-item-${itemIndex}`} style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', padding: 12, background: 'var(--color-white)', borderRadius: '0.8rem', border: '1px solid var(--color-gray-200)' }}>
+                                                        <div style={{ flex: '2 1 260px' }}>
+                                                            <label className="form-label">Deskripsi Barang</label>
+                                                            <input
+                                                                className="form-input"
+                                                                value={item.description}
+                                                                onChange={event => updateTripCreateItem(group.id, itemIndex, 'description', event.target.value)}
+                                                                placeholder="Mis. Oli 50 liter / Ban luar / Pupuk"
+                                                                disabled={isActionInFlight}
+                                                            />
+                                                        </div>
+                                                        <div style={{ flex: '0 1 110px' }}>
+                                                            <label className="form-label">Koli</label>
+                                                            <FormattedNumberInput
+                                                                min={0}
+                                                                allowDecimal={false}
+                                                                value={item.qtyKoli}
+                                                                onValueChange={value => updateTripCreateItem(group.id, itemIndex, 'qtyKoli', value)}
+                                                                disabled={isActionInFlight}
+                                                            />
+                                                        </div>
+                                                        <div style={{ flex: '1 1 180px' }}>
+                                                            <label className="form-label">Berat</label>
+                                                            <div className="driver-completion-unit-row">
+                                                                <FormattedNumberInput
+                                                                    min={0}
+                                                                    maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
+                                                                    value={item.weightInputValue}
+                                                                    onValueChange={value => updateTripCreateItem(group.id, itemIndex, 'weightInputValue', value)}
+                                                                    disabled={isActionInFlight}
+                                                                />
+                                                                <select
+                                                                    className="form-select"
+                                                                    value={item.weightInputUnit}
+                                                                    onChange={event => setTripCreateGroups(previous => previous.map(entry => (
+                                                                        entry.id === group.id
+                                                                            ? {
+                                                                                ...entry,
+                                                                                items: entry.items.map((entryItem, entryItemIndex) => (
+                                                                                    entryItemIndex === itemIndex
+                                                                                        ? toDeliveryOrderCargoDraftItem(updateOrderItemWeightUnit({
+                                                                                            ...entryItem,
+                                                                                            pickupStopKey: entry.pickupStopKey,
+                                                                                            shipperReferenceNumber: entry.shipperReferenceNumber,
+                                                                                        }, event.target.value as DeliveryOrderCargoDraftItem['weightInputUnit']))
+                                                                                        : entryItem
+                                                                                )),
+                                                                            }
+                                                                            : entry
+                                                                    )))}
+                                                                    disabled={isActionInFlight}
+                                                                >
+                                                                    {WEIGHT_INPUT_UNIT_OPTIONS.map(option => (
+                                                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ flex: '1 1 180px' }}>
+                                                            <label className="form-label">Volume</label>
+                                                            <div className="driver-completion-unit-row">
+                                                                <FormattedNumberInput
+                                                                    min={0}
+                                                                    maxFractionDigits={item.volumeInputUnit === 'LITER' ? 0 : 3}
+                                                                    value={item.volumeInputValue}
+                                                                    onValueChange={value => updateTripCreateItem(group.id, itemIndex, 'volumeInputValue', value)}
+                                                                    disabled={isActionInFlight}
+                                                                />
+                                                                <select
+                                                                    className="form-select"
+                                                                    value={item.volumeInputUnit}
+                                                                    onChange={event => setTripCreateGroups(previous => previous.map(entry => (
+                                                                        entry.id === group.id
+                                                                            ? {
+                                                                                ...entry,
+                                                                                items: entry.items.map((entryItem, entryItemIndex) => (
+                                                                                    entryItemIndex === itemIndex
+                                                                                        ? toDeliveryOrderCargoDraftItem(updateOrderItemVolumeUnit({
+                                                                                            ...entryItem,
+                                                                                            pickupStopKey: entry.pickupStopKey,
+                                                                                            shipperReferenceNumber: entry.shipperReferenceNumber,
+                                                                                        }, event.target.value as DeliveryOrderCargoDraftItem['volumeInputUnit']))
+                                                                                        : entryItem
+                                                                                )),
+                                                                            }
+                                                                            : entry
+                                                                    )))}
+                                                                    disabled={isActionInFlight}
+                                                                >
+                                                                    {VOLUME_INPUT_UNIT_OPTIONS.map(option => (
+                                                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                        </div>
+                                                        {group.items.length > 1 && (
+                                                            <button
+                                                                type="button"
+                                                                className="btn btn-ghost btn-icon-only"
+                                                                onClick={() => removeTripCreateItem(group.id, itemIndex)}
+                                                                disabled={isActionInFlight}
+                                                                style={{ marginBottom: 4 }}
+                                                            >
+                                                                &times;
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                                <div className="text-muted text-sm">
+                                                    Satu SJ boleh berisi banyak barang.
+                                                </div>
+                                                <button type="button" className="btn btn-secondary btn-sm" onClick={() => addTripCreateItem(group.id)} disabled={isActionInFlight}>
+                                                    <Plus size={14} /> Tambah Barang di SJ Ini
+                                                </button>
                                             </div>
                                         </div>
-                                        <div style={{ flex: '1 1 180px' }}>
-                                            <label className="form-label">Volume</label>
-                                            <div className="driver-completion-unit-row">
-                                                <FormattedNumberInput
-                                                    min={0}
-                                                    maxFractionDigits={item.volumeInputUnit === 'LITER' ? 0 : 3}
-                                                    value={item.volumeInputValue}
-                                                    onValueChange={value => updateTripCreateItem(index, 'volumeInputValue', value)}
-                                                    disabled={isActionInFlight}
-                                                />
-                                                <select
-                                                    className="form-select"
-                                                    value={item.volumeInputUnit}
-                                                    onChange={event => setTripCreateItems(previous => previous.map((entry, entryIndex) => (
-                                                        entryIndex === index ? { ...entry, ...updateOrderItemVolumeUnit(entry, event.target.value as DriverCargoInputItem['volumeInputUnit']) } : entry
-                                                    )))}
-                                                    disabled={isActionInFlight}
-                                                >
-                                                    {VOLUME_INPUT_UNIT_OPTIONS.map(option => (
-                                                        <option key={option.value} value={option.value}>{option.label}</option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                        </div>
-                                        {tripCreateItems.length > 1 && (
-                                            <button
-                                                type="button"
-                                                className="btn btn-ghost btn-icon-only"
-                                                onClick={() => removeTripCreateItem(index)}
-                                                disabled={isActionInFlight}
-                                                style={{ marginBottom: 4 }}
-                                            >
-                                                &times;
-                                            </button>
-                                        )}
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
 
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginTop: '1rem' }}>
                                 <div className="text-muted text-sm">
-                                    Surat Jalan boleh dibuat dulu. Kalau barang belum final, kosongkan baris ini dan tambah nanti dari DO aktif.
+                                    Surat Jalan boleh dibuat dulu. Kalau barang belum final, kosongkan draft lalu isi nanti dari DO aktif.
                                 </div>
-                                <button type="button" className="btn btn-secondary btn-sm" onClick={addTripCreateItem} disabled={isActionInFlight}>
-                                    <Plus size={14} /> Tambah Baris
+                                <button type="button" className="btn btn-secondary btn-sm" onClick={addTripCreateGroup} disabled={isActionInFlight}>
+                                    <Plus size={14} /> Tambah SJ
                                 </button>
                             </div>
                         </div>
@@ -1338,139 +1509,194 @@ export default function DriverPortalPage() {
                                     <strong>{cargoInputDraftItems.length > 0 ? formatCargoSummary(cargoInputSummary) : 'Belum ada barang'}</strong>
                                 </div>
                             </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginTop: '1rem', marginBottom: '1rem' }}>
+                                <div className="driver-completion-summary-card">
+                                    <span>Draft SJ</span>
+                                    <strong>{cargoInputGroups.length} SJ</strong>
+                                </div>
+                                <div className="driver-completion-summary-card">
+                                    <span>Barang Dicatat</span>
+                                    <strong>{cargoInputDraftItems.length} barang</strong>
+                                </div>
+                            </div>
 
                             <div style={{ display: 'grid', gap: '0.85rem' }}>
-                                {cargoInputItems.map((item, index) => (
-                                    <div
-                                        key={`driver-cargo-input-${index}`}
-                                        style={{
-                                            display: 'flex',
-                                            gap: 12,
-                                            alignItems: 'flex-end',
-                                            flexWrap: 'wrap',
-                                            padding: 12,
-                                            background: 'var(--color-gray-50)',
-                                            borderRadius: 'var(--radius-md)',
-                                            border: '1px solid var(--color-gray-200)',
-                                        }}
-                                    >
-                                        {(cargoInputOrder.pickupStops?.length || 0) > 0 && (
-                                            <div style={{ flex: '1 1 240px' }}>
-                                                <label className="form-label">Titik Pickup</label>
-                                                <select
-                                                    className="form-select"
-                                                    value={item.pickupStopKey}
-                                                    onChange={event => updateCargoInputItem(index, 'pickupStopKey', event.target.value)}
-                                                    disabled={isActionInFlight}
-                                                >
-                                                    <option value="">Pilih titik pickup</option>
-                                                    {(cargoInputOrder.pickupStops || []).map((pickupStop, pickupIndex) => (
-                                                        <option key={pickupStop._key || `${pickupIndex}-${pickupStop.pickupAddress}`} value={pickupStop._key || ''}>
-                                                            {`Pickup ${pickupIndex + 1}${pickupStop.pickupLabel ? ` - ${pickupStop.pickupLabel}` : ''}`}
-                                                        </option>
-                                                    ))}
-                                                </select>
+                                {cargoInputGroups.map((group, groupIndex) => {
+                                    const draftItemsInGroup = getDeliveryOrderCargoDraftItems(group);
+                                    return (
+                                        <div key={group.id} style={{ display: 'grid', gap: '0.85rem', padding: 12, background: 'var(--color-gray-50)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-gray-200)' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                <div>
+                                                    <div className="font-semibold">SJ {groupIndex + 1}</div>
+                                                    <div className="text-muted text-sm">{draftItemsInGroup.length} barang</div>
+                                                </div>
+                                                {cargoInputGroups.length > 1 && (
+                                                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeCargoInputGroup(group.id)} disabled={isActionInFlight}>
+                                                        <X size={14} /> Hapus SJ
+                                                    </button>
+                                                )}
                                             </div>
-                                        )}
-                                        <div style={{ flex: '1 1 220px' }}>
-                                            <label className="form-label">No. SJ Pengirim</label>
-                                            <input
-                                                className="form-input"
-                                                value={item.shipperReferenceNumber}
-                                                onChange={event => updateCargoInputItem(index, 'shipperReferenceNumber', event.target.value.toUpperCase())}
-                                                placeholder="Masukkan nomor surat jalan pengirim"
-                                                disabled={isActionInFlight}
-                                            />
-                                        </div>
-                                        <div style={{ flex: '2 1 260px' }}>
-                                            <label className="form-label">Deskripsi Barang</label>
-                                            <input
-                                                className="form-input"
-                                                value={item.description}
-                                                onChange={event => updateCargoInputItem(index, 'description', event.target.value)}
-                                                placeholder="Mis. Oli 50 liter / Ban luar / Pupuk"
-                                                disabled={isActionInFlight}
-                                            />
-                                        </div>
-                                        <div style={{ flex: '0 1 110px' }}>
-                                            <label className="form-label">Koli</label>
-                                            <FormattedNumberInput
-                                                min={0}
-                                                allowDecimal={false}
-                                                value={item.qtyKoli}
-                                                onValueChange={value => updateCargoInputItem(index, 'qtyKoli', value)}
-                                                disabled={isActionInFlight}
-                                            />
-                                        </div>
-                                        <div style={{ flex: '1 1 180px' }}>
-                                            <label className="form-label">Berat</label>
-                                            <div className="driver-completion-unit-row">
-                                                <FormattedNumberInput
-                                                    min={0}
-                                                    maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
-                                                    value={item.weightInputValue}
-                                                    onValueChange={value => updateCargoInputItem(index, 'weightInputValue', value)}
+
+                                            {(cargoInputOrder.pickupStops?.length || 0) > 0 && (
+                                                <div style={{ flex: '1 1 240px' }}>
+                                                    <label className="form-label">Titik Pickup</label>
+                                                    <select
+                                                        className="form-select"
+                                                        value={group.pickupStopKey}
+                                                        onChange={event => updateCargoInputGroup(group.id, 'pickupStopKey', event.target.value)}
+                                                        disabled={isActionInFlight}
+                                                    >
+                                                        <option value="">Pilih titik pickup</option>
+                                                        {(cargoInputOrder.pickupStops || []).map((pickupStop, pickupIndex) => (
+                                                            <option key={pickupStop._key || `${pickupIndex}-${pickupStop.pickupAddress}`} value={pickupStop._key || ''}>
+                                                                {`Pickup ${pickupIndex + 1}${pickupStop.pickupLabel ? ` - ${pickupStop.pickupLabel}` : ''}`}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            )}
+                                            <div style={{ flex: '1 1 220px' }}>
+                                                <label className="form-label">No. SJ Pengirim</label>
+                                                <input
+                                                    className="form-input"
+                                                    value={group.shipperReferenceNumber}
+                                                    onChange={event => updateCargoInputGroup(group.id, 'shipperReferenceNumber', event.target.value.toUpperCase())}
+                                                    placeholder="Masukkan nomor surat jalan pengirim"
                                                     disabled={isActionInFlight}
                                                 />
-                                                <select
-                                                    className="form-select"
-                                                    value={item.weightInputUnit}
-                                                    onChange={event => setCargoInputItems(previous => previous.map((entry, entryIndex) => (
-                                                        entryIndex === index ? { ...entry, ...updateOrderItemWeightUnit(entry, event.target.value as DriverCargoInputItem['weightInputUnit']) } : entry
-                                                    )))}
-                                                    disabled={isActionInFlight}
-                                                >
-                                                    {WEIGHT_INPUT_UNIT_OPTIONS.map(option => (
-                                                        <option key={option.value} value={option.value}>{option.label}</option>
-                                                    ))}
-                                                </select>
+                                            </div>
+
+                                            <div style={{ display: 'grid', gap: '0.75rem' }}>
+                                                {group.items.map((item, itemIndex) => (
+                                                    <div key={`${group.id}-item-${itemIndex}`} style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', padding: 12, background: 'var(--color-white)', borderRadius: '0.8rem', border: '1px solid var(--color-gray-200)' }}>
+                                                        <div style={{ flex: '2 1 260px' }}>
+                                                            <label className="form-label">Deskripsi Barang</label>
+                                                            <input
+                                                                className="form-input"
+                                                                value={item.description}
+                                                                onChange={event => updateCargoInputItem(group.id, itemIndex, 'description', event.target.value)}
+                                                                placeholder="Mis. Oli 50 liter / Ban luar / Pupuk"
+                                                                disabled={isActionInFlight}
+                                                            />
+                                                        </div>
+                                                        <div style={{ flex: '0 1 110px' }}>
+                                                            <label className="form-label">Koli</label>
+                                                            <FormattedNumberInput
+                                                                min={0}
+                                                                allowDecimal={false}
+                                                                value={item.qtyKoli}
+                                                                onValueChange={value => updateCargoInputItem(group.id, itemIndex, 'qtyKoli', value)}
+                                                                disabled={isActionInFlight}
+                                                            />
+                                                        </div>
+                                                        <div style={{ flex: '1 1 180px' }}>
+                                                            <label className="form-label">Berat</label>
+                                                            <div className="driver-completion-unit-row">
+                                                                <FormattedNumberInput
+                                                                    min={0}
+                                                                    maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
+                                                                    value={item.weightInputValue}
+                                                                    onValueChange={value => updateCargoInputItem(group.id, itemIndex, 'weightInputValue', value)}
+                                                                    disabled={isActionInFlight}
+                                                                />
+                                                                <select
+                                                                    className="form-select"
+                                                                    value={item.weightInputUnit}
+                                                                    onChange={event => setCargoInputGroups(previous => previous.map(entry => (
+                                                                        entry.id === group.id
+                                                                            ? {
+                                                                                ...entry,
+                                                                                items: entry.items.map((entryItem, entryItemIndex) => (
+                                                                                    entryItemIndex === itemIndex
+                                                                                        ? toDeliveryOrderCargoDraftItem(updateOrderItemWeightUnit({
+                                                                                            ...entryItem,
+                                                                                            pickupStopKey: entry.pickupStopKey,
+                                                                                            shipperReferenceNumber: entry.shipperReferenceNumber,
+                                                                                        }, event.target.value as DeliveryOrderCargoDraftItem['weightInputUnit']))
+                                                                                        : entryItem
+                                                                                )),
+                                                                            }
+                                                                            : entry
+                                                                    )))}
+                                                                    disabled={isActionInFlight}
+                                                                >
+                                                                    {WEIGHT_INPUT_UNIT_OPTIONS.map(option => (
+                                                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ flex: '1 1 180px' }}>
+                                                            <label className="form-label">Volume</label>
+                                                            <div className="driver-completion-unit-row">
+                                                                <FormattedNumberInput
+                                                                    min={0}
+                                                                    maxFractionDigits={item.volumeInputUnit === 'LITER' ? 0 : 3}
+                                                                    value={item.volumeInputValue}
+                                                                    onValueChange={value => updateCargoInputItem(group.id, itemIndex, 'volumeInputValue', value)}
+                                                                    disabled={isActionInFlight}
+                                                                />
+                                                                <select
+                                                                    className="form-select"
+                                                                    value={item.volumeInputUnit}
+                                                                    onChange={event => setCargoInputGroups(previous => previous.map(entry => (
+                                                                        entry.id === group.id
+                                                                            ? {
+                                                                                ...entry,
+                                                                                items: entry.items.map((entryItem, entryItemIndex) => (
+                                                                                    entryItemIndex === itemIndex
+                                                                                        ? toDeliveryOrderCargoDraftItem(updateOrderItemVolumeUnit({
+                                                                                            ...entryItem,
+                                                                                            pickupStopKey: entry.pickupStopKey,
+                                                                                            shipperReferenceNumber: entry.shipperReferenceNumber,
+                                                                                        }, event.target.value as DeliveryOrderCargoDraftItem['volumeInputUnit']))
+                                                                                        : entryItem
+                                                                                )),
+                                                                            }
+                                                                            : entry
+                                                                    )))}
+                                                                    disabled={isActionInFlight}
+                                                                >
+                                                                    {VOLUME_INPUT_UNIT_OPTIONS.map(option => (
+                                                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                        </div>
+                                                        {group.items.length > 1 && (
+                                                            <button
+                                                                type="button"
+                                                                className="btn btn-ghost btn-icon-only"
+                                                                onClick={() => removeCargoInputItem(group.id, itemIndex)}
+                                                                disabled={isActionInFlight}
+                                                                style={{ marginBottom: 4 }}
+                                                            >
+                                                                &times;
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                                <div className="text-muted text-sm">
+                                                    Satu SJ boleh ditambah bertahap selama trip masih aktif.
+                                                </div>
+                                                <button type="button" className="btn btn-secondary btn-sm" onClick={() => addCargoInputItem(group.id)} disabled={isActionInFlight}>
+                                                    <Plus size={14} /> Tambah Barang di SJ Ini
+                                                </button>
                                             </div>
                                         </div>
-                                        <div style={{ flex: '1 1 180px' }}>
-                                            <label className="form-label">Volume</label>
-                                            <div className="driver-completion-unit-row">
-                                                <FormattedNumberInput
-                                                    min={0}
-                                                    maxFractionDigits={item.volumeInputUnit === 'LITER' ? 0 : 3}
-                                                    value={item.volumeInputValue}
-                                                    onValueChange={value => updateCargoInputItem(index, 'volumeInputValue', value)}
-                                                    disabled={isActionInFlight}
-                                                />
-                                                <select
-                                                    className="form-select"
-                                                    value={item.volumeInputUnit}
-                                                    onChange={event => setCargoInputItems(previous => previous.map((entry, entryIndex) => (
-                                                        entryIndex === index ? { ...entry, ...updateOrderItemVolumeUnit(entry, event.target.value as DriverCargoInputItem['volumeInputUnit']) } : entry
-                                                    )))}
-                                                    disabled={isActionInFlight}
-                                                >
-                                                    {VOLUME_INPUT_UNIT_OPTIONS.map(option => (
-                                                        <option key={option.value} value={option.value}>{option.label}</option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                        </div>
-                                        {cargoInputItems.length > 1 && (
-                                            <button
-                                                type="button"
-                                                className="btn btn-ghost btn-icon-only"
-                                                onClick={() => removeCargoInputItem(index)}
-                                                disabled={isActionInFlight}
-                                                style={{ marginBottom: 4 }}
-                                            >
-                                                &times;
-                                            </button>
-                                        )}
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
 
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginTop: '1rem' }}>
                                 <div className="text-muted text-sm">
                                     Barang boleh ditambah bertahap. Pastikan deskripsi dan muatan sesuai surat jalan yang driver pegang.
                                 </div>
-                                <button type="button" className="btn btn-secondary btn-sm" onClick={addCargoInputItem} disabled={isActionInFlight}>
-                                    <Plus size={14} /> Tambah Baris
+                                <button type="button" className="btn btn-secondary btn-sm" onClick={addCargoInputGroup} disabled={isActionInFlight}>
+                                    <Plus size={14} /> Tambah SJ
                                 </button>
                             </div>
                         </div>

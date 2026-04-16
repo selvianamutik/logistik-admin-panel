@@ -528,6 +528,51 @@ function normalizeIncomingShipperReferences(
     return normalized;
 }
 
+type DeliveryOrderCargoReferenceSnapshot = {
+    pickupStopKey?: string;
+    pickupAddress?: string;
+    shipperReferenceNumber?: string;
+};
+
+function buildShipperReferencesFromCargoSnapshots(
+    items: DeliveryOrderCargoReferenceSnapshot[],
+    pickupStops: NormalizedDeliveryOrderPickupStop[],
+    existing: DeliveryOrderShipperReference[] | undefined
+) {
+    const pickupMap = new Map(pickupStops.map(stop => [stop._key, stop]));
+    const existingByNumber = new Map(
+        normalizeExistingShipperReferences(existing, pickupStops).map(reference => [reference.referenceNumber, reference])
+    );
+    const references: NormalizedDeliveryOrderShipperReference[] = [];
+
+    for (const item of items) {
+        const referenceNumber = normalizeReferenceNumber(item.shipperReferenceNumber);
+        if (!referenceNumber) {
+            continue;
+        }
+        const pickupStopKey = normalizeOptionalText(item.pickupStopKey) || undefined;
+        if (pickupStopKey && !pickupMap.has(pickupStopKey)) {
+            throw new Error(`Titik pickup untuk SJ pengirim ${referenceNumber} tidak ditemukan di surat jalan`);
+        }
+        const reference = upsertShipperReferenceForPickup(references, referenceNumber, pickupStopKey, pickupMap);
+        if (!reference.pickupAddress) {
+            reference.pickupAddress = normalizeOptionalText(item.pickupAddress) || reference.pickupAddress;
+        }
+    }
+
+    return references.map((reference, index) => {
+        const existingReference = existingByNumber.get(reference.referenceNumber);
+        return {
+            ...reference,
+            _key: existingReference?._key || reference._key,
+            sequence: index + 1,
+            pickupStopKey: reference.pickupStopKey || existingReference?.pickupStopKey,
+            pickupAddress: reference.pickupAddress || existingReference?.pickupAddress,
+            notes: reference.notes || existingReference?.notes,
+        };
+    });
+}
+
 function buildCustomerDoConstraintDocs(deliveryOrderId: string, customerRef: string, references: NormalizedDeliveryOrderShipperReference[]) {
     return references.map(reference =>
         buildDeliveryOrderCustomerDoConstraintDoc(deliveryOrderId, customerRef, reference.referenceNumber)
@@ -4049,6 +4094,7 @@ export async function handleDeliveryOrderAppendCargoItems(
         _rev?: string;
         doNumber?: string;
         status?: string;
+        pendingDriverStatus?: string;
         orderRef?: unknown;
         customerRef?: unknown;
         vehicleRef?: unknown;
@@ -4061,6 +4107,12 @@ export async function handleDeliveryOrderAppendCargoItems(
     if (!['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status || '')) {
         return NextResponse.json(
             { error: 'Muatan hanya bisa ditambahkan saat surat jalan masih aktif sebelum trip selesai atau dibatalkan.' },
+            { status: 409 }
+        );
+    }
+    if (deliveryOrder.pendingDriverStatus) {
+        return NextResponse.json(
+            { error: `DO ${deliveryOrder.doNumber || id} sedang menunggu approval ${deliveryOrder.pendingDriverStatus}. Review dulu sebelum muatan diubah.` },
             { status: 409 }
         );
     }
@@ -4351,6 +4403,505 @@ export async function handleDeliveryOrderAppendCargoItems(
         data: {
             _id: id,
             appendedCount: directCargoItems.length,
+        },
+    });
+}
+
+export async function handleDeliveryOrderCargoItemRemove(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const id = typeof data.id === 'string' ? data.id : '';
+    const deliveryOrderItemId = typeof data.deliveryOrderItemId === 'string' ? data.deliveryOrderItemId : '';
+
+    if (!id || !deliveryOrderItemId) {
+        return NextResponse.json({ error: 'Item surat jalan tidak valid' }, { status: 400 });
+    }
+
+    const deliveryOrder = await sanityGetById<{
+        _id: string;
+        _rev?: string;
+        doNumber?: string;
+        status?: string;
+        pendingDriverStatus?: string;
+        orderRef?: unknown;
+        customerRef?: unknown;
+        customerDoNumber?: string;
+        pickupStops?: DeliveryOrderPickupStop[];
+        shipperReferences?: DeliveryOrderShipperReference[];
+    }>(id);
+    if (!deliveryOrder) {
+        return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
+    }
+    if (!['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status || '')) {
+        return NextResponse.json(
+            { error: 'Barang hanya bisa dihapus saat surat jalan masih aktif sebelum trip selesai atau dibatalkan.' },
+            { status: 409 }
+        );
+    }
+    if (deliveryOrder.pendingDriverStatus) {
+        return NextResponse.json(
+            { error: `DO ${deliveryOrder.doNumber || id} sedang menunggu approval ${deliveryOrder.pendingDriverStatus}. Review dulu sebelum barang diubah.` },
+            { status: 409 }
+        );
+    }
+
+    const deliveryOrderItem = await sanityGetById<{
+        _id: string;
+        deliveryOrderRef?: unknown;
+        orderItemRef?: unknown;
+        orderItemDescription?: string;
+        shipperReferenceNumber?: string;
+    }>(deliveryOrderItemId);
+    if (!deliveryOrderItem || extractRefId(deliveryOrderItem.deliveryOrderRef) !== id) {
+        return NextResponse.json({ error: 'Item surat jalan tidak ditemukan' }, { status: 404 });
+    }
+
+    const orderItemRef = extractRefId(deliveryOrderItem.orderItemRef);
+    if (!orderItemRef) {
+        return NextResponse.json({ error: 'Item order sumber tidak ditemukan' }, { status: 409 });
+    }
+
+    const orderItem = await sanityGetById<{
+        _id: string;
+        _rev?: string;
+        orderRef?: unknown;
+        entrySource?: 'ORDER' | 'DELIVERY_ORDER';
+        sourceDeliveryOrderRef?: unknown;
+    }>(orderItemRef);
+    if (!orderItem) {
+        return NextResponse.json({ error: 'Item order sumber tidak ditemukan' }, { status: 404 });
+    }
+    if (
+        orderItem.entrySource !== 'DELIVERY_ORDER' ||
+        extractRefId(orderItem.sourceDeliveryOrderRef) !== id
+    ) {
+        return NextResponse.json(
+            { error: 'Item ini berasal dari target order/resi utama. Koreksi assignment-nya harus dari flow order, bukan hapus langsung di surat jalan.' },
+            { status: 409 }
+        );
+    }
+
+    if (!deliveryOrder._rev) {
+        return NextResponse.json({ error: 'Revisi surat jalan tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
+
+    const doPickupStops = normalizeDeliveryOrderPickupStopsSnapshot(deliveryOrder.pickupStops);
+    const existingShipperReferences = normalizeExistingShipperReferences(deliveryOrder.shipperReferences, doPickupStops);
+    const remainingDeliveryOrderItems = await getSanityClient().fetch<Array<{
+        pickupStopKey?: string;
+        pickupAddress?: string;
+        shipperReferenceNumber?: string;
+    }>>(
+        `*[_type == "deliveryOrderItem" && deliveryOrderRef == $ref && _id != $itemId]{
+            pickupStopKey,
+            pickupAddress,
+            shipperReferenceNumber
+        }`,
+        { ref: id, itemId: deliveryOrderItemId }
+    );
+    let nextShipperReferences: NormalizedDeliveryOrderShipperReference[] = [];
+    try {
+        nextShipperReferences = buildShipperReferencesFromCargoSnapshots(
+            remainingDeliveryOrderItems,
+            doPickupStops,
+            deliveryOrder.shipperReferences
+        );
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Referensi SJ pengirim tidak valid' },
+            { status: 400 }
+        );
+    }
+
+    const customerRef = extractRefId(deliveryOrder.customerRef);
+    const currentConstraintIds =
+        customerRef
+            ? buildCustomerDoConstraintIds(customerRef, existingShipperReferences)
+            : [];
+    const nextConstraintDocs =
+        customerRef
+            ? buildCustomerDoConstraintDocs(id, customerRef, nextShipperReferences)
+            : [];
+
+    const transaction = getSanityClient()
+        .transaction()
+        .delete(deliveryOrderItemId)
+        .delete(orderItemRef);
+    currentConstraintIds
+        .filter(constraintId => !nextConstraintDocs.some(constraint => constraint._id === constraintId))
+        .forEach(constraintId => transaction.delete(constraintId));
+    nextConstraintDocs
+        .filter(constraint => !currentConstraintIds.includes(constraint._id))
+        .forEach(constraint => transaction.create(constraint));
+    transaction.patch(id, {
+        ifRevisionID: deliveryOrder._rev,
+        set: {
+            ...(nextShipperReferences.length > 0
+                ? {
+                    customerDoNumber: nextShipperReferences[0].referenceNumber,
+                    shipperReferences: nextShipperReferences,
+                }
+                : {}),
+        },
+        unset: nextShipperReferences.length > 0 ? [] : ['customerDoNumber', 'shipperReferences'],
+    });
+    try {
+        await transaction.commit();
+    } catch (error) {
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Barang surat jalan berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
+
+    const orderRef = extractRefId(deliveryOrder.orderRef) || extractRefId(orderItem.orderRef);
+    if (orderRef) {
+        await syncOrderStatusFromItems(orderRef, session, addAuditLog);
+    }
+
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'delivery-orders',
+        id,
+        `Hapus barang dari Surat Jalan ${deliveryOrder.doNumber || id}: ${deliveryOrderItem.shipperReferenceNumber || '-'}${deliveryOrderItem.orderItemDescription ? ` - ${deliveryOrderItem.orderItemDescription}` : ''}`
+    );
+
+    return NextResponse.json({
+        data: {
+            _id: id,
+            removedDeliveryOrderItemId: deliveryOrderItemId,
+            removedOrderItemId: orderItemRef,
+        },
+    });
+}
+
+export async function handleDeliveryOrderCargoItemUpdate(
+    session: ApiSession,
+    data: Record<string, unknown>,
+    addAuditLog: AuditLogFn
+) {
+    const id = typeof data.id === 'string' ? data.id : '';
+    const deliveryOrderItemId = typeof data.deliveryOrderItemId === 'string' ? data.deliveryOrderItemId : '';
+    const cargoItemPayload = isPlainObject(data.cargoItem) ? data.cargoItem : null;
+
+    if (!id || !deliveryOrderItemId || !cargoItemPayload) {
+        return NextResponse.json({ error: 'Barang surat jalan tidak valid' }, { status: 400 });
+    }
+
+    const deliveryOrder = await sanityGetById<{
+        _id: string;
+        _rev?: string;
+        doNumber?: string;
+        status?: string;
+        pendingDriverStatus?: string;
+        orderRef?: unknown;
+        customerRef?: unknown;
+        customerDoNumber?: string;
+        pickupStops?: DeliveryOrderPickupStop[];
+        shipperReferences?: DeliveryOrderShipperReference[];
+    }>(id);
+    if (!deliveryOrder) {
+        return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
+    }
+    if (!['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(deliveryOrder.status || '')) {
+        return NextResponse.json(
+            { error: 'Barang hanya bisa diubah saat surat jalan masih aktif sebelum trip selesai atau dibatalkan.' },
+            { status: 409 }
+        );
+    }
+    if (deliveryOrder.pendingDriverStatus) {
+        return NextResponse.json(
+            { error: `DO ${deliveryOrder.doNumber || id} sedang menunggu approval ${deliveryOrder.pendingDriverStatus}. Review dulu sebelum barang diubah.` },
+            { status: 409 }
+        );
+    }
+    if (!deliveryOrder._rev) {
+        return NextResponse.json({ error: 'Revisi surat jalan tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+    }
+
+    const deliveryOrderItem = await sanityGetById<{
+        _id: string;
+        deliveryOrderRef?: unknown;
+        orderItemRef?: unknown;
+        orderItemDescription?: string;
+        shipperReferenceNumber?: string;
+        pickupStopKey?: string;
+        pickupAddress?: string;
+    }>(deliveryOrderItemId);
+    if (!deliveryOrderItem || extractRefId(deliveryOrderItem.deliveryOrderRef) !== id) {
+        return NextResponse.json({ error: 'Item surat jalan tidak ditemukan' }, { status: 404 });
+    }
+
+    const orderItemRef = extractRefId(deliveryOrderItem.orderItemRef);
+    if (!orderItemRef) {
+        return NextResponse.json({ error: 'Item order sumber tidak ditemukan' }, { status: 409 });
+    }
+
+    const orderItem = await sanityGetById<{
+        _id: string;
+        _rev?: string;
+        orderRef?: unknown;
+        customerProductRef?: string;
+        customerProductCode?: string;
+        customerProductName?: string;
+        entrySource?: 'ORDER' | 'DELIVERY_ORDER';
+        sourceDeliveryOrderRef?: unknown;
+        status?: string;
+        deliveredQtyKoli?: number;
+        deliveredWeight?: number;
+        deliveredVolume?: number;
+        assignedQtyKoli?: number;
+        assignedWeight?: number;
+        assignedVolume?: number;
+        heldQtyKoli?: number;
+        heldWeight?: number;
+        heldVolume?: number;
+    }>(orderItemRef);
+    if (!orderItem || !orderItem._rev) {
+        return NextResponse.json({ error: 'Item order sumber tidak ditemukan' }, { status: 404 });
+    }
+    if (
+        orderItem.entrySource !== 'DELIVERY_ORDER' ||
+        extractRefId(orderItem.sourceDeliveryOrderRef) !== id
+    ) {
+        return NextResponse.json(
+            { error: 'Item ini berasal dari target order/resi utama. Koreksi assignment-nya harus dari flow order, bukan edit langsung di surat jalan.' },
+            { status: 409 }
+        );
+    }
+
+    const orderRef = extractRefId(deliveryOrder.orderRef) || extractRefId(orderItem.orderRef);
+    if (!orderRef) {
+        return NextResponse.json({ error: 'Order sumber surat jalan tidak ditemukan' }, { status: 409 });
+    }
+
+    const order = await sanityGetById<{
+        _id: string;
+        _rev?: string;
+        customerRef?: unknown;
+        cargoEntryMode?: 'ORDER' | 'DELIVERY_ORDER';
+    }>(orderRef);
+    if (!order) {
+        return NextResponse.json({ error: 'Order sumber surat jalan tidak ditemukan' }, { status: 404 });
+    }
+
+    const existingOrderItemCount = await getSanityClient().fetch<number>(
+        `count(*[_type == "orderItem" && orderRef == $ref])`,
+        { ref: orderRef }
+    );
+    const orderItemCargoModeHints =
+        !order.cargoEntryMode && existingOrderItemCount > 0
+            ? await getSanityClient().fetch<Array<{
+                _createdAt?: string;
+                entrySource?: 'ORDER' | 'DELIVERY_ORDER';
+                sourceDeliveryOrderRef?: string;
+            }>>(
+                `*[_type == "orderItem" && orderRef == $ref]{
+                    _createdAt,
+                    entrySource,
+                    sourceDeliveryOrderRef
+                }`,
+                { ref: orderRef }
+            )
+            : [];
+    const resolvedCargoEntryMode = resolveOrderCargoEntryMode(order, orderItemCargoModeHints);
+    const allowsDirectCargoInput = resolvedCargoEntryMode === 'DELIVERY_ORDER' || existingOrderItemCount === 0;
+    if (!allowsDirectCargoInput) {
+        return NextResponse.json(
+            { error: 'Order ini memakai flow item order. Koreksi barang harus dari flow order, bukan edit langsung di surat jalan.' },
+            { status: 409 }
+        );
+    }
+
+    let normalizedItem: NormalizedOrderItemInput;
+    try {
+        const items = await normalizeOrderItemsInput(
+            extractRefId(order.customerRef) || extractRefId(deliveryOrder.customerRef) || '',
+            [cargoItemPayload],
+            { allowEmpty: false }
+        );
+        normalizedItem = items[0];
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Barang surat jalan tidak valid';
+        return NextResponse.json({ error: message }, { status: 400 });
+    }
+
+    const pickupStopKey =
+        normalizeOptionalText(cargoItemPayload.pickupStopKey)
+        || (Array.isArray(deliveryOrder.pickupStops) && deliveryOrder.pickupStops.length === 1
+            ? normalizeOptionalText(deliveryOrder.pickupStops[0]?._key)
+            : undefined);
+    const shipperReferenceNumber = normalizeReferenceNumber(cargoItemPayload.shipperReferenceNumber);
+    const doPickupStops = normalizeDeliveryOrderPickupStopsSnapshot(deliveryOrder.pickupStops);
+    const pickupStopMap = new Map(doPickupStops.map(stop => [stop._key, stop]));
+    if (doPickupStops.length > 0 && !pickupStopKey) {
+        return NextResponse.json({ error: 'Titik pickup wajib dipilih untuk barang surat jalan ini.' }, { status: 400 });
+    }
+    if (pickupStopKey && !pickupStopMap.has(pickupStopKey)) {
+        return NextResponse.json({ error: 'Titik pickup barang surat jalan tidak ditemukan.' }, { status: 400 });
+    }
+    if (!shipperReferenceNumber) {
+        return NextResponse.json({ error: 'No. SJ pengirim wajib diisi.' }, { status: 400 });
+    }
+
+    const otherDeliveryOrderItems = await getSanityClient().fetch<Array<{
+        pickupStopKey?: string;
+        pickupAddress?: string;
+        shipperReferenceNumber?: string;
+    }>>(
+        `*[_type == "deliveryOrderItem" && deliveryOrderRef == $ref && _id != $itemId]{
+            pickupStopKey,
+            pickupAddress,
+            shipperReferenceNumber
+        }`,
+        { ref: id, itemId: deliveryOrderItemId }
+    );
+    let nextShipperReferences: NormalizedDeliveryOrderShipperReference[] = [];
+    try {
+        nextShipperReferences = buildShipperReferencesFromCargoSnapshots(
+            [
+                ...otherDeliveryOrderItems,
+                {
+                    pickupStopKey,
+                    pickupAddress: pickupStopKey ? pickupStopMap.get(pickupStopKey)?.pickupAddress : undefined,
+                    shipperReferenceNumber,
+                },
+            ],
+            doPickupStops,
+            deliveryOrder.shipperReferences
+        );
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Referensi SJ pengirim tidak valid' },
+            { status: 400 }
+        );
+    }
+
+    const customerRef = extractRefId(deliveryOrder.customerRef);
+    if (customerRef && nextShipperReferences.length > 0) {
+        const duplicateCustomerDoNumber = await findDuplicateCustomerDoReference(customerRef, nextShipperReferences, id);
+        if (duplicateCustomerDoNumber) {
+            return NextResponse.json(
+                { error: `No. SJ pengirim ${duplicateCustomerDoNumber.referenceNumber} sudah dipakai untuk customer ini.` },
+                { status: 409 }
+            );
+        }
+    }
+
+    const existingShipperReferences = normalizeExistingShipperReferences(deliveryOrder.shipperReferences, doPickupStops);
+    const currentConstraintIds =
+        customerRef
+            ? buildCustomerDoConstraintIds(customerRef, existingShipperReferences)
+            : [];
+    const nextConstraintDocs =
+        customerRef
+            ? buildCustomerDoConstraintDocs(id, customerRef, nextShipperReferences)
+            : [];
+    const mutationTimestamp = new Date().toISOString();
+    const usesQtyBasis = normalizedItem.qtyKoli > 0;
+    const transaction = getSanityClient().transaction();
+    try {
+        patchLinkedCustomerProducts(transaction, [normalizedItem], mutationTimestamp);
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Barang customer berubah karena ada update lain. Refresh lalu coba lagi.' },
+            { status: 409 }
+        );
+    }
+    currentConstraintIds
+        .filter(constraintId => !nextConstraintDocs.some(constraint => constraint._id === constraintId))
+        .forEach(constraintId => transaction.delete(constraintId));
+    nextConstraintDocs
+        .filter(constraint => !currentConstraintIds.includes(constraint._id))
+        .forEach(constraint => transaction.create(constraint));
+    transaction.patch(orderItemRef, {
+        ifRevisionID: orderItem._rev,
+        set: {
+            customerProductRef: normalizedItem.customerProductRef || orderItem.customerProductRef,
+            customerProductCode: normalizedItem.customerProductCode || orderItem.customerProductCode,
+            customerProductName: normalizedItem.customerProductName || orderItem.customerProductName,
+            description: normalizedItem.description,
+            qtyKoli: normalizedItem.qtyKoli,
+            weight: normalizedItem.weight,
+            volume: normalizedItem.volume,
+            weightInputValue: normalizedItem.weightInputValue,
+            weightInputUnit: normalizedItem.weightInputUnit,
+            volumeInputValue: normalizedItem.volumeInputValue,
+            volumeInputUnit: normalizedItem.volumeInputUnit,
+            value: normalizedItem.value,
+            assignedQtyKoli: usesQtyBasis ? normalizedItem.qtyKoli : 0,
+            assignedWeight: normalizedItem.weight,
+            assignedVolume: normalizedItem.volume || 0,
+        },
+    });
+    transaction.patch(deliveryOrderItemId, {
+        set: {
+            pickupStopKey: pickupStopKey || undefined,
+            pickupAddress: pickupStopKey ? pickupStopMap.get(pickupStopKey)?.pickupAddress : undefined,
+            shipperReferenceKey: nextShipperReferences.find(reference => reference.referenceNumber === shipperReferenceNumber)?._key,
+            shipperReferenceNumber,
+            orderItemDescription: normalizedItem.description,
+            orderItemQtyKoli: usesQtyBasis ? normalizedItem.qtyKoli : undefined,
+            orderItemWeight: normalizedItem.weight,
+            orderItemVolumeM3: normalizedItem.volume,
+            orderItemWeightInputValue: normalizedItem.weightInputValue,
+            orderItemWeightInputUnit: normalizedItem.weightInputUnit,
+            orderItemVolumeInputValue: normalizedItem.volumeInputValue,
+            orderItemVolumeInputUnit: normalizedItem.volumeInputUnit,
+            shippedQtyKoli: usesQtyBasis ? normalizedItem.qtyKoli : undefined,
+            shippedWeight: normalizedItem.weight,
+        },
+    });
+    transaction.patch(id, {
+        ifRevisionID: deliveryOrder._rev,
+        set: {
+            ...(nextShipperReferences.length > 0
+                ? {
+                    customerDoNumber: nextShipperReferences[0].referenceNumber,
+                    shipperReferences: nextShipperReferences,
+                }
+                : {}),
+        },
+        unset: nextShipperReferences.length > 0 ? [] : ['customerDoNumber', 'shipperReferences'],
+    });
+
+    try {
+        await transaction.commit();
+    } catch (error) {
+        if (nextConstraintDocs.some(constraint => isDocumentAlreadyExistsError(error, constraint._id))) {
+            return NextResponse.json(
+                { error: `Salah satu SJ pengirim (${nextShipperReferences.map(reference => reference.referenceNumber).join(', ')}) sudah dipakai untuk customer ini.` },
+                { status: 409 }
+            );
+        }
+        if (isMutationConflictError(error)) {
+            return NextResponse.json(
+                { error: 'Barang surat jalan berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { status: 409 }
+            );
+        }
+        throw error;
+    }
+
+    await syncOrderStatusFromItems(orderRef, session, addAuditLog);
+    await addAuditLog(
+        session,
+        'UPDATE',
+        'delivery-orders',
+        id,
+        `Edit barang Surat Jalan ${deliveryOrder.doNumber || id}: ${deliveryOrderItem.shipperReferenceNumber || '-'}${deliveryOrderItem.orderItemDescription ? ` - ${deliveryOrderItem.orderItemDescription}` : ''} -> ${shipperReferenceNumber}${normalizedItem.description ? ` - ${normalizedItem.description}` : ''}`
+    );
+
+    return NextResponse.json({
+        data: {
+            _id: id,
+            deliveryOrderItemId,
         },
     });
 }
@@ -4672,9 +5223,16 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
         customerName?: string;
         pickupStops?: DeliveryOrderPickupStop[];
         shipperReferences?: DeliveryOrderShipperReference[];
+        pendingDriverStatus?: string;
     }>(id);
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
+    }
+    if (deliveryOrder.pendingDriverStatus) {
+        return NextResponse.json(
+            { error: `DO ${deliveryOrder.doNumber || id} sedang menunggu approval ${deliveryOrder.pendingDriverStatus}. Review dulu sebelum SJ pengirim diubah.` },
+            { status: 409 }
+        );
     }
 
     const hasNotaReference = await getSanityClient().fetch<{ _id: string; notaRef?: string } | null>(

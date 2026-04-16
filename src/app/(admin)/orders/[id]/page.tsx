@@ -54,7 +54,8 @@ import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import { useApp } from '../../layout';
 
 function getDeliveryOrderShipperReferenceNumbers(
-    deliveryOrder: Pick<DeliveryOrder, 'customerDoNumber' | 'shipperReferences'>
+    deliveryOrder: Pick<DeliveryOrder, '_id' | 'customerDoNumber' | 'shipperReferences'>,
+    deliveryOrderItems: Pick<DeliveryOrderItem, 'deliveryOrderRef' | 'shipperReferenceNumber'>[] = []
 ) {
     const references =
         Array.isArray(deliveryOrder.shipperReferences)
@@ -62,6 +63,12 @@ function getDeliveryOrderShipperReferenceNumbers(
                 .map(reference => reference.referenceNumber?.trim())
                 .filter((value): value is string => Boolean(value))
             : [];
+
+    deliveryOrderItems
+        .filter(item => item.deliveryOrderRef === deliveryOrder._id)
+        .map(item => item.shipperReferenceNumber?.trim())
+        .filter((value): value is string => Boolean(value))
+        .forEach(value => references.push(value));
 
     if (references.length === 0 && deliveryOrder.customerDoNumber?.trim()) {
         references.push(deliveryOrder.customerDoNumber.trim());
@@ -71,10 +78,11 @@ function getDeliveryOrderShipperReferenceNumbers(
 }
 
 function formatDeliveryOrderShipperReferencePreview(
-    deliveryOrder: Pick<DeliveryOrder, 'customerDoNumber' | 'shipperReferences'>,
+    deliveryOrder: Pick<DeliveryOrder, '_id' | 'customerDoNumber' | 'shipperReferences'>,
+    deliveryOrderItems: Pick<DeliveryOrderItem, 'deliveryOrderRef' | 'shipperReferenceNumber'>[] = [],
     limit: number = 2
 ) {
-    const references = getDeliveryOrderShipperReferenceNumbers(deliveryOrder);
+    const references = getDeliveryOrderShipperReferenceNumbers(deliveryOrder, deliveryOrderItems);
     if (references.length === 0) {
         return null;
     }
@@ -723,7 +731,7 @@ export default function OrderDetailPage() {
             const createdShipperReferences = getDeliveryOrderShipperReferenceNumbers(doData.data || {});
             addToast(
                 'success',
-                `Trip dibuat: ${formatInternalDeliveryOrderNumber(doData.data || {})}${createdShipperReferences.length > 0 ? ` | ${createdShipperReferences.length} SJ: ${formatDeliveryOrderShipperReferencePreview(doData.data || {}, 3)}` : ''}${isHeaderOnlyOrder && draftDirectCargoItems.length === 0 ? ' | Barang menyusul' : ''}`
+                `Trip dibuat: ${formatInternalDeliveryOrderNumber(doData.data || {})}${createdShipperReferences.length > 0 ? ` | ${createdShipperReferences.length} SJ: ${formatDeliveryOrderShipperReferencePreview(doData.data || {}, [], 3)}` : ''}${isHeaderOnlyOrder && draftDirectCargoItems.length === 0 ? ' | Barang menyusul' : ''}`
             );
             setShowDOModal(false);
             setSelectedShipments({});
@@ -1033,8 +1041,9 @@ export default function OrderDetailPage() {
                         {orderTripPlans.map(tripPlan => {
                             const linkedDeliveryOrder = tripPlan.linkedDeliveryOrderRef ? deliveryOrderById.get(tripPlan.linkedDeliveryOrderRef) : undefined;
                             const tripPlanPickupStops = resolvedOrderPickupStops.filter(stop => tripPlan.pickupStopKeys.includes(stop._key));
-                            const linkedShipperReferenceCount = linkedDeliveryOrder ? getDeliveryOrderShipperReferenceNumbers(linkedDeliveryOrder).length : 0;
-                            const linkedShipperReferencePreview = linkedDeliveryOrder ? formatDeliveryOrderShipperReferencePreview(linkedDeliveryOrder, 3) : null;
+                            const linkedShipperReferenceItems = linkedDeliveryOrder ? doItems.filter(item => item.deliveryOrderRef === linkedDeliveryOrder._id) : [];
+                            const linkedShipperReferenceCount = linkedDeliveryOrder ? getDeliveryOrderShipperReferenceNumbers(linkedDeliveryOrder, linkedShipperReferenceItems).length : 0;
+                            const linkedShipperReferencePreview = linkedDeliveryOrder ? formatDeliveryOrderShipperReferencePreview(linkedDeliveryOrder, linkedShipperReferenceItems, 3) : null;
                             const canInputSuratJalan =
                                 !linkedDeliveryOrder || linkedDeliveryOrder.status === 'CANCELLED';
                             return (
@@ -1310,8 +1319,9 @@ export default function OrderDetailPage() {
                             {displayedDoList.length === 0 ? (
                                 <tr><td colSpan={7} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada trip / DO internal</td></tr>
                             ) : displayedDoList.map(d => {
-                                const shipperReferenceNumbers = getDeliveryOrderShipperReferenceNumbers(d);
-                                const shipperReferencePreview = formatDeliveryOrderShipperReferencePreview(d, 3);
+                                const relatedDeliveryOrderItems = doItems.filter(item => item.deliveryOrderRef === d._id);
+                                const shipperReferenceNumbers = getDeliveryOrderShipperReferenceNumbers(d, relatedDeliveryOrderItems);
+                                const shipperReferencePreview = formatDeliveryOrderShipperReferencePreview(d, relatedDeliveryOrderItems, 3);
                                 return (
                                 <tr key={d._id}>
                                     <td>
