@@ -1237,11 +1237,7 @@ export default function DODetailPage() {
                         </div>
                         <div className="detail-row">
                             <div className="detail-item"><div className="detail-label">Driver</div><div className="detail-value">{canOpenDriverPage && doData.driverRef ? <Link href={`/fleet/drivers/${doData.driverRef}`}>{doData.driverName || '-'}</Link> : (doData.driverName || '-')}</div></div>
-                            <div className="detail-item"><div className="detail-label">Telepon Penerima</div><div className="detail-value">{doData.receiverPhone || '-'}</div></div>
-                        </div>
-                        <div className="detail-row">
                             <div className="detail-item"><div className="detail-label">Armada Diminta</div><div className="detail-value">{doData.serviceName || '-'}</div></div>
-                            <div className="detail-item"><div className="detail-label">Penerima</div><div className="detail-value">{doData.receiverName || '-'}</div></div>
                         </div>
                         <div className="detail-row">
                             <div className="detail-item"><div className="detail-label">Armada Aktual</div><div className="detail-value">{doData.vehicleServiceName || doData.serviceName || '-'}</div></div>

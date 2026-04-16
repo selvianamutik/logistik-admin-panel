@@ -557,6 +557,11 @@ export default function OrderDetailPage() {
             };
         }).filter(entry => entry.shipperManifests.length > 0)
         : [];
+    const persistedShipperManifestCount = headerOnlyManifestByDo.reduce(
+        (sum, entry) => sum + entry.shipperManifests.length,
+        0
+    );
+    const displayedDoList = hasPlannedTrips ? unplannedDos : dos;
     const headerOnlyDeliveredMatchesTotal =
         isHeaderOnlyOrder &&
         totalDeliveredActualCargo.qtyKoli === totalOrderCargo.qtyKoli &&
@@ -1125,7 +1130,7 @@ export default function OrderDetailPage() {
             {/* Items */}
             <div className="card mt-6">
                 <div className="card-header">
-                    <span className="card-header-title">{isHeaderOnlyOrder ? `Manifest Tersimpan per SJ (${dos.length})` : `Item / Koli (${items.length})`}</span>
+                    <span className="card-header-title">{isHeaderOnlyOrder ? `Manifest Tersimpan per SJ (${persistedShipperManifestCount})` : `Item / Koli (${items.length})`}</span>
                 </div>
                 {isHeaderOnlyOrder ? (
                     <div className="card-body">
@@ -1297,14 +1302,14 @@ export default function OrderDetailPage() {
             {/* DOs */}
             {(!hasPlannedTrips || unplannedDos.length > 0) && (
             <div className="card mt-6" id="order-surat-jalan-section">
-                <div className="card-header"><span className="card-header-title">Trip / DO Internal ({dos.length})</span></div>
+                <div className="card-header"><span className="card-header-title">Trip / DO Internal ({displayedDoList.length})</span></div>
                 <div className="table-wrapper">
                     <table>
                         <thead><tr><th>Trip / DO Internal</th><th>SJ Pengirim</th><th>Tanggal</th><th>Kendaraan</th><th>Muatan</th><th>Status</th><th>Aksi</th></tr></thead>
                         <tbody>
-                            {(hasPlannedTrips ? unplannedDos : dos).length === 0 ? (
+                            {displayedDoList.length === 0 ? (
                                 <tr><td colSpan={7} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada trip / DO internal</td></tr>
-                            ) : (hasPlannedTrips ? unplannedDos : dos).map(d => {
+                            ) : displayedDoList.map(d => {
                                 const shipperReferenceNumbers = getDeliveryOrderShipperReferenceNumbers(d);
                                 const shipperReferencePreview = formatDeliveryOrderShipperReferencePreview(d, 3);
                                 return (
