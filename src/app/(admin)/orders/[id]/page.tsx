@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '../../layout';
 import { Truck, FileText, Edit, Eye, Plus, X } from 'lucide-react';
@@ -153,6 +153,7 @@ function flattenDirectCargoGroups(groups: DirectCargoGroup[]): OrderItemForm[] {
 
 export default function OrderDetailPage() {
     const params = useParams();
+    const pathname = usePathname();
     const router = useRouter();
     const { user } = useApp();
     const { addToast } = useToast();
@@ -197,6 +198,8 @@ export default function OrderDetailPage() {
     const canOpenCustomerPage = user ? hasPageAccess(user.role, 'customers') : false;
     const canOpenVehiclePage = user ? hasPageAccess(user.role, 'vehicles') : false;
     const hasOpenModal = showDOModal || showHoldModal;
+    const currentPath = pathname || `/orders/${orderId}`;
+    const withReturnTo = (href: string) => `${href}${href.includes('?') ? '&' : '?'}returnTo=${encodeURIComponent(currentPath)}`;
 
     useEffect(() => {
         if (!hasOpenModal) {
@@ -888,7 +891,7 @@ export default function OrderDetailPage() {
                         </button>
                     )}
                     {canCreateInvoice && (
-                        <button className="btn btn-secondary" onClick={() => router.push('/invoices/new')}>
+                        <button className="btn btn-secondary" onClick={() => router.push(withReturnTo('/invoices/new'))}>
                             <FileText size={16} /> Buat Nota
                         </button>
                     )}
@@ -1005,7 +1008,7 @@ export default function OrderDetailPage() {
                             <div className="detail-item"><div className="detail-label">Tanggal</div><div className="detail-value">{formatDate(order.createdAt)}</div></div>
                         </div>
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">Customer / Pengirim / Penagih</div><div className="detail-value">{canOpenCustomerPage && order.customerRef ? <Link href={`/customers/${order.customerRef}`}>{order.customerName}</Link> : order.customerName}</div></div>
+                            <div className="detail-item"><div className="detail-label">Customer / Pengirim / Penagih</div><div className="detail-value">{canOpenCustomerPage && order.customerRef ? <Link href={withReturnTo(`/customers/${order.customerRef}`)}>{order.customerName}</Link> : order.customerName}</div></div>
                             <div className="detail-item"><div className="detail-label">Kategori Truk / Armada</div><div className="detail-value">{order.serviceName || '-'}</div></div>
                         </div>
                         <div className="mt-2">
@@ -1135,7 +1138,7 @@ export default function OrderDetailPage() {
                                         </div>
                                         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                                             {linkedDeliveryOrder && (
-                                                <Link href={`/delivery-orders/${linkedDeliveryOrder._id}`} className="btn btn-secondary btn-sm">
+                                                <Link href={withReturnTo(`/delivery-orders/${linkedDeliveryOrder._id}`)} className="btn btn-secondary btn-sm">
                                                     <Eye size={14} /> Kelola Trip / SJ
                                                 </Link>
                                             )}
@@ -1172,7 +1175,7 @@ export default function OrderDetailPage() {
                                     <div key={deliveryOrder._id} style={{ display: 'grid', gap: '0.85rem', padding: '1rem', border: '1px solid var(--color-gray-200)', borderRadius: '0.9rem', background: 'var(--color-gray-50)' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
                                             <div>
-                                                <Link href={`/delivery-orders/${deliveryOrder._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>
+                                                <Link href={withReturnTo(`/delivery-orders/${deliveryOrder._id}`)} className="font-semibold" style={{ color: 'var(--color-primary)' }}>
                                                     {formatInternalDeliveryOrderNumber(deliveryOrder)}
                                                 </Link>
                                                 <div className="text-muted text-sm">
@@ -1310,7 +1313,7 @@ export default function OrderDetailPage() {
                                                 <button className="table-action-btn" onClick={() => void releaseHoldQuantity(item)}>Lepas Hold</button>
                                             )}
                                             {activeAssignment && (
-                                                <Link href={`/delivery-orders/${activeAssignment._id}`} className="table-action-btn" title="Item ini sudah masuk surat jalan aktif">
+                                                <Link href={withReturnTo(`/delivery-orders/${activeAssignment._id}`)} className="table-action-btn" title="Item ini sudah masuk surat jalan aktif">
                                                     <Eye size={14} /> {activeAssignment.doNumber || 'Lihat DO'}{doItem?.orderItemQtyKoli ? ` (${formatNumber(doItem.orderItemQtyKoli)} koli)` : ''}
                                                 </Link>
                                             )}
@@ -1342,7 +1345,7 @@ export default function OrderDetailPage() {
                                 return (
                                 <tr key={d._id}>
                                     <td>
-                                        <Link href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>
+                                        <Link href={withReturnTo(`/delivery-orders/${d._id}`)} className="font-semibold" style={{ color: 'var(--color-primary)' }}>
                                             {formatInternalDeliveryOrderNumber(d)}
                                         </Link>
                                         <div className="text-muted text-sm">
@@ -1362,7 +1365,7 @@ export default function OrderDetailPage() {
                                         )}
                                     </td>
                                     <td>{formatDate(d.date)}</td>
-                                    <td>{canOpenVehiclePage && d.vehicleRef ? <Link href={`/fleet/vehicles/${d.vehicleRef}`} style={{ color: 'var(--color-primary)' }}>{d.vehiclePlate || '-'}</Link> : (d.vehiclePlate || '-')}</td>
+                                    <td>{canOpenVehiclePage && d.vehicleRef ? <Link href={withReturnTo(`/fleet/vehicles/${d.vehicleRef}`)} style={{ color: 'var(--color-primary)' }}>{d.vehiclePlate || '-'}</Link> : (d.vehiclePlate || '-')}</td>
                                     <td>
                                         <div className="font-medium">
                                             {formatCargoSummary(
@@ -1384,7 +1387,7 @@ export default function OrderDetailPage() {
                                         </div>
                                     </td>
                                     <td><span className={`badge badge-${DO_STATUS_MAP[d.status]?.color}`}><span className="badge-dot" /> {DO_STATUS_MAP[d.status]?.label}</span></td>
-                                    <td><Link href={`/delivery-orders/${d._id}`} className="table-action-btn"><Eye size={14} /> Lihat</Link></td>
+                                    <td><Link href={withReturnTo(`/delivery-orders/${d._id}`)} className="table-action-btn"><Eye size={14} /> Lihat</Link></td>
                                 </tr>
                                 );
                             })}
@@ -1411,11 +1414,11 @@ export default function OrderDetailPage() {
                                 </tr>
                             ) : notas.map(nota => (
                                 <tr key={nota._id}>
-                                    <td><Link href={`/invoices/${nota._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{nota.notaNumber}</Link></td>
+                                    <td><Link href={withReturnTo(`/invoices/${nota._id}`)} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{nota.notaNumber}</Link></td>
                                     <td>{formatDate(nota.issueDate)}</td>
                                     <td className="font-medium">{formatCurrency(getReceivableNetAmount(nota))}</td>
                                     <td><span className={`badge badge-${INVOICE_STATUS_MAP[nota.status]?.color}`}><span className="badge-dot" /> {INVOICE_STATUS_MAP[nota.status]?.label}</span></td>
-                                    <td><Link href={`/invoices/${nota._id}`} className="table-action-btn"><Eye size={14} /> Lihat</Link></td>
+                                    <td><Link href={withReturnTo(`/invoices/${nota._id}`)} className="table-action-btn"><Eye size={14} /> Lihat</Link></td>
                                 </tr>
                             ))}
                         </tbody>

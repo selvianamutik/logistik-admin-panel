@@ -1,7 +1,7 @@
 ﻿'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useApp, useToast } from '../../layout';
 import { Printer, FileDown, Truck, Upload, Save, MapPin, Radio, Edit, Wallet, Plus, X } from 'lucide-react';
@@ -170,6 +170,7 @@ function buildResolvedShipperReferenceEntries(
 
 export default function DODetailPage() {
     const params = useParams();
+    const pathname = usePathname();
     const { addToast } = useToast();
     const { user } = useApp();
     const doId = params.id as string;
@@ -248,6 +249,8 @@ export default function DODetailPage() {
     const canEditDeliveryTarget = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL' || normalizedRole === 'FINANCE';
     const canReviewDriverRequest = canManageDeliveryStatus;
     const canManageTripFee = canManageDeliveryStatus;
+    const currentPath = pathname || `/delivery-orders/${doId}`;
+    const withReturnTo = (href: string) => `${href}${href.includes('?') ? '&' : '?'}returnTo=${encodeURIComponent(currentPath)}`;
     const hasOpenModal =
         showStatusModal ||
         showPODModal ||
@@ -1306,21 +1309,6 @@ export default function DODetailPage() {
                     </div>
                 </div>
                 <div className="page-actions">
-                    {linkedTripCashVoucherId && canOpenTripCashPage && (
-                        <Link className="btn btn-secondary" href={`/driver-vouchers/${linkedTripCashVoucherId}`}>
-                            <Wallet size={16} /> Buka Uang Jalan
-                        </Link>
-                    )}
-                    {!hasLinkedTripCash && canIssueVoucherFromDo && (
-                        <Link className="btn btn-secondary" href={`/driver-vouchers/new?deliveryOrderRef=${encodeURIComponent(doData._id)}`}>
-                            <Wallet size={16} /> Terbitkan Uang Jalan
-                        </Link>
-                    )}
-                    {doData.status === 'CREATED' && canAssignTripResources && !hasLinkedTripCash && (
-                        <button className="btn btn-secondary" onClick={() => void openTripResourcesModal()}>
-                            <Truck size={16} /> {tripResourceActionLabel}
-                        </button>
-                    )}
                     {availableNextStatuses.length > 0 && canManageDeliveryStatus && !doData.pendingDriverStatus && (
                         <button className="btn btn-primary" onClick={() => openStatusModal()}>
                             <Truck size={16} /> {availableNextStatuses.includes('DELIVERED') ? 'Lanjut / Selesaikan DO' : 'Ubah Status'}
@@ -1362,11 +1350,6 @@ export default function DODetailPage() {
                                             : 'Supir trip belum dipilih. Lengkapi dulu sebelum trip diteruskan ke workflow operasional berikutnya.'}
                                 </div>
                             </div>
-                            {canAssignTripResources && (
-                                <button className="btn btn-secondary btn-sm" onClick={() => void openTripResourcesModal()}>
-                                    <Truck size={14} /> {tripResourceActionLabel}
-                                </button>
-                            )}
                         </div>
                     </div>
                 </div>
@@ -1434,6 +1417,11 @@ export default function DODetailPage() {
                                     <Edit size={14} /> {hasShipperReference ? 'Edit SJ Pengirim' : 'Isi SJ Pengirim'}
                                 </button>
                             )}
+                            {canEditDeliveryTarget && (
+                                <button className="btn btn-secondary btn-sm" onClick={openTargetModal}>
+                                    <MapPin size={14} /> Edit Tujuan
+                                </button>
+                            )}
                             {canAppendCargoToDo && (
                                 <button className="btn btn-secondary btn-sm" onClick={openCargoModal}>
                                     <Plus size={14} /> Tambah Barang / SJ
@@ -1443,16 +1431,6 @@ export default function DODetailPage() {
                                 <button className="btn btn-secondary btn-sm" onClick={openTripFeeEditor}>
                                     <Edit size={14} /> {doData.taripBorongan ? 'Edit Upah Trip' : 'Isi Upah Trip'}
                                 </button>
-                            )}
-                            {linkedTripCashVoucherId && canOpenTripCashPage && (
-                                <Link className="btn btn-secondary btn-sm" href={`/driver-vouchers/${linkedTripCashVoucherId}`}>
-                                    <Wallet size={14} /> Buka Uang Jalan
-                                </Link>
-                            )}
-                            {!hasLinkedTripCash && canIssueVoucherFromDo && (
-                                <Link className="btn btn-primary btn-sm" href={`/driver-vouchers/new?deliveryOrderRef=${encodeURIComponent(doData._id)}`}>
-                                    <Wallet size={14} /> Terbitkan Uang Jalan
-                                </Link>
                             )}
                             {canManageDeliveryStatus && availableNextStatuses.includes('CANCELLED') && (
                                 <button className="btn btn-secondary btn-sm" onClick={() => openStatusModal('CANCELLED')}>
@@ -1479,12 +1457,12 @@ export default function DODetailPage() {
                     <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                         <span className="card-header-title">Uang Jalan Trip</span>
                         {linkedTripCashVoucherId && canOpenTripCashPage && (
-                            <Link className="btn btn-secondary btn-sm" href={`/driver-vouchers/${linkedTripCashVoucherId}`}>
+                            <Link className="btn btn-secondary btn-sm" href={withReturnTo(`/driver-vouchers/${linkedTripCashVoucherId}`)}>
                                 <Wallet size={14} /> Buka Detail Bon
                             </Link>
                         )}
                         {!hasLinkedTripCash && canIssueVoucherFromDo && (
-                            <Link className="btn btn-primary btn-sm" href={`/driver-vouchers/new?deliveryOrderRef=${encodeURIComponent(doData._id)}`}>
+                            <Link className="btn btn-primary btn-sm" href={withReturnTo(`/driver-vouchers/new?deliveryOrderRef=${encodeURIComponent(doData._id)}`)}>
                                 <Wallet size={14} /> Terbitkan Uang Jalan
                             </Link>
                         )}
@@ -1496,7 +1474,7 @@ export default function DODetailPage() {
                                     <div>
                                         <div className="detail-label">Bon Terkait</div>
                                         <div className="detail-value font-mono">
-                                            {canOpenTripCashPage ? <Link href={`/driver-vouchers/${linkedVoucher._id}`}>{linkedVoucher.bonNumber}</Link> : linkedVoucher.bonNumber}
+                                            {canOpenTripCashPage ? <Link href={withReturnTo(`/driver-vouchers/${linkedVoucher._id}`)}>{linkedVoucher.bonNumber}</Link> : linkedVoucher.bonNumber}
                                         </div>
                                     </div>
                                     {linkedVoucherStatusMeta && (
@@ -1593,7 +1571,7 @@ export default function DODetailPage() {
                 <div className="card">
                     <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                         <span className="card-header-title">Informasi Surat Jalan</span>
-                        {canEditShipperReference && (
+                        {!canShowTripManager && canEditShipperReference && (
                             <button className="btn btn-secondary btn-sm" onClick={openShipperReferenceModal}>
                                 <Edit size={14} /> {hasShipperReference ? 'Edit SJ Pengirim' : 'Isi SJ Pengirim'}
                             </button>
@@ -1624,14 +1602,14 @@ export default function DODetailPage() {
                         </div>
                         <div className="detail-row">
                             <div className="detail-item"><div className="detail-label">No. DO Internal</div><div className="detail-value font-mono">{doData.doNumber}</div></div>
-                            <div className="detail-item"><div className="detail-label">Kendaraan</div><div className="detail-value">{canOpenVehiclePage && doData.vehicleRef ? <Link href={`/fleet/vehicles/${doData.vehicleRef}`}>{doData.vehiclePlate || '-'}</Link> : (doData.vehiclePlate || '-')}</div></div>
+                            <div className="detail-item"><div className="detail-label">Kendaraan</div><div className="detail-value">{canOpenVehiclePage && doData.vehicleRef ? <Link href={withReturnTo(`/fleet/vehicles/${doData.vehicleRef}`)}>{doData.vehiclePlate || '-'}</Link> : (doData.vehiclePlate || '-')}</div></div>
                         </div>
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">Master Resi</div><div className="detail-value">{canOpenSourceOrderPage ? <Link href={`/orders/${doData.orderRef}`}>{doData.masterResi}</Link> : doData.masterResi}</div></div>
-                            <div className="detail-item"><div className="detail-label">Customer</div><div className="detail-value">{canOpenCustomerPage && doData.customerRef ? <Link href={`/customers/${doData.customerRef}`}>{doData.customerName || '-'}</Link> : (doData.customerName || '-')}</div></div>
+                            <div className="detail-item"><div className="detail-label">Master Resi</div><div className="detail-value">{canOpenSourceOrderPage ? <Link href={withReturnTo(`/orders/${doData.orderRef}`)}>{doData.masterResi}</Link> : doData.masterResi}</div></div>
+                            <div className="detail-item"><div className="detail-label">Customer</div><div className="detail-value">{canOpenCustomerPage && doData.customerRef ? <Link href={withReturnTo(`/customers/${doData.customerRef}`)}>{doData.customerName || '-'}</Link> : (doData.customerName || '-')}</div></div>
                         </div>
                         <div className="detail-row">
-                            <div className="detail-item"><div className="detail-label">Driver</div><div className="detail-value">{canOpenDriverPage && doData.driverRef ? <Link href={`/fleet/drivers/${doData.driverRef}`}>{doData.driverName || '-'}</Link> : (doData.driverName || '-')}</div></div>
+                            <div className="detail-item"><div className="detail-label">Driver</div><div className="detail-value">{canOpenDriverPage && doData.driverRef ? <Link href={withReturnTo(`/fleet/drivers/${doData.driverRef}`)}>{doData.driverName || '-'}</Link> : (doData.driverName || '-')}</div></div>
                             <div className="detail-item"><div className="detail-label">Armada Diminta</div><div className="detail-value">{doData.serviceName || '-'}</div></div>
                         </div>
                         <div className="detail-row">
@@ -1658,7 +1636,7 @@ export default function DODetailPage() {
                 <div className="card">
                     <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                         <span className="card-header-title">Tujuan / Penerima</span>
-                        {canEditDeliveryTarget && (
+                        {!canShowTripManager && canEditDeliveryTarget && (
                             <button className="btn btn-secondary btn-sm" onClick={openTargetModal}>
                                 <Edit size={14} /> Edit Tujuan
                             </button>
@@ -1823,7 +1801,7 @@ export default function DODetailPage() {
                                     <div className="detail-label">Keterangan</div>
                                     <div className="detail-value">{doData.keteranganBorongan || '-'}</div>
                                 </div>
-                                {canManageTripFee && !hasLinkedTripCash && (
+                                {canManageTripFee && !hasLinkedTripCash && !canShowTripManager && (
                                     <div className="detail-item" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end' }}>
                                         <button className="btn btn-secondary btn-sm" onClick={openTripFeeEditor}>
                                             <Edit size={14} /> {doData.taripBorongan ? 'Edit Upah' : 'Isi Upah'}
@@ -1986,7 +1964,7 @@ export default function DODetailPage() {
             <div className="card">
                 <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                     <span className="card-header-title">Item dalam DO ({doItems.length})</span>
-                    {canAppendCargoToDo && (
+                    {!canShowTripManager && canAppendCargoToDo && (
                         <button className="btn btn-secondary btn-sm" onClick={openCargoModal}>
                             <Plus size={14} /> Tambah Barang / SJ
                         </button>

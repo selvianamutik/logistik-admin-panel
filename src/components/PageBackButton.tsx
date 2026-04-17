@@ -1,7 +1,7 @@
 'use client';
 
 import { ArrowLeft } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 type PageBackButtonProps = {
     href: string;
@@ -11,12 +11,18 @@ type PageBackButtonProps = {
 
 export default function PageBackButton({ href, label = 'Kembali', className = '' }: PageBackButtonProps) {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const returnTo = searchParams.get('returnTo');
+    const targetHref =
+        returnTo && returnTo.startsWith('/') && !returnTo.startsWith('//')
+            ? returnTo
+            : href;
 
     return (
         <button
             type="button"
             className={['btn-back', className].filter(Boolean).join(' ')}
-            onClick={() => router.push(href)}
+            onClick={() => router.push(targetHref)}
             aria-label={label}
             title={label}
         >
