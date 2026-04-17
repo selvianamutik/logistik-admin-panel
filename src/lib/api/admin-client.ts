@@ -12,7 +12,7 @@ export function withAdminCollectionPageSize(url: string, pageSize: number = DEFA
 }
 
 export async function fetchAdminData<T>(url: string, fallbackMessage: string): Promise<T> {
-    const res = await fetch(url);
+    const res = await fetch(url, { cache: 'no-store' });
     const payload = await res.json();
     if (!res.ok) {
         throw new Error(payload.error || fallbackMessage);
@@ -40,7 +40,7 @@ export async function fetchAllAdminCollectionData<T>(
 
     do {
         resolvedUrl.searchParams.set('page', String(currentPage));
-        const res = await fetch(`${resolvedUrl.pathname}${resolvedUrl.search}`);
+        const res = await fetch(`${resolvedUrl.pathname}${resolvedUrl.search}`, { cache: 'no-store' });
         const payload = await res.json();
         if (!res.ok) {
             throw new Error(payload.error || fallbackMessage);

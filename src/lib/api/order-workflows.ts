@@ -427,6 +427,41 @@ function normalizeExistingShipperReferences(existing: DeliveryOrderShipperRefere
     return normalizedReferences;
 }
 
+function normalizeDeliveryOrderPersistedShipperReferences(
+    deliveryOrder: {
+        shipperReferences?: DeliveryOrderShipperReference[];
+        customerDoNumber?: string;
+        pickupAddress?: string;
+    },
+    pickupStops: NormalizedDeliveryOrderPickupStop[]
+) {
+    const normalizedReferences = normalizeExistingShipperReferences(deliveryOrder.shipperReferences, pickupStops);
+    if (normalizedReferences.length > 0) {
+        return normalizedReferences;
+    }
+
+    const legacyReferenceNumber = normalizeReferenceNumber(deliveryOrder.customerDoNumber);
+    if (!legacyReferenceNumber) {
+        return normalizedReferences;
+    }
+
+    const singlePickupStop = pickupStops.length === 1 ? pickupStops[0] : undefined;
+    return [{
+        _key: 'legacy-customer-do-number',
+        sequence: 1,
+        referenceNumber: legacyReferenceNumber,
+        pickupStopKey: singlePickupStop?._key,
+        pickupAddress: singlePickupStop?.pickupAddress || normalizeOptionalText(deliveryOrder.pickupAddress) || undefined,
+        billingCustomerRef: undefined,
+        billingCustomerName: undefined,
+        receiverName: undefined,
+        receiverPhone: undefined,
+        receiverAddress: undefined,
+        receiverCompany: undefined,
+        notes: undefined,
+    }];
+}
+
 function describePickupStop(stop?: { pickupLabel?: string; pickupAddress?: string }) {
     return normalizeOptionalText(stop?.pickupLabel) || normalizeOptionalText(stop?.pickupAddress) || 'titik pickup';
 }
@@ -641,6 +676,66 @@ function buildShipperReferencesFromCargoSnapshots(
     });
 }
 
+function preserveExistingShipperReferences(
+    nextReferences: NormalizedDeliveryOrderShipperReference[],
+    existing: DeliveryOrderShipperReference[] | undefined,
+    pickupStops: NormalizedDeliveryOrderPickupStop[]
+) {
+    const normalizedExisting = normalizeExistingShipperReferences(existing, pickupStops);
+    if (normalizedExisting.length === 0) {
+        return nextReferences.map((reference, index) => ({
+            ...reference,
+            sequence: index + 1,
+        }));
+    }
+
+    const nextByKey = new Map(
+        nextReferences
+            .filter(reference => reference._key)
+            .map(reference => [reference._key as string, reference])
+    );
+    const nextByNumber = new Map(
+        nextReferences.map(reference => [reference.referenceNumber, reference])
+    );
+    const merged: NormalizedDeliveryOrderShipperReference[] = [];
+
+    for (const existingReference of normalizedExisting) {
+        const matchedReference =
+            (existingReference._key ? nextByKey.get(existingReference._key) : undefined)
+            || nextByNumber.get(existingReference.referenceNumber);
+        if (matchedReference) {
+            if (matchedReference._key) {
+                nextByKey.delete(matchedReference._key);
+            }
+            nextByNumber.delete(matchedReference.referenceNumber);
+            merged.push({
+                ...existingReference,
+                ...matchedReference,
+                _key: existingReference._key || matchedReference._key,
+            });
+            continue;
+        }
+
+        merged.push(existingReference);
+    }
+
+    for (const reference of nextReferences) {
+        if (!nextByNumber.has(reference.referenceNumber)) {
+            continue;
+        }
+        nextByNumber.delete(reference.referenceNumber);
+        if (reference._key) {
+            nextByKey.delete(reference._key);
+        }
+        merged.push(reference);
+    }
+
+    return merged.map((reference, index) => ({
+        ...reference,
+        sequence: index + 1,
+    }));
+}
+
 function buildCustomerDoConstraintDocs(deliveryOrderId: string, customerRef: string, references: NormalizedDeliveryOrderShipperReference[]) {
     return references.map(reference =>
         buildDeliveryOrderCustomerDoConstraintDoc(deliveryOrderId, customerRef, reference.referenceNumber)
@@ -661,19 +756,34 @@ async function findDuplicateCustomerDoReference(
         return null;
     }
 
-    const values = references.map(reference => `${normalizedCustomerRef}::${normalizeText(reference.referenceNumber).toLowerCase()}`);
-    const duplicates = await getSanityClient().fetch<Array<{ valueLower?: string }>>(
+    const numbers = references
+        .map(reference => normalizeText(reference.referenceNumber).toLowerCase())
+        .filter(Boolean);
+    if (numbers.length === 0) {
+        return null;
+    }
+
+    const duplicates = await getSanityClient().fetch<Array<{
+        customerDoNumber?: string;
+        shipperReferences?: Array<{ referenceNumber?: string }>;
+    }>>(
         `*[
-            _type == "uniqueConstraint" &&
-            entityType == "deliveryOrder" &&
-            fieldName == "customerRefCustomerDoNumber" &&
-            valueLower in $values &&
-            (!defined(ownerRef) || ownerRef != $excludeDeliveryOrderId)
+            _type == "deliveryOrder" &&
+            _id != $excludeDeliveryOrderId &&
+            (customerRef == $customerRef || customerRef._ref == $customerRef) &&
+            (
+                lower(coalesce(customerDoNumber, "")) in $numbers ||
+                count(shipperReferences[lower(coalesce(referenceNumber, "")) in $numbers]) > 0
+            )
         ]{
-            valueLower
+            customerDoNumber,
+            shipperReferences[]{
+                referenceNumber
+            }
         }`,
         {
-            values,
+            customerRef: normalizedCustomerRef,
+            numbers,
             excludeDeliveryOrderId: excludeDeliveryOrderId || '',
         }
     );
@@ -682,8 +792,20 @@ async function findDuplicateCustomerDoReference(
         return null;
     }
 
-    const duplicateSet = new Set(duplicates.map(item => normalizeOptionalText(item.valueLower) || ''));
-    return references.find(reference => duplicateSet.has(`${normalizedCustomerRef}::${normalizeText(reference.referenceNumber).toLowerCase()}`)) || null;
+    const duplicateSet = new Set<string>();
+    duplicates.forEach(item => {
+        const customerDoNumber = normalizeText(item.customerDoNumber).toLowerCase();
+        if (customerDoNumber) {
+            duplicateSet.add(customerDoNumber);
+        }
+        (item.shipperReferences || []).forEach(reference => {
+            const referenceNumber = normalizeText(reference.referenceNumber).toLowerCase();
+            if (referenceNumber) {
+                duplicateSet.add(referenceNumber);
+            }
+        });
+    });
+    return references.find(reference => duplicateSet.has(normalizeText(reference.referenceNumber).toLowerCase())) || null;
 }
 
 async function releaseDriverTrackingLockIfOwned(driverRef: unknown, deliveryOrderRef: string, timestamp: string) {
@@ -4236,7 +4358,7 @@ export async function handleDeliveryOrderAppendCargoItems(
 
     const doPickupStops = normalizeDeliveryOrderPickupStopsSnapshot(deliveryOrder.pickupStops);
     const pickupStopMap = new Map(doPickupStops.map(stop => [stop._key, stop]));
-    const existingShipperReferences = normalizeExistingShipperReferences(deliveryOrder.shipperReferences, doPickupStops);
+    const existingShipperReferences = normalizeDeliveryOrderPersistedShipperReferences(deliveryOrder, doPickupStops);
     const hasExplicitShipperReferences =
         Array.isArray(data.shipperReferences) || Boolean(normalizeReferenceNumber(data.customerDoNumber));
     let nextShipperReferences = [...existingShipperReferences];
@@ -4592,7 +4714,7 @@ export async function handleDeliveryOrderCargoItemRemove(
     }
 
     const doPickupStops = normalizeDeliveryOrderPickupStopsSnapshot(deliveryOrder.pickupStops);
-    const existingShipperReferences = normalizeExistingShipperReferences(deliveryOrder.shipperReferences, doPickupStops);
+    const existingShipperReferences = normalizeDeliveryOrderPersistedShipperReferences(deliveryOrder, doPickupStops);
     const remainingDeliveryOrderItems = await getSanityClient().fetch<Array<{
         pickupStopKey?: string;
         pickupAddress?: string;
@@ -4611,6 +4733,11 @@ export async function handleDeliveryOrderCargoItemRemove(
             remainingDeliveryOrderItems,
             doPickupStops,
             deliveryOrder.shipperReferences
+        );
+        nextShipperReferences = preserveExistingShipperReferences(
+            nextShipperReferences,
+            deliveryOrder.shipperReferences,
+            doPickupStops
         );
     } catch (error) {
         return NextResponse.json(
@@ -4880,6 +5007,11 @@ export async function handleDeliveryOrderCargoItemUpdate(
             doPickupStops,
             deliveryOrder.shipperReferences
         );
+        nextShipperReferences = preserveExistingShipperReferences(
+            nextShipperReferences,
+            deliveryOrder.shipperReferences,
+            doPickupStops
+        );
     } catch (error) {
         return NextResponse.json(
             { error: error instanceof Error ? error.message : 'Referensi SJ pengirim tidak valid' },
@@ -4898,7 +5030,7 @@ export async function handleDeliveryOrderCargoItemUpdate(
         }
     }
 
-    const existingShipperReferences = normalizeExistingShipperReferences(deliveryOrder.shipperReferences, doPickupStops);
+    const existingShipperReferences = normalizeDeliveryOrderPersistedShipperReferences(deliveryOrder, doPickupStops);
     const currentConstraintIds =
         customerRef
             ? buildCustomerDoConstraintIds(customerRef, existingShipperReferences)
@@ -5376,7 +5508,7 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
         );
     }
     const customerDoNumber = nextShipperReferences[0]?.referenceNumber || undefined;
-    const existingShipperReferences = normalizeExistingShipperReferences(deliveryOrder.shipperReferences, doPickupStops);
+    const existingShipperReferences = normalizeDeliveryOrderPersistedShipperReferences(deliveryOrder, doPickupStops);
     const relatedDeliveryOrderItems = await getSanityClient().fetch<Array<{
         _id: string;
         shipperReferenceKey?: string;
