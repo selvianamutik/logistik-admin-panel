@@ -2582,8 +2582,8 @@ export async function handleFreightNotaCreate(
     const payloadCoverageByDoRef = new Map<
         string,
         {
-            fullDoIncluded: boolean;
             deliveryOrderItemRefs: Set<string>;
+            rowKeys: Set<string>;
         }
     >();
     for (const row of rows) {
@@ -2594,34 +2594,22 @@ export async function handleFreightNotaCreate(
             : row.deliveryOrderItemRef
                 ? [row.deliveryOrderItemRef]
                 : [];
+        const rowKey = `${row.doRef}::${normalizeOptionalText(row.noSJ) || '-'}`;
         const coverage =
             payloadCoverageByDoRef.get(row.doRef) ||
             {
-                fullDoIncluded: false,
                 deliveryOrderItemRefs: new Set<string>(),
+                rowKeys: new Set<string>(),
             };
-        if (rowItemRefs.length === 0) {
-            if (coverage.fullDoIncluded || coverage.deliveryOrderItemRefs.size > 0) {
-                return NextResponse.json(
-                    {
-                        error: `DO ${deliveryOrder?.doNumber || row.doRef} duplikat dalam payload nota`,
-                    },
-                    { status: 409 }
-                );
-            }
-            coverage.fullDoIncluded = true;
-            payloadCoverageByDoRef.set(row.doRef, coverage);
-            continue;
-        }
-
-        if (coverage.fullDoIncluded) {
+        if (coverage.rowKeys.has(rowKey)) {
             return NextResponse.json(
                 {
-                    error: `DO ${deliveryOrder?.doNumber || row.doRef} sudah dimasukkan penuh dalam payload nota`,
+                    error: `SJ ${row.noSJ || '-'} pada DO ${deliveryOrder?.doNumber || row.doRef} duplikat dalam payload nota`,
                 },
                 { status: 409 }
             );
         }
+
         for (const itemRef of rowItemRefs) {
             if (coverage.deliveryOrderItemRefs.has(itemRef)) {
                 return NextResponse.json(
@@ -2632,6 +2620,7 @@ export async function handleFreightNotaCreate(
                 );
             }
         }
+        coverage.rowKeys.add(rowKey);
         rowItemRefs.forEach(itemRef => coverage.deliveryOrderItemRefs.add(itemRef));
         payloadCoverageByDoRef.set(row.doRef, coverage);
     }
@@ -2672,19 +2661,17 @@ export async function handleFreightNotaCreate(
             { ids: uniqueDoRefs }
         );
         const existingItemUsage = new Map<string, { doRef?: string; doNumber?: string; noSJ?: string }>();
-        const existingFullDoRefs = new Set<string>();
+        const existingRowKeys = new Set<string>();
         for (const item of existingNotaItems) {
             const existingDoRef = normalizeOptionalText(item.doRef);
+            const existingNoSJ = normalizeOptionalText(item.noSJ);
             const existingItemRefs = Array.isArray(item.deliveryOrderItemRefs) && item.deliveryOrderItemRefs.length > 0
                 ? item.deliveryOrderItemRefs
                 : item.deliveryOrderItemRef
                     ? [item.deliveryOrderItemRef]
                     : [];
-            if (existingItemRefs.length === 0) {
-                if (existingDoRef) {
-                    existingFullDoRefs.add(existingDoRef);
-                }
-                continue;
+            if (existingDoRef && existingNoSJ) {
+                existingRowKeys.add(`${existingDoRef}::${existingNoSJ}`);
             }
             for (const itemRef of existingItemRefs.map(value => normalizeOptionalText(value)).filter((value): value is string => Boolean(value))) {
                 existingItemUsage.set(itemRef, {
@@ -2702,18 +2689,10 @@ export async function handleFreightNotaCreate(
                 : row.deliveryOrderItemRef
                     ? [row.deliveryOrderItemRef]
                     : [];
-            if (rowItemRefs.length === 0) {
-                if (existingFullDoRefs.has(row.doRef) || existingNotaItems.some(item => normalizeOptionalText(item.doRef) === row.doRef)) {
-                    return NextResponse.json(
-                        { error: `DO ${row.doNumber || row.doRef} sudah punya item nota sebelumnya. Pilih per SJ yang belum tertagih.` },
-                        { status: 409 }
-                    );
-                }
-                continue;
-            }
-            if (existingFullDoRefs.has(row.doRef)) {
+            const rowKey = `${row.doRef}::${normalizeOptionalText(row.noSJ) || '-'}`;
+            if (existingRowKeys.has(rowKey)) {
                 return NextResponse.json(
-                    { error: `DO ${row.doNumber || row.doRef} sudah tercantum penuh di nota lain` },
+                    { error: `SJ ${row.noSJ || '-'} pada DO ${row.doNumber || row.doRef} sudah tertagih di nota lain` },
                     { status: 409 }
                 );
             }

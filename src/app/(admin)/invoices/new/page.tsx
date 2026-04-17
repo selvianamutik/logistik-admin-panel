@@ -41,7 +41,7 @@ export default function NewNotaPage() {
     const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([]);
     const [deliveryOrderItems, setDeliveryOrderItems] = useState<DeliveryOrderItem[]>([]);
     const [orders, setOrders] = useState<Order[]>([]);
-    const [lockedNotaDoRefs, setLockedNotaDoRefs] = useState<string[]>([]);
+    const [usedNotaDoRowKeys, setUsedNotaDoRowKeys] = useState<string[]>([]);
     const [usedNotaDoItemRefs, setUsedNotaDoItemRefs] = useState<string[]>([]);
     const [saving, setSaving] = useState(false);
 
@@ -69,6 +69,7 @@ export default function NewNotaPage() {
                     fetchAdminCollectionData<DeliveryOrderItem[]>('/api/data?entity=delivery-order-items', 'Gagal memuat item DO'),
                     fetchAdminCollectionData<Array<{
                         doRef?: string;
+                        noSJ?: string;
                         deliveryOrderItemRef?: string;
                         deliveryOrderItemRefs?: string[];
                     }>>('/api/data?entity=freight-nota-items', 'Gagal memuat pemakaian DO nota'),
@@ -78,11 +79,14 @@ export default function NewNotaPage() {
                 setDeliveryOrders((dos || []).filter((item: DeliveryOrder) => item.status === 'DELIVERED'));
                 setOrders(ords || []);
                 setDeliveryOrderItems(doItems || []);
-                setLockedNotaDoRefs(
+                setUsedNotaDoRowKeys(
                     (notaItems || [])
-                        .filter(item => !item.deliveryOrderItemRef && (!Array.isArray(item.deliveryOrderItemRefs) || item.deliveryOrderItemRefs.length === 0))
-                        .map(item => item.doRef)
-                        .filter((value: string | undefined): value is string => Boolean(value))
+                        .map(item => {
+                            const doRef = item.doRef?.trim();
+                            const noSJ = item.noSJ?.trim();
+                            return doRef && noSJ ? `${doRef}::${noSJ}` : null;
+                        })
+                        .filter((value): value is string => Boolean(value))
                 );
                 setUsedNotaDoItemRefs(
                     (notaItems || []).flatMap(item => (
@@ -187,7 +191,7 @@ export default function NewNotaPage() {
     };
 
     const getAvailableNotaRowsForDeliveryOrder = useCallback((deliveryOrder: DeliveryOrder, targetCustomerRef?: string) => {
-        const lockedDoRefSet = new Set(lockedNotaDoRefs);
+        const usedDoRowKeySet = new Set(usedNotaDoRowKeys);
         const usedDoItemRefSet = new Set(usedNotaDoItemRefs);
         const selectedDoItemRefSet = new Set(
             rows.flatMap(row => (
@@ -203,10 +207,6 @@ export default function NewNotaPage() {
                 .filter(row => !isEmptyNotaRow(row))
                 .map(row => `${row.doRef || 'manual'}::${row.noSJ || row.id}`)
         );
-
-        if (lockedDoRefSet.has(deliveryOrder._id)) {
-            return [] as NotaItemRow[];
-        }
 
         return buildNotaRowsFromDeliveryOrder({
             deliveryOrder,
@@ -229,9 +229,12 @@ export default function NewNotaPage() {
                 return false;
             }
             const rowKey = `${row.doRef || 'manual'}::${row.noSJ || row.id}`;
-            return !selectedRowKeys.has(rowKey);
+            if (usedDoRowKeySet.has(rowKey) || selectedRowKeys.has(rowKey)) {
+                return false;
+            }
+            return true;
         });
-    }, [deliveryOrderItems, lockedNotaDoRefs, orders, rows, usedNotaDoItemRefs]);
+    }, [deliveryOrderItems, orders, rows, usedNotaDoItemRefs, usedNotaDoRowKeys]);
 
     const addDORow = (doId: string) => {
         const deliveryOrder = deliveryOrders.find(item => item._id === doId);
