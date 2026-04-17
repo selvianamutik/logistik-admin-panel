@@ -196,6 +196,23 @@ export default function OrderDetailPage() {
     const canCreateInvoice = user ? hasPermission(user.role, 'freightNotas', 'create') : false;
     const canOpenCustomerPage = user ? hasPageAccess(user.role, 'customers') : false;
     const canOpenVehiclePage = user ? hasPageAccess(user.role, 'vehicles') : false;
+    const hasOpenModal = showDOModal || showHoldModal;
+
+    useEffect(() => {
+        if (!hasOpenModal) {
+            return;
+        }
+
+        const previousBodyOverflow = document.body.style.overflow;
+        const previousHtmlOverflow = document.documentElement.style.overflow;
+        document.body.style.overflow = 'hidden';
+        document.documentElement.style.overflow = 'hidden';
+
+        return () => {
+            document.body.style.overflow = previousBodyOverflow;
+            document.documentElement.style.overflow = previousHtmlOverflow;
+        };
+    }, [hasOpenModal]);
 
     const loadOrderDetail = useCallback(async () => {
         setLoading(true);
@@ -891,8 +908,8 @@ export default function OrderDetailPage() {
                     {isHeaderOnlyOrder && (
                         <div style={{ marginBottom: '0.85rem', padding: '0.85rem 1rem', borderRadius: '0.75rem', border: '1px solid var(--color-gray-200)', background: 'var(--color-gray-50)', fontSize: '0.82rem', color: 'var(--color-gray-700)' }}>
                             {dos.length > 0
-                                ? 'Order ini memakai flow header booking. Manifest barang tersimpan per Surat Jalan, bukan di header order.'
-                                : 'Order ini masih berupa header booking. Barang, koli, dan berat akan dicatat saat Surat Jalan pertama dibuat.'}
+                                ? 'Manifest barang tersimpan per Surat Jalan, bukan di header order.'
+                                : 'Barang akan dicatat saat Surat Jalan pertama dibuat.'}
                         </div>
                     )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 'var(--font-size-sm)' }}>
@@ -1015,7 +1032,7 @@ export default function OrderDetailPage() {
                     <div className="card-header"><span className="card-header-title">Tujuan Surat Jalan</span></div>
                     <div className="card-body">
                         <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', fontSize: '0.85rem', color: 'var(--color-gray-700)', border: '1px solid var(--color-gray-200)' }}>
-                            Tujuan/penerima tidak lagi melekat di order. Field ini sekarang diisi langsung di Surat Jalan supaya setiap trip bisa fleksibel, editable, dan tidak mengunci header resi.
+                            Tujuan sekarang diisi langsung di Surat Jalan. Snapshot lama di bawah hanya referensi.
                         </div>
                         {(order.receiverName || order.receiverAddress || order.receiverCompany) && (
                             <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--color-gray-200)' }}>
@@ -1420,7 +1437,7 @@ export default function OrderDetailPage() {
                                     <label className="form-label">Tanggal</label>
                                     <input type="date" className="form-input" value={doDate} onChange={e => setDoDate(e.target.value)} disabled={creatingDO} />
                                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                        No. DO internal akan otomatis memakai format tanggal <strong>{internalDoPreviewPeriod}</strong>.
+                                        No. DO internal otomatis mengikuti tanggal ini: <strong>{internalDoPreviewPeriod}</strong>.
                                     </div>
                                 </div>
                                 {!isHeaderOnlyOrder && (
@@ -1434,7 +1451,7 @@ export default function OrderDetailPage() {
                                             disabled={creatingDO}
                                         />
                                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                            Format referensi customer: <strong>{normalizedShipperReferenceFormat}</strong>. Kalau SJ pengirim belum turun, field ini boleh dikosongkan dulu lalu diisi belakangan, misalnya <strong>{shipperReferenceExample}</strong>.
+                                            Boleh dikosongkan dulu. Format referensi customer: <strong>{normalizedShipperReferenceFormat}</strong>, misalnya <strong>{shipperReferenceExample}</strong>.
                                         </div>
                                     </div>
                                 )}

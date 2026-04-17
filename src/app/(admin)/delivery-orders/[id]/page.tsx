@@ -248,6 +248,14 @@ export default function DODetailPage() {
     const canEditDeliveryTarget = normalizedRole === 'OWNER' || normalizedRole === 'OPERASIONAL' || normalizedRole === 'FINANCE';
     const canReviewDriverRequest = canManageDeliveryStatus;
     const canManageTripFee = canManageDeliveryStatus;
+    const hasOpenModal =
+        showStatusModal ||
+        showPODModal ||
+        showRejectRequestModal ||
+        showTripResourcesModal ||
+        showShipperReferenceModal ||
+        showTargetModal ||
+        showCargoModal;
     const tripOriginAreaOptions = buildTripRateAreaOptions(tripRouteRates, 'originArea', {
         serviceRef: doData?.serviceRef,
     });
@@ -298,6 +306,22 @@ export default function DODetailPage() {
     useEffect(() => {
         editingTaripRef.current = editingTarip;
     }, [editingTarip]);
+
+    useEffect(() => {
+        if (!hasOpenModal) {
+            return;
+        }
+
+        const previousBodyOverflow = document.body.style.overflow;
+        const previousHtmlOverflow = document.documentElement.style.overflow;
+        document.body.style.overflow = 'hidden';
+        document.documentElement.style.overflow = 'hidden';
+
+        return () => {
+            document.body.style.overflow = previousBodyOverflow;
+            document.documentElement.style.overflow = previousHtmlOverflow;
+        };
+    }, [hasOpenModal]);
 
     const loadDO = useCallback(async (mode: 'initial' | 'refresh' = 'refresh') => {
         if (mode === 'initial') {
@@ -1397,7 +1421,7 @@ export default function DODetailPage() {
                     </div>
                     <div className="card-body" style={{ display: 'grid', gap: '0.85rem' }}>
                         <div className="text-muted text-sm">
-                            Edit trip, SJ pengirim, dan uang jalan dari halaman ini. Pembatalan tetap lewat status agar histori tidak putus.
+                            Edit trip, SJ pengirim, dan uang jalan dari halaman ini.
                         </div>
                         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                             {doData.status === 'CREATED' && canAssignTripResources && !hasLinkedTripCash && (
@@ -1552,7 +1576,7 @@ export default function DODetailPage() {
                             <div style={{ display: 'grid', gap: '0.75rem' }}>
                                 <div className="detail-value">Belum ada uang jalan trip yang terbit untuk Surat Jalan ini.</div>
                                 <div className="text-muted text-sm">
-                                    Setelah trip siap jalan, terbitkan uang jalan dari Surat Jalan ini agar bon, biaya perjalanan, upah trip, dan settlement akhir tetap terkunci ke DO yang benar.
+                                    Terbitkan uang jalan dari Surat Jalan ini setelah trip siap jalan.
                                 </div>
                                 {canCreateTripCash && voucherIssueBlockingReasons.length > 0 && (
                                     <div className="text-muted text-sm">
@@ -2719,8 +2743,8 @@ export default function DODetailPage() {
                                 <h3 className="modal-title">{isEditingCargoItem ? 'Edit Barang / SJ' : 'Tambah Barang / SJ'}</h3>
                                 <div className="text-muted text-sm" style={{ marginTop: '0.3rem' }}>
                                     {isEditingCargoItem
-                                        ? 'Koreksi 1 barang yang sudah tersimpan. Jika mau tambah manifest baru, tutup dulu mode edit ini.'
-                                        : 'Tambahkan manifest per SJ pengirim. Satu SJ bisa berisi banyak barang.'}
+                                        ? 'Koreksi 1 barang yang sudah tersimpan.'
+                                        : 'Input SJ pengirim lalu isi barangnya.'}
                                 </div>
                             </div>
                             <button className="modal-close" onClick={closeCargoModal} disabled={savingCargo}>&times;</button>
@@ -2909,8 +2933,8 @@ export default function DODetailPage() {
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginTop: '1rem' }}>
                                 <div className="text-muted text-sm">
                                     {isEditingCargoItem
-                                        ? 'Perubahan akan langsung sinkron ke manifest trip, daftar SJ, dan penagihan per SJ.'
-                                        : 'Satu trip boleh memuat beberapa SJ pengirim dan setiap SJ boleh berisi banyak barang.'}
+                                        ? 'Perubahan langsung sinkron ke manifest trip dan penagihan per SJ.'
+                                        : 'Satu trip bisa memuat beberapa SJ.'}
                                 </div>
                                 {!isEditingCargoItem && (
                                     <button type="button" className="btn btn-secondary btn-sm" onClick={addCargoDraftGroup} disabled={savingCargo}>

@@ -1488,7 +1488,7 @@ tbody td {
   z-index: var(--z-modal);
   padding: calc(var(--space-4) + env(safe-area-inset-top, 0px)) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
   padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
-  overflow-y: auto;
+  overflow: hidden;
   -webkit-overflow-scrolling: touch;
   animation: fadeIn var(--transition-fast);
 }
@@ -1497,11 +1497,13 @@ tbody td {
   background: var(--color-white);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-xl);
+  display: flex;
+  flex-direction: column;
   width: 100%;
   max-width: 520px;
   max-height: 90vh;
   max-height: calc(100dvh - (var(--space-4) * 2) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
-  overflow-y: auto;
+  overflow: hidden;
   overscroll-behavior: contain;
   animation: slideUp var(--transition-base);
 }
@@ -1547,6 +1549,8 @@ tbody td {
 
 .modal-body {
   padding: var(--space-6);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .modal-footer {
