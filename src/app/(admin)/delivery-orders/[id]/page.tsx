@@ -77,6 +77,8 @@ type DeliveryOrderTripCashLink = {
 };
 
 type ShipperReferenceDraft = {
+    draftKey: string;
+    referenceKey: string;
     referenceNumber: string;
     pickupStopKey: string;
     billingCustomerRef: string;
@@ -88,7 +90,8 @@ type ShipperReferenceDraft = {
 };
 
 type ResolvedShipperReferenceEntry = {
-    key: string;
+    draftKey: string;
+    referenceKey: string;
     referenceNumber: string;
     pickupStopKey: string;
     pickupLabel: string;
@@ -119,8 +122,15 @@ function buildResolvedShipperReferenceEntries(
         .sort((left, right) => left.sequence - right.sequence);
     const pickupStopMap = new Map(pickupStops.map(stop => [stop._key, stop]));
     const entries = new Map<string, ResolvedShipperReferenceEntry>();
+    const compositeIndex = new Map<string, string>();
 
-    const upsertEntry = (referenceNumber: string, pickupStopKey = '', pickupAddress = '', keyHint = '') => {
+    const upsertEntry = (
+        referenceNumber: string,
+        pickupStopKey = '',
+        pickupAddress = '',
+        draftKeyHint = '',
+        referenceKeyHint = ''
+    ) => {
         const normalizedReference = referenceNumber.trim();
         if (!normalizedReference) {
             return;
@@ -130,19 +140,31 @@ function buildResolvedShipperReferenceEntries(
             ? `Pickup ${matchedStop.sequence}${matchedStop.pickupLabel ? ` - ${matchedStop.pickupLabel}` : ''}`
             : '';
         const resolvedPickupAddress = matchedStop?.pickupAddress || pickupAddress || '';
-        const entryKey = `${pickupStopKey || 'tanpa-pickup'}::${normalizedReference}`;
-        if (entries.has(entryKey)) {
-            const current = entries.get(entryKey)!;
-            entries.set(entryKey, {
+        const compositeKey = `${pickupStopKey || 'tanpa-pickup'}::${normalizedReference}`;
+        const resolvedEntryKey =
+            (referenceKeyHint && entries.has(referenceKeyHint) && referenceKeyHint)
+            || (draftKeyHint && entries.has(draftKeyHint) && draftKeyHint)
+            || compositeIndex.get(compositeKey)
+            || referenceKeyHint
+            || draftKeyHint
+            || compositeKey;
+        if (entries.has(resolvedEntryKey)) {
+            const current = entries.get(resolvedEntryKey)!;
+            entries.set(resolvedEntryKey, {
                 ...current,
-                key: current.key || keyHint || entryKey,
+                draftKey: current.draftKey || resolvedEntryKey,
+                referenceKey: current.referenceKey || referenceKeyHint,
+                referenceNumber: current.referenceNumber || normalizedReference,
+                pickupStopKey: current.pickupStopKey || pickupStopKey,
                 pickupLabel: current.pickupLabel || resolvedPickupLabel,
                 pickupAddress: current.pickupAddress || resolvedPickupAddress,
             });
+            compositeIndex.set(compositeKey, resolvedEntryKey);
             return;
         }
-        entries.set(entryKey, {
-            key: keyHint || entryKey,
+        entries.set(resolvedEntryKey, {
+            draftKey: draftKeyHint || resolvedEntryKey,
+            referenceKey: referenceKeyHint,
             referenceNumber: normalizedReference,
             pickupStopKey,
             pickupLabel: resolvedPickupLabel,
@@ -154,6 +176,7 @@ function buildResolvedShipperReferenceEntries(
             receiverAddress: '',
             receiverCompany: '',
         });
+        compositeIndex.set(compositeKey, resolvedEntryKey);
     };
 
     (deliveryOrder.shipperReferences || []).forEach((reference, index) => {
@@ -161,13 +184,18 @@ function buildResolvedShipperReferenceEntries(
             reference.referenceNumber || '',
             reference.pickupStopKey || '',
             reference.pickupAddress || '',
-            reference._key || `shipper-reference-${index + 1}`
+            reference._key || `shipper-reference-${index + 1}`,
+            reference._key || ''
         );
-        const entryKey = `${reference.pickupStopKey || 'tanpa-pickup'}::${(reference.referenceNumber || '').trim()}`;
+        const entryKey =
+            reference._key
+            || compositeIndex.get(`${reference.pickupStopKey || 'tanpa-pickup'}::${(reference.referenceNumber || '').trim()}`)
+            || `${reference.pickupStopKey || 'tanpa-pickup'}::${(reference.referenceNumber || '').trim()}`;
         const current = entries.get(entryKey);
         if (current) {
             entries.set(entryKey, {
                 ...current,
+                referenceKey: reference._key || current.referenceKey,
                 billingCustomerRef: reference.billingCustomerRef || current.billingCustomerRef,
                 billingCustomerName: reference.billingCustomerName || current.billingCustomerName,
                 receiverName: reference.receiverName || current.receiverName,
@@ -183,7 +211,8 @@ function buildResolvedShipperReferenceEntries(
             item.shipperReferenceNumber || '',
             item.pickupStopKey || '',
             item.pickupAddress || '',
-            `delivery-order-item-${item._id}`
+            item.shipperReferenceKey || `delivery-order-item-${item._id}`,
+            item.shipperReferenceKey || ''
         );
     });
 
@@ -192,7 +221,8 @@ function buildResolvedShipperReferenceEntries(
             deliveryOrder.customerDoNumber,
             deliveryOrder.pickupStops?.[0]?._key || '',
             deliveryOrder.pickupAddress || '',
-            'legacy-customer-do-number'
+            'legacy-customer-do-number',
+            ''
         );
     }
 
@@ -256,6 +286,8 @@ export default function DODetailPage() {
     const [tripDriverRef, setTripDriverRef] = useState('');
     const [tripVehicleOverrideReason, setTripVehicleOverrideReason] = useState('');
     const [shipperReferenceDrafts, setShipperReferenceDrafts] = useState<ShipperReferenceDraft[]>([{
+        draftKey: crypto.randomUUID(),
+        referenceKey: '',
         referenceNumber: '',
         pickupStopKey: '',
         billingCustomerRef: '',
@@ -543,6 +575,8 @@ export default function DODetailPage() {
         const normalizedFormat = shipperReferenceFormat.trim().toUpperCase() || 'SJ';
         const nextReferences = resolvedShipperReferences
             .map(reference => ({
+                draftKey: reference.draftKey,
+                referenceKey: reference.referenceKey,
                 referenceNumber: reference.referenceNumber,
                 pickupStopKey: reference.pickupStopKey,
                 billingCustomerRef: reference.billingCustomerRef,
@@ -557,6 +591,8 @@ export default function DODetailPage() {
             nextReferences.length > 0
                 ? nextReferences
                 : [{
+                    draftKey: crypto.randomUUID(),
+                    referenceKey: '',
                     referenceNumber: doData?.customerDoNumber || (normalizedFormat !== 'SJ' ? normalizedFormat : ''),
                     pickupStopKey: '',
                     billingCustomerRef: doData?.customerRef || '',
@@ -568,6 +604,18 @@ export default function DODetailPage() {
                 }]
         );
         setShowShipperReferenceModal(true);
+    };
+
+    const updateShipperReferenceDraft = (draftKey: string, patch: Partial<ShipperReferenceDraft>) => {
+        setShipperReferenceDrafts(previous => previous.map(entry => (
+            entry.draftKey === draftKey
+                ? { ...entry, ...patch }
+                : entry
+        )));
+    };
+
+    const removeShipperReferenceDraft = (draftKey: string) => {
+        setShipperReferenceDrafts(previous => previous.filter(entry => entry.draftKey !== draftKey));
     };
 
     const openTargetModal = () => {
@@ -1241,6 +1289,7 @@ export default function DODetailPage() {
     const saveShipperReference = async () => {
         const normalizedReferences = shipperReferenceDrafts
             .map(entry => ({
+                referenceKey: entry.referenceKey.trim(),
                 referenceNumber: entry.referenceNumber.trim().toUpperCase(),
                 pickupStopKey: entry.pickupStopKey.trim(),
                 billingCustomerRef: entry.billingCustomerRef.trim(),
@@ -1274,6 +1323,7 @@ export default function DODetailPage() {
                     data: {
                         id: doData?._id,
                         shipperReferences: normalizedReferences.map(reference => ({
+                            _key: reference.referenceKey || undefined,
                             referenceNumber: reference.referenceNumber,
                             pickupStopKey: reference.pickupStopKey || undefined,
                             billingCustomerRef: reference.billingCustomerRef || undefined,
@@ -1746,7 +1796,7 @@ export default function DODetailPage() {
                                 {shipperReferenceDisplayList.length > 0 ? (
                                     <div style={{ display: 'grid', gap: '0.5rem' }}>
                                         {shipperReferenceDisplayList.map(reference => (
-                                            <div key={reference.key} style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.6rem 0.75rem', background: 'var(--color-gray-50)' }}>
+                                            <div key={reference.draftKey || reference.referenceKey || `${reference.pickupStopKey || 'tanpa-pickup'}::${reference.referenceNumber}`} style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.6rem 0.75rem', background: 'var(--color-gray-50)' }}>
                                                 <div className="detail-value font-mono">{reference.referenceNumber}</div>
                                                 {reference.pickupLabel && (
                                                     <div className="text-muted text-sm" style={{ marginTop: '0.2rem' }}>
@@ -2802,17 +2852,15 @@ export default function DODetailPage() {
                             <div className="form-group">
                                 <label className="form-label">Daftar SJ Pengirim</label>
                                 <div style={{ display: 'grid', gap: '0.75rem' }}>
-                                    {shipperReferenceDrafts.map((entry, index) => (
-                                        <div key={`shipper-reference-${index}`} style={{ display: 'grid', gap: '0.6rem', padding: '0.85rem', border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', background: 'var(--color-gray-50)' }}>
+                                    {shipperReferenceDrafts.map(entry => (
+                                        <div key={entry.draftKey} style={{ display: 'grid', gap: '0.6rem', padding: '0.85rem', border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', background: 'var(--color-gray-50)' }}>
                                             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                                                 <input
                                                     className="form-input"
                                                     value={entry.referenceNumber}
                                                     onChange={event => {
                                                         const nextValue = event.target.value.toUpperCase();
-                                                        setShipperReferenceDrafts(previous => previous.map((current, entryIndex) => (
-                                                            entryIndex === index ? { ...current, referenceNumber: nextValue } : current
-                                                        )));
+                                                        updateShipperReferenceDraft(entry.draftKey, { referenceNumber: nextValue });
                                                     }}
                                                     placeholder={`Contoh: ${shipperReferenceExample}`}
                                                     disabled={savingShipperReference}
@@ -2821,7 +2869,7 @@ export default function DODetailPage() {
                                                     <button
                                                         type="button"
                                                         className="btn btn-ghost btn-icon-only"
-                                                        onClick={() => setShipperReferenceDrafts(previous => previous.filter((_, entryIndex) => entryIndex !== index))}
+                                                        onClick={() => removeShipperReferenceDraft(entry.draftKey)}
                                                         disabled={savingShipperReference}
                                                         title="Hapus SJ pengirim"
                                                     >
@@ -2835,9 +2883,7 @@ export default function DODetailPage() {
                                                     <select
                                                         className="form-select"
                                                         value={entry.pickupStopKey}
-                                                        onChange={event => setShipperReferenceDrafts(previous => previous.map((current, entryIndex) => (
-                                                            entryIndex === index ? { ...current, pickupStopKey: event.target.value } : current
-                                                        )))}
+                                                        onChange={event => updateShipperReferenceDraft(entry.draftKey, { pickupStopKey: event.target.value })}
                                                         disabled={savingShipperReference}
                                                     >
                                                         <option value="">Pilih pickup untuk SJ ini</option>
@@ -2867,15 +2913,10 @@ export default function DODetailPage() {
                                                     onChange={event => {
                                                         const nextCustomerRef = event.target.value;
                                                         const nextCustomerName = billingCustomers.find(customer => customer._id === nextCustomerRef)?.name || '';
-                                                        setShipperReferenceDrafts(previous => previous.map((current, entryIndex) => (
-                                                            entryIndex === index
-                                                                ? {
-                                                                    ...current,
-                                                                    billingCustomerRef: nextCustomerRef,
-                                                                    billingCustomerName: nextCustomerName,
-                                                                }
-                                                                : current
-                                                        )));
+                                                        updateShipperReferenceDraft(entry.draftKey, {
+                                                            billingCustomerRef: nextCustomerRef,
+                                                            billingCustomerName: nextCustomerName,
+                                                        });
                                                     }}
                                                     disabled={savingShipperReference}
                                                 >
@@ -2893,9 +2934,7 @@ export default function DODetailPage() {
                                                     <input
                                                         className="form-input"
                                                         value={entry.receiverName}
-                                                        onChange={event => setShipperReferenceDrafts(previous => previous.map((current, entryIndex) => (
-                                                            entryIndex === index ? { ...current, receiverName: event.target.value } : current
-                                                        )))}
+                                                        onChange={event => updateShipperReferenceDraft(entry.draftKey, { receiverName: event.target.value })}
                                                         disabled={savingShipperReference}
                                                         placeholder="Opsional"
                                                     />
@@ -2905,9 +2944,7 @@ export default function DODetailPage() {
                                                     <input
                                                         className="form-input"
                                                         value={entry.receiverPhone}
-                                                        onChange={event => setShipperReferenceDrafts(previous => previous.map((current, entryIndex) => (
-                                                            entryIndex === index ? { ...current, receiverPhone: event.target.value } : current
-                                                        )))}
+                                                        onChange={event => updateShipperReferenceDraft(entry.draftKey, { receiverPhone: event.target.value })}
                                                         disabled={savingShipperReference}
                                                         placeholder="Opsional"
                                                     />
@@ -2918,9 +2955,7 @@ export default function DODetailPage() {
                                                 <input
                                                     className="form-input"
                                                     value={entry.receiverCompany}
-                                                    onChange={event => setShipperReferenceDrafts(previous => previous.map((current, entryIndex) => (
-                                                        entryIndex === index ? { ...current, receiverCompany: event.target.value } : current
-                                                    )))}
+                                                    onChange={event => updateShipperReferenceDraft(entry.draftKey, { receiverCompany: event.target.value })}
                                                     disabled={savingShipperReference}
                                                     placeholder="Opsional"
                                                 />
@@ -2931,9 +2966,7 @@ export default function DODetailPage() {
                                                     className="form-textarea"
                                                     rows={2}
                                                     value={entry.receiverAddress}
-                                                    onChange={event => setShipperReferenceDrafts(previous => previous.map((current, entryIndex) => (
-                                                        entryIndex === index ? { ...current, receiverAddress: event.target.value } : current
-                                                    )))}
+                                                    onChange={event => updateShipperReferenceDraft(entry.draftKey, { receiverAddress: event.target.value })}
                                                     disabled={savingShipperReference}
                                                     placeholder="Alamat tujuan untuk invoice / dokumen SJ ini"
                                                 />
@@ -2949,6 +2982,8 @@ export default function DODetailPage() {
                                         type="button"
                                         className="btn btn-secondary btn-sm"
                                         onClick={() => setShipperReferenceDrafts(previous => [...previous, {
+                                            draftKey: crypto.randomUUID(),
+                                            referenceKey: '',
                                             referenceNumber: '',
                                             pickupStopKey: pickupStopList.length === 1 ? pickupStopList[0]._key : '',
                                             billingCustomerRef: doData?.customerRef || '',

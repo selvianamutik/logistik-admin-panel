@@ -2,6 +2,7 @@ import {
     getDriverCustomerProducts,
     getDriverAssignedDeliveryOrders,
     getDriverAssignedTripPlans,
+    getDriverOrderCargoCapabilities,
     getDriverPortalAccessNotice,
     requireDriverSessionContext,
 } from '@/lib/api/driver-portal';
@@ -25,9 +26,23 @@ export async function GET(request: Request) {
         getDriverAssignedDeliveryOrders(result.driver._id),
         getDriverAssignedTripPlans(result.driver._id),
     ]);
+    const cargoCapabilities = await getDriverOrderCargoCapabilities([
+        ...deliveryOrders.map(item => typeof item.orderRef === 'string' ? item.orderRef : ''),
+        ...plannedTrips.map(item => item.orderRef || ''),
+    ]);
     const customerProducts = await getDriverCustomerProducts([
         ...deliveryOrders.map(item => item.customerRef || ''),
         ...plannedTrips.map(item => item.customerRef || ''),
     ]);
-    return jsonNoStore({ data: deliveryOrders, plannedTrips, customerProducts });
+    return jsonNoStore({
+        data: deliveryOrders.map(item => ({
+            ...item,
+            allowsDirectCargoInput: cargoCapabilities.get(typeof item.orderRef === 'string' ? item.orderRef : '') ?? true,
+        })),
+        plannedTrips: plannedTrips.map(item => ({
+            ...item,
+            allowsDirectCargoInput: cargoCapabilities.get(item.orderRef || '') ?? true,
+        })),
+        customerProducts,
+    });
 }

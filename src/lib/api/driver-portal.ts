@@ -3,6 +3,7 @@ import { getBusinessDateValue } from '@/lib/business-date';
 import { getDriverScoreStatusMeta } from '@/lib/driver-scoring-support';
 import { getCurrentDriverScore } from '@/lib/api/driver-score-workflows';
 import { getSanityClient, sanityGetById, sanityGetCompanyProfile } from '@/lib/sanity';
+import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
 import type {
     CompanyProfile,
     CustomerProduct,
@@ -27,6 +28,7 @@ export type DriverAssignedDeliveryOrderCargoItem = DeliveryOrderItem;
 
 export type DriverAssignedDeliveryOrder = DeliveryOrder & {
     driverCargoItems?: DriverAssignedDeliveryOrderCargoItem[];
+    allowsDirectCargoInput?: boolean;
 };
 
 export type DriverAssignedTripPlanPickupStop = {
@@ -61,6 +63,7 @@ export type DriverAssignedTripPlan = {
     linkedDeliveryOrderRef?: string;
     linkedDeliveryOrderNumber?: string;
     linkedDeliveryOrderStatus?: DeliveryOrder['status'] | 'UNKNOWN';
+    allowsDirectCargoInput?: boolean;
 };
 
 export type DriverPortalAccessNotice = {
@@ -178,6 +181,7 @@ export async function getDriverAssignedDeliveryOrders(driverRef: string) {
             status in ["CREATED", "HEADING_TO_PICKUP", "ON_DELIVERY", "ARRIVED"]
         ] | order(date desc, _createdAt desc){
             _id,
+            orderRef,
             doNumber,
             date,
             status,
@@ -232,6 +236,74 @@ export async function getDriverAssignedDeliveryOrders(driverRef: string) {
         }`,
         { driverRef }
     );
+}
+
+export async function getDriverOrderCargoCapabilities(orderRefs: string[]) {
+    const normalizedOrderRefs = [...new Set(orderRefs.filter(Boolean))];
+    if (normalizedOrderRefs.length === 0) {
+        return new Map<string, boolean>();
+    }
+
+    const [orders, orderItemHints] = await Promise.all([
+        getSanityClient().fetch<Array<{
+            _id: string;
+            _createdAt?: string;
+            createdAt?: string;
+            cargoEntryMode?: 'ORDER' | 'DELIVERY_ORDER';
+        }>>(
+            `*[_type == "order" && _id in $ids]{
+                _id,
+                _createdAt,
+                createdAt,
+                cargoEntryMode
+            }`,
+            { ids: normalizedOrderRefs }
+        ),
+        getSanityClient().fetch<Array<{
+            orderRef?: string;
+            _createdAt?: string;
+            entrySource?: 'ORDER' | 'DELIVERY_ORDER';
+            sourceDeliveryOrderRef?: string;
+        }>>(
+            `*[_type == "orderItem" && orderRef in $ids]{
+                orderRef,
+                _createdAt,
+                entrySource,
+                sourceDeliveryOrderRef
+            }`,
+            { ids: normalizedOrderRefs }
+        ),
+    ]);
+
+    const orderMap = new Map(orders.map(order => [order._id, order]));
+    const hintsByOrderRef = new Map<string, Array<{
+        _createdAt?: string;
+        entrySource?: 'ORDER' | 'DELIVERY_ORDER';
+        sourceDeliveryOrderRef?: string;
+    }>>();
+    for (const item of orderItemHints) {
+        const orderRef = typeof item.orderRef === 'string' ? item.orderRef : '';
+        if (!orderRef) {
+            continue;
+        }
+        const current = hintsByOrderRef.get(orderRef) || [];
+        current.push({
+            _createdAt: item._createdAt,
+            entrySource: item.entrySource,
+            sourceDeliveryOrderRef: item.sourceDeliveryOrderRef,
+        });
+        hintsByOrderRef.set(orderRef, current);
+    }
+
+    const capabilities = new Map<string, boolean>();
+    normalizedOrderRefs.forEach(orderRef => {
+        const order = orderMap.get(orderRef);
+        const hints = hintsByOrderRef.get(orderRef) || [];
+        const resolvedCargoEntryMode = resolveOrderCargoEntryMode(order, hints);
+        capabilities.set(orderRef, resolvedCargoEntryMode === 'DELIVERY_ORDER' || hints.length === 0);
+    });
+
+    return capabilities;
 }
 
 function normalizeTripPlanPickupStops(
