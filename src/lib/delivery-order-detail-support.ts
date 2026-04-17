@@ -231,9 +231,13 @@ export function summarizeActualCargoDrafts(items: ActualCargoDraft[]) {
     };
 }
 
-export function buildDefaultActualDropDrafts(doData: DeliveryOrder | null, cargoItems: ActualCargoDraft[]): ActualDropDraft[] {
-    if (doData?.actualDropPoints && doData.actualDropPoints.length > 0) {
-        return doData.actualDropPoints.map((point, index) => ({
+export function buildDefaultActualDropDrafts(
+    doData: DeliveryOrder | null,
+    cargoItems: ActualCargoDraft[],
+    sourceDropPoints: DeliveryOrder['actualDropPoints'] | DeliveryOrder['pendingDriverActualDropPoints'] = doData?.actualDropPoints
+): ActualDropDraft[] {
+    if (sourceDropPoints && sourceDropPoints.length > 0) {
+        return sourceDropPoints.map((point, index) => ({
             draftKey: point._key || `${index + 1}`,
             stopType: point.stopType,
             locationName: point.locationName || '',

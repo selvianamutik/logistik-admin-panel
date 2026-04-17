@@ -67,6 +67,7 @@ import { buildRouteLabel, computeDriverVoucherTotals } from './driver-workflow-s
 import { computeDeliveryOrderOvertonage } from '@/lib/delivery-order-overtonage';
 import type {
     CompanyProfile,
+    DeliveryActualDropPoint,
     DeliveryOrderPickupStop,
     DeliveryOrderShipperReference,
     OrderPickupStop,
@@ -143,6 +144,10 @@ type NormalizedDeliveryOrderShipperReference = Required<Pick<DeliveryOrderShippe
     _key: string;
     pickupStopKey?: string;
     pickupAddress?: string;
+    receiverName?: string;
+    receiverPhone?: string;
+    receiverAddress?: string;
+    receiverCompany?: string;
     notes?: string;
 };
 
@@ -408,6 +413,10 @@ function normalizeExistingShipperReferences(existing: DeliveryOrderShipperRefere
             referenceNumber,
             pickupStopKey,
             pickupAddress: normalizeOptionalText(reference.pickupAddress) || matchedStop?.pickupAddress || undefined,
+            receiverName: normalizeOptionalText(reference.receiverName) || undefined,
+            receiverPhone: normalizeOptionalText(reference.receiverPhone) || undefined,
+            receiverAddress: normalizeOptionalText(reference.receiverAddress) || undefined,
+            receiverCompany: normalizeOptionalText(reference.receiverCompany) || undefined,
             notes: normalizeOptionalText(reference.notes) || undefined,
         });
     }
@@ -453,6 +462,10 @@ function upsertShipperReferenceForPickup(
         referenceNumber,
         pickupStopKey,
         pickupAddress: pickupStopKey ? pickupMap.get(pickupStopKey)?.pickupAddress : undefined,
+        receiverName: undefined,
+        receiverPhone: undefined,
+        receiverAddress: undefined,
+        receiverCompany: undefined,
     };
     references.push(createdReference);
     return createdReference;
@@ -484,6 +497,10 @@ function normalizeIncomingShipperReferences(
         const referenceNumber = normalizeReferenceNumber(row.referenceNumber ?? row.customerDoNumber);
         const pickupStopKey = normalizeOptionalText(row.pickupStopKey) || undefined;
         const notes = normalizeOptionalText(row.notes) || undefined;
+        const receiverName = normalizeOptionalText(row.receiverName) || undefined;
+        const receiverPhone = normalizeOptionalText(row.receiverPhone) || undefined;
+        const receiverAddress = normalizeOptionalText(row.receiverAddress) || undefined;
+        const receiverCompany = normalizeOptionalText(row.receiverCompany) || undefined;
         if (!referenceNumber) {
             continue;
         }
@@ -506,6 +523,13 @@ function normalizeIncomingShipperReferences(
                 currentReference.pickupStopKey = pickupStopKey;
                 currentReference.pickupAddress = pickupMap.get(pickupStopKey)?.pickupAddress || currentReference.pickupAddress;
             }
+            if (currentReference) {
+                currentReference.receiverName = receiverName || currentReference.receiverName;
+                currentReference.receiverPhone = receiverPhone || currentReference.receiverPhone;
+                currentReference.receiverAddress = receiverAddress || currentReference.receiverAddress;
+                currentReference.receiverCompany = receiverCompany || currentReference.receiverCompany;
+                currentReference.notes = notes || currentReference.notes;
+            }
             continue;
         }
         seen.add(referenceNumber);
@@ -521,6 +545,10 @@ function normalizeIncomingShipperReferences(
                 matchedStop?.pickupAddress ||
                 existingReference?.pickupAddress ||
                 undefined,
+            receiverName: receiverName || existingReference?.receiverName,
+            receiverPhone: receiverPhone || existingReference?.receiverPhone,
+            receiverAddress: receiverAddress || existingReference?.receiverAddress,
+            receiverCompany: receiverCompany || existingReference?.receiverCompany,
             notes: notes || existingReference?.notes,
         });
     }
@@ -2227,6 +2255,7 @@ export async function handleDeliveryOrderStatusUpdate(
             actualVolumeInputValue?: number;
             actualVolumeInputUnit?: VolumeInputUnit;
         }>;
+        pendingDriverActualDropPoints?: DeliveryActualDropPoint[];
     }>(id);
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
@@ -2733,6 +2762,7 @@ export async function handleDeliveryOrderStatusUpdate(
                     pendingDriverStatusRequestedByName: undefined,
                     pendingDriverStatusNote: undefined,
                     pendingDriverActualCargoItems: undefined,
+                    pendingDriverActualDropPoints: undefined,
                     cargoFinalizedAt: timestamp,
                     cargoFinalizedBy: session._id,
                     cargoFinalizedByName: session.name,
@@ -2747,6 +2777,7 @@ export async function handleDeliveryOrderStatusUpdate(
                     pendingDriverStatusRequestedByName: undefined,
                     pendingDriverStatusNote: undefined,
                     pendingDriverActualCargoItems: undefined,
+                    pendingDriverActualDropPoints: undefined,
                 }
                 : {}),
             trackingState: shouldStopTracking ? 'STOPPED' : deliveryOrder.trackingState,
@@ -2776,6 +2807,9 @@ export async function handleDeliveryOrderDriverStatusRequest(
         doNumber?: string;
         status?: string;
         driverRef?: unknown;
+        receiverName?: string;
+        receiverCompany?: string;
+        receiverAddress?: string;
         pendingDriverStatus?: string;
         pendingDriverStatusRequestedAt?: string;
         pendingDriverStatusRequestedBy?: string;
@@ -2789,6 +2823,7 @@ export async function handleDeliveryOrderDriverStatusRequest(
             actualVolumeInputValue?: number;
             actualVolumeInputUnit?: VolumeInputUnit;
         }>;
+        pendingDriverActualDropPoints?: DeliveryActualDropPoint[];
     }>(id);
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
@@ -2886,6 +2921,7 @@ export async function handleDeliveryOrderDriverStatusRequest(
         actualVolumeInputValue?: number;
         actualVolumeInputUnit?: VolumeInputUnit;
     }> = [];
+    let pendingDriverActualDropPoints: ReturnType<typeof normalizeDeliveryActualDropPoints> | undefined;
     try {
         const actualCargoByDoItemId = normalizeDeliveryOrderActualCargoInputs(data, doItems);
         pendingDriverActualCargoItems = Array.from(actualCargoByDoItemId.values()).map(item => ({
@@ -2896,9 +2932,10 @@ export async function handleDeliveryOrderDriverStatusRequest(
             actualVolumeInputValue: item.actualVolumeInputValue,
             actualVolumeInputUnit: item.actualVolumeInputUnit,
         }));
+        pendingDriverActualDropPoints = normalizeDeliveryActualDropPoints(data, deliveryOrder, actualCargoByDoItemId);
     } catch (error) {
         return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Muatan aktual draft driver tidak valid' },
+            { error: error instanceof Error ? error.message : 'Draft penyelesaian driver tidak valid' },
             { status: 400 }
         );
     }
@@ -2915,6 +2952,7 @@ export async function handleDeliveryOrderDriverStatusRequest(
                 pendingDriverStatusRequestedByName: session.name,
                 pendingDriverStatusNote: note,
                 pendingDriverActualCargoItems,
+                pendingDriverActualDropPoints,
             },
         })
         .create({
@@ -2946,7 +2984,7 @@ export async function handleDeliveryOrderDriverStatusRequest(
         'UPDATE',
         'delivery-orders',
         id,
-        `Driver mengajukan status ${status} untuk DO ${deliveryOrder.doNumber || id} (${pendingDriverActualCargoItems.length} item aktual draft)${note ? `: ${note}` : ''}`
+        `Driver mengajukan status ${status} untuk DO ${deliveryOrder.doNumber || id} (${pendingDriverActualCargoItems.length} item aktual draft, ${pendingDriverActualDropPoints?.length || 0} titik drop draft)${note ? `: ${note}` : ''}`
     );
 
     return NextResponse.json({
@@ -2958,6 +2996,7 @@ export async function handleDeliveryOrderDriverStatusRequest(
             pendingDriverStatusRequestedByName: session.name,
             pendingDriverStatusNote: note,
             pendingDriverActualCargoItems,
+            pendingDriverActualDropPoints,
         },
     });
 }
@@ -3052,6 +3091,7 @@ export async function handleDeliveryOrderDriverStatusRequestReject(
             pendingDriverStatusRequestedByName: undefined,
             pendingDriverStatusNote: undefined,
             pendingDriverActualCargoItems: undefined,
+            pendingDriverActualDropPoints: undefined,
         },
     });
 }

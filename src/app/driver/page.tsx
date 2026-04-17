@@ -17,9 +17,14 @@ import {
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import {
     buildActualCargoDrafts,
+    buildDefaultActualDropDrafts,
+    buildDeliveryOrderDetailState,
+    createEmptyActualDropDraft,
+    shouldOpenAdvancedDropEditor,
     updateActualCargoDraftVolumeUnit,
     updateActualCargoDraftWeightUnit,
     type ActualCargoDraft,
+    type ActualDropDraft,
 } from '@/lib/delivery-order-detail-support';
 import {
     buildInitialDeliveryOrderCargoDraftGroups,
@@ -173,6 +178,8 @@ export default function DriverPortalPage() {
     const [completionOrderId, setCompletionOrderId] = useState<string | null>(null);
     const [completionNote, setCompletionNote] = useState('');
     const [completionCargoItems, setCompletionCargoItems] = useState<ActualCargoDraft[]>([]);
+    const [completionDropPoints, setCompletionDropPoints] = useState<ActualDropDraft[]>([]);
+    const [showCompletionAdvancedDropEditor, setShowCompletionAdvancedDropEditor] = useState(false);
     const [showCargoInputModal, setShowCargoInputModal] = useState(false);
     const [cargoInputOrderId, setCargoInputOrderId] = useState<string | null>(null);
     const [cargoInputGroups, setCargoInputGroups] = useState<DeliveryOrderCargoDraftGroup[]>([createDefaultDeliveryOrderCargoDraftGroup()]);
@@ -197,6 +204,15 @@ export default function DriverPortalPage() {
     const completionOrder = useMemo(
         () => orders.find(item => item._id === completionOrderId) || null,
         [completionOrderId, orders]
+    );
+    const completionDetailState = useMemo(
+        () => buildDeliveryOrderDetailState({
+            doData: completionOrder,
+            actualCargoItems: completionCargoItems,
+            actualDropPoints: completionDropPoints,
+            showAdvancedDropEditor: showCompletionAdvancedDropEditor,
+        }),
+        [completionCargoItems, completionDropPoints, completionOrder, showCompletionAdvancedDropEditor]
     );
     const cargoInputOrder = useMemo(
         () => orders.find(item => item._id === cargoInputOrderId) || null,
@@ -387,6 +403,17 @@ export default function DriverPortalPage() {
                     actualVolumeInputValue: number;
                     actualVolumeInputUnit: ActualCargoDraft['actualVolumeInputUnit'];
                 }>;
+                actualDropPoints?: Array<{
+                    stopType: ActualDropDraft['stopType'];
+                    locationName: string;
+                    locationAddress: string;
+                    qtyKoli: number;
+                    weightInputValue: number;
+                    weightInputUnit: ActualDropDraft['weightInputUnit'];
+                    volumeInputValue: number;
+                    volumeInputUnit: ActualDropDraft['volumeInputUnit'];
+                    note?: string;
+                }>;
             }
         ) => {
             const res = await fetch('/api/driver/delivery-orders/status', {
@@ -397,6 +424,7 @@ export default function DriverPortalPage() {
                     status,
                     note: options?.note,
                     actualItems: options?.actualItems,
+                    actualDropPoints: options?.actualDropPoints,
                 }),
             });
 
@@ -565,10 +593,18 @@ export default function DriverPortalPage() {
     };
 
     const openDeliveredRequestModal = useCallback((order: DriverAssignedDeliveryOrder) => {
+        const nextCargoItems = buildActualCargoDrafts(order.driverCargoItems || [], order.pendingDriverActualCargoItems);
+        const nextDropPoints = buildDefaultActualDropDrafts(
+            order,
+            nextCargoItems,
+            order.pendingDriverActualDropPoints
+        );
         setCompletionOrderId(order._id);
         setCompletionNote(order.pendingDriverStatusNote || '');
-        setCompletionCargoItems(
-            buildActualCargoDrafts(order.driverCargoItems || [], order.pendingDriverActualCargoItems)
+        setCompletionCargoItems(nextCargoItems);
+        setCompletionDropPoints(nextDropPoints);
+        setShowCompletionAdvancedDropEditor(
+            shouldOpenAdvancedDropEditor(order, nextDropPoints)
         );
         setShowDeliveredRequestModal(true);
     }, []);
@@ -581,6 +617,8 @@ export default function DriverPortalPage() {
         setCompletionOrderId(null);
         setCompletionNote('');
         setCompletionCargoItems([]);
+        setCompletionDropPoints([]);
+        setShowCompletionAdvancedDropEditor(false);
     }, [actionLoadingId]);
 
     const openCargoInputModal = useCallback((order: DriverAssignedDeliveryOrder) => {
@@ -803,6 +841,24 @@ export default function DriverPortalPage() {
         );
     }, []);
 
+    const updateCompletionDropDraft = useCallback((
+        draftKey: string,
+        field: keyof Pick<ActualDropDraft, 'stopType' | 'locationName' | 'locationAddress' | 'qtyKoli' | 'weightInputValue' | 'weightInputUnit' | 'volumeInputValue' | 'volumeInputUnit' | 'note'>,
+        value: string
+    ) => {
+        setCompletionDropPoints(previous =>
+            previous.map(item => (item.draftKey === draftKey ? { ...item, [field]: value } : item))
+        );
+    }, []);
+
+    const addCompletionDropDraft = useCallback(() => {
+        setCompletionDropPoints(previous => [...previous, createEmptyActualDropDraft()]);
+    }, []);
+
+    const removeCompletionDropDraft = useCallback((draftKey: string) => {
+        setCompletionDropPoints(previous => previous.filter(item => item.draftKey !== draftKey));
+    }, []);
+
     const submitDeliveredRequest = useCallback(async () => {
         if (!completionOrder) {
             return;
@@ -824,6 +880,25 @@ export default function DriverPortalPage() {
                     }),
                     actualVolumeInputUnit: item.actualVolumeInputUnit,
                 })),
+                actualDropPoints: completionDetailState.effectiveActualDropPoints.map(item => ({
+                    stopType: item.stopType,
+                    locationName: item.locationName,
+                    locationAddress: item.locationAddress,
+                    qtyKoli: item.qtyKoli.trim() ? parseFormattedNumberish(item.qtyKoli) : 0,
+                    weightInputValue: item.weightInputValue.trim()
+                        ? parseFormattedNumberish(item.weightInputValue, {
+                            maxFractionDigits: item.weightInputUnit === 'TON' ? 3 : 2,
+                        })
+                        : 0,
+                    weightInputUnit: item.weightInputUnit,
+                    volumeInputValue: item.volumeInputValue.trim()
+                        ? parseFormattedNumberish(item.volumeInputValue, {
+                            maxFractionDigits: item.volumeInputUnit === 'LITER' ? 0 : 3,
+                        })
+                        : 0,
+                    volumeInputUnit: item.volumeInputUnit,
+                    note: item.note.trim() || undefined,
+                })),
             });
             setFeedback({ type: 'success', message: getDriverProgressSuccessMessage('DELIVERED') });
             await loadOrders();
@@ -831,6 +906,8 @@ export default function DriverPortalPage() {
             setCompletionOrderId(null);
             setCompletionNote('');
             setCompletionCargoItems([]);
+            setCompletionDropPoints([]);
+            setShowCompletionAdvancedDropEditor(false);
         } catch (error) {
             if (error instanceof Error && 'status' in error && (error.status === 401 || error.status === 403)) {
                 handleDriverAuthFailure(error.message);
@@ -845,6 +922,7 @@ export default function DriverPortalPage() {
         }
     }, [
         completionCargoItems,
+        completionDetailState.effectiveActualDropPoints,
         completionNote,
         completionOrder,
         handleDriverAuthFailure,
@@ -1741,6 +1819,10 @@ export default function DriverPortalPage() {
                                     <span>Ringkasan Aktual</span>
                                     <strong>{completionCargoItems.length > 0 ? completionCargoSummary : 'Belum ada item'}</strong>
                                 </div>
+                                <div className="driver-completion-summary-card">
+                                    <span>Mode Drop</span>
+                                    <strong>{showCompletionAdvancedDropEditor ? `${completionDetailState.actualDropPointCount} titik` : 'Trip normal / 1 tujuan'}</strong>
+                                </div>
                             </div>
 
                             <div className="driver-completion-list">
@@ -1842,6 +1924,172 @@ export default function DriverPortalPage() {
                             </div>
 
                             <div className="form-group" style={{ marginTop: '1rem' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+                                    <label className="form-label" style={{ marginBottom: 0 }}>Realisasi Titik Drop <span className="required">*</span></label>
+                                    <button
+                                        type="button"
+                                        className="btn btn-secondary btn-sm"
+                                        onClick={() => setShowCompletionAdvancedDropEditor(previous => !previous)}
+                                        disabled={isActionInFlight}
+                                    >
+                                        {showCompletionAdvancedDropEditor ? 'Tutup Detail Drop' : 'Ada Multi-drop / Hold / Extra Drop'}
+                                    </button>
+                                </div>
+                                <div className="text-muted text-sm" style={{ marginBottom: '0.75rem' }}>
+                                    Untuk trip normal, semua muatan aktual turun di {completionDetailState.autoActualDropDraft.locationName || 'tujuan tagihan'}.
+                                </div>
+                                {!showCompletionAdvancedDropEditor ? (
+                                    <div className="driver-completion-item">
+                                        <div className="driver-completion-item-header">
+                                            <div>
+                                                <div className="driver-completion-item-title">Realisasi Default</div>
+                                                <div className="text-muted text-sm">
+                                                    {completionDetailState.autoActualDropDraft.locationName || 'Tujuan Tagihan'}
+                                                    {completionDetailState.autoActualDropDraft.locationAddress ? ` • ${completionDetailState.autoActualDropDraft.locationAddress}` : ''}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="text-muted text-sm">
+                                            {formatCargoSummary({
+                                                qtyKoli: completionDetailState.actualCargoTotals.qtyKoli,
+                                                weightKg: completionDetailState.actualCargoTotals.weightKg,
+                                                volumeM3: completionDetailState.actualCargoTotals.volumeM3,
+                                            })}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'grid', gap: '0.75rem' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                            <button type="button" className="btn btn-secondary btn-sm" onClick={addCompletionDropDraft} disabled={isActionInFlight}>
+                                                <Plus size={14} /> Tambah Titik Drop
+                                            </button>
+                                        </div>
+                                        {completionDropPoints.map((item, index) => (
+                                            <div key={item.draftKey} className="driver-completion-item">
+                                                <div className="driver-completion-item-header">
+                                                    <div>
+                                                        <div className="driver-completion-item-title">Titik Drop {index + 1}</div>
+                                                    </div>
+                                                    {completionDropPoints.length > 1 && (
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-ghost btn-sm"
+                                                            onClick={() => removeCompletionDropDraft(item.draftKey)}
+                                                            disabled={isActionInFlight}
+                                                        >
+                                                            <X size={14} /> Hapus
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                <div className="driver-completion-metrics">
+                                                    <div className="form-group">
+                                                        <label className="form-label">Tipe Titik</label>
+                                                        <select
+                                                            className="form-select"
+                                                            value={item.stopType}
+                                                            onChange={event => updateCompletionDropDraft(item.draftKey, 'stopType', event.target.value)}
+                                                            disabled={isActionInFlight}
+                                                        >
+                                                            <option value="DROP">Drop</option>
+                                                            <option value="HOLD">Hold</option>
+                                                            <option value="TRANSIT">Transit</option>
+                                                            <option value="EXTRA_DROP">Extra Drop</option>
+                                                            <option value="RETURN">Return</option>
+                                                        </select>
+                                                    </div>
+                                                    <div className="form-group">
+                                                        <label className="form-label">Nama Lokasi</label>
+                                                        <input
+                                                            className="form-input"
+                                                            value={item.locationName}
+                                                            onChange={event => updateCompletionDropDraft(item.draftKey, 'locationName', event.target.value)}
+                                                            disabled={isActionInFlight}
+                                                            placeholder="Mis. Gudang transit / tujuan drop"
+                                                        />
+                                                    </div>
+                                                    <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                                                        <label className="form-label">Alamat</label>
+                                                        <input
+                                                            className="form-input"
+                                                            value={item.locationAddress}
+                                                            onChange={event => updateCompletionDropDraft(item.draftKey, 'locationAddress', event.target.value)}
+                                                            disabled={isActionInFlight}
+                                                            placeholder="Alamat aktual titik drop"
+                                                        />
+                                                    </div>
+                                                    <div className="form-group">
+                                                        <label className="form-label">Qty</label>
+                                                        <FormattedNumberInput
+                                                            min={0}
+                                                            maxFractionDigits={2}
+                                                            value={parseFormattedNumberish(item.qtyKoli || 0, { maxFractionDigits: 2 })}
+                                                            onValueChange={value => updateCompletionDropDraft(item.draftKey, 'qtyKoli', String(value))}
+                                                            disabled={isActionInFlight}
+                                                        />
+                                                    </div>
+                                                    <div className="form-group">
+                                                        <label className="form-label">Berat</label>
+                                                        <div className="driver-completion-unit-row">
+                                                            <FormattedNumberInput
+                                                                min={0}
+                                                                maxFractionDigits={item.weightInputUnit === 'TON' ? 3 : 2}
+                                                                value={parseFormattedNumberish(item.weightInputValue || 0, { maxFractionDigits: item.weightInputUnit === 'TON' ? 3 : 2 })}
+                                                                onValueChange={value => updateCompletionDropDraft(item.draftKey, 'weightInputValue', String(value))}
+                                                                disabled={isActionInFlight}
+                                                            />
+                                                            <select
+                                                                className="form-select"
+                                                                value={item.weightInputUnit}
+                                                                onChange={event => updateCompletionDropDraft(item.draftKey, 'weightInputUnit', event.target.value)}
+                                                                disabled={isActionInFlight}
+                                                            >
+                                                                {WEIGHT_INPUT_UNIT_OPTIONS.map(option => (
+                                                                    <option key={option.value} value={option.value}>{option.label}</option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                    <div className="form-group">
+                                                        <label className="form-label">Volume</label>
+                                                        <div className="driver-completion-unit-row">
+                                                            <FormattedNumberInput
+                                                                min={0}
+                                                                maxFractionDigits={item.volumeInputUnit === 'LITER' ? 0 : 3}
+                                                                value={parseFormattedNumberish(item.volumeInputValue || 0, { maxFractionDigits: item.volumeInputUnit === 'LITER' ? 0 : 3 })}
+                                                                onValueChange={value => updateCompletionDropDraft(item.draftKey, 'volumeInputValue', String(value))}
+                                                                disabled={isActionInFlight}
+                                                            />
+                                                            <select
+                                                                className="form-select"
+                                                                value={item.volumeInputUnit}
+                                                                onChange={event => updateCompletionDropDraft(item.draftKey, 'volumeInputUnit', event.target.value)}
+                                                                disabled={isActionInFlight}
+                                                            >
+                                                                {VOLUME_INPUT_UNIT_OPTIONS.map(option => (
+                                                                    <option key={option.value} value={option.value}>{option.label}</option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                    <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                                                        <label className="form-label">Catatan</label>
+                                                        <textarea
+                                                            className="form-textarea"
+                                                            rows={2}
+                                                            value={item.note}
+                                                            onChange={event => updateCompletionDropDraft(item.draftKey, 'note', event.target.value)}
+                                                            disabled={isActionInFlight}
+                                                            placeholder="Opsional: parsial, hold, transit, dll."
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="form-group" style={{ marginTop: '1rem' }}>
                                 <label className="form-label">Catatan Driver</label>
                                 <textarea
                                     className="form-textarea"
@@ -1860,7 +2108,7 @@ export default function DriverPortalPage() {
                             <button
                                 className="btn btn-success"
                                 onClick={() => void submitDeliveredRequest()}
-                                disabled={isActionInFlight || completionCargoItems.length === 0 || !completionCargoReady}
+                                disabled={isActionInFlight || completionCargoItems.length === 0 || !completionCargoReady || !completionDetailState.actualDropReady}
                             >
                                 <Truck size={15} /> {actionLoadingId === completionOrder._id ? 'Mengirim...' : 'Ajukan Selesai'}
                             </button>

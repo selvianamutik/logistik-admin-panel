@@ -254,6 +254,10 @@ export interface DeliveryOrderShipperReference {
   referenceNumber: string;
   pickupStopKey?: string;
   pickupAddress?: string;
+  receiverName?: string;
+  receiverPhone?: string;
+  receiverAddress?: string;
+  receiverCompany?: string;
   notes?: string;
 }
 
@@ -706,6 +710,7 @@ export interface DeliveryOrder {
   pendingDriverStatusRequestedByName?: string;
   pendingDriverStatusNote?: string;
   pendingDriverActualCargoItems?: PendingDriverActualCargoItem[];
+  pendingDriverActualDropPoints?: DeliveryActualDropPoint[];
   cargoFinalizedAt?: string;
   cargoFinalizedBy?: string;
   cargoFinalizedByName?: string;

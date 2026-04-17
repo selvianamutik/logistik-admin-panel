@@ -202,6 +202,7 @@ export async function getDriverAssignedDeliveryOrders(driverRef: string) {
             pendingDriverStatusRequestedByName,
             pendingDriverStatusNote,
             pendingDriverActualCargoItems,
+            pendingDriverActualDropPoints,
             "driverCargoItems": *[_type == "deliveryOrderItem" && deliveryOrderRef == ^._id] | order(_createdAt asc){
                 _id,
                 _type,

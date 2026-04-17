@@ -219,6 +219,7 @@ export const DRIVER_STATUS_REQUEST_FIELDS = [
     'pendingDriverStatusRequestedByName',
     'pendingDriverStatusNote',
     'pendingDriverActualCargoItems',
+    'pendingDriverActualDropPoints',
 ];
 
 export function getPeriodFromDate(value: string) {

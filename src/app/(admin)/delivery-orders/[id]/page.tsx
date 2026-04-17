@@ -79,6 +79,10 @@ type DeliveryOrderTripCashLink = {
 type ShipperReferenceDraft = {
     referenceNumber: string;
     pickupStopKey: string;
+    receiverName: string;
+    receiverPhone: string;
+    receiverAddress: string;
+    receiverCompany: string;
 };
 
 type ResolvedShipperReferenceEntry = {
@@ -87,6 +91,10 @@ type ResolvedShipperReferenceEntry = {
     pickupStopKey: string;
     pickupLabel: string;
     pickupAddress: string;
+    receiverName: string;
+    receiverPhone: string;
+    receiverAddress: string;
+    receiverCompany: string;
 };
 
 function buildResolvedShipperReferenceEntries(
@@ -135,6 +143,10 @@ function buildResolvedShipperReferenceEntries(
             pickupStopKey,
             pickupLabel: resolvedPickupLabel,
             pickupAddress: resolvedPickupAddress,
+            receiverName: '',
+            receiverPhone: '',
+            receiverAddress: '',
+            receiverCompany: '',
         });
     };
 
@@ -145,6 +157,17 @@ function buildResolvedShipperReferenceEntries(
             reference.pickupAddress || '',
             reference._key || `shipper-reference-${index + 1}`
         );
+        const entryKey = `${reference.pickupStopKey || 'tanpa-pickup'}::${(reference.referenceNumber || '').trim()}`;
+        const current = entries.get(entryKey);
+        if (current) {
+            entries.set(entryKey, {
+                ...current,
+                receiverName: reference.receiverName || current.receiverName,
+                receiverPhone: reference.receiverPhone || current.receiverPhone,
+                receiverAddress: reference.receiverAddress || current.receiverAddress,
+                receiverCompany: reference.receiverCompany || current.receiverCompany,
+            });
+        }
     });
 
     doItems.forEach(item => {
@@ -223,7 +246,14 @@ export default function DODetailPage() {
     const [tripVehicleRef, setTripVehicleRef] = useState('');
     const [tripDriverRef, setTripDriverRef] = useState('');
     const [tripVehicleOverrideReason, setTripVehicleOverrideReason] = useState('');
-    const [shipperReferenceDrafts, setShipperReferenceDrafts] = useState<ShipperReferenceDraft[]>([{ referenceNumber: '', pickupStopKey: '' }]);
+    const [shipperReferenceDrafts, setShipperReferenceDrafts] = useState<ShipperReferenceDraft[]>([{
+        referenceNumber: '',
+        pickupStopKey: '',
+        receiverName: '',
+        receiverPhone: '',
+        receiverAddress: '',
+        receiverCompany: '',
+    }]);
     const [shipperReferenceFormat, setShipperReferenceFormat] = useState('SJ');
     const [cargoDraftGroups, setCargoDraftGroups] = useState<DeliveryOrderCargoDraftGroup[]>([createDefaultDeliveryOrderCargoDraftGroup()]);
     const [targetReceiverName, setTargetReceiverName] = useState('');
@@ -336,6 +366,50 @@ export default function DODetailPage() {
             document.documentElement.style.overflow = previousHtmlOverflow;
         };
     }, [hasOpenModal]);
+
+    useEffect(() => {
+        if (!showStatusModal || !reviewingDriverRequest || newStatus !== 'DELIVERED') {
+            return;
+        }
+        if (!doData?.pendingDriverActualDropPoints?.length) {
+            return;
+        }
+
+        const syncedDropDrafts = buildDefaultActualDropDrafts(
+            doData,
+            actualCargoItems,
+            doData.pendingDriverActualDropPoints
+        );
+
+        setActualDropPoints(current => {
+            if (current.length === syncedDropDrafts.length) {
+                const isSame = current.every((item, index) => {
+                    const nextItem = syncedDropDrafts[index];
+                    return nextItem
+                        && item.stopType === nextItem.stopType
+                        && item.locationName === nextItem.locationName
+                        && item.locationAddress === nextItem.locationAddress
+                        && item.qtyKoli === nextItem.qtyKoli
+                        && item.weightInputValue === nextItem.weightInputValue
+                        && item.weightInputUnit === nextItem.weightInputUnit
+                        && item.volumeInputValue === nextItem.volumeInputValue
+                        && item.volumeInputUnit === nextItem.volumeInputUnit
+                        && item.note === nextItem.note;
+                });
+                if (isSame) {
+                    return current;
+                }
+            }
+            return syncedDropDrafts;
+        });
+        setShowAdvancedDropEditor(shouldOpenAdvancedDropEditor(doData, syncedDropDrafts));
+    }, [
+        actualCargoItems,
+        doData,
+        newStatus,
+        reviewingDriverRequest,
+        showStatusModal,
+    ]);
 
     const loadDO = useCallback(async (mode: 'initial' | 'refresh' = 'refresh') => {
         if (mode === 'initial') {
@@ -455,6 +529,10 @@ export default function DODetailPage() {
             .map(reference => ({
                 referenceNumber: reference.referenceNumber,
                 pickupStopKey: reference.pickupStopKey,
+                receiverName: reference.receiverName,
+                receiverPhone: reference.receiverPhone,
+                receiverAddress: reference.receiverAddress,
+                receiverCompany: reference.receiverCompany,
             }))
             .filter(reference => Boolean(reference.referenceNumber));
         setShipperReferenceDrafts(
@@ -463,6 +541,10 @@ export default function DODetailPage() {
                 : [{
                     referenceNumber: doData?.customerDoNumber || (normalizedFormat !== 'SJ' ? normalizedFormat : ''),
                     pickupStopKey: '',
+                    receiverName: doData?.receiverName || '',
+                    receiverPhone: doData?.receiverPhone || '',
+                    receiverAddress: doData?.receiverAddress || '',
+                    receiverCompany: doData?.receiverCompany || '',
                 }]
         );
         setShowShipperReferenceModal(true);
@@ -609,24 +691,59 @@ export default function DODetailPage() {
         }
     };
 
-    const openStatusModal = (requestedStatus?: string, fromDriverRequest: boolean = false) => {
+    const openStatusModal = async (requestedStatus?: string, fromDriverRequest: boolean = false) => {
         if (!canManageDeliveryStatus) return;
+        const hydratingDriverDeliveredRequest = fromDriverRequest && requestedStatus === 'DELIVERED';
+        let statusModalDOData = doData;
+        let pendingDriverActualCargoItems = hydratingDriverDeliveredRequest ? doData?.pendingDriverActualCargoItems : undefined;
+        let pendingDriverActualDropPoints = hydratingDriverDeliveredRequest ? doData?.pendingDriverActualDropPoints : undefined;
+
+        if (hydratingDriverDeliveredRequest && doId) {
+            try {
+                const latestDeliveryOrder = await fetchAdminData<DeliveryOrder | null>(
+                    `/api/data?entity=delivery-orders&id=${doId}`,
+                    'Gagal memuat permintaan driver terbaru'
+                );
+                if (latestDeliveryOrder) {
+                    const resolvedLatestDeliveryOrder = buildResolvedDeliveryOrder(latestDeliveryOrder, null);
+                    statusModalDOData = resolvedLatestDeliveryOrder;
+                    pendingDriverActualCargoItems = latestDeliveryOrder.pendingDriverActualCargoItems;
+                    pendingDriverActualDropPoints = latestDeliveryOrder.pendingDriverActualDropPoints;
+                    setDoData(prev => (prev ? resolvedLatestDeliveryOrder : prev));
+                }
+            } catch {
+                addToast('warning', 'Permintaan driver terbaru belum sempat disegarkan. Modal memakai data yang sudah terbuka.');
+            }
+        }
+
+        const defaultPodName =
+            statusModalDOData?.podReceiverName?.trim()
+            || statusModalDOData?.receiverName?.trim()
+            || statusModalDOData?.receiverCompany?.trim()
+            || '';
+        const defaultPodDate = statusModalDOData?.podReceivedDate?.trim()
+            ? statusModalDOData.podReceivedDate.trim().slice(0, 10)
+            : getBusinessDateValue();
+        const defaultPodNote = statusModalDOData?.podNote || '';
+
         setNewStatus(requestedStatus || '');
-        setStatusNote(fromDriverRequest ? (doData?.pendingDriverStatusNote || '') : '');
+        setStatusNote(fromDriverRequest ? (statusModalDOData?.pendingDriverStatusNote || '') : '');
         setReviewingDriverRequest(fromDriverRequest);
-        setPodName(getDefaultPodName());
-        setPodDate(getDefaultPodDate());
-        setPodNote(getDefaultPodNote());
+        setPodName(defaultPodName);
+        setPodDate(defaultPodDate);
+        setPodNote(defaultPodNote);
         const nextActualCargoItems = buildActualCargoDrafts(
             doItems,
-            fromDriverRequest && requestedStatus === 'DELIVERED'
-                ? doData?.pendingDriverActualCargoItems
-                : undefined
+            hydratingDriverDeliveredRequest ? pendingDriverActualCargoItems : undefined
         );
-        const nextActualDropPoints = buildDefaultActualDropDrafts(doData, nextActualCargoItems);
+        const nextActualDropPoints = buildDefaultActualDropDrafts(
+            statusModalDOData,
+            nextActualCargoItems,
+            hydratingDriverDeliveredRequest ? pendingDriverActualDropPoints : undefined
+        );
         setActualCargoItems(nextActualCargoItems);
         setActualDropPoints(nextActualDropPoints);
-        setShowAdvancedDropEditor(shouldOpenAdvancedDropEditor(doData, nextActualDropPoints));
+        setShowAdvancedDropEditor(shouldOpenAdvancedDropEditor(statusModalDOData, nextActualDropPoints));
         setShowStatusModal(true);
     };
 
@@ -1106,6 +1223,10 @@ export default function DODetailPage() {
             .map(entry => ({
                 referenceNumber: entry.referenceNumber.trim().toUpperCase(),
                 pickupStopKey: entry.pickupStopKey.trim(),
+                receiverName: entry.receiverName.trim(),
+                receiverPhone: entry.receiverPhone.trim(),
+                receiverAddress: entry.receiverAddress.trim(),
+                receiverCompany: entry.receiverCompany.trim(),
             }))
             .filter(entry => Boolean(entry.referenceNumber));
         if (normalizedReferences.length === 0) {
@@ -1133,6 +1254,10 @@ export default function DODetailPage() {
                         shipperReferences: normalizedReferences.map(reference => ({
                             referenceNumber: reference.referenceNumber,
                             pickupStopKey: reference.pickupStopKey || undefined,
+                            receiverName: reference.receiverName || undefined,
+                            receiverPhone: reference.receiverPhone || undefined,
+                            receiverAddress: reference.receiverAddress || undefined,
+                            receiverCompany: reference.receiverCompany || undefined,
                         })),
                     },
                 }),
@@ -1600,6 +1725,11 @@ export default function DODetailPage() {
                                                 {reference.pickupLabel && (
                                                     <div className="text-muted text-sm" style={{ marginTop: '0.2rem' }}>
                                                         {reference.pickupLabel}{reference.pickupAddress ? ` | ${reference.pickupAddress}` : ''}
+                                                    </div>
+                                                )}
+                                                {(reference.receiverAddress || reference.receiverName || reference.receiverCompany) && (
+                                                    <div className="text-muted text-sm" style={{ marginTop: '0.2rem' }}>
+                                                        Tujuan: {reference.receiverAddress || reference.receiverCompany || reference.receiverName}
                                                     </div>
                                                 )}
                                             </div>
@@ -2693,11 +2823,62 @@ export default function DODetailPage() {
                                                     {pickupStopMap.get(entry.pickupStopKey)?.pickupAddress}
                                                 </div>
                                             )}
+                                            <div className="form-row">
+                                                <div className="form-group">
+                                                    <label className="form-label">Nama Penerima</label>
+                                                    <input
+                                                        className="form-input"
+                                                        value={entry.receiverName}
+                                                        onChange={event => setShipperReferenceDrafts(previous => previous.map((current, entryIndex) => (
+                                                            entryIndex === index ? { ...current, receiverName: event.target.value } : current
+                                                        )))}
+                                                        disabled={savingShipperReference}
+                                                        placeholder="Opsional"
+                                                    />
+                                                </div>
+                                                <div className="form-group">
+                                                    <label className="form-label">Telepon</label>
+                                                    <input
+                                                        className="form-input"
+                                                        value={entry.receiverPhone}
+                                                        onChange={event => setShipperReferenceDrafts(previous => previous.map((current, entryIndex) => (
+                                                            entryIndex === index ? { ...current, receiverPhone: event.target.value } : current
+                                                        )))}
+                                                        disabled={savingShipperReference}
+                                                        placeholder="Opsional"
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                                <label className="form-label">Perusahaan / Tujuan</label>
+                                                <input
+                                                    className="form-input"
+                                                    value={entry.receiverCompany}
+                                                    onChange={event => setShipperReferenceDrafts(previous => previous.map((current, entryIndex) => (
+                                                        entryIndex === index ? { ...current, receiverCompany: event.target.value } : current
+                                                    )))}
+                                                    disabled={savingShipperReference}
+                                                    placeholder="Opsional"
+                                                />
+                                            </div>
+                                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                                <label className="form-label">Alamat Tujuan SJ</label>
+                                                <textarea
+                                                    className="form-textarea"
+                                                    rows={2}
+                                                    value={entry.receiverAddress}
+                                                    onChange={event => setShipperReferenceDrafts(previous => previous.map((current, entryIndex) => (
+                                                        entryIndex === index ? { ...current, receiverAddress: event.target.value } : current
+                                                    )))}
+                                                    disabled={savingShipperReference}
+                                                    placeholder="Alamat tujuan untuk invoice / dokumen SJ ini"
+                                                />
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
                                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                                    Satu trip boleh memuat beberapa SJ pengirim. Kalau pickup lebih dari satu, kaitkan setiap SJ ke pickup yang benar.
+                                    Satu trip boleh memuat beberapa SJ pengirim. Kalau pickup lebih dari satu, kaitkan setiap SJ ke pickup yang benar. Tujuan invoice akan mengikuti data tujuan pada SJ ini.
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.75rem' }}>
                                     <button
@@ -2706,6 +2887,10 @@ export default function DODetailPage() {
                                         onClick={() => setShipperReferenceDrafts(previous => [...previous, {
                                             referenceNumber: '',
                                             pickupStopKey: pickupStopList.length === 1 ? pickupStopList[0]._key : '',
+                                            receiverName: '',
+                                            receiverPhone: '',
+                                            receiverAddress: '',
+                                            receiverCompany: '',
                                         }])}
                                         disabled={savingShipperReference}
                                     >

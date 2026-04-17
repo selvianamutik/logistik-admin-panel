@@ -2377,6 +2377,11 @@ export async function handleFreightNotaCreate(
             vehiclePlate?: string;
             pickupAddress?: string;
             receiverAddress?: string;
+            shipperReferences?: Array<{
+                referenceNumber?: string;
+                pickupAddress?: string;
+                receiverAddress?: string;
+            }>;
             date?: string;
             freightNotaRef?: unknown;
         }>>(
@@ -2390,6 +2395,11 @@ export async function handleFreightNotaCreate(
                 vehiclePlate,
                 pickupAddress,
                 receiverAddress,
+                shipperReferences[]{
+                    referenceNumber,
+                    pickupAddress,
+                    receiverAddress
+                },
                 date,
                 freightNotaRef
             }`,
@@ -2509,6 +2519,9 @@ export async function handleFreightNotaCreate(
         const itemSummary = selectedItemSources.length > 0
             ? summarizeDeliveryOrderItems(selectedItemSources as FreightNotaDeliveryOrderItemSource[])
             : summarizeDeliveryOrderItems(doItemMap.get(row.doRef) || []);
+        const matchedShipperReference = (deliveryOrder.shipperReferences || []).find(reference =>
+            normalizeOptionalText(reference.referenceNumber) === normalizeOptionalText(row.noSJ)
+        );
 
         row.doNumber = normalizeOptionalText(deliveryOrder.doNumber) || row.doNumber;
         row.noSJ =
@@ -2519,11 +2532,13 @@ export async function handleFreightNotaCreate(
         row.vehiclePlate = normalizeOptionalText(deliveryOrder.vehiclePlate) || row.vehiclePlate;
         row.date = normalizeOptionalText(deliveryOrder.date) || row.date || '';
         row.dari =
+            normalizeOptionalText(matchedShipperReference?.pickupAddress) ||
             normalizeOptionalText(deliveryOrder.pickupAddress) ||
             normalizeOptionalText(sourceOrder?.pickupAddress) ||
             row.dari ||
             '';
         row.tujuan =
+            normalizeOptionalText(matchedShipperReference?.receiverAddress) ||
             normalizeOptionalText(deliveryOrder.receiverAddress) ||
             normalizeOptionalText(sourceOrder?.receiverAddress) ||
             row.tujuan ||

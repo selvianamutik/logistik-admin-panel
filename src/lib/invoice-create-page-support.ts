@@ -93,6 +93,11 @@ export function buildNotaRowsFromDeliveryOrder(params: {
     const { deliveryOrder, orders, deliveryOrderItems } = params;
     const relatedOrder = orders.find(order => order._id === deliveryOrder.orderRef);
     const relatedItems = deliveryOrderItems.filter(item => item.deliveryOrderRef === deliveryOrder._id);
+    const shipperReferenceMap = new Map(
+        (deliveryOrder.shipperReferences || [])
+            .filter(reference => Boolean(reference.referenceNumber?.trim()))
+            .map(reference => [reference.referenceNumber!.trim(), reference])
+    );
     const baseRow = {
         doRef: deliveryOrder._id,
         doNumber: deliveryOrder.doNumber || '',
@@ -124,14 +129,20 @@ export function buildNotaRowsFromDeliveryOrder(params: {
         return acc;
     }, new Map());
 
-    return [...groupedItems.entries()].map(([shipperReferenceNumber, items]) => ({
-        id: Math.random().toString(36).slice(2),
-        ...baseRow,
-        deliveryOrderItemRef: items[0]?._id,
-        deliveryOrderItemRefs: items.map(item => item._id).filter(Boolean),
-        noSJ: shipperReferenceNumber,
-        barang: [...new Set(items.map(item => item.orderItemDescription?.trim()).filter((value): value is string => Boolean(value)))].join(', '),
-        collie: items.reduce((sum, item) => sum + parseFormattedNumberish(item.actualQtyKoli ?? item.orderItemQtyKoli ?? 0), 0),
-        beratKg: items.reduce((sum, item) => sum + parseFormattedNumberish(item.actualWeightKg ?? item.orderItemWeight ?? 0), 0),
-    }));
+    return [...groupedItems.entries()].map(([shipperReferenceNumber, items]) => {
+        const matchedReference = shipperReferenceMap.get(shipperReferenceNumber.trim());
+
+        return {
+            id: Math.random().toString(36).slice(2),
+            ...baseRow,
+            deliveryOrderItemRef: items[0]?._id,
+            deliveryOrderItemRefs: items.map(item => item._id).filter(Boolean),
+            noSJ: shipperReferenceNumber,
+            dari: matchedReference?.pickupAddress || baseRow.dari,
+            tujuan: matchedReference?.receiverAddress || baseRow.tujuan,
+            barang: [...new Set(items.map(item => item.orderItemDescription?.trim()).filter((value): value is string => Boolean(value)))].join(', '),
+            collie: items.reduce((sum, item) => sum + parseFormattedNumberish(item.actualQtyKoli ?? item.orderItemQtyKoli ?? 0), 0),
+            beratKg: items.reduce((sum, item) => sum + parseFormattedNumberish(item.actualWeightKg ?? item.orderItemWeight ?? 0), 0),
+        };
+    });
 }

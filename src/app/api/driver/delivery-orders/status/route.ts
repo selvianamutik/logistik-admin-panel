@@ -62,6 +62,17 @@ export async function POST(request: Request) {
                 actualVolumeInputValue?: number;
                 actualVolumeInputUnit?: string;
             }>;
+            actualDropPoints?: Array<{
+                stopType?: string;
+                locationName?: string;
+                locationAddress?: string;
+                qtyKoli?: number;
+                weightInputValue?: number;
+                weightInputUnit?: string;
+                volumeInputValue?: number;
+                volumeInputUnit?: string;
+                note?: string;
+            }>;
         }>(request);
         if ('error' in parsedBody) {
             return parsedBody.error;
@@ -100,7 +111,7 @@ export async function POST(request: Request) {
         if (DRIVER_APPROVAL_REQUEST_STATUSES.has(status)) {
             return await handleDeliveryOrderDriverStatusRequest(
                 auth.session,
-                { id, status, note, actualItems: body.actualItems },
+                { id, status, note, actualItems: body.actualItems, actualDropPoints: body.actualDropPoints },
                 addAuditLog
             );
         }
