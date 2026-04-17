@@ -1815,7 +1815,7 @@ export default function OrderDetailPage() {
                                     </div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginTop: '1rem' }}>
                                         <div className="text-muted text-sm">
-                                            Kalau manifest belum final, trip tetap boleh dibuat dulu lalu SJ dan barang bisa dilengkapi lagi dari detail DO.
+                                            Kalau manifest belum final, buat trip dulu lalu lengkapi SJ dan barang dari detail DO.
                                         </div>
                                         <button type="button" className="btn btn-secondary btn-sm" onClick={addDirectCargoGroup} disabled={creatingDO}>
                                             <Plus size={14} /> Tambah SJ

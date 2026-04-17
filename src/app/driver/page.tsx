@@ -1062,9 +1062,8 @@ export default function DriverPortalPage() {
                     Tracking live v1
                 </div>
                 <p>
-                    Lokasi akan terkirim selama halaman ini tetap terbuka di HP, internet aktif, dan izin lokasi GPS menyala.
-                    Kalau aplikasi/browser ditutup total, tracking live tidak akan terus berjalan di background. Driver juga tidak bisa
-                    menghentikan tracking sendiri sebelum admin menutup DO.
+                    Lokasi terkirim selama halaman ini tetap terbuka, internet aktif, dan GPS menyala.
+                    Kalau browser ditutup total, tracking berhenti. Driver juga tidak bisa menutup tracking sendiri sebelum admin menyelesaikan DO.
                 </p>
                 {feedback && <div className={`driver-feedback ${feedback.type}`}>{feedback.message}</div>}
             </section>
@@ -1455,7 +1454,7 @@ export default function DriverPortalPage() {
 
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginTop: '1rem' }}>
                                 <div className="text-muted text-sm">
-                                    Surat Jalan boleh dibuat dulu. Kalau barang belum final, kosongkan draft lalu isi nanti dari DO aktif.
+                                    Kalau barang belum final, simpan SJ dulu lalu lengkapi dari DO aktif.
                                 </div>
                                 <button type="button" className="btn btn-secondary btn-sm" onClick={addTripCreateGroup} disabled={isActionInFlight}>
                                     <Plus size={14} /> Tambah SJ

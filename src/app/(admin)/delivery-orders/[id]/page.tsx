@@ -251,6 +251,17 @@ export default function DODetailPage() {
     const canManageTripFee = canManageDeliveryStatus;
     const currentPath = pathname || `/delivery-orders/${doId}`;
     const withReturnTo = (href: string) => `${href}${href.includes('?') ? '&' : '?'}returnTo=${encodeURIComponent(currentPath)}`;
+    const getDefaultPodName = useCallback(() => {
+        return doData?.podReceiverName?.trim()
+            || doData?.receiverName?.trim()
+            || doData?.receiverCompany?.trim()
+            || '';
+    }, [doData?.podReceiverName, doData?.receiverName, doData?.receiverCompany]);
+    const getDefaultPodDate = useCallback(() => {
+        const rawDate = doData?.podReceivedDate?.trim() || '';
+        return rawDate ? rawDate.slice(0, 10) : getBusinessDateValue();
+    }, [doData?.podReceivedDate]);
+    const getDefaultPodNote = useCallback(() => doData?.podNote || '', [doData?.podNote]);
     const hasOpenModal =
         showStatusModal ||
         showPODModal ||
@@ -603,9 +614,9 @@ export default function DODetailPage() {
         setNewStatus(requestedStatus || '');
         setStatusNote(fromDriverRequest ? (doData?.pendingDriverStatusNote || '') : '');
         setReviewingDriverRequest(fromDriverRequest);
-        setPodName('');
-        setPodDate(getBusinessDateValue());
-        setPodNote('');
+        setPodName(getDefaultPodName());
+        setPodDate(getDefaultPodDate());
+        setPodNote(getDefaultPodNote());
         const nextActualCargoItems = buildActualCargoDrafts(
             doItems,
             fromDriverRequest && requestedStatus === 'DELIVERED'
@@ -1318,9 +1329,9 @@ export default function DODetailPage() {
                         <button
                             className="btn btn-success"
                             onClick={() => {
-                                setPodName('');
-                                setPodDate(getBusinessDateValue());
-                                setPodNote('');
+                                setPodName(getDefaultPodName());
+                                setPodDate(getDefaultPodDate());
+                                setPodNote(getDefaultPodNote());
                                 setShowPODModal(true);
                             }}
                         >
@@ -2286,7 +2297,7 @@ export default function DODetailPage() {
                                     <div className="form-group">
                                         <label className="form-label">Muatan Aktual per Item <span className="required">*</span></label>
                                         <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-gray-600)' }}>
-                                            Untuk trip normal, cukup isi realisasi lapangan tiap item. <strong>Rencana Trip</strong> di DO ini masih estimasi proporsional dari target order/resi. Qty aktual boleh lebih kecil atau lebih besar dari rencana trip selama total order/resi belum terlampaui. Berat dan volume aktual juga boleh berbeda dari rencana trip, tetapi kalau total target order/resi memang bertambah, revisi order/resi dulu.
+                                            Isi realisasi lapangan per item. Angka aktual boleh berbeda dari rencana trip, tapi kalau total target order/resi berubah, revisi order dulu.
                                         </div>
                                         <div style={{ display: 'grid', gap: '0.75rem' }}>
                                             {actualCargoItems.map(item => (
@@ -2387,7 +2398,7 @@ export default function DODetailPage() {
                                             </button>
                                         </div>
                                         <div style={{ background: 'var(--color-info-light)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-info)' }}>
-                                            Untuk trip normal, sistem otomatis menganggap semua muatan aktual turun di tujuan tagihan: <strong>{autoActualDropDraft.locationName || 'Tujuan Tagihan'}</strong>. Buka detail ini hanya jika ada multi-drop, hold/inap, return, atau extra drop.
+                                            Untuk trip normal, semua muatan aktual otomatis turun di <strong>{autoActualDropDraft.locationName || 'Tujuan Tagihan'}</strong>. Buka detail ini hanya kalau ada multi-drop, hold, return, atau extra drop.
                                         </div>
                                         {!showAdvancedDropEditor ? (
                                             <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)' }}>
