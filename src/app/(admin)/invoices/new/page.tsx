@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Pencil, Plus, Save, Trash2, X } from 'lucide-react';
 
@@ -41,7 +41,8 @@ export default function NewNotaPage() {
     const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([]);
     const [deliveryOrderItems, setDeliveryOrderItems] = useState<DeliveryOrderItem[]>([]);
     const [orders, setOrders] = useState<Order[]>([]);
-    const [usedNotaDoRefs, setUsedNotaDoRefs] = useState<string[]>([]);
+    const [lockedNotaDoRefs, setLockedNotaDoRefs] = useState<string[]>([]);
+    const [usedNotaDoItemRefs, setUsedNotaDoItemRefs] = useState<string[]>([]);
     const [saving, setSaving] = useState(false);
 
     const [customerRef, setCustomerRef] = useState('');
@@ -66,17 +67,31 @@ export default function NewNotaPage() {
                     fetchAdminCollectionData<DeliveryOrder[]>('/api/data?entity=delivery-orders', 'Gagal memuat surat jalan'),
                     fetchAdminCollectionData<Order[]>('/api/data?entity=orders', 'Gagal memuat order'),
                     fetchAdminCollectionData<DeliveryOrderItem[]>('/api/data?entity=delivery-order-items', 'Gagal memuat item DO'),
-                    fetchAdminCollectionData<Array<{ doRef?: string }>>('/api/data?entity=freight-nota-items', 'Gagal memuat pemakaian DO nota'),
+                    fetchAdminCollectionData<Array<{
+                        doRef?: string;
+                        deliveryOrderItemRef?: string;
+                        deliveryOrderItemRefs?: string[];
+                    }>>('/api/data?entity=freight-nota-items', 'Gagal memuat pemakaian DO nota'),
                 ]);
                 setCustomers((cust || []).filter(customer => customer.active !== false));
                 setCompany(comp || null);
                 setDeliveryOrders((dos || []).filter((item: DeliveryOrder) => item.status === 'DELIVERED'));
                 setOrders(ords || []);
                 setDeliveryOrderItems(doItems || []);
-                setUsedNotaDoRefs(
+                setLockedNotaDoRefs(
                     (notaItems || [])
-                        .map((item: { doRef?: string }) => item.doRef)
+                        .filter(item => !item.deliveryOrderItemRef && (!Array.isArray(item.deliveryOrderItemRefs) || item.deliveryOrderItemRefs.length === 0))
+                        .map(item => item.doRef)
                         .filter((value: string | undefined): value is string => Boolean(value))
+                );
+                setUsedNotaDoItemRefs(
+                    (notaItems || []).flatMap(item => (
+                        Array.isArray(item.deliveryOrderItemRefs) && item.deliveryOrderItemRefs.length > 0
+                            ? item.deliveryOrderItemRefs
+                            : item.deliveryOrderItemRef
+                                ? [item.deliveryOrderItemRef]
+                                : []
+                    ))
                 );
             } catch (error) {
                 addToast('error', error instanceof Error ? error.message : 'Gagal memuat data nota');
@@ -171,41 +186,87 @@ export default function NewNotaPage() {
         closeEditRowModal();
     };
 
+    const getAvailableNotaRowsForDeliveryOrder = useCallback((deliveryOrder: DeliveryOrder, targetCustomerRef?: string) => {
+        const lockedDoRefSet = new Set(lockedNotaDoRefs);
+        const usedDoItemRefSet = new Set(usedNotaDoItemRefs);
+        const selectedDoItemRefSet = new Set(
+            rows.flatMap(row => (
+                Array.isArray(row.deliveryOrderItemRefs) && row.deliveryOrderItemRefs.length > 0
+                    ? row.deliveryOrderItemRefs
+                    : row.deliveryOrderItemRef
+                        ? [row.deliveryOrderItemRef]
+                        : []
+            ))
+        );
+        const selectedRowKeys = new Set(
+            rows
+                .filter(row => !isEmptyNotaRow(row))
+                .map(row => `${row.doRef || 'manual'}::${row.noSJ || row.id}`)
+        );
+
+        if (lockedDoRefSet.has(deliveryOrder._id)) {
+            return [] as NotaItemRow[];
+        }
+
+        return buildNotaRowsFromDeliveryOrder({
+            deliveryOrder,
+            orders,
+            deliveryOrderItems,
+        }).filter(row => {
+            const rowItemRefs =
+                Array.isArray(row.deliveryOrderItemRefs) && row.deliveryOrderItemRefs.length > 0
+                    ? row.deliveryOrderItemRefs
+                    : row.deliveryOrderItemRef
+                        ? [row.deliveryOrderItemRef]
+                        : [];
+            if (rowItemRefs.length === 0) {
+                return false;
+            }
+            if (rowItemRefs.some(itemRef => usedDoItemRefSet.has(itemRef) || selectedDoItemRefSet.has(itemRef))) {
+                return false;
+            }
+            if (targetCustomerRef && (row.customerRef || '') !== targetCustomerRef) {
+                return false;
+            }
+            const rowKey = `${row.doRef || 'manual'}::${row.noSJ || row.id}`;
+            return !selectedRowKeys.has(rowKey);
+        });
+    }, [deliveryOrderItems, lockedNotaDoRefs, orders, rows, usedNotaDoItemRefs]);
+
     const addDORow = (doId: string) => {
         const deliveryOrder = deliveryOrders.find(item => item._id === doId);
         if (!deliveryOrder) {
             addToast('error', 'DO tidak ditemukan');
             return;
         }
-        if (rows.some(row => row.doRef === doId)) {
-            addToast('error', 'DO ini sudah ada di nota');
-            return;
-        }
-        if (usedNotaDoRefs.includes(doId)) {
-            addToast('error', 'DO ini sudah tercantum di nota lain');
+        const nextRows = getAvailableNotaRowsForDeliveryOrder(deliveryOrder, customerRef || undefined);
+        if (nextRows.length === 0) {
+            addToast('error', customerRef ? 'Tidak ada SJ yang tersisa untuk customer tagihan ini pada DO tersebut' : 'Semua item SJ pada DO ini sudah tertagih atau sudah ada di nota saat ini');
             return;
         }
 
-        const relatedOrder = orders.find(order => order._id === deliveryOrder.orderRef);
-        if (customerRef && relatedOrder?.customerRef && relatedOrder.customerRef !== customerRef) {
-            addToast('error', 'DO ini milik customer lain');
-            return;
-        }
-
-        const nextRows = buildNotaRowsFromDeliveryOrder({
-            deliveryOrder,
-            orders,
-            deliveryOrderItems,
-        });
-        if (!customerRef && relatedOrder?.customerRef) {
-            const resolvedCustomerName =
-                relatedOrder.customerName ||
-                customers.find(customer => customer._id === relatedOrder.customerRef)?.name ||
-                '';
-            setCustomerRef(relatedOrder.customerRef);
-            setCustomerName(resolvedCustomerName);
-        } else if (!customerName && relatedOrder?.customerName) {
-            setCustomerName(relatedOrder.customerName);
+        if (!customerRef) {
+            const rowCustomers: Array<[string, string]> = Array.from(
+                new Map(
+                    nextRows
+                        .filter(row => row.customerRef && row.customerName)
+                        .map(row => [row.customerRef as string, row.customerName as string])
+                ).entries()
+            );
+            if (rowCustomers.length > 1) {
+                addToast('error', 'DO ini punya SJ dengan customer tagihan berbeda. Pilih customer nota dulu.');
+                return;
+            }
+            if (rowCustomers.length === 1) {
+                const [nextCustomerRef, nextCustomerName] = rowCustomers[0];
+                setCustomerRef(nextCustomerRef);
+                setCustomerName(nextCustomerName);
+            }
+        } else if (!customerName) {
+            const selectedCustomerName = customers.find(customer => customer._id === customerRef)?.name || '';
+            if (selectedCustomerName) {
+                setCustomerName(selectedCustomerName);
+            }
         }
 
         setRows(previous => {
@@ -258,6 +319,13 @@ export default function NewNotaPage() {
             addToast('error', 'Minimal 1 baris perjalanan');
             return;
         }
+        if (customerRef) {
+            const mismatchedRow = filledRows.find(row => row.customerRef && row.customerRef !== customerRef);
+            if (mismatchedRow) {
+                addToast('error', `SJ ${mismatchedRow.noSJ || '-'} memakai customer tagihan berbeda. Pisahkan ke nota lain.`);
+                return;
+            }
+        }
 
         setSaving(true);
         try {
@@ -296,27 +364,8 @@ export default function NewNotaPage() {
         }
     };
 
-    const customerOrderIds = customerRef
-        ? new Set(orders.filter(order => order.customerRef === customerRef).map(order => order._id))
-        : null;
-
-    const customerDOs = customerOrderIds
-        ? deliveryOrders.filter(deliveryOrder => customerOrderIds.has(deliveryOrder.orderRef || ''))
-        : deliveryOrders;
-
-    const otherDOs = customerRef
-        ? []
-        : customerOrderIds
-        ? deliveryOrders.filter(deliveryOrder => !customerOrderIds.has(deliveryOrder.orderRef || ''))
-        : [];
-
-    const selectedDoRefs = new Set(rows.map(row => row.doRef).filter(Boolean));
-    const blockedDoRefs = new Set(usedNotaDoRefs);
-    const availableCustomerDOs = customerDOs.filter(
-        deliveryOrder => !selectedDoRefs.has(deliveryOrder._id) && !blockedDoRefs.has(deliveryOrder._id)
-    );
-    const availableOtherDOs = otherDOs.filter(
-        deliveryOrder => !selectedDoRefs.has(deliveryOrder._id) && !blockedDoRefs.has(deliveryOrder._id)
+    const availableDeliveryOrders = deliveryOrders.filter(
+        deliveryOrder => getAvailableNotaRowsForDeliveryOrder(deliveryOrder, customerRef || undefined).length > 0
     );
 
     return (
@@ -485,24 +534,15 @@ export default function NewNotaPage() {
                                 }}
                             >
                                 <option value="">-- Pilih DO yang selesai --</option>
-                                {availableCustomerDOs.length > 0 && (
+                                {availableDeliveryOrders.length > 0 && (
                                     <optgroup
                                         label={
                                             customerRef
-                                                ? `DO milik ${customerName} (${availableCustomerDOs.length})`
-                                                : `Semua DO Selesai (${availableCustomerDOs.length})`
+                                                ? `DO dengan SJ customer ${customerName || '-'} (${availableDeliveryOrders.length})`
+                                                : `Semua DO Selesai (${availableDeliveryOrders.length})`
                                         }
                                     >
-                                        {availableCustomerDOs.map(deliveryOrder => (
-                                            <option key={deliveryOrder._id} value={deliveryOrder._id}>
-                                                {formatInternalDeliveryOrderNumber(deliveryOrder)}{deliveryOrder.customerDoNumber ? ` | SJ ${formatShipperDeliveryOrderNumber(deliveryOrder)}` : ''} - {deliveryOrder.vehiclePlate || '-'} - {deliveryOrder.receiverAddress || '-'}
-                                            </option>
-                                        ))}
-                                    </optgroup>
-                                )}
-                                {availableOtherDOs.length > 0 && (
-                                    <optgroup label={`DO Customer Lain (${availableOtherDOs.length})`}>
-                                        {availableOtherDOs.map(deliveryOrder => (
+                                        {availableDeliveryOrders.map(deliveryOrder => (
                                             <option key={deliveryOrder._id} value={deliveryOrder._id}>
                                                 {formatInternalDeliveryOrderNumber(deliveryOrder)}{deliveryOrder.customerDoNumber ? ` | SJ ${formatShipperDeliveryOrderNumber(deliveryOrder)}` : ''} - {deliveryOrder.vehiclePlate || '-'} - {deliveryOrder.receiverAddress || '-'}
                                             </option>

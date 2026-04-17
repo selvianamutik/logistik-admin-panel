@@ -254,6 +254,8 @@ export interface DeliveryOrderShipperReference {
   referenceNumber: string;
   pickupStopKey?: string;
   pickupAddress?: string;
+  billingCustomerRef?: string;
+  billingCustomerName?: string;
   receiverName?: string;
   receiverPhone?: string;
   receiverAddress?: string;
@@ -825,6 +827,8 @@ export interface FreightNotaItem {
   doRef?: string;
   deliveryOrderItemRef?: string;
   deliveryOrderItemRefs?: string[];
+  customerRef?: string;
+  customerName?: string;
   doNumber?: string;
   vehiclePlate?: string;
   date: string;

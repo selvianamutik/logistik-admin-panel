@@ -144,6 +144,8 @@ type NormalizedDeliveryOrderShipperReference = Required<Pick<DeliveryOrderShippe
     _key: string;
     pickupStopKey?: string;
     pickupAddress?: string;
+    billingCustomerRef?: string;
+    billingCustomerName?: string;
     receiverName?: string;
     receiverPhone?: string;
     receiverAddress?: string;
@@ -413,6 +415,8 @@ function normalizeExistingShipperReferences(existing: DeliveryOrderShipperRefere
             referenceNumber,
             pickupStopKey,
             pickupAddress: normalizeOptionalText(reference.pickupAddress) || matchedStop?.pickupAddress || undefined,
+            billingCustomerRef: normalizeOptionalText(reference.billingCustomerRef) || undefined,
+            billingCustomerName: normalizeOptionalText(reference.billingCustomerName) || undefined,
             receiverName: normalizeOptionalText(reference.receiverName) || undefined,
             receiverPhone: normalizeOptionalText(reference.receiverPhone) || undefined,
             receiverAddress: normalizeOptionalText(reference.receiverAddress) || undefined,
@@ -466,6 +470,8 @@ function upsertShipperReferenceForPickup(
         receiverPhone: undefined,
         receiverAddress: undefined,
         receiverCompany: undefined,
+        billingCustomerRef: undefined,
+        billingCustomerName: undefined,
     };
     references.push(createdReference);
     return createdReference;
@@ -497,6 +503,8 @@ function normalizeIncomingShipperReferences(
         const referenceNumber = normalizeReferenceNumber(row.referenceNumber ?? row.customerDoNumber);
         const pickupStopKey = normalizeOptionalText(row.pickupStopKey) || undefined;
         const notes = normalizeOptionalText(row.notes) || undefined;
+        const billingCustomerRef = normalizeOptionalText(row.billingCustomerRef) || undefined;
+        const billingCustomerName = normalizeOptionalText(row.billingCustomerName) || undefined;
         const receiverName = normalizeOptionalText(row.receiverName) || undefined;
         const receiverPhone = normalizeOptionalText(row.receiverPhone) || undefined;
         const receiverAddress = normalizeOptionalText(row.receiverAddress) || undefined;
@@ -524,6 +532,8 @@ function normalizeIncomingShipperReferences(
                 currentReference.pickupAddress = pickupMap.get(pickupStopKey)?.pickupAddress || currentReference.pickupAddress;
             }
             if (currentReference) {
+                currentReference.billingCustomerRef = billingCustomerRef || currentReference.billingCustomerRef;
+                currentReference.billingCustomerName = billingCustomerName || currentReference.billingCustomerName;
                 currentReference.receiverName = receiverName || currentReference.receiverName;
                 currentReference.receiverPhone = receiverPhone || currentReference.receiverPhone;
                 currentReference.receiverAddress = receiverAddress || currentReference.receiverAddress;
@@ -545,6 +555,8 @@ function normalizeIncomingShipperReferences(
                 matchedStop?.pickupAddress ||
                 existingReference?.pickupAddress ||
                 undefined,
+            billingCustomerRef: billingCustomerRef || existingReference?.billingCustomerRef,
+            billingCustomerName: billingCustomerName || existingReference?.billingCustomerName,
             receiverName: receiverName || existingReference?.receiverName,
             receiverPhone: receiverPhone || existingReference?.receiverPhone,
             receiverAddress: receiverAddress || existingReference?.receiverAddress,
@@ -596,6 +608,8 @@ function buildShipperReferencesFromCargoSnapshots(
             sequence: index + 1,
             pickupStopKey: reference.pickupStopKey || existingReference?.pickupStopKey,
             pickupAddress: reference.pickupAddress || existingReference?.pickupAddress,
+            billingCustomerRef: reference.billingCustomerRef || existingReference?.billingCustomerRef,
+            billingCustomerName: reference.billingCustomerName || existingReference?.billingCustomerName,
             notes: reference.notes || existingReference?.notes,
         };
     });

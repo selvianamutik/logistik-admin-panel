@@ -7,6 +7,8 @@ export interface NotaItemRow {
     doRef: string;
     deliveryOrderItemRef?: string;
     deliveryOrderItemRefs?: string[];
+    customerRef?: string;
+    customerName?: string;
     doNumber: string;
     vehiclePlate: string;
     date: string;
@@ -25,6 +27,8 @@ export function createEmptyNotaRow(): NotaItemRow {
     return {
         id: Math.random().toString(36).slice(2),
         doRef: '',
+        customerRef: '',
+        customerName: '',
         doNumber: '',
         vehiclePlate: '',
         date: getBusinessDateValue(),
@@ -43,6 +47,8 @@ export function createEmptyNotaRow(): NotaItemRow {
 export function isEmptyNotaRow(row: NotaItemRow) {
     return (
         !row.doRef &&
+        !row.customerRef &&
+        !row.customerName &&
         !row.doNumber &&
         !row.vehiclePlate &&
         !row.noSJ &&
@@ -100,6 +106,8 @@ export function buildNotaRowsFromDeliveryOrder(params: {
     );
     const baseRow = {
         doRef: deliveryOrder._id,
+        customerRef: relatedOrder?.customerRef || '',
+        customerName: relatedOrder?.customerName || deliveryOrder.customerName || '',
         doNumber: deliveryOrder.doNumber || '',
         vehiclePlate: deliveryOrder.vehiclePlate || '',
         date: deliveryOrder.date || getBusinessDateValue(),
@@ -137,6 +145,8 @@ export function buildNotaRowsFromDeliveryOrder(params: {
             ...baseRow,
             deliveryOrderItemRef: items[0]?._id,
             deliveryOrderItemRefs: items.map(item => item._id).filter(Boolean),
+            customerRef: matchedReference?.billingCustomerRef || baseRow.customerRef,
+            customerName: matchedReference?.billingCustomerName || baseRow.customerName,
             noSJ: shipperReferenceNumber,
             dari: matchedReference?.pickupAddress || baseRow.dari,
             tujuan: matchedReference?.receiverAddress || baseRow.tujuan,

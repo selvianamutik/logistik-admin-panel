@@ -79,6 +79,8 @@ type DeliveryOrderTripCashLink = {
 type ShipperReferenceDraft = {
     referenceNumber: string;
     pickupStopKey: string;
+    billingCustomerRef: string;
+    billingCustomerName: string;
     receiverName: string;
     receiverPhone: string;
     receiverAddress: string;
@@ -91,6 +93,8 @@ type ResolvedShipperReferenceEntry = {
     pickupStopKey: string;
     pickupLabel: string;
     pickupAddress: string;
+    billingCustomerRef: string;
+    billingCustomerName: string;
     receiverName: string;
     receiverPhone: string;
     receiverAddress: string;
@@ -143,6 +147,8 @@ function buildResolvedShipperReferenceEntries(
             pickupStopKey,
             pickupLabel: resolvedPickupLabel,
             pickupAddress: resolvedPickupAddress,
+            billingCustomerRef: '',
+            billingCustomerName: '',
             receiverName: '',
             receiverPhone: '',
             receiverAddress: '',
@@ -162,6 +168,8 @@ function buildResolvedShipperReferenceEntries(
         if (current) {
             entries.set(entryKey, {
                 ...current,
+                billingCustomerRef: reference.billingCustomerRef || current.billingCustomerRef,
+                billingCustomerName: reference.billingCustomerName || current.billingCustomerName,
                 receiverName: reference.receiverName || current.receiverName,
                 receiverPhone: reference.receiverPhone || current.receiverPhone,
                 receiverAddress: reference.receiverAddress || current.receiverAddress,
@@ -202,6 +210,7 @@ export default function DODetailPage() {
     const [trackingLogs, setTrackingLogs] = useState<TrackingLog[]>([]);
     const [drivers, setDrivers] = useState<Driver[]>([]);
     const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+    const [billingCustomers, setBillingCustomers] = useState<Array<Pick<Customer, '_id' | 'name' | 'active'>>>([]);
     const [activeDeliveryOrders, setActiveDeliveryOrders] = useState<DeliveryOrder[]>([]);
     const [loading, setLoading] = useState(true);
     const [showStatusModal, setShowStatusModal] = useState(false);
@@ -249,6 +258,8 @@ export default function DODetailPage() {
     const [shipperReferenceDrafts, setShipperReferenceDrafts] = useState<ShipperReferenceDraft[]>([{
         referenceNumber: '',
         pickupStopKey: '',
+        billingCustomerRef: '',
+        billingCustomerName: '',
         receiverName: '',
         receiverPhone: '',
         receiverAddress: '',
@@ -418,7 +429,7 @@ export default function DODetailPage() {
 
         try {
             const deliveryOrder = await fetchAdminData<DeliveryOrder | null>(`/api/data?entity=delivery-orders&id=${doId}`, 'Gagal memuat detail surat jalan');
-            const [itemRows, logRows, sourceOrder, customerData, tripRateRows, linkedVoucherRows, tripCashLink] = await Promise.all([
+            const [itemRows, logRows, sourceOrder, customerData, tripRateRows, linkedVoucherRows, tripCashLink, customerRows] = await Promise.all([
                 fetchAllAdminCollectionData<DeliveryOrderItem>(`/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: doId }))}`, 'Gagal memuat detail surat jalan'),
                 fetchAllAdminCollectionData<TrackingLog>(`/api/data?entity=tracking-logs&filter=${encodeURIComponent(JSON.stringify({ refRef: doId, refType: 'DO' }))}`, 'Gagal memuat detail surat jalan'),
                 deliveryOrder?.orderRef
@@ -436,6 +447,10 @@ export default function DODetailPage() {
                 fetchAdminData<DeliveryOrderTripCashLink | null>(
                     `/api/data?entity=delivery-order-trip-cash-link&deliveryOrderRef=${encodeURIComponent(doId)}`,
                     'Gagal memuat detail surat jalan'
+                ),
+                fetchAdminCollectionData<Array<Pick<Customer, '_id' | 'name' | 'active'>>>(
+                    '/api/data?entity=customers&sortField=name&sortDir=asc',
+                    'Gagal memuat daftar customer'
                 ),
             ]);
             const deliveryOrderItems = itemRows || [];
@@ -467,6 +482,7 @@ export default function DODetailPage() {
             const resolvedDeliveryOrder = buildResolvedDeliveryOrder(deliveryOrder, sourceOrder);
 
             setDoData(resolvedDeliveryOrder);
+            setBillingCustomers((customerRows || []).filter(customer => customer.active !== false || customer._id === resolvedDeliveryOrder?.customerRef));
             setShipperReferenceFormat((customerData?.deliveryOrderPrefix || 'SJ').toUpperCase());
             setTripRouteRates((tripRateRows || []).filter(rate => rate.active !== false));
             setLinkedVoucher(linkedVoucherRows?.[0] || null);
@@ -529,6 +545,8 @@ export default function DODetailPage() {
             .map(reference => ({
                 referenceNumber: reference.referenceNumber,
                 pickupStopKey: reference.pickupStopKey,
+                billingCustomerRef: reference.billingCustomerRef,
+                billingCustomerName: reference.billingCustomerName,
                 receiverName: reference.receiverName,
                 receiverPhone: reference.receiverPhone,
                 receiverAddress: reference.receiverAddress,
@@ -541,6 +559,8 @@ export default function DODetailPage() {
                 : [{
                     referenceNumber: doData?.customerDoNumber || (normalizedFormat !== 'SJ' ? normalizedFormat : ''),
                     pickupStopKey: '',
+                    billingCustomerRef: doData?.customerRef || '',
+                    billingCustomerName: doData?.customerName || '',
                     receiverName: doData?.receiverName || '',
                     receiverPhone: doData?.receiverPhone || '',
                     receiverAddress: doData?.receiverAddress || '',
@@ -1223,6 +1243,8 @@ export default function DODetailPage() {
             .map(entry => ({
                 referenceNumber: entry.referenceNumber.trim().toUpperCase(),
                 pickupStopKey: entry.pickupStopKey.trim(),
+                billingCustomerRef: entry.billingCustomerRef.trim(),
+                billingCustomerName: entry.billingCustomerName.trim(),
                 receiverName: entry.receiverName.trim(),
                 receiverPhone: entry.receiverPhone.trim(),
                 receiverAddress: entry.receiverAddress.trim(),
@@ -1254,6 +1276,8 @@ export default function DODetailPage() {
                         shipperReferences: normalizedReferences.map(reference => ({
                             referenceNumber: reference.referenceNumber,
                             pickupStopKey: reference.pickupStopKey || undefined,
+                            billingCustomerRef: reference.billingCustomerRef || undefined,
+                            billingCustomerName: reference.billingCustomerName || undefined,
                             receiverName: reference.receiverName || undefined,
                             receiverPhone: reference.receiverPhone || undefined,
                             receiverAddress: reference.receiverAddress || undefined,
@@ -1725,6 +1749,11 @@ export default function DODetailPage() {
                                                 {reference.pickupLabel && (
                                                     <div className="text-muted text-sm" style={{ marginTop: '0.2rem' }}>
                                                         {reference.pickupLabel}{reference.pickupAddress ? ` | ${reference.pickupAddress}` : ''}
+                                                    </div>
+                                                )}
+                                                {reference.billingCustomerName && (
+                                                    <div className="text-muted text-sm" style={{ marginTop: '0.2rem' }}>
+                                                        Tagihan: {reference.billingCustomerName}
                                                     </div>
                                                 )}
                                                 {(reference.receiverAddress || reference.receiverName || reference.receiverCompany) && (
@@ -2823,6 +2852,34 @@ export default function DODetailPage() {
                                                     {pickupStopMap.get(entry.pickupStopKey)?.pickupAddress}
                                                 </div>
                                             )}
+                                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                                <label className="form-label">Customer Tagihan</label>
+                                                <select
+                                                    className="form-select"
+                                                    value={entry.billingCustomerRef}
+                                                    onChange={event => {
+                                                        const nextCustomerRef = event.target.value;
+                                                        const nextCustomerName = billingCustomers.find(customer => customer._id === nextCustomerRef)?.name || '';
+                                                        setShipperReferenceDrafts(previous => previous.map((current, entryIndex) => (
+                                                            entryIndex === index
+                                                                ? {
+                                                                    ...current,
+                                                                    billingCustomerRef: nextCustomerRef,
+                                                                    billingCustomerName: nextCustomerName,
+                                                                }
+                                                                : current
+                                                        )));
+                                                    }}
+                                                    disabled={savingShipperReference}
+                                                >
+                                                    <option value="">Ikuti customer order / resi</option>
+                                                    {billingCustomers.map(customer => (
+                                                        <option key={customer._id} value={customer._id}>
+                                                            {customer.name}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
                                             <div className="form-row">
                                                 <div className="form-group">
                                                     <label className="form-label">Nama Penerima</label>
@@ -2887,6 +2944,8 @@ export default function DODetailPage() {
                                         onClick={() => setShipperReferenceDrafts(previous => [...previous, {
                                             referenceNumber: '',
                                             pickupStopKey: pickupStopList.length === 1 ? pickupStopList[0]._key : '',
+                                            billingCustomerRef: doData?.customerRef || '',
+                                            billingCustomerName: doData?.customerName || '',
                                             receiverName: '',
                                             receiverPhone: '',
                                             receiverAddress: '',

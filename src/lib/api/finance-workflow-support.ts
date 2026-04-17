@@ -11,6 +11,8 @@ export type NormalizedFreightNotaRow = {
     doRef?: string;
     deliveryOrderItemRef?: string;
     deliveryOrderItemRefs?: string[];
+    customerRef?: string;
+    customerName?: string;
     doNumber?: string;
     vehiclePlate?: string;
     date: string;
@@ -28,6 +30,7 @@ export type NormalizedFreightNotaRow = {
 export type FreightNotaOrderSource = {
     _id: string;
     customerRef?: unknown;
+    customerName?: string;
     pickupAddress?: string;
     receiverAddress?: string;
 };
