@@ -88,6 +88,9 @@ type ShipperReferenceDisplayValue = {
     customerDoNumber?: string | null;
     shipperReferences?: Array<{
         referenceNumber?: string | null;
+        receiverName?: string | null;
+        receiverCompany?: string | null;
+        receiverAddress?: string | null;
     }> | null;
 };
 
@@ -131,6 +134,42 @@ export function formatShipperDeliveryOrderNumber(
     }
 
     return `${references.slice(0, maxVisible).join(', ')} (+${references.length - maxVisible})`;
+}
+
+export function getShipperReceiverTargets(value: ShipperReferenceDisplayValue) {
+    const uniqueTargets = new Set<string>();
+    for (const entry of value.shipperReferences || []) {
+        const normalizedTarget =
+            entry?.receiverAddress?.trim()
+            || entry?.receiverCompany?.trim()
+            || entry?.receiverName?.trim();
+        if (normalizedTarget) {
+            uniqueTargets.add(normalizedTarget);
+        }
+    }
+
+    return Array.from(uniqueTargets);
+}
+
+export function formatShipperReceiverSummary(
+    value: ShipperReferenceDisplayValue,
+    options?: { mode?: 'summary' | 'full'; maxVisible?: number; fallback?: string }
+) {
+    const targets = getShipperReceiverTargets(value);
+    if (targets.length === 0) {
+        return options?.fallback || '-';
+    }
+
+    if (options?.mode === 'full') {
+        return targets.join(', ');
+    }
+
+    const maxVisible = options?.maxVisible ?? 2;
+    if (targets.length <= maxVisible) {
+        return targets.join(', ');
+    }
+
+    return `${targets.slice(0, maxVisible).join(', ')} (+${targets.length - maxVisible})`;
 }
 
 export function getReceivableNetAmount(value: {

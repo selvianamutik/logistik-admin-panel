@@ -29,7 +29,7 @@ import {
 import { convertWeightToKg } from '@/lib/measurement';
 import { buildPph23Label, calculatePph23Summary, DEFAULT_PPH23_RATE_PERCENT, PPH23_BASE_MODE_OPTIONS } from '@/lib/pph23';
 import type { CompanyProfile, Customer, DeliveryOrder, DeliveryOrderItem, FreightNotaBillingMode, Order } from '@/lib/types';
-import { formatCurrency, formatInternalDeliveryOrderNumber, formatQuantity, formatShipperDeliveryOrderNumber, getShipperReferenceCount } from '@/lib/utils';
+import { formatCurrency, formatInternalDeliveryOrderNumber, formatQuantity, formatShipperDeliveryOrderNumber, formatShipperReceiverSummary, getShipperReferenceCount } from '@/lib/utils';
 
 import { useToast } from '../../layout';
 
@@ -544,7 +544,7 @@ export default function NewNotaPage() {
                                     >
                                         {availableDeliveryOrders.map(deliveryOrder => (
                                             <option key={deliveryOrder._id} value={deliveryOrder._id}>
-                                                {formatInternalDeliveryOrderNumber(deliveryOrder)}{getShipperReferenceCount(deliveryOrder) > 0 ? ` | SJ ${formatShipperDeliveryOrderNumber(deliveryOrder)}` : ''} - {deliveryOrder.vehiclePlate || '-'} - {deliveryOrder.receiverAddress || '-'}
+                                                {formatInternalDeliveryOrderNumber(deliveryOrder)}{getShipperReferenceCount(deliveryOrder) > 0 ? ` | SJ ${formatShipperDeliveryOrderNumber(deliveryOrder)}` : ''} - {deliveryOrder.vehiclePlate || '-'} - {formatShipperReceiverSummary(deliveryOrder, { fallback: deliveryOrder.receiverAddress || '-' })}
                                             </option>
                                         ))}
                                     </optgroup>

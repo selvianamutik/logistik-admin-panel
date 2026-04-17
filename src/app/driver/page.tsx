@@ -44,7 +44,7 @@ import {
     updateOrderItemVolumeUnit,
     updateOrderItemWeightUnit,
 } from '@/lib/order-create-page-support';
-import { DO_STATUS_MAP, formatCurrency, formatDate, formatDateTime } from '@/lib/utils';
+import { DO_STATUS_MAP, formatCurrency, formatDate, formatDateTime, formatShipperDeliveryOrderNumber, formatShipperReceiverSummary, getShipperReferenceCount } from '@/lib/utils';
 import type { Driver, SessionUser } from '@/lib/types';
 import type { DriverAssignedDeliveryOrder, DriverAssignedTripPlan } from '@/lib/api/driver-portal';
 
@@ -1250,7 +1250,8 @@ export default function DriverPortalPage() {
                                 </div>
                                 <div className="card-body">
                                     <div className="driver-do-meta"><span>Customer</span><strong>{item.customerName || '-'}</strong></div>
-                                    <div className="driver-do-meta"><span>Tujuan</span><strong>{item.receiverAddress || '-'}</strong></div>
+                                    <div className="driver-do-meta"><span>SJ Pengirim</span><strong>{getShipperReferenceCount(item) > 0 ? formatShipperDeliveryOrderNumber(item) : '-'}</strong></div>
+                                    <div className="driver-do-meta"><span>Tujuan</span><strong>{formatShipperReceiverSummary(item, { fallback: item.receiverAddress || '-' })}</strong></div>
                                     <div className="driver-do-meta"><span>Kendaraan</span><strong>{item.vehiclePlate || '-'}</strong></div>
                                     <div className="driver-do-meta"><span>Muatan</span><strong>{cargoItemCount > 0 ? summarizeDriverOrderCargo(item) : 'Belum diisi'}</strong></div>
                                     <div className="driver-do-meta"><span>Posisi terakhir</span><strong>{item.trackingLastSeenAt ? formatDateTime(item.trackingLastSeenAt) : '-'}</strong></div>
@@ -1574,8 +1575,12 @@ export default function DriverPortalPage() {
                                     <strong>{cargoInputOrder.customerName || '-'}</strong>
                                 </div>
                                 <div className="driver-completion-summary-card">
+                                    <span>SJ Pengirim</span>
+                                    <strong>{getShipperReferenceCount(cargoInputOrder) > 0 ? formatShipperDeliveryOrderNumber(cargoInputOrder) : '-'}</strong>
+                                </div>
+                                <div className="driver-completion-summary-card">
                                     <span>Tujuan</span>
-                                    <strong>{cargoInputOrder.receiverName || cargoInputOrder.receiverAddress || '-'}</strong>
+                                    <strong>{formatShipperReceiverSummary(cargoInputOrder, { fallback: cargoInputOrder.receiverName || cargoInputOrder.receiverAddress || '-' })}</strong>
                                 </div>
                                 <div className="driver-completion-summary-card">
                                     <span>Pickup</span>
@@ -1812,8 +1817,12 @@ export default function DriverPortalPage() {
                                     <strong>{completionOrder.customerName || '-'}</strong>
                                 </div>
                                 <div className="driver-completion-summary-card">
+                                    <span>SJ Pengirim</span>
+                                    <strong>{getShipperReferenceCount(completionOrder) > 0 ? formatShipperDeliveryOrderNumber(completionOrder) : '-'}</strong>
+                                </div>
+                                <div className="driver-completion-summary-card">
                                     <span>Tujuan</span>
-                                    <strong>{completionOrder.receiverName || completionOrder.receiverAddress || '-'}</strong>
+                                    <strong>{formatShipperReceiverSummary(completionOrder, { fallback: completionOrder.receiverName || completionOrder.receiverAddress || '-' })}</strong>
                                 </div>
                                 <div className="driver-completion-summary-card">
                                     <span>Ringkasan Aktual</span>
