@@ -7,7 +7,7 @@ import type { NextRequest } from 'next/server';
 
 import { matchesPathSegment } from '@/lib/pathname';
 import { hasPageAccess, hasPermission, type AppModule, type ModulePermissions } from '@/lib/rbac';
-import { DRIVER_SESSION_COOKIE, SESSION_COOKIE, verifySessionToken } from '@/lib/session';
+import { DRIVER_SESSION_COOKIE, SESSION_COOKIE } from '@/lib/session';
 import type { SessionUser } from '@/lib/types';
 
 const INTERNAL_PATH_MODULES: Array<{ path: string; module: AppModule }> = [
@@ -111,10 +111,7 @@ export async function proxy(request: NextRequest) {
     if (driverLoginPath) {
         if (driverToken) {
             const live = await getLiveSessionUser(request, driverToken, 'DRIVER');
-            let user = live.user;
-            if (!user && !live.checkedLive) {
-                user = await verifySessionToken(driverToken);
-            }
+            const user = live.user;
             if (user?.role === 'DRIVER') {
                 return NextResponse.redirect(new URL('/driver', request.url));
             }
@@ -127,10 +124,7 @@ export async function proxy(request: NextRequest) {
 
         if (adminToken) {
             const live = await getLiveSessionUser(request, adminToken, 'ADMIN');
-            let user = live.user;
-            if (!user && !live.checkedLive) {
-                user = await verifySessionToken(adminToken);
-            }
+            const user = live.user;
             if (user && user.role !== 'DRIVER') {
                 return NextResponse.redirect(new URL('/dashboard', request.url));
             }
@@ -147,10 +141,7 @@ export async function proxy(request: NextRequest) {
     if (adminLoginPath) {
         if (adminToken) {
             const live = await getLiveSessionUser(request, adminToken, 'ADMIN');
-            let user = live.user;
-            if (!user && !live.checkedLive) {
-                user = await verifySessionToken(adminToken);
-            }
+            const user = live.user;
             if (user) {
                 return NextResponse.redirect(new URL(user.role === 'DRIVER' ? '/driver' : '/dashboard', request.url));
             }
@@ -163,10 +154,7 @@ export async function proxy(request: NextRequest) {
 
         if (driverToken) {
             const live = await getLiveSessionUser(request, driverToken, 'DRIVER');
-            let user = live.user;
-            if (!user && !live.checkedLive) {
-                user = await verifySessionToken(driverToken);
-            }
+            const user = live.user;
             if (user?.role === 'DRIVER') {
                 return NextResponse.redirect(new URL('/driver', request.url));
             }
@@ -183,20 +171,14 @@ export async function proxy(request: NextRequest) {
     if (pathname === '/') {
         if (adminToken) {
             const live = await getLiveSessionUser(request, adminToken, 'ADMIN');
-            let user = live.user;
-            if (!user && !live.checkedLive) {
-                user = await verifySessionToken(adminToken);
-            }
+            const user = live.user;
             if (user && user.role !== 'DRIVER') {
                 return NextResponse.redirect(new URL('/dashboard', request.url));
             }
         }
         if (driverToken) {
             const live = await getLiveSessionUser(request, driverToken, 'DRIVER');
-            let user = live.user;
-            if (!user && !live.checkedLive) {
-                user = await verifySessionToken(driverToken);
-            }
+            const user = live.user;
             if (user?.role === 'DRIVER') {
                 return NextResponse.redirect(new URL('/driver', request.url));
             }
@@ -211,10 +193,7 @@ export async function proxy(request: NextRequest) {
             }
 
             const live = await getLiveSessionUser(request, driverToken, 'DRIVER');
-            let user = live.user;
-            if (!user && !live.checkedLive) {
-                user = await verifySessionToken(driverToken);
-            }
+            const user = live.user;
             if (!user) {
                 const response = NextResponse.redirect(new URL('/driver/login', request.url));
                 response.cookies.delete(DRIVER_SESSION_COOKIE);
@@ -231,10 +210,7 @@ export async function proxy(request: NextRequest) {
         }
 
         const live = await getLiveSessionUser(request, adminToken, 'ADMIN');
-        let user = live.user;
-        if (!user && !live.checkedLive) {
-            user = await verifySessionToken(adminToken);
-        }
+        const user = live.user;
         if (!user) {
             const response = NextResponse.redirect(new URL('/login', request.url));
             response.cookies.delete(SESSION_COOKIE);

@@ -219,10 +219,7 @@ export default function NewNotaPage() {
                     : row.deliveryOrderItemRef
                         ? [row.deliveryOrderItemRef]
                         : [];
-            if (rowItemRefs.length === 0) {
-                return false;
-            }
-            if (rowItemRefs.some(itemRef => usedDoItemRefSet.has(itemRef) || selectedDoItemRefSet.has(itemRef))) {
+            if (rowItemRefs.length > 0 && rowItemRefs.some(itemRef => usedDoItemRefSet.has(itemRef) || selectedDoItemRefSet.has(itemRef))) {
                 return false;
             }
             if (targetCustomerRef && (row.customerRef || '') !== targetCustomerRef) {
