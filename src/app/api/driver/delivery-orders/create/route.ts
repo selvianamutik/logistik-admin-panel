@@ -54,6 +54,10 @@ export async function POST(request: Request) {
             orderRef?: string;
             orderTripPlanKey?: string;
             customerDoNumber?: string;
+            shipperReferences?: Array<{
+                referenceNumber?: string;
+                pickupStopKey?: string;
+            }>;
             receiverName?: string;
             receiverPhone?: string;
             receiverAddress?: string;
@@ -95,6 +99,7 @@ export async function POST(request: Request) {
                 orderRef,
                 orderTripPlanKey,
                 customerDoNumber: parsedBody.data.customerDoNumber,
+                shipperReferences: parsedBody.data.shipperReferences,
                 receiverName: parsedBody.data.receiverName,
                 receiverPhone: parsedBody.data.receiverPhone,
                 receiverAddress: parsedBody.data.receiverAddress,

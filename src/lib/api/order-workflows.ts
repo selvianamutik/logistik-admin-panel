@@ -4214,12 +4214,29 @@ export async function handleDeliveryOrderAppendCargoItems(
         );
     }
 
+    const doPickupStops = normalizeDeliveryOrderPickupStopsSnapshot(deliveryOrder.pickupStops);
+    const pickupStopMap = new Map(doPickupStops.map(stop => [stop._key, stop]));
+    const existingShipperReferences = normalizeExistingShipperReferences(deliveryOrder.shipperReferences, doPickupStops);
+    const hasExplicitShipperReferences =
+        Array.isArray(data.shipperReferences) || Boolean(normalizeReferenceNumber(data.customerDoNumber));
+    let nextShipperReferences = [...existingShipperReferences];
+    if (hasExplicitShipperReferences) {
+        try {
+            nextShipperReferences = normalizeIncomingShipperReferences(data, doPickupStops, deliveryOrder.shipperReferences, false);
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Referensi SJ pengirim tidak valid' },
+                { status: 400 }
+            );
+        }
+    }
+
     let directCargoItems: NormalizedOrderItemInput[] = [];
     try {
         directCargoItems = await normalizeOrderItemsInput(
             extractRefId(order.customerRef) || extractRefId(deliveryOrder.customerRef) || '',
             Array.isArray(data.cargoItems) ? data.cargoItems : [],
-            { allowEmpty: false }
+            { allowEmpty: true }
         );
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Barang surat jalan tidak valid';
@@ -4234,11 +4251,13 @@ export async function handleDeliveryOrderAppendCargoItems(
             { status: 409 }
         );
     }
+    if (directCargoItems.length === 0 && nextShipperReferences.length === 0) {
+        return NextResponse.json(
+            { error: 'Isi minimal 1 SJ pengirim atau 1 barang sebelum disimpan.' },
+            { status: 400 }
+        );
+    }
 
-    const doPickupStops = normalizeDeliveryOrderPickupStopsSnapshot(deliveryOrder.pickupStops);
-    const pickupStopMap = new Map(doPickupStops.map(stop => [stop._key, stop]));
-    const existingShipperReferences = normalizeExistingShipperReferences(deliveryOrder.shipperReferences, doPickupStops);
-    const nextShipperReferences = [...existingShipperReferences];
     const currentConstraintIds = new Set(
         extractRefId(deliveryOrder.customerRef)
             ? buildCustomerDoConstraintIds(extractRefId(deliveryOrder.customerRef) as string, existingShipperReferences)
@@ -4444,19 +4463,24 @@ export async function handleDeliveryOrderAppendCargoItems(
         throw error;
     }
 
-    await syncOrderStatusFromItems(orderRef, session, addAuditLog);
+    if (directCargoItems.length > 0) {
+        await syncOrderStatusFromItems(orderRef, session, addAuditLog);
+    }
     await addAuditLog(
         session,
         'UPDATE',
         'delivery-orders',
         id,
-        `Tambah muatan Surat Jalan ${deliveryOrder.doNumber || id}: ${selectionSummaries.join('; ')}`
+        selectionSummaries.length > 0
+            ? `Tambah muatan Surat Jalan ${deliveryOrder.doNumber || id}: ${selectionSummaries.join('; ')}`
+            : `Perbarui SJ pengirim Surat Jalan ${deliveryOrder.doNumber || id}: ${nextShipperReferences.map(reference => reference.referenceNumber).join(', ')}`
     );
 
     return NextResponse.json({
         data: {
             _id: id,
             appendedCount: directCargoItems.length,
+            shipperReferenceCount: nextShipperReferences.length,
         },
     });
 }

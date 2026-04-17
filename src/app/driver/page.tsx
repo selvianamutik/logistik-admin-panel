@@ -40,18 +40,26 @@ import {
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { VOLUME_INPUT_UNIT_OPTIONS, WEIGHT_INPUT_UNIT_OPTIONS, formatCargoSummary } from '@/lib/measurement';
 import {
+    applyCustomerProductToOrderItem,
     summarizeDraftOrderCargo,
     updateOrderItemVolumeUnit,
     updateOrderItemWeightUnit,
 } from '@/lib/order-create-page-support';
 import { DO_STATUS_MAP, formatCurrency, formatDate, formatDateTime, formatShipperDeliveryOrderNumber, formatShipperReceiverSummary, getShipperReferenceCount } from '@/lib/utils';
-import type { Driver, SessionUser } from '@/lib/types';
+import type { CustomerProduct, Driver, SessionUser } from '@/lib/types';
 import type { DriverAssignedDeliveryOrder, DriverAssignedTripPlan } from '@/lib/api/driver-portal';
 
 type DriverSessionResponse = {
     user: SessionUser;
     driver: Driver;
     company: { _id: string; name: string; phone?: string; themeColor?: string } | null;
+};
+
+type DriverDeliveryOrdersResponse = {
+    data?: DriverAssignedDeliveryOrder[];
+    plannedTrips?: DriverAssignedTripPlan[];
+    customerProducts?: CustomerProduct[];
+    error?: string;
 };
 
 type DriverPortalError = Error & { status?: number };
@@ -169,6 +177,7 @@ export default function DriverPortalPage() {
     const [companyName, setCompanyName] = useState('PT Gading Mas Surya');
     const [orders, setOrders] = useState<DriverAssignedDeliveryOrder[]>([]);
     const [plannedTrips, setPlannedTrips] = useState<DriverAssignedTripPlan[]>([]);
+    const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
     const [loading, setLoading] = useState(true);
     const [loggingOut, setLoggingOut] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
@@ -218,9 +227,17 @@ export default function DriverPortalPage() {
         () => orders.find(item => item._id === cargoInputOrderId) || null,
         [cargoInputOrderId, orders]
     );
+    const cargoInputCustomerProducts = useMemo(
+        () => customerProducts.filter(product => product.customerRef === cargoInputOrder?.customerRef),
+        [cargoInputOrder?.customerRef, customerProducts]
+    );
     const tripCreateTarget = useMemo(
         () => plannedTrips.find(item => getDriverTripPlanId(item) === tripCreateTargetId) || null,
         [plannedTrips, tripCreateTargetId]
+    );
+    const tripCreateCustomerProducts = useMemo(
+        () => customerProducts.filter(product => product.customerRef === tripCreateTarget?.customerRef),
+        [customerProducts, tripCreateTarget?.customerRef]
     );
     const completionCargoReady = useMemo(
         () => areActualCargoDraftsReady(completionCargoItems),
@@ -302,12 +319,13 @@ export default function DriverPortalPage() {
 
         try {
             const res = await fetch('/api/driver/delivery-orders');
-            const payload = await res.json();
+            const payload = await res.json() as DriverDeliveryOrdersResponse;
             if (!res.ok) {
                 throw createDriverPortalError(res.status, payload.error || 'Gagal memuat surat jalan driver');
             }
             setOrders(payload.data || []);
             setPlannedTrips(payload.plannedTrips || []);
+            setCustomerProducts((payload.customerProducts || []).filter(product => product.active !== false));
         } catch (error) {
             if (error instanceof Error && 'status' in error && (error.status === 401 || error.status === 403)) {
                 handleDriverAuthFailure();
@@ -729,6 +747,28 @@ export default function DriverPortalPage() {
         }));
     }, []);
 
+    const applyCargoInputProductSelection = useCallback((groupId: string, itemIndex: number, nextProductRef: string) => {
+        const selectedProduct = cargoInputCustomerProducts.find(product => product._id === nextProductRef);
+        setCargoInputGroups(previous =>
+            previous.map(group => (
+                group.id === groupId
+                    ? {
+                        ...group,
+                        items: group.items.map((item, index) => (
+                            index === itemIndex
+                                ? toDeliveryOrderCargoDraftItem(applyCustomerProductToOrderItem({
+                                    ...item,
+                                    pickupStopKey: group.pickupStopKey,
+                                    shipperReferenceNumber: group.shipperReferenceNumber,
+                                }, selectedProduct))
+                                : item
+                        )),
+                    }
+                    : group
+            ))
+        );
+    }, [cargoInputCustomerProducts]);
+
     const updateTripCreateGroup = useCallback((
         groupId: string,
         field: keyof Pick<DeliveryOrderCargoDraftGroup, 'pickupStopKey' | 'shipperReferenceNumber'>,
@@ -797,6 +837,28 @@ export default function DriverPortalPage() {
             };
         }));
     }, []);
+
+    const applyTripCreateProductSelection = useCallback((groupId: string, itemIndex: number, nextProductRef: string) => {
+        const selectedProduct = tripCreateCustomerProducts.find(product => product._id === nextProductRef);
+        setTripCreateGroups(previous =>
+            previous.map(group => (
+                group.id === groupId
+                    ? {
+                        ...group,
+                        items: group.items.map((item, index) => (
+                            index === itemIndex
+                                ? toDeliveryOrderCargoDraftItem(applyCustomerProductToOrderItem({
+                                    ...item,
+                                    pickupStopKey: group.pickupStopKey,
+                                    shipperReferenceNumber: group.shipperReferenceNumber,
+                                }, selectedProduct))
+                                : item
+                        )),
+                    }
+                    : group
+            ))
+        );
+    }, [tripCreateCustomerProducts]);
 
     const updateCompletionCargoDraft = useCallback((
         deliveryOrderItemRef: string,
@@ -934,8 +996,8 @@ export default function DriverPortalPage() {
         if (!cargoInputOrder) {
             return;
         }
-        if (cargoInputDraftItems.length === 0) {
-            setFeedback({ type: 'error', message: 'Isi minimal 1 barang sebelum disimpan ke surat jalan.' });
+        if (cargoInputDraftGroups.length === 0) {
+            setFeedback({ type: 'error', message: 'Isi minimal 1 SJ pengirim atau 1 barang sebelum disimpan.' });
             return;
         }
         const normalizedGroups = cargoInputDraftGroups.map(group => ({
@@ -943,7 +1005,7 @@ export default function DriverPortalPage() {
             resolvedPickupStopKey: group.pickupStopKey || ((cargoInputOrder.pickupStops?.length || 0) === 1 ? cargoInputOrder.pickupStops?.[0]?._key || '' : ''),
             resolvedShipperReferenceNumber: group.shipperReferenceNumber.trim().toUpperCase(),
         }));
-        const invalidReferenceGroup = normalizedGroups.findIndex(group => group.draftItems.length > 0 && !group.resolvedShipperReferenceNumber);
+        const invalidReferenceGroup = normalizedGroups.findIndex(group => !group.resolvedShipperReferenceNumber);
         if (invalidReferenceGroup >= 0) {
             setFeedback({ type: 'error', message: `No. SJ pengirim wajib diisi pada SJ ${invalidReferenceGroup + 1}.` });
             return;
@@ -963,6 +1025,10 @@ export default function DriverPortalPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     id: cargoInputOrder._id,
+                    shipperReferences: normalizedGroups.map(group => ({
+                        referenceNumber: group.resolvedShipperReferenceNumber,
+                        pickupStopKey: group.resolvedPickupStopKey || undefined,
+                    })),
                     cargoItems: normalizedGroups.flatMap(group =>
                         group.draftItems.map(item => ({
                             customerProductRef: item.customerProductRef || undefined,
@@ -985,12 +1051,15 @@ export default function DriverPortalPage() {
 
             setFeedback({
                 type: 'success',
-                message: `${payload?.data?.appendedCount || cargoInputDraftItems.length} barang ditambahkan ke surat jalan.`,
+                message:
+                    normalizedGroups.length > 0 && (payload?.data?.appendedCount || 0) === 0
+                        ? `${payload?.data?.shipperReferenceCount || normalizedGroups.length} SJ disimpan. Barang bisa ditambah menyusul.`
+                        : `${payload?.data?.appendedCount || cargoInputDraftItems.length} barang ditambahkan ke surat jalan.`,
             });
-            await loadOrders();
             setShowCargoInputModal(false);
             setCargoInputOrderId(null);
             setCargoInputGroups([createDefaultDeliveryOrderCargoDraftGroup()]);
+            await loadOrders();
         } catch (error) {
             if (error instanceof Error && 'status' in error && (error.status === 401 || error.status === 403)) {
                 handleDriverAuthFailure(error.message);
@@ -1009,6 +1078,10 @@ export default function DriverPortalPage() {
         if (!tripCreateTarget) {
             return;
         }
+        if (tripCreateDraftGroups.length === 0) {
+            setFeedback({ type: 'error', message: 'Isi minimal 1 SJ pengirim atau 1 barang sebelum disimpan.' });
+            return;
+        }
         const normalizedGroups = tripCreateDraftGroups.map(group => ({
             ...group,
             resolvedPickupStopKey: group.pickupStopKey || ((tripCreateTarget.pickupStops?.length || 0) === 1 ? tripCreateTarget.pickupStops?.[0]?._key || '' : ''),
@@ -1021,7 +1094,7 @@ export default function DriverPortalPage() {
                 return;
             }
         }
-        const invalidReferenceGroup = normalizedGroups.findIndex(group => group.draftItems.length > 0 && !group.resolvedShipperReferenceNumber);
+        const invalidReferenceGroup = normalizedGroups.findIndex(group => !group.resolvedShipperReferenceNumber);
         if (invalidReferenceGroup >= 0) {
             setFeedback({ type: 'error', message: `No. SJ pengirim wajib diisi pada SJ ${invalidReferenceGroup + 1}.` });
             return;
@@ -1036,6 +1109,10 @@ export default function DriverPortalPage() {
                 body: JSON.stringify({
                     orderRef: tripCreateTarget.orderRef,
                     orderTripPlanKey: tripCreateTarget.tripPlanKey,
+                    shipperReferences: normalizedGroups.map(group => ({
+                        referenceNumber: group.resolvedShipperReferenceNumber,
+                        pickupStopKey: group.resolvedPickupStopKey || undefined,
+                    })),
                     cargoItems: normalizedGroups.flatMap(group =>
                         group.draftItems.map(item => ({
                             customerProductRef: item.customerProductRef || undefined,
@@ -1058,12 +1135,14 @@ export default function DriverPortalPage() {
 
             setFeedback({
                 type: 'success',
-                message: `${payload?.data?.doNumber || 'Surat jalan'} berhasil dibuat${tripCreateDraftItems.length === 0 ? ' | barang menyusul' : ''}.`,
+                message:
+                    `${payload?.data?.doNumber || 'Surat jalan'} berhasil dibuat | ${normalizedGroups.length} SJ disimpan` +
+                    `${tripCreateDraftItems.length === 0 ? ' | barang menyusul' : ''}.`,
             });
-            await loadOrders();
             setShowTripCreateModal(false);
             setTripCreateTargetId(null);
             setTripCreateGroups([createDefaultDeliveryOrderCargoDraftGroup()]);
+            await loadOrders();
         } catch (error) {
             if (error instanceof Error && 'status' in error && (error.status === 401 || error.status === 403)) {
                 handleDriverAuthFailure(error.message);
@@ -1409,6 +1488,22 @@ export default function DriverPortalPage() {
                                             <div style={{ display: 'grid', gap: '0.75rem' }}>
                                                 {group.items.map((item, itemIndex) => (
                                                     <div key={`${group.id}-item-${itemIndex}`} style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', padding: 12, background: 'var(--color-white)', borderRadius: '0.8rem', border: '1px solid var(--color-gray-200)' }}>
+                                                        <div style={{ flex: '1 1 240px' }}>
+                                                            <label className="form-label">Barang Customer</label>
+                                                            <select
+                                                                className="form-select"
+                                                                value={item.customerProductRef}
+                                                                onChange={event => applyTripCreateProductSelection(group.id, itemIndex, event.target.value)}
+                                                                disabled={isActionInFlight || !tripCreateTarget.customerRef}
+                                                            >
+                                                                <option value="">{tripCreateCustomerProducts.length > 0 ? 'Pilih dari master barang customer' : 'Belum ada master barang customer'}</option>
+                                                                {tripCreateCustomerProducts.map(product => (
+                                                                    <option key={product._id} value={product._id}>
+                                                                        {product.code ? `${product.code} - ` : ''}{product.name}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
                                                         <div style={{ flex: '2 1 260px' }}>
                                                             <label className="form-label">Deskripsi Barang</label>
                                                             <input
@@ -1651,6 +1746,22 @@ export default function DriverPortalPage() {
                                             <div style={{ display: 'grid', gap: '0.75rem' }}>
                                                 {group.items.map((item, itemIndex) => (
                                                     <div key={`${group.id}-item-${itemIndex}`} style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', padding: 12, background: 'var(--color-white)', borderRadius: '0.8rem', border: '1px solid var(--color-gray-200)' }}>
+                                                        <div style={{ flex: '1 1 240px' }}>
+                                                            <label className="form-label">Barang Customer</label>
+                                                            <select
+                                                                className="form-select"
+                                                                value={item.customerProductRef}
+                                                                onChange={event => applyCargoInputProductSelection(group.id, itemIndex, event.target.value)}
+                                                                disabled={isActionInFlight || !cargoInputOrder.customerRef}
+                                                            >
+                                                                <option value="">{cargoInputCustomerProducts.length > 0 ? 'Pilih dari master barang customer' : 'Belum ada master barang customer'}</option>
+                                                                {cargoInputCustomerProducts.map(product => (
+                                                                    <option key={product._id} value={product._id}>
+                                                                        {product.code ? `${product.code} - ` : ''}{product.name}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
                                                         <div style={{ flex: '2 1 260px' }}>
                                                             <label className="form-label">Deskripsi Barang</label>
                                                             <input
@@ -1789,9 +1900,9 @@ export default function DriverPortalPage() {
                             <button
                                 className="btn btn-primary"
                                 onClick={() => void submitCargoInput()}
-                                disabled={isActionInFlight || cargoInputDraftItems.length === 0}
+                                disabled={isActionInFlight}
                             >
-                                <Truck size={15} /> {actionLoadingId === cargoInputOrder._id ? 'Menyimpan...' : 'Simpan Barang'}
+                                <Truck size={15} /> {actionLoadingId === cargoInputOrder._id ? 'Menyimpan...' : (cargoInputDraftItems.length > 0 ? 'Simpan SJ & Barang' : 'Simpan SJ')}
                             </button>
                         </div>
                     </div>

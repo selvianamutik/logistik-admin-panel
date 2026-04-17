@@ -5,6 +5,7 @@ import { getCurrentDriverScore } from '@/lib/api/driver-score-workflows';
 import { getSanityClient, sanityGetById, sanityGetCompanyProfile } from '@/lib/sanity';
 import type {
     CompanyProfile,
+    CustomerProduct,
     DeliveryOrder,
     DeliveryOrderItem,
     Driver,
@@ -39,6 +40,7 @@ export type DriverAssignedTripPlanPickupStop = {
 export type DriverAssignedTripPlan = {
     orderRef: string;
     masterResi?: string;
+    customerRef?: string;
     customerName?: string;
     serviceName?: string;
     pickupAddress?: string;
@@ -181,6 +183,7 @@ export async function getDriverAssignedDeliveryOrders(driverRef: string) {
             status,
             trackingState,
             masterResi,
+            customerRef,
             "customerName": coalesce(customerName, orderRef->customerName),
             "receiverName": coalesce(receiverName, orderRef->receiverName),
             "receiverAddress": coalesce(receiverAddress, orderRef->receiverAddress),
@@ -277,6 +280,7 @@ export async function getDriverAssignedTripPlans(driverRef: string) {
     const orders = await getSanityClient().fetch<Array<{
         _id: string;
         masterResi?: string;
+        customerRef?: string;
         customerName?: string;
         serviceName?: string;
         pickupAddress?: string;
@@ -289,6 +293,7 @@ export async function getDriverAssignedTripPlans(driverRef: string) {
         ] | order(createdAt desc, _createdAt desc){
             _id,
             masterResi,
+            customerRef,
             customerName,
             serviceName,
             pickupAddress,
@@ -351,6 +356,7 @@ export async function getDriverAssignedTripPlans(driverRef: string) {
             plannedTrips.push({
                 orderRef: order._id,
                 masterResi: order.masterResi,
+                customerRef: order.customerRef,
                 customerName: order.customerName,
                 serviceName: order.serviceName,
                 pickupAddress: order.pickupAddress,
@@ -376,6 +382,35 @@ export async function getDriverAssignedTripPlans(driverRef: string) {
     }
 
     return plannedTrips;
+}
+
+export async function getDriverCustomerProducts(customerRefs: string[]) {
+    const normalizedCustomerRefs = [...new Set(customerRefs.filter(Boolean))];
+    if (normalizedCustomerRefs.length === 0) {
+        return [] as CustomerProduct[];
+    }
+
+    return getSanityClient().fetch<CustomerProduct[]>(
+        `*[_type == "customerProduct" && customerRef in $customerRefs && active != false] | order(coalesce(code, name) asc){
+            _id,
+            _type,
+            customerRef,
+            customerName,
+            code,
+            name,
+            description,
+            defaultQtyKoli,
+            defaultWeight,
+            defaultWeightInputValue,
+            defaultWeightInputUnit,
+            defaultVolume,
+            defaultVolumeInputValue,
+            defaultVolumeInputUnit,
+            notes,
+            active
+        }`,
+        { customerRefs: normalizedCustomerRefs }
+    );
 }
 
 export function sanitizeDriverForMobile(driver: Driver) {

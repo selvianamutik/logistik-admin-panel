@@ -45,6 +45,10 @@ export async function POST(request: Request) {
     try {
         const parsedBody = await parseJsonBody<{
             id?: string;
+            shipperReferences?: Array<{
+                referenceNumber?: string;
+                pickupStopKey?: string;
+            }>;
             cargoItems?: Array<{
                 customerProductRef?: string;
                 description?: string;
@@ -81,6 +85,7 @@ export async function POST(request: Request) {
             auth.session,
             {
                 id,
+                shipperReferences: parsedBody.data.shipperReferences,
                 cargoItems: parsedBody.data.cargoItems,
             },
             addAuditLog

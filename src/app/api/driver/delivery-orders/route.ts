@@ -1,4 +1,5 @@
 import {
+    getDriverCustomerProducts,
     getDriverAssignedDeliveryOrders,
     getDriverAssignedTripPlans,
     getDriverPortalAccessNotice,
@@ -24,5 +25,9 @@ export async function GET(request: Request) {
         getDriverAssignedDeliveryOrders(result.driver._id),
         getDriverAssignedTripPlans(result.driver._id),
     ]);
-    return jsonNoStore({ data: deliveryOrders, plannedTrips });
+    const customerProducts = await getDriverCustomerProducts([
+        ...deliveryOrders.map(item => item.customerRef || ''),
+        ...plannedTrips.map(item => item.customerRef || ''),
+    ]);
+    return jsonNoStore({ data: deliveryOrders, plannedTrips, customerProducts });
 }
