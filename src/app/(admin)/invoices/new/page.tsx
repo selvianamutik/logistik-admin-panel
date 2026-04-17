@@ -364,9 +364,33 @@ export default function NewNotaPage() {
         }
     };
 
-    const availableDeliveryOrders = deliveryOrders.filter(
-        deliveryOrder => getAvailableNotaRowsForDeliveryOrder(deliveryOrder, customerRef || undefined).length > 0
-    );
+    const availableDeliveryOrderOptions = deliveryOrders.flatMap(deliveryOrder => {
+        const nextRows = getAvailableNotaRowsForDeliveryOrder(deliveryOrder, customerRef || undefined);
+        if (nextRows.length === 0) {
+            return [];
+        }
+        if (!customerRef) {
+            const rowCustomers = Array.from(
+                new Map(
+                    nextRows
+                        .filter(row => row.customerRef && row.customerName)
+                        .map(row => [row.customerRef as string, row.customerName as string])
+                ).entries()
+            );
+            if (rowCustomers.length > 1) {
+                return [];
+            }
+        }
+
+        const noSJList = [...new Set(nextRows.map(row => row.noSJ?.trim()).filter((value): value is string => Boolean(value)))];
+        const tujuanList = [...new Set(nextRows.map(row => row.tujuan?.trim()).filter((value): value is string => Boolean(value)))];
+
+        return [{
+            deliveryOrder,
+            noSJSummary: noSJList.join(', '),
+            tujuanSummary: tujuanList.join(', '),
+        }];
+    });
 
     return (
         <div>
@@ -534,17 +558,17 @@ export default function NewNotaPage() {
                                 }}
                             >
                                 <option value="">-- Pilih DO yang selesai --</option>
-                                {availableDeliveryOrders.length > 0 && (
+                                {availableDeliveryOrderOptions.length > 0 && (
                                     <optgroup
                                         label={
                                             customerRef
-                                                ? `DO dengan SJ customer ${customerName || '-'} (${availableDeliveryOrders.length})`
-                                                : `Semua DO Selesai (${availableDeliveryOrders.length})`
+                                                ? `DO dengan SJ customer ${customerName || '-'} (${availableDeliveryOrderOptions.length})`
+                                                : `Semua DO Selesai (${availableDeliveryOrderOptions.length})`
                                         }
                                     >
-                                        {availableDeliveryOrders.map(deliveryOrder => (
+                                        {availableDeliveryOrderOptions.map(({ deliveryOrder, noSJSummary, tujuanSummary }) => (
                                             <option key={deliveryOrder._id} value={deliveryOrder._id}>
-                                                {formatInternalDeliveryOrderNumber(deliveryOrder)}{getShipperReferenceCount(deliveryOrder) > 0 ? ` | SJ ${formatShipperDeliveryOrderNumber(deliveryOrder)}` : ''} - {deliveryOrder.vehiclePlate || '-'} - {formatShipperReceiverSummary(deliveryOrder, { fallback: deliveryOrder.receiverAddress || '-' })}
+                                                {formatInternalDeliveryOrderNumber(deliveryOrder)}{noSJSummary ? ` | SJ ${noSJSummary}` : getShipperReferenceCount(deliveryOrder) > 0 ? ` | SJ ${formatShipperDeliveryOrderNumber(deliveryOrder)}` : ''} - {deliveryOrder.vehiclePlate || '-'} - {tujuanSummary || formatShipperReceiverSummary(deliveryOrder, { fallback: deliveryOrder.receiverAddress || '-' })}
                                             </option>
                                         ))}
                                     </optgroup>
