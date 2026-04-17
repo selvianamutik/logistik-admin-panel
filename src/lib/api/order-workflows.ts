@@ -742,8 +742,26 @@ function buildCustomerDoConstraintDocs(deliveryOrderId: string, customerRef: str
     );
 }
 
-function buildCustomerDoConstraintIds(customerRef: string, references: Array<{ referenceNumber: string }>) {
-    return references.map(reference => buildDeliveryOrderCustomerDoConstraintId(customerRef, reference.referenceNumber));
+async function getExistingDeliveryOrderCustomerDoConstraintIds(deliveryOrderId: string) {
+    if (!normalizeText(deliveryOrderId)) {
+        return [];
+    }
+
+    const constraintIds = await getSanityClient().fetch<Array<{ _id: string }>>(
+        `*[
+            _type == "uniqueConstraint" &&
+            entityType == "deliveryOrder" &&
+            fieldName == "customerRefCustomerDoNumber" &&
+            ownerRef == $deliveryOrderId
+        ]{
+            _id
+        }`,
+        { deliveryOrderId }
+    );
+
+    return constraintIds
+        .map(item => normalizeOptionalText(item._id))
+        .filter((value): value is string => Boolean(value));
 }
 
 async function findDuplicateCustomerDoReference(
@@ -4408,7 +4426,7 @@ export async function handleDeliveryOrderAppendCargoItems(
 
     const currentConstraintIds = new Set(
         extractRefId(deliveryOrder.customerRef)
-            ? buildCustomerDoConstraintIds(extractRefId(deliveryOrder.customerRef) as string, existingShipperReferences)
+            ? await getExistingDeliveryOrderCustomerDoConstraintIds(id)
             : []
     );
 
@@ -4714,7 +4732,6 @@ export async function handleDeliveryOrderCargoItemRemove(
     }
 
     const doPickupStops = normalizeDeliveryOrderPickupStopsSnapshot(deliveryOrder.pickupStops);
-    const existingShipperReferences = normalizeDeliveryOrderPersistedShipperReferences(deliveryOrder, doPickupStops);
     const remainingDeliveryOrderItems = await getSanityClient().fetch<Array<{
         pickupStopKey?: string;
         pickupAddress?: string;
@@ -4749,7 +4766,7 @@ export async function handleDeliveryOrderCargoItemRemove(
     const customerRef = extractRefId(deliveryOrder.customerRef);
     const currentConstraintIds =
         customerRef
-            ? buildCustomerDoConstraintIds(customerRef, existingShipperReferences)
+            ? await getExistingDeliveryOrderCustomerDoConstraintIds(id)
             : [];
     const nextConstraintDocs =
         customerRef
@@ -5030,10 +5047,9 @@ export async function handleDeliveryOrderCargoItemUpdate(
         }
     }
 
-    const existingShipperReferences = normalizeDeliveryOrderPersistedShipperReferences(deliveryOrder, doPickupStops);
     const currentConstraintIds =
         customerRef
-            ? buildCustomerDoConstraintIds(customerRef, existingShipperReferences)
+            ? await getExistingDeliveryOrderCustomerDoConstraintIds(id)
             : [];
     const nextConstraintDocs =
         customerRef
@@ -5598,7 +5614,7 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
 
     const currentConstraintId =
         customerRef
-            ? buildCustomerDoConstraintIds(customerRef, existingShipperReferences)
+            ? await getExistingDeliveryOrderCustomerDoConstraintIds(id)
             : [];
     const nextConstraintDocs =
         customerRef

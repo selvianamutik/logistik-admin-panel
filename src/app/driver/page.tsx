@@ -267,6 +267,10 @@ export default function DriverPortalPage() {
         () => summarizeDraftOrderCargo(flattenedCargoInputItems),
         [flattenedCargoInputItems]
     );
+    const cargoInputExistingSummary = useMemo(
+        () => (cargoInputOrder ? summarizeDriverOrderCargo(cargoInputOrder) : ''),
+        [cargoInputOrder]
+    );
     const flattenedTripCreateItems = useMemo(
         () => flattenDeliveryOrderCargoDraftGroups(tripCreateGroups),
         [tripCreateGroups]
@@ -1431,8 +1435,12 @@ export default function DriverPortalPage() {
                                     <strong>{tripCreateTarget.pickupStops.length > 0 ? `${tripCreateTarget.pickupStops.length} titik` : (tripCreateTarget.pickupAddress || '-')}</strong>
                                 </div>
                                 <div className="driver-completion-summary-card">
-                                    <span>Ringkasan Barang</span>
-                                    <strong>{tripCreateDraftItems.length > 0 ? formatCargoSummary(tripCreateSummary) : 'Belum ada barang'}</strong>
+                                    <span>{tripCreateAllowsDirectCargoInput ? 'Ringkasan Barang' : 'Muatan Order'}</span>
+                                    <strong>
+                                        {tripCreateDraftItems.length > 0
+                                            ? formatCargoSummary(tripCreateSummary)
+                                            : (tripCreateAllowsDirectCargoInput ? 'Belum ada barang' : 'Mengikuti order / resi')}
+                                    </strong>
                                 </div>
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginTop: '1rem', marginBottom: '1rem' }}>
@@ -1631,9 +1639,11 @@ export default function DriverPortalPage() {
                                                 <div className="text-muted text-sm">
                                                     {tripCreateAllowsDirectCargoInput ? 'Satu SJ boleh berisi banyak barang.' : 'Satu trip tetap boleh memuat beberapa SJ pengirim.'}
                                                 </div>
-                                                <button type="button" className="btn btn-secondary btn-sm" onClick={() => addTripCreateItem(group.id)} disabled={isActionInFlight || !tripCreateAllowsDirectCargoInput}>
-                                                    <Plus size={14} /> Tambah Barang di SJ Ini
-                                                </button>
+                                                {tripCreateAllowsDirectCargoInput && (
+                                                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => addTripCreateItem(group.id)} disabled={isActionInFlight}>
+                                                        <Plus size={14} /> Tambah Barang di SJ Ini
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
                                     );
@@ -1698,8 +1708,12 @@ export default function DriverPortalPage() {
                                     <strong>{cargoInputOrder.pickupStops?.length ? `${cargoInputOrder.pickupStops.length} titik` : (cargoInputOrder.pickupAddress || '-')}</strong>
                                 </div>
                                 <div className="driver-completion-summary-card">
-                                    <span>Ringkasan Tambahan</span>
-                                    <strong>{cargoInputDraftItems.length > 0 ? formatCargoSummary(cargoInputSummary) : 'Belum ada barang'}</strong>
+                                    <span>{cargoInputAllowsDirectCargoInput ? 'Ringkasan Tambahan' : 'Muatan DO'}</span>
+                                    <strong>
+                                        {cargoInputDraftItems.length > 0
+                                            ? formatCargoSummary(cargoInputSummary)
+                                            : (cargoInputAllowsDirectCargoInput ? 'Belum ada barang' : (cargoInputExistingSummary || 'Mengikuti order / resi'))}
+                                    </strong>
                                 </div>
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginTop: '1rem', marginBottom: '1rem' }}>
@@ -1899,9 +1913,11 @@ export default function DriverPortalPage() {
                                                         ? 'Satu SJ boleh ditambah bertahap selama trip masih aktif.'
                                                         : 'Satu SJ tetap bisa ditambah atau diperbarui tanpa input barang manual.'}
                                                 </div>
-                                                <button type="button" className="btn btn-secondary btn-sm" onClick={() => addCargoInputItem(group.id)} disabled={isActionInFlight || !cargoInputAllowsDirectCargoInput}>
-                                                    <Plus size={14} /> Tambah Barang di SJ Ini
-                                                </button>
+                                                {cargoInputAllowsDirectCargoInput && (
+                                                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => addCargoInputItem(group.id)} disabled={isActionInFlight}>
+                                                        <Plus size={14} /> Tambah Barang di SJ Ini
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
                                     );

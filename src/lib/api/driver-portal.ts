@@ -183,6 +183,7 @@ export async function getDriverAssignedDeliveryOrders(driverRef: string) {
             _id,
             orderRef,
             doNumber,
+            customerDoNumber,
             date,
             status,
             trackingState,
