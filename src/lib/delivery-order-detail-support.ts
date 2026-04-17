@@ -17,7 +17,7 @@ import {
     type VolumeInputUnit,
     type WeightInputUnit,
 } from '@/lib/measurement';
-import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatDate, formatDateTime, formatShipperDeliveryOrderNumber } from '@/lib/utils';
+import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatDate, formatDateTime, formatShipperDeliveryOrderNumber, formatShipperReceiverSummary } from '@/lib/utils';
 
 export interface ActualCargoDraft {
     deliveryOrderItemRef: string;
@@ -576,6 +576,15 @@ export function buildDeliveryOrderPrintHtml(
     doItems: DeliveryOrderItem[],
     trackingLogs: TrackingLog[]
 ) {
+    const receiverSummary = formatShipperReceiverSummary(doData, {
+        mode: 'summary',
+        fallback: doData.receiverCompany || doData.receiverName || doData.receiverAddress || '-',
+    });
+    const receiverFullSummary = formatShipperReceiverSummary(doData, {
+        mode: 'full',
+        fallback: doData.receiverAddress || doData.receiverCompany || doData.receiverName || '-',
+    });
+
     return `
         <div style="margin-bottom:16px">
             <table style="width:100%;border:none"><tbody>
@@ -607,7 +616,7 @@ export function buildDeliveryOrderPrintHtml(
                     <td style="border:none;padding:2px 8px;font-weight:600">Driver</td>
                     <td style="border:none;padding:2px 8px">${doData.driverName || '-'}</td>
                     <td style="border:none;padding:2px 8px;font-weight:600">Penerima</td>
-                    <td style="border:none;padding:2px 8px">${doData.receiverName || '-'}</td>
+                    <td style="border:none;padding:2px 8px">${receiverSummary}</td>
                 </tr>
                 <tr>
                     <td style="border:none;padding:2px 8px;font-weight:600">Telepon Penerima</td>
@@ -629,7 +638,7 @@ export function buildDeliveryOrderPrintHtml(
                 </tr>
                 <tr>
                     <td style="border:none;padding:2px 8px;font-weight:600">Alamat Penerima</td>
-                    <td colspan="3" style="border:none;padding:2px 8px">${doData.receiverAddress || '-'}</td>
+                    <td colspan="3" style="border:none;padding:2px 8px">${receiverFullSummary}</td>
                 </tr>
                 ${doData.notes ? `<tr><td style="border:none;padding:2px 8px;font-weight:600">Catatan</td><td colspan="3" style="border:none;padding:2px 8px">${doData.notes}</td></tr>` : ''}
                 ${doData.podReceiverName ? `<tr><td style="border:none;padding:2px 8px;font-weight:600">POD</td><td colspan="3" style="border:none;padding:2px 8px">Diterima oleh ${doData.podReceiverName} pada ${formatDate(doData.podReceivedDate || '')}${doData.podNote ? ` - ${doData.podNote}` : ''}</td></tr>` : ''}
@@ -694,8 +703,8 @@ export function buildDeliveryOrderPrintHtml(
                     : `
                         <tr>
                             <td>Drop</td>
-                            <td>1. ${doData.receiverCompany || doData.receiverName || 'Tujuan Tagihan'}</td>
-                            <td>${doData.receiverAddress || '-'}</td>
+                            <td>1. ${receiverSummary}</td>
+                            <td>${receiverFullSummary}</td>
                             <td>-</td>
                             <td>Realisasi drop belum dicatat terpisah.</td>
                         </tr>

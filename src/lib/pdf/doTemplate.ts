@@ -6,7 +6,7 @@
 import jsPDF from 'jspdf';
 import { formatBusinessDateTime } from '@/lib/business-date';
 import type { DeliveryOrder, DeliveryOrderItem, CompanyProfile } from '@/lib/types';
-import { DO_ACTUAL_DROP_TYPE_MAP, formatDate, formatInternalDeliveryOrderNumber, formatShipperDeliveryOrderNumber } from '@/lib/utils';
+import { DO_ACTUAL_DROP_TYPE_MAP, formatDate, formatInternalDeliveryOrderNumber, formatShipperDeliveryOrderNumber, formatShipperReceiverSummary } from '@/lib/utils';
 import { formatCargoSummary } from '@/lib/measurement';
 
 // Simple table drawing helper
@@ -69,6 +69,14 @@ export function generateDOPdf(
     const margin = 15;
     const contentWidth = pageWidth - 2 * margin;
     let y = 15;
+    const receiverSummary = formatShipperReceiverSummary(doData, {
+        mode: 'summary',
+        fallback: doData.receiverCompany || doData.receiverName || doData.receiverAddress || '-',
+    });
+    const receiverFullSummary = formatShipperReceiverSummary(doData, {
+        mode: 'full',
+        fallback: doData.receiverAddress || doData.receiverCompany || doData.receiverName || '-',
+    });
 
     // Header
     doc.setFontSize(16);
@@ -117,7 +125,7 @@ export function generateDOPdf(
     addRow('Resi', doData.masterResi || '-', margin, y);
     addRow('Kendaraan', doData.vehiclePlate || '-', col2X, y);
     y += 5;
-    addRow('Penerima', doData.receiverName || '-', margin, y);
+    addRow('Penerima', receiverSummary, margin, y);
     addRow('Telepon Penerima', doData.receiverPhone || '-', col2X, y);
     y += 5;
     addRow('Driver', doData.driverName || '-', margin, y);
@@ -130,7 +138,7 @@ export function generateDOPdf(
         addRow('Override Armada', doData.vehicleCategoryOverrideReason, margin, y);
         y += 5;
     }
-    addRow('Alamat Penerima', doData.receiverAddress || '-', margin, y);
+    addRow('Alamat Penerima', receiverFullSummary, margin, y);
     y += 8;
 
     // Items Table
@@ -154,7 +162,7 @@ export function generateDOPdf(
     y += 1;
     doc.text(`Asal: ${doData.pickupAddress || '-'}`, margin, y, { maxWidth: contentWidth });
     y += 4.5;
-    doc.text(`Tujuan: ${doData.receiverAddress || '-'}`, margin, y, { maxWidth: contentWidth });
+    doc.text(`Tujuan: ${receiverFullSummary}`, margin, y, { maxWidth: contentWidth });
     y += 6;
 
     doc.setFont('helvetica', 'bold');
@@ -188,7 +196,7 @@ export function generateDOPdf(
                 }
             });
     } else {
-        doc.text('Belum ada realisasi drop terpisah. Tagihan mengikuti tujuan utama surat jalan.', margin, y, { maxWidth: contentWidth });
+        doc.text(`Belum ada realisasi drop terpisah. Tagihan mengikuti ${receiverSummary}.`, margin, y, { maxWidth: contentWidth });
         y += 4.5;
     }
     y += 4;
