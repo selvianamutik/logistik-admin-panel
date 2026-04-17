@@ -231,6 +231,47 @@ export function summarizeActualCargoDrafts(items: ActualCargoDraft[]) {
     };
 }
 
+function resolveDefaultActualDropTarget(doData: DeliveryOrder | null) {
+    const shipperTargets = Array.from(new Set(
+        (doData?.shipperReferences || [])
+            .map(reference => ({
+                locationName:
+                    reference.receiverCompany?.trim()
+                    || reference.receiverName?.trim()
+                    || reference.receiverAddress?.trim()
+                    || '',
+                locationAddress: reference.receiverAddress?.trim() || '',
+            }))
+            .filter(target => target.locationName || target.locationAddress)
+            .map(target => `${target.locationName}::${target.locationAddress}`)
+    )).map(entry => {
+        const [locationName = '', locationAddress = ''] = entry.split('::');
+        return { locationName, locationAddress };
+    });
+
+    if (shipperTargets.length === 1) {
+        return {
+            locationName: shipperTargets[0].locationName || 'Tujuan Tagihan',
+            locationAddress: shipperTargets[0].locationAddress || '',
+            distinctTargetCount: 1,
+        };
+    }
+
+    if (shipperTargets.length > 1) {
+        return {
+            locationName: `${shipperTargets.length} tujuan SJ`,
+            locationAddress: '',
+            distinctTargetCount: shipperTargets.length,
+        };
+    }
+
+    return {
+        locationName: doData?.receiverCompany || doData?.receiverName || 'Tujuan Tagihan',
+        locationAddress: doData?.receiverAddress || '',
+        distinctTargetCount: 0,
+    };
+}
+
 export function buildDefaultActualDropDrafts(
     doData: DeliveryOrder | null,
     cargoItems: ActualCargoDraft[],
@@ -260,12 +301,13 @@ export function buildDefaultActualDropDrafts(
     }
 
     const totals = summarizeActualCargoDrafts(cargoItems);
+    const defaultTarget = resolveDefaultActualDropTarget(doData);
     return [
         {
             draftKey: crypto.randomUUID(),
             stopType: 'DROP',
-            locationName: doData?.receiverCompany || doData?.receiverName || 'Tujuan Tagihan',
-            locationAddress: doData?.receiverAddress || '',
+            locationName: defaultTarget.locationName,
+            locationAddress: defaultTarget.locationAddress,
             qtyKoli: totals.qtyKoli > 0 ? String(totals.qtyKoli) : '',
             weightInputValue: totals.weightKg > 0 ? String(totals.weightKg) : '',
             weightInputUnit: 'KG',
@@ -278,11 +320,12 @@ export function buildDefaultActualDropDrafts(
 
 export function buildAutoActualDropDraft(doData: DeliveryOrder | null, cargoItems: ActualCargoDraft[]): ActualDropDraft {
     const totals = summarizeActualCargoDrafts(cargoItems);
+    const defaultTarget = resolveDefaultActualDropTarget(doData);
     return {
         draftKey: 'auto-default-drop',
         stopType: 'DROP',
-        locationName: doData?.receiverCompany || doData?.receiverName || 'Tujuan Tagihan',
-        locationAddress: doData?.receiverAddress || '',
+        locationName: defaultTarget.locationName,
+        locationAddress: defaultTarget.locationAddress,
         qtyKoli: totals.qtyKoli > 0 ? String(totals.qtyKoli) : '',
         weightInputValue: totals.weightKg > 0 ? String(totals.weightKg) : '',
         weightInputUnit: 'KG',
@@ -293,13 +336,16 @@ export function buildAutoActualDropDraft(doData: DeliveryOrder | null, cargoItem
 }
 
 export function shouldOpenAdvancedDropEditor(doData: DeliveryOrder | null, dropDrafts: ActualDropDraft[]) {
-    const defaultLocationName = doData?.receiverCompany || doData?.receiverName || 'Tujuan Tagihan';
-    const defaultLocationAddress = doData?.receiverAddress || '';
+    const defaultTarget = resolveDefaultActualDropTarget(doData);
+
+    if (defaultTarget.distinctTargetCount > 1) {
+        return true;
+    }
 
     return dropDrafts.length > 1 || dropDrafts.some(point =>
         point.stopType !== 'DROP' ||
-        (point.locationName || '') !== defaultLocationName ||
-        (point.locationAddress || '') !== defaultLocationAddress ||
+        (point.locationName || '') !== defaultTarget.locationName ||
+        (point.locationAddress || '') !== defaultTarget.locationAddress ||
         point.note.trim().length > 0
     );
 }
