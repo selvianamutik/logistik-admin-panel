@@ -17,6 +17,7 @@ import {
     formatCurrency,
     formatDate,
     formatDateTime,
+    getShipperReferenceCount,
     getDriverVoucherFinancialSummary,
     formatInternalDeliveryOrderNumber,
     formatShipperDeliveryOrderNumber,
@@ -243,7 +244,7 @@ export default function DriverDetailPage() {
                                             <Link href={`/delivery-orders/${item._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>
                                                 {formatInternalDeliveryOrderNumber(item)}
                                             </Link>
-                                            {item.customerDoNumber && <div className="text-muted text-sm font-mono">{formatShipperDeliveryOrderNumber(item)}</div>}
+                                            {getShipperReferenceCount(item) > 0 && <div className="text-muted text-sm font-mono">{formatShipperDeliveryOrderNumber(item)}</div>}
                                         </td>
                                         <td>{formatDate(item.date)}</td>
                                         <td>{canOpenCustomerPage && item.customerRef ? <Link href={`/customers/${item.customerRef}`} style={{ color: 'var(--color-primary)' }}>{item.customerName || '-'}</Link> : (item.customerName || '-')}</td>
@@ -267,7 +268,7 @@ export default function DriverDetailPage() {
                                     <span className={`badge badge-${DO_STATUS_MAP[item.status]?.color || 'gray'}`}>{DO_STATUS_MAP[item.status]?.label || item.status}</span>
                                 </div>
                                 <div className="mobile-record-meta">
-                                    {item.customerDoNumber && (
+                                    {getShipperReferenceCount(item) > 0 && (
                                         <div className="mobile-record-kv">
                                             <span className="mobile-record-label">SJ Pengirim</span>
                                             <span className="mobile-record-value">{formatShipperDeliveryOrderNumber(item)}</span>

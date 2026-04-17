@@ -14,6 +14,7 @@ import {
     formatDate,
     formatDateTime,
     formatCurrency,
+    getShipperReferenceCount,
     formatShipperDeliveryOrderNumber,
     formatInternalDeliveryOrderNumber,
     formatQuantity,
@@ -473,7 +474,7 @@ export default function VehicleDetailPage() {
                                             {' - '}
                                             {canOpenCustomerPage && activeDeliveryOrder.customerRef ? <Link href={`/customers/${activeDeliveryOrder.customerRef}`}>{activeDeliveryOrder.customerName}</Link> : activeDeliveryOrder.customerName}
                                         </div>
-                                        {activeDeliveryOrder.customerDoNumber && (
+                                        {getShipperReferenceCount(activeDeliveryOrder) > 0 && (
                                             <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
                                                 SJ Pengirim: {formatShipperDeliveryOrderNumber(activeDeliveryOrder)}
                                             </div>
@@ -507,7 +508,7 @@ export default function VehicleDetailPage() {
                         <div className="table-wrapper table-desktop-only"><table>
                             <thead><tr><th>No. DO Internal</th><th>Tanggal</th><th>Customer</th><th>Status</th></tr></thead>
                             <tbody>{dos.length === 0 ? <tr><td colSpan={4} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada riwayat DO</td></tr> : dos.map(d => (
-                                <tr key={d._id}><td><a href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{formatInternalDeliveryOrderNumber(d)}</a>{d.customerDoNumber && <div className="text-muted text-sm font-mono">{formatShipperDeliveryOrderNumber(d)}</div>}</td><td>{formatDate(d.date)}</td><td>{d.customerName}</td><td><span className={`badge badge-${DO_STATUS_MAP[d.status]?.color}`}>{DO_STATUS_MAP[d.status]?.label}</span></td></tr>
+                                <tr key={d._id}><td><a href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{formatInternalDeliveryOrderNumber(d)}</a>{getShipperReferenceCount(d) > 0 && <div className="text-muted text-sm font-mono">{formatShipperDeliveryOrderNumber(d)}</div>}</td><td>{formatDate(d.date)}</td><td>{d.customerName}</td><td><span className={`badge badge-${DO_STATUS_MAP[d.status]?.color}`}>{DO_STATUS_MAP[d.status]?.label}</span></td></tr>
                             ))}</tbody>
                         </table></div>
                         <div className="mobile-record-list">
@@ -525,7 +526,7 @@ export default function VehicleDetailPage() {
                                         <span className={`badge badge-${DO_STATUS_MAP[d.status]?.color}`}>{DO_STATUS_MAP[d.status]?.label}</span>
                                     </div>
                                     <div className="mobile-record-meta">
-                                        {d.customerDoNumber && (
+                                        {getShipperReferenceCount(d) > 0 && (
                                             <div className="mobile-record-kv">
                                                 <span className="mobile-record-label">SJ Pengirim</span>
                                                 <span className="mobile-record-value">{formatShipperDeliveryOrderNumber(d)}</span>

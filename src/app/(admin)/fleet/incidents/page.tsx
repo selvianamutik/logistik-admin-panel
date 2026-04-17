@@ -16,7 +16,7 @@ import {
     getIncidentNextAction,
     type IncidentFormState,
 } from '@/lib/fleet-queue-page-support';
-import { formatDateTime, formatInternalDeliveryOrderNumber, formatQuantity, formatShipperDeliveryOrderNumber, INCIDENT_STATUS_MAP, URGENCY_MAP, INCIDENT_TYPE_MAP } from '@/lib/utils';
+import { formatDateTime, formatInternalDeliveryOrderNumber, formatQuantity, formatShipperDeliveryOrderNumber, getShipperReferenceCount, INCIDENT_STATUS_MAP, URGENCY_MAP, INCIDENT_TYPE_MAP } from '@/lib/utils';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
 import type { Incident, Vehicle, DeliveryOrder } from '@/lib/types';
 
@@ -400,7 +400,7 @@ export default function IncidentsPage() {
                                     </div>
                                     <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
                                         {selectedRelatedDO
-                                            ? `No. DO Internal ${formatInternalDeliveryOrderNumber(selectedRelatedDO)}${selectedRelatedDO.customerDoNumber ? ` | SJ ${formatShipperDeliveryOrderNumber(selectedRelatedDO)}` : ''} / driver ${selectedRelatedDO.driverName || '-'}`
+                                            ? `No. DO Internal ${formatInternalDeliveryOrderNumber(selectedRelatedDO)}${getShipperReferenceCount(selectedRelatedDO) > 0 ? ` | SJ ${formatShipperDeliveryOrderNumber(selectedRelatedDO)}` : ''} / driver ${selectedRelatedDO.driverName || '-'}`
                                             : `Odometer terakhir ${selectedVehicle?.lastOdometer ? `${formatQuantity(selectedVehicle.lastOdometer, 0)} km` : 'belum diisi'}`}
                                     </div>
                                 </div>
@@ -420,7 +420,7 @@ export default function IncidentsPage() {
                                 <div className="form-group"><label className="form-label">Odometer</label><FormattedNumberInput allowDecimal={false} value={form.odometer} onValueChange={value => setForm({ ...form, odometer: value })} /></div>
                             </div>
                             <div className="form-group"><label className="form-label">DO Internal Terkait (Opsional)</label>
-                                <select className="form-select" value={form.relatedDeliveryOrderRef} onChange={e => handleRelatedDOChange(e.target.value)}><option value="">- Tidak ada -</option>{filteredDos.map(deliveryOrder => <option key={deliveryOrder._id} value={deliveryOrder._id}>{`${formatInternalDeliveryOrderNumber(deliveryOrder)}${deliveryOrder.customerDoNumber ? ` | SJ ${formatShipperDeliveryOrderNumber(deliveryOrder)}` : ''}`}</option>)}</select></div>
+                                <select className="form-select" value={form.relatedDeliveryOrderRef} onChange={e => handleRelatedDOChange(e.target.value)}><option value="">- Tidak ada -</option>{filteredDos.map(deliveryOrder => <option key={deliveryOrder._id} value={deliveryOrder._id}>{`${formatInternalDeliveryOrderNumber(deliveryOrder)}${getShipperReferenceCount(deliveryOrder) > 0 ? ` | SJ ${formatShipperDeliveryOrderNumber(deliveryOrder)}` : ''}`}</option>)}</select></div>
                             <div className="form-group"><label className="form-label">Kronologi / Deskripsi <span className="required">*</span></label><textarea className="form-textarea" rows={4} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Jelaskan kronologi insiden secara detail..." /></div>
                         </div>
                         <div className="modal-footer"><button className="btn btn-secondary" onClick={closeIncidentModal} disabled={saving}>Batal</button><button className="btn btn-danger" onClick={handleSave} disabled={saving}><AlertTriangle size={16} /> {saving ? 'Menyimpan...' : 'Laporkan Insiden'}</button></div>
