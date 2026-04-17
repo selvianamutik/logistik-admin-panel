@@ -485,7 +485,7 @@ export function buildDeliveryOrderPrintHtml(
             <table style="width:100%;border:none"><tbody>
                 <tr>
                     <td style="border:none;padding:2px 8px;width:140px;font-weight:600">No. SJ Pengirim</td>
-                    <td style="border:none;padding:2px 8px">${formatShipperDeliveryOrderNumber(doData)}</td>
+                    <td style="border:none;padding:2px 8px">${formatShipperDeliveryOrderNumber(doData, { mode: 'full' })}</td>
                     <td style="border:none;padding:2px 8px;width:140px;font-weight:600">Tanggal</td>
                     <td style="border:none;padding:2px 8px">${formatDate(doData.date || '')}</td>
                 </tr>
@@ -539,6 +539,29 @@ export function buildDeliveryOrderPrintHtml(
                 ${doData.podReceiverName ? `<tr><td style="border:none;padding:2px 8px;font-weight:600">POD</td><td colspan="3" style="border:none;padding:2px 8px">Diterima oleh ${doData.podReceiverName} pada ${formatDate(doData.podReceivedDate || '')}${doData.podNote ? ` - ${doData.podNote}` : ''}</td></tr>` : ''}
             </tbody></table>
         </div>
+        ${(doData.shipperReferences || []).length > 0 ? `
+        <div class="section-title">Ringkasan SJ Pengirim</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>No. SJ</th>
+                    <th>Customer Tagihan</th>
+                    <th>Tujuan</th>
+                    <th>Alamat Tujuan</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${(doData.shipperReferences || []).map(reference => `
+                    <tr>
+                        <td>${reference.referenceNumber || '-'}</td>
+                        <td>${reference.billingCustomerName || doData.customerName || '-'}</td>
+                        <td>${reference.receiverCompany || reference.receiverName || doData.receiverCompany || doData.receiverName || '-'}</td>
+                        <td>${reference.receiverAddress || doData.receiverAddress || '-'}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+        ` : ''}
         <div class="section-title">Route Tagihan & Realisasi Drop</div>
         <table>
             <thead>

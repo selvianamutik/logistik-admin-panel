@@ -111,7 +111,7 @@ export function generateDOPdf(
     addRow('Tanggal', formatDate(doData.date), margin, y);
     addRow('No. DO Internal', doData.doNumber || '-', col2X, y);
     y += 5;
-    addRow('No. SJ Pengirim', formatShipperDeliveryOrderNumber(doData), margin, y);
+    addRow('No. SJ Pengirim', formatShipperDeliveryOrderNumber(doData, { mode: 'summary', maxVisible: 3 }), margin, y);
     addRow('Customer', doData.customerName || '-', col2X, y);
     y += 5;
     addRow('Resi', doData.masterResi || '-', margin, y);
@@ -140,6 +140,18 @@ export function generateDOPdf(
     y += 5;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
+    if ((doData.shipperReferences || []).length > 0) {
+        (doData.shipperReferences || []).forEach(reference => {
+            const routeLine = `${reference.referenceNumber || '-'} | ${reference.billingCustomerName || doData.customerName || '-'} | ${reference.receiverCompany || reference.receiverName || doData.receiverCompany || doData.receiverName || '-'} | ${reference.receiverAddress || doData.receiverAddress || '-'}`;
+            const routeLines = doc.splitTextToSize(routeLine, contentWidth);
+            doc.text(routeLines, margin, y);
+            y += routeLines.length * 4.5;
+        });
+    } else {
+        doc.text(`SJ: ${formatShipperDeliveryOrderNumber(doData)}`, margin, y, { maxWidth: contentWidth });
+        y += 4.5;
+    }
+    y += 1;
     doc.text(`Asal: ${doData.pickupAddress || '-'}`, margin, y, { maxWidth: contentWidth });
     y += 4.5;
     doc.text(`Tujuan: ${doData.receiverAddress || '-'}`, margin, y, { maxWidth: contentWidth });

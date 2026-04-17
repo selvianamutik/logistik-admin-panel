@@ -7,7 +7,7 @@ import { Search, Eye, Truck, FileDown, Printer } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
 import { getBusinessDateValue } from '@/lib/business-date';
-import { formatDate, formatDateTime, DO_STATUS_MAP, formatInternalDeliveryOrderNumber, formatShipperDeliveryOrderNumber } from '@/lib/utils';
+import { formatDate, formatDateTime, DO_STATUS_MAP, formatInternalDeliveryOrderNumber, formatShipperDeliveryOrderNumber, getShipperReferenceCount } from '@/lib/utils';
 import {
     buildDeliveryOrderExportRows,
     buildDeliveryOrdersPrintHtml,
@@ -253,7 +253,7 @@ export default function DeliveryOrdersPage() {
                                     <tr><td colSpan={13}><div className="empty-state"><Truck size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada surat jalan</div><div className="empty-state-text">Buat surat jalan dari halaman detail order</div></div></td></tr>
                                 ) : items.map(d => (
                                     <tr key={d._id}>
-                                        <td>{d.customerDoNumber ? <Link href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{formatShipperDeliveryOrderNumber(d)}</Link> : <span className="text-muted">-</span>}</td>
+                                        <td>{getShipperReferenceCount(d) > 0 ? <Link href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{formatShipperDeliveryOrderNumber(d)}</Link> : <span className="text-muted">-</span>}</td>
                                         <td className="font-mono text-muted"><Link href={`/delivery-orders/${d._id}`} style={{ color: 'inherit' }}>{d.doNumber}</Link></td>
                                         <td>{canOpenSourceOrderPage ? <Link href={`/orders/${d.orderRef}`} className="text-muted">{d.masterResi}</Link> : <span className="text-muted">{d.masterResi}</span>}</td>
                                         <td>{d.customerName}</td>

@@ -84,10 +84,53 @@ export function formatInternalDeliveryOrderNumber(value: {
     return value.doNumber || '-';
 }
 
-export function formatShipperDeliveryOrderNumber(value: {
+type ShipperReferenceDisplayValue = {
     customerDoNumber?: string | null;
-}) {
-    return value.customerDoNumber || '-';
+    shipperReferences?: Array<{
+        referenceNumber?: string | null;
+    }> | null;
+};
+
+export function getShipperReferenceNumbers(value: ShipperReferenceDisplayValue) {
+    const uniqueNumbers = new Set<string>();
+    for (const entry of value.shipperReferences || []) {
+        const normalizedNumber = entry?.referenceNumber?.trim();
+        if (normalizedNumber) {
+            uniqueNumbers.add(normalizedNumber);
+        }
+    }
+
+    const legacyNumber = value.customerDoNumber?.trim();
+    if (uniqueNumbers.size === 0 && legacyNumber) {
+        uniqueNumbers.add(legacyNumber);
+    }
+
+    return Array.from(uniqueNumbers);
+}
+
+export function getShipperReferenceCount(value: ShipperReferenceDisplayValue) {
+    return getShipperReferenceNumbers(value).length;
+}
+
+export function formatShipperDeliveryOrderNumber(
+    value: ShipperReferenceDisplayValue,
+    options?: { mode?: 'summary' | 'full'; maxVisible?: number }
+) {
+    const references = getShipperReferenceNumbers(value);
+    if (references.length === 0) {
+        return '-';
+    }
+
+    if (options?.mode === 'full') {
+        return references.join(', ');
+    }
+
+    const maxVisible = options?.maxVisible ?? 2;
+    if (references.length <= maxVisible) {
+        return references.join(', ');
+    }
+
+    return `${references.slice(0, maxVisible).join(', ')} (+${references.length - maxVisible})`;
 }
 
 export function getReceivableNetAmount(value: {

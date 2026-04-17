@@ -56,6 +56,11 @@ export function buildDeliveryOrdersQuery(params: {
         paramsBuilder.set('searchFields', [
             'doNumber',
             'customerDoNumber',
+            'shipperReferences[].referenceNumber',
+            'shipperReferences[].billingCustomerName',
+            'shipperReferences[].receiverName',
+            'shipperReferences[].receiverCompany',
+            'shipperReferences[].receiverAddress',
             'customerName',
             'vehiclePlate',
             'driverName',
@@ -122,7 +127,7 @@ export function getSelectableDeliveryOrderServices(params: {
 
 export function buildDeliveryOrderExportRows(deliveryOrders: DeliveryOrder[], services: Service[]) {
     return deliveryOrders.map(deliveryOrder => ({
-        customerDoNumber: formatShipperDeliveryOrderNumber(deliveryOrder),
+        customerDoNumber: formatShipperDeliveryOrderNumber(deliveryOrder, { mode: 'full' }),
         doNumber: deliveryOrder.doNumber || '-',
         masterResi: deliveryOrder.masterResi || '-',
         customerName: deliveryOrder.customerName || '-',
@@ -155,7 +160,7 @@ export function buildDeliveryOrdersPrintHtml(deliveryOrders: DeliveryOrder[], se
             <tbody>
                 ${deliveryOrders.map(item => `
                     <tr>
-                        <td class="b">${escapePrintHtml(formatShipperDeliveryOrderNumber(item))}</td>
+                        <td class="b">${escapePrintHtml(formatShipperDeliveryOrderNumber(item, { mode: 'full' }))}</td>
                         <td>${escapePrintHtml(item.doNumber || '-')}</td>
                         <td>${escapePrintHtml(item.masterResi || '-')}</td>
                         <td>${escapePrintHtml(item.customerName || '-')}</td>
