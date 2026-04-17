@@ -1,5 +1,6 @@
 import { DEFAULT_PAGE_SIZE } from './pagination';
 import { getBusinessDateTimeLocalValue, getBusinessDateValue } from './business-date';
+import { formatShipperReceiverSummary } from './utils';
 import type { DeliveryOrder, Incident, Maintenance, Vehicle } from './types';
 
 export type IncidentFormState = {
@@ -30,12 +31,22 @@ export function getTodayDate() {
     return getBusinessDateValue();
 }
 
+export function getIncidentLocationTextFromDeliveryOrder(deliveryOrder?: DeliveryOrder | null) {
+    if (!deliveryOrder) {
+        return '';
+    }
+    return formatShipperReceiverSummary(deliveryOrder, {
+        mode: 'full',
+        fallback: deliveryOrder.receiverAddress || '',
+    });
+}
+
 export function createDefaultIncidentForm(vehicle?: Vehicle | null, deliveryOrder?: DeliveryOrder | null): IncidentFormState {
     return {
         vehicleRef: deliveryOrder?.vehicleRef || vehicle?._id || '',
         incidentType: 'OTHER',
         urgency: 'MEDIUM',
-        locationText: deliveryOrder?.receiverAddress || '',
+        locationText: getIncidentLocationTextFromDeliveryOrder(deliveryOrder),
         odometer: typeof vehicle?.lastOdometer === 'number' ? vehicle.lastOdometer : 0,
         description: '',
         dateTime: getDefaultIncidentDateTime(),

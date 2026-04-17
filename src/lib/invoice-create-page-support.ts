@@ -173,6 +173,30 @@ export function buildNotaRowsFromDeliveryOrder(params: {
         ket: '',
     };
 
+    const buildShipperReferenceRow = (
+        shipperReferenceNumber: string,
+        items: DeliveryOrderItem[] = []
+    ): NotaItemRow => {
+        const matchedReference = shipperReferenceMap.get(shipperReferenceNumber.trim());
+
+        return {
+            id: Math.random().toString(36).slice(2),
+            ...baseRow,
+            deliveryOrderItemRef: items[0]?._id,
+            deliveryOrderItemRefs: items.map(item => item._id).filter(Boolean),
+            customerRef: matchedReference?.billingCustomerRef || baseRow.customerRef,
+            customerName: matchedReference?.billingCustomerName || baseRow.customerName,
+            noSJ: shipperReferenceNumber,
+            dari: matchedReference?.pickupAddress || baseRow.dari,
+            tujuan: matchedReference?.receiverAddress || baseRow.tujuan,
+            barang: items.length > 0
+                ? [...new Set(items.map(item => item.orderItemDescription?.trim()).filter((value): value is string => Boolean(value)))].join(', ')
+                : '',
+            collie: items.reduce((sum, item) => sum + parseFormattedNumberish(item.actualQtyKoli ?? item.orderItemQtyKoli ?? 0), 0),
+            beratKg: items.reduce((sum, item) => sum + parseFormattedNumberish(item.actualWeightKg ?? item.orderItemWeight ?? 0), 0),
+        };
+    };
+
     if (relatedItems.length === 0) {
         if (shipperReferences.length > 0) {
             return shipperReferences.map(reference => ({
@@ -205,23 +229,21 @@ export function buildNotaRowsFromDeliveryOrder(params: {
         acc.set(key, current);
         return acc;
     }, new Map());
+    const rows: NotaItemRow[] = [];
+    const emittedReferences = new Set<string>();
 
-    return [...groupedItems.entries()].map(([shipperReferenceNumber, items]) => {
-        const matchedReference = shipperReferenceMap.get(shipperReferenceNumber.trim());
+    for (const reference of shipperReferences) {
+        const shipperReferenceNumber = reference.referenceNumber;
+        emittedReferences.add(shipperReferenceNumber);
+        rows.push(buildShipperReferenceRow(shipperReferenceNumber, groupedItems.get(shipperReferenceNumber) || []));
+    }
 
-        return {
-            id: Math.random().toString(36).slice(2),
-            ...baseRow,
-            deliveryOrderItemRef: items[0]?._id,
-            deliveryOrderItemRefs: items.map(item => item._id).filter(Boolean),
-            customerRef: matchedReference?.billingCustomerRef || baseRow.customerRef,
-            customerName: matchedReference?.billingCustomerName || baseRow.customerName,
-            noSJ: shipperReferenceNumber,
-            dari: matchedReference?.pickupAddress || baseRow.dari,
-            tujuan: matchedReference?.receiverAddress || baseRow.tujuan,
-            barang: [...new Set(items.map(item => item.orderItemDescription?.trim()).filter((value): value is string => Boolean(value)))].join(', '),
-            collie: items.reduce((sum, item) => sum + parseFormattedNumberish(item.actualQtyKoli ?? item.orderItemQtyKoli ?? 0), 0),
-            beratKg: items.reduce((sum, item) => sum + parseFormattedNumberish(item.actualWeightKg ?? item.orderItemWeight ?? 0), 0),
-        };
-    });
+    for (const [shipperReferenceNumber, items] of groupedItems.entries()) {
+        if (emittedReferences.has(shipperReferenceNumber)) {
+            continue;
+        }
+        rows.push(buildShipperReferenceRow(shipperReferenceNumber, items));
+    }
+
+    return rows;
 }

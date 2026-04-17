@@ -13,6 +13,7 @@ import {
     buildIncidentsQuery,
     buildIncidentSelectableState,
     createDefaultIncidentForm,
+    getIncidentLocationTextFromDeliveryOrder,
     getIncidentNextAction,
     type IncidentFormState,
 } from '@/lib/fleet-queue-page-support';
@@ -170,7 +171,9 @@ export default function IncidentsPage() {
             ...prev,
             relatedDeliveryOrderRef: deliveryOrderRef,
             vehicleRef: deliveryOrderRef ? (deliveryOrder?.vehicleRef || '') : prev.vehicleRef,
-            locationText: prev.locationText || deliveryOrder?.receiverAddress || '',
+            locationText: deliveryOrderRef
+                ? getIncidentLocationTextFromDeliveryOrder(deliveryOrder)
+                : '',
         }));
     };
 
