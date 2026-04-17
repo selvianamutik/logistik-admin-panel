@@ -91,6 +91,55 @@ export function getSuggestedNotaDueDate(params: {
     return termDays === null ? null : calculateNotaDueDate(params.issueDate, termDays);
 }
 
+export function buildFreightNotaCoverageRowKeys(params: {
+    deliveryOrder: {
+        _id: string;
+        doNumber?: string;
+        customerDoNumber?: string;
+        shipperReferences?: Array<{ referenceNumber?: string | undefined }>;
+    };
+    noSJ?: string | null | undefined;
+}) {
+    const { deliveryOrder } = params;
+    const doRef = deliveryOrder._id?.trim();
+    const normalizedNoSJ = params.noSJ?.trim() || '';
+    if (!doRef) {
+        return [];
+    }
+
+    const doNumber = deliveryOrder.doNumber?.trim() || '';
+    const customerDoNumber = deliveryOrder.customerDoNumber?.trim() || '';
+    const explicitReferences = Array.from(
+        new Set(
+            (deliveryOrder.shipperReferences || [])
+                .map(reference => reference.referenceNumber?.trim())
+                .filter((value): value is string => Boolean(value))
+        )
+    );
+
+    const coverageNumbers = new Set<string>();
+    if (normalizedNoSJ) {
+        coverageNumbers.add(normalizedNoSJ);
+    }
+
+    const matchesExplicitReference = normalizedNoSJ ? explicitReferences.includes(normalizedNoSJ) : false;
+    const matchesLegacyHeaderNumber =
+        normalizedNoSJ &&
+        (normalizedNoSJ === doNumber || normalizedNoSJ === customerDoNumber);
+
+    if (matchesLegacyHeaderNumber && !matchesExplicitReference) {
+        if (doNumber) {
+            coverageNumbers.add(doNumber);
+        }
+        if (customerDoNumber) {
+            coverageNumbers.add(customerDoNumber);
+        }
+        explicitReferences.forEach(referenceNumber => coverageNumbers.add(referenceNumber));
+    }
+
+    return Array.from(coverageNumbers).map(referenceNumber => `${doRef}::${referenceNumber}`);
+}
+
 export function buildNotaRowsFromDeliveryOrder(params: {
     deliveryOrder: DeliveryOrder;
     orders: Order[];

@@ -20,6 +20,7 @@ import {
     normalizeFreightNotaBillingMode,
 } from '@/lib/freight-nota-billing';
 import {
+    buildFreightNotaCoverageRowKeys,
     buildNotaRowsFromDeliveryOrder,
     createEmptyNotaRow,
     getSuggestedNotaDueDate,
@@ -79,14 +80,23 @@ export default function NewNotaPage() {
                 setDeliveryOrders((dos || []).filter((item: DeliveryOrder) => item.status === 'DELIVERED'));
                 setOrders(ords || []);
                 setDeliveryOrderItems(doItems || []);
+                const deliveryOrderMap = new Map((dos || []).map(item => [item._id, item]));
                 setUsedNotaDoRowKeys(
-                    (notaItems || [])
-                        .map(item => {
-                            const doRef = item.doRef?.trim();
+                    (notaItems || []).flatMap(item => {
+                        const doRef = item.doRef?.trim();
+                        if (!doRef) {
+                            return [];
+                        }
+                        const matchedDeliveryOrder = deliveryOrderMap.get(doRef);
+                        if (!matchedDeliveryOrder) {
                             const noSJ = item.noSJ?.trim();
-                            return doRef && noSJ ? `${doRef}::${noSJ}` : null;
-                        })
-                        .filter((value): value is string => Boolean(value))
+                            return noSJ ? [`${doRef}::${noSJ}`] : [];
+                        }
+                        return buildFreightNotaCoverageRowKeys({
+                            deliveryOrder: matchedDeliveryOrder,
+                            noSJ: item.noSJ,
+                        });
+                    })
                 );
                 setUsedNotaDoItemRefs(
                     (notaItems || []).flatMap(item => (

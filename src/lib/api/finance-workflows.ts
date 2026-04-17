@@ -9,6 +9,7 @@ import {
 } from '@/lib/freight-nota-billing';
 import { getSanityClient, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
 import { buildFreightNotaDisplayNumberFromParts } from '@/lib/nota-numbering';
+import { buildFreightNotaCoverageRowKeys } from '@/lib/invoice-create-page-support';
 import { DEFAULT_PPH23_RATE_PERCENT, normalizePph23BaseMode, normalizePph23Enabled, normalizePph23RatePercent } from '@/lib/pph23';
 import type {
     CustomerOverpaymentRefund,
@@ -2671,7 +2672,15 @@ export async function handleFreightNotaCreate(
                     ? [item.deliveryOrderItemRef]
                     : [];
             if (existingDoRef && existingNoSJ) {
-                existingRowKeys.add(`${existingDoRef}::${existingNoSJ}`);
+                const matchedDeliveryOrder = deliveryOrderMap.get(existingDoRef);
+                if (matchedDeliveryOrder) {
+                    buildFreightNotaCoverageRowKeys({
+                        deliveryOrder: matchedDeliveryOrder,
+                        noSJ: existingNoSJ,
+                    }).forEach(rowKey => existingRowKeys.add(rowKey));
+                } else {
+                    existingRowKeys.add(`${existingDoRef}::${existingNoSJ}`);
+                }
             }
             for (const itemRef of existingItemRefs.map(value => normalizeOptionalText(value)).filter((value): value is string => Boolean(value))) {
                 existingItemUsage.set(itemRef, {
