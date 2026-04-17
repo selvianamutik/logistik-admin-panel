@@ -99,11 +99,16 @@ export function buildNotaRowsFromDeliveryOrder(params: {
     const { deliveryOrder, orders, deliveryOrderItems } = params;
     const relatedOrder = orders.find(order => order._id === deliveryOrder.orderRef);
     const relatedItems = deliveryOrderItems.filter(item => item.deliveryOrderRef === deliveryOrder._id);
+    const shipperReferences = (deliveryOrder.shipperReferences || [])
+        .filter(reference => Boolean(reference.referenceNumber?.trim()))
+        .map(reference => ({
+            ...reference,
+            referenceNumber: reference.referenceNumber!.trim(),
+        }));
     const shipperReferenceMap = new Map(
-        (deliveryOrder.shipperReferences || [])
-            .filter(reference => Boolean(reference.referenceNumber?.trim()))
-            .map(reference => [reference.referenceNumber!.trim(), reference])
+        shipperReferences.map(reference => [reference.referenceNumber, reference])
     );
+    const fallbackShipperReferenceNumber = shipperReferences[0]?.referenceNumber || deliveryOrder.customerDoNumber || deliveryOrder.doNumber || '';
     const baseRow = {
         doRef: deliveryOrder._id,
         customerRef: relatedOrder?.customerRef || '',
@@ -111,7 +116,7 @@ export function buildNotaRowsFromDeliveryOrder(params: {
         doNumber: deliveryOrder.doNumber || '',
         vehiclePlate: deliveryOrder.vehiclePlate || '',
         date: deliveryOrder.date || getBusinessDateValue(),
-        noSJ: deliveryOrder.customerDoNumber || deliveryOrder.doNumber || '',
+        noSJ: fallbackShipperReferenceNumber,
         dari: deliveryOrder.pickupAddress || relatedOrder?.pickupAddress || '',
         tujuan: deliveryOrder.receiverAddress || relatedOrder?.receiverAddress || '',
         tarip: 0,
@@ -120,6 +125,21 @@ export function buildNotaRowsFromDeliveryOrder(params: {
     };
 
     if (relatedItems.length === 0) {
+        if (shipperReferences.length > 0) {
+            return shipperReferences.map(reference => ({
+                id: Math.random().toString(36).slice(2),
+                ...baseRow,
+                customerRef: reference.billingCustomerRef || baseRow.customerRef,
+                customerName: reference.billingCustomerName || baseRow.customerName,
+                noSJ: reference.referenceNumber,
+                dari: reference.pickupAddress || baseRow.dari,
+                tujuan: reference.receiverAddress || baseRow.tujuan,
+                barang: '',
+                collie: 0,
+                beratKg: 0,
+            }));
+        }
+
         return [{
             id: Math.random().toString(36).slice(2),
             ...baseRow,
@@ -130,7 +150,7 @@ export function buildNotaRowsFromDeliveryOrder(params: {
     }
 
     const groupedItems = relatedItems.reduce<Map<string, DeliveryOrderItem[]>>((acc, item) => {
-        const key = item.shipperReferenceNumber?.trim() || deliveryOrder.customerDoNumber || deliveryOrder.doNumber || 'TANPA-SJ';
+        const key = item.shipperReferenceNumber?.trim() || fallbackShipperReferenceNumber || 'TANPA-SJ';
         const current = acc.get(key) || [];
         current.push(item);
         acc.set(key, current);
