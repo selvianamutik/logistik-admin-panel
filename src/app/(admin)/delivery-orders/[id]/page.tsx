@@ -1438,10 +1438,12 @@ export default function DODetailPage() {
         (canManageDeliveryStatus && availableNextStatuses.includes('CANCELLED'));
     const {
         actualCargoTotals,
+        actualDropTotals,
         autoActualDropDraft,
         effectiveActualDropPoints,
         actualCargoReady,
         actualDropReady,
+        actualDropMismatchMessage,
         actualDropPointCount,
         actualDropSummary,
         hasLiveCoordinates,
@@ -2559,6 +2561,11 @@ export default function DODetailPage() {
                                         <div style={{ background: 'var(--color-info-light)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-info)' }}>
                                             Untuk trip normal, semua muatan aktual otomatis turun di <strong>{autoActualDropDraft.locationName || 'Tujuan Tagihan'}</strong>. Buka detail ini hanya kalau ada multi-drop, hold, return, atau extra drop.
                                         </div>
+                                        {actualDropMismatchMessage && (
+                                            <div style={{ background: 'var(--color-danger-light)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-danger)' }}>
+                                                {actualDropMismatchMessage} Muatan aktual {formatCargoSummary(actualCargoTotals)} tetapi alokasi drop baru {formatCargoSummary(actualDropTotals)}.
+                                            </div>
+                                        )}
                                         {!showAdvancedDropEditor ? (
                                             <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)' }}>
                                                 <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Realisasi Default</div>

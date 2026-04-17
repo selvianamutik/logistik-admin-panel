@@ -10,7 +10,7 @@ import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import type { BankAccount, Driver, DeliveryOrder, DriverVoucher, Order } from '@/lib/types';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, formatShipperDeliveryOrderNumber, formatShipperReceiverSummary, getShipperReferenceCount } from '@/lib/utils';
 
 export default function NewDriverVoucherPage() {
     const router = useRouter();
@@ -131,7 +131,7 @@ export default function NewDriverVoucherPage() {
     const selectedVehicleLabel = selectedDo?.vehiclePlate || '';
     const selectedRoute = [
         selectedDo?.pickupAddress || selectedOrder?.pickupAddress,
-        selectedDo?.receiverAddress || selectedOrder?.receiverAddress,
+        selectedDo ? formatShipperReceiverSummary(selectedDo, { fallback: selectedDo.receiverAddress || selectedOrder?.receiverAddress || '' }) : '',
     ].filter(Boolean).join(' -> ') || '';
     const effectiveTripFee = parseFormattedNumberish(selectedDo?.taripBorongan || 0);
 
@@ -226,11 +226,15 @@ export default function NewDriverVoucherPage() {
                                         : null;
                                     const route = [
                                         deliveryOrder.pickupAddress || order?.pickupAddress,
-                                        deliveryOrder.receiverAddress || order?.receiverAddress,
+                                        formatShipperReceiverSummary(deliveryOrder, { fallback: deliveryOrder.receiverAddress || order?.receiverAddress || '' }),
                                     ].filter(Boolean).join(' -> ');
                                     return (
                                         <option key={deliveryOrder._id} value={deliveryOrder._id}>
-                                            {deliveryOrder.doNumber} | {deliveryOrder.driverName || drivers.find(driver => driver._id === deliveryOrder.driverRef)?.name || '-'} | {deliveryOrder.vehiclePlate || '-'}{route ? ` | ${route}` : ''}
+                                            {deliveryOrder.doNumber}
+                                            {getShipperReferenceCount(deliveryOrder) > 0 ? ` | SJ ${formatShipperDeliveryOrderNumber(deliveryOrder)}` : ''}
+                                            {` | ${deliveryOrder.driverName || drivers.find(driver => driver._id === deliveryOrder.driverRef)?.name || '-'}`}
+                                            {` | ${deliveryOrder.vehiclePlate || '-'}`}
+                                            {route ? ` | ${route}` : ''}
                                         </option>
                                     );
                                 })}

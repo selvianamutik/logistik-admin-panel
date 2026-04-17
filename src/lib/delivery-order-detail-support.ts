@@ -58,10 +58,16 @@ export type DeliveryOrderDetailState = {
         weightKg: number;
         volumeM3: number;
     };
+    actualDropTotals: {
+        qtyKoli: number;
+        weightKg: number;
+        volumeM3: number;
+    };
     autoActualDropDraft: ActualDropDraft;
     effectiveActualDropPoints: ActualDropDraft[];
     actualCargoReady: boolean;
     actualDropReady: boolean;
+    actualDropMismatchMessage: string | null;
     actualDropPointCount: number;
     actualDropSummary: NonNullable<DeliveryOrder['actualDropPoints']>;
     hasLiveCoordinates: boolean;
@@ -229,6 +235,46 @@ export function summarizeActualCargoDrafts(items: ActualCargoDraft[]) {
         weightKg,
         volumeM3,
     };
+}
+
+export function summarizeActualDropDrafts(items: ActualDropDraft[]) {
+    const qtyKoli = items.reduce((sum, item) => sum + parseFormattedNumberish(item.qtyKoli || 0), 0);
+    const weightKg = items.reduce((sum, item) => {
+        const value = parseFormattedNumberish(item.weightInputValue || 0, {
+            maxFractionDigits: item.weightInputUnit === 'TON' ? 3 : 2,
+        });
+        if (!value) return sum;
+        return sum + convertWeightToKg(value, item.weightInputUnit);
+    }, 0);
+    const volumeM3 = items.reduce((sum, item) => {
+        const value = parseFormattedNumberish(item.volumeInputValue || 0, {
+            maxFractionDigits: item.volumeInputUnit === 'LITER' ? 0 : 3,
+        });
+        if (!value) return sum;
+        return sum + convertVolumeToM3(value, item.volumeInputUnit);
+    }, 0);
+
+    return {
+        qtyKoli,
+        weightKg,
+        volumeM3,
+    };
+}
+
+function getActualDropMismatchMessage(
+    actualCargoTotals: DeliveryOrderDetailState['actualCargoTotals'],
+    actualDropTotals: DeliveryOrderDetailState['actualDropTotals']
+) {
+    if (actualCargoTotals.qtyKoli > 0 && Math.abs(actualDropTotals.qtyKoli - actualCargoTotals.qtyKoli) > 0.01) {
+        return 'Total qty titik drop harus sama dengan qty aktual muatan.';
+    }
+    if (actualCargoTotals.weightKg > 0 && Math.abs(actualDropTotals.weightKg - actualCargoTotals.weightKg) > 0.01) {
+        return 'Total berat titik drop harus sama dengan berat aktual muatan.';
+    }
+    if (actualCargoTotals.volumeM3 > 0 && Math.abs(actualDropTotals.volumeM3 - actualCargoTotals.volumeM3) > 0.001) {
+        return 'Total volume titik drop harus sama dengan volume aktual muatan.';
+    }
+    return null;
 }
 
 function resolveDefaultActualDropTarget(doData: DeliveryOrder | null) {
@@ -465,6 +511,7 @@ export function buildDeliveryOrderDetailState(params: {
     const actualCargoTotals = summarizeActualCargoDrafts(actualCargoItems);
     const autoActualDropDraft = buildAutoActualDropDraft(doData, actualCargoItems);
     const effectiveActualDropPoints = showAdvancedDropEditor ? actualDropPoints : [autoActualDropDraft];
+    const actualDropTotals = summarizeActualDropDrafts(effectiveActualDropPoints);
     const actualCargoReady = actualCargoItems.every(item => {
         const qty = parseFormattedNumberish(item.actualQtyKoli);
         const weight = parseFormattedNumberish(item.actualWeightInputValue, {
@@ -484,6 +531,7 @@ export function buildDeliveryOrderDetailState(params: {
             )
         );
     });
+    const actualDropMismatchMessage = getActualDropMismatchMessage(actualCargoTotals, actualDropTotals);
     const actualDropReady = effectiveActualDropPoints.length > 0 && effectiveActualDropPoints.every(item => {
         const qty = parseFormattedNumberish(item.qtyKoli);
         const weight = parseFormattedNumberish(item.weightInputValue, {
@@ -496,7 +544,7 @@ export function buildDeliveryOrderDetailState(params: {
             Boolean(item.locationName.trim() || item.locationAddress.trim()) &&
             ((Number.isFinite(qty) && qty > 0) || (Number.isFinite(weight) && weight > 0) || (Number.isFinite(volume) && volume > 0))
         );
-    });
+    }) && !actualDropMismatchMessage;
     const actualDropPointCount = effectiveActualDropPoints.length;
     const actualDropSummary = doData?.actualDropPoints || [];
     const hasLiveCoordinates = typeof doData?.trackingLastLat === 'number' && typeof doData?.trackingLastLng === 'number';
@@ -509,10 +557,12 @@ export function buildDeliveryOrderDetailState(params: {
 
     return {
         actualCargoTotals,
+        actualDropTotals,
         autoActualDropDraft,
         effectiveActualDropPoints,
         actualCargoReady,
         actualDropReady,
+        actualDropMismatchMessage,
         actualDropPointCount,
         actualDropSummary,
         hasLiveCoordinates,
