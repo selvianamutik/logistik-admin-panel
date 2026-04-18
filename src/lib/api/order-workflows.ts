@@ -1948,6 +1948,9 @@ export async function handleOrderHeaderBookingUpdate(
     );
 
     if (relatedDeliveryOrder) {
+        const customerPickupProvided = Object.prototype.hasOwnProperty.call(data, 'customerPickupRef');
+        const pickupStopsProvided = Array.isArray(data.pickupStops);
+        const pickupAddressProvided = Object.prototype.hasOwnProperty.call(data, 'pickupAddress');
         const touchesDeprecatedTargetFields =
             Object.prototype.hasOwnProperty.call(data, 'customerRecipientRef') ||
             Object.prototype.hasOwnProperty.call(data, 'receiverName') ||
@@ -1957,9 +1960,9 @@ export async function handleOrderHeaderBookingUpdate(
         const attemptedHeaderChanges =
             normalizeText(order.customerRef) !== customerRef ||
             normalizeOptionalText(order.serviceRef) !== serviceRef ||
-            normalizeOptionalText(order.customerPickupRef) !== customerPickupRef ||
+            (customerPickupProvided && normalizeOptionalText(order.customerPickupRef) !== customerPickupRef) ||
             (
-                Array.isArray(data.pickupStops)
+                pickupStopsProvided
                     ? JSON.stringify(getOrderPickupStopsSnapshot(order).map(stop => ({
                         customerPickupRef: stop.customerPickupRef || '',
                         pickupAddress: stop.pickupAddress,
@@ -1972,7 +1975,9 @@ export async function handleOrderHeaderBookingUpdate(
                             }))
                             .filter(stop => stop.customerPickupRef || stop.pickupAddress)
                     )
-                    : normalizeOptionalText(order.pickupAddress) !== normalizeOptionalText(data.pickupAddress)
+                    : pickupAddressProvided
+                        ? normalizeOptionalText(order.pickupAddress) !== normalizeOptionalText(data.pickupAddress)
+                        : false
             ) ||
             touchesDeprecatedTargetFields;
 
