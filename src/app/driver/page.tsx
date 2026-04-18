@@ -1411,11 +1411,15 @@ export default function DriverPortalPage() {
                     <div className="modal modal-lg" onClick={event => event.stopPropagation()}>
                         <div className="modal-header">
                             <div>
-                                <h3 className="modal-title">Input Surat Jalan Trip {tripCreateTarget.tripSequence}</h3>
+                                <h3 className="modal-title">
+                                    {tripCreateAllowsDirectCargoInput
+                                        ? `Input Surat Jalan Trip ${tripCreateTarget.tripSequence}`
+                                        : `Buat Surat Jalan Trip ${tripCreateTarget.tripSequence}`}
+                                </h3>
                                 <div className="text-muted text-sm" style={{ marginTop: '0.3rem' }}>
                                     {tripCreateAllowsDirectCargoInput
-                                        ? 'Trip ini sudah menempel ke driver, kendaraan, dan uang jalan. Isi nomor SJ pengirim per barang.'
-                                        : 'Trip ini sudah menempel ke driver, kendaraan, dan uang jalan. Isi nomor SJ pengirim dulu, barang mengikuti flow item order.'}
+                                        ? 'Trip ini sudah menempel ke driver, kendaraan, dan uang jalan. Isi SJ pengirim dan muatan sesuai dokumen yang dibawa.'
+                                        : 'Trip ini sudah menempel ke driver, kendaraan, dan uang jalan. Isi daftar SJ pengirim yang dibawa.'}
                                 </div>
                             </div>
                             <button className="modal-close" onClick={closeTripCreateModal} disabled={isActionInFlight}>&times;</button>
@@ -1449,8 +1453,8 @@ export default function DriverPortalPage() {
                                     <strong>{tripCreateGroups.length} SJ</strong>
                                 </div>
                                 <div className="driver-completion-summary-card">
-                                    <span>Barang Dicatat</span>
-                                    <strong>{tripCreateDraftItems.length} barang</strong>
+                                    <span>{tripCreateAllowsDirectCargoInput ? 'Barang Dicatat' : 'Input Barang'}</span>
+                                    <strong>{tripCreateAllowsDirectCargoInput ? `${tripCreateDraftItems.length} barang` : 'Ikut order'}</strong>
                                 </div>
                             </div>
 
@@ -1462,7 +1466,9 @@ export default function DriverPortalPage() {
                                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
                                                 <div>
                                                     <div className="font-semibold">SJ {groupIndex + 1}</div>
-                                                    <div className="text-muted text-sm">{draftItemsInGroup.length} barang</div>
+                                                    <div className="text-muted text-sm">
+                                                        {tripCreateAllowsDirectCargoInput ? `${draftItemsInGroup.length} barang` : 'Muatan ikut order'}
+                                                    </div>
                                                 </div>
                                                 {tripCreateGroups.length > 1 && (
                                                     <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeTripCreateGroup(group.id)} disabled={isActionInFlight}>
@@ -1631,13 +1637,13 @@ export default function DriverPortalPage() {
                                                 </div>
                                             ) : (
                                                 <div className="text-muted text-sm" style={{ padding: '0.75rem 0' }}>
-                                                    Barang tidak diinput manual dari akun driver untuk trip ini. Simpan SJ pengirim dulu, lalu admin akan sinkronkan item order yang terkait.
+                                                    Trip ini mengikuti item order. Driver cukup melengkapi daftar SJ pengirim.
                                                 </div>
                                             )}
 
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                                                 <div className="text-muted text-sm">
-                                                    {tripCreateAllowsDirectCargoInput ? 'Satu SJ boleh berisi banyak barang.' : 'Satu trip tetap boleh memuat beberapa SJ pengirim.'}
+                                                    {tripCreateAllowsDirectCargoInput ? 'Satu SJ boleh berisi banyak barang.' : 'Trip ini boleh memuat beberapa SJ pengirim.'}
                                                 </div>
                                                 {tripCreateAllowsDirectCargoInput && (
                                                     <button type="button" className="btn btn-secondary btn-sm" onClick={() => addTripCreateItem(group.id)} disabled={isActionInFlight}>
@@ -1654,7 +1660,7 @@ export default function DriverPortalPage() {
                                 <div className="text-muted text-sm">
                                     {tripCreateAllowsDirectCargoInput
                                         ? 'Kalau barang belum final, simpan SJ dulu lalu lengkapi dari DO aktif.'
-                                        : 'Simpan SJ pengirim dulu. Barang untuk trip ini mengikuti item order yang sudah ada.'}
+                                        : 'Simpan daftar SJ pengirim yang dibawa.'}
                                 </div>
                                 <button type="button" className="btn btn-secondary btn-sm" onClick={addTripCreateGroup} disabled={isActionInFlight}>
                                     <Plus size={14} /> Tambah SJ
@@ -1682,9 +1688,15 @@ export default function DriverPortalPage() {
                     <div className="modal modal-lg" onClick={event => event.stopPropagation()}>
                         <div className="modal-header">
                             <div>
-                                <h3 className="modal-title">{(cargoInputOrder.driverCargoItems?.length || 0) > 0 ? 'Tambah Barang' : 'Input Barang'} {cargoInputOrder.doNumber}</h3>
+                                <h3 className="modal-title">
+                                    {cargoInputAllowsDirectCargoInput
+                                        ? `${(cargoInputOrder.driverCargoItems?.length || 0) > 0 ? 'Tambah Barang' : 'Input Barang'} ${cargoInputOrder.doNumber}`
+                                        : `Kelola SJ ${cargoInputOrder.doNumber}`}
+                                </h3>
                                 <div className="text-muted text-sm" style={{ marginTop: '0.3rem' }}>
-                                    Isi manifest yang sudah driver terima. Barang ini akan langsung masuk ke Surat Jalan aktif.
+                                    {cargoInputAllowsDirectCargoInput
+                                        ? 'Isi manifest sesuai SJ yang driver pegang. Barang akan masuk ke Surat Jalan aktif.'
+                                        : 'Lengkapi daftar SJ pengirim yang driver bawa. Muatan tetap mengikuti order / resi dan dikroscek admin.'}
                                 </div>
                             </div>
                             <button className="modal-close" onClick={closeCargoInputModal} disabled={isActionInFlight}>&times;</button>
@@ -1722,8 +1734,8 @@ export default function DriverPortalPage() {
                                     <strong>{cargoInputGroups.length} SJ</strong>
                                 </div>
                                 <div className="driver-completion-summary-card">
-                                    <span>Barang Dicatat</span>
-                                    <strong>{cargoInputDraftItems.length} barang</strong>
+                                    <span>{cargoInputAllowsDirectCargoInput ? 'Barang Dicatat' : 'Input Barang'}</span>
+                                    <strong>{cargoInputAllowsDirectCargoInput ? `${cargoInputDraftItems.length} barang` : 'Ikut order'}</strong>
                                 </div>
                             </div>
 
@@ -1735,7 +1747,9 @@ export default function DriverPortalPage() {
                                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
                                                 <div>
                                                     <div className="font-semibold">SJ {groupIndex + 1}</div>
-                                                    <div className="text-muted text-sm">{draftItemsInGroup.length} barang</div>
+                                                    <div className="text-muted text-sm">
+                                                        {cargoInputAllowsDirectCargoInput ? `${draftItemsInGroup.length} barang` : 'Muatan ikut order'}
+                                                    </div>
                                                 </div>
                                                 {cargoInputGroups.length > 1 && (
                                                     <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeCargoInputGroup(group.id)} disabled={isActionInFlight}>
@@ -1903,7 +1917,7 @@ export default function DriverPortalPage() {
                                                 </div>
                                             ) : (
                                                 <div className="text-muted text-sm" style={{ padding: '0.75rem 0' }}>
-                                                    DO ini memakai flow item order. Driver hanya perlu melengkapi SJ pengirim. Barang dikoreksi dari order oleh admin.
+                                                    DO ini mengikuti item order. Driver cukup melengkapi daftar SJ pengirim.
                                                 </div>
                                             )}
 
@@ -1911,7 +1925,7 @@ export default function DriverPortalPage() {
                                                 <div className="text-muted text-sm">
                                                     {cargoInputAllowsDirectCargoInput
                                                         ? 'Satu SJ boleh ditambah bertahap selama trip masih aktif.'
-                                                        : 'Satu SJ tetap bisa ditambah atau diperbarui tanpa input barang manual.'}
+                                                        : 'SJ bisa ditambah atau diperbarui selama trip masih aktif.'}
                                                 </div>
                                                 {cargoInputAllowsDirectCargoInput && (
                                                     <button type="button" className="btn btn-secondary btn-sm" onClick={() => addCargoInputItem(group.id)} disabled={isActionInFlight}>
@@ -1928,7 +1942,7 @@ export default function DriverPortalPage() {
                                 <div className="text-muted text-sm">
                                     {cargoInputAllowsDirectCargoInput
                                         ? 'Barang boleh ditambah bertahap. Pastikan deskripsi dan muatan sesuai surat jalan yang driver pegang.'
-                                        : 'Lengkapi SJ pengirim yang dibawa. Barang mengikuti flow item order dan akan dikroscek admin.'}
+                                        : 'Lengkapi daftar SJ pengirim yang dibawa.'}
                                 </div>
                                 <button type="button" className="btn btn-secondary btn-sm" onClick={addCargoInputGroup} disabled={isActionInFlight}>
                                     <Plus size={14} /> Tambah SJ
