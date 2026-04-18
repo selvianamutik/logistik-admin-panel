@@ -1,13 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Pencil, Plus, Save, Trash2, X } from 'lucide-react';
 
 import CurrencyInput from '@/components/CurrencyInput';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
-import { fetchAdminCollectionData, fetchAdminData } from '@/lib/api/admin-client';
+import { fetchAdminCollectionData, fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
 import {
     calculateFreightNotaRowAmount,
@@ -29,14 +29,18 @@ import {
 } from '@/lib/invoice-create-page-support';
 import { convertWeightToKg } from '@/lib/measurement';
 import { buildPph23Label, calculatePph23Summary, DEFAULT_PPH23_RATE_PERCENT, PPH23_BASE_MODE_OPTIONS } from '@/lib/pph23';
-import type { CompanyProfile, Customer, DeliveryOrder, DeliveryOrderItem, FreightNotaBillingMode, Order } from '@/lib/types';
+import type { CompanyProfile, Customer, DeliveryOrder, DeliveryOrderItem, FreightNota, FreightNotaBillingMode, FreightNotaItem, Order } from '@/lib/types';
 import { formatCurrency, formatInternalDeliveryOrderNumber, formatQuantity, formatShipperDeliveryOrderNumber, formatShipperReceiverSummary, getShipperReferenceCount } from '@/lib/utils';
 
 import { useToast } from '../../layout';
 
 export default function NewNotaPage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const { addToast } = useToast();
+    const editNotaId = searchParams.get('edit')?.trim() || '';
+    const isEditMode = Boolean(editNotaId);
+    const skipCustomerDefaultsRef = useRef(false);
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [company, setCompany] = useState<CompanyProfile | null>(null);
     const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([]);
@@ -45,6 +49,7 @@ export default function NewNotaPage() {
     const [usedNotaDoRowKeys, setUsedNotaDoRowKeys] = useState<string[]>([]);
     const [usedNotaDoItemRefs, setUsedNotaDoItemRefs] = useState<string[]>([]);
     const [saving, setSaving] = useState(false);
+    const [loadingInitialData, setLoadingInitialData] = useState(true);
 
     const [customerRef, setCustomerRef] = useState('');
     const [customerName, setCustomerName] = useState('');
@@ -62,27 +67,38 @@ export default function NewNotaPage() {
     useEffect(() => {
         async function loadData() {
             try {
-                const [cust, comp, dos, ords, doItems, notaItems] = await Promise.all([
+                const [cust, comp, dos, ords, doItems, notaItems, editNota, editNotaItems] = await Promise.all([
                     fetchAdminCollectionData<Customer[]>('/api/data?entity=customers', 'Gagal memuat customer'),
                     fetchAdminData<CompanyProfile | null>('/api/data?entity=company', 'Gagal memuat profil perusahaan').catch(() => null),
                     fetchAdminCollectionData<DeliveryOrder[]>('/api/data?entity=delivery-orders', 'Gagal memuat surat jalan'),
                     fetchAdminCollectionData<Order[]>('/api/data?entity=orders', 'Gagal memuat order'),
                     fetchAdminCollectionData<DeliveryOrderItem[]>('/api/data?entity=delivery-order-items', 'Gagal memuat item DO'),
-                    fetchAdminCollectionData<Array<{
+                    fetchAllAdminCollectionData<{
                         doRef?: string;
                         noSJ?: string;
+                        notaRef?: string;
                         deliveryOrderItemRef?: string;
                         deliveryOrderItemRefs?: string[];
-                    }>>('/api/data?entity=freight-nota-items', 'Gagal memuat pemakaian DO nota'),
+                    }>('/api/data?entity=freight-nota-items', 'Gagal memuat pemakaian DO nota'),
+                    editNotaId
+                        ? fetchAdminData<FreightNota | null>(`/api/data?entity=freight-notas&id=${editNotaId}`, 'Gagal memuat nota yang akan direvisi')
+                        : Promise.resolve(null),
+                    editNotaId
+                        ? fetchAllAdminCollectionData<FreightNotaItem>(
+                            `/api/data?entity=freight-nota-items&filter=${encodeURIComponent(JSON.stringify({ notaRef: editNotaId }))}`,
+                            'Gagal memuat item nota yang akan direvisi'
+                        )
+                        : Promise.resolve([] as FreightNotaItem[]),
                 ]);
                 setCustomers((cust || []).filter(customer => customer.active !== false));
                 setCompany(comp || null);
                 setDeliveryOrders((dos || []).filter((item: DeliveryOrder) => item.status === 'DELIVERED'));
                 setOrders(ords || []);
                 setDeliveryOrderItems(doItems || []);
+                const usableNotaItems = (notaItems || []).filter(item => !editNotaId || item.notaRef !== editNotaId);
                 const deliveryOrderMap = new Map((dos || []).map(item => [item._id, item]));
                 setUsedNotaDoRowKeys(
-                    (notaItems || []).flatMap(item => {
+                    usableNotaItems.flatMap(item => {
                         const doRef = item.doRef?.trim();
                         if (!doRef) {
                             return [];
@@ -99,7 +115,7 @@ export default function NewNotaPage() {
                     })
                 );
                 setUsedNotaDoItemRefs(
-                    (notaItems || []).flatMap(item => (
+                    usableNotaItems.flatMap(item => (
                         Array.isArray(item.deliveryOrderItemRefs) && item.deliveryOrderItemRefs.length > 0
                             ? item.deliveryOrderItemRefs
                             : item.deliveryOrderItemRef
@@ -107,13 +123,59 @@ export default function NewNotaPage() {
                                 : []
                     ))
                 );
+                if (editNotaId) {
+                    if (!editNota) {
+                        throw new Error('Nota yang akan direvisi tidak ditemukan');
+                    }
+                    skipCustomerDefaultsRef.current = true;
+                    setCustomerRef(editNota.customerRef || '');
+                    setCustomerName(editNota.customerName || '');
+                    setIssueDate(editNota.issueDate || getBusinessDateValue());
+                    setDueDate(editNota.dueDate || '');
+                    setDueDateTouched(Boolean(editNota.dueDate));
+                    setNotes(editNota.notes || '');
+                    setBillingMode(normalizeFreightNotaBillingMode(editNota.billingMode));
+                    setPph23Enabled(editNota.pph23Enabled === true);
+                    setPph23RatePercent(
+                        typeof editNota.pph23RatePercent === 'number'
+                            ? editNota.pph23RatePercent
+                            : DEFAULT_PPH23_RATE_PERCENT
+                    );
+                    setPph23BaseMode(editNota.pph23BaseMode === 'AFTER_CLAIM' ? 'AFTER_CLAIM' : 'BEFORE_CLAIM');
+                    setRows(
+                        editNotaItems.length > 0
+                            ? editNotaItems.map(item => ({
+                                id: item._id,
+                                doRef: item.doRef || '',
+                                deliveryOrderItemRef: item.deliveryOrderItemRef,
+                                deliveryOrderItemRefs: item.deliveryOrderItemRefs,
+                                customerRef: item.customerRef,
+                                customerName: item.customerName,
+                                doNumber: item.doNumber || '',
+                                vehiclePlate: item.vehiclePlate || '',
+                                date: item.date || getBusinessDateValue(),
+                                noSJ: item.noSJ || '',
+                                dari: item.dari || '',
+                                tujuan: item.tujuan || '',
+                                barang: item.barang || '',
+                                collie: item.collie || 0,
+                                beratKg: item.beratKg || 0,
+                                tarip: item.tarip || 0,
+                                uangRp: item.uangRp || 0,
+                                ket: item.ket || '',
+                            }))
+                            : [createEmptyNotaRow()]
+                    );
+                }
             } catch (error) {
                 addToast('error', error instanceof Error ? error.message : 'Gagal memuat data nota');
+            } finally {
+                setLoadingInitialData(false);
             }
         }
 
         void loadData();
-    }, [addToast]);
+    }, [addToast, editNotaId]);
 
     useEffect(() => {
         const nextDueDate = getSuggestedNotaDueDate({
@@ -130,6 +192,10 @@ export default function NewNotaPage() {
 
     useEffect(() => {
         if (!customerRef) return;
+        if (skipCustomerDefaultsRef.current) {
+            skipCustomerDefaultsRef.current = false;
+            return;
+        }
         const selectedCustomer = customers.find(item => item._id === customerRef);
         if (!selectedCustomer) return;
         setBillingMode(normalizeFreightNotaBillingMode(selectedCustomer.defaultFreightNotaBillingMode));
@@ -302,6 +368,10 @@ export default function NewNotaPage() {
         });
     };
 
+    if (loadingInitialData) {
+        return <div><div className="skeleton skeleton-title" /><div className="skeleton skeleton-card" style={{ height: 220 }} /></div>;
+    }
+
     const totalCollie = rows.reduce((sum, row) => sum + (row.collie || 0), 0);
     const totalBerat = rows.reduce((sum, row) => sum + (row.beratKg || 0), 0);
     const totalAmount = rows.reduce((sum, row) => sum + (row.uangRp || 0), 0);
@@ -344,8 +414,9 @@ export default function NewNotaPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     entity: 'freight-notas',
-                    action: 'create-with-items',
+                    action: isEditMode ? 'update-with-items' : 'create-with-items',
                     data: {
+                        id: editNotaId || undefined,
                         customerRef: customerRef || undefined,
                         customerName,
                         issueDate,
@@ -361,14 +432,14 @@ export default function NewNotaPage() {
             });
             const notaPayload = await notaResponse.json();
             if (!notaResponse.ok) {
-                addToast('error', notaPayload.error || 'Gagal membuat nota');
+                addToast('error', notaPayload.error || (isEditMode ? 'Gagal merevisi nota' : 'Gagal membuat nota'));
                 return;
             }
 
-            addToast('success', 'Nota berhasil dibuat');
-            router.push(`/invoices/${notaPayload.data._id}`);
+            addToast('success', isEditMode ? 'Nota berhasil direvisi' : 'Nota berhasil dibuat');
+            router.push(`/invoices/${isEditMode ? editNotaId : notaPayload.data._id}`);
         } catch {
-            addToast('error', 'Gagal membuat nota');
+            addToast('error', isEditMode ? 'Gagal merevisi nota' : 'Gagal membuat nota');
         } finally {
             setSaving(false);
         }
@@ -406,8 +477,8 @@ export default function NewNotaPage() {
         <div>
             <div className="page-header">
                 <div className="page-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                    <PageBackButton href="/invoices" />
-                    <h1 className="page-title" style={{ margin: 0 }}>Buat Nota Ongkos Angkut</h1>
+                    <PageBackButton href={isEditMode ? `/invoices/${editNotaId}` : '/invoices'} />
+                    <h1 className="page-title" style={{ margin: 0 }}>{isEditMode ? 'Revisi Nota Ongkos Angkut' : 'Buat Nota Ongkos Angkut'}</h1>
                 </div>
             </div>
 
@@ -666,7 +737,7 @@ export default function NewNotaPage() {
                                 <strong>{formatCurrency(pph23Summary.netAmount)}</strong>
                             </div>
                             <button className="btn btn-primary" style={{ width: '100%' }} onClick={handleSave} disabled={saving}>
-                                <Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan Nota'}
+                                <Save size={16} /> {saving ? 'Menyimpan...' : isEditMode ? 'Simpan Revisi Nota' : 'Simpan Nota'}
                             </button>
                         </div>
                     </div>

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useApp, useToast } from '../../layout';
-import { Printer, DollarSign, Landmark, Trash2, FileDown } from 'lucide-react';
+import { Printer, DollarSign, Landmark, Trash2, FileDown, Pencil } from 'lucide-react';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import CurrencyInput from '@/components/CurrencyInput';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
@@ -141,6 +141,7 @@ export default function NotaDetailPage() {
     const canManageOverpaymentRefund = canManageInvoice;
     const canOpenBankAccounts = user ? hasPageAccess(user.role, 'bankAccounts') : false;
     const canEditPph23 = canManageInvoice && totalPaidRaw <= 0 && refundedOverpaymentAmount <= 0;
+    const canReviseInvoice = canManageInvoice && totalPaidRaw <= 0 && refundedOverpaymentAmount <= 0 && totalAdjustmentAmount <= 0;
     const draftPph23Summary = calculatePph23Summary({
         grossAmount,
         claimAmount: totalAdjustmentAmount,
@@ -508,6 +509,16 @@ export default function NotaDetailPage() {
                 </div>
                 </div>
                 <div className="page-actions" style={{ gap: '0.4rem' }}>
+                    {canManageInvoice && (
+                        <button
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => router.push(`/invoices/new?edit=${nota._id}`)}
+                            disabled={!canReviseInvoice}
+                            title={canReviseInvoice ? 'Revisi nota ini' : 'Revisi nota hanya tersedia sebelum ada pembayaran, refund, atau klaim/potongan aktif'}
+                        >
+                            <Pencil size={14} /> Revisi Nota
+                        </button>
+                    )}
                     {canManageInvoice && displayStatus !== 'PAID' && <button className="btn btn-success btn-sm" onClick={() => setShowPayModal(true)}><DollarSign size={14} /> Catat Pembayaran</button>}
                     {canManageInvoice && grossAmount > totalAdjustmentAmount && <button className="btn btn-secondary btn-sm" onClick={openCreateAdjustmentModal}>Catat Klaim / Potongan</button>}
                     {canEditPph23 && <button className="btn btn-secondary btn-sm" onClick={openPph23Modal}>Atur PPh 23</button>}
