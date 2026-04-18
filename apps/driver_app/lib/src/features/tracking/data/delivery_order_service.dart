@@ -99,6 +99,41 @@ class DeliveryOrderService {
     return _mapTrip(data);
   }
 
+  Future<void> requestDeliveryCompletion({
+    required String sessionToken,
+    required String deliveryOrderId,
+    String? note,
+    required List<DriverActualCargoInput> actualItems,
+    required List<DriverActualDropPointInput> actualDropPoints,
+  }) async {
+    final response = await http.post(
+      Uri.parse('${AppConfig.apiBaseUrl}/api/driver/delivery-orders/status'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'x-client-type': 'driver-app',
+        'Authorization': 'Bearer $sessionToken',
+      },
+      body: jsonEncode({
+        'id': deliveryOrderId,
+        'status': 'DELIVERED',
+        if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+        'actualItems': actualItems.map((item) => item.toJson()).toList(),
+        'actualDropPoints': actualDropPoints
+            .map((item) => item.toJson())
+            .toList(),
+      }),
+    );
+
+    final decoded = _decodeJson(response.body);
+    if (response.statusCode >= 400) {
+      final message = decoded['error'] is String
+          ? decoded['error'] as String
+          : 'Gagal mengajukan DO selesai';
+      throw DeliveryOrderException(message, response.statusCode);
+    }
+  }
+
   Future<void> createDeliveryOrderFromTripPlan({
     required String sessionToken,
     required String orderRef,
@@ -203,6 +238,7 @@ class DeliveryOrderService {
       orderRef: (json['orderRef'] as String?)?.trim(),
       customerRef: (json['customerRef'] as String?)?.trim(),
       receiverName: receiverName?.isNotEmpty == true ? receiverName : null,
+      receiverAddress: destination?.isNotEmpty == true ? destination : null,
       itemSummary: notes?.isNotEmpty == true ? notes : null,
       trackingState: (json['trackingState'] as String?)?.trim(),
       pendingDriverStatus: (json['pendingDriverStatus'] as String?)?.trim(),
@@ -215,6 +251,12 @@ class DeliveryOrderService {
             : null,
       ),
       cargoItems: _mapCargoItems(json['driverCargoItems']),
+      pendingActualCargoItems: _mapPendingActualCargoItems(
+        json['pendingDriverActualCargoItems'],
+      ),
+      pendingActualDropPoints: _mapActualDropPoints(
+        json['pendingDriverActualDropPoints'],
+      ),
     );
   }
 
@@ -300,6 +342,9 @@ class DeliveryOrderService {
           DeliveryShipperReference(
             referenceNumber: referenceNumber,
             pickupStopKey: (item['pickupStopKey'] as String?)?.trim(),
+            receiverName: (item['receiverName'] as String?)?.trim(),
+            receiverCompany: (item['receiverCompany'] as String?)?.trim(),
+            receiverAddress: (item['receiverAddress'] as String?)?.trim(),
           ),
         );
       }
@@ -333,8 +378,64 @@ class DeliveryOrderService {
               item['orderItemWeight'] ?? item['shippedWeight'],
             ),
             volumeM3: _toDouble(item['orderItemVolumeM3']),
+            weightInputValue: _toDouble(item['orderItemWeightInputValue']),
+            weightInputUnit: (item['orderItemWeightInputUnit'] as String?)
+                ?.trim(),
+            volumeInputValue: _toDouble(item['orderItemVolumeInputValue']),
+            volumeInputUnit: (item['orderItemVolumeInputUnit'] as String?)
+                ?.trim(),
+            actualQtyKoli: _toDouble(item['actualQtyKoli']),
+            actualWeightInputValue: _toDouble(item['actualWeightInputValue']),
+            actualWeightInputUnit: (item['actualWeightInputUnit'] as String?)
+                ?.trim(),
+            actualVolumeInputValue: _toDouble(item['actualVolumeInputValue']),
+            actualVolumeInputUnit: (item['actualVolumeInputUnit'] as String?)
+                ?.trim(),
           ),
         )
+        .toList(growable: false);
+  }
+
+  List<PendingDriverActualCargoItem> _mapPendingActualCargoItems(dynamic raw) {
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (item) => PendingDriverActualCargoItem(
+            deliveryOrderItemRef:
+                (item['deliveryOrderItemRef'] as String?)?.trim() ?? '',
+            actualQtyKoli: _toDouble(item['actualQtyKoli']),
+            actualWeightInputValue: _toDouble(item['actualWeightInputValue']),
+            actualWeightInputUnit: (item['actualWeightInputUnit'] as String?)
+                ?.trim(),
+            actualVolumeInputValue: _toDouble(item['actualVolumeInputValue']),
+            actualVolumeInputUnit: (item['actualVolumeInputUnit'] as String?)
+                ?.trim(),
+          ),
+        )
+        .where((item) => item.deliveryOrderItemRef.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  List<DeliveryActualDropPoint> _mapActualDropPoints(dynamic raw) {
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (item) => DeliveryActualDropPoint(
+            sequence: _toInt(item['sequence']),
+            stopType: (item['stopType'] as String?)?.trim() ?? 'DROP',
+            locationName: (item['locationName'] as String?)?.trim() ?? '',
+            locationAddress: (item['locationAddress'] as String?)?.trim(),
+            qtyKoli: _toDouble(item['qtyKoli']),
+            weightInputValue: _toDouble(item['weightInputValue']),
+            weightInputUnit: (item['weightInputUnit'] as String?)?.trim(),
+            volumeInputValue: _toDouble(item['volumeInputValue']),
+            volumeInputUnit: (item['volumeInputUnit'] as String?)?.trim(),
+            note: (item['note'] as String?)?.trim(),
+          ),
+        )
+        .where((item) => item.locationName.isNotEmpty)
         .toList(growable: false);
   }
 
@@ -421,6 +522,69 @@ class DriverManifestCargoItemInput {
     'shipperReferenceNumber': shipperReferenceNumber,
     if (pickupStopKey != null && pickupStopKey!.isNotEmpty)
       'pickupStopKey': pickupStopKey,
+  };
+}
+
+class DriverActualCargoInput {
+  const DriverActualCargoInput({
+    required this.deliveryOrderItemRef,
+    required this.actualQtyKoli,
+    required this.actualWeightInputValue,
+    required this.actualWeightInputUnit,
+    required this.actualVolumeInputValue,
+    required this.actualVolumeInputUnit,
+  });
+
+  final String deliveryOrderItemRef;
+  final double actualQtyKoli;
+  final double actualWeightInputValue;
+  final String actualWeightInputUnit;
+  final double actualVolumeInputValue;
+  final String actualVolumeInputUnit;
+
+  Map<String, dynamic> toJson() => {
+    'deliveryOrderItemRef': deliveryOrderItemRef,
+    'actualQtyKoli': actualQtyKoli,
+    'actualWeightInputValue': actualWeightInputValue,
+    'actualWeightInputUnit': actualWeightInputUnit,
+    'actualVolumeInputValue': actualVolumeInputValue,
+    'actualVolumeInputUnit': actualVolumeInputUnit,
+  };
+}
+
+class DriverActualDropPointInput {
+  const DriverActualDropPointInput({
+    required this.stopType,
+    required this.locationName,
+    required this.locationAddress,
+    required this.qtyKoli,
+    required this.weightInputValue,
+    required this.weightInputUnit,
+    required this.volumeInputValue,
+    required this.volumeInputUnit,
+    this.note,
+  });
+
+  final String stopType;
+  final String locationName;
+  final String locationAddress;
+  final double qtyKoli;
+  final double weightInputValue;
+  final String weightInputUnit;
+  final double volumeInputValue;
+  final String volumeInputUnit;
+  final String? note;
+
+  Map<String, dynamic> toJson() => {
+    'stopType': stopType,
+    'locationName': locationName,
+    'locationAddress': locationAddress,
+    'qtyKoli': qtyKoli,
+    'weightInputValue': weightInputValue,
+    'weightInputUnit': weightInputUnit,
+    'volumeInputValue': volumeInputValue,
+    'volumeInputUnit': volumeInputUnit,
+    if (note != null && note!.trim().isNotEmpty) 'note': note!.trim(),
   };
 }
 

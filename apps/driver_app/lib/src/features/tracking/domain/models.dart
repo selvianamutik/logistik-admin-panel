@@ -28,10 +28,26 @@ class DeliveryShipperReference {
   const DeliveryShipperReference({
     required this.referenceNumber,
     this.pickupStopKey,
+    this.receiverName,
+    this.receiverCompany,
+    this.receiverAddress,
   });
 
   final String referenceNumber;
   final String? pickupStopKey;
+  final String? receiverName;
+  final String? receiverCompany;
+  final String? receiverAddress;
+
+  String get targetLabel {
+    final company = (receiverCompany ?? '').trim();
+    if (company.isNotEmpty) return company;
+    final name = (receiverName ?? '').trim();
+    if (name.isNotEmpty) return name;
+    final address = (receiverAddress ?? '').trim();
+    if (address.isNotEmpty) return address;
+    return '-';
+  }
 }
 
 class DeliveryCargoItem {
@@ -41,6 +57,15 @@ class DeliveryCargoItem {
     this.qtyKoli,
     this.weightKg,
     this.volumeM3,
+    this.weightInputValue,
+    this.weightInputUnit,
+    this.volumeInputValue,
+    this.volumeInputUnit,
+    this.actualQtyKoli,
+    this.actualWeightInputValue,
+    this.actualWeightInputUnit,
+    this.actualVolumeInputValue,
+    this.actualVolumeInputUnit,
   });
 
   final String id;
@@ -48,6 +73,59 @@ class DeliveryCargoItem {
   final double? qtyKoli;
   final double? weightKg;
   final double? volumeM3;
+  final double? weightInputValue;
+  final String? weightInputUnit;
+  final double? volumeInputValue;
+  final String? volumeInputUnit;
+  final double? actualQtyKoli;
+  final double? actualWeightInputValue;
+  final String? actualWeightInputUnit;
+  final double? actualVolumeInputValue;
+  final String? actualVolumeInputUnit;
+}
+
+class PendingDriverActualCargoItem {
+  const PendingDriverActualCargoItem({
+    required this.deliveryOrderItemRef,
+    this.actualQtyKoli,
+    this.actualWeightInputValue,
+    this.actualWeightInputUnit,
+    this.actualVolumeInputValue,
+    this.actualVolumeInputUnit,
+  });
+
+  final String deliveryOrderItemRef;
+  final double? actualQtyKoli;
+  final double? actualWeightInputValue;
+  final String? actualWeightInputUnit;
+  final double? actualVolumeInputValue;
+  final String? actualVolumeInputUnit;
+}
+
+class DeliveryActualDropPoint {
+  const DeliveryActualDropPoint({
+    required this.stopType,
+    required this.locationName,
+    this.sequence,
+    this.locationAddress,
+    this.qtyKoli,
+    this.weightInputValue,
+    this.weightInputUnit,
+    this.volumeInputValue,
+    this.volumeInputUnit,
+    this.note,
+  });
+
+  final int? sequence;
+  final String stopType;
+  final String locationName;
+  final String? locationAddress;
+  final double? qtyKoli;
+  final double? weightInputValue;
+  final String? weightInputUnit;
+  final double? volumeInputValue;
+  final String? volumeInputUnit;
+  final String? note;
 }
 
 class CustomerProductOption {
@@ -173,10 +251,13 @@ class DeliveryTrip {
     this.trackingState,
     this.pendingDriverStatus,
     this.receiverName,
+    this.receiverAddress,
     this.itemSummary,
     this.pickupStops = const [],
     this.shipperReferences = const [],
     this.cargoItems = const [],
+    this.pendingActualCargoItems = const [],
+    this.pendingActualDropPoints = const [],
   });
 
   final String deliveryOrderId;
@@ -194,10 +275,13 @@ class DeliveryTrip {
   final String? trackingState;
   final String? pendingDriverStatus;
   final String? receiverName;
+  final String? receiverAddress;
   final String? itemSummary;
   final List<DeliveryPickupStop> pickupStops;
   final List<DeliveryShipperReference> shipperReferences;
   final List<DeliveryCargoItem> cargoItems;
+  final List<PendingDriverActualCargoItem> pendingActualCargoItems;
+  final List<DeliveryActualDropPoint> pendingActualDropPoints;
 
   bool get isAwaitingAdminApproval => pendingDriverStatus == 'DELIVERED';
 
@@ -233,10 +317,13 @@ class DeliveryTrip {
       trackingState: trackingState ?? this.trackingState,
       pendingDriverStatus: nextPendingDriverStatus,
       receiverName: receiverName,
+      receiverAddress: receiverAddress,
       itemSummary: itemSummary,
       pickupStops: pickupStops,
       shipperReferences: shipperReferences,
       cargoItems: cargoItems,
+      pendingActualCargoItems: pendingActualCargoItems,
+      pendingActualDropPoints: pendingActualDropPoints,
     );
   }
 }

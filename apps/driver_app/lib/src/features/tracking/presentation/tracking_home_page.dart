@@ -8,6 +8,7 @@ import '../data/driver_access_service.dart';
 import '../data/delivery_order_service.dart';
 import '../data/driver_tracking_service.dart';
 import '../domain/models.dart';
+import 'delivery_completion_page.dart';
 import 'delivery_manifest_page.dart';
 
 class TrackingHomePage extends StatefulWidget {
@@ -649,6 +650,10 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       TripStatus.arrived => TripStatus.delivered,
       TripStatus.delivered => TripStatus.delivered,
     };
+    if (trip.status == TripStatus.arrived) {
+      await _openDeliveryCompletion(trip);
+      return;
+    }
     setState(() => _updatingStatus = true);
     try {
       final updatedTrip = await _deliveryOrderService.updateTripStatus(
@@ -679,6 +684,65 @@ class _TrackingHomePageState extends State<TrackingHomePage>
           ),
         );
       }
+    } on DeliveryOrderException catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(err.message),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _updatingStatus = false);
+      }
+    }
+  }
+
+  Future<void> _openDeliveryCompletion(DeliveryTrip trip) async {
+    final sessionToken = widget.session.token;
+    if (sessionToken == null || sessionToken.isEmpty) {
+      return;
+    }
+    if (trip.cargoItems.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Muatan DO belum ada. Isi barang dulu sebelum ajukan selesai.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final result = await Navigator.of(context)
+        .push<DeliveryCompletionSubmitResult>(
+          MaterialPageRoute(builder: (_) => DeliveryCompletionPage(trip: trip)),
+        );
+
+    if (result == null) {
+      return;
+    }
+
+    setState(() => _updatingStatus = true);
+    try {
+      await _deliveryOrderService.requestDeliveryCompletion(
+        sessionToken: sessionToken,
+        deliveryOrderId: trip.deliveryOrderId,
+        note: result.note,
+        actualItems: result.actualItems,
+        actualDropPoints: result.actualDropPoints,
+      );
+      await _loadTrips();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Permintaan selesai dikirim. Menunggu approval admin.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     } on DeliveryOrderException catch (err) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
