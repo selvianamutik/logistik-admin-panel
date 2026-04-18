@@ -13,6 +13,7 @@ void main() {
       status: TripStatus.assigned,
       etdLabel: 'Tanggal DO 2026-04-18',
       statusNote: 'Trip sudah ditugaskan',
+      allowsDirectCargoInput: true,
     );
 
     test('updates status note when status changes', () {

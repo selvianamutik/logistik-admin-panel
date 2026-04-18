@@ -8,6 +8,7 @@ import '../data/driver_access_service.dart';
 import '../data/delivery_order_service.dart';
 import '../data/driver_tracking_service.dart';
 import '../domain/models.dart';
+import 'delivery_manifest_page.dart';
 
 class TrackingHomePage extends StatefulWidget {
   const TrackingHomePage({
@@ -30,6 +31,8 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   late final DriverTrackingService _trackingService;
 
   List<DeliveryTrip> _trips = const [];
+  List<DriverAssignedTripPlan> _plannedTrips = const [];
+  List<CustomerProductOption> _customerProducts = const [];
   DeliveryTrip? _selectedTrip;
   DeliveryTrip? _activeTrip;
   LocationSnapshot? _latestLocation;
@@ -37,6 +40,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   bool _trackingEnabled = false;
   bool _loadingTrips = true;
   bool _updatingStatus = false;
+  bool _submittingManifest = false;
   bool _acknowledgingWarning = false;
   String? _loadError;
   String? _locationError;
@@ -222,12 +226,15 @@ class _TrackingHomePageState extends State<TrackingHomePage>
       _loadError = null;
     });
     try {
-      final trips = await _deliveryOrderService.fetchDriverTrips(
+      final portalData = await _deliveryOrderService.fetchDriverPortalData(
         sessionToken: sessionToken,
       );
+      final trips = portalData.trips;
       if (!mounted) return;
       setState(() {
         _trips = trips;
+        _plannedTrips = portalData.plannedTrips;
+        _customerProducts = portalData.customerProducts;
         // DO NOT clear _accessNotice here. It should only be cleared by
         // explicit server response (notice = null) or after acknowledgement.
         // The previous code was wiping warnings incorrectly.
@@ -308,6 +315,170 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   }
 
   // ── Tracking ───────────────────────────────────────────────
+
+  List<CustomerProductOption> _productsForCustomer(String? customerRef) {
+    final normalizedCustomerRef = customerRef?.trim() ?? '';
+    if (normalizedCustomerRef.isEmpty) {
+      return _customerProducts;
+    }
+    return _customerProducts
+        .where((product) => product.customerRef == normalizedCustomerRef)
+        .toList(growable: false);
+  }
+
+  bool _canManageManifest(DeliveryTrip trip) {
+    if (trip.status == TripStatus.delivered) {
+      return false;
+    }
+    return !trip.isAwaitingAdminApproval;
+  }
+
+  Future<void> _openTripManifestPlan(DriverAssignedTripPlan tripPlan) async {
+    final sessionToken = widget.session.token;
+    if (sessionToken == null || sessionToken.isEmpty) {
+      return;
+    }
+    if (tripPlan.linkedDeliveryOrderRef?.trim().isNotEmpty == true) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Trip ini sudah punya DO. Kelola SJ dari DO aktifnya.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final result = await Navigator.of(context)
+        .push<DeliveryManifestSubmitResult>(
+          MaterialPageRoute(
+            builder: (_) => DeliveryManifestPage(
+              title: tripPlan.allowsDirectCargoInput
+                  ? 'Buat SJ & Barang'
+                  : 'Buat SJ',
+              submitLabel: tripPlan.allowsDirectCargoInput
+                  ? 'Simpan SJ & Barang'
+                  : 'Simpan SJ',
+              pickupStops: tripPlan.pickupStops,
+              customerProducts: _productsForCustomer(tripPlan.customerRef),
+              allowsDirectCargoInput: tripPlan.allowsDirectCargoInput,
+            ),
+          ),
+        );
+
+    if (result == null) {
+      return;
+    }
+
+    setState(() => _submittingManifest = true);
+    try {
+      await _deliveryOrderService.createDeliveryOrderFromTripPlan(
+        sessionToken: sessionToken,
+        orderRef: tripPlan.orderRef,
+        orderTripPlanKey: tripPlan.tripPlanKey,
+        shipperReferences: result.shipperReferences,
+        cargoItems: result.cargoItems,
+      );
+      await _loadTrips();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            tripPlan.allowsDirectCargoInput
+                ? 'SJ dan barang berhasil dibuat.'
+                : 'SJ berhasil dibuat.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } on DeliveryOrderException catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(err.message),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _submittingManifest = false);
+      }
+    }
+  }
+
+  Future<void> _openDeliveryManifest(DeliveryTrip trip) async {
+    final sessionToken = widget.session.token;
+    if (sessionToken == null || sessionToken.isEmpty) {
+      return;
+    }
+    if (!_canManageManifest(trip)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('DO ini tidak bisa diubah dari aplikasi driver.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final result = await Navigator.of(context)
+        .push<DeliveryManifestSubmitResult>(
+          MaterialPageRoute(
+            builder: (_) => DeliveryManifestPage(
+              title: trip.allowsDirectCargoInput
+                  ? 'Kelola SJ & Barang'
+                  : 'Kelola SJ',
+              submitLabel: trip.allowsDirectCargoInput
+                  ? 'Simpan SJ & Barang'
+                  : 'Simpan SJ',
+              pickupStops: trip.pickupStops,
+              customerProducts: _productsForCustomer(trip.customerRef),
+              allowsDirectCargoInput: trip.allowsDirectCargoInput,
+              initialShipperReferences: trip.shipperReferences,
+              existingCargoItems: trip.cargoItems,
+            ),
+          ),
+        );
+
+    if (result == null) {
+      return;
+    }
+
+    setState(() => _submittingManifest = true);
+    try {
+      await _deliveryOrderService.appendCargoToDeliveryOrder(
+        sessionToken: sessionToken,
+        deliveryOrderId: trip.deliveryOrderId,
+        shipperReferences: result.shipperReferences,
+        cargoItems: result.cargoItems,
+      );
+      await _loadTrips();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.cargoItems.isEmpty
+                ? 'SJ berhasil disimpan.'
+                : 'SJ dan barang berhasil disimpan.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } on DeliveryOrderException catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(err.message),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _submittingManifest = false);
+      }
+    }
+  }
 
   Future<String?> _checkPermission() async {
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -580,6 +751,12 @@ class _TrackingHomePageState extends State<TrackingHomePage>
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final compact = MediaQuery.sizeOf(context).width < 380;
+    final pendingTripPlans = _plannedTrips
+        .where(
+          (tripPlan) =>
+              tripPlan.linkedDeliveryOrderRef?.trim().isNotEmpty != true,
+        )
+        .toList(growable: false);
     final accessNotice = _accessNotice;
     final hasBlockingNotice =
         accessNotice != null &&
@@ -636,7 +813,10 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                   ? const NeverScrollableScrollPhysics()
                   : const AlwaysScrollableScrollPhysics(),
               children: [
-                _DriverCard(session: widget.session, tripCount: _trips.length),
+                _DriverCard(
+                  session: widget.session,
+                  tripCount: _trips.length + pendingTripPlans.length,
+                ),
                 const SizedBox(height: 16),
                 if (!hasBlockingNotice && accessNotice != null) ...[
                   _ErrorBanner(
@@ -646,6 +826,25 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                   ),
                   const SizedBox(height: 16),
                 ],
+                if (!hasBlockingNotice && pendingTripPlans.isNotEmpty) ...[
+                  _SectionHeader(
+                    title: 'Trip siap input SJ',
+                    count: pendingTripPlans.length,
+                  ),
+                  const SizedBox(height: 10),
+                  ...pendingTripPlans.map(
+                    (tripPlan) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _PlannedTripCard(
+                        tripPlan: tripPlan,
+                        busy: _submittingManifest,
+                        onPressed: () =>
+                            unawaited(_openTripManifestPlan(tripPlan)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                ],
                 _SectionHeader(title: 'Trip', count: _trips.length),
                 const SizedBox(height: 10),
                 _buildTripList(scheme),
@@ -654,6 +853,36 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                   const _SectionHeader(title: 'Trip dipilih'),
                   const SizedBox(height: 10),
                   _TripDetailCard(trip: _selectedTrip!),
+                  const SizedBox(height: 12),
+                  _ManifestSummaryCard(trip: _selectedTrip!),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.tonalIcon(
+                      onPressed:
+                          _submittingManifest ||
+                              !_canManageManifest(_selectedTrip!)
+                          ? null
+                          : () => unawaited(
+                              _openDeliveryManifest(_selectedTrip!),
+                            ),
+                      icon: _submittingManifest
+                          ? SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: scheme.primary,
+                              ),
+                            )
+                          : const Icon(Icons.inventory_2_outlined),
+                      label: Text(
+                        _selectedTrip!.allowsDirectCargoInput
+                            ? 'Kelola SJ & Barang'
+                            : 'Kelola SJ',
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   if (_locationError != null) ...[
                     _ErrorBanner(
@@ -1079,6 +1308,211 @@ class _TripListCard extends StatelessWidget {
 }
 
 // ── Trip detail card ───────────────────────────────────────
+class _PlannedTripCard extends StatelessWidget {
+  const _PlannedTripCard({
+    required this.tripPlan,
+    required this.busy,
+    required this.onPressed,
+  });
+
+  final DriverAssignedTripPlan tripPlan;
+  final bool busy;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final pickupSummary = tripPlan.pickupStops.isEmpty
+        ? 'Pickup belum diset'
+        : tripPlan.pickupStops.map((pickup) => pickup.displayLabel).join(', ');
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(
+                  tripPlan.tripLabel,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: scheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    tripPlan.allowsDirectCargoInput ? 'SJ & Barang' : 'SJ',
+                    style: TextStyle(
+                      color: scheme.primary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${tripPlan.customerName ?? 'Tanpa customer'} | ${tripPlan.vehiclePlate ?? '-'}',
+              style: TextStyle(
+                color: scheme.onSurface.withValues(alpha: 0.58),
+                fontSize: 12.5,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              pickupSummary,
+              style: TextStyle(
+                color: scheme.onSurface.withValues(alpha: 0.72),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.tonalIcon(
+                onPressed: busy ? null : onPressed,
+                icon: busy
+                    ? SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: scheme.primary,
+                        ),
+                      )
+                    : const Icon(Icons.note_add_outlined),
+                label: Text(
+                  tripPlan.allowsDirectCargoInput
+                      ? 'Buat SJ & Barang'
+                      : 'Buat SJ',
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ManifestSummaryCard extends StatelessWidget {
+  const _ManifestSummaryCard({required this.trip});
+
+  final DeliveryTrip trip;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final shipperRefs = trip.shipperReferences;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  'Manifest',
+                  style: TextStyle(
+                    color: scheme.onSurface,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '${shipperRefs.length} SJ',
+                    style: TextStyle(
+                      color: scheme.onSurface.withValues(alpha: 0.72),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            if (shipperRefs.isEmpty)
+              Text(
+                'Belum ada SJ tercatat untuk DO ini.',
+                style: TextStyle(
+                  color: scheme.onSurface.withValues(alpha: 0.58),
+                  fontSize: 13,
+                ),
+              )
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: shipperRefs
+                    .map(
+                      (shipperRef) => Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          color: scheme.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: scheme.outline.withValues(alpha: 0.32),
+                          ),
+                        ),
+                        child: Text(
+                          shipperRef.referenceNumber,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(growable: false),
+              ),
+            const SizedBox(height: 10),
+            Text(
+              trip.allowsDirectCargoInput
+                  ? '${trip.cargoItems.length} barang sudah tercatat di DO ini.'
+                  : 'Muatan mengikuti order/resi. Driver cukup kelola nomor SJ dan pickup yang dibawa.',
+              style: TextStyle(
+                color: scheme.onSurface.withValues(alpha: 0.58),
+                fontSize: 12.5,
+                height: 1.4,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _TripDetailCard extends StatelessWidget {
   const _TripDetailCard({required this.trip});
   final DeliveryTrip trip;
