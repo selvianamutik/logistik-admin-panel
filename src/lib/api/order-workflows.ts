@@ -5179,6 +5179,7 @@ export async function handleDeliveryOrderTripResourceAssign(
         _id: string;
         _rev?: string;
         doNumber?: string;
+        orderRef?: unknown;
         customerDoNumber?: string;
         status?: string;
         trackingState?: string;
@@ -5388,6 +5389,17 @@ export async function handleDeliveryOrderTripResourceAssign(
         return NextResponse.json({ error: 'Revisi surat jalan tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
+    const relatedOrderRef = extractRefId(deliveryOrder.orderRef);
+    const relatedOrder = relatedOrderRef
+        ? await sanityGetById<{
+            _id: string;
+            _rev?: string;
+            tripPlans?: OrderTripPlan[];
+        }>(relatedOrderRef)
+        : null;
+    const relatedOrderTripPlans = normalizeOrderTripPlansSnapshot(relatedOrder?.tripPlans);
+    const linkedTripPlan = relatedOrderTripPlans.find(plan => plan.linkedDeliveryOrderRef === id) || null;
+
     let updatedDeliveryOrder: unknown;
     try {
         const mutationTimestamp = new Date().toISOString();
@@ -5422,11 +5434,35 @@ export async function handleDeliveryOrderTripResourceAssign(
                 driverName: nextDriverName || undefined,
             },
         });
+        if (relatedOrder && linkedTripPlan) {
+            if (!relatedOrder._rev) {
+                return NextResponse.json({ error: 'Revisi order trip tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
+            }
+            transaction.patch(relatedOrder._id, {
+                ifRevisionID: relatedOrder._rev,
+                set: {
+                    tripPlans: relatedOrderTripPlans.map(plan => (
+                        plan._key === linkedTripPlan._key
+                            ? {
+                                ...plan,
+                                vehicleRef: nextVehicleRef || undefined,
+                                vehiclePlate: nextVehiclePlate || undefined,
+                                vehicleServiceRef: nextVehicleServiceRef || undefined,
+                                vehicleServiceName: nextVehicleServiceName || undefined,
+                                vehicleCategoryOverrideReason: nextVehicleCategoryOverrideReason || undefined,
+                                driverRef: nextDriverRef || undefined,
+                                driverName: nextDriverName || undefined,
+                            }
+                            : plan
+                    )),
+                },
+            });
+        }
         updatedDeliveryOrder = await transaction.commit();
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
-                { error: 'Armada trip, kendaraan, atau supir berubah karena ada update lain. Refresh lalu coba lagi.' },
+                { error: 'Armada trip, kendaraan, supir, atau order trip berubah karena ada update lain. Refresh lalu coba lagi.' },
                 { status: 409 }
             );
         }
