@@ -17,6 +17,7 @@
     "audit:runtime-order-header-booking-flow": "npx tsx scripts/audit-runtime-order-header-booking-flow.ts",
     "audit:runtime-nota-revision-flow": "npx tsx scripts/audit-runtime-nota-revision-flow.ts",
     "audit:runtime-do-nota-flow": "npx tsx scripts/audit-runtime-do-nota-flow.ts",
+    "audit:runtime-driver-request-lifecycle-flow": "npx tsx scripts/audit-runtime-driver-request-lifecycle-flow.ts",
     "audit:runtime-sj-edit-flow": "npx tsx scripts/audit-runtime-sj-edit-flow.ts",
     "audit:runtime-trip-resource-sync-flow": "npx tsx scripts/audit-runtime-trip-resource-sync-flow.ts",
     "backfill:do-shipper-refs": "npx tsx scripts/backfill-do-shipper-references.ts --write",
