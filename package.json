@@ -21,6 +21,7 @@
     "audit:runtime-order-item-hold-release-complete-flow": "npx tsx scripts/audit-runtime-order-item-hold-release-complete-flow.ts",
     "audit:runtime-do-nota-flow": "npx tsx scripts/audit-runtime-do-nota-flow.ts",
     "audit:runtime-driver-approve-mixed-billing-flow": "npx tsx scripts/audit-runtime-driver-approve-mixed-billing-flow.ts",
+    "audit:runtime-mixed-billing-nota-finance-lock-flow": "npx tsx scripts/audit-runtime-mixed-billing-nota-finance-lock-flow.ts",
     "audit:runtime-mixed-billing-nota-revision-flow": "npx tsx scripts/audit-runtime-mixed-billing-nota-revision-flow.ts",
     "audit:runtime-mixed-billing-split-flow": "npx tsx scripts/audit-runtime-mixed-billing-split-flow.ts",
     "audit:runtime-partial-hold-multi-sj-invoice-flow": "npx tsx scripts/audit-runtime-partial-hold-multi-sj-invoice-flow.ts",
