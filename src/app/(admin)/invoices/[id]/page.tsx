@@ -142,6 +142,7 @@ export default function NotaDetailPage() {
     const canOpenBankAccounts = user ? hasPageAccess(user.role, 'bankAccounts') : false;
     const canEditPph23 = canManageInvoice && totalPaidRaw <= 0 && refundedOverpaymentAmount <= 0;
     const canReviseInvoice = canManageInvoice && totalPaidRaw <= 0 && refundedOverpaymentAmount <= 0 && totalAdjustmentAmount <= 0;
+    const canDeleteInvoiceSafely = canDeleteInvoice && totalPaidRaw <= 0 && refundedOverpaymentAmount <= 0 && totalAdjustmentAmount <= 0;
     const draftPph23Summary = calculatePph23Summary({
         grossAmount,
         claimAmount: totalAdjustmentAmount,
@@ -525,7 +526,16 @@ export default function NotaDetailPage() {
                     {canManageOverpaymentRefund && creditAmount > 0 && <button className="btn btn-warning btn-sm" onClick={openRefundOverpaymentModal}>Konfirmasi Transfer Balik</button>}
                     {canExportInvoice && <button className="btn btn-secondary btn-sm" onClick={handleExportExcel}><FileDown size={14} /> Excel</button>}
                     {canPrintInvoice && <button className="btn btn-secondary btn-sm" onClick={handlePrint}><Printer size={14} /> Cetak Nota</button>}
-                    {canDeleteInvoice && <button className="btn btn-secondary btn-sm" onClick={handleDelete} disabled={deleting}><Trash2 size={14} /> Hapus Nota</button>}
+                    {canDeleteInvoice && (
+                        <button
+                            className="btn btn-secondary btn-sm"
+                            onClick={handleDelete}
+                            disabled={deleting || !canDeleteInvoiceSafely}
+                            title={canDeleteInvoiceSafely ? 'Hapus nota ini' : 'Nota tidak bisa dihapus setelah ada pembayaran, refund, atau klaim/potongan aktif'}
+                        >
+                            <Trash2 size={14} /> Hapus Nota
+                        </button>
+                    )}
                 </div>
             </div>
 
