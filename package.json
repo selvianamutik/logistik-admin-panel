@@ -12,6 +12,7 @@
     "audit:delivery-flow": "node scripts/audit-delivery-status-flow.mjs",
     "audit:do-flow": "node scripts/audit-do-flow.mjs",
     "audit:finance": "node scripts/audit-finance.mjs",
+    "audit:invoice-flow": "node scripts/audit-freight-nota-flow.mjs",
     "backfill:do-shipper-refs": "npx tsx scripts/backfill-do-shipper-references.ts --write",
     "reset:sanity": "npx tsx scripts/reset-sanity.ts",
     "seed:sanity": "npx tsx scripts/seed-sanity.ts",
