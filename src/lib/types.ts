@@ -736,6 +736,9 @@ export interface DeliveryOrderItem {
   orderItemWeightInputUnit?: WeightInputUnit;
   orderItemVolumeInputValue?: number;
   orderItemVolumeInputUnit?: VolumeInputUnit;
+  heldQtyKoli?: number;
+  heldWeight?: number;
+  heldVolume?: number;
   shippedQtyKoli?: number;
   shippedWeight?: number;
   actualQtyKoli?: number;

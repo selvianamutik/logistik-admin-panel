@@ -128,6 +128,9 @@ export type OrderItemProgressSnapshot = {
 export type DeliveryOrderItemCargoSnapshot = {
     _id: string;
     orderItemRef?: unknown;
+    heldQtyKoli?: number;
+    heldWeight?: number;
+    heldVolume?: number;
     shippedQtyKoli?: number;
     shippedWeight?: number;
     orderItemQtyKoli?: number;

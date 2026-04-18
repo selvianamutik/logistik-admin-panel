@@ -2484,6 +2484,9 @@ export async function handleDeliveryOrderStatusUpdate(
             _id,
             _rev,
             orderItemRef,
+            heldQtyKoli,
+            heldWeight,
+            heldVolume,
             shippedQtyKoli,
             shippedWeight,
             orderItemQtyKoli,
@@ -2931,20 +2934,34 @@ export async function handleDeliveryOrderStatusUpdate(
             }
 
             if (status === 'CANCELLED') {
+                const heldQtyFromDeliveryOrder = roundQuantity(normalizeNumber(item.heldQtyKoli ?? 0));
+                const heldWeightFromDeliveryOrder = roundQuantity(normalizeNumber(item.heldWeight ?? 0));
+                const heldVolumeFromDeliveryOrder = roundQuantity(normalizeNumber(item.heldVolume ?? 0), 3);
                 const nextProgress = {
                     ...progress,
                     assignedQtyKoli: roundQuantity(Math.max(progress.assignedQtyKoli - plannedQtyKoli, 0)),
                     assignedWeight: roundQuantity(Math.max(progress.assignedWeight - plannedWeight, 0)),
                     assignedVolume: roundQuantity(Math.max(progress.assignedVolume - plannedVolume, 0), 3),
+                    heldQtyKoli: roundQuantity(Math.max(progress.heldQtyKoli - heldQtyFromDeliveryOrder, 0)),
+                    heldWeight: roundQuantity(Math.max(progress.heldWeight - heldWeightFromDeliveryOrder, 0)),
+                    heldVolume: roundQuantity(Math.max(progress.heldVolume - heldVolumeFromDeliveryOrder, 0), 3),
                 };
+                const orderItemPatchSet: Record<string, unknown> = {
+                    assignedQtyKoli: nextProgress.assignedQtyKoli,
+                    assignedWeight: nextProgress.assignedWeight,
+                    assignedVolume: nextProgress.assignedVolume,
+                    heldQtyKoli: nextProgress.heldQtyKoli,
+                    heldWeight: nextProgress.heldWeight,
+                    heldVolume: nextProgress.heldVolume,
+                    status: deriveOrderItemStatusFromProgress(nextProgress),
+                };
+                if (nextProgress.heldQtyKoli <= 0 && nextProgress.heldWeight <= 0 && nextProgress.heldVolume <= 0) {
+                    orderItemPatchSet.holdReason = undefined;
+                    orderItemPatchSet.holdLocation = undefined;
+                }
                 transaction.patch(orderItemRef, {
                     ifRevisionID: orderItem._rev,
-                    set: {
-                        assignedQtyKoli: nextProgress.assignedQtyKoli,
-                        assignedWeight: nextProgress.assignedWeight,
-                        assignedVolume: nextProgress.assignedVolume,
-                        status: deriveOrderItemStatusFromProgress(nextProgress),
-                    },
+                    set: orderItemPatchSet,
                 });
             }
         }
@@ -4319,6 +4336,9 @@ export async function handleDeliveryOrderCreate(
             orderItemWeightInputUnit: shippedWeightInputUnit,
             orderItemVolumeInputValue: shippedVolumeInputValue,
             orderItemVolumeInputUnit: shippedVolumeInputUnit,
+            heldQtyKoli: holdQtyToApply > 0 ? holdQtyToApply : undefined,
+            heldWeight: holdWeightToApply > 0 ? holdWeightToApply : undefined,
+            heldVolume: holdVolumeToApply > 0 ? holdVolumeToApply : undefined,
             shippedQtyKoli: usesQtyBasis ? shippedQtyKoli : undefined,
             shippedWeight,
         });
