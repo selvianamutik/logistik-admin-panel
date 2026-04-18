@@ -603,6 +603,7 @@ class _ManifestGroupCard extends StatelessWidget {
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               key: ValueKey('pickup-${group.id}-${group.pickupStopKey}'),
+              isExpanded: true,
               initialValue:
                   pickupStops.any((stop) => stop.key == group.pickupStopKey)
                   ? group.pickupStopKey
@@ -736,6 +737,7 @@ class _ManifestItemCard extends StatelessWidget {
           if (customerProducts.isNotEmpty) ...[
             DropdownButtonFormField<String>(
               key: ValueKey('product-${item.id}-${item.customerProductRef}'),
+              isExpanded: true,
               initialValue: item.customerProductRef.isNotEmpty
                   ? item.customerProductRef
                   : null,
@@ -797,6 +799,7 @@ class _ManifestItemCard extends StatelessWidget {
                   key: ValueKey(
                     'weight-unit-${item.id}-${item.weightInputUnit}',
                   ),
+                  isExpanded: true,
                   initialValue: item.weightInputUnit,
                   decoration: const InputDecoration(labelText: 'Unit'),
                   items: const [
@@ -831,6 +834,7 @@ class _ManifestItemCard extends StatelessWidget {
                   key: ValueKey(
                     'volume-unit-${item.id}-${item.volumeInputUnit}',
                   ),
+                  isExpanded: true,
                   initialValue: item.volumeInputUnit,
                   decoration: const InputDecoration(labelText: 'Unit'),
                   items: const [
