@@ -37,7 +37,10 @@ class DeliveryTrip {
     TripStatus? status,
     String? trackingState,
     String? pendingDriverStatus,
+    String? statusNote,
   }) {
+    final nextStatus = status ?? this.status;
+    final nextPendingDriverStatus = pendingDriverStatus ?? this.pendingDriverStatus;
     return DeliveryTrip(
       deliveryOrderId: deliveryOrderId,
       doNumber: doNumber,
@@ -45,15 +48,37 @@ class DeliveryTrip {
       originLabel: originLabel,
       destinationLabel: destinationLabel,
       customerName: customerName,
-      status: status ?? this.status,
+      status: nextStatus,
       etdLabel: etdLabel,
-      statusNote: statusNote,
+      statusNote:
+          statusNote ??
+          defaultTripStatusNote(
+            nextStatus,
+            pendingDriverStatus: nextPendingDriverStatus,
+          ),
       trackingState: trackingState ?? this.trackingState,
-      pendingDriverStatus: pendingDriverStatus ?? this.pendingDriverStatus,
+      pendingDriverStatus: nextPendingDriverStatus,
       receiverName: receiverName,
       itemSummary: itemSummary,
     );
   }
+}
+
+String defaultTripStatusNote(
+  TripStatus status, {
+  String? pendingDriverStatus,
+}) {
+  if (pendingDriverStatus == 'DELIVERED') {
+    return 'Menunggu approval admin';
+  }
+
+  return switch (status) {
+    TripStatus.headingToPickup => 'Driver menuju pickup',
+    TripStatus.onDelivery => 'Pengiriman berjalan',
+    TripStatus.arrived => 'Driver sudah tiba',
+    TripStatus.delivered => 'Trip selesai',
+    TripStatus.assigned => 'Trip sudah ditugaskan',
+  };
 }
 
 class DriverLocationSnapshot {

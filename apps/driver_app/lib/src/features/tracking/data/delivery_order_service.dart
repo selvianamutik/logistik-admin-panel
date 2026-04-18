@@ -110,24 +110,11 @@ class DeliveryOrderService {
       pendingDriverStatus: (json['pendingDriverStatus'] as String?)?.trim(),
       status: mappedStatus,
       etdLabel: date?.isNotEmpty == true ? 'Tanggal DO $date' : 'Tanggal DO -',
-      statusNote: _statusNote(
-        status,
+      statusNote: defaultTripStatusNote(
+        mappedStatus,
         pendingDriverStatus: (json['pendingDriverStatus'] as String?)?.trim(),
       ),
     );
-  }
-
-  String _statusNote(String status, {String? pendingDriverStatus}) {
-    if (pendingDriverStatus == 'DELIVERED') {
-      return 'Menunggu approval admin';
-    }
-    return switch (status) {
-      'HEADING_TO_PICKUP' => 'Driver menuju pickup',
-      'ON_DELIVERY' => 'Pengiriman berjalan',
-      'ARRIVED' => 'Driver sudah tiba',
-      'DELIVERED' => 'Trip selesai',
-      _ => 'Trip sudah ditugaskan',
-    };
   }
 
   String _mapStatusToApi(TripStatus status) {
