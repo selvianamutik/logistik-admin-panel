@@ -24,6 +24,7 @@
     "audit:runtime-driver-request-lifecycle-flow": "npx tsx scripts/audit-runtime-driver-request-lifecycle-flow.ts",
     "audit:runtime-sj-edit-flow": "npx tsx scripts/audit-runtime-sj-edit-flow.ts",
     "audit:runtime-trip-resource-sync-flow": "npx tsx scripts/audit-runtime-trip-resource-sync-flow.ts",
+    "audit:runtime-trip-plan-cancel-reuse-flow": "npx tsx scripts/audit-runtime-trip-plan-cancel-reuse-flow.ts",
     "backfill:do-shipper-refs": "npx tsx scripts/backfill-do-shipper-references.ts --write",
     "reset:sanity": "npx tsx scripts/reset-sanity.ts",
     "seed:sanity": "npx tsx scripts/seed-sanity.ts",
