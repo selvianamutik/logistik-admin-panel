@@ -2689,6 +2689,68 @@ export async function handleDeliveryOrderStatusUpdate(
 
     for (const item of doItems) {
         const orderItemRef = extractRefId(item.orderItemRef);
+        const plannedQtyKoli = roundQuantity(normalizeNumber(item.shippedQtyKoli ?? item.orderItemQtyKoli ?? 0));
+        const plannedWeight = roundQuantity(normalizeNumber(item.shippedWeight ?? item.orderItemWeight ?? 0));
+        const plannedVolume = roundQuantity(normalizeNumber(item.orderItemVolumeM3 ?? 0), 3);
+        if (status === 'DELIVERED' && !orderItemRef) {
+            if (!item._rev) {
+                return NextResponse.json(
+                    { error: 'Revisi item surat jalan tidak tersedia. Refresh lalu coba lagi.' },
+                    { status: 409 }
+                );
+            }
+            const actualCargo = actualCargoByDoItemId.get(item._id);
+            if (!actualCargo) {
+                return NextResponse.json({ error: 'Muatan aktual surat jalan tidak lengkap' }, { status: 400 });
+            }
+
+            if (plannedQtyKoli > 0 && (!Number.isFinite(actualCargo.actualQtyKoli) || actualCargo.actualQtyKoli <= 0)) {
+                return NextResponse.json(
+                    { error: `Qty aktual untuk item surat jalan ${item._id} harus lebih besar dari 0` },
+                    { status: 400 }
+                );
+            }
+            if (!Number.isFinite(actualCargo.actualWeightKg) || actualCargo.actualWeightKg < 0) {
+                return NextResponse.json(
+                    { error: `Berat aktual untuk item surat jalan ${item._id} tidak valid` },
+                    { status: 400 }
+                );
+            }
+            if (plannedWeight > 0 && actualCargo.actualWeightKg <= 0) {
+                return NextResponse.json(
+                    { error: `Berat aktual untuk item surat jalan ${item._id} wajib diisi` },
+                    { status: 400 }
+                );
+            }
+            if (actualCargo.actualVolumeM3 !== undefined && (!Number.isFinite(actualCargo.actualVolumeM3) || actualCargo.actualVolumeM3 < 0)) {
+                return NextResponse.json(
+                    { error: `Volume aktual untuk item surat jalan ${item._id} tidak valid` },
+                    { status: 400 }
+                );
+            }
+            if (plannedVolume > 0 && normalizeNumber(actualCargo.actualVolumeM3 ?? 0) <= 0) {
+                return NextResponse.json(
+                    { error: `Volume aktual untuk item surat jalan ${item._id} wajib diisi` },
+                    { status: 400 }
+                );
+            }
+
+            const actualWeight = roundQuantity(actualCargo.actualWeightKg);
+            const actualVolume = roundQuantity(normalizeNumber(actualCargo.actualVolumeM3 ?? 0), 3);
+            transaction.patch(item._id, {
+                ifRevisionID: item._rev,
+                set: {
+                    actualQtyKoli: plannedQtyKoli > 0 ? actualCargo.actualQtyKoli : undefined,
+                    actualWeightKg: actualWeight,
+                    actualVolumeM3: actualVolume > 0 ? actualVolume : undefined,
+                    actualWeightInputValue: actualCargo.actualWeightInputValue,
+                    actualWeightInputUnit: actualCargo.actualWeightInputUnit,
+                    actualVolumeInputValue: actualCargo.actualVolumeInputValue,
+                    actualVolumeInputUnit: actualCargo.actualVolumeInputUnit,
+                },
+            });
+            continue;
+        }
         if (orderItemRef) {
             const orderItem = await sanityGetById<OrderItemProgressSnapshot & { _rev?: string }>(orderItemRef);
             if (!orderItem) {
