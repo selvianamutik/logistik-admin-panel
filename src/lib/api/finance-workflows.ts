@@ -3694,7 +3694,21 @@ export async function handleFreightNotaDelete(
         { ref: id }
     );
     if (existingPayments.length > 0) {
-        return NextResponse.json({ error: 'Nota yang sudah punya pembayaran tidak boleh dihapus' }, { status: 409 });
+        return NextResponse.json(
+            { error: 'Nota yang sudah punya pembayaran, refund, atau klaim/potongan aktif tidak boleh dihapus' },
+            { status: 409 }
+        );
+    }
+
+    const existingRefunds = await getSanityClient().fetch<Array<{ _id: string }>>(
+        `*[_type == "customerOverpaymentRefund" && sourceType == "INVOICE_OVERPAID" && sourceInvoiceRef == $ref]{ _id }`,
+        { ref: id }
+    );
+    if (existingRefunds.length > 0) {
+        return NextResponse.json(
+            { error: 'Nota yang sudah punya pembayaran, refund, atau klaim/potongan aktif tidak boleh dihapus' },
+            { status: 409 }
+        );
     }
 
     const existingAdjustments = await getSanityClient().fetch<Array<{ _id: string }>>(
@@ -3702,7 +3716,10 @@ export async function handleFreightNotaDelete(
         { ref: id }
     );
     if (existingAdjustments.length > 0) {
-        return NextResponse.json({ error: 'Nota yang sudah punya klaim/potongan tidak boleh dihapus' }, { status: 409 });
+        return NextResponse.json(
+            { error: 'Nota yang sudah punya pembayaran, refund, atau klaim/potongan aktif tidak boleh dihapus' },
+            { status: 409 }
+        );
     }
 
     const notaItems = await getSanityClient().fetch<Array<{ _id: string; _rev?: string }>>(
