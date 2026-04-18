@@ -141,8 +141,6 @@ class _TrackingHomePageState extends State<TrackingHomePage>
         });
         return;
       }
-      // and any existing session-level blocking notice should be cleared.
-      if (notice == null && _accessNotice != null) {}
       setState(() => _accessNotice = notice);
       await _loadTrips(skipAccessRefresh: true);
     } on DriverAccessException catch (err) {
@@ -157,7 +155,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
           _loadError = err.message;
         });
       }
-    } catch (err, stack) {
+    } catch (_) {
       // Network / parse errors — do not swallow silently.
       if (!mounted) return;
       if (_isNoticeBlocking(_accessNotice)) {
@@ -589,6 +587,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
             (accessNotice.isWarning &&
                 (accessNotice.warningAcknowledgedAt == null ||
                     accessNotice.warningAcknowledgedAt!.isEmpty)));
+    final blockingNotice = hasBlockingNotice ? accessNotice : null;
 
     return Scaffold(
       appBar: AppBar(
@@ -721,7 +720,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
               ],
             ),
           ),
-          if (hasBlockingNotice && accessNotice != null)
+          if (blockingNotice != null)
             Positioned.fill(
               child: ColoredBox(
                 color: Colors.black.withValues(alpha: 0.45),
@@ -746,16 +745,16 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                                     width: 48,
                                     height: 48,
                                     decoration: BoxDecoration(
-                                      color: accessNotice.blocking
+                                      color: blockingNotice.blocking
                                           ? scheme.errorContainer
                                           : scheme.secondaryContainer,
                                       borderRadius: BorderRadius.circular(16),
                                     ),
                                     child: Icon(
-                                      accessNotice.blocking
+                                      blockingNotice.blocking
                                           ? Icons.block_rounded
                                           : Icons.warning_amber_rounded,
-                                      color: accessNotice.blocking
+                                      color: blockingNotice.blocking
                                           ? scheme.error
                                           : scheme.secondary,
                                     ),
@@ -763,7 +762,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                                   const SizedBox(width: 14),
                                   Expanded(
                                     child: Text(
-                                      accessNotice.title,
+                                      blockingNotice.title,
                                       style: const TextStyle(
                                         fontSize: 18,
                                         fontWeight: FontWeight.w800,
@@ -774,7 +773,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                               ),
                               const SizedBox(height: 16),
                               Text(
-                                accessNotice.message,
+                                blockingNotice.message,
                                 style: TextStyle(
                                   color: scheme.onSurface.withValues(
                                     alpha: 0.78,
@@ -784,7 +783,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                               ),
                               const SizedBox(height: 12),
                               Text(
-                                accessNotice.isWarning
+                                blockingNotice.isWarning
                                     ? 'Warning ini hanya tampil satu kali. Setelah ditutup, warning akan hilang dari aplikasi driver.'
                                     : 'Akses akan kembali normal setelah masa skors selesai di server.',
                                 style: TextStyle(
@@ -798,7 +797,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                               const SizedBox(height: 20),
                               Row(
                                 children: [
-                                  if (accessNotice.blocking)
+                                  if (blockingNotice.blocking)
                                     OutlinedButton.icon(
                                       onPressed: () =>
                                           unawaited(_bootstrapPage()),
@@ -806,7 +805,7 @@ class _TrackingHomePageState extends State<TrackingHomePage>
                                       label: const Text('Refresh'),
                                     ),
                                   const Spacer(),
-                                  if (accessNotice.blocking)
+                                  if (blockingNotice.blocking)
                                     FilledButton.icon(
                                       onPressed: widget.onLogout,
                                       icon: const Icon(Icons.logout_rounded),
