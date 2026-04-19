@@ -16,14 +16,18 @@ import {
     type WeightInputUnit,
 } from '@/lib/measurement';
 import {
-    applyCustomerPickupSnapshot,
+    applyCustomerPickupToStop,
     applyCustomerProductToOrderItem,
     createDefaultOrderItemForm,
+    createDefaultPickupStopForm,
     findDefaultCustomerPickup,
+    getDraftPickupStops,
     sortCustomerPickups,
+    summarizePickupStopList,
     updateOrderItemVolumeUnit,
     updateOrderItemWeightUnit,
     type OrderItemForm,
+    type PickupStopForm,
 } from '@/lib/order-create-page-support';
 import {
     buildOrderEditForm,
@@ -34,6 +38,31 @@ import {
     type OrderEditFormState,
 } from '@/lib/order-edit-page-support';
 import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
+
+function getPrimaryPickupStop(stops: PickupStopForm[]) {
+    return getDraftPickupStops(stops)[0] || stops[0] || createDefaultPickupStopForm();
+}
+
+function syncPickupFields(form: OrderEditFormState, pickupStops: PickupStopForm[]): OrderEditFormState {
+    const primaryStop = getPrimaryPickupStop(pickupStops);
+    return {
+        ...form,
+        pickupStops,
+        customerPickupRef: primaryStop.customerPickupRef || '',
+        pickupAddress: primaryStop.pickupAddress || '',
+    };
+}
+
+function buildPickupStopsPayload(stops: PickupStopForm[]) {
+    return getDraftPickupStops(stops).map((stop, index) => ({
+        _key: stop.id,
+        sequence: index + 1,
+        customerPickupRef: stop.customerPickupRef || undefined,
+        pickupLabel: stop.pickupLabel.trim() || undefined,
+        pickupAddress: stop.pickupAddress.trim(),
+        notes: stop.notes.trim() || undefined,
+    }));
+}
 
 export default function OrderEditPage() {
     const params = useParams();
@@ -123,7 +152,8 @@ export default function OrderEditPage() {
     }, [addToast, form.customerRef]);
 
     useEffect(() => {
-        if (!customerScopedMastersLoaded || !shouldAutoApplyDefaultPickup || !form.customerRef || form.customerPickupRef) {
+        const firstPickupStop = form.pickupStops[0];
+        if (!customerScopedMastersLoaded || !shouldAutoApplyDefaultPickup || !form.customerRef || firstPickupStop?.customerPickupRef) {
             return;
         }
         const defaultPickup = findDefaultCustomerPickup(customerPickups);
@@ -131,17 +161,18 @@ export default function OrderEditPage() {
             setShouldAutoApplyDefaultPickup(false);
             return;
         }
-        const snapshot = applyCustomerPickupSnapshot(defaultPickup);
-        setForm(prev => ({
-            ...prev,
-            customerPickupRef: defaultPickup._id,
-            pickupAddress: snapshot.pickupAddress,
-            savePickupToMaster: false,
-            savePickupAsDefault: false,
-            pickupMasterLabel: '',
-        }));
+        setForm(prev => {
+            const nextStops = (prev.pickupStops.length > 0 ? prev.pickupStops : [createDefaultPickupStopForm()])
+                .map((stop, index) => index === 0 ? applyCustomerPickupToStop(stop, defaultPickup) : stop);
+            return syncPickupFields({
+                ...prev,
+                savePickupToMaster: false,
+                savePickupAsDefault: false,
+                pickupMasterLabel: '',
+            }, nextStops);
+        });
         setShouldAutoApplyDefaultPickup(false);
-    }, [customerPickups, customerScopedMastersLoaded, form.customerPickupRef, form.customerRef, shouldAutoApplyDefaultPickup]);
+    }, [customerPickups, customerScopedMastersLoaded, form.customerRef, form.pickupStops, shouldAutoApplyDefaultPickup]);
 
     const updateItem = <K extends keyof OrderItemForm>(idx: number, field: K, value: OrderItemForm[K]) => {
         setItems(prev => prev.map((item, i) => i === idx ? { ...item, [field]: value } : item));
@@ -158,16 +189,29 @@ export default function OrderEditPage() {
     const handleCustomerChange = (nextCustomerRef: string) => {
         const nextCustomer = customers.find(customer => customer._id === nextCustomerRef);
         setForm(prev => ({
-            ...prev,
+            ...syncPickupFields(prev, (() => {
+                const draftStops = getDraftPickupStops(prev.pickupStops);
+                const previousCustomer = customers.find(customer => customer._id === prev.customerRef);
+                const previousCustomerAddress = previousCustomer?.address?.trim() || '';
+                const shouldUseCustomerDefault =
+                    draftStops.length === 0 ||
+                    (draftStops.length === 1 && (!draftStops[0].pickupAddress.trim() || draftStops[0].pickupAddress.trim() === previousCustomerAddress));
+                if (shouldUseCustomerDefault) {
+                    return [createDefaultPickupStopForm(resolvePickupAddressForCustomer({
+                        nextCustomerRef,
+                        previousCustomerRef: prev.customerRef,
+                        previousPickupAddress: prev.pickupAddress,
+                        customers,
+                    }) || nextCustomer?.address || '')];
+                }
+                return draftStops.map(stop => ({
+                    ...stop,
+                    customerPickupRef: '',
+                    pickupLabel: '',
+                }));
+            })()),
             customerRef: nextCustomerRef,
             customerName: nextCustomer?.name || '',
-            customerPickupRef: '',
-            pickupAddress: resolvePickupAddressForCustomer({
-                nextCustomerRef,
-                previousCustomerRef: prev.customerRef,
-                previousPickupAddress: prev.pickupAddress,
-                customers,
-            }),
             savePickupToMaster: false,
             savePickupAsDefault: false,
             pickupMasterLabel: '',
@@ -179,27 +223,73 @@ export default function OrderEditPage() {
         })));
     };
 
-    const handleCustomerPickupChange = (nextPickupRef: string) => {
+    const updatePickupStop = <K extends keyof PickupStopForm>(index: number, field: K, value: PickupStopForm[K]) => {
+        setShouldAutoApplyDefaultPickup(false);
+        setForm(prev => {
+            const nextStops = prev.pickupStops.map((stop, stopIndex) => (
+                stopIndex === index ? { ...stop, [field]: value } : stop
+            ));
+            return syncPickupFields(prev, nextStops);
+        });
+    };
+
+    const handleCustomerPickupChange = (index: number, nextPickupRef: string) => {
         setShouldAutoApplyDefaultPickup(false);
         const pickup = customerPickups.find(item => item._id === nextPickupRef);
-        const snapshot = applyCustomerPickupSnapshot(pickup);
-        setForm(prev => ({
+        setForm(prev => {
+            const nextStops = prev.pickupStops.map((stop, stopIndex) => (
+                stopIndex === index
+                    ? applyCustomerPickupToStop({ ...stop, customerPickupRef: nextPickupRef }, pickup)
+                    : stop
+            ));
+            return syncPickupFields({
+                ...prev,
+                savePickupToMaster: false,
+                savePickupAsDefault: false,
+                pickupMasterLabel: '',
+            }, nextStops);
+        });
+    };
+
+    const updatePickupAddress = (index: number, value: string) => {
+        setShouldAutoApplyDefaultPickup(false);
+        setForm(prev => {
+            const nextStops = prev.pickupStops.map((stop, stopIndex) => (
+                stopIndex === index
+                    ? {
+                        ...stop,
+                        customerPickupRef: '',
+                        pickupLabel: stop.customerPickupRef ? '' : stop.pickupLabel,
+                        pickupAddress: value,
+                    }
+                    : stop
+            ));
+            return syncPickupFields(prev, nextStops);
+        });
+    };
+
+    const addPickupStop = () => {
+        setShouldAutoApplyDefaultPickup(false);
+        setForm(prev => syncPickupFields({
             ...prev,
-            customerPickupRef: nextPickupRef,
-            pickupAddress: snapshot.pickupAddress,
             savePickupToMaster: false,
             savePickupAsDefault: false,
             pickupMasterLabel: '',
-        }));
+        }, [...prev.pickupStops, createDefaultPickupStopForm()]));
     };
 
-    const updatePickupAddress = (value: string) => {
+    const removePickupStop = (index: number) => {
         setShouldAutoApplyDefaultPickup(false);
-        setForm(prev => ({
-            ...prev,
-            customerPickupRef: prev.customerPickupRef ? '' : prev.customerPickupRef,
-            pickupAddress: value,
-        }));
+        setForm(prev => {
+            const nextStops = prev.pickupStops.filter((_, stopIndex) => stopIndex !== index);
+            const currentCustomer = customers.find(customer => customer._id === prev.customerRef);
+            return syncPickupFields({
+                ...prev,
+                savePickupToMaster: false,
+                savePickupAsDefault: false,
+                pickupMasterLabel: '',
+            }, nextStops.length > 0 ? nextStops : [createDefaultPickupStopForm(currentCustomer?.address || '')]);
+        });
     };
 
     const applyCustomerProductSelection = (idx: number, nextProductRef: string) => {
@@ -213,9 +303,24 @@ export default function OrderEditPage() {
         e.preventDefault();
         const usesDeliveryOrderCargoMode = form.cargoEntryMode === 'DELIVERY_ORDER';
         const isRevisionMode = !usesDeliveryOrderCargoMode && (hasDeliveryOrders || hasOperationalProgress);
+        const headerFieldsLocked = usesDeliveryOrderCargoMode && hasDeliveryOrders;
+        const canEditHeader = !isRevisionMode && !headerFieldsLocked;
 
         const hasTargetItems = !usesDeliveryOrderCargoMode && items.length > 0;
         const validItems = items.filter(item => item.description.trim() || item.customerProductRef);
+        const draftPickupStops = getDraftPickupStops(form.pickupStops);
+        if (canEditHeader && !form.customerRef) {
+            addToast('error', 'Customer wajib dipilih');
+            return;
+        }
+        if (canEditHeader && draftPickupStops.length === 0) {
+            addToast('error', 'Minimal 1 titik pickup wajib diisi');
+            return;
+        }
+        if (canEditHeader && draftPickupStops.some(stop => !stop.pickupAddress.trim())) {
+            addToast('error', 'Alamat setiap titik pickup wajib diisi');
+            return;
+        }
         if (!isRevisionMode && hasTargetItems && validItems.length === 0) {
             addToast('error', 'Minimal 1 item order wajib diisi');
             return;
@@ -232,8 +337,14 @@ export default function OrderEditPage() {
                 : isRevisionMode
                     ? 'revise-targets'
                     : 'update-with-items';
-            let pickupRefForSubmit = form.customerPickupRef;
-            if (!usesDeliveryOrderCargoMode && !isRevisionMode && form.savePickupToMaster && !pickupRefForSubmit) {
+            let pickupStopsForSubmit = buildPickupStopsPayload(form.pickupStops);
+            if (canEditHeader && form.savePickupToMaster) {
+                const singlePickupStop = draftPickupStops.length === 1 ? draftPickupStops[0] : null;
+                if (!singlePickupStop || singlePickupStop.customerPickupRef) {
+                    addToast('error', 'Simpan ke master hanya berlaku untuk 1 titik pickup manual');
+                    setSaving(false);
+                    return;
+                }
                 if (!form.pickupMasterLabel.trim()) {
                     addToast('error', 'Label master pickup wajib diisi jika ingin disimpan ke master');
                     setSaving(false);
@@ -247,7 +358,7 @@ export default function OrderEditPage() {
                         data: {
                             customerRef: form.customerRef,
                             label: form.pickupMasterLabel,
-                            pickupAddress: form.pickupAddress,
+                            pickupAddress: singlePickupStop.pickupAddress.trim(),
                             active: true,
                             isDefault: form.savePickupAsDefault,
                         },
@@ -257,17 +368,33 @@ export default function OrderEditPage() {
                 if (!pickupRes.ok) {
                     throw new Error(pickupPayload.error || 'Gagal menyimpan master pickup');
                 }
-                pickupRefForSubmit = pickupPayload.data?._id || pickupPayload.id || '';
+                const pickupRefForSubmit = pickupPayload.data?._id || pickupPayload.id || '';
+                pickupStopsForSubmit = pickupStopsForSubmit.map((stop, index) => (
+                    index === 0
+                        ? {
+                            ...stop,
+                            customerPickupRef: pickupRefForSubmit || undefined,
+                            pickupLabel: form.pickupMasterLabel.trim(),
+                        }
+                        : stop
+                ));
             }
-            const headerPayload = {
-                customerRef: form.customerRef,
-                customerName: form.customerName,
-                customerPickupRef: pickupRefForSubmit,
-                pickupAddress: form.pickupAddress,
-                serviceRef: form.serviceRef,
-                serviceName: form.serviceName,
-                notes: form.notes,
-            };
+            const headerPayload = headerFieldsLocked
+                ? {
+                    customerRef: form.customerRef,
+                    serviceRef: form.serviceRef,
+                    notes: form.notes,
+                }
+                : {
+                    customerRef: form.customerRef,
+                    customerName: form.customerName,
+                    customerPickupRef: pickupStopsForSubmit[0]?.customerPickupRef,
+                    pickupAddress: pickupStopsForSubmit[0]?.pickupAddress || form.pickupAddress,
+                    pickupStops: pickupStopsForSubmit,
+                    serviceRef: form.serviceRef,
+                    serviceName: form.serviceName,
+                    notes: form.notes,
+                };
             const payloadData = usesDeliveryOrderCargoMode
                 ? {
                     id: orderId,
@@ -326,6 +453,9 @@ export default function OrderEditPage() {
     const selectedCustomer = customers.find(customer => customer._id === form.customerRef) || null;
     const selectedService = services.find(service => service._id === form.serviceRef) || null;
     const sortedCustomerPickups = sortCustomerPickups(customerPickups);
+    const pickupSummary = summarizePickupStopList(form.pickupStops);
+    const draftPickupStops = getDraftPickupStops(form.pickupStops);
+    const canSavePickupToMaster = !isRevisionMode && !headerFieldsLocked && Boolean(form.customerRef) && draftPickupStops.length === 1 && !draftPickupStops[0].customerPickupRef;
 
     return (
         <div>
@@ -361,10 +491,8 @@ export default function OrderEditPage() {
                 </div>
                 <div className="kpi-card">
                     <div className="kpi-content">
-                        <div className="kpi-label">{isHeaderOnlyOrder ? 'Input Barang' : 'Item'}</div>
-                        <div className="kpi-value" style={{ fontSize: isHeaderOnlyOrder ? '0.95rem' : undefined }}>
-                            {isHeaderOnlyOrder ? 'Di Surat Jalan' : `${items.length} item`}
-                        </div>
+                        <div className="kpi-label">Pickup</div>
+                        <div className="kpi-value" style={{ fontSize: '0.95rem' }}>{pickupSummary}</div>
                     </div>
                 </div>
                 <div className="kpi-card">
@@ -400,21 +528,77 @@ export default function OrderEditPage() {
                                 </select>
                             </div>
                             <div className="form-group">
-                                <label className="form-label">Lokasi Ambil</label>
-                                <select className="form-select" value={form.customerPickupRef} onChange={e => handleCustomerPickupChange(e.target.value)} disabled={isRevisionMode || headerFieldsLocked || !form.customerRef}>
-                                    <option value="">{form.customerRef ? (customerPickups.length > 0 ? 'Pilih dari lokasi ambil customer (opsional)' : 'Belum ada lokasi ambil customer') : 'Pilih customer dulu'}</option>
-                                    {sortedCustomerPickups.map(pickup => (
-                                        <option key={pickup._id} value={pickup._id}>
-                                            {pickup.isDefault ? '[Default] ' : ''}{pickup.label}
-                                        </option>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+                                    <label className="form-label" style={{ marginBottom: 0 }}>Titik Pickup</label>
+                                    {!isRevisionMode && !headerFieldsLocked && (
+                                        <button type="button" className="btn btn-secondary btn-sm" onClick={addPickupStop} disabled={!form.customerRef}>
+                                            <Plus size={14} /> Tambah Pickup
+                                        </button>
+                                    )}
+                                </div>
+                                <div style={{ display: 'grid', gap: '0.75rem' }}>
+                                    {form.pickupStops.map((stop, index) => (
+                                        <div
+                                            key={stop.id}
+                                            style={{
+                                                display: 'grid',
+                                                gap: '0.75rem',
+                                                padding: '0.85rem',
+                                                border: '1px solid var(--color-gray-200)',
+                                                borderRadius: '0.75rem',
+                                                background: 'var(--color-gray-50)',
+                                            }}
+                                        >
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                <div style={{ fontWeight: 600 }}>Pickup {index + 1}</div>
+                                                {!isRevisionMode && !headerFieldsLocked && form.pickupStops.length > 1 && (
+                                                    <button type="button" className="btn btn-ghost btn-icon-only" onClick={() => removePickupStop(index)} title="Hapus pickup">
+                                                        <X size={16} />
+                                                    </button>
+                                                )}
+                                            </div>
+                                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                                <label className="form-label">Master Pickup Customer</label>
+                                                <select
+                                                    className="form-select"
+                                                    value={stop.customerPickupRef}
+                                                    onChange={e => handleCustomerPickupChange(index, e.target.value)}
+                                                    disabled={isRevisionMode || headerFieldsLocked || !form.customerRef}
+                                                >
+                                                    <option value="">{form.customerRef ? (customerPickups.length > 0 ? 'Pilih master pickup' : 'Belum ada master pickup') : 'Pilih customer dulu'}</option>
+                                                    {sortedCustomerPickups.map(pickup => (
+                                                        <option key={pickup._id} value={pickup._id}>
+                                                            {pickup.isDefault ? '[Default] ' : ''}{pickup.label}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                                <label className="form-label">Alamat Pickup <span className="required">*</span></label>
+                                                <textarea
+                                                    className="form-textarea"
+                                                    rows={2}
+                                                    value={stop.pickupAddress}
+                                                    onChange={e => updatePickupAddress(index, e.target.value)}
+                                                    disabled={isRevisionMode || headerFieldsLocked}
+                                                    placeholder="Alamat lokasi pengambilan barang"
+                                                />
+                                            </div>
+                                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                                <label className="form-label">Catatan Pickup</label>
+                                                <input
+                                                    className="form-input"
+                                                    value={stop.notes}
+                                                    onChange={e => updatePickupStop(index, 'notes', e.target.value)}
+                                                    disabled={isRevisionMode || headerFieldsLocked}
+                                                    placeholder="Opsional"
+                                                />
+                                            </div>
+                                        </div>
                                     ))}
-                                </select>
+                                </div>
                             </div>
-                            <div className="form-group">
-                                <label className="form-label">Alamat Ambil</label>
-                                <textarea className="form-textarea" rows={2} value={form.pickupAddress} onChange={e => updatePickupAddress(e.target.value)} disabled={isRevisionMode || headerFieldsLocked} />
-                            </div>
-                            {!isRevisionMode && !headerFieldsLocked && form.customerRef && !form.customerPickupRef && (
+                            {canSavePickupToMaster && (
                                 <div style={{ display: 'grid', gap: '0.75rem', padding: '0.85rem 1rem', border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', background: 'var(--color-gray-50)' }}>
                                     <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                         <input

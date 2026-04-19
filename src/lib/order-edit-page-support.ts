@@ -1,4 +1,4 @@
-import type { Customer, Order, OrderItem } from './types';
+import type { Customer, Order, OrderItem, OrderPickupStop } from './types';
 import { parseFormattedNumberish } from './formatted-number';
 import {
     convertKgToWeightInputValue,
@@ -7,8 +7,11 @@ import {
     type VolumeInputUnit,
 } from './measurement';
 import {
+    createDefaultPickupStopForm,
+    getDraftPickupStops,
     summarizeDraftOrderCargo,
     type OrderItemForm,
+    type PickupStopForm,
 } from './order-create-page-support';
 
 export type OrderEditFormState = {
@@ -22,6 +25,7 @@ export type OrderEditFormState = {
     receiverAddress: string;
     receiverCompany: string;
     pickupAddress: string;
+    pickupStops: PickupStopForm[];
     serviceRef: string;
     serviceName: string;
     notes: string;
@@ -44,6 +48,7 @@ export const DEFAULT_ORDER_EDIT_FORM: OrderEditFormState = {
     receiverAddress: '',
     receiverCompany: '',
     pickupAddress: '',
+    pickupStops: [],
     serviceRef: '',
     serviceName: '',
     notes: '',
@@ -57,20 +62,26 @@ export const DEFAULT_ORDER_EDIT_FORM: OrderEditFormState = {
 
 export function buildOrderEditForm(order: Order | null): OrderEditFormState {
     if (!order) {
-        return { ...DEFAULT_ORDER_EDIT_FORM };
+        return {
+            ...DEFAULT_ORDER_EDIT_FORM,
+            pickupStops: [createDefaultPickupStopForm()],
+        };
     }
+    const pickupStops = getOrderEditPickupStops(order);
+    const firstPickupStop = getDraftPickupStops(pickupStops)[0] || pickupStops[0] || createDefaultPickupStopForm(order.pickupAddress || '');
 
     return {
         cargoEntryMode: order.cargoEntryMode || 'ORDER',
         customerRef: order.customerRef,
         customerName: order.customerName || '',
         customerRecipientRef: order.customerRecipientRef || '',
-        customerPickupRef: order.customerPickupRef || '',
+        customerPickupRef: firstPickupStop.customerPickupRef || order.customerPickupRef || '',
         receiverName: order.receiverName || '',
         receiverPhone: order.receiverPhone || '',
         receiverAddress: order.receiverAddress || '',
         receiverCompany: order.receiverCompany || '',
-        pickupAddress: order.pickupAddress || '',
+        pickupAddress: firstPickupStop.pickupAddress || order.pickupAddress || '',
+        pickupStops,
         serviceRef: order.serviceRef,
         serviceName: order.serviceName || '',
         notes: order.notes || '',
@@ -81,6 +92,34 @@ export function buildOrderEditForm(order: Order | null): OrderEditFormState {
         savePickupAsDefault: false,
         pickupMasterLabel: '',
     };
+}
+
+function mapOrderPickupStopToEditForm(stop: OrderPickupStop, index: number): PickupStopForm {
+    return {
+        id: stop._key || `pickup-${index + 1}`,
+        customerPickupRef: stop.customerPickupRef || '',
+        pickupLabel: stop.pickupLabel || '',
+        pickupAddress: stop.pickupAddress || '',
+        notes: stop.notes || '',
+    };
+}
+
+export function getOrderEditPickupStops(order: Pick<Order, 'pickupAddress' | 'pickupStops' | 'customerPickupRef'> | null): PickupStopForm[] {
+    if (!order) {
+        return [createDefaultPickupStopForm()];
+    }
+
+    const stops = (order.pickupStops || [])
+        .filter(stop => stop && (stop.pickupAddress || stop.pickupLabel || stop.customerPickupRef || stop.notes))
+        .map(mapOrderPickupStopToEditForm);
+    if (stops.length > 0) {
+        return stops;
+    }
+
+    return [{
+        ...createDefaultPickupStopForm(order.pickupAddress || ''),
+        customerPickupRef: order.customerPickupRef || '',
+    }];
 }
 
 export function mapOrderItemToOrderEditForm(item: OrderItem): OrderItemForm {

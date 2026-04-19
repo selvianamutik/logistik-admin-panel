@@ -85,7 +85,8 @@ async function main() {
     const uniqueSeed = Date.now().toString(36).toUpperCase();
     const orderId = `audit-order-header-${uniqueSeed.toLowerCase()}`;
     const doId = `audit-do-header-${uniqueSeed.toLowerCase()}`;
-    const initialPickupKey = `pickup-initial-${uniqueSeed.toLowerCase()}`;
+    const initialPickupKeyA = `pickup-initial-a-${uniqueSeed.toLowerCase()}`;
+    const initialPickupKeyB = `pickup-initial-b-${uniqueSeed.toLowerCase()}`;
 
     try {
         await client.create({
@@ -98,9 +99,16 @@ async function main() {
             pickupAddress: 'Pickup Header Lama',
             pickupStops: [
                 {
-                    _key: initialPickupKey,
-                    label: 'Pickup Header Lama',
-                    pickupAddress: 'Pickup Header Lama',
+                    _key: initialPickupKeyA,
+                    sequence: 1,
+                    pickupLabel: 'Pickup Header Lama A',
+                    pickupAddress: 'Pickup Header Lama A',
+                },
+                {
+                    _key: initialPickupKeyB,
+                    sequence: 2,
+                    pickupLabel: 'Pickup Header Lama B',
+                    pickupAddress: 'Pickup Header Lama B',
                 },
             ],
             serviceRef: 'svc-002',
@@ -119,7 +127,8 @@ async function main() {
                     customerRef: 'cust-001',
                     serviceRef: 'svc-002',
                     pickupStops: [
-                        { pickupAddress: 'Pickup Header Baru' },
+                        { _key: initialPickupKeyA, pickupLabel: 'Pickup Baru A', pickupAddress: 'Pickup Header Baru A' },
+                        { _key: initialPickupKeyB, pickupLabel: 'Pickup Baru B', pickupAddress: 'Pickup Header Baru B' },
                     ],
                     notes: 'Header boleh berubah sebelum DO dibuat',
                 },
@@ -129,15 +138,16 @@ async function main() {
 
         let order = await client.fetch<{
             pickupAddress?: string;
-            pickupStops?: Array<{ pickupAddress?: string }>;
+            pickupStops?: Array<{ pickupAddress?: string; pickupLabel?: string }>;
             notes?: string;
         } | null>(
-            `*[_type == "order" && _id == $id][0]{ pickupAddress, pickupStops[]{ pickupAddress }, notes }`,
+            `*[_type == "order" && _id == $id][0]{ pickupAddress, pickupStops[]{ pickupAddress, pickupLabel }, notes }`,
             { id: orderId }
         );
         assert(order, 'Order audit header tidak ditemukan setelah update awal.');
-        assert((order.pickupStops || []).length === 1, 'Update header awal tidak menyimpan pickup baru dengan benar.');
-        assert(order.pickupStops?.[0]?.pickupAddress === 'Pickup Header Baru', 'Pickup baru tidak tersimpan sebelum DO dibuat.');
+        assert((order.pickupStops || []).length === 2, 'Update header awal tidak menyimpan semua titik pickup baru dengan benar.');
+        assert(order.pickupStops?.[0]?.pickupAddress === 'Pickup Header Baru A', 'Pickup A baru tidak tersimpan sebelum DO dibuat.');
+        assert(order.pickupStops?.[1]?.pickupAddress === 'Pickup Header Baru B', 'Pickup B baru tidak tersimpan sebelum DO dibuat.');
         assert(order.notes === 'Header boleh berubah sebelum DO dibuat', 'Notes order tidak berubah pada update header awal.');
 
         await client.create({
@@ -148,7 +158,11 @@ async function main() {
             masterResi: `AUDIT-HDR-${uniqueSeed}`,
             customerRef: 'cust-001',
             customerName: 'PT Pangan Nusantara',
-            pickupAddress: 'Pickup Header Baru',
+            pickupAddress: '2 titik pickup | Pickup Baru A',
+            pickupStops: [
+                { _key: initialPickupKeyA, sequence: 1, pickupLabel: 'Pickup Baru A', pickupAddress: 'Pickup Header Baru A' },
+                { _key: initialPickupKeyB, sequence: 2, pickupLabel: 'Pickup Baru B', pickupAddress: 'Pickup Header Baru B' },
+            ],
             serviceRef: 'svc-002',
             serviceName: 'CDD',
             status: 'CREATED',
@@ -163,7 +177,8 @@ async function main() {
                     customerRef: 'cust-001',
                     serviceRef: 'svc-002',
                     pickupStops: [
-                        { pickupAddress: 'Pickup Header Tidak Boleh Berubah' },
+                        { pickupAddress: 'Pickup Header Tidak Boleh Berubah A' },
+                        { pickupAddress: 'Pickup Header Tidak Boleh Berubah B' },
                     ],
                     notes: 'Should fail',
                 },
@@ -195,7 +210,9 @@ async function main() {
             { id: orderId }
         );
         assert(order, 'Order audit header tidak ditemukan setelah update notes.');
-        assert(order.pickupStops?.[0]?.pickupAddress === 'Pickup Header Baru', 'Pickup berubah padahal sesudah DO seharusnya hanya notes yang boleh berubah.');
+        assert((order.pickupStops || []).length === 2, 'Jumlah pickup berubah padahal sesudah DO seharusnya hanya notes yang boleh berubah.');
+        assert(order.pickupStops?.[0]?.pickupAddress === 'Pickup Header Baru A', 'Pickup A berubah padahal sesudah DO seharusnya hanya notes yang boleh berubah.');
+        assert(order.pickupStops?.[1]?.pickupAddress === 'Pickup Header Baru B', 'Pickup B berubah padahal sesudah DO seharusnya hanya notes yang boleh berubah.');
         assert(order.notes === 'Catatan umum sesudah DO terbit', 'Notes-only update setelah DO tidak tersimpan.');
 
         console.log('Audit Runtime Order Header Booking Flow');
@@ -203,7 +220,7 @@ async function main() {
         console.log('');
         console.log('Semua langkah runtime mutation: OK');
         console.log(`- Order audit: ${orderId}`);
-        console.log('- Header booking bisa edit pickup sebelum DO dibuat');
+        console.log('- Header booking bisa edit multi-pickup sebelum DO dibuat');
         console.log('- Setelah DO ada, perubahan header selain notes ditolak');
         console.log('- Notes-only update tetap diizinkan setelah DO terbit');
     } finally {
