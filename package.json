@@ -32,6 +32,7 @@
     "audit:runtime-mixed-billing-nota-revision-flow": "npx tsx scripts/audit-runtime-mixed-billing-nota-revision-flow.ts",
     "audit:runtime-mixed-billing-split-flow": "npx tsx scripts/audit-runtime-mixed-billing-split-flow.ts",
     "audit:runtime-partial-hold-multi-sj-invoice-flow": "npx tsx scripts/audit-runtime-partial-hold-multi-sj-invoice-flow.ts",
+    "audit:runtime-actual-drop-hold-status-flow": "npx tsx scripts/audit-runtime-actual-drop-hold-status-flow.ts",
     "audit:runtime-driver-request-lifecycle-flow": "npx tsx scripts/audit-runtime-driver-request-lifecycle-flow.ts",
     "audit:runtime-sj-edit-flow": "npx tsx scripts/audit-runtime-sj-edit-flow.ts",
     "audit:runtime-trip-resource-sync-flow": "npx tsx scripts/audit-runtime-trip-resource-sync-flow.ts",

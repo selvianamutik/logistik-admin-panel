@@ -84,6 +84,188 @@ type AuditLogFn = (
 
 type SanityMutations = Parameters<ReturnType<typeof getSanityClient>['mutate']>[0];
 
+type ActualCargoDropAllocation = {
+    deliveredQtyKoli: number;
+    deliveredWeightKg: number;
+    deliveredVolumeM3: number;
+    heldQtyKoli: number;
+    heldWeightKg: number;
+    heldVolumeM3: number;
+    holdReason?: string;
+    holdLocation?: string;
+};
+
+const CUSTOMER_DELIVERED_DROP_TYPES = new Set<DeliveryActualDropPoint['stopType']>(['DROP', 'EXTRA_DROP']);
+
+function createEmptyActualCargoDropAllocation(): ActualCargoDropAllocation {
+    return {
+        deliveredQtyKoli: 0,
+        deliveredWeightKg: 0,
+        deliveredVolumeM3: 0,
+        heldQtyKoli: 0,
+        heldWeightKg: 0,
+        heldVolumeM3: 0,
+    };
+}
+
+function normalizeReferenceValue(value: unknown) {
+    return (normalizeOptionalText(value) || '').toUpperCase();
+}
+
+function getActualCargoInputTotals(actualCargo?: NormalizedActualCargoInput) {
+    return {
+        qtyKoli: roundQuantity(normalizeNumber(actualCargo?.actualQtyKoli ?? 0)),
+        weightKg: roundQuantity(normalizeNumber(actualCargo?.actualWeightKg ?? 0)),
+        volumeM3: roundQuantity(normalizeNumber(actualCargo?.actualVolumeM3 ?? 0), 3),
+    };
+}
+
+function getActualDropAllocationTargets(
+    point: DeliveryActualDropPoint,
+    doItems: DeliveryOrderItemCargoSnapshot[],
+    actualCargoByDoItemId: Map<string, NormalizedActualCargoInput>
+) {
+    const pointReferenceKey = normalizeOptionalText(point.shipperReferenceKey);
+    const pointReferenceNumber = normalizeReferenceValue(point.shipperReferenceNumber);
+    const candidates = doItems.filter(item => actualCargoByDoItemId.has(item._id));
+    if (!pointReferenceKey && !pointReferenceNumber) {
+        return candidates;
+    }
+
+    const matched = candidates.filter(item => {
+        const itemReferenceKey = normalizeOptionalText(item.shipperReferenceKey);
+        const itemReferenceNumber = normalizeReferenceValue(item.shipperReferenceNumber);
+        return (
+            (pointReferenceKey && itemReferenceKey === pointReferenceKey) ||
+            (pointReferenceNumber && itemReferenceNumber === pointReferenceNumber)
+        );
+    });
+    return matched.length > 0 ? matched : candidates;
+}
+
+function allocateDropMetricAcrossItems<T extends DeliveryOrderItemCargoSnapshot>(
+    value: number,
+    items: T[],
+    getBasis: (item: T) => number,
+    fractionDigits: number
+) {
+    const normalizedValue = roundQuantity(normalizeNumber(value), fractionDigits);
+    if (normalizedValue <= 0 || items.length === 0) {
+        return new Map<string, number>();
+    }
+
+    const basisValues = items.map(item => roundQuantity(Math.max(getBasis(item), 0), fractionDigits));
+    const basisTotal = roundQuantity(basisValues.reduce((sum, item) => sum + item, 0), fractionDigits);
+    const allocations = new Map<string, number>();
+    let remaining = normalizedValue;
+
+    items.forEach((item, index) => {
+        const isLast = index === items.length - 1;
+        const rawPortion = basisTotal > 0
+            ? normalizedValue * (basisValues[index] / basisTotal)
+            : normalizedValue / items.length;
+        const portion = isLast
+            ? roundQuantity(Math.max(remaining, 0), fractionDigits)
+            : roundQuantity(rawPortion, fractionDigits);
+        allocations.set(item._id, portion);
+        remaining = roundQuantity(remaining - portion, fractionDigits);
+    });
+
+    return allocations;
+}
+
+function addActualDropAllocation(
+    allocation: ActualCargoDropAllocation,
+    field: 'delivered' | 'held',
+    qtyKoli: number,
+    weightKg: number,
+    volumeM3: number,
+    point: DeliveryActualDropPoint
+) {
+    if (field === 'delivered') {
+        allocation.deliveredQtyKoli = roundQuantity(allocation.deliveredQtyKoli + qtyKoli);
+        allocation.deliveredWeightKg = roundQuantity(allocation.deliveredWeightKg + weightKg);
+        allocation.deliveredVolumeM3 = roundQuantity(allocation.deliveredVolumeM3 + volumeM3, 3);
+        return;
+    }
+
+    allocation.heldQtyKoli = roundQuantity(allocation.heldQtyKoli + qtyKoli);
+    allocation.heldWeightKg = roundQuantity(allocation.heldWeightKg + weightKg);
+    allocation.heldVolumeM3 = roundQuantity(allocation.heldVolumeM3 + volumeM3, 3);
+    allocation.holdReason = point.note || `${point.stopType} dari realisasi drop`;
+    allocation.holdLocation = point.locationName || point.locationAddress || allocation.holdLocation;
+}
+
+function buildActualCargoDropAllocations(
+    doItems: DeliveryOrderItemCargoSnapshot[],
+    actualCargoByDoItemId: Map<string, NormalizedActualCargoInput>,
+    actualDropPoints: DeliveryActualDropPoint[]
+) {
+    const allocations = new Map<string, ActualCargoDropAllocation>();
+    doItems.forEach(item => allocations.set(item._id, createEmptyActualCargoDropAllocation()));
+
+    actualDropPoints.forEach(point => {
+        const targets = getActualDropAllocationTargets(point, doItems, actualCargoByDoItemId);
+        const qtyAllocations = allocateDropMetricAcrossItems(
+            normalizeNumber(point.qtyKoli ?? 0),
+            targets,
+            item => getActualCargoInputTotals(actualCargoByDoItemId.get(item._id)).qtyKoli,
+            2
+        );
+        const weightAllocations = allocateDropMetricAcrossItems(
+            normalizeNumber(point.weightKg ?? 0),
+            targets,
+            item => getActualCargoInputTotals(actualCargoByDoItemId.get(item._id)).weightKg,
+            2
+        );
+        const volumeAllocations = allocateDropMetricAcrossItems(
+            normalizeNumber(point.volumeM3 ?? 0),
+            targets,
+            item => getActualCargoInputTotals(actualCargoByDoItemId.get(item._id)).volumeM3,
+            3
+        );
+        const allocationField = CUSTOMER_DELIVERED_DROP_TYPES.has(point.stopType) ? 'delivered' : 'held';
+
+        targets.forEach(item => {
+            const allocation = allocations.get(item._id);
+            if (!allocation) return;
+            addActualDropAllocation(
+                allocation,
+                allocationField,
+                qtyAllocations.get(item._id) || 0,
+                weightAllocations.get(item._id) || 0,
+                volumeAllocations.get(item._id) || 0,
+                point
+            );
+        });
+    });
+
+    for (const item of doItems) {
+        const actualCargo = actualCargoByDoItemId.get(item._id);
+        const allocation = allocations.get(item._id);
+        if (!actualCargo || !allocation) {
+            continue;
+        }
+        const actualTotals = getActualCargoInputTotals(actualCargo);
+        const allocatedTotals = {
+            qtyKoli: roundQuantity(allocation.deliveredQtyKoli + allocation.heldQtyKoli),
+            weightKg: roundQuantity(allocation.deliveredWeightKg + allocation.heldWeightKg),
+            volumeM3: roundQuantity(allocation.deliveredVolumeM3 + allocation.heldVolumeM3, 3),
+        };
+        if (actualTotals.qtyKoli > 0 && Math.abs(allocatedTotals.qtyKoli - actualTotals.qtyKoli) > 0.01) {
+            throw new Error(`Alokasi qty titik drop untuk ${item._id} tidak sama dengan qty aktual barang`);
+        }
+        if (actualTotals.weightKg > 0 && Math.abs(allocatedTotals.weightKg - actualTotals.weightKg) > 0.01) {
+            throw new Error(`Alokasi berat titik drop untuk ${item._id} tidak sama dengan berat aktual barang`);
+        }
+        if (actualTotals.volumeM3 > 0 && Math.abs(allocatedTotals.volumeM3 - actualTotals.volumeM3) > 0.001) {
+            throw new Error(`Alokasi volume titik drop untuk ${item._id} tidak sama dengan volume aktual barang`);
+        }
+    }
+
+    return allocations;
+}
+
 function isDocumentAlreadyExistsError(error: unknown, documentId?: string) {
     const statusCode =
         error && typeof error === 'object' && 'statusCode' in error && typeof (error as { statusCode?: unknown }).statusCode === 'number'
@@ -2491,6 +2673,8 @@ export async function handleDeliveryOrderStatusUpdate(
             _id,
             _rev,
             orderItemRef,
+            shipperReferenceKey,
+            shipperReferenceNumber,
             heldQtyKoli,
             heldWeight,
             heldVolume,
@@ -2536,6 +2720,7 @@ export async function handleDeliveryOrderStatusUpdate(
 
     let actualCargoByDoItemId = new Map<string, NormalizedActualCargoInput>();
     let actualDropPoints: ReturnType<typeof normalizeDeliveryActualDropPoints> | undefined;
+    let actualDropAllocations = new Map<string, ActualCargoDropAllocation>();
     let overtonageResult: ReturnType<typeof computeDeliveryOrderOvertonage> | undefined;
     let linkedVoucherAdjustmentSummary: string | undefined;
     let settledVoucherOvertonageWarning: string | undefined;
@@ -2574,6 +2759,7 @@ export async function handleDeliveryOrderStatusUpdate(
         try {
             actualCargoByDoItemId = normalizeDeliveryOrderActualCargoInputs(completionData, doItems);
             actualDropPoints = normalizeDeliveryActualDropPoints(completionData, deliveryOrder, actualCargoByDoItemId);
+            actualDropAllocations = buildActualCargoDropAllocations(doItems, actualCargoByDoItemId, actualDropPoints);
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Muatan aktual surat jalan tidak valid' },
@@ -2872,6 +3058,13 @@ export async function handleDeliveryOrderStatusUpdate(
                 const actualQtyKoli = requireQty ? actualCargo.actualQtyKoli : 0;
                 const actualWeight = roundQuantity(actualCargo.actualWeightKg);
                 const actualVolume = roundQuantity(normalizeNumber(actualCargo.actualVolumeM3 ?? 0), 3);
+                const dropAllocation = actualDropAllocations.get(item._id) || createEmptyActualCargoDropAllocation();
+                const deliveredQtyKoli = requireQty ? roundQuantity(dropAllocation.deliveredQtyKoli) : 0;
+                const heldQtyKoli = requireQty ? roundQuantity(dropAllocation.heldQtyKoli) : 0;
+                const deliveredWeight = roundQuantity(dropAllocation.deliveredWeightKg);
+                const heldWeight = roundQuantity(dropAllocation.heldWeightKg);
+                const deliveredVolume = roundQuantity(dropAllocation.deliveredVolumeM3, 3);
+                const heldVolume = roundQuantity(dropAllocation.heldVolumeM3, 3);
                 const otherReservedWeight = roundQuantity(
                     Math.max(progress.deliveredWeight + progress.assignedWeight + progress.heldWeight - plannedWeight, 0)
                 );
@@ -2906,9 +3099,12 @@ export async function handleDeliveryOrderStatusUpdate(
                     assignedQtyKoli: roundQuantity(Math.max(progress.assignedQtyKoli - plannedQtyKoli, 0)),
                     assignedWeight: roundQuantity(Math.max(progress.assignedWeight - plannedWeight, 0)),
                     assignedVolume: roundQuantity(Math.max(progress.assignedVolume - plannedVolume, 0), 3),
-                    deliveredQtyKoli: roundQuantity(progress.deliveredQtyKoli + actualQtyKoli),
-                    deliveredWeight: roundQuantity(progress.deliveredWeight + actualWeight),
-                    deliveredVolume: roundQuantity(progress.deliveredVolume + actualVolume, 3),
+                    deliveredQtyKoli: roundQuantity(progress.deliveredQtyKoli + deliveredQtyKoli),
+                    deliveredWeight: roundQuantity(progress.deliveredWeight + deliveredWeight),
+                    deliveredVolume: roundQuantity(progress.deliveredVolume + deliveredVolume, 3),
+                    heldQtyKoli: roundQuantity(progress.heldQtyKoli + heldQtyKoli),
+                    heldWeight: roundQuantity(progress.heldWeight + heldWeight),
+                    heldVolume: roundQuantity(progress.heldVolume + heldVolume, 3),
                 };
                 const orderItemPatch: {
                     set: Record<string, unknown>;
@@ -2921,6 +3117,15 @@ export async function handleDeliveryOrderStatusUpdate(
                         deliveredQtyKoli: nextProgress.deliveredQtyKoli,
                         deliveredWeight: nextProgress.deliveredWeight,
                         deliveredVolume: nextProgress.deliveredVolume,
+                        heldQtyKoli: nextProgress.heldQtyKoli,
+                        heldWeight: nextProgress.heldWeight,
+                        heldVolume: nextProgress.heldVolume,
+                        holdReason: nextProgress.heldQtyKoli > 0 || nextProgress.heldWeight > 0 || nextProgress.heldVolume > 0
+                            ? dropAllocation.holdReason || orderItem.holdReason
+                            : undefined,
+                        holdLocation: nextProgress.heldQtyKoli > 0 || nextProgress.heldWeight > 0 || nextProgress.heldVolume > 0
+                            ? dropAllocation.holdLocation || orderItem.holdLocation
+                            : undefined,
                         status: deriveOrderItemStatusFromProgress(nextProgress),
                     },
                 };
@@ -2938,6 +3143,9 @@ export async function handleDeliveryOrderStatusUpdate(
                     } else {
                         orderItemPatch.unset = ['volume', 'volumeInputValue', 'volumeInputUnit'];
                     }
+                }
+                if (nextProgress.heldQtyKoli <= 0 && nextProgress.heldWeight <= 0 && nextProgress.heldVolume <= 0) {
+                    orderItemPatch.unset = [...(orderItemPatch.unset || []), 'holdReason', 'holdLocation'];
                 }
                 transaction.patch(orderItemRef, {
                     ifRevisionID: orderItem._rev,
@@ -3146,29 +3354,12 @@ export async function handleDeliveryOrderDriverStatusRequest(
         );
     }
 
-    const doItems = await getSanityClient().fetch<Array<{
-        _id: string;
-        orderItemRef?: unknown;
-        shippedQtyKoli?: number;
-        shippedWeight?: number;
-        orderItemQtyKoli?: number;
-        orderItemWeight?: number;
-        orderItemVolumeM3?: number;
-        orderItemWeightInputValue?: number;
-        orderItemWeightInputUnit?: WeightInputUnit;
-        orderItemVolumeInputValue?: number;
-        orderItemVolumeInputUnit?: VolumeInputUnit;
-        actualQtyKoli?: number;
-        actualWeightKg?: number;
-        actualVolumeM3?: number;
-        actualWeightInputValue?: number;
-        actualWeightInputUnit?: WeightInputUnit;
-        actualVolumeInputValue?: number;
-        actualVolumeInputUnit?: VolumeInputUnit;
-    }>>(
+    const doItems = await getSanityClient().fetch<Array<DeliveryOrderItemCargoSnapshot>>(
         `*[_type == "deliveryOrderItem" && deliveryOrderRef == $ref]{
             _id,
             orderItemRef,
+            shipperReferenceKey,
+            shipperReferenceNumber,
             shippedQtyKoli,
             shippedWeight,
             orderItemQtyKoli,
@@ -3229,6 +3420,7 @@ export async function handleDeliveryOrderDriverStatusRequest(
             actualVolumeInputUnit: item.actualVolumeInputUnit,
         }));
         pendingDriverActualDropPoints = normalizeDeliveryActualDropPoints(data, deliveryOrder, actualCargoByDoItemId);
+        buildActualCargoDropAllocations(doItems, actualCargoByDoItemId, pendingDriverActualDropPoints);
     } catch (error) {
         return NextResponse.json(
             { error: error instanceof Error ? error.message : 'Draft penyelesaian driver tidak valid' },

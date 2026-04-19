@@ -341,6 +341,7 @@ class DeliveryOrderService {
         references.add(
           DeliveryShipperReference(
             referenceNumber: referenceNumber,
+            key: (item['_key'] as String?)?.trim(),
             pickupStopKey: (item['pickupStopKey'] as String?)?.trim(),
             receiverName: (item['receiverName'] as String?)?.trim(),
             receiverCompany: (item['receiverCompany'] as String?)?.trim(),
@@ -355,6 +356,7 @@ class DeliveryOrderService {
       references.add(
         DeliveryShipperReference(
           referenceNumber: fallbackCustomerDoNumber,
+          key: null,
           pickupStopKey: fallbackPickupStopKey,
         ),
       );
@@ -371,6 +373,12 @@ class DeliveryOrderService {
             id: (item['_id'] as String?)?.trim() ?? '',
             description:
                 (item['orderItemDescription'] as String?)?.trim() ?? '-',
+            pickupStopKey: (item['pickupStopKey'] as String?)?.trim(),
+            pickupAddress: (item['pickupAddress'] as String?)?.trim(),
+            shipperReferenceKey: (item['shipperReferenceKey'] as String?)
+                ?.trim(),
+            shipperReferenceNumber:
+                (item['shipperReferenceNumber'] as String?)?.trim(),
             qtyKoli: _toDouble(
               item['orderItemQtyKoli'] ?? item['shippedQtyKoli'],
             ),

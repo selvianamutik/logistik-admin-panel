@@ -27,6 +27,7 @@ class DeliveryPickupStop {
 class DeliveryShipperReference {
   const DeliveryShipperReference({
     required this.referenceNumber,
+    this.key,
     this.pickupStopKey,
     this.receiverName,
     this.receiverCompany,
@@ -34,6 +35,7 @@ class DeliveryShipperReference {
   });
 
   final String referenceNumber;
+  final String? key;
   final String? pickupStopKey;
   final String? receiverName;
   final String? receiverCompany;
@@ -54,6 +56,10 @@ class DeliveryCargoItem {
   const DeliveryCargoItem({
     required this.id,
     required this.description,
+    this.pickupStopKey,
+    this.pickupAddress,
+    this.shipperReferenceKey,
+    this.shipperReferenceNumber,
     this.qtyKoli,
     this.weightKg,
     this.volumeM3,
@@ -70,6 +76,10 @@ class DeliveryCargoItem {
 
   final String id;
   final String description;
+  final String? pickupStopKey;
+  final String? pickupAddress;
+  final String? shipperReferenceKey;
+  final String? shipperReferenceNumber;
   final double? qtyKoli;
   final double? weightKg;
   final double? volumeM3;

@@ -546,7 +546,6 @@ async function main() {
                     actualDropPoints: [
                         {
                             stopType: 'DROP',
-                            shipperReferenceNumber: renamedSjNumber,
                             locationName: 'Tujuan Audit Pending Lifecycle',
                             locationAddress: 'Tujuan Audit Pending Lifecycle',
                             qtyKoli: 6,
@@ -632,8 +631,8 @@ async function main() {
             'Approval admin tidak mempertahankan lokasi drop dari draft driver.'
         );
         assert(
-            deliveryOrder?.actualDropPoints?.[0]?.shipperReferenceNumber === renamedSjNumber,
-            'Approval admin tidak mempertahankan relasi drop ke nomor SJ dari draft driver.'
+            !deliveryOrder?.actualDropPoints?.[0]?.shipperReferenceNumber,
+            'Drop gabungan multi-SJ tidak boleh dipaksa ke salah satu nomor SJ.'
         );
         assert(
             deliveryOrder?.actualDropPoints?.[0]?.note === 'Resubmit setelah reject dan edit ulang',

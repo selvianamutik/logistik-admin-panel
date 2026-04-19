@@ -20,7 +20,9 @@ import {
     buildDefaultActualDropDrafts,
     buildDeliveryOrderDetailState,
     createEmptyActualDropDraft,
+    getActualCargoDraftsForDrop,
     shouldOpenAdvancedDropEditor,
+    summarizeActualCargoDraftDescriptions,
     updateActualCargoDraftVolumeUnit,
     updateActualCargoDraftWeightUnit,
     type ActualCargoDraft,
@@ -313,6 +315,16 @@ export default function DriverPortalPage() {
         }),
         [completionCargoItems]
     );
+    const completionShipperReferences = completionOrder?.shipperReferences || [];
+    const resolveCompletionDropShipperReferenceValue = (drop: Pick<ActualDropDraft, 'shipperReferenceKey' | 'shipperReferenceNumber'>) => {
+        const matchedReference = completionShipperReferences.find(reference =>
+            (drop.shipperReferenceKey && reference._key === drop.shipperReferenceKey) ||
+            (drop.shipperReferenceNumber && reference.referenceNumber === drop.shipperReferenceNumber)
+        );
+        return matchedReference?._key || matchedReference?.referenceNumber || '';
+    };
+    const getCompletionDropCargoSummary = (drop: Pick<ActualDropDraft, 'shipperReferenceKey' | 'shipperReferenceNumber'>) =>
+        summarizeActualCargoDraftDescriptions(getActualCargoDraftsForDrop(drop, completionCargoItems));
 
     const applyOrderUpdate = useCallback((updated: DriverAssignedDeliveryOrder) => {
         setOrders(prev => prev.map(item => (item._id === updated._id ? { ...item, ...updated } : item)));
@@ -911,13 +923,43 @@ export default function DriverPortalPage() {
 
     const updateCompletionDropDraft = useCallback((
         draftKey: string,
-        field: keyof Pick<ActualDropDraft, 'stopType' | 'locationName' | 'locationAddress' | 'qtyKoli' | 'weightInputValue' | 'weightInputUnit' | 'volumeInputValue' | 'volumeInputUnit' | 'note'>,
+        field: keyof Pick<ActualDropDraft, 'stopType' | 'shipperReferenceKey' | 'shipperReferenceNumber' | 'locationName' | 'locationAddress' | 'qtyKoli' | 'weightInputValue' | 'weightInputUnit' | 'volumeInputValue' | 'volumeInputUnit' | 'note'>,
         value: string
     ) => {
         setCompletionDropPoints(previous =>
             previous.map(item => (item.draftKey === draftKey ? { ...item, [field]: value } : item))
         );
     }, []);
+
+    const applyCompletionDropShipperReference = useCallback((draftKey: string, optionValue: string) => {
+        const selectedReference = (completionOrder?.shipperReferences || []).find(reference => {
+            const referenceOptionValue = reference._key || reference.referenceNumber || '';
+            return referenceOptionValue === optionValue;
+        });
+        setCompletionDropPoints(previous => previous.map(item => {
+            if (item.draftKey !== draftKey) {
+                return item;
+            }
+            if (!selectedReference) {
+                return {
+                    ...item,
+                    shipperReferenceKey: '',
+                    shipperReferenceNumber: '',
+                };
+            }
+            return {
+                ...item,
+                shipperReferenceKey: selectedReference._key || '',
+                shipperReferenceNumber: selectedReference.referenceNumber || '',
+                locationName:
+                    selectedReference.receiverCompany?.trim()
+                    || selectedReference.receiverName?.trim()
+                    || selectedReference.receiverAddress?.trim()
+                    || item.locationName,
+                locationAddress: selectedReference.receiverAddress || item.locationAddress,
+            };
+        }));
+    }, [completionOrder?.shipperReferences]);
 
     const addCompletionDropDraft = useCallback(() => {
         setCompletionDropPoints(previous => [...previous, createEmptyActualDropDraft()]);
@@ -950,6 +992,8 @@ export default function DriverPortalPage() {
                 })),
                 actualDropPoints: completionDetailState.effectiveActualDropPoints.map(item => ({
                     stopType: item.stopType,
+                    shipperReferenceKey: item.shipperReferenceKey || undefined,
+                    shipperReferenceNumber: item.shipperReferenceNumber || undefined,
                     locationName: item.locationName,
                     locationAddress: item.locationAddress,
                     qtyKoli: item.qtyKoli.trim() ? parseFormattedNumberish(item.qtyKoli) : 0,
@@ -2137,6 +2181,9 @@ export default function DriverPortalPage() {
                                                 volumeM3: completionDetailState.actualCargoTotals.volumeM3,
                                             })}
                                         </div>
+                                        <div className="text-muted text-sm" style={{ marginTop: '0.25rem' }}>
+                                            Barang: {getCompletionDropCargoSummary(completionDetailState.autoActualDropDraft)}
+                                        </div>
                                     </div>
                                 ) : (
                                     <div style={{ display: 'grid', gap: '0.75rem' }}>
@@ -2163,6 +2210,31 @@ export default function DriverPortalPage() {
                                                     )}
                                                 </div>
                                                 <div className="driver-completion-metrics">
+                                                    {completionShipperReferences.length > 0 && (
+                                                        <div className="form-group">
+                                                            <label className="form-label">No. SJ / Barang</label>
+                                                            <select
+                                                                className="form-select"
+                                                                value={resolveCompletionDropShipperReferenceValue(item)}
+                                                                onChange={event => applyCompletionDropShipperReference(item.draftKey, event.target.value)}
+                                                                disabled={isActionInFlight}
+                                                            >
+                                                                <option value="">Tidak spesifik / semua barang</option>
+                                                                {completionShipperReferences.map(reference => {
+                                                                    const optionValue = reference._key || reference.referenceNumber || '';
+                                                                    return (
+                                                                        <option key={optionValue} value={optionValue}>
+                                                                            {reference.referenceNumber || '-'}
+                                                                            {reference.receiverCompany || reference.receiverName ? ` - ${reference.receiverCompany || reference.receiverName}` : ''}
+                                                                        </option>
+                                                                    );
+                                                                })}
+                                                            </select>
+                                                            <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
+                                                                Barang: {getCompletionDropCargoSummary(item)}
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                     <div className="form-group">
                                                         <label className="form-label">Tipe Titik</label>
                                                         <select

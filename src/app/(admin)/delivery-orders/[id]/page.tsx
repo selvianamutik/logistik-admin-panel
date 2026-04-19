@@ -23,10 +23,13 @@ import {
     buildResolvedDeliveryOrder,
     buildDefaultActualDropDrafts,
     createEmptyActualDropDraft,
+    getActualCargoDraftsForDrop,
     getAssignableTripDrivers,
     getAssignableTripVehicles,
     getNextDeliveryOrderStatuses,
     getTripResourceActionLabel,
+    summarizeActualCargoDraftDescriptions,
+    summarizeDeliveryOrderItemDescriptionsForDrop,
     shouldRequireTripVehicleOverrideReason,
     shouldOpenAdvancedDropEditor,
     sortTrackingLogs,
@@ -62,11 +65,11 @@ import {
     type DeliveryOrderCargoDraftGroup,
     type DeliveryOrderCargoDraftItem,
 } from '@/lib/delivery-order-cargo-draft-support';
-import { summarizeDraftOrderCargo, updateOrderItemVolumeUnit, updateOrderItemWeightUnit } from '@/lib/order-create-page-support';
+import { applyCustomerProductToOrderItem, summarizeDraftOrderCargo, updateOrderItemVolumeUnit, updateOrderItemWeightUnit } from '@/lib/order-create-page-support';
 import { generateDOPdf } from '@/lib/pdf/doTemplate';
 import { hasPageAccess, hasPermission, normalizeUserRole } from '@/lib/rbac';
 import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
-import type { Customer, DeliveryOrder, DeliveryOrderItem, TrackingLog, CompanyProfile, Order, OrderItem, Driver, DriverVoucher, TripRouteRate, Vehicle } from '@/lib/types';
+import type { Customer, CustomerProduct, DeliveryOrder, DeliveryOrderItem, TrackingLog, CompanyProfile, Order, OrderItem, Driver, DriverVoucher, TripRouteRate, Vehicle } from '@/lib/types';
 
 type DeliveryOrderTripCashLink = {
     hasVoucher: true;
@@ -241,6 +244,7 @@ export default function DODetailPage() {
     const [drivers, setDrivers] = useState<Driver[]>([]);
     const [vehicles, setVehicles] = useState<Vehicle[]>([]);
     const [billingCustomers, setBillingCustomers] = useState<Array<Pick<Customer, '_id' | 'name' | 'active'>>>([]);
+    const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
     const [activeDeliveryOrders, setActiveDeliveryOrders] = useState<DeliveryOrder[]>([]);
     const [loading, setLoading] = useState(true);
     const [showStatusModal, setShowStatusModal] = useState(false);
@@ -461,7 +465,7 @@ export default function DODetailPage() {
 
         try {
             const deliveryOrder = await fetchAdminData<DeliveryOrder | null>(`/api/data?entity=delivery-orders&id=${doId}`, 'Gagal memuat detail surat jalan');
-            const [itemRows, logRows, sourceOrder, customerData, tripRateRows, linkedVoucherRows, tripCashLink, customerRows] = await Promise.all([
+            const [itemRows, logRows, sourceOrder, customerData, tripRateRows, linkedVoucherRows, tripCashLink, customerRows, productRows] = await Promise.all([
                 fetchAllAdminCollectionData<DeliveryOrderItem>(`/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: doId }))}`, 'Gagal memuat detail surat jalan'),
                 fetchAllAdminCollectionData<TrackingLog>(`/api/data?entity=tracking-logs&filter=${encodeURIComponent(JSON.stringify({ refRef: doId, refType: 'DO' }))}`, 'Gagal memuat detail surat jalan'),
                 deliveryOrder?.orderRef
@@ -484,6 +488,12 @@ export default function DODetailPage() {
                     '/api/data?entity=customers&sortField=name&sortDir=asc',
                     'Gagal memuat daftar customer'
                 ),
+                deliveryOrder?.customerRef
+                    ? fetchAdminCollectionData<CustomerProduct[]>(
+                        `/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef: deliveryOrder.customerRef, active: true }))}&sortField=name&sortDir=asc`,
+                        'Gagal memuat master barang customer'
+                    )
+                    : Promise.resolve([] as CustomerProduct[]),
             ]);
             const deliveryOrderItems = itemRows || [];
             const linkedOrderItemRefs = Array.from(
@@ -515,6 +525,7 @@ export default function DODetailPage() {
 
             setDoData(resolvedDeliveryOrder);
             setBillingCustomers((customerRows || []).filter(customer => customer.active !== false || customer._id === resolvedDeliveryOrder?.customerRef));
+            setCustomerProducts((productRows || []).filter(product => product.active !== false));
             setShipperReferenceFormat((customerData?.deliveryOrderPrefix || 'SJ').toUpperCase());
             setTripRouteRates((tripRateRows || []).filter(rate => rate.active !== false));
             setLinkedVoucher(linkedVoucherRows?.[0] || null);
@@ -705,6 +716,26 @@ export default function DODetailPage() {
                     items: group.items.map((item, currentIndex) => (
                         currentIndex === itemIndex
                             ? { ...item, [field]: value }
+                            : item
+                    )),
+                }
+                : group
+        )));
+    };
+
+    const applyCargoDraftProductSelection = (groupId: string, itemIndex: number, nextProductRef: string) => {
+        const selectedProduct = customerProducts.find(product => product._id === nextProductRef);
+        setCargoDraftGroups(previous => previous.map(group => (
+            group.id === groupId
+                ? {
+                    ...group,
+                    items: group.items.map((item, currentIndex) => (
+                        currentIndex === itemIndex
+                            ? toDeliveryOrderCargoDraftItem(applyCustomerProductToOrderItem({
+                                ...item,
+                                pickupStopKey: group.pickupStopKey,
+                                shipperReferenceNumber: group.shipperReferenceNumber,
+                            }, selectedProduct))
                             : item
                     )),
                 }
@@ -1035,12 +1066,42 @@ export default function DODetailPage() {
 
     const updateActualDropDraft = (
         draftKey: string,
-        field: keyof Pick<ActualDropDraft, 'stopType' | 'locationName' | 'locationAddress' | 'qtyKoli' | 'weightInputValue' | 'weightInputUnit' | 'volumeInputValue' | 'volumeInputUnit' | 'note'>,
+        field: keyof Pick<ActualDropDraft, 'stopType' | 'shipperReferenceKey' | 'shipperReferenceNumber' | 'locationName' | 'locationAddress' | 'qtyKoli' | 'weightInputValue' | 'weightInputUnit' | 'volumeInputValue' | 'volumeInputUnit' | 'note'>,
         value: string
     ) => {
         setActualDropPoints(previous =>
             previous.map(item => (item.draftKey === draftKey ? { ...item, [field]: value } : item))
         );
+    };
+
+    const applyActualDropShipperReference = (draftKey: string, optionValue: string) => {
+        const selectedReference = shipperReferenceDisplayList.find(reference => {
+            const referenceOptionValue = reference.referenceKey || reference.draftKey || reference.referenceNumber;
+            return referenceOptionValue === optionValue;
+        });
+        setActualDropPoints(previous => previous.map(item => {
+            if (item.draftKey !== draftKey) {
+                return item;
+            }
+            if (!selectedReference) {
+                return {
+                    ...item,
+                    shipperReferenceKey: '',
+                    shipperReferenceNumber: '',
+                };
+            }
+            return {
+                ...item,
+                shipperReferenceKey: selectedReference.referenceKey || '',
+                shipperReferenceNumber: selectedReference.referenceNumber || '',
+                locationName:
+                    selectedReference.receiverCompany?.trim()
+                    || selectedReference.receiverName?.trim()
+                    || selectedReference.receiverAddress?.trim()
+                    || item.locationName,
+                locationAddress: selectedReference.receiverAddress || item.locationAddress,
+            };
+        }));
     };
 
     const addActualDropDraft = () => {
@@ -1399,6 +1460,15 @@ export default function DODetailPage() {
             ? pickupStopMap.get(reference.pickupStopKey)?.pickupAddress || reference.pickupAddress
             : reference.pickupAddress,
     }));
+    const resolveActualDropShipperReferenceValue = (drop: Pick<ActualDropDraft, 'shipperReferenceKey' | 'shipperReferenceNumber'>) => {
+        const matchedReference = shipperReferenceDisplayList.find(reference =>
+            (drop.shipperReferenceKey && reference.referenceKey === drop.shipperReferenceKey) ||
+            (drop.shipperReferenceNumber && reference.referenceNumber === drop.shipperReferenceNumber)
+        );
+        return matchedReference?.referenceKey || matchedReference?.draftKey || matchedReference?.referenceNumber || '';
+    };
+    const getActualDropCargoSummary = (drop: Pick<ActualDropDraft, 'shipperReferenceKey' | 'shipperReferenceNumber'>) =>
+        summarizeActualCargoDraftDescriptions(getActualCargoDraftsForDrop(drop, actualCargoItems));
     const cargoGroups = (() => {
         const groups = new Map<string, {
             key: string;
@@ -1921,6 +1991,9 @@ export default function DODetailPage() {
                                                     {point.locationAddress}
                                                 </div>
                                             )}
+                                            <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
+                                                Barang: {summarizeDeliveryOrderItemDescriptionsForDrop(point, doItems)}
+                                            </div>
                                             <div className="detail-row" style={{ marginTop: '0.75rem' }}>
                                                 <div className="detail-item">
                                                     <div className="detail-label">Muatan</div>
@@ -2622,6 +2695,7 @@ export default function DODetailPage() {
                                                 <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', display: 'grid', gap: '0.2rem' }}>
                                                     <div>Lokasi: {autoActualDropDraft.locationName || 'Tujuan Tagihan'}</div>
                                                     {autoActualDropDraft.locationAddress && <div>Alamat: {autoActualDropDraft.locationAddress}</div>}
+                                                    <div>Barang: {getActualDropCargoSummary(autoActualDropDraft)}</div>
                                                     <div>Muatan: {formatCargoSummary({ qtyKoli: actualCargoTotals.qtyKoli, weightKg: actualCargoTotals.weightKg, volumeM3: actualCargoTotals.volumeM3 })}</div>
                                                 </div>
                                             </div>
@@ -2644,6 +2718,31 @@ export default function DODetailPage() {
                                                                 )}
                                                             </div>
                                                             <div className="form-row">
+                                                                {shipperReferenceDisplayList.length > 0 && (
+                                                                    <div className="form-group">
+                                                                        <label className="form-label">No. SJ / Barang</label>
+                                                                        <select
+                                                                            className="form-select"
+                                                                            value={resolveActualDropShipperReferenceValue(item)}
+                                                                            onChange={e => applyActualDropShipperReference(item.draftKey, e.target.value)}
+                                                                            disabled={updatingStatus}
+                                                                        >
+                                                                            <option value="">Tidak spesifik / semua barang</option>
+                                                                            {shipperReferenceDisplayList.map(reference => {
+                                                                                const optionValue = reference.referenceKey || reference.draftKey || reference.referenceNumber;
+                                                                                return (
+                                                                                    <option key={optionValue} value={optionValue}>
+                                                                                        {reference.referenceNumber}
+                                                                                        {reference.receiverCompany || reference.receiverName ? ` - ${reference.receiverCompany || reference.receiverName}` : ''}
+                                                                                    </option>
+                                                                                );
+                                                                            })}
+                                                                        </select>
+                                                                        <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
+                                                                            Barang: {getActualDropCargoSummary(item)}
+                                                                        </div>
+                                                                    </div>
+                                                                )}
                                                                 <div className="form-group">
                                                                     <label className="form-label">Tipe Titik</label>
                                                                     <select
@@ -3092,6 +3191,22 @@ export default function DODetailPage() {
                                             <div style={{ display: 'grid', gap: '0.75rem' }}>
                                                 {group.items.map((item, itemIndex) => (
                                                     <div key={`${group.id}-item-${itemIndex}`} style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', padding: 12, background: 'var(--color-white)', borderRadius: '0.8rem', border: '1px solid var(--color-gray-200)' }}>
+                                                        <div style={{ flex: '1 1 240px' }}>
+                                                            <label className="form-label">Barang Customer</label>
+                                                            <select
+                                                                className="form-select"
+                                                                value={item.customerProductRef}
+                                                                onChange={e => applyCargoDraftProductSelection(group.id, itemIndex, e.target.value)}
+                                                                disabled={savingCargo || !doData?.customerRef}
+                                                            >
+                                                                <option value="">{customerProducts.length > 0 ? 'Pilih master barang' : 'Belum ada master barang'}</option>
+                                                                {customerProducts.map(product => (
+                                                                    <option key={product._id} value={product._id}>
+                                                                        {product.code ? `${product.code} - ` : ''}{product.name}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
                                                         <div style={{ flex: '2 1 260px' }}>
                                                             <label className="form-label">Deskripsi Barang</label>
                                                             <input

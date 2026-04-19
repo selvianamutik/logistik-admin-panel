@@ -22,6 +22,8 @@ import { DO_ACTUAL_DROP_TYPE_MAP, DO_STATUS_MAP, formatDate, formatDateTime, for
 export interface ActualCargoDraft {
     deliveryOrderItemRef: string;
     description: string;
+    shipperReferenceKey: string;
+    shipperReferenceNumber: string;
     plannedQtyKoli: number;
     plannedWeightKg: number;
     plannedWeightInputValue?: number;
@@ -139,6 +141,8 @@ export function buildActualCargoDraft(
     return {
         deliveryOrderItemRef: item._id,
         description: item.orderItemDescription || '-',
+        shipperReferenceKey: item.shipperReferenceKey || '',
+        shipperReferenceNumber: item.shipperReferenceNumber || '',
         plannedQtyKoli,
         plannedWeightKg,
         plannedWeightInputValue,
@@ -237,6 +241,78 @@ export function summarizeActualCargoDrafts(items: ActualCargoDraft[]) {
         weightKg,
         volumeM3,
     };
+}
+
+type DropReferenceLike = {
+    shipperReferenceKey?: string;
+    shipperReferenceNumber?: string;
+};
+
+export function getActualCargoDraftsForDrop(drop: DropReferenceLike, cargoItems: ActualCargoDraft[]) {
+    const shipperReferenceKey = (drop.shipperReferenceKey || '').trim();
+    const shipperReferenceNumber = (drop.shipperReferenceNumber || '').trim().toUpperCase();
+    if (!shipperReferenceKey && !shipperReferenceNumber) {
+        return cargoItems;
+    }
+
+    return cargoItems.filter(item => {
+        const itemReferenceKey = item.shipperReferenceKey.trim();
+        const itemReferenceNumber = item.shipperReferenceNumber.trim().toUpperCase();
+        return (
+            (shipperReferenceKey && itemReferenceKey === shipperReferenceKey) ||
+            (shipperReferenceNumber && itemReferenceNumber === shipperReferenceNumber)
+        );
+    });
+}
+
+export function summarizeActualCargoDraftDescriptions(items: ActualCargoDraft[]) {
+    const descriptions = Array.from(new Set(
+        items
+            .map(item => item.description.trim())
+            .filter(Boolean)
+    ));
+    if (descriptions.length === 0) {
+        return 'Belum ada barang';
+    }
+    if (descriptions.length <= 3) {
+        return descriptions.join(', ');
+    }
+    return `${descriptions.slice(0, 3).join(', ')} +${descriptions.length - 3} barang`;
+}
+
+export function getDeliveryOrderItemsForDrop(drop: DropReferenceLike, items: DeliveryOrderItem[]) {
+    const shipperReferenceKey = (drop.shipperReferenceKey || '').trim();
+    const shipperReferenceNumber = (drop.shipperReferenceNumber || '').trim().toUpperCase();
+    if (!shipperReferenceKey && !shipperReferenceNumber) {
+        return items;
+    }
+
+    return items.filter(item => {
+        const itemReferenceKey = (item.shipperReferenceKey || '').trim();
+        const itemReferenceNumber = (item.shipperReferenceNumber || '').trim().toUpperCase();
+        return (
+            (shipperReferenceKey && itemReferenceKey === shipperReferenceKey) ||
+            (shipperReferenceNumber && itemReferenceNumber === shipperReferenceNumber)
+        );
+    });
+}
+
+export function summarizeDeliveryOrderItemDescriptionsForDrop(
+    drop: DropReferenceLike,
+    items: DeliveryOrderItem[]
+) {
+    const descriptions = Array.from(new Set(
+        getDeliveryOrderItemsForDrop(drop, items)
+            .map(item => (item.orderItemDescription || '').trim())
+            .filter(Boolean)
+    ));
+    if (descriptions.length === 0) {
+        return 'Belum ada barang';
+    }
+    if (descriptions.length <= 3) {
+        return descriptions.join(', ');
+    }
+    return `${descriptions.slice(0, 3).join(', ')} +${descriptions.length - 3} barang`;
 }
 
 export function summarizeActualDropDrafts(items: ActualDropDraft[]) {
@@ -352,12 +428,41 @@ export function buildDefaultActualDropDrafts(
 
     const totals = summarizeActualCargoDrafts(cargoItems);
     const defaultTarget = resolveDefaultActualDropTarget(doData);
+    const shipperReferences = doData?.shipperReferences || [];
+    if (shipperReferences.length > 1) {
+        return shipperReferences.map((reference, index) => {
+            const referenceCargoItems = getActualCargoDraftsForDrop({
+                shipperReferenceKey: reference._key || '',
+                shipperReferenceNumber: reference.referenceNumber || '',
+            }, cargoItems);
+            const referenceTotals = summarizeActualCargoDrafts(referenceCargoItems);
+            return {
+                draftKey: crypto.randomUUID(),
+                stopType: 'DROP',
+                shipperReferenceKey: reference._key || '',
+                shipperReferenceNumber: reference.referenceNumber || '',
+                locationName:
+                    reference.receiverCompany?.trim()
+                    || reference.receiverName?.trim()
+                    || reference.receiverAddress?.trim()
+                    || `Tujuan SJ ${index + 1}`,
+                locationAddress: reference.receiverAddress || '',
+                qtyKoli: referenceTotals.qtyKoli > 0 ? String(referenceTotals.qtyKoli) : '',
+                weightInputValue: referenceTotals.weightKg > 0 ? String(referenceTotals.weightKg) : '',
+                weightInputUnit: 'KG' as const,
+                volumeInputValue: referenceTotals.volumeM3 > 0 ? String(referenceTotals.volumeM3) : '',
+                volumeInputUnit: 'M3' as const,
+                note: '',
+            };
+        });
+    }
+    const singleShipperReference = shipperReferences.length === 1 ? shipperReferences[0] : null;
     return [
         {
             draftKey: crypto.randomUUID(),
             stopType: 'DROP',
-            shipperReferenceKey: '',
-            shipperReferenceNumber: '',
+            shipperReferenceKey: singleShipperReference?._key || '',
+            shipperReferenceNumber: singleShipperReference?.referenceNumber || '',
             locationName: defaultTarget.locationName,
             locationAddress: defaultTarget.locationAddress,
             qtyKoli: totals.qtyKoli > 0 ? String(totals.qtyKoli) : '',
@@ -373,11 +478,12 @@ export function buildDefaultActualDropDrafts(
 export function buildAutoActualDropDraft(doData: DeliveryOrder | null, cargoItems: ActualCargoDraft[]): ActualDropDraft {
     const totals = summarizeActualCargoDrafts(cargoItems);
     const defaultTarget = resolveDefaultActualDropTarget(doData);
+    const singleShipperReference = doData?.shipperReferences?.length === 1 ? doData.shipperReferences[0] : null;
     return {
         draftKey: 'auto-default-drop',
         stopType: 'DROP',
-        shipperReferenceKey: '',
-        shipperReferenceNumber: '',
+        shipperReferenceKey: singleShipperReference?._key || '',
+        shipperReferenceNumber: singleShipperReference?.referenceNumber || '',
         locationName: defaultTarget.locationName,
         locationAddress: defaultTarget.locationAddress,
         qtyKoli: totals.qtyKoli > 0 ? String(totals.qtyKoli) : '',
@@ -682,6 +788,7 @@ export function buildDeliveryOrderPrintHtml(
                     <th>Tipe</th>
                     <th>Lokasi</th>
                     <th>Alamat</th>
+                    <th>Barang</th>
                     <th>Muatan</th>
                     <th>Catatan</th>
                 </tr>
@@ -696,6 +803,7 @@ export function buildDeliveryOrderPrintHtml(
                                 <td>${DO_ACTUAL_DROP_TYPE_MAP[point.stopType]?.label || point.stopType}</td>
                                 <td>${point.sequence}. ${point.locationName || '-'}</td>
                                 <td>${point.locationAddress || '-'}</td>
+                                <td>${summarizeDeliveryOrderItemDescriptionsForDrop(point, doItems)}</td>
                                 <td>${formatCargoSummary({
                                     qtyKoli: point.qtyKoli,
                                     weightKg: point.weightKg,
@@ -713,6 +821,7 @@ export function buildDeliveryOrderPrintHtml(
                             <td>Drop</td>
                             <td>1. ${receiverSummary}</td>
                             <td>${receiverFullSummary}</td>
+                            <td>${doItems.length > 0 ? Array.from(new Set(doItems.map(item => item.orderItemDescription).filter(Boolean))).join(', ') : '-'}</td>
                             <td>-</td>
                             <td>Realisasi drop belum dicatat terpisah.</td>
                         </tr>
