@@ -42,6 +42,8 @@ export interface ActualCargoDraft {
 export interface ActualDropDraft {
     draftKey: string;
     stopType: 'DROP' | 'HOLD' | 'TRANSIT' | 'EXTRA_DROP' | 'RETURN';
+    shipperReferenceKey: string;
+    shipperReferenceNumber: string;
     locationName: string;
     locationAddress: string;
     qtyKoli: string;
@@ -327,6 +329,8 @@ export function buildDefaultActualDropDrafts(
         return sourceDropPoints.map((point, index) => ({
             draftKey: point._key || `${index + 1}`,
             stopType: point.stopType,
+            shipperReferenceKey: point.shipperReferenceKey || '',
+            shipperReferenceNumber: point.shipperReferenceNumber || '',
             locationName: point.locationName || '',
             locationAddress: point.locationAddress || '',
             qtyKoli: point.qtyKoli !== undefined ? String(point.qtyKoli) : '',
@@ -352,6 +356,8 @@ export function buildDefaultActualDropDrafts(
         {
             draftKey: crypto.randomUUID(),
             stopType: 'DROP',
+            shipperReferenceKey: '',
+            shipperReferenceNumber: '',
             locationName: defaultTarget.locationName,
             locationAddress: defaultTarget.locationAddress,
             qtyKoli: totals.qtyKoli > 0 ? String(totals.qtyKoli) : '',
@@ -370,6 +376,8 @@ export function buildAutoActualDropDraft(doData: DeliveryOrder | null, cargoItem
     return {
         draftKey: 'auto-default-drop',
         stopType: 'DROP',
+        shipperReferenceKey: '',
+        shipperReferenceNumber: '',
         locationName: defaultTarget.locationName,
         locationAddress: defaultTarget.locationAddress,
         qtyKoli: totals.qtyKoli > 0 ? String(totals.qtyKoli) : '',
@@ -819,6 +827,8 @@ export function createEmptyActualDropDraft(): ActualDropDraft {
     return {
         draftKey: crypto.randomUUID(),
         stopType: 'DROP',
+        shipperReferenceKey: '',
+        shipperReferenceNumber: '',
         locationName: '',
         locationAddress: '',
         qtyKoli: '',
@@ -868,6 +878,8 @@ export function buildDeliveryOrderStatusUpdateData(params: {
                 })),
                 actualDropPoints: params.effectiveActualDropPoints.map(item => ({
                     stopType: item.stopType,
+                    shipperReferenceKey: item.shipperReferenceKey,
+                    shipperReferenceNumber: item.shipperReferenceNumber,
                     locationName: item.locationName,
                     locationAddress: item.locationAddress,
                     qtyKoli: item.qtyKoli.trim() ? parseFormattedNumberish(item.qtyKoli) : 0,

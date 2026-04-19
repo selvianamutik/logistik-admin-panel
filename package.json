@@ -22,6 +22,7 @@
     "audit:runtime-order-item-partial-hold-cancel-flow": "npx tsx scripts/audit-runtime-order-item-partial-hold-cancel-flow.ts",
     "audit:runtime-order-item-hold-release-complete-flow": "npx tsx scripts/audit-runtime-order-item-hold-release-complete-flow.ts",
     "audit:runtime-do-nota-flow": "npx tsx scripts/audit-runtime-do-nota-flow.ts",
+    "audit:runtime-nota-drop-destination-flow": "npx tsx scripts/audit-runtime-nota-drop-destination-flow.ts",
     "audit:runtime-driver-approve-mixed-billing-flow": "npx tsx scripts/audit-runtime-driver-approve-mixed-billing-flow.ts",
     "audit:runtime-driver-cargo-route-flow": "npx tsx scripts/audit-runtime-driver-cargo-route-flow.ts",
     "audit:runtime-driver-route-flow": "npx tsx scripts/audit-runtime-driver-route-flow.ts",

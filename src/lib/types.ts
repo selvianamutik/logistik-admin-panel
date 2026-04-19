@@ -623,6 +623,8 @@ export interface DeliveryActualDropPoint {
   _key?: string;
   sequence: number;
   stopType: DeliveryActualDropType;
+  shipperReferenceKey?: string;
+  shipperReferenceNumber?: string;
   locationName: string;
   locationAddress?: string;
   qtyKoli?: number;

@@ -2389,6 +2389,11 @@ export async function handleFreightNotaCreate(
                 billingCustomerName?: string;
                 receiverAddress?: string;
             }>;
+            actualDropPoints?: Array<{
+                shipperReferenceNumber?: string;
+                locationName?: string;
+                locationAddress?: string;
+            }>;
             date?: string;
             freightNotaRef?: unknown;
         }>>(
@@ -2408,6 +2413,11 @@ export async function handleFreightNotaCreate(
                     billingCustomerRef,
                     billingCustomerName,
                     receiverAddress
+                },
+                actualDropPoints[]{
+                    shipperReferenceNumber,
+                    locationName,
+                    locationAddress
                 },
                 date,
                 freightNotaRef
@@ -2491,6 +2501,19 @@ export async function handleFreightNotaCreate(
         doItemMap.set(deliveryOrderRef, current);
     }
 
+    const getActualDropDestinationForShipperReference = (
+        deliveryOrder: { actualDropPoints?: Array<{ shipperReferenceNumber?: string; locationName?: string; locationAddress?: string }> },
+        shipperReferenceNumber?: string
+    ) => {
+        const normalizedShipperReferenceNumber = normalizeOptionalText(shipperReferenceNumber);
+        if (!normalizedShipperReferenceNumber) return undefined;
+        const destinations = (deliveryOrder.actualDropPoints || [])
+            .filter(point => normalizeOptionalText(point.shipperReferenceNumber) === normalizedShipperReferenceNumber)
+            .map(point => normalizeOptionalText(point.locationAddress) || normalizeOptionalText(point.locationName))
+            .filter((value): value is string => Boolean(value));
+        return destinations.length > 0 ? [...new Set(destinations)].join(', ') : undefined;
+    };
+
     for (const row of rows) {
         if (!row.doRef) continue;
         const deliveryOrder = deliveryOrderMap.get(row.doRef);
@@ -2556,6 +2579,7 @@ export async function handleFreightNotaCreate(
             '';
         row.tujuan =
             normalizeOptionalText(matchedShipperReference?.receiverAddress) ||
+            getActualDropDestinationForShipperReference(deliveryOrder, row.noSJ) ||
             normalizeOptionalText(deliveryOrder.receiverAddress) ||
             normalizeOptionalText(sourceOrder?.receiverAddress) ||
             row.tujuan ||

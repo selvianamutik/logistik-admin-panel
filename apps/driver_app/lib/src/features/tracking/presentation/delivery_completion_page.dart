@@ -126,6 +126,12 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
         .map(
           (draft) => DriverActualDropPointInput(
             stopType: draft.stopType,
+            shipperReferenceNumber: draft.shipperReferenceNumber.trim().isNotEmpty
+                ? draft.shipperReferenceNumber.trim()
+                : null,
+            shipperReferenceKey: draft.shipperReferenceKey.trim().isNotEmpty
+                ? draft.shipperReferenceKey.trim()
+                : null,
             locationName: draft.locationName.trim().isNotEmpty
                 ? draft.locationName.trim()
                 : draft.locationAddress.trim(),
@@ -404,6 +410,8 @@ class _ActualDropDraft {
   const _ActualDropDraft({
     required this.id,
     required this.stopType,
+    required this.shipperReferenceNumber,
+    required this.shipperReferenceKey,
     required this.locationName,
     required this.locationAddress,
     required this.qtyKoli,
@@ -416,6 +424,8 @@ class _ActualDropDraft {
 
   final String id;
   final String stopType;
+  final String shipperReferenceNumber;
+  final String shipperReferenceKey;
   final String locationName;
   final String locationAddress;
   final String qtyKoli;
@@ -431,6 +441,8 @@ class _ActualDropDraft {
 
   factory _ActualDropDraft.create({
     String stopType = 'DROP',
+    String shipperReferenceNumber = '',
+    String shipperReferenceKey = '',
     String locationName = '',
     String locationAddress = '',
     String qtyKoli = '',
@@ -443,6 +455,8 @@ class _ActualDropDraft {
     return _ActualDropDraft(
       id: UniqueKey().toString(),
       stopType: stopType,
+      shipperReferenceNumber: shipperReferenceNumber,
+      shipperReferenceKey: shipperReferenceKey,
       locationName: locationName,
       locationAddress: locationAddress,
       qtyKoli: qtyKoli,
@@ -456,6 +470,8 @@ class _ActualDropDraft {
 
   _ActualDropDraft copyWith({
     String? stopType,
+    String? shipperReferenceNumber,
+    String? shipperReferenceKey,
     String? locationName,
     String? locationAddress,
     String? qtyKoli,
@@ -468,6 +484,9 @@ class _ActualDropDraft {
     return _ActualDropDraft(
       id: id,
       stopType: stopType ?? this.stopType,
+      shipperReferenceNumber:
+          shipperReferenceNumber ?? this.shipperReferenceNumber,
+      shipperReferenceKey: shipperReferenceKey ?? this.shipperReferenceKey,
       locationName: locationName ?? this.locationName,
       locationAddress: locationAddress ?? this.locationAddress,
       qtyKoli: qtyKoli ?? this.qtyKoli,
@@ -545,6 +564,8 @@ List<_ActualDropDraft> _buildInitialDropDrafts(
         .map(
           (point) => _ActualDropDraft.create(
             stopType: point.stopType,
+            shipperReferenceNumber: point.shipperReferenceNumber ?? '',
+            shipperReferenceKey: point.shipperReferenceKey ?? '',
             locationName: point.locationName,
             locationAddress: point.locationAddress ?? '',
             qtyKoli: _formatMetric(point.qtyKoli),
@@ -578,11 +599,15 @@ List<_ActualDropDraft> _buildInitialDropDrafts(
         : (
             locationName: (trip.receiverName ?? trip.destinationLabel).trim(),
             locationAddress: (trip.receiverAddress ?? '').trim(),
+            shipperReferenceNumber: '',
+            shipperReferenceKey: '',
           );
     return [
       _ActualDropDraft.create(
         locationName: target.locationName,
         locationAddress: target.locationAddress,
+        shipperReferenceNumber: target.shipperReferenceNumber,
+        shipperReferenceKey: target.shipperReferenceKey,
         qtyKoli: _formatMetric(totals.qtyKoli),
         weightInputValue: _formatMetric(totals.weightKg),
         volumeInputValue: _formatMetric(totals.volumeM3, fractionDigits: 3),
@@ -595,15 +620,31 @@ List<_ActualDropDraft> _buildInitialDropDrafts(
         (target) => _ActualDropDraft.create(
           locationName: target.locationName,
           locationAddress: target.locationAddress,
+          shipperReferenceNumber: target.shipperReferenceNumber,
+          shipperReferenceKey: target.shipperReferenceKey,
         ),
       )
       .toList(growable: false);
 }
 
-List<({String locationName, String locationAddress})> _resolveDistinctTargets(
+List<
+  ({
+    String locationName,
+    String locationAddress,
+    String shipperReferenceNumber,
+    String shipperReferenceKey,
+  })
+>
+_resolveDistinctTargets(
   DeliveryTrip trip,
 ) {
-  final results = <({String locationName, String locationAddress})>[];
+  final results =
+      <({
+        String locationName,
+        String locationAddress,
+        String shipperReferenceNumber,
+        String shipperReferenceKey,
+      })>[];
   final seen = <String>{};
   for (final reference in trip.shipperReferences) {
     final locationName = reference.targetLabel.trim();
@@ -614,7 +655,12 @@ List<({String locationName, String locationAddress})> _resolveDistinctTargets(
       continue;
     }
     seen.add(key);
-    results.add((locationName: locationName, locationAddress: locationAddress));
+    results.add((
+      locationName: locationName,
+      locationAddress: locationAddress,
+      shipperReferenceNumber: reference.referenceNumber,
+      shipperReferenceKey: '',
+    ));
   }
   return results;
 }

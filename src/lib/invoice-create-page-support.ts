@@ -157,6 +157,18 @@ export function buildNotaRowsFromDeliveryOrder(params: {
     const shipperReferenceMap = new Map(
         shipperReferences.map(reference => [reference.referenceNumber, reference])
     );
+    const actualDropPointsByShipperReference = new Map<string, string>();
+    for (const point of deliveryOrder.actualDropPoints || []) {
+        const shipperReferenceNumber = point.shipperReferenceNumber?.trim();
+        if (!shipperReferenceNumber) continue;
+        const destination = point.locationAddress?.trim() || point.locationName?.trim() || '';
+        if (!destination) continue;
+        const current = actualDropPointsByShipperReference.get(shipperReferenceNumber);
+        actualDropPointsByShipperReference.set(
+            shipperReferenceNumber,
+            current ? `${current}, ${destination}` : destination
+        );
+    }
     const fallbackShipperReferenceNumber = shipperReferences[0]?.referenceNumber || deliveryOrder.customerDoNumber || deliveryOrder.doNumber || '';
     const baseRow = {
         doRef: deliveryOrder._id,
@@ -188,7 +200,10 @@ export function buildNotaRowsFromDeliveryOrder(params: {
             customerName: matchedReference?.billingCustomerName || baseRow.customerName,
             noSJ: shipperReferenceNumber,
             dari: matchedReference?.pickupAddress || baseRow.dari,
-            tujuan: matchedReference?.receiverAddress || baseRow.tujuan,
+            tujuan:
+                matchedReference?.receiverAddress ||
+                actualDropPointsByShipperReference.get(shipperReferenceNumber) ||
+                baseRow.tujuan,
             barang: items.length > 0
                 ? [...new Set(items.map(item => item.orderItemDescription?.trim()).filter((value): value is string => Boolean(value)))].join(', ')
                 : '',
@@ -206,7 +221,10 @@ export function buildNotaRowsFromDeliveryOrder(params: {
                 customerName: reference.billingCustomerName || baseRow.customerName,
                 noSJ: reference.referenceNumber,
                 dari: reference.pickupAddress || baseRow.dari,
-                tujuan: reference.receiverAddress || baseRow.tujuan,
+                tujuan:
+                    reference.receiverAddress ||
+                    actualDropPointsByShipperReference.get(reference.referenceNumber) ||
+                    baseRow.tujuan,
                 barang: '',
                 collie: 0,
                 beratKg: 0,

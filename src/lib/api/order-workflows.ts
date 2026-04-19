@@ -2425,6 +2425,13 @@ export async function handleDeliveryOrderStatusUpdate(
         receiverName?: string;
         receiverCompany?: string;
         receiverAddress?: string;
+        shipperReferences?: Array<{
+            _key?: string;
+            referenceNumber?: string;
+            receiverName?: string;
+            receiverCompany?: string;
+            receiverAddress?: string;
+        }>;
         baseTaripBorongan?: number;
         taripBorongan?: number;
         pendingDriverStatus?: string;
@@ -3089,6 +3096,13 @@ export async function handleDeliveryOrderDriverStatusRequest(
         receiverName?: string;
         receiverCompany?: string;
         receiverAddress?: string;
+        shipperReferences?: Array<{
+            _key?: string;
+            referenceNumber?: string;
+            receiverName?: string;
+            receiverCompany?: string;
+            receiverAddress?: string;
+        }>;
         pendingDriverStatus?: string;
         pendingDriverStatusRequestedAt?: string;
         pendingDriverStatusRequestedBy?: string;

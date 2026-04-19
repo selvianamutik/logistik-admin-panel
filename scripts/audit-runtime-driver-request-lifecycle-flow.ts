@@ -21,6 +21,7 @@ type DeliveryOrderSnapshot = {
     pendingDriverActualDropPoints?: Array<{ stopType?: string }>;
     actualDropPoints?: Array<{
         stopType?: string;
+        shipperReferenceNumber?: string;
         locationName?: string;
         qtyKoli?: number;
         weightKg?: number;
@@ -505,6 +506,7 @@ async function main() {
                     actualDropPoints: [
                         {
                             stopType: 'DROP',
+                            shipperReferenceNumber: renamedSjNumber,
                             locationName: 'Tujuan Audit Pending Lifecycle',
                             locationAddress: 'Tujuan Audit Pending Lifecycle',
                             qtyKoli: 6,
@@ -559,6 +561,7 @@ async function main() {
                 pendingDriverActualDropPoints,
                 actualDropPoints[]{
                     stopType,
+                    shipperReferenceNumber,
                     locationName,
                     qtyKoli,
                     weightKg,
@@ -587,6 +590,10 @@ async function main() {
         assert(
             deliveryOrder?.actualDropPoints?.[0]?.locationName === 'Tujuan Audit Pending Lifecycle',
             'Approval admin tidak mempertahankan lokasi drop dari draft driver.'
+        );
+        assert(
+            deliveryOrder?.actualDropPoints?.[0]?.shipperReferenceNumber === renamedSjNumber,
+            'Approval admin tidak mempertahankan relasi drop ke nomor SJ dari draft driver.'
         );
         assert(
             deliveryOrder?.actualDropPoints?.[0]?.note === 'Resubmit setelah reject dan edit ulang',

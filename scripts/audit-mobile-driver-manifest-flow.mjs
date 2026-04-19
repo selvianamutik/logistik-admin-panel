@@ -55,6 +55,7 @@ for (const payloadKey of [
     "'actualDropPoints'",
     "'referenceNumber'",
     "'shipperReferenceNumber'",
+    "'shipperReferenceKey'",
     "'pickupStopKey'",
     "'customerProductRef'",
     "'weightInputValue'",
@@ -113,6 +114,16 @@ assertIncludes(
     completionSource,
     'class _SyncedTextFormField extends StatefulWidget',
     'Mobile completion harus memakai field controller sinkron untuk input aktual/drop yang stabil.'
+);
+assertIncludes(
+    completionSource,
+    'shipperReferenceNumber: target.shipperReferenceNumber',
+    'Mobile completion harus membawa nomor SJ pada default titik drop multi-target.'
+);
+assertIncludes(
+    serviceSource,
+    "'shipperReferenceNumber': shipperReferenceNumber",
+    'Mobile completion payload harus mengirim relasi titik drop ke nomor SJ.'
 );
 
 for (const unstableKeyPattern of [

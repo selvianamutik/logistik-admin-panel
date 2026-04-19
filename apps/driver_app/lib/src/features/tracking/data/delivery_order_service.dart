@@ -425,6 +425,10 @@ class DeliveryOrderService {
           (item) => DeliveryActualDropPoint(
             sequence: _toInt(item['sequence']),
             stopType: (item['stopType'] as String?)?.trim() ?? 'DROP',
+            shipperReferenceNumber: (item['shipperReferenceNumber'] as String?)
+                ?.trim(),
+            shipperReferenceKey: (item['shipperReferenceKey'] as String?)
+                ?.trim(),
             locationName: (item['locationName'] as String?)?.trim() ?? '',
             locationAddress: (item['locationAddress'] as String?)?.trim(),
             qtyKoli: _toDouble(item['qtyKoli']),
@@ -562,10 +566,14 @@ class DriverActualDropPointInput {
     required this.weightInputUnit,
     required this.volumeInputValue,
     required this.volumeInputUnit,
+    this.shipperReferenceNumber,
+    this.shipperReferenceKey,
     this.note,
   });
 
   final String stopType;
+  final String? shipperReferenceNumber;
+  final String? shipperReferenceKey;
   final String locationName;
   final String locationAddress;
   final double qtyKoli;
@@ -577,6 +585,11 @@ class DriverActualDropPointInput {
 
   Map<String, dynamic> toJson() => {
     'stopType': stopType,
+    if (shipperReferenceNumber != null &&
+        shipperReferenceNumber!.trim().isNotEmpty)
+      'shipperReferenceNumber': shipperReferenceNumber!.trim(),
+    if (shipperReferenceKey != null && shipperReferenceKey!.trim().isNotEmpty)
+      'shipperReferenceKey': shipperReferenceKey!.trim(),
     'locationName': locationName,
     'locationAddress': locationAddress,
     'qtyKoli': qtyKoli,

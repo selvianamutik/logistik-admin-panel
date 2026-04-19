@@ -106,6 +106,8 @@ class DeliveryActualDropPoint {
   const DeliveryActualDropPoint({
     required this.stopType,
     required this.locationName,
+    this.shipperReferenceNumber,
+    this.shipperReferenceKey,
     this.sequence,
     this.locationAddress,
     this.qtyKoli,
@@ -118,6 +120,8 @@ class DeliveryActualDropPoint {
 
   final int? sequence;
   final String stopType;
+  final String? shipperReferenceNumber;
+  final String? shipperReferenceKey;
   final String locationName;
   final String? locationAddress;
   final double? qtyKoli;

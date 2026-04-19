@@ -795,11 +795,19 @@ export function normalizeDeliveryActualDropPoints(
         receiverName?: string;
         receiverCompany?: string;
         receiverAddress?: string;
+        shipperReferences?: Array<{
+            _key?: string;
+            referenceNumber?: string;
+            receiverName?: string;
+            receiverCompany?: string;
+            receiverAddress?: string;
+        }>;
     },
     actualCargoByDoItemId: Map<string, NormalizedActualCargoInput>
 ) {
     const actualTotals = summarizeActualCargoInputs(actualCargoByDoItemId);
     const rawDropPoints = Array.isArray(data.actualDropPoints) ? data.actualDropPoints : [];
+    const shipperReferences = Array.isArray(deliveryOrder.shipperReferences) ? deliveryOrder.shipperReferences : [];
 
     if (rawDropPoints.length === 0) {
         return [buildDefaultActualDropPoint(deliveryOrder, actualTotals)];
@@ -814,6 +822,29 @@ export function normalizeDeliveryActualDropPoints(
         const locationName = normalizeOptionalText(rawPoint.locationName);
         const locationAddress = normalizeOptionalText(rawPoint.locationAddress);
         const note = normalizeOptionalText(rawPoint.note);
+        const requestedShipperReferenceNumber = normalizeOptionalText(rawPoint.shipperReferenceNumber);
+        const requestedShipperReferenceKey = normalizeOptionalText(rawPoint.shipperReferenceKey);
+        const matchedShipperReference =
+            shipperReferences.find(reference =>
+                requestedShipperReferenceNumber &&
+                normalizeOptionalText(reference.referenceNumber) === requestedShipperReferenceNumber
+            ) ||
+            shipperReferences.find(reference =>
+                requestedShipperReferenceKey &&
+                normalizeOptionalText(reference._key) === requestedShipperReferenceKey
+            ) ||
+            shipperReferences.find(reference => {
+                const referenceTargetName =
+                    normalizeOptionalText(reference.receiverCompany) ||
+                    normalizeOptionalText(reference.receiverName) ||
+                    normalizeOptionalText(reference.receiverAddress);
+                const referenceTargetAddress = normalizeOptionalText(reference.receiverAddress);
+                return Boolean(
+                    (locationName || locationAddress) &&
+                    referenceTargetName === (locationName || locationAddress) &&
+                    (!referenceTargetAddress || !locationAddress || referenceTargetAddress === locationAddress)
+                );
+            });
         const qtyKoli = roundQuantity(normalizeNumber(rawPoint.qtyKoli));
         const weightInputUnit = resolvePayloadWeightInputUnit(rawPoint.weightInputUnit, `Satuan berat titik drop #${index + 1}`);
         const rawWeightInputValue = roundQuantity(
@@ -852,6 +883,8 @@ export function normalizeDeliveryActualDropPoints(
             _key: crypto.randomUUID(),
             sequence: index + 1,
             stopType: normalizeDeliveryDropType(rawPoint.stopType, `Tipe titik drop #${index + 1}`),
+            shipperReferenceKey: normalizeOptionalText(matchedShipperReference?._key) || requestedShipperReferenceKey,
+            shipperReferenceNumber: normalizeOptionalText(matchedShipperReference?.referenceNumber) || requestedShipperReferenceNumber,
             locationName: locationName || locationAddress || `Titik drop ${index + 1}`,
             locationAddress,
             qtyKoli: qtyKoli > 0 ? qtyKoli : undefined,
