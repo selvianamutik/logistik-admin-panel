@@ -252,6 +252,7 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
                     (draft) => Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: _ActualCargoCard(
+                        key: ValueKey(draft.itemId),
                         draft: draft,
                         onChanged: _updateCargo,
                       ),
@@ -270,6 +271,7 @@ class _DeliveryCompletionPageState extends State<DeliveryCompletionPage> {
                     (entry) => Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: _ActualDropCard(
+                        key: ValueKey(entry.value.id),
                         index: entry.key + 1,
                         draft: entry.value,
                         showRemove: _dropDrafts.length > 1,
@@ -802,7 +804,11 @@ class _MetricItem extends StatelessWidget {
 }
 
 class _ActualCargoCard extends StatelessWidget {
-  const _ActualCargoCard({required this.draft, required this.onChanged});
+  const _ActualCargoCard({
+    super.key,
+    required this.draft,
+    required this.onChanged,
+  });
 
   final _ActualCargoDraft draft;
   final void Function(
@@ -828,8 +834,8 @@ class _ActualCargoCard extends StatelessWidget {
               style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
             ),
             const SizedBox(height: 12),
-            TextFormField(
-              initialValue: draft.qtyKoli,
+            _SyncedTextFormField(
+              value: draft.qtyKoli,
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
@@ -842,8 +848,8 @@ class _ActualCargoCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: TextFormField(
-                    initialValue: draft.weightInputValue,
+                  child: _SyncedTextFormField(
+                    value: draft.weightInputValue,
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
@@ -877,8 +883,8 @@ class _ActualCargoCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: TextFormField(
-                    initialValue: draft.volumeInputValue,
+                  child: _SyncedTextFormField(
+                    value: draft.volumeInputValue,
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
@@ -918,6 +924,7 @@ class _ActualCargoCard extends StatelessWidget {
 
 class _ActualDropCard extends StatelessWidget {
   const _ActualDropCard({
+    super.key,
     required this.index,
     required this.draft,
     required this.showRemove,
@@ -989,22 +996,22 @@ class _ActualDropCard extends StatelessWidget {
                   onChanged(draft.id, stopType: value ?? 'DROP'),
             ),
             const SizedBox(height: 12),
-            TextFormField(
-              initialValue: draft.locationName,
+            _SyncedTextFormField(
+              value: draft.locationName,
               decoration: const InputDecoration(labelText: 'Nama Lokasi'),
               onChanged: (value) => onChanged(draft.id, locationName: value),
             ),
             const SizedBox(height: 12),
-            TextFormField(
-              initialValue: draft.locationAddress,
+            _SyncedTextFormField(
+              value: draft.locationAddress,
               minLines: 2,
               maxLines: 3,
               decoration: const InputDecoration(labelText: 'Alamat Lokasi'),
               onChanged: (value) => onChanged(draft.id, locationAddress: value),
             ),
             const SizedBox(height: 12),
-            TextFormField(
-              initialValue: draft.qtyKoli,
+            _SyncedTextFormField(
+              value: draft.qtyKoli,
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
@@ -1015,8 +1022,8 @@ class _ActualDropCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: TextFormField(
-                    initialValue: draft.weightInputValue,
+                  child: _SyncedTextFormField(
+                    value: draft.weightInputValue,
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
@@ -1046,8 +1053,8 @@ class _ActualDropCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: TextFormField(
-                    initialValue: draft.volumeInputValue,
+                  child: _SyncedTextFormField(
+                    value: draft.volumeInputValue,
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
@@ -1075,8 +1082,8 @@ class _ActualDropCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            TextFormField(
-              initialValue: draft.note,
+            _SyncedTextFormField(
+              value: draft.note,
               minLines: 2,
               maxLines: 3,
               decoration: const InputDecoration(labelText: 'Catatan Titik'),
@@ -1085,6 +1092,66 @@ class _ActualDropCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _SyncedTextFormField extends StatefulWidget {
+  const _SyncedTextFormField({
+    required this.value,
+    required this.decoration,
+    required this.onChanged,
+    this.keyboardType,
+    this.minLines,
+    this.maxLines = 1,
+  });
+
+  final String value;
+  final InputDecoration decoration;
+  final ValueChanged<String> onChanged;
+  final TextInputType? keyboardType;
+  final int? minLines;
+  final int? maxLines;
+
+  @override
+  State<_SyncedTextFormField> createState() => _SyncedTextFormFieldState();
+}
+
+class _SyncedTextFormFieldState extends State<_SyncedTextFormField> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.value);
+  }
+
+  @override
+  void didUpdateWidget(covariant _SyncedTextFormField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.value == _controller.text) return;
+
+    _controller.value = TextEditingValue(
+      text: widget.value,
+      selection: TextSelection.collapsed(offset: widget.value.length),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextFormField(
+      controller: _controller,
+      keyboardType: widget.keyboardType,
+      minLines: widget.minLines,
+      maxLines: widget.maxLines,
+      decoration: widget.decoration,
+      onChanged: widget.onChanged,
     );
   }
 }

@@ -10,9 +10,14 @@ const servicePath = path.join(
     appDir,
     'apps/driver_app/lib/src/features/tracking/data/delivery_order_service.dart'
 );
+const completionPath = path.join(
+    appDir,
+    'apps/driver_app/lib/src/features/tracking/presentation/delivery_completion_page.dart'
+);
 
 const manifestSource = fs.readFileSync(manifestPath, 'utf8');
 const serviceSource = fs.readFileSync(servicePath, 'utf8');
+const completionSource = fs.readFileSync(completionPath, 'utf8');
 
 function assert(condition, message) {
     if (!condition) {
@@ -46,6 +51,8 @@ for (const endpoint of requiredDriverEndpoints) {
 for (const payloadKey of [
     "'shipperReferences'",
     "'cargoItems'",
+    "'actualItems'",
+    "'actualDropPoints'",
     "'referenceNumber'",
     "'shipperReferenceNumber'",
     "'pickupStopKey'",
@@ -92,6 +99,21 @@ assertIncludes(
     'class _SyncedTextFormField extends StatefulWidget',
     'Mobile manifest harus memakai field controller sinkron untuk input stabil.'
 );
+assertIncludes(
+    completionSource,
+    'key: ValueKey(draft.itemId)',
+    'Mobile completion cargo card harus punya key stabil agar controller tidak tertukar.'
+);
+assertIncludes(
+    completionSource,
+    'key: ValueKey(entry.value.id)',
+    'Mobile completion drop card harus punya key stabil agar controller tidak tertukar.'
+);
+assertIncludes(
+    completionSource,
+    'class _SyncedTextFormField extends StatefulWidget',
+    'Mobile completion harus memakai field controller sinkron untuk input aktual/drop yang stabil.'
+);
 
 for (const unstableKeyPattern of [
     "ValueKey('sj-",
@@ -107,4 +129,19 @@ for (const unstableKeyPattern of [
     );
 }
 
-console.log('Mobile driver manifest audit OK: endpoints, payloads, multi-SJ, and stable inputs verified.');
+for (const unstableCompletionPattern of [
+    'initialValue: draft.qtyKoli',
+    'initialValue: draft.weightInputValue',
+    'initialValue: draft.volumeInputValue',
+    'initialValue: draft.locationName',
+    'initialValue: draft.locationAddress',
+    'initialValue: draft.note',
+]) {
+    assertNotIncludes(
+        completionSource,
+        unstableCompletionPattern,
+        `Mobile completion masih punya field tidak sinkron: ${unstableCompletionPattern}.`
+    );
+}
+
+console.log('Mobile driver manifest audit OK: endpoints, payloads, multi-SJ, completion, and stable inputs verified.');
