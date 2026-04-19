@@ -2545,6 +2545,7 @@ export async function handleDeliveryOrderStatusUpdate(
             _rev: string;
             driverFeeAmount: number;
             totalClaimAmount: number;
+            balance: number;
         }
         | undefined;
     if (status === 'DELIVERED') {
@@ -2645,6 +2646,7 @@ export async function handleDeliveryOrderStatusUpdate(
                 _rev: linkedVoucher._rev,
                 driverFeeAmount: voucherTotals.driverFeeAmount,
                 totalClaimAmount: voucherTotals.totalClaimAmount,
+                balance: voucherTotals.balance,
             };
             linkedVoucherAdjustmentSummary = `bon ${linkedVoucher.bonNumber || linkedVoucher._id} ikut disinkronkan ke ${voucherTotals.driverFeeAmount}`;
         }
@@ -2713,6 +2715,7 @@ export async function handleDeliveryOrderStatusUpdate(
             set: {
                 driverFeeAmount: linkedVoucherPatch.driverFeeAmount,
                 totalClaimAmount: linkedVoucherPatch.totalClaimAmount,
+                balance: linkedVoucherPatch.balance,
             },
         });
     }

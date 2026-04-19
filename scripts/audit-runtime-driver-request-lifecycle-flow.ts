@@ -34,6 +34,13 @@ type DeliveryOrderSnapshot = {
     }>;
 };
 
+type DriverVoucherSnapshot = {
+    _id: string;
+    driverFeeAmount?: number;
+    totalClaimAmount?: number;
+    balance?: number;
+};
+
 type DeliveryOrderItemSnapshot = {
     _id: string;
     orderItemDescription?: string;
@@ -120,6 +127,12 @@ async function cleanupAuditArtifacts() {
             { ids: doIds }
         )
         : [];
+    const voucherIds = doIds.length > 0
+        ? await client.fetch<string[]>(
+            `*[_type == "driverVoucher" && deliveryOrderRef in $ids]._id`,
+            { ids: doIds }
+        )
+        : [];
     const trackingLogIds = doIds.length > 0
         ? await client.fetch<string[]>(
             `*[_type == "trackingLog" && refRef in $ids]._id`,
@@ -129,6 +142,7 @@ async function cleanupAuditArtifacts() {
 
     await deleteDocumentsByIds([
         ...trackingLogIds,
+        ...voucherIds,
         ...doItemIds,
         ...doIds,
         ...orderItemIds,
@@ -196,8 +210,12 @@ async function main() {
             receiverAddress: 'Tujuan Audit Pending Lifecycle',
             vehicleRef: 'veh-002',
             vehiclePlate: 'L 9456 AB',
+            serviceRef: 'svc-002',
+            serviceName: 'CDD Box / Canter',
             driverRef: 'drv-002',
             driverName: 'Budi Hartono',
+            baseTaripBorongan: 260000,
+            taripBorongan: 260000,
             pickupStops: [
                 {
                     _key: pickupKey,
@@ -205,6 +223,28 @@ async function main() {
                     pickupAddress: 'Gudang Audit Pending Lifecycle',
                 },
             ],
+        });
+        await client.create({
+            _id: `audit-voucher-pending-lifecycle-${uniqueSeed.toLowerCase()}`,
+            _type: 'driverVoucher',
+            bonNumber: `BON-AUDIT-PENDING-${uniqueSeed}`,
+            deliveryOrderRef: doId,
+            doNumber: `DO-AUDIT-PENDING-${uniqueSeed}`,
+            driverRef: 'drv-002',
+            driverName: 'Budi Hartono',
+            vehicleRef: 'veh-002',
+            vehiclePlate: 'L 9456 AB',
+            issuedDate: businessDate,
+            cashGiven: 95000,
+            initialCashGiven: 95000,
+            totalIssuedAmount: 95000,
+            totalSpent: 0,
+            driverFeeAmount: 260000,
+            totalClaimAmount: 260000,
+            balance: -165000,
+            issueBankRef: 'bank-jatim-001',
+            issueBankName: 'Bank Jatim',
+            status: 'ISSUED',
         });
 
         await parseResponse(
@@ -603,6 +643,20 @@ async function main() {
         const finalizedQty = deliveryOrderItems.reduce((sum, item) => sum + (item.actualQtyKoli || 0), 0);
         assert(finalizedQty === 6, 'Approval admin tidak memfinalkan total qty aktual dari draft driver.');
         assert(finalizedWeight === 180, 'Approval admin tidak memfinalkan total berat aktual dari draft driver.');
+
+        const linkedVoucher = await client.fetch<DriverVoucherSnapshot | null>(
+            `*[_type == "driverVoucher" && deliveryOrderRef == $id][0]{
+                _id,
+                driverFeeAmount,
+                totalClaimAmount,
+                balance
+            }`,
+            { id: doId }
+        );
+        assert(linkedVoucher, 'Bon audit pending lifecycle tidak ditemukan.');
+        assert(linkedVoucher.driverFeeAmount === 278000, 'Approval overtonase tidak mengubah upah trip bon menjadi Rp278.000.');
+        assert(linkedVoucher.totalClaimAmount === 278000, 'Approval overtonase tidak mengubah total klaim bon menjadi Rp278.000.');
+        assert(linkedVoucher.balance === -183000, 'Approval overtonase tidak menghitung ulang balance bon menjadi -Rp183.000.');
 
         console.log('Audit runtime driver pending approval lifecycle: OK');
     } finally {
