@@ -12,10 +12,20 @@ type ApiSession = {
 type DeliveryOrderSnapshot = {
     _id: string;
     doNumber?: string;
+    status?: string;
+    trackingState?: string;
+    cargoFinalizedAt?: string;
     pendingDriverStatus?: string;
     pendingDriverStatusNote?: string;
     pendingDriverActualCargoItems?: Array<{ deliveryOrderItemRef?: string }>;
     pendingDriverActualDropPoints?: Array<{ stopType?: string }>;
+    actualDropPoints?: Array<{
+        stopType?: string;
+        locationName?: string;
+        qtyKoli?: number;
+        weightKg?: number;
+        note?: string;
+    }>;
     customerDoNumber?: string;
     shipperReferences?: Array<{
         _key?: string;
@@ -27,6 +37,8 @@ type DeliveryOrderItemSnapshot = {
     _id: string;
     orderItemDescription?: string;
     shipperReferenceNumber?: string;
+    actualQtyKoli?: number;
+    actualWeightKg?: number;
 };
 
 let client: ReturnType<Awaited<typeof import('../src/lib/sanity')>['getSanityClient']>;
@@ -129,6 +141,7 @@ async function main() {
     const {
         handleDeliveryOrderAppendCargoItems,
         handleDeliveryOrderCargoItemUpdate,
+        handleDeliveryOrderStatusUpdate,
         handleDeliveryOrderDriverStatusRequest,
         handleDeliveryOrderDriverStatusRequestReject,
         handleDeliveryOrderShipperReferenceUpdate,
@@ -519,6 +532,70 @@ async function main() {
         assert(deliveryOrder?.pendingDriverStatus === 'DELIVERED', 'Driver tidak bisa resubmit setelah reject.');
         assert((deliveryOrder.pendingDriverActualCargoItems || []).length === 2, 'Resubmit setelah reject tidak membawa seluruh actual item terbaru.');
         assert((deliveryOrder.pendingDriverActualDropPoints || []).length === 1, 'Resubmit setelah reject tidak menyimpan actual drop terbaru.');
+
+        await parseResponse(
+            await handleDeliveryOrderStatusUpdate(
+                ownerSession,
+                {
+                    id: doId,
+                    status: 'DELIVERED',
+                    note: 'Audit admin approve draft driver tanpa kirim ulang cargo/drop',
+                    podReceiverName: 'Penerima Audit Pending Lifecycle',
+                    podReceivedDate: businessDate,
+                    podNote: 'Approval memakai pending draft driver',
+                },
+                noopAuditLog
+            )
+        );
+
+        deliveryOrder = await client.fetch<DeliveryOrderSnapshot | null>(
+            `*[_type == "deliveryOrder" && _id == $id][0]{
+                _id,
+                status,
+                trackingState,
+                cargoFinalizedAt,
+                pendingDriverStatus,
+                pendingDriverActualCargoItems,
+                pendingDriverActualDropPoints,
+                actualDropPoints[]{
+                    stopType,
+                    locationName,
+                    qtyKoli,
+                    weightKg,
+                    note
+                }
+            }`,
+            { id: doId }
+        );
+        deliveryOrderItems = await client.fetch<DeliveryOrderItemSnapshot[]>(
+            `*[_type == "deliveryOrderItem" && deliveryOrderRef == $id]{
+                _id,
+                orderItemDescription,
+                actualQtyKoli,
+                actualWeightKg
+            }`,
+            { id: doId }
+        );
+
+        assert(deliveryOrder?.status === 'DELIVERED', 'Approval admin tidak memfinalkan DO menjadi DELIVERED.');
+        assert(deliveryOrder?.trackingState === 'STOPPED', 'Approval admin tidak menghentikan tracking DO.');
+        assert(Boolean(deliveryOrder?.cargoFinalizedAt), 'Approval admin tidak mengisi cargoFinalizedAt.');
+        assert(!deliveryOrder?.pendingDriverStatus, 'Approval admin tidak membersihkan pendingDriverStatus.');
+        assert(!deliveryOrder?.pendingDriverActualCargoItems?.length, 'Approval admin tidak membersihkan pending actual cargo.');
+        assert(!deliveryOrder?.pendingDriverActualDropPoints?.length, 'Approval admin tidak membersihkan pending actual drop.');
+        assert((deliveryOrder?.actualDropPoints || []).length === 1, 'Approval admin tidak memakai pending actual drop driver.');
+        assert(
+            deliveryOrder?.actualDropPoints?.[0]?.locationName === 'Tujuan Audit Pending Lifecycle',
+            'Approval admin tidak mempertahankan lokasi drop dari draft driver.'
+        );
+        assert(
+            deliveryOrder?.actualDropPoints?.[0]?.note === 'Resubmit setelah reject dan edit ulang',
+            'Approval admin tidak mempertahankan catatan drop dari draft driver.'
+        );
+        const finalizedWeight = deliveryOrderItems.reduce((sum, item) => sum + (item.actualWeightKg || 0), 0);
+        const finalizedQty = deliveryOrderItems.reduce((sum, item) => sum + (item.actualQtyKoli || 0), 0);
+        assert(finalizedQty === 6, 'Approval admin tidak memfinalkan total qty aktual dari draft driver.');
+        assert(finalizedWeight === 180, 'Approval admin tidak memfinalkan total berat aktual dari draft driver.');
 
         console.log('Audit runtime driver pending approval lifecycle: OK');
     } finally {

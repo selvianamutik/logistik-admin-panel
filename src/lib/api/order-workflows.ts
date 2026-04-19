@@ -2548,9 +2548,24 @@ export async function handleDeliveryOrderStatusUpdate(
             );
         }
 
+        const completionData =
+            deliveryOrder.pendingDriverStatus === 'DELIVERED'
+                ? {
+                    ...data,
+                    actualItems:
+                        Array.isArray(data.actualItems) && data.actualItems.length > 0
+                            ? data.actualItems
+                            : deliveryOrder.pendingDriverActualCargoItems,
+                    actualDropPoints:
+                        Array.isArray(data.actualDropPoints) && data.actualDropPoints.length > 0
+                            ? data.actualDropPoints
+                            : deliveryOrder.pendingDriverActualDropPoints,
+                }
+                : data;
+
         try {
-            actualCargoByDoItemId = normalizeDeliveryOrderActualCargoInputs(data, doItems);
-            actualDropPoints = normalizeDeliveryActualDropPoints(data, deliveryOrder, actualCargoByDoItemId);
+            actualCargoByDoItemId = normalizeDeliveryOrderActualCargoInputs(completionData, doItems);
+            actualDropPoints = normalizeDeliveryActualDropPoints(completionData, deliveryOrder, actualCargoByDoItemId);
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Muatan aktual surat jalan tidak valid' },
