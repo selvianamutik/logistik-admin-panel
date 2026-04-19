@@ -215,6 +215,7 @@ function getMutationPermissionAction(action?: string): keyof ModulePermissions {
         action === 'receive' ||
         action === 'record-payment' ||
         action === 'update-with-items' ||
+        action === 'update-pph23' ||
         action === 'update-header-booking' ||
         action === 'revise-targets' ||
         action === 'set-status' ||

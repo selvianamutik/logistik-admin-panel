@@ -37,16 +37,16 @@ function assertActionMappedToUpdate(block, action) {
     );
 }
 
-function assertDispatch(block, action, handler) {
-    const actionIndex = block.indexOf(`entity === 'delivery-orders' && action === '${action}'`);
-    assert(actionIndex >= 0, `Dispatch action ${action} tidak ditemukan di POST /api/data.`);
+function assertDispatch(block, entity, action, handler) {
+    const actionIndex = block.indexOf(`entity === '${entity}' && action === '${action}'`);
+    assert(actionIndex >= 0, `Dispatch action ${entity}/${action} tidak ditemukan di POST /api/data.`);
     const handlerIndex = block.indexOf(handler, actionIndex);
-    assert(handlerIndex >= 0, `Action ${action} tidak mengarah ke ${handler}.`);
+    assert(handlerIndex >= 0, `Action ${entity}/${action} tidak mengarah ke ${handler}.`);
 
-    const nextDeliveryOrderDispatchIndex = block.indexOf(`entity === 'delivery-orders' && action ===`, actionIndex + 1);
+    const nextDeliveryOrderDispatchIndex = block.indexOf(`entity === '${entity}' && action ===`, actionIndex + 1);
     assert(
         nextDeliveryOrderDispatchIndex < 0 || handlerIndex < nextDeliveryOrderDispatchIndex,
-        `Handler ${handler} untuk action ${action} berada di luar block dispatch yang benar.`
+        `Handler ${handler} untuk action ${entity}/${action} berada di luar block dispatch yang benar.`
     );
 }
 
@@ -144,7 +144,7 @@ const deliveryOrderActions = [
 
 for (const item of deliveryOrderActions) {
     assertActionMappedToUpdate(mutationPermissionBlock, item.action);
-    assertDispatch(postBlock, item.action, item.handler);
+    assertDispatch(postBlock, 'delivery-orders', item.action, item.handler);
     assert(
         source.includes(item.handler),
         `Handler ${item.handler} belum di-import atau tidak dipakai di route.`
@@ -160,10 +160,30 @@ for (const item of deliveryOrderActions) {
     }
 }
 
+const freightNotaUpdateActions = [
+    {
+        action: 'update-with-items',
+        handler: 'handleFreightNotaUpdate',
+    },
+    {
+        action: 'update-pph23',
+        handler: 'handleFreightNotaPph23Update',
+    },
+];
+
+for (const item of freightNotaUpdateActions) {
+    assertActionMappedToUpdate(mutationPermissionBlock, item.action);
+    assertDispatch(postBlock, 'freight-notas', item.action, item.handler);
+    assert(
+        source.includes(item.handler),
+        `Handler ${item.handler} belum di-import atau tidak dipakai di route.`
+    );
+}
+
 assert(
     postBlock.includes("session.role === 'DRIVER'") &&
         postBlock.includes('Driver tidak diizinkan mengakses API admin'),
     'POST /api/data harus tetap menolak role DRIVER karena driver memakai route /api/driver.'
 );
 
-console.log(`Admin data route audit OK: ${deliveryOrderActions.length} delivery-order actions verified.`);
+console.log(`Admin data route audit OK: ${deliveryOrderActions.length} delivery-order actions and ${freightNotaUpdateActions.length} freight-nota update actions verified.`);
