@@ -15,6 +15,7 @@
     "audit:invoice-flow": "node scripts/audit-freight-nota-flow.mjs",
     "audit:order-trip-flow": "node scripts/audit-order-trip-handoff.mjs",
     "audit:admin-data-route-flow": "node scripts/audit-admin-data-route-flow.mjs",
+    "audit:mobile-driver-manifest-flow": "node scripts/audit-mobile-driver-manifest-flow.mjs",
     "audit:runtime-order-header-booking-flow": "npx tsx scripts/audit-runtime-order-header-booking-flow.ts",
     "audit:runtime-nota-revision-flow": "npx tsx scripts/audit-runtime-nota-revision-flow.ts",
     "audit:runtime-order-multi-trip-create-flow": "npx tsx scripts/audit-runtime-order-multi-trip-create-flow.ts",

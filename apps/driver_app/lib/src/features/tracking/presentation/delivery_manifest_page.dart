@@ -333,6 +333,7 @@ class _DeliveryManifestPageState extends State<DeliveryManifestPage> {
                       (group) => Padding(
                         padding: const EdgeInsets.only(bottom: 14),
                         child: _ManifestGroupCard(
+                          key: ValueKey(group.id),
                           group: group,
                           pickupStops: widget.pickupStops,
                           customerProducts: widget.customerProducts,
@@ -519,6 +520,7 @@ class _ManifestItemDraft {
 
 class _ManifestGroupCard extends StatelessWidget {
   const _ManifestGroupCard({
+    super.key,
     required this.group,
     required this.pickupStops,
     required this.customerProducts,
@@ -588,9 +590,8 @@ class _ManifestGroupCard extends StatelessWidget {
                   ),
               ],
             ),
-            TextFormField(
-              key: ValueKey('sj-${group.id}-${group.shipperReferenceNumber}'),
-              initialValue: group.shipperReferenceNumber,
+            _SyncedTextFormField(
+              value: group.shipperReferenceNumber,
               textCapitalization: TextCapitalization.characters,
               decoration: const InputDecoration(
                 labelText: 'No. SJ Pengirim',
@@ -630,6 +631,7 @@ class _ManifestGroupCard extends StatelessWidget {
                 (item) => Padding(
                   padding: const EdgeInsets.only(bottom: 12),
                   child: _ManifestItemCard(
+                    key: ValueKey(item.id),
                     item: item,
                     customerProducts: customerProducts,
                     onChanged:
@@ -680,6 +682,7 @@ class _ManifestGroupCard extends StatelessWidget {
 
 class _ManifestItemCard extends StatelessWidget {
   const _ManifestItemCard({
+    super.key,
     required this.item,
     required this.customerProducts,
     required this.onChanged,
@@ -756,9 +759,8 @@ class _ManifestItemCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
           ],
-          TextFormField(
-            key: ValueKey('desc-${item.id}-${item.description}'),
-            initialValue: item.description,
+          _SyncedTextFormField(
+            value: item.description,
             decoration: const InputDecoration(
               labelText: 'Deskripsi Barang',
               hintText: 'Mis. Keramik / Oli Diesel / Beras 50 Kg',
@@ -769,9 +771,8 @@ class _ManifestItemCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: TextFormField(
-                  key: ValueKey('koli-${item.id}-${item.qtyKoli}'),
-                  initialValue: item.qtyKoli,
+                child: _SyncedTextFormField(
+                  value: item.qtyKoli,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
@@ -782,9 +783,8 @@ class _ManifestItemCard extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 flex: 2,
-                child: TextFormField(
-                  key: ValueKey('weight-${item.id}-${item.weightInputValue}'),
-                  initialValue: item.weightInputValue,
+                child: _SyncedTextFormField(
+                  value: item.weightInputValue,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
@@ -817,9 +817,8 @@ class _ManifestItemCard extends StatelessWidget {
             children: [
               Expanded(
                 flex: 2,
-                child: TextFormField(
-                  key: ValueKey('volume-${item.id}-${item.volumeInputValue}'),
-                  initialValue: item.volumeInputValue,
+                child: _SyncedTextFormField(
+                  value: item.volumeInputValue,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
@@ -850,6 +849,66 @@ class _ManifestItemCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _SyncedTextFormField extends StatefulWidget {
+  const _SyncedTextFormField({
+    required this.value,
+    required this.decoration,
+    required this.onChanged,
+    this.keyboardType,
+    this.textCapitalization = TextCapitalization.none,
+    this.validator,
+  });
+
+  final String value;
+  final InputDecoration decoration;
+  final ValueChanged<String> onChanged;
+  final TextInputType? keyboardType;
+  final TextCapitalization textCapitalization;
+  final FormFieldValidator<String>? validator;
+
+  @override
+  State<_SyncedTextFormField> createState() => _SyncedTextFormFieldState();
+}
+
+class _SyncedTextFormFieldState extends State<_SyncedTextFormField> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.value);
+  }
+
+  @override
+  void didUpdateWidget(covariant _SyncedTextFormField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.value == _controller.text) return;
+
+    _controller.value = TextEditingValue(
+      text: widget.value,
+      selection: TextSelection.collapsed(offset: widget.value.length),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextFormField(
+      controller: _controller,
+      keyboardType: widget.keyboardType,
+      textCapitalization: widget.textCapitalization,
+      decoration: widget.decoration,
+      validator: widget.validator,
+      onChanged: widget.onChanged,
     );
   }
 }
