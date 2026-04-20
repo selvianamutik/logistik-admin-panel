@@ -9,11 +9,11 @@ if (!inputFile) {
     throw new Error('Usage: node scripts/import-supabase.mjs <path-to-export.json>');
 }
 
-const supabaseUrl = readAnyEnv(['SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL']);
-const serviceRoleKey = readAnyEnv(['SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SECRET_KEY']);
+const supabaseUrl = readAnyEnv(['SUPABASE_URL', 'SUPABASE_PROJECT_URL', 'NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_PROJECT_URL']);
+const serviceRoleKey = readAnyEnv(['SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SERVICE_KEY', 'SUPABASE_SECRET_KEY', 'SUPABASE_SERVICE_ROLE']);
 
 if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error('Missing Supabase import env. Expected SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL, plus SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY.');
+    throw new Error('Missing Supabase import env. Expected a Supabase URL env plus a Supabase service-role key env.');
 }
 
 const raw = await readFile(path.resolve(process.cwd(), inputFile), 'utf8');

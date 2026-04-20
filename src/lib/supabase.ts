@@ -1,3 +1,5 @@
+import 'server-only';
+
 type SupabaseConfig = {
     url: string;
     serviceRoleKey: string;
@@ -39,6 +41,22 @@ export class SupabaseServiceError extends Error {
     }
 }
 
+export class SupabaseConfigError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'SupabaseConfigError';
+    }
+}
+
+export function isSupabaseConfigError(error: unknown): error is SupabaseConfigError {
+    return error instanceof SupabaseConfigError || (
+        typeof error === 'object'
+        && error !== null
+        && 'name' in error
+        && error.name === 'SupabaseConfigError'
+    );
+}
+
 function cleanEnv(value: string | undefined): string | undefined {
     if (!value) return undefined;
     const trimmed = value.trim();
@@ -59,15 +77,15 @@ function readEnv(names: string[]) {
 function requireAnyEnv(names: string[]) {
     const value = readEnv(names);
     if (!value) {
-        throw new Error(`Missing required env. Expected one of: ${names.join(', ')}`);
+        throw new SupabaseConfigError(`Missing required Supabase env. Expected one of: ${names.join(', ')}`);
     }
     return value;
 }
 
 function getSupabaseConfig(): SupabaseConfig {
     return {
-        url: requireAnyEnv(['SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL']),
-        serviceRoleKey: requireAnyEnv(['SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SECRET_KEY']),
+        url: requireAnyEnv(['SUPABASE_URL', 'SUPABASE_PROJECT_URL', 'NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_PROJECT_URL']),
+        serviceRoleKey: requireAnyEnv(['SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SERVICE_KEY', 'SUPABASE_SECRET_KEY', 'SUPABASE_SERVICE_ROLE']),
     };
 }
 

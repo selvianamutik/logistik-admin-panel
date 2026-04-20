@@ -8,7 +8,8 @@ import { clearFailedAttempts, getRequestIp, recordLoginAttempt } from '@/lib/api
 import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
 import { getDocumentById } from '@/lib/repositories/document-store';
 import { findActiveUserByEmail, updateUserLoginState } from '@/lib/repositories/user-store';
-import { DRIVER_SESSION_COOKIE, SESSION_COOKIE } from '@/lib/session';
+import { DRIVER_SESSION_COOKIE, isSessionConfigError, SESSION_COOKIE } from '@/lib/session';
+import { isSupabaseConfigError, SupabaseServiceError } from '@/lib/supabase';
 import type { Driver, User } from '@/lib/types';
 
 const LOGIN_ATTEMPT_LIMIT = 10;
@@ -26,6 +27,30 @@ function tooManyAttemptsResponse(retryAfterSeconds: number) {
             headers: { 'Retry-After': String(retryAfterSeconds) },
         }
     );
+}
+
+function serverLoginErrorResponse(error: unknown) {
+    if (isSupabaseConfigError(error) || isSessionConfigError(error)) {
+        return jsonNoStore(
+            {
+                error: 'Konfigurasi server belum lengkap. Hubungi admin sistem.',
+                code: 'SERVER_CONFIG_ERROR',
+            },
+            { status: 503 }
+        );
+    }
+
+    if (error instanceof SupabaseServiceError && (error.status === 401 || error.status === 403)) {
+        return jsonNoStore(
+            {
+                error: 'Konfigurasi database tidak valid. Hubungi admin sistem.',
+                code: 'DATABASE_AUTH_ERROR',
+            },
+            { status: 503 }
+        );
+    }
+
+    return jsonNoStore({ error: 'Terjadi kesalahan server' }, { status: 500 });
 }
 
 export async function GET() {
@@ -175,6 +200,6 @@ export async function POST(request: Request) {
         });
     } catch (err) {
         console.error('Login error:', err);
-        return jsonNoStore({ error: 'Terjadi kesalahan server' }, { status: 500 });
+        return serverLoginErrorResponse(err);
     }
 }

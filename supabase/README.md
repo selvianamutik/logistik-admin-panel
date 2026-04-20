@@ -14,6 +14,8 @@ SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
 ```
 
+Accepted aliases are `SUPABASE_PROJECT_URL` for the URL and `SUPABASE_SERVICE_KEY`, `SUPABASE_SECRET_KEY`, or `SUPABASE_SERVICE_ROLE` for the service-role key.
+
 Keep `SUPABASE_SERVICE_ROLE_KEY` server-side only.
 
 ## Setup
