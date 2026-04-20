@@ -235,8 +235,8 @@ class DeliveryOrderService {
         pendingDriverStatus: (json['pendingDriverStatus'] as String?)?.trim(),
       ),
       allowsDirectCargoInput: json['allowsDirectCargoInput'] != false,
-      orderRef: (json['orderRef'] as String?)?.trim(),
-      customerRef: (json['customerRef'] as String?)?.trim(),
+      orderRef: _readRefId(json['orderRef']),
+      customerRef: _readRefId(json['customerRef']),
       receiverName: receiverName?.isNotEmpty == true ? receiverName : null,
       receiverAddress: destination?.isNotEmpty == true ? destination : null,
       itemSummary: notes?.isNotEmpty == true ? notes : null,
@@ -264,7 +264,7 @@ class DeliveryOrderService {
     return DriverAssignedTripPlan(
       orderRef: (json['orderRef'] as String?)?.trim() ?? '',
       masterResi: (json['masterResi'] as String?)?.trim(),
-      customerRef: (json['customerRef'] as String?)?.trim(),
+      customerRef: _readRefId(json['customerRef']),
       customerName: (json['customerName'] as String?)?.trim(),
       serviceName: (json['serviceName'] as String?)?.trim(),
       tripPlanKey: (json['tripPlanKey'] as String?)?.trim() ?? '',
@@ -294,7 +294,7 @@ class DeliveryOrderService {
   CustomerProductOption _mapCustomerProduct(Map<String, dynamic> json) {
     return CustomerProductOption(
       id: (json['_id'] as String?)?.trim() ?? '',
-      customerRef: (json['customerRef'] as String?)?.trim() ?? '',
+      customerRef: _readRefId(json['customerRef']) ?? '',
       name: (json['name'] as String?)?.trim() ?? '-',
       code: (json['code'] as String?)?.trim(),
       description: (json['description'] as String?)?.trim(),
@@ -479,6 +479,19 @@ class DeliveryOrderService {
   int? _toInt(dynamic value) {
     if (value is num) return value.toInt();
     if (value is String) return int.tryParse(value);
+    return null;
+  }
+
+  String? _readRefId(dynamic value) {
+    if (value is String) {
+      final trimmed = value.trim();
+      return trimmed.isNotEmpty ? trimmed : null;
+    }
+    if (value is Map<String, dynamic>) {
+      final ref =
+          (value['_ref'] as String?)?.trim() ?? (value['_id'] as String?)?.trim();
+      return ref != null && ref.isNotEmpty ? ref : null;
+    }
     return null;
   }
 }

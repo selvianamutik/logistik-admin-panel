@@ -159,6 +159,9 @@ export function buildNotaRowsFromDeliveryOrder(params: {
     );
     const actualDropPointsByShipperReference = new Map<string, string>();
     for (const point of deliveryOrder.actualDropPoints || []) {
+        if (!['DROP', 'EXTRA_DROP'].includes(point.stopType || '')) {
+            continue;
+        }
         const shipperReferenceNumber = point.shipperReferenceNumber?.trim();
         if (!shipperReferenceNumber) continue;
         const destination = point.locationAddress?.trim() || point.locationName?.trim() || '';
@@ -172,7 +175,7 @@ export function buildNotaRowsFromDeliveryOrder(params: {
     const fallbackShipperReferenceNumber = shipperReferences[0]?.referenceNumber || deliveryOrder.customerDoNumber || deliveryOrder.doNumber || '';
     const baseRow = {
         doRef: deliveryOrder._id,
-        customerRef: relatedOrder?.customerRef || '',
+        customerRef: relatedOrder?.customerRef || deliveryOrder.customerRef || '',
         customerName: relatedOrder?.customerName || deliveryOrder.customerName || '',
         doNumber: deliveryOrder.doNumber || '',
         vehiclePlate: deliveryOrder.vehiclePlate || '',

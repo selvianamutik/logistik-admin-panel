@@ -17,12 +17,30 @@ export default function PageBackButton({ href, label = 'Kembali', className = ''
         returnTo && returnTo.startsWith('/') && !returnTo.startsWith('//')
             ? returnTo
             : href;
+    const handleBack = () => {
+        if (typeof window !== 'undefined') {
+            const hasSameOriginReferrer =
+                Boolean(document.referrer) &&
+                (() => {
+                    try {
+                        return new URL(document.referrer).origin === window.location.origin;
+                    } catch {
+                        return false;
+                    }
+                })();
+            if (hasSameOriginReferrer && window.history.length > 1 && targetHref === href) {
+                router.back();
+                return;
+            }
+        }
+        router.push(targetHref);
+    };
 
     return (
         <button
             type="button"
             className={['btn-back', className].filter(Boolean).join(' ')}
-            onClick={() => router.push(targetHref)}
+            onClick={handleBack}
             aria-label={label}
             title={label}
         >

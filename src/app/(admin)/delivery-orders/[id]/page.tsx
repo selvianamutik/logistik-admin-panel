@@ -724,7 +724,7 @@ export default function DODetailPage() {
     };
 
     const applyCargoDraftProductSelection = (groupId: string, itemIndex: number, nextProductRef: string) => {
-        const selectedProduct = customerProducts.find(product => product._id === nextProductRef);
+        const selectedProduct = deliveryOrderCustomerProducts.find(product => product._id === nextProductRef);
         setCargoDraftGroups(previous => previous.map(group => (
             group.id === groupId
                 ? {
@@ -934,6 +934,20 @@ export default function DODetailPage() {
         const invalidPickupIndex = normalizedGroups.findIndex(group => pickupStopList.length > 0 && !group.resolvedPickupStopKey);
         if (invalidPickupIndex >= 0) {
             addToast('error', `Titik pickup wajib dipilih pada SJ ${invalidPickupIndex + 1}`);
+            return;
+        }
+        const duplicateGroupReferenceNumber = (() => {
+            const seen = new Set<string>();
+            for (const group of normalizedGroups) {
+                if (seen.has(group.resolvedShipperReferenceNumber)) {
+                    return group.resolvedShipperReferenceNumber;
+                }
+                seen.add(group.resolvedShipperReferenceNumber);
+            }
+            return '';
+        })();
+        if (duplicateGroupReferenceNumber) {
+            addToast('error', `No. SJ pengirim ${duplicateGroupReferenceNumber} ditulis lebih dari sekali. Tambahkan barangnya di SJ yang sama, bukan membuat grup SJ baru.`);
             return;
         }
         if (editingCargoItemId) {
@@ -1372,6 +1386,20 @@ export default function DODetailPage() {
                 return;
             }
         }
+        const duplicateReferenceNumber = (() => {
+            const seen = new Set<string>();
+            for (const reference of normalizedReferences) {
+                if (seen.has(reference.referenceNumber)) {
+                    return reference.referenceNumber;
+                }
+                seen.add(reference.referenceNumber);
+            }
+            return '';
+        })();
+        if (duplicateReferenceNumber) {
+            addToast('error', `No. SJ pengirim ${duplicateReferenceNumber} terisi lebih dari sekali. Pakai 1 baris SJ saja lalu lengkapi datanya di baris itu.`);
+            return;
+        }
 
         setSavingShipperReference(true);
         try {
@@ -1508,6 +1536,15 @@ export default function DODetailPage() {
     const cargoDraftGroupsWithItems = getDraftDeliveryOrderCargoGroups(cargoDraftGroups);
     const cargoDraftSummary = summarizeDraftOrderCargo(flattenedCargoDraftItems);
     const cargoDraftItemCount = cargoDraftGroupsWithItems.reduce((sum, group) => sum + getDeliveryOrderCargoDraftItems(group).length, 0);
+    const cargoDraftSelectedProductRefs = new Set(
+        flattenedCargoDraftItems
+            .map(item => item.customerProductRef.trim())
+            .filter(Boolean)
+    );
+    const deliveryOrderCustomerProducts = customerProducts.filter(product =>
+        product.customerRef === doData.customerRef ||
+        cargoDraftSelectedProductRefs.has(product._id)
+    );
     const isEditingCargoItem = Boolean(editingCargoItemId);
     const canAppendCargoToDo =
         canEditDeliveryCargo &&
@@ -3199,8 +3236,8 @@ export default function DODetailPage() {
                                                                 onChange={e => applyCargoDraftProductSelection(group.id, itemIndex, e.target.value)}
                                                                 disabled={savingCargo || !doData?.customerRef}
                                                             >
-                                                                <option value="">{customerProducts.length > 0 ? 'Pilih master barang' : 'Belum ada master barang'}</option>
-                                                                {customerProducts.map(product => (
+                                                                <option value="">{deliveryOrderCustomerProducts.length > 0 ? 'Pilih master barang' : 'Belum ada master barang'}</option>
+                                                                {deliveryOrderCustomerProducts.map(product => (
                                                                     <option key={product._id} value={product._id}>
                                                                         {product.code ? `${product.code} - ` : ''}{product.name}
                                                                     </option>

@@ -2502,12 +2502,20 @@ export async function handleFreightNotaCreate(
     }
 
     const getActualDropDestinationForShipperReference = (
-        deliveryOrder: { actualDropPoints?: Array<{ shipperReferenceNumber?: string; locationName?: string; locationAddress?: string }> },
+        deliveryOrder: {
+            actualDropPoints?: Array<{
+                stopType?: string;
+                shipperReferenceNumber?: string;
+                locationName?: string;
+                locationAddress?: string;
+            }>;
+        },
         shipperReferenceNumber?: string
     ) => {
         const normalizedShipperReferenceNumber = normalizeOptionalText(shipperReferenceNumber);
         if (!normalizedShipperReferenceNumber) return undefined;
         const destinations = (deliveryOrder.actualDropPoints || [])
+            .filter(point => ['DROP', 'EXTRA_DROP'].includes(normalizeOptionalText(point.stopType) || ''))
             .filter(point => normalizeOptionalText(point.shipperReferenceNumber) === normalizedShipperReferenceNumber)
             .map(point => normalizeOptionalText(point.locationAddress) || normalizeOptionalText(point.locationName))
             .filter((value): value is string => Boolean(value));

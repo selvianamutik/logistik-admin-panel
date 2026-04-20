@@ -206,14 +206,14 @@ export async function getDriverAssignedDeliveryOrders(driverRef: string) {
             status in ["CREATED", "HEADING_TO_PICKUP", "ON_DELIVERY", "ARRIVED"]
         ] | order(date desc, _createdAt desc){
             _id,
-            orderRef,
+            "orderRef": coalesce(orderRef._ref, orderRef),
             doNumber,
             customerDoNumber,
             date,
             status,
             trackingState,
             masterResi,
-            customerRef,
+            "customerRef": coalesce(customerRef._ref, customerRef, orderRef->customerRef._ref, orderRef->customerRef),
             "customerName": coalesce(customerName, orderRef->customerName),
             "receiverName": coalesce(receiverName, orderRef->receiverName),
             "receiverAddress": coalesce(receiverAddress, orderRef->receiverAddress),
@@ -395,7 +395,7 @@ export async function getDriverAssignedTripPlans(driverRef: string) {
         ] | order(createdAt desc, _createdAt desc){
             _id,
             masterResi,
-            customerRef,
+            "customerRef": coalesce(customerRef._ref, customerRef),
             customerName,
             serviceName,
             pickupAddress,
@@ -493,10 +493,10 @@ export async function getDriverCustomerProducts(customerRefs: string[]) {
     }
 
     return getSanityClient().fetch<CustomerProduct[]>(
-        `*[_type == "customerProduct" && customerRef in $customerRefs && active != false] | order(coalesce(code, name) asc){
+        `*[_type == "customerProduct" && coalesce(customerRef._ref, customerRef) in $customerRefs && active != false] | order(coalesce(code, name) asc){
             _id,
             _type,
-            customerRef,
+            "customerRef": coalesce(customerRef._ref, customerRef),
             customerName,
             code,
             name,
