@@ -63,6 +63,7 @@ type RelationalListOptions = {
     pageSize?: number;
     sortField?: string;
     sortDir?: 'asc' | 'desc';
+    sortPreset?: string | null;
 };
 
 type RelationalListResult<T> = {
@@ -1301,6 +1302,88 @@ function mapDocumentToRow(docType: SupportedDocType, doc: { _id?: string; _type?
     return row;
 }
 
+function compareByText(left: unknown, right: unknown, direction: 'asc' | 'desc' = 'asc') {
+    const result = compareValues(left, right);
+    return direction === 'asc' ? result : -result;
+}
+
+function rankValue(value: unknown, ranks: Record<string, number>) {
+    return ranks[String(value ?? '')] ?? 99;
+}
+
+function hasMeaningfulValue(value: unknown) {
+    if (Array.isArray(value)) return value.length > 0;
+    return value !== undefined && value !== null && value !== '';
+}
+
+function compareWithFallback(
+    left: Record<string, unknown>,
+    right: Record<string, unknown>,
+    field: string,
+    direction: 'asc' | 'desc' = 'asc',
+    fallback: unknown = '',
+) {
+    return compareByText(readField(left, field) ?? fallback, readField(right, field) ?? fallback, direction);
+}
+
+function getSortPresetComparator(
+    docType: SupportedDocType,
+    sortPreset?: string | null,
+): ((left: Record<string, unknown>, right: Record<string, unknown>) => number) | null {
+    if (sortPreset !== 'work-queue') return null;
+
+    if (docType === 'order') {
+        const ranks = { OPEN: 0, PARTIAL: 1, ON_HOLD: 2, COMPLETE: 3, CANCELLED: 4 };
+        return (left, right) =>
+            rankValue(left.status, ranks) - rankValue(right.status, ranks)
+            || compareWithFallback(left, right, 'createdAt', 'desc');
+    }
+
+    if (docType === 'deliveryOrder') {
+        const ranks = { ARRIVED: 0, ON_DELIVERY: 1, HEADING_TO_PICKUP: 2, CREATED: 3, DELIVERED: 4, CANCELLED: 5 };
+        return (left, right) => {
+            const leftPendingRank = hasMeaningfulValue(left.pendingDriverStatus) ? 0 : 1;
+            const rightPendingRank = hasMeaningfulValue(right.pendingDriverStatus) ? 0 : 1;
+            return leftPendingRank - rightPendingRank
+                || rankValue(left.status, ranks) - rankValue(right.status, ranks)
+                || compareWithFallback(left, right, 'date', 'desc');
+        };
+    }
+
+    if (docType === 'driverVoucher') {
+        const ranks = { ISSUED: 0, DRAFT: 1, SETTLED: 2 };
+        return (left, right) =>
+            rankValue(left.status, ranks) - rankValue(right.status, ranks)
+            || compareWithFallback(left, right, 'issuedDate', 'desc');
+    }
+
+    if (docType === 'freightNota') {
+        const ranks = { UNPAID: 0, PARTIAL: 1, PAID: 2 };
+        return (left, right) =>
+            rankValue(left.status, ranks) - rankValue(right.status, ranks)
+            || compareWithFallback(left, right, 'issueDate', 'asc')
+            || compareWithFallback(left, right, '_createdAt', 'desc');
+    }
+
+    if (docType === 'maintenance') {
+        const ranks = { SCHEDULED: 0, DONE: 1, SKIPPED: 2 };
+        return (left, right) =>
+            rankValue(left.status, ranks) - rankValue(right.status, ranks)
+            || compareWithFallback(left, right, 'plannedDate', 'asc', '9999-12-31')
+            || compareWithFallback(left, right, 'plannedOdometer', 'asc')
+            || compareWithFallback(left, right, '_createdAt', 'desc');
+    }
+
+    if (docType === 'incident') {
+        const ranks = { OPEN: 0, IN_PROGRESS: 1, RESOLVED: 2, CLOSED: 3 };
+        return (left, right) =>
+            rankValue(left.status, ranks) - rankValue(right.status, ranks)
+            || compareWithFallback(left, right, 'dateTime', 'desc');
+    }
+
+    return null;
+}
+
 function buildQueryPath(table: string, params: URLSearchParams) {
     const query = params.toString();
     return query ? `${table}?${query}` : table;
@@ -1482,7 +1565,8 @@ export async function relationalList<T = Record<string, unknown>>(
     const pageSize = normalizePositiveInteger(options.pageSize, 10, 500);
 
     const config = RELATIONAL_CONFIG[docType];
-    const serverParams = buildServerListParams(config, options);
+    const presetComparator = getSortPresetComparator(docType, options.sortPreset);
+    const serverParams = presetComparator ? null : buildServerListParams(config, options);
     if (serverParams) {
         const pagedParams = new URLSearchParams(serverParams);
         pagedParams.set('limit', String(pageSize));
@@ -1513,7 +1597,9 @@ export async function relationalList<T = Record<string, unknown>>(
         .filter(doc => matchesDefinedFields(doc, options.definedFields ?? []))
         .filter(doc => matchesOrFilters(doc, options.orFilters ?? []))
         .filter(doc => matchesSearch(doc, options.search ?? '', options.searchFields ?? []));
-    const sorted = sortDocuments(filtered, options.sortField, options.sortDir);
+    const sorted = presetComparator
+        ? [...filtered].sort(presetComparator)
+        : sortDocuments(filtered, options.sortField, options.sortDir);
     const start = (page - 1) * pageSize;
     const items = sorted.slice(start, start + pageSize) as T[];
 

@@ -6,6 +6,7 @@ const repoRoot = process.cwd();
 const requiredPaths = [
   'supabase/README.md',
   'src/lib/supabase.ts',
+  'src/lib/supabase-relational.ts',
   'src/lib/repositories/document-store.ts',
   'src/lib/data-backend.ts',
   'scripts/seed-supabase.ts',
@@ -18,6 +19,7 @@ const supportFile = 'src/lib/api/order-workflow-support.ts';
 const genericWorkflowFile = 'src/lib/api/generic-workflows.ts';
 const supportWorkflowFile = 'src/lib/api/support-workflows.ts';
 const dataRouteFile = 'src/app/api/data/route.ts';
+const relationalFile = 'src/lib/supabase-relational.ts';
 const migrationHotspots = [
   'src/lib/auth.ts',
   'src/app/api/data/route.ts',
@@ -211,8 +213,26 @@ const dataRouteChecks = [
       "const boronganItems = await listDocumentsByFilter<{",
       "listDocumentsByFilter<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>('driverVoucherDisbursement', {",
       "listDocumentsByFilter<Pick<DriverVoucherItem, 'voucherRef' | 'amount'>>('driverVoucherItem', {",
+      'sortPreset,',
     ],
-    mustNotInclude: ['getSanityClient().fetch<', 'sanityCreate('],
+    mustNotInclude: ['getSanityClient().fetch<', 'sanityCreate(', 'sortClause: getListSortClause'],
+  },
+];
+
+const relationalAdapterChecks = [
+  {
+    name: 'work-queue-sort-presets',
+    mode: 'file',
+    mustInclude: [
+      'function getSortPresetComparator',
+      "docType === 'order'",
+      "docType === 'deliveryOrder'",
+      "docType === 'maintenance'",
+      "docType === 'incident'",
+      'const presetComparator = getSortPresetComparator(docType, options.sortPreset);',
+      '? [...filtered].sort(presetComparator)',
+    ],
+    mustNotInclude: ['sortClause'],
   },
 ];
 
@@ -397,6 +417,33 @@ for (const check of dataRouteChecks) {
       console.log(`  forbidden: ${fragment}`);
     }
     fail(`Data route check ${check.name} failed`);
+    continue;
+  }
+
+  console.log(`- OK   ${check.name}`);
+}
+
+console.log('');
+console.log('Relational adapter checks');
+const relationalSource = readFileSync(path.join(repoRoot, relationalFile), 'utf8');
+for (const check of relationalAdapterChecks) {
+  const haystack = check.mode === 'file' ? relationalSource : getFunctionBody(relationalSource, check.name);
+  if (!haystack) {
+    fail(`Could not locate content for ${check.name}`);
+    continue;
+  }
+
+  const missing = (check.mustInclude || []).filter(fragment => !haystack.includes(fragment));
+  const forbidden = (check.mustNotInclude || []).filter(fragment => haystack.includes(fragment));
+  if (missing.length > 0 || forbidden.length > 0) {
+    console.log(`- FAIL ${check.name}`);
+    for (const fragment of missing) {
+      console.log(`  missing: ${fragment}`);
+    }
+    for (const fragment of forbidden) {
+      console.log(`  forbidden: ${fragment}`);
+    }
+    fail(`Relational adapter check ${check.name} failed`);
     continue;
   }
 

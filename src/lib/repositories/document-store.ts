@@ -162,7 +162,7 @@ type DocumentListOptions = {
     pageSize?: number;
     sortField?: string;
     sortDir?: 'asc' | 'desc';
-    sortClause?: string;
+    sortPreset?: string | null;
 };
 
 export async function listDocuments<T = Record<string, unknown>>(

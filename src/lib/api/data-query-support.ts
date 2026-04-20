@@ -1498,36 +1498,6 @@ export type DashboardSummary = {
     }>;
 };
 
-export function getListSortClause(entity: string, sortPreset?: string | null) {
-    if (!sortPreset) return undefined;
-
-    if (entity === 'orders' && sortPreset === 'work-queue') {
-        return 'select(status == "OPEN" => 0, status == "PARTIAL" => 1, status == "ON_HOLD" => 2, status == "COMPLETE" => 3, status == "CANCELLED" => 4, 99) asc, createdAt desc';
-    }
-
-    if (entity === 'delivery-orders' && sortPreset === 'work-queue') {
-        return 'select(defined(pendingDriverStatus) => 0, 1) asc, select(status == "ARRIVED" => 0, status == "ON_DELIVERY" => 1, status == "HEADING_TO_PICKUP" => 2, status == "CREATED" => 3, status == "DELIVERED" => 4, status == "CANCELLED" => 5, 99) asc, date desc';
-    }
-
-    if (entity === 'driver-vouchers' && sortPreset === 'work-queue') {
-        return 'select(status == "ISSUED" => 0, status == "DRAFT" => 1, status == "SETTLED" => 2, 99) asc, issuedDate desc';
-    }
-
-    if (entity === 'freight-notas' && sortPreset === 'work-queue') {
-        return 'select(status == "UNPAID" => 0, status == "PARTIAL" => 1, status == "PAID" => 2, 99) asc, issueDate asc, _createdAt desc';
-    }
-
-    if (entity === 'maintenances' && sortPreset === 'work-queue') {
-        return 'select(status == "SCHEDULED" => 0, status == "DONE" => 1, status == "SKIPPED" => 2, 99) asc, coalesce(plannedDate, "9999-12-31") asc, plannedOdometer asc, _createdAt desc';
-    }
-
-    if (entity === 'incidents' && sortPreset === 'work-queue') {
-        return 'select(status == "OPEN" => 0, status == "IN_PROGRESS" => 1, status == "RESOLVED" => 2, status == "CLOSED" => 3, 99) asc, dateTime desc';
-    }
-
-    return undefined;
-}
-
 export async function getDashboardSummary(session: ApiSession): Promise<DashboardSummary> {
     const canViewOrders = hasPageAccess(session.role, 'orders');
     const canViewInvoices = hasPermission(session.role, 'freightNotas', 'view');

@@ -116,7 +116,6 @@ import {
     getFreightNotaById,
     getFreightNotaList,
     getDriverVoucherById,
-    getListSortClause,
     getVehiclesSummary,
     applyDerivedDriverBoronganTotals,
     applyDerivedDriverVoucherLedger,
@@ -1043,7 +1042,7 @@ export async function GET(request: Request) {
                     pageSize,
                     sortField,
                     sortDir,
-                    sortClause: getListSortClause(entity, sortPreset),
+                    sortPreset,
                 });
                 items = result.items as Record<string, unknown>[];
                 totalItems = result.total;
