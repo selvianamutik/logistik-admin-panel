@@ -137,6 +137,115 @@ function buildOrderItemDraftDocument(
     };
 }
 
+function normalizeDeliveryOrderShipperReferencesForUpdate(
+    deliveryOrder: {
+        pickupStops?: Array<{
+            _key?: string;
+            pickupAddress?: string;
+        }>;
+        shipperReferences?: Array<{
+            _key?: string;
+            sequence?: number;
+            referenceNumber?: string;
+            pickupStopKey?: string;
+            pickupAddress?: string;
+            billingCustomerRef?: string;
+            billingCustomerName?: string;
+            receiverName?: string;
+            receiverPhone?: string;
+            receiverAddress?: string;
+            receiverCompany?: string;
+            notes?: string;
+        }>;
+    },
+    rawShipperReferences: unknown,
+) {
+    const requestedReferences = Array.isArray(rawShipperReferences) ? rawShipperReferences : [];
+    if (requestedReferences.length === 0) {
+        return undefined;
+    }
+
+    const pickupStopByKey = new Map(
+        (deliveryOrder.pickupStops || [])
+            .map(stop => [normalizeOptionalText(stop._key), stop] as const)
+            .filter((entry): entry is [string, NonNullable<typeof entry[1]>] => Boolean(entry[0]))
+    );
+    const existingReferences = Array.isArray(deliveryOrder.shipperReferences)
+        ? deliveryOrder.shipperReferences
+        : [];
+
+    const seenReferenceNumbers = new Set<string>();
+    const normalizedReferences = requestedReferences
+        .filter(isPlainObject)
+        .map((reference, index) => {
+            const referenceNumber = normalizeText(reference.referenceNumber).toUpperCase();
+            if (!referenceNumber) {
+                throw new Error(`No. SJ pengirim wajib diisi pada SJ ${index + 1}`);
+            }
+            if (seenReferenceNumbers.has(referenceNumber)) {
+                throw new Error(`No. SJ pengirim ${referenceNumber} duplikat dalam daftar SJ`);
+            }
+            seenReferenceNumbers.add(referenceNumber);
+
+            const requestedPickupStopKey = normalizeOptionalText(reference.pickupStopKey);
+            const existingReference =
+                existingReferences.find(item =>
+                    normalizeOptionalText(item.referenceNumber)?.toUpperCase() === referenceNumber
+                ) || existingReferences[index];
+            const resolvedPickupStopKey =
+                requestedPickupStopKey
+                || normalizeOptionalText(existingReference?.pickupStopKey)
+                || ((deliveryOrder.pickupStops?.length || 0) === 1
+                    ? normalizeOptionalText(deliveryOrder.pickupStops?.[0]?._key)
+                    : undefined);
+            const pickupStop = resolvedPickupStopKey ? pickupStopByKey.get(resolvedPickupStopKey) : undefined;
+
+            return {
+                _key: normalizeOptionalText(existingReference?._key) || crypto.randomUUID(),
+                sequence: index + 1,
+                referenceNumber,
+                pickupStopKey: resolvedPickupStopKey,
+                pickupAddress:
+                    normalizeOptionalText(pickupStop?.pickupAddress)
+                    || normalizeOptionalText(existingReference?.pickupAddress),
+                billingCustomerRef: existingReference?.billingCustomerRef,
+                billingCustomerName: existingReference?.billingCustomerName,
+                receiverName: existingReference?.receiverName,
+                receiverPhone: existingReference?.receiverPhone,
+                receiverAddress: existingReference?.receiverAddress,
+                receiverCompany: existingReference?.receiverCompany,
+                notes: existingReference?.notes,
+            };
+        });
+
+    return normalizedReferences;
+}
+
+function areDeliveryOrderShipperReferencesEquivalent(
+    left: Array<{
+        referenceNumber?: string;
+        pickupStopKey?: string;
+    }> | undefined,
+    right: Array<{
+        referenceNumber?: string;
+        pickupStopKey?: string;
+    }> | undefined,
+) {
+    const normalizeReferences = (value: typeof left) =>
+        (Array.isArray(value) ? value : [])
+            .map((reference, index) => ({
+                sequence: index + 1,
+                referenceNumber: normalizeOptionalText(reference.referenceNumber)?.toUpperCase() || '',
+                pickupStopKey: normalizeOptionalText(reference.pickupStopKey) || '',
+            }))
+            .filter(reference => reference.referenceNumber.length > 0);
+
+    const normalizedLeft = normalizeReferences(left);
+    const normalizedRight = normalizeReferences(right);
+
+    return JSON.stringify(normalizedLeft) === JSON.stringify(normalizedRight);
+}
+
 export async function syncOrderStatusFromItems(orderRef: string, session: ApiSession, addAuditLog: AuditLogFn) {
     for (let attempt = 0; attempt < 3; attempt += 1) {
         const order = await getDocumentById<{ _id: string; _rev?: string; status?: string }>(orderRef);
@@ -2889,6 +2998,24 @@ export async function handleDeliveryOrderAppendCargoItems(
         orderRef?: unknown;
         customerRef?: unknown;
         customerDoNumber?: string;
+        pickupStops?: Array<{
+            _key?: string;
+            pickupAddress?: string;
+        }>;
+        shipperReferences?: Array<{
+            _key?: string;
+            sequence?: number;
+            referenceNumber?: string;
+            pickupStopKey?: string;
+            pickupAddress?: string;
+            billingCustomerRef?: string;
+            billingCustomerName?: string;
+            receiverName?: string;
+            receiverPhone?: string;
+            receiverAddress?: string;
+            receiverCompany?: string;
+            notes?: string;
+        }>;
     }>(id, 'deliveryOrder');
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
@@ -2933,9 +3060,55 @@ export async function handleDeliveryOrderAppendCargoItems(
         );
     }
 
+    let nextShipperReferences:
+        | Array<{
+            _key: string;
+            sequence: number;
+            referenceNumber: string;
+            pickupStopKey?: string;
+            pickupAddress?: string;
+            billingCustomerRef?: string;
+            billingCustomerName?: string;
+            receiverName?: string;
+            receiverPhone?: string;
+            receiverAddress?: string;
+            receiverCompany?: string;
+            notes?: string;
+        }>
+        | undefined;
+    try {
+        nextShipperReferences = normalizeDeliveryOrderShipperReferencesForUpdate(
+            deliveryOrder,
+            data.shipperReferences
+        );
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Daftar SJ pengirim tidak valid' },
+            { status: 400 }
+        );
+    }
+
     const nextCustomerDoNumber = normalizeOptionalText(data.customerDoNumber);
-    if (directCargoItems.length === 0 && !nextCustomerDoNumber) {
-        return NextResponse.json({ error: 'Tidak ada perubahan muatan yang dikirim' }, { status: 400 });
+    const nextPrimaryShipperReferenceNumber =
+        nextShipperReferences && nextShipperReferences.length > 0
+            ? nextShipperReferences[0]?.referenceNumber
+            : undefined;
+    const resolvedCustomerDoNumber = (nextCustomerDoNumber || nextPrimaryShipperReferenceNumber)?.toUpperCase();
+    const shipperReferencesChanged = nextShipperReferences
+        ? !areDeliveryOrderShipperReferencesEquivalent(deliveryOrder.shipperReferences, nextShipperReferences)
+        : false;
+    const customerDoNumberChanged =
+        Boolean(resolvedCustomerDoNumber) &&
+        normalizeOptionalText(deliveryOrder.customerDoNumber)?.toUpperCase() !== resolvedCustomerDoNumber;
+
+    if (directCargoItems.length === 0 && !shipperReferencesChanged && !customerDoNumberChanged) {
+        return NextResponse.json({
+            data: {
+                _id: id,
+                appendedCount: 0,
+                shipperReferenceCount: deliveryOrder.shipperReferences?.length || 0,
+            },
+        });
     }
 
     const mutationTimestamp = new Date().toISOString();
@@ -2977,8 +3150,11 @@ export async function handleDeliveryOrderAppendCargoItems(
                 shippedWeight: item.weight,
             });
         }
-        if (nextCustomerDoNumber) {
-            await updateDocument(id, { customerDoNumber: nextCustomerDoNumber.toUpperCase() });
+        if (shipperReferencesChanged || customerDoNumberChanged) {
+            await updateDocument(id, {
+                shipperReferences: nextShipperReferences,
+                customerDoNumber: resolvedCustomerDoNumber,
+            });
         }
     } catch (error) {
         if (isMutationConflictError(error)) {
@@ -2996,13 +3172,14 @@ export async function handleDeliveryOrderAppendCargoItems(
         'UPDATE',
         'delivery-orders',
         id,
-        `Tambah muatan Surat Jalan ${deliveryOrder.doNumber || id}: ${directCargoItems.length} barang`
+        `Update Surat Jalan ${deliveryOrder.doNumber || id}: ${directCargoItems.length} barang ditambah, ${nextShipperReferences?.length || deliveryOrder.shipperReferences?.length || 0} SJ aktif`
     );
 
     return NextResponse.json({
         data: {
             _id: id,
             appendedCount: directCargoItems.length,
+            shipperReferenceCount: nextShipperReferences?.length || deliveryOrder.shipperReferences?.length || 0,
         },
     });
 }

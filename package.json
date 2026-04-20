@@ -11,6 +11,8 @@
     "typecheck": "node scripts/typecheck.mjs",
     "audit:admin-data-route-flow": "node scripts/audit-admin-data-route-flow.mjs",
     "audit:mobile-driver-manifest-flow": "node scripts/audit-mobile-driver-manifest-flow.mjs",
+    "audit:delivery-order-nota-integrity": "npx tsx scripts/audit-delivery-order-nota-integrity.ts",
+    "audit:driver-shipper-reference-flow": "npx tsx scripts/audit-driver-shipper-reference-flow.ts",
     "audit:supabase": "node scripts/audit-supabase-migration.mjs",
     "import:supabase": "node scripts/import-supabase.mjs",
     "reset:supabase": "tsx scripts/reset-supabase.ts",
