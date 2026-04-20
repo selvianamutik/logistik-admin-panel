@@ -46,18 +46,28 @@ function cleanEnv(value: string | undefined): string | undefined {
     return trimmed.replace(/^['"]+|['"]+$/g, '');
 }
 
-function requireEnv(name: 'NEXT_PUBLIC_SUPABASE_URL' | 'SUPABASE_SERVICE_ROLE_KEY') {
-    const value = cleanEnv(process.env[name]);
+function readEnv(names: string[]) {
+    for (const name of names) {
+        const value = cleanEnv(process.env[name]);
+        if (value) {
+            return value;
+        }
+    }
+    return undefined;
+}
+
+function requireAnyEnv(names: string[]) {
+    const value = readEnv(names);
     if (!value) {
-        throw new Error(`Missing required env: ${name}`);
+        throw new Error(`Missing required env. Expected one of: ${names.join(', ')}`);
     }
     return value;
 }
 
 function getSupabaseConfig(): SupabaseConfig {
     return {
-        url: requireEnv('NEXT_PUBLIC_SUPABASE_URL'),
-        serviceRoleKey: requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
+        url: requireAnyEnv(['SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL']),
+        serviceRoleKey: requireAnyEnv(['SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SECRET_KEY']),
     };
 }
 

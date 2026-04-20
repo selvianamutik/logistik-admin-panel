@@ -1,10 +1,10 @@
-import { loadScriptEnv, requireEnv } from './_env';
+import { loadScriptEnv, requireAnyEnv } from './_env';
 import { isMissingSupabaseTableError, RELATIONAL_RESET_TABLES } from './_supabase-relational';
 
 loadScriptEnv();
 
-const supabaseUrl = requireEnv('NEXT_PUBLIC_SUPABASE_URL');
-const serviceRoleKey = requireEnv('SUPABASE_SERVICE_ROLE_KEY');
+const supabaseUrl = requireAnyEnv(['SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL']);
+const serviceRoleKey = requireAnyEnv(['SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SECRET_KEY']);
 
 async function supabaseRequest(path: string, init: RequestInit = {}) {
     const response = await fetch(`${supabaseUrl}/rest/v1/${path}`, {

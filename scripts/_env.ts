@@ -39,3 +39,21 @@ export function requireEnv(name: string): string {
     }
     return value;
 }
+
+export function readAnyEnv(names: string[]): string | undefined {
+    for (const name of names) {
+        const value = process.env[name]?.trim();
+        if (value) {
+            return value;
+        }
+    }
+    return undefined;
+}
+
+export function requireAnyEnv(names: string[]): string {
+    const value = readAnyEnv(names);
+    if (!value) {
+        throw new Error(`Missing required environment variable. Expected one of: ${names.join(', ')}`);
+    }
+    return value;
+}

@@ -9,11 +9,11 @@ if (!inputFile) {
     throw new Error('Usage: node scripts/import-supabase.mjs <path-to-export.json>');
 }
 
-const supabaseUrl = cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL);
-const serviceRoleKey = cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY);
+const supabaseUrl = readAnyEnv(['SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL']);
+const serviceRoleKey = readAnyEnv(['SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SECRET_KEY']);
 
 if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error('Missing Supabase import env. Expected NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
+    throw new Error('Missing Supabase import env. Expected SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL, plus SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY.');
 }
 
 const raw = await readFile(path.resolve(process.cwd(), inputFile), 'utf8');
@@ -48,6 +48,14 @@ function cleanEnv(value) {
     const trimmed = value.trim();
     if (!trimmed) return undefined;
     return trimmed.replace(/^['"]+|['"]+$/g, '');
+}
+
+function readAnyEnv(names) {
+    for (const name of names) {
+        const value = cleanEnv(process.env[name]);
+        if (value) return value;
+    }
+    return undefined;
 }
 
 async function supabaseRequest(path, init = {}) {

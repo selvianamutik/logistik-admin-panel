@@ -10,7 +10,7 @@ The active setup flow targets only relational tables in `public` for runtime rea
 
 ```env
 DATA_BACKEND=supabase
-NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
 ```
 
