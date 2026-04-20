@@ -1,39 +1,51 @@
 import { acknowledgeDriverWarningScore } from '@/lib/api/driver-score-workflows';
 import { getDriverPortalAccessNotice, requireDriverSessionContext } from '@/lib/api/driver-portal';
 import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
+import { getSanityServiceErrorInfo } from '@/lib/sanity';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export async function POST(request: Request) {
-    const clientType = request.headers.get('x-client-type');
-    if (clientType !== 'driver-app') {
-        const originError = ensureSameOriginRequest(request);
-        if (originError) {
-            return originError;
+    try {
+        const clientType = request.headers.get('x-client-type');
+        if (clientType !== 'driver-app') {
+            const originError = ensureSameOriginRequest(request);
+            if (originError) {
+                return originError;
+            }
         }
-    }
 
-    const auth = await requireDriverSessionContext(request);
-    if ('error' in auth) {
-        return jsonNoStore({ error: auth.error }, { status: auth.status });
-    }
+        const auth = await requireDriverSessionContext(request);
+        if ('error' in auth) {
+            return jsonNoStore({ error: auth.error }, { status: auth.status });
+        }
 
-    const parsedBody = await parseJsonBody<{ scoreId?: string }>(request);
-    if ('error' in parsedBody) {
-        return parsedBody.error;
-    }
+        const parsedBody = await parseJsonBody<{ scoreId?: string }>(request);
+        if ('error' in parsedBody) {
+            return parsedBody.error;
+        }
 
-    const scoreId = typeof parsedBody.data.scoreId === 'string' ? parsedBody.data.scoreId : '';
-    if (!scoreId) {
-        return jsonNoStore({ error: 'Scoring warning tidak valid' }, { status: 400 });
-    }
+        const scoreId = typeof parsedBody.data.scoreId === 'string' ? parsedBody.data.scoreId : '';
+        if (!scoreId) {
+            return jsonNoStore({ error: 'Scoring warning tidak valid' }, { status: 400 });
+        }
 
-    const updated = await acknowledgeDriverWarningScore(scoreId, auth.driver._id);
-    if (!updated) {
-        return jsonNoStore({ error: 'Warning driver tidak ditemukan' }, { status: 404 });
-    }
+        const updated = await acknowledgeDriverWarningScore(scoreId, auth.driver._id);
+        if (!updated) {
+            return jsonNoStore({ error: 'Warning driver tidak ditemukan' }, { status: 404 });
+        }
 
-    const driverAccessNotice = await getDriverPortalAccessNotice(auth.driver._id);
-    return jsonNoStore({ data: updated, driverAccessNotice });
+        const driverAccessNotice = await getDriverPortalAccessNotice(auth.driver._id);
+        return jsonNoStore({ data: updated, driverAccessNotice });
+    } catch (error) {
+        const serviceError = getSanityServiceErrorInfo(
+            error,
+            'Layanan scoring driver sedang tidak tersedia. Coba lagi beberapa saat.'
+        );
+        if (serviceError) {
+            return jsonNoStore({ error: serviceError.message }, { status: serviceError.status });
+        }
+        throw error;
+    }
 }

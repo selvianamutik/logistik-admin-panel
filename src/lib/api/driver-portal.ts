@@ -2,7 +2,12 @@ import { getDriverSession, getSession, getSessionFromToken } from '@/lib/auth';
 import { getBusinessDateValue } from '@/lib/business-date';
 import { getDriverScoreStatusMeta } from '@/lib/driver-scoring-support';
 import { getCurrentDriverScore } from '@/lib/api/driver-score-workflows';
-import { getSanityClient, sanityGetById, sanityGetCompanyProfile } from '@/lib/sanity';
+import {
+    getSanityClient,
+    getSanityServiceErrorInfo,
+    sanityGetById,
+    sanityGetCompanyProfile,
+} from '@/lib/sanity';
 import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
 import type {
     CompanyProfile,
@@ -118,31 +123,51 @@ export async function requireDriverSessionContext(request?: Request): Promise<Dr
         return { error: 'Forbidden', status: 403 };
     }
 
-    const user = await sanityGetById<User>(session._id);
-    if (!user || user.role !== 'DRIVER' || !user.driverRef || user.active === false) {
-        return { error: 'Akun driver tidak aktif', status: 403 };
-    }
+    try {
+        const user = await sanityGetById<User>(session._id);
+        if (!user || user.role !== 'DRIVER' || !user.driverRef || user.active === false) {
+            return { error: 'Akun driver tidak aktif', status: 403 };
+        }
 
-    const driver = await sanityGetById<Driver>(user.driverRef);
-    if (!driver || driver.active === false) {
-        return { error: 'Data supir tidak aktif atau tidak ditemukan', status: 403 };
-    }
+        const driver = await sanityGetById<Driver>(user.driverRef);
+        if (!driver || driver.active === false) {
+            return { error: 'Data supir tidak aktif atau tidak ditemukan', status: 403 };
+        }
 
-    return { session, user, driver };
+        return { session, user, driver };
+    } catch (error) {
+        const serviceError = getSanityServiceErrorInfo(
+            error,
+            'Layanan data driver sedang tidak tersedia. Coba lagi beberapa saat.'
+        );
+        if (serviceError) {
+            return { error: serviceError.message, status: serviceError.status };
+        }
+        throw error;
+    }
 }
 
 export async function getDriverAppContext() {
-    const company = await sanityGetCompanyProfile() as CompanyProfile | null;
-    return {
-        company: company
-            ? {
-                _id: company._id,
-                name: company.name,
-                phone: company.phone,
-                themeColor: company.themeColor,
-            }
-            : null,
-    };
+    try {
+        const company = await sanityGetCompanyProfile() as CompanyProfile | null;
+        return {
+            company: company
+                ? {
+                    _id: company._id,
+                    name: company.name,
+                    phone: company.phone,
+                    themeColor: company.themeColor,
+                }
+                : null,
+        };
+    } catch (error) {
+        if (getSanityServiceErrorInfo(error)) {
+            return {
+                company: null,
+            };
+        }
+        throw error;
+    }
 }
 
 export async function getDriverPortalAccessNotice(driverRef: string): Promise<DriverPortalAccessNotice | null> {

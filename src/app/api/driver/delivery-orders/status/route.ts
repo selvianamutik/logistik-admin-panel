@@ -6,7 +6,7 @@ import {
 } from '@/lib/api/order-workflows';
 import { validateDriverStatusTransition } from '@/lib/api/driver-status-guards';
 import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
-import { sanityCreate, sanityGetById } from '@/lib/sanity';
+import { getSanityServiceErrorInfo, sanityCreate, sanityGetById } from '@/lib/sanity';
 import type { DeliveryOrder } from '@/lib/types';
 
 const DRIVER_ALLOWED_STATUS_UPDATES = new Set(['ON_DELIVERY', 'ARRIVED']);
@@ -40,16 +40,16 @@ export async function POST(request: Request) {
         }
     }
 
-    const auth = await requireDriverSessionContext(request);
-    if ('error' in auth) {
-        return jsonNoStore({ error: auth.error }, { status: auth.status });
-    }
-    const driverAccessNotice = await getDriverPortalAccessNotice(auth.driver._id);
-    if (driverAccessNotice?.blocking) {
-        return jsonNoStore({ error: driverAccessNotice.message }, { status: 403 });
-    }
-
     try {
+        const auth = await requireDriverSessionContext(request);
+        if ('error' in auth) {
+            return jsonNoStore({ error: auth.error }, { status: auth.status });
+        }
+        const driverAccessNotice = await getDriverPortalAccessNotice(auth.driver._id);
+        if (driverAccessNotice?.blocking) {
+            return jsonNoStore({ error: driverAccessNotice.message }, { status: 403 });
+        }
+
         const parsedBody = await parseJsonBody<{
             id?: string;
             status?: string;
@@ -123,6 +123,13 @@ export async function POST(request: Request) {
         );
     } catch (error) {
         console.error('Driver delivery status update error:', error);
+        const serviceError = getSanityServiceErrorInfo(
+            error,
+            'Layanan update status driver sedang tidak tersedia. Coba lagi beberapa saat.'
+        );
+        if (serviceError) {
+            return jsonNoStore({ error: serviceError.message }, { status: serviceError.status });
+        }
         return jsonNoStore({ error: 'Terjadi kesalahan server' }, { status: 500 });
     }
 }

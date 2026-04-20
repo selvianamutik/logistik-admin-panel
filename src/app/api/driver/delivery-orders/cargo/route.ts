@@ -2,7 +2,7 @@ import { extractRefId } from '@/lib/api/data-helpers';
 import { handleDeliveryOrderAppendCargoItems } from '@/lib/api/order-workflows';
 import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
 import { getDriverPortalAccessNotice, requireDriverSessionContext } from '@/lib/api/driver-portal';
-import { sanityCreate, sanityGetById } from '@/lib/sanity';
+import { getSanityServiceErrorInfo, sanityCreate, sanityGetById } from '@/lib/sanity';
 import type { DeliveryOrder } from '@/lib/types';
 
 async function addAuditLog(actor: { _id: string; name: string; email?: string; role?: string }, action: string, entityRef: string, summary: string) {
@@ -33,16 +33,16 @@ export async function POST(request: Request) {
         }
     }
 
-    const auth = await requireDriverSessionContext(request);
-    if ('error' in auth) {
-        return jsonNoStore({ error: auth.error }, { status: auth.status });
-    }
-    const driverAccessNotice = await getDriverPortalAccessNotice(auth.driver._id);
-    if (driverAccessNotice?.blocking) {
-        return jsonNoStore({ error: driverAccessNotice.message }, { status: 403 });
-    }
-
     try {
+        const auth = await requireDriverSessionContext(request);
+        if ('error' in auth) {
+            return jsonNoStore({ error: auth.error }, { status: auth.status });
+        }
+        const driverAccessNotice = await getDriverPortalAccessNotice(auth.driver._id);
+        if (driverAccessNotice?.blocking) {
+            return jsonNoStore({ error: driverAccessNotice.message }, { status: 403 });
+        }
+
         const parsedBody = await parseJsonBody<{
             id?: string;
             shipperReferences?: Array<{
@@ -92,6 +92,13 @@ export async function POST(request: Request) {
         );
     } catch (error) {
         console.error('Driver delivery cargo update error:', error);
+        const serviceError = getSanityServiceErrorInfo(
+            error,
+            'Layanan data surat jalan driver sedang tidak tersedia. Coba lagi beberapa saat.'
+        );
+        if (serviceError) {
+            return jsonNoStore({ error: serviceError.message }, { status: serviceError.status });
+        }
         return jsonNoStore({ error: 'Terjadi kesalahan server' }, { status: 500 });
     }
 }

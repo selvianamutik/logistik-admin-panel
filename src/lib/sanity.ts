@@ -141,6 +141,81 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+type SanityServiceErrorInfo = {
+    status: number;
+    message: string;
+};
+
+function parseSanityErrorPayload(error: unknown) {
+    if (!isRecord(error)) {
+        return {
+            statusCode: undefined as number | undefined,
+            code: undefined as string | undefined,
+            message: error instanceof Error ? error.message : undefined,
+        };
+    }
+
+    const statusCode = typeof error.statusCode === 'number' ? error.statusCode : undefined;
+    const message = typeof error.message === 'string'
+        ? error.message
+        : error instanceof Error
+            ? error.message
+            : undefined;
+    let code: string | undefined;
+    let responseMessage: string | undefined;
+
+    if (typeof error.responseBody === 'string' && error.responseBody.trim()) {
+        try {
+            const parsed = JSON.parse(error.responseBody) as Record<string, unknown>;
+            if (typeof parsed.error === 'string') {
+                code = parsed.error;
+            }
+            if (typeof parsed.message === 'string') {
+                responseMessage = parsed.message;
+            }
+        } catch {
+            // Ignore malformed upstream body and fall back to top-level message.
+        }
+    }
+
+    if (!code && message?.toLowerCase().includes('plan_limit_reached')) {
+        code = 'plan_limit_reached';
+    }
+
+    return {
+        statusCode,
+        code,
+        message: responseMessage || message,
+    };
+}
+
+export function getSanityServiceErrorInfo(
+    error: unknown,
+    fallbackMessage = 'Layanan data sedang tidak tersedia. Coba lagi beberapa saat.'
+): SanityServiceErrorInfo | null {
+    const parsed = parseSanityErrorPayload(error);
+
+    if (parsed.statusCode === 402 || parsed.code === 'plan_limit_reached') {
+        return {
+            status: 503,
+            message: 'Sumber data Sanity sedang mencapai batas kuota. Coba lagi beberapa saat atau hubungi admin sistem.',
+        };
+    }
+
+    if (parsed.statusCode === 429 || (typeof parsed.statusCode === 'number' && parsed.statusCode >= 500)) {
+        return {
+            status: 503,
+            message: fallbackMessage,
+        };
+    }
+
+    return null;
+}
+
+export function isSanityServiceUnavailableError(error: unknown) {
+    return getSanityServiceErrorInfo(error) !== null;
+}
+
 function normalizePrefix(prefix: unknown, fallback: string) {
     const value = typeof prefix === 'string' && prefix.trim() ? prefix.trim() : fallback;
     return value.endsWith('-') ? value : `${value}-`;

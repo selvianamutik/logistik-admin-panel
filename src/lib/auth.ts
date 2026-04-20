@@ -8,7 +8,7 @@ import { cookies, headers } from 'next/headers';
 
 import type { SessionUser, User } from './types';
 import { normalizeUserRole } from './rbac';
-import { sanityGetById } from './sanity';
+import { isSanityServiceUnavailableError, sanityGetById } from './sanity';
 import {
     createSessionToken,
     DRIVER_SESSION_COOKIE,
@@ -62,12 +62,19 @@ function buildSessionUser(user: User): SessionUser {
 export async function getSessionFromToken(token: string): Promise<SessionUser | null> {
     try {
         const session = await verifySessionToken(token);
-        const user = await sanityGetById<User>(session._id);
-        if (!user || user.active === false) {
-            return null;
-        }
+        try {
+            const user = await sanityGetById<User>(session._id);
+            if (!user || user.active === false) {
+                return null;
+            }
 
-        return buildSessionUser(user);
+            return buildSessionUser(user);
+        } catch (error) {
+            if (isSanityServiceUnavailableError(error)) {
+                return session;
+            }
+            throw error;
+        }
     } catch {
         return null;
     }

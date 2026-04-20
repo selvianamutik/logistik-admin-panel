@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
+    AlertCircle,
     Loader2,
     LogOut,
     MapPin,
@@ -75,6 +76,21 @@ function createDriverPortalError(status: number, message: string) {
     const error = new Error(message) as DriverPortalError;
     error.status = status;
     return error;
+}
+
+function getDriverPortalErrorStatus(error: unknown) {
+    if (
+        error instanceof Error &&
+        'status' in error &&
+        typeof (error as DriverPortalError).status === 'number'
+    ) {
+        return (error as DriverPortalError).status as number;
+    }
+    return null;
+}
+
+function isDriverUnauthorizedError(error: unknown) {
+    return getDriverPortalErrorStatus(error) === 401;
 }
 
 function formatTrackingState(state?: DriverAssignedDeliveryOrder['trackingState']) {
@@ -181,6 +197,7 @@ export default function DriverPortalPage() {
     const [plannedTrips, setPlannedTrips] = useState<DriverAssignedTripPlan[]>([]);
     const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
     const [loading, setLoading] = useState(true);
+    const [portalLoadError, setPortalLoadError] = useState<string | null>(null);
     const [loggingOut, setLoggingOut] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
@@ -199,6 +216,7 @@ export default function DriverPortalPage() {
     const [tripCreateGroups, setTripCreateGroups] = useState<DeliveryOrderCargoDraftGroup[]>([createDefaultDeliveryOrderCargoDraftGroup()]);
 
     const handleDriverAuthFailure = useCallback((message = 'Sesi driver berakhir. Silakan login ulang.') => {
+        setPortalLoadError(null);
         setFeedback({ type: 'error', message });
         router.replace('/driver/login');
     }, [router]);
@@ -345,8 +363,8 @@ export default function DriverPortalPage() {
             setPlannedTrips(payload.plannedTrips || []);
             setCustomerProducts((payload.customerProducts || []).filter(product => product.active !== false));
         } catch (error) {
-            if (error instanceof Error && 'status' in error && (error.status === 401 || error.status === 403)) {
-                handleDriverAuthFailure();
+            if (isDriverUnauthorizedError(error)) {
+                handleDriverAuthFailure(error instanceof Error ? error.message : undefined);
                 return;
             }
             setFeedback({
@@ -360,37 +378,34 @@ export default function DriverPortalPage() {
         }
     }, [handleDriverAuthFailure]);
 
-    useEffect(() => {
-        const loadDriverPortal = async () => {
-            setLoading(true);
-            try {
-                const sessionRes = await fetch('/api/driver/session');
-                const sessionPayload = await sessionRes.json() as DriverSessionResponse & { error?: string };
-                if (!sessionRes.ok || !sessionPayload.user || !sessionPayload.driver) {
-                    throw createDriverPortalError(sessionRes.status, sessionPayload.error || 'Akun driver tidak valid');
-                }
-
-                setUser(sessionPayload.user);
-                setDriver(sessionPayload.driver);
-                setCompanyName(sessionPayload.company?.name || 'PT Gading Mas Surya');
-                await loadOrders('initial');
-            } catch (error) {
-                if (error instanceof Error && 'status' in error && (error.status === 401 || error.status === 403)) {
-                    handleDriverAuthFailure(error.message);
-                    return;
-                }
-                setFeedback({
-                    type: 'error',
-                    message: error instanceof Error ? error.message : 'Gagal memuat aplikasi driver',
-                });
-                router.replace('/driver/login');
-            } finally {
-                setLoading(false);
+    const loadDriverPortal = useCallback(async () => {
+        setLoading(true);
+        setPortalLoadError(null);
+        try {
+            const sessionRes = await fetch('/api/driver/session');
+            const sessionPayload = await sessionRes.json() as DriverSessionResponse & { error?: string };
+            if (!sessionRes.ok || !sessionPayload.user || !sessionPayload.driver) {
+                throw createDriverPortalError(sessionRes.status, sessionPayload.error || 'Akun driver tidak valid');
             }
-        };
 
+            setUser(sessionPayload.user);
+            setDriver(sessionPayload.driver);
+            setCompanyName(sessionPayload.company?.name || 'PT Gading Mas Surya');
+            await loadOrders('initial');
+        } catch (error) {
+            if (isDriverUnauthorizedError(error)) {
+                handleDriverAuthFailure(error instanceof Error ? error.message : undefined);
+                return;
+            }
+            setPortalLoadError(error instanceof Error ? error.message : 'Gagal memuat aplikasi driver');
+        } finally {
+            setLoading(false);
+        }
+    }, [handleDriverAuthFailure, loadOrders]);
+
+    useEffect(() => {
         void loadDriverPortal();
-    }, [handleDriverAuthFailure, loadOrders, router]);
+    }, [loadDriverPortal]);
 
     const postTrackingAction = useCallback(
         async (
@@ -518,8 +533,8 @@ export default function DriverPortalPage() {
                     });
                     await loadOrders();
                 } catch (error) {
-                    if (error instanceof Error && 'status' in error && (error.status === 401 || error.status === 403)) {
-                        handleDriverAuthFailure(error.message);
+                    if (isDriverUnauthorizedError(error)) {
+                        handleDriverAuthFailure(error instanceof Error ? error.message : undefined);
                         return;
                     }
                     setFeedback({
@@ -556,13 +571,17 @@ export default function DriverPortalPage() {
                     try {
                         await postTrackingAction('heartbeat', activeTrackingDo._id, position.coords);
                     } catch (error) {
-                        if (error instanceof Error && 'status' in error) {
-                            if (error.status === 401 || error.status === 403) {
-                                handleDriverAuthFailure();
+                        const errorStatus = getDriverPortalErrorStatus(error);
+                        if (typeof errorStatus === 'number') {
+                            if (errorStatus === 401) {
+                                handleDriverAuthFailure(error instanceof Error ? error.message : undefined);
                                 return;
                             }
-                            if (error.status === 409) {
-                                setFeedback({ type: 'info', message: error.message });
+                            if (errorStatus === 409) {
+                                setFeedback({
+                                    type: 'info',
+                                    message: error instanceof Error ? error.message : 'Status tracking berubah di server.',
+                                });
                                 await loadOrders();
                                 return;
                             }
@@ -1021,8 +1040,8 @@ export default function DriverPortalPage() {
             setCompletionDropPoints([]);
             setShowCompletionAdvancedDropEditor(false);
         } catch (error) {
-            if (error instanceof Error && 'status' in error && (error.status === 401 || error.status === 403)) {
-                handleDriverAuthFailure(error.message);
+            if (isDriverUnauthorizedError(error)) {
+                handleDriverAuthFailure(error instanceof Error ? error.message : undefined);
                 return;
             }
             setFeedback({
@@ -1111,8 +1130,8 @@ export default function DriverPortalPage() {
             setCargoInputGroups([createDefaultDeliveryOrderCargoDraftGroup()]);
             await loadOrders();
         } catch (error) {
-            if (error instanceof Error && 'status' in error && (error.status === 401 || error.status === 403)) {
-                handleDriverAuthFailure(error.message);
+            if (isDriverUnauthorizedError(error)) {
+                handleDriverAuthFailure(error instanceof Error ? error.message : undefined);
                 return;
             }
             setFeedback({
@@ -1194,8 +1213,8 @@ export default function DriverPortalPage() {
             setTripCreateGroups([createDefaultDeliveryOrderCargoDraftGroup()]);
             await loadOrders();
         } catch (error) {
-            if (error instanceof Error && 'status' in error && (error.status === 401 || error.status === 403)) {
-                handleDriverAuthFailure(error.message);
+            if (isDriverUnauthorizedError(error)) {
+                handleDriverAuthFailure(error instanceof Error ? error.message : undefined);
                 return;
             }
             setFeedback({
@@ -1224,8 +1243,8 @@ export default function DriverPortalPage() {
                 setFeedback({ type: 'success', message: getDriverProgressSuccessMessage(nextStatus) });
                 await loadOrders();
             } catch (error) {
-                if (error instanceof Error && 'status' in error && (error.status === 401 || error.status === 403)) {
-                    handleDriverAuthFailure(error.message);
+                if (isDriverUnauthorizedError(error)) {
+                    handleDriverAuthFailure(error instanceof Error ? error.message : undefined);
                     return;
                 }
                 setFeedback({
@@ -1245,6 +1264,25 @@ export default function DriverPortalPage() {
                 <div className="driver-loading">
                     <Loader2 size={28} className="spinner" />
                     <p>Memuat aplikasi driver...</p>
+                </div>
+            </main>
+        );
+    }
+
+    if (portalLoadError && (!user || !driver)) {
+        return (
+            <main className="driver-app-shell">
+                <div className="driver-loading" style={{ gap: '0.9rem' }}>
+                    <AlertCircle size={28} />
+                    <p style={{ maxWidth: 420, textAlign: 'center' }}>{portalLoadError}</p>
+                    <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+                        <button className="btn btn-secondary" onClick={() => void loadDriverPortal()}>
+                            <RefreshCw size={15} /> Coba Lagi
+                        </button>
+                        <button className="btn btn-primary" onClick={() => router.replace('/driver/login')}>
+                            Kembali ke Login
+                        </button>
+                    </div>
                 </div>
             </main>
         );

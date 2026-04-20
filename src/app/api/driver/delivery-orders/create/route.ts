@@ -5,7 +5,7 @@ import {
     getDriverPortalAccessNotice,
     requireDriverSessionContext,
 } from '@/lib/api/driver-portal';
-import { sanityCreate } from '@/lib/sanity';
+import { getSanityServiceErrorInfo, sanityCreate } from '@/lib/sanity';
 
 async function addAuditLog(
     actor: { _id: string; name: string; email?: string; role?: string },
@@ -40,16 +40,16 @@ export async function POST(request: Request) {
         }
     }
 
-    const auth = await requireDriverSessionContext(request);
-    if ('error' in auth) {
-        return jsonNoStore({ error: auth.error }, { status: auth.status });
-    }
-    const driverAccessNotice = await getDriverPortalAccessNotice(auth.driver._id);
-    if (driverAccessNotice?.blocking) {
-        return jsonNoStore({ error: driverAccessNotice.message }, { status: 403 });
-    }
-
     try {
+        const auth = await requireDriverSessionContext(request);
+        if ('error' in auth) {
+            return jsonNoStore({ error: auth.error }, { status: auth.status });
+        }
+        const driverAccessNotice = await getDriverPortalAccessNotice(auth.driver._id);
+        if (driverAccessNotice?.blocking) {
+            return jsonNoStore({ error: driverAccessNotice.message }, { status: 403 });
+        }
+
         const parsedBody = await parseJsonBody<{
             orderRef?: string;
             orderTripPlanKey?: string;
@@ -111,6 +111,13 @@ export async function POST(request: Request) {
         );
     } catch (error) {
         console.error('Driver delivery order create error:', error);
+        const serviceError = getSanityServiceErrorInfo(
+            error,
+            'Layanan pembuatan surat jalan driver sedang tidak tersedia. Coba lagi beberapa saat.'
+        );
+        if (serviceError) {
+            return jsonNoStore({ error: serviceError.message }, { status: serviceError.status });
+        }
         return jsonNoStore({ error: 'Terjadi kesalahan server' }, { status: 500 });
     }
 }

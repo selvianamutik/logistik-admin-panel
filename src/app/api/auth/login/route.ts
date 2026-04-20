@@ -2,7 +2,7 @@
    LOGISTIK — Login API Route (Sanity CMS)
    ============================================================ */
 
-import { getSanityClient, sanityGetById } from '@/lib/sanity';
+import { getSanityClient, getSanityServiceErrorInfo, sanityGetById } from '@/lib/sanity';
 import { verifyPassword, createSession, hashPassword, isPasswordHashMigrated, setSessionCookie } from '@/lib/auth';
 import { isMutationConflictError, writeAuditLog } from '@/lib/api/data-helpers';
 import { clearFailedAttempts, getRequestIp, recordLoginAttempt } from '@/lib/api/rate-limit';
@@ -242,6 +242,13 @@ export async function POST(request: Request) {
         });
     } catch (err) {
         console.error('Login error:', err);
+        const serviceError = getSanityServiceErrorInfo(
+            err,
+            'Layanan login sedang tidak tersedia. Coba lagi beberapa saat.'
+        );
+        if (serviceError) {
+            return jsonNoStore({ error: serviceError.message }, { status: serviceError.status });
+        }
         return jsonNoStore({ error: 'Terjadi kesalahan server' }, { status: 500 });
     }
 }

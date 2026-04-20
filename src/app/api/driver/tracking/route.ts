@@ -9,7 +9,7 @@ import {
 import { extractRefId, isMutationConflictError } from '@/lib/api/data-helpers';
 import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
 import { handleDeliveryOrderStatusUpdate } from '@/lib/api/order-workflows';
-import { getSanityClient, sanityCreate, sanityGetById } from '@/lib/sanity';
+import { getSanityClient, getSanityServiceErrorInfo, sanityCreate, sanityGetById } from '@/lib/sanity';
 import type { DeliveryOrder, Driver } from '@/lib/types';
 
 async function addAuditLog(actor: { _id: string; name: string; email?: string; role?: string }, action: string, entityRef: string, summary: string) {
@@ -159,16 +159,16 @@ export async function POST(request: Request) {
         }
     }
 
-    const auth = await requireDriverSessionContext(request);
-    if ('error' in auth) {
-        return jsonNoStore({ error: auth.error }, { status: auth.status });
-    }
-    const driverAccessNotice = await getDriverPortalAccessNotice(auth.driver._id);
-    if (driverAccessNotice?.blocking) {
-        return jsonNoStore({ error: driverAccessNotice.message }, { status: 403 });
-    }
-
     try {
+        const auth = await requireDriverSessionContext(request);
+        if ('error' in auth) {
+            return jsonNoStore({ error: auth.error }, { status: auth.status });
+        }
+        const driverAccessNotice = await getDriverPortalAccessNotice(auth.driver._id);
+        if (driverAccessNotice?.blocking) {
+            return jsonNoStore({ error: driverAccessNotice.message }, { status: 403 });
+        }
+
         const parsedBody = await parseJsonBody<{
             action?: 'start' | 'heartbeat' | 'pause' | 'resume' | 'stop' | 'rollback-start';
             deliveryOrderRef?: string;
@@ -624,6 +624,13 @@ export async function POST(request: Request) {
         return jsonNoStore({ error: 'Aksi tracking tidak dikenal' }, { status: 400 });
     } catch (error) {
         console.error('Driver tracking route error:', error);
+        const serviceError = getSanityServiceErrorInfo(
+            error,
+            'Layanan tracking driver sedang tidak tersedia. Coba lagi beberapa saat.'
+        );
+        if (serviceError) {
+            return jsonNoStore({ error: serviceError.message }, { status: serviceError.status });
+        }
         return jsonNoStore({ error: 'Terjadi kesalahan server' }, { status: 500 });
     }
 }

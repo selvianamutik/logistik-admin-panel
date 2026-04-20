@@ -3,7 +3,7 @@ import { isMutationConflictError, writeAuditLog } from '@/lib/api/data-helpers';
 import { getDriverAppContext, getDriverPortalAccessNotice, sanitizeDriverForMobile } from '@/lib/api/driver-portal';
 import { clearFailedAttempts, getRequestIp, recordLoginAttempt } from '@/lib/api/rate-limit';
 import { jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
-import { sanityGetById, getSanityClient } from '@/lib/sanity';
+import { sanityGetById, getSanityClient, getSanityServiceErrorInfo } from '@/lib/sanity';
 import type { Driver, User } from '@/lib/types';
 
 const LOGIN_ATTEMPT_LIMIT = 10;
@@ -212,6 +212,13 @@ export async function POST(request: Request) {
         });
     } catch (error) {
         console.error('Driver mobile login error:', error);
+        const serviceError = getSanityServiceErrorInfo(
+            error,
+            'Layanan login driver sedang tidak tersedia. Coba lagi beberapa saat.'
+        );
+        if (serviceError) {
+            return jsonNoStore({ error: serviceError.message }, { status: serviceError.status });
+        }
         return jsonNoStore({ error: 'Terjadi kesalahan server' }, { status: 500 });
     }
 }
