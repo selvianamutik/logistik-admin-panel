@@ -13,8 +13,8 @@ async function addAuditLog(actor: { _id: string; name: string; email?: string; r
 }
 
 async function getDuplicateEmail(email: string, excludeId?: string) {
-    const users = await listDocumentsByFilter<User>('user', {});
-    return users.find(user => user.email?.toLowerCase() === email.toLowerCase() && user._id !== excludeId) || null;
+    const users = await listDocumentsByFilter<User>('user', { email: email.toLowerCase() });
+    return users.find(user => user._id !== excludeId) || null;
 }
 
 async function getDuplicateDriverAccount(driverRef: string, excludeId?: string) {

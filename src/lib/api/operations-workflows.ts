@@ -75,6 +75,46 @@ function sanitizePatchSet(input: Record<string, unknown>) {
     );
 }
 
+async function findRelatedByRefOrLegacyText<T extends Record<string, unknown>>(
+    docType: string,
+    refField: string,
+    refValue: string,
+    legacyField: string,
+    legacyValue: string,
+    baseFilter: Record<string, unknown> = {},
+) {
+    const relatedByRef =
+        (await listDocumentsByFilter<T>(docType, {
+            ...baseFilter,
+            [refField]: refValue,
+        }))[0] || null;
+    if (relatedByRef) {
+        return relatedByRef;
+    }
+
+    if (!legacyValue) {
+        return null;
+    }
+
+    const exactLegacyRows = await listDocumentsByFilter<T>(docType, {
+        ...baseFilter,
+        [legacyField]: legacyValue,
+    });
+    const exactLegacyMatch = exactLegacyRows.find(row =>
+        !row[refField] &&
+        normalizeOptionalText(row[legacyField])?.toLowerCase() === legacyValue
+    ) || null;
+    if (exactLegacyMatch) {
+        return exactLegacyMatch;
+    }
+
+    return (await listDocumentsByFilter<T>(docType, baseFilter))
+        .find(row =>
+            !row[refField] &&
+            normalizeOptionalText(row[legacyField])?.toLowerCase() === legacyValue
+        ) || null;
+}
+
 function formatIncidentSettlementLabel(line: Pick<IncidentSettlementLine, 'lineType' | 'description' | 'amount' | 'incidentNumber'>) {
     const lineTypeLabel =
         line.lineType === 'COMPENSATION'
@@ -655,20 +695,35 @@ export async function handleServiceDelete(
         return NextResponse.json({ error: 'Kategori truk/armada tidak ditemukan' }, { status: 404 });
     }
     const serviceName = normalizeOptionalText(service.name)?.toLowerCase() || '';
-    const relatedOrder = (await listDocumentsByFilter<{ _id: string; serviceRef?: string; serviceName?: string }>('order', {}))
-        .find(doc => doc.serviceRef === id || (normalizeOptionalText(doc.serviceName)?.toLowerCase() || '') === serviceName) || null;
+    const relatedOrder = await findRelatedByRefOrLegacyText<{ _id: string; serviceRef?: string; serviceName?: string }>(
+        'order',
+        'serviceRef',
+        id,
+        'serviceName',
+        serviceName,
+    );
     if (relatedOrder) {
         return NextResponse.json({ error: 'Kategori truk/armada yang sudah dipakai pada order tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedVehicle = (await listDocumentsByFilter<{ _id: string; serviceRef?: string; serviceName?: string }>('vehicle', {}))
-        .find(doc => doc.serviceRef === id || (normalizeOptionalText(doc.serviceName)?.toLowerCase() || '') === serviceName) || null;
+    const relatedVehicle = await findRelatedByRefOrLegacyText<{ _id: string; serviceRef?: string; serviceName?: string }>(
+        'vehicle',
+        'serviceRef',
+        id,
+        'serviceName',
+        serviceName,
+    );
     if (relatedVehicle) {
         return NextResponse.json({ error: 'Kategori truk/armada yang sudah dipakai pada kendaraan tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedTripRouteRate = (await listDocumentsByFilter<{ _id: string; serviceRef?: string; serviceName?: string }>('tripRouteRate', {}))
-        .find(doc => doc.serviceRef === id || (normalizeOptionalText(doc.serviceName)?.toLowerCase() || '') === serviceName) || null;
+    const relatedTripRouteRate = await findRelatedByRefOrLegacyText<{ _id: string; serviceRef?: string; serviceName?: string }>(
+        'tripRouteRate',
+        'serviceRef',
+        id,
+        'serviceName',
+        serviceName,
+    );
     if (relatedTripRouteRate) {
         return NextResponse.json({ error: 'Kategori truk/armada yang sudah dipakai pada biaya rute trip tidak boleh dihapus' }, { status: 409 });
     }
@@ -693,8 +748,13 @@ export async function handleExpenseCategoryDelete(
         return NextResponse.json({ error: 'Kategori biaya tidak ditemukan' }, { status: 404 });
     }
     const categoryName = normalizeOptionalText(category.name)?.toLowerCase() || '';
-    const relatedExpense = (await listDocumentsByFilter<{ _id: string; categoryRef?: string; categoryName?: string }>('expense', {}))
-        .find(doc => doc.categoryRef === id || (normalizeOptionalText(doc.categoryName)?.toLowerCase() || '') === categoryName) || null;
+    const relatedExpense = await findRelatedByRefOrLegacyText<{ _id: string; categoryRef?: string; categoryName?: string }>(
+        'expense',
+        'categoryRef',
+        id,
+        'categoryName',
+        categoryName,
+    );
     if (relatedExpense) {
         return NextResponse.json({ error: 'Kategori biaya yang sudah dipakai pada pengeluaran tidak boleh dihapus' }, { status: 409 });
     }
@@ -723,32 +783,58 @@ export async function handleDriverDelete(
         return NextResponse.json({ error: 'Supir tidak ditemukan' }, { status: 404 });
     }
     const driverName = normalizeOptionalText(driver.name)?.toLowerCase() || '';
-    const relatedDeliveryOrder = (await listDocumentsByFilter<{ _id: string; driverRef?: string; driverName?: string }>('deliveryOrder', {}))
-        .find(doc => doc.driverRef === id || (normalizeOptionalText(doc.driverName)?.toLowerCase() || '') === driverName) || null;
+    const relatedDeliveryOrder = await findRelatedByRefOrLegacyText<{ _id: string; driverRef?: string; driverName?: string }>(
+        'deliveryOrder',
+        'driverRef',
+        id,
+        'driverName',
+        driverName,
+    );
     if (relatedDeliveryOrder) {
         return NextResponse.json({ error: 'Supir yang sudah dipakai pada surat jalan tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedBorongan = (await listDocumentsByFilter<{ _id: string; driverRef?: string; driverName?: string }>('driverBorongan', {}))
-        .find(doc => doc.driverRef === id || (normalizeOptionalText(doc.driverName)?.toLowerCase() || '') === driverName) || null;
+    const relatedBorongan = await findRelatedByRefOrLegacyText<{ _id: string; driverRef?: string; driverName?: string }>(
+        'driverBorongan',
+        'driverRef',
+        id,
+        'driverName',
+        driverName,
+    );
     if (relatedBorongan) {
         return NextResponse.json({ error: 'Supir yang sudah dipakai pada slip borongan tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedVoucher = (await listDocumentsByFilter<{ _id: string; driverRef?: string; driverName?: string }>('driverVoucher', {}))
-        .find(doc => doc.driverRef === id || (normalizeOptionalText(doc.driverName)?.toLowerCase() || '') === driverName) || null;
+    const relatedVoucher = await findRelatedByRefOrLegacyText<{ _id: string; driverRef?: string; driverName?: string }>(
+        'driverVoucher',
+        'driverRef',
+        id,
+        'driverName',
+        driverName,
+    );
     if (relatedVoucher) {
         return NextResponse.json({ error: 'Supir yang sudah dipakai pada uang jalan trip tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedIncident = (await listDocumentsByFilter<{ _id: string; driverRef?: string; driverName?: string }>('incident', {}))
-        .find(doc => doc.driverRef === id || (normalizeOptionalText(doc.driverName)?.toLowerCase() || '') === driverName) || null;
+    const relatedIncident = await findRelatedByRefOrLegacyText<{ _id: string; driverRef?: string; driverName?: string }>(
+        'incident',
+        'driverRef',
+        id,
+        'driverName',
+        driverName,
+    );
     if (relatedIncident) {
         return NextResponse.json({ error: 'Supir yang sudah dipakai pada insiden tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedDriverUser = (await listDocumentsByFilter<{ _id: string; role?: string; driverRef?: string; driverName?: string }>('user', { role: 'DRIVER' }))
-        .find(doc => doc.driverRef === id || (normalizeOptionalText(doc.driverName)?.toLowerCase() || '') === driverName) || null;
+    const relatedDriverUser = await findRelatedByRefOrLegacyText<{ _id: string; role?: string; driverRef?: string; driverName?: string }>(
+        'user',
+        'driverRef',
+        id,
+        'driverName',
+        driverName,
+        { role: 'DRIVER' },
+    );
     if (relatedDriverUser) {
         return NextResponse.json({ error: 'Supir yang masih punya akun mobile tidak boleh dihapus' }, { status: 409 });
     }
@@ -895,38 +981,68 @@ export async function handleVehicleDelete(
         return NextResponse.json({ error: 'Kendaraan tidak ditemukan' }, { status: 404 });
     }
     const vehiclePlate = normalizeOptionalText(vehicle.plateNumber)?.toLowerCase() || '';
-    const relatedDeliveryOrder = (await listDocumentsByFilter<{ _id: string; vehicleRef?: string; vehiclePlate?: string }>('deliveryOrder', {}))
-        .find(doc => doc.vehicleRef === id || (normalizeOptionalText(doc.vehiclePlate)?.toLowerCase() || '') === vehiclePlate) || null;
+    const relatedDeliveryOrder = await findRelatedByRefOrLegacyText<{ _id: string; vehicleRef?: string; vehiclePlate?: string }>(
+        'deliveryOrder',
+        'vehicleRef',
+        id,
+        'vehiclePlate',
+        vehiclePlate,
+    );
     if (relatedDeliveryOrder) {
         return NextResponse.json({ error: 'Kendaraan yang sudah dipakai pada surat jalan tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedMaintenance = (await listDocumentsByFilter<{ _id: string; vehicleRef?: string; vehiclePlate?: string }>('maintenance', {}))
-        .find(doc => doc.vehicleRef === id || (normalizeOptionalText(doc.vehiclePlate)?.toLowerCase() || '') === vehiclePlate) || null;
+    const relatedMaintenance = await findRelatedByRefOrLegacyText<{ _id: string; vehicleRef?: string; vehiclePlate?: string }>(
+        'maintenance',
+        'vehicleRef',
+        id,
+        'vehiclePlate',
+        vehiclePlate,
+    );
     if (relatedMaintenance) {
         return NextResponse.json({ error: 'Kendaraan yang sudah punya maintenance tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedIncident = (await listDocumentsByFilter<{ _id: string; vehicleRef?: string; vehiclePlate?: string }>('incident', {}))
-        .find(doc => doc.vehicleRef === id || (normalizeOptionalText(doc.vehiclePlate)?.toLowerCase() || '') === vehiclePlate) || null;
+    const relatedIncident = await findRelatedByRefOrLegacyText<{ _id: string; vehicleRef?: string; vehiclePlate?: string }>(
+        'incident',
+        'vehicleRef',
+        id,
+        'vehiclePlate',
+        vehiclePlate,
+    );
     if (relatedIncident) {
         return NextResponse.json({ error: 'Kendaraan yang sudah punya insiden tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedTireEvent = (await listDocumentsByFilter<{ _id: string; vehicleRef?: string; vehiclePlate?: string }>('tireEvent', {}))
-        .find(doc => doc.vehicleRef === id || (normalizeOptionalText(doc.vehiclePlate)?.toLowerCase() || '') === vehiclePlate) || null;
+    const relatedTireEvent = await findRelatedByRefOrLegacyText<{ _id: string; vehicleRef?: string; vehiclePlate?: string }>(
+        'tireEvent',
+        'vehicleRef',
+        id,
+        'vehiclePlate',
+        vehiclePlate,
+    );
     if (relatedTireEvent) {
         return NextResponse.json({ error: 'Kendaraan yang sudah punya riwayat ban tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedVoucher = (await listDocumentsByFilter<{ _id: string; vehicleRef?: string; vehiclePlate?: string }>('driverVoucher', {}))
-        .find(doc => doc.vehicleRef === id || (normalizeOptionalText(doc.vehiclePlate)?.toLowerCase() || '') === vehiclePlate) || null;
+    const relatedVoucher = await findRelatedByRefOrLegacyText<{ _id: string; vehicleRef?: string; vehiclePlate?: string }>(
+        'driverVoucher',
+        'vehicleRef',
+        id,
+        'vehiclePlate',
+        vehiclePlate,
+    );
     if (relatedVoucher) {
         return NextResponse.json({ error: 'Kendaraan yang sudah dipakai pada uang jalan trip tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedExpense = (await listDocumentsByFilter<{ _id: string; relatedVehicleRef?: string; relatedVehiclePlate?: string }>('expense', {}))
-        .find(doc => doc.relatedVehicleRef === id || (normalizeOptionalText(doc.relatedVehiclePlate)?.toLowerCase() || '') === vehiclePlate) || null;
+    const relatedExpense = await findRelatedByRefOrLegacyText<{ _id: string; relatedVehicleRef?: string; relatedVehiclePlate?: string }>(
+        'expense',
+        'relatedVehicleRef',
+        id,
+        'relatedVehiclePlate',
+        vehiclePlate,
+    );
     if (relatedExpense) {
         return NextResponse.json({ error: 'Kendaraan yang sudah dipakai pada pengeluaran tidak boleh dihapus' }, { status: 409 });
     }

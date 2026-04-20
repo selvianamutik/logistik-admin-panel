@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { getBusinessDateValue } from '@/lib/business-date';
 import { createSession, setSessionCookie } from '@/lib/auth';
-import { useSupabaseBackend } from '@/lib/data-backend';
+import { isSupabaseBackendEnabled } from '@/lib/data-backend';
 import {
     createDocument,
     deleteDocument,
@@ -382,7 +382,7 @@ async function buildInvoiceInstructionAccountRemoval(accountId: string) {
         return null;
     }
 
-    if (!company._rev && !useSupabaseBackend()) {
+    if (!company._rev && !isSupabaseBackendEnabled()) {
         throw new Error('Revisi profil perusahaan tidak tersedia. Refresh lalu coba lagi.');
     }
 
@@ -592,7 +592,7 @@ async function appendTrackedTireWarehouseSync(params: {
     }
 
     const warehouseItem = await resolveTrackedTireWarehouseItem(itemRef);
-    if (!warehouseItem._rev && !useSupabaseBackend()) {
+    if (!warehouseItem._rev && !isSupabaseBackendEnabled()) {
         throw new Error('Revisi master barang gudang ban tidak tersedia. Refresh lalu coba lagi.');
     }
     const countedBefore = countsTowardTrackedTireWarehouseStock(params.previousDoc || {});
@@ -830,7 +830,7 @@ export async function handleGenericUpdate(
                     updates.tripOriginArea = tripRouteSelection.tripOriginArea;
                     updates.tripDestinationArea = tripRouteSelection.tripDestinationArea;
                     if (tripRouteSelection.matchedTripRouteRate?._id) {
-                        if (!tripRouteSelection.matchedTripRouteRate._rev && !useSupabaseBackend()) {
+                        if (!tripRouteSelection.matchedTripRouteRate._rev && !isSupabaseBackendEnabled()) {
                             return NextResponse.json(
                                 { error: 'Revisi master biaya rute trip tidak tersedia. Refresh lalu coba lagi.' },
                                 { status: 409 }
@@ -1134,7 +1134,7 @@ export async function handleGenericUpdate(
         if (!existingTire) {
             return NextResponse.json({ error: 'Catatan ban tidak ditemukan' }, { status: 404 });
         }
-        if (!existingTire._rev && !useSupabaseBackend()) {
+        if (!existingTire._rev && !isSupabaseBackendEnabled()) {
             return NextResponse.json({ error: 'Revisi catatan ban tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
         }
         let normalizedTireUpdates: Record<string, unknown>;
@@ -1309,7 +1309,7 @@ export async function handleGenericUpdate(
     if (!currentDoc) {
         return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
-    if (!currentDoc._rev && !useSupabaseBackend()) {
+    if (!currentDoc._rev && !isSupabaseBackendEnabled()) {
         return NextResponse.json({ error: 'Revisi dokumen tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
@@ -1484,7 +1484,7 @@ export async function handleGenericDelete(
         if (!customerProduct) {
             return NextResponse.json({ error: 'Barang customer tidak ditemukan' }, { status: 404 });
         }
-        if (!customerProduct._rev && !useSupabaseBackend()) {
+        if (!customerProduct._rev && !isSupabaseBackendEnabled()) {
             return NextResponse.json({ error: 'Revisi barang customer tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
         }
 
@@ -1524,7 +1524,7 @@ export async function handleGenericDelete(
         if (!supplier) {
             return NextResponse.json({ error: 'Supplier tidak ditemukan' }, { status: 404 });
         }
-        if (!supplier._rev && !useSupabaseBackend()) {
+        if (!supplier._rev && !isSupabaseBackendEnabled()) {
             return NextResponse.json({ error: 'Revisi supplier tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
         }
 
@@ -1561,7 +1561,7 @@ export async function handleGenericDelete(
         if (!warehouseItem) {
             return NextResponse.json({ error: 'Barang gudang tidak ditemukan' }, { status: 404 });
         }
-        if (!warehouseItem._rev && !useSupabaseBackend()) {
+        if (!warehouseItem._rev && !isSupabaseBackendEnabled()) {
             return NextResponse.json({ error: 'Revisi barang gudang tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
         }
 
@@ -1604,7 +1604,7 @@ export async function handleGenericDelete(
         if (!recipient) {
             return NextResponse.json({ error: 'Master penerima tidak ditemukan' }, { status: 404 });
         }
-        if (!recipient._rev && !useSupabaseBackend()) {
+        if (!recipient._rev && !isSupabaseBackendEnabled()) {
             return NextResponse.json({ error: 'Revisi master penerima tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
         }
 
@@ -1644,7 +1644,7 @@ export async function handleGenericDelete(
         if (!pickup) {
             return NextResponse.json({ error: 'Master pickup tidak ditemukan' }, { status: 404 });
         }
-        if (!pickup._rev && !useSupabaseBackend()) {
+        if (!pickup._rev && !isSupabaseBackendEnabled()) {
             return NextResponse.json({ error: 'Revisi master pickup tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
         }
 
@@ -1684,7 +1684,7 @@ export async function handleGenericDelete(
         if (!tripRouteRate) {
             return NextResponse.json({ error: 'Master biaya rute trip tidak ditemukan' }, { status: 404 });
         }
-        if (!tripRouteRate._rev && !useSupabaseBackend()) {
+        if (!tripRouteRate._rev && !isSupabaseBackendEnabled()) {
             return NextResponse.json({ error: 'Revisi master biaya rute trip tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
         }
 
@@ -1812,7 +1812,7 @@ export async function handleGenericDelete(
         }
 
         const companyInvoiceCleanup = await buildInvoiceInstructionAccountRemoval(id);
-        if (!existingAccount._rev && !useSupabaseBackend()) {
+        if (!existingAccount._rev && !isSupabaseBackendEnabled()) {
             return NextResponse.json({ error: 'Revisi rekening tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
         }
 
@@ -1846,7 +1846,7 @@ export async function handleGenericDelete(
     if (!existing) {
         return NextResponse.json({ error: 'Dokumen tidak ditemukan' }, { status: 404 });
     }
-    if (!existing._rev && !useSupabaseBackend()) {
+    if (!existing._rev && !isSupabaseBackendEnabled()) {
         return NextResponse.json({ error: 'Revisi dokumen tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
@@ -1885,7 +1885,7 @@ export async function handleGenericCreate(
             );
         }
         if (existing?._id) {
-            if (!existing._rev && !useSupabaseBackend()) {
+            if (!existing._rev && !isSupabaseBackendEnabled()) {
                 return NextResponse.json(
                     { error: 'Revisi profil perusahaan tidak tersedia. Refresh lalu coba lagi.' },
                     { status: 409 }
@@ -1947,7 +1947,7 @@ export async function handleGenericCreate(
         }
 
         let activeAssignment: { _id: string } | null = null;
-        if (useSupabaseBackend()) {
+        if (isSupabaseBackendEnabled()) {
             const assignments = await listDocumentsByFilter<{ _id: string; deliveryOrderRef?: string; orderItemRef?: string }>('deliveryOrderItem', {
                 orderItemRef,
             });
@@ -2270,7 +2270,7 @@ export async function handleGenericCreate(
     newDoc._id = newId;
     let created: Record<string, unknown> | null;
     if (entity === 'users' && typeof newDoc.driverRef === 'string') {
-        if (!userDriverRevision && !useSupabaseBackend()) {
+        if (!userDriverRevision && !isSupabaseBackendEnabled()) {
             return NextResponse.json(
                 { error: 'Revisi supir untuk akun mobile tidak tersedia. Refresh lalu coba lagi.' },
                 { status: 409 }

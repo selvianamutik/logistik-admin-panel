@@ -1,3 +1,3 @@
-export function useSupabaseBackend() {
+export function isSupabaseBackendEnabled() {
     return true;
 }

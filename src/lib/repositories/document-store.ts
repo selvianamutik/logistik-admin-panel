@@ -3,6 +3,7 @@ import {
 } from '@/lib/supabase';
 import { getBusinessDateValue, parseBusinessDateValue } from '@/lib/business-date';
 import {
+    relationalCountByPrefix,
     relationalDeleteDocument,
     relationalFindDocumentByIdAcrossTypes,
     relationalGetAll,
@@ -86,11 +87,9 @@ async function getRelationalNextNumber(prefix: string, dateValue?: string) {
             typeof settings[config.periodField] === 'string' ? settings[config.periodField] : '';
         const currentCounter = currentPeriod === period ? numberFromUnknown(settings[config.counterField]) : 0;
 
-        const existingDocs = await relationalGetAll<Record<string, unknown>>(config.docType);
-        const existingCount = existingDocs.filter(doc => {
-            const value = doc[config.docField];
-            return typeof value === 'string' && value.startsWith(`${normalizedPrefix}${period}-`);
-        }).length;
+        const existingCount =
+            await relationalCountByPrefix(config.docType, config.docField, `${normalizedPrefix}${period}-`)
+            ?? 0;
 
         const nextCounter = Math.max(currentCounter, existingCount) + 1;
         const nextNumber = `${normalizedPrefix}${period}-${String(nextCounter).padStart(4, '0')}`;

@@ -258,6 +258,10 @@ export function isMutationConflictError(err: unknown) {
             : isPlainObject(err) && typeof err.status === 'number'
                 ? err.status
                 : undefined;
+    const errorCode =
+        isPlainObject(err) && typeof err.code === 'string'
+            ? err.code
+            : undefined;
     const message =
         err instanceof Error
             ? err.message
@@ -267,8 +271,11 @@ export function isMutationConflictError(err: unknown) {
 
     return (
         statusCode === 409
+        || errorCode === '23505'
         || /revision/i.test(message)
         || /conflict/i.test(message)
+        || /duplicate key/i.test(message)
+        || /already exists/i.test(message)
         || (/mutation failed/i.test(message) && /was not found/i.test(message))
     );
 }

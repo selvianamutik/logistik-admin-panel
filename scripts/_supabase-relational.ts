@@ -8,8 +8,6 @@ type SeedDoc = {
 
 type SupabaseRequestFn = (path: string, init?: RequestInit) => Promise<Response>;
 
-type RelationalRow = Record<string, unknown>;
-
 const RELATIONAL_SEED_ORDER = [
     'company_profiles',
     'drivers',

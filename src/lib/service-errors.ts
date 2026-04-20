@@ -10,12 +10,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function parseServiceErrorPayload(error: unknown) {
     if (!isRecord(error)) {
         return {
+            code: undefined as string | undefined,
+            details: undefined as string | undefined,
+            hint: undefined as string | undefined,
             statusCode: undefined as number | undefined,
             message: error instanceof Error ? error.message : undefined,
         };
     }
 
     return {
+        code: typeof error.code === 'string' ? error.code : undefined,
+        details: typeof error.details === 'string' ? error.details : undefined,
+        hint: typeof error.hint === 'string' ? error.hint : undefined,
         statusCode: typeof error.statusCode === 'number'
             ? error.statusCode
             : typeof error.status === 'number'
@@ -34,7 +40,7 @@ export function getDataServiceErrorInfo(
     fallbackMessage = 'Layanan data sedang tidak tersedia. Coba lagi beberapa saat.'
 ): ServiceErrorInfo | null {
     const parsed = parseServiceErrorPayload(error);
-    const message = parsed.message || '';
+    const message = [parsed.message, parsed.details, parsed.hint].filter(Boolean).join(' ');
 
     if (
         parsed.statusCode === 429 ||

@@ -82,7 +82,13 @@ type RelationalRow = Record<string, unknown> & {
     document_updated_at?: string | null;
 };
 
+type FetchRowsResult = {
+    rows: RelationalRow[];
+    total: number | null;
+};
+
 const META_FIELDS = new Set(['_id', '_type', '_createdAt', '_updatedAt', '_rev']);
+const FETCH_BATCH_SIZE = 500;
 
 const RELATIONAL_CONFIG: Record<SupportedDocType, RelationalConfig> = {
     companyProfile: {
@@ -1026,6 +1032,138 @@ function toDocTypeList() {
     return Object.keys(RELATIONAL_CONFIG) as SupportedDocType[];
 }
 
+function getColumnName(config: RelationalConfig, field: string) {
+    if (field === '_id') return 'source_document_id';
+    if (field === '_createdAt') return 'document_created_at';
+    if (field === '_updatedAt') return 'document_updated_at';
+    if (field === '_rev' || field === '_type' || field.includes('.')) return null;
+    return config.fieldMap[field] || null;
+}
+
+function isServerFilterScalar(value: unknown): value is string | number | boolean {
+    return isScalar(value);
+}
+
+function isServerClauseStringSafe(value: string) {
+    return !/[(),]/.test(value);
+}
+
+function isServerSearchStringSafe(value: string) {
+    return !/[%_*(),]/.test(value);
+}
+
+function formatServerFilterValue(value: string | number | boolean) {
+    return typeof value === 'string' ? value : String(value);
+}
+
+function formatServerInValue(value: string | number | boolean) {
+    if (typeof value === 'string') {
+        return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+    }
+    return String(value);
+}
+
+function parseContentRangeTotal(value: string | null) {
+    if (!value) return null;
+    const match = /\/(\d+|\*)$/.exec(value);
+    if (!match || match[1] === '*') {
+        return null;
+    }
+    const parsed = Number.parseInt(match[1], 10);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function buildFilterParams(
+    config: RelationalConfig,
+    filterObj: Record<string, unknown>,
+) {
+    const params = new URLSearchParams();
+
+    for (const [field, expected] of Object.entries(filterObj)) {
+        if (expected === '' || expected === null || expected === undefined) {
+            continue;
+        }
+
+        const column = getColumnName(config, field);
+        if (!column) {
+            return null;
+        }
+
+        if (Array.isArray(expected)) {
+            if (expected.length === 0) {
+                continue;
+            }
+
+            if (!expected.every(isServerFilterScalar)) {
+                return null;
+            }
+
+            params.set(column, `in.(${expected.map(formatServerInValue).join(',')})`);
+            continue;
+        }
+
+        if (!isServerFilterScalar(expected)) {
+            return null;
+        }
+
+        params.set(column, `eq.${formatServerFilterValue(expected)}`);
+    }
+
+    return params;
+}
+
+function buildOrFilterClause(
+    config: RelationalConfig,
+    orFilters: Array<{ fields: string[]; value: string | number | boolean }>,
+) {
+    if (orFilters.length === 0) return '';
+
+    const clauses: string[] = [];
+    for (const orFilter of orFilters) {
+        if (!isServerFilterScalar(orFilter.value)) {
+            return null;
+        }
+
+        if (typeof orFilter.value === 'string' && !isServerClauseStringSafe(orFilter.value)) {
+            return null;
+        }
+
+        const formattedValue = formatServerFilterValue(orFilter.value);
+        for (const field of orFilter.fields) {
+            const column = getColumnName(config, field);
+            if (!column) {
+                return null;
+            }
+            clauses.push(`${column}.eq.${formattedValue}`);
+        }
+    }
+
+    return clauses.length > 0 ? clauses.join(',') : '';
+}
+
+function buildSearchClause(
+    config: RelationalConfig,
+    search: string,
+    searchFields: string[],
+) {
+    const trimmed = search.trim();
+    if (!trimmed || searchFields.length === 0) return '';
+    if (!isServerSearchStringSafe(trimmed)) {
+        return null;
+    }
+
+    const clauses: string[] = [];
+    for (const field of searchFields) {
+        const column = getColumnName(config, field);
+        if (!column) {
+            return null;
+        }
+        clauses.push(`${column}.ilike.*${trimmed}*`);
+    }
+
+    return clauses.length > 0 ? clauses.join(',') : '';
+}
+
 function readField(source: Record<string, unknown>, path: string): unknown {
     return path.split('.').reduce<unknown>((current, segment) => {
         if (!isRecord(current)) {
@@ -1163,9 +1301,108 @@ function mapDocumentToRow(docType: SupportedDocType, doc: { _id?: string; _type?
     return row;
 }
 
-async function fetchRows(path: string) {
-    const response = await getSupabaseClient().fetch(path);
-    return await response.json() as RelationalRow[];
+function buildQueryPath(table: string, params: URLSearchParams) {
+    const query = params.toString();
+    return query ? `${table}?${query}` : table;
+}
+
+async function fetchRows(path: string, init: RequestInit = {}): Promise<FetchRowsResult> {
+    const response = await getSupabaseClient().fetch(path, init);
+    const rows = await response.json() as RelationalRow[];
+    return {
+        rows,
+        total: parseContentRangeTotal(response.headers.get('content-range')),
+    };
+}
+
+async function fetchAllRows(
+    table: string,
+    params: URLSearchParams = new URLSearchParams(),
+    init: RequestInit = {},
+): Promise<FetchRowsResult> {
+    const rows: RelationalRow[] = [];
+    let total: number | null = null;
+    let offset = 0;
+
+    while (true) {
+        const batchParams = new URLSearchParams(params);
+        batchParams.set('limit', String(FETCH_BATCH_SIZE));
+        batchParams.set('offset', String(offset));
+
+        const batch = await fetchRows(buildQueryPath(table, batchParams), init);
+        if (total === null && batch.total !== null) {
+            total = batch.total;
+        }
+
+        if (batch.rows.length === 0) {
+            break;
+        }
+
+        rows.push(...batch.rows);
+        offset += batch.rows.length;
+
+        if (batch.rows.length < FETCH_BATCH_SIZE) {
+            break;
+        }
+
+        if (total !== null && offset >= total) {
+            break;
+        }
+    }
+
+    return {
+        rows,
+        total: total ?? rows.length,
+    };
+}
+
+function buildServerListParams(
+    config: RelationalConfig,
+    options: RelationalListOptions,
+) {
+    if ((options.definedFields?.length || 0) > 0) {
+        return null;
+    }
+
+    const params = new URLSearchParams();
+    params.set('select', '*');
+
+    const filterParams = buildFilterParams(config, options.filterObj ?? {});
+    if (!filterParams) {
+        return null;
+    }
+    for (const [key, value] of filterParams.entries()) {
+        params.set(key, value);
+    }
+
+    const searchClause = buildSearchClause(config, options.search ?? '', options.searchFields ?? []);
+    if (searchClause === null) {
+        return null;
+    }
+
+    const orClause = buildOrFilterClause(config, options.orFilters ?? []);
+    if (orClause === null) {
+        return null;
+    }
+
+    if (searchClause && orClause) {
+        return null;
+    }
+
+    if (searchClause) {
+        params.set('or', searchClause);
+    } else if (orClause) {
+        params.set('or', orClause);
+    }
+
+    const targetSortField = options.sortField?.trim() || '_updatedAt';
+    const sortColumn = getColumnName(config, targetSortField);
+    if (!sortColumn) {
+        return null;
+    }
+
+    params.set('order', `${sortColumn}.${options.sortDir === 'asc' ? 'asc' : 'desc'}`);
+    return params;
 }
 
 function isMissingRelationalTableError(error: unknown) {
@@ -1181,8 +1418,12 @@ export async function relationalGetById<T = Record<string, unknown>>(docType: Su
     const config = RELATIONAL_CONFIG[docType];
 
     try {
-        const rows = await fetchRows(
-            `${config.table}?select=*&source_document_id=eq.${encodeURIComponent(id)}&limit=1`
+        const params = new URLSearchParams();
+        params.set('select', '*');
+        params.set('source_document_id', `eq.${id}`);
+        params.set('limit', '1');
+        const { rows } = await fetchRows(
+            buildQueryPath(config.table, params)
         );
         return rows[0] ? mapRowToDocument(docType, rows[0]) as T : null;
     } catch (error) {
@@ -1197,7 +1438,9 @@ export async function relationalGetAll<T = Record<string, unknown>>(docType: Sup
     const config = RELATIONAL_CONFIG[docType];
 
     try {
-        const rows = await fetchRows(`${config.table}?select=*`);
+        const params = new URLSearchParams();
+        params.set('select', '*');
+        const { rows } = await fetchAllRows(config.table, params);
         return rows.map(row => mapRowToDocument(docType, row) as T);
     } catch (error) {
         if (isMissingRelationalTableError(error)) {
@@ -1211,6 +1454,22 @@ export async function relationalGetByFilter<T = Record<string, unknown>>(
     docType: SupportedDocType,
     filterObj: Record<string, unknown>
 ): Promise<T[]> {
+    const config = RELATIONAL_CONFIG[docType];
+    const filterParams = buildFilterParams(config, filterObj);
+
+    if (filterParams) {
+        try {
+            filterParams.set('select', '*');
+            const { rows } = await fetchAllRows(config.table, filterParams);
+            return rows.map(row => mapRowToDocument(docType, row) as T);
+        } catch (error) {
+            if (isMissingRelationalTableError(error)) {
+                return [];
+            }
+            throw error;
+        }
+    }
+
     const docs = await relationalGetAll<Record<string, unknown>>(docType);
     return docs.filter(doc => matchesFilter(doc, filterObj)) as T[];
 }
@@ -1219,6 +1478,35 @@ export async function relationalList<T = Record<string, unknown>>(
     docType: SupportedDocType,
     options: RelationalListOptions = {}
 ): Promise<RelationalListResult<T>> {
+    const page = normalizePositiveInteger(options.page, 1);
+    const pageSize = normalizePositiveInteger(options.pageSize, 10, 500);
+
+    const config = RELATIONAL_CONFIG[docType];
+    const serverParams = buildServerListParams(config, options);
+    if (serverParams) {
+        const pagedParams = new URLSearchParams(serverParams);
+        pagedParams.set('limit', String(pageSize));
+        pagedParams.set('offset', String((page - 1) * pageSize));
+
+        try {
+            const result = await fetchRows(
+                buildQueryPath(config.table, pagedParams),
+                { headers: { Prefer: 'count=exact' } },
+            );
+            if (result.total !== null) {
+                return {
+                    items: result.rows.map(row => mapRowToDocument(docType, row) as T),
+                    total: result.total,
+                };
+            }
+        } catch (error) {
+            if (isMissingRelationalTableError(error)) {
+                return { items: [], total: 0 };
+            }
+            throw error;
+        }
+    }
+
     const docs = await relationalGetAll<Record<string, unknown>>(docType);
     const filtered = docs
         .filter(doc => matchesFilter(doc, options.filterObj ?? {}))
@@ -1226,8 +1514,6 @@ export async function relationalList<T = Record<string, unknown>>(
         .filter(doc => matchesOrFilters(doc, options.orFilters ?? []))
         .filter(doc => matchesSearch(doc, options.search ?? '', options.searchFields ?? []));
     const sorted = sortDocuments(filtered, options.sortField, options.sortDir);
-    const page = normalizePositiveInteger(options.page, 1);
-    const pageSize = normalizePositiveInteger(options.pageSize, 10, 500);
     const start = (page - 1) * pageSize;
     const items = sorted.slice(start, start + pageSize) as T[];
 
@@ -1235,6 +1521,35 @@ export async function relationalList<T = Record<string, unknown>>(
         items,
         total: filtered.length,
     };
+}
+
+export async function relationalCountByPrefix(
+    docType: SupportedDocType,
+    field: string,
+    prefix: string,
+): Promise<number | null> {
+    const config = RELATIONAL_CONFIG[docType];
+    const column = getColumnName(config, field);
+    if (!column || !prefix) {
+        return null;
+    }
+
+    try {
+        const params = new URLSearchParams();
+        params.set('select', 'source_document_id');
+        params.set(column, `like.${prefix}*`);
+        params.set('limit', '1');
+        const result = await fetchRows(
+            buildQueryPath(config.table, params),
+            { headers: { Prefer: 'count=exact' } },
+        );
+        return result.total;
+    } catch (error) {
+        if (isMissingRelationalTableError(error)) {
+            return null;
+        }
+        throw error;
+    }
 }
 
 export async function relationalUpsertDocument<T = Record<string, unknown>>(

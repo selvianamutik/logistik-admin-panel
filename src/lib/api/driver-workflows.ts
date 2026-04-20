@@ -21,7 +21,6 @@ import {
     ensureCashAccount,
     extractRefId,
     getLedgerAccount,
-    isMutationConflictError,
     isPlainObject,
     normalizeCurrencyNumber,
     normalizeNumber,

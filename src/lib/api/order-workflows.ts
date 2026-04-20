@@ -9,7 +9,7 @@ import {
     roundQuantity,
 } from '@/lib/order-item-progress';
 import { resolveCompanyLogoUrl } from '@/lib/branding';
-import { useSupabaseBackend } from '@/lib/data-backend';
+import { isSupabaseBackendEnabled } from '@/lib/data-backend';
 import {
     createDocument,
     deleteDocument,
@@ -42,7 +42,6 @@ import {
 import {
     DO_STATUS_TRANSITIONS,
     DRIVER_APPROVAL_REQUESTABLE_DO_STATUSES,
-    DRIVER_STATUS_REQUEST_FIELDS,
     buildDriverRequestedTrackingStatus,
     deriveOrderStatusFromItems,
     type DeliveryOrderItemCargoSnapshot,
@@ -87,7 +86,7 @@ async function releaseDriverTrackingLockIfOwned(driverRef: unknown, deliveryOrde
     }
 
     const driver = await getDocumentById<{ _id: string; _rev?: string; activeTrackingDeliveryOrderRef?: unknown }>(driverId);
-    if (!driver || (!driver._rev && !useSupabaseBackend())) {
+    if (!driver || (!driver._rev && !isSupabaseBackendEnabled())) {
         return;
     }
 
@@ -209,7 +208,7 @@ export async function handleOrderItemHoldSet(
     if (!orderItem) {
         return NextResponse.json({ error: 'Item order tidak ditemukan' }, { status: 404 });
     }
-    if (!useSupabaseBackend() && !orderItem._rev) {
+    if (!isSupabaseBackendEnabled() && !orderItem._rev) {
         return NextResponse.json({ error: 'Revisi item order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
@@ -348,7 +347,7 @@ export async function handleOrderItemHoldRelease(
     if (!orderItem) {
         return NextResponse.json({ error: 'Item order tidak ditemukan' }, { status: 404 });
     }
-    if (!useSupabaseBackend() && !orderItem._rev) {
+    if (!isSupabaseBackendEnabled() && !orderItem._rev) {
         return NextResponse.json({ error: 'Revisi item order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
@@ -504,16 +503,16 @@ export async function handleOrderCreate(
     if (tripPlans.length > 0 && pickupStops.length === 0) {
         return NextResponse.json({ error: 'Minimal 1 titik pickup wajib diisi' }, { status: 400 });
     }
-    if (!customer._rev && !useSupabaseBackend()) {
+    if (!customer._rev && !isSupabaseBackendEnabled()) {
         return NextResponse.json({ error: 'Revisi customer tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
-    if (serviceRef && !service?._rev && !useSupabaseBackend()) {
+    if (serviceRef && !service?._rev && !isSupabaseBackendEnabled()) {
         return NextResponse.json({ error: 'Revisi kategori armada tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
-    if (customerRecipientRef && !customerRecipient?._rev && !useSupabaseBackend()) {
+    if (customerRecipientRef && !customerRecipient?._rev && !isSupabaseBackendEnabled()) {
         return NextResponse.json({ error: 'Revisi master penerima tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
-    if (customerPickupRef && !customerPickup?._rev && !useSupabaseBackend()) {
+    if (customerPickupRef && !customerPickup?._rev && !isSupabaseBackendEnabled()) {
         return NextResponse.json({ error: 'Revisi master pickup tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
@@ -610,7 +609,7 @@ export async function handleOrderUpdateWithItems(
     if (!order) {
         return NextResponse.json({ error: 'Order tidak ditemukan' }, { status: 404 });
     }
-    if (!order._rev && !useSupabaseBackend()) {
+    if (!order._rev && !isSupabaseBackendEnabled()) {
         return NextResponse.json({ error: 'Revisi order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
     if (order.cargoEntryMode === 'DELIVERY_ORDER') {
@@ -691,19 +690,19 @@ export async function handleOrderUpdateWithItems(
     if (!receiverName || !receiverAddress) {
         return NextResponse.json({ error: 'Order, customer, penerima, dan alamat tujuan wajib diisi' }, { status: 400 });
     }
-    if (!useSupabaseBackend() && existingItems.some(item => !item._rev)) {
+    if (!isSupabaseBackendEnabled() && existingItems.some(item => !item._rev)) {
         return NextResponse.json({ error: 'Revisi item order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
-    if (!customer._rev && !useSupabaseBackend()) {
+    if (!customer._rev && !isSupabaseBackendEnabled()) {
         return NextResponse.json({ error: 'Revisi customer tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
-    if (serviceRef && !service?._rev && !useSupabaseBackend()) {
+    if (serviceRef && !service?._rev && !isSupabaseBackendEnabled()) {
         return NextResponse.json({ error: 'Revisi kategori armada tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
-    if (customerRecipientRef && !customerRecipient?._rev && !useSupabaseBackend()) {
+    if (customerRecipientRef && !customerRecipient?._rev && !isSupabaseBackendEnabled()) {
         return NextResponse.json({ error: 'Revisi master penerima tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
-    if (customerPickupRef && !customerPickup?._rev && !useSupabaseBackend()) {
+    if (customerPickupRef && !customerPickup?._rev && !isSupabaseBackendEnabled()) {
         return NextResponse.json({ error: 'Revisi master pickup tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
@@ -834,7 +833,7 @@ export async function handleOrderHeaderBookingUpdate(
             );
         }
 
-        if (!order._rev && !useSupabaseBackend()) {
+        if (!order._rev && !isSupabaseBackendEnabled()) {
             return NextResponse.json({ error: 'Revisi order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
         }
 
@@ -884,19 +883,19 @@ export async function handleOrderHeaderBookingUpdate(
         return NextResponse.json({ error: 'Order, customer, penerima, dan alamat tujuan wajib diisi' }, { status: 400 });
     }
 
-    if (!order._rev && !useSupabaseBackend()) {
+    if (!order._rev && !isSupabaseBackendEnabled()) {
         return NextResponse.json({ error: 'Revisi order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
-    if (!customer._rev && !useSupabaseBackend()) {
+    if (!customer._rev && !isSupabaseBackendEnabled()) {
         return NextResponse.json({ error: 'Revisi customer tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
-    if (serviceRef && !service?._rev && !useSupabaseBackend()) {
+    if (serviceRef && !service?._rev && !isSupabaseBackendEnabled()) {
         return NextResponse.json({ error: 'Revisi kategori armada tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
-    if (customerRecipientRef && !customerRecipient?._rev && !useSupabaseBackend()) {
+    if (customerRecipientRef && !customerRecipient?._rev && !isSupabaseBackendEnabled()) {
         return NextResponse.json({ error: 'Revisi master penerima tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
-    if (customerPickupRef && !customerPickup?._rev && !useSupabaseBackend()) {
+    if (customerPickupRef && !customerPickup?._rev && !isSupabaseBackendEnabled()) {
         return NextResponse.json({ error: 'Revisi master pickup tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
@@ -1211,7 +1210,7 @@ export async function handleDeliveryOrderStatusUpdate(
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
     }
-    if (!deliveryOrder._rev && !useSupabaseBackend()) {
+    if (!deliveryOrder._rev && !isSupabaseBackendEnabled()) {
         return NextResponse.json({ error: 'Revisi surat jalan tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
@@ -1429,7 +1428,7 @@ export async function handleDeliveryOrderStatusUpdate(
             if (!orderItem) {
                 continue;
             }
-            if (!orderItem._rev && !useSupabaseBackend()) {
+            if (!orderItem._rev && !isSupabaseBackendEnabled()) {
                 return NextResponse.json(
                     { error: 'Revisi item order tidak tersedia. Refresh lalu coba lagi.' },
                     { status: 409 }
@@ -1450,7 +1449,7 @@ export async function handleDeliveryOrderStatusUpdate(
             }
 
             if (status === 'DELIVERED') {
-                if (!item._rev && !useSupabaseBackend()) {
+                if (!item._rev && !isSupabaseBackendEnabled()) {
                     return NextResponse.json(
                         { error: 'Revisi item surat jalan tidak tersedia. Refresh lalu coba lagi.' },
                         { status: 409 }
@@ -1721,7 +1720,7 @@ export async function handleDeliveryOrderDriverStatusRequest(
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
     }
-    if (!deliveryOrder._rev && !useSupabaseBackend()) {
+    if (!deliveryOrder._rev && !isSupabaseBackendEnabled()) {
         return NextResponse.json({ error: 'Revisi surat jalan tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
@@ -1896,7 +1895,7 @@ export async function handleDeliveryOrderDriverStatusRequestReject(
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
     }
-    if (!deliveryOrder._rev && !useSupabaseBackend()) {
+    if (!deliveryOrder._rev && !isSupabaseBackendEnabled()) {
         return NextResponse.json({ error: 'Revisi surat jalan tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
     if (!deliveryOrder.pendingDriverStatus) {
@@ -2240,7 +2239,7 @@ export async function handleDeliveryOrderCreate(
         );
     }
     const matchedTripRouteRateFee = normalizeCurrencyNumber(tripRouteSelection?.matchedTripRouteRate?.rate ?? 0);
-    if (!useSupabaseBackend() && tripRouteSelection?.matchedTripRouteRate && !tripRouteSelection.matchedTripRouteRate._rev) {
+    if (!isSupabaseBackendEnabled() && tripRouteSelection?.matchedTripRouteRate && !tripRouteSelection.matchedTripRouteRate._rev) {
         return NextResponse.json(
             { error: 'Revisi master biaya rute trip tidak tersedia. Refresh lalu coba lagi.' },
             { status: 409 }
@@ -2367,7 +2366,7 @@ export async function handleDeliveryOrderCreate(
         if (selectedItems.length !== requestedItemIds.length) {
             return NextResponse.json({ error: 'Sebagian item order tidak ditemukan' }, { status: 404 });
         }
-        if (!useSupabaseBackend() && selectedItems.some(item => !item._rev)) {
+        if (!isSupabaseBackendEnabled() && selectedItems.some(item => !item._rev)) {
             return NextResponse.json({ error: 'Revisi item order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
         }
 
@@ -3454,7 +3453,7 @@ export async function handleDeliveryOrderTripResourceAssign(
         return NextResponse.json({ data: unchangedDeliveryOrder, id });
     }
 
-    if (!deliveryOrder._rev && !useSupabaseBackend()) {
+    if (!deliveryOrder._rev && !isSupabaseBackendEnabled()) {
         return NextResponse.json({ error: 'Revisi surat jalan tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
@@ -3580,7 +3579,7 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
         }
     }
 
-    if (!deliveryOrder._rev && !useSupabaseBackend()) {
+    if (!deliveryOrder._rev && !isSupabaseBackendEnabled()) {
         return NextResponse.json({ error: 'Revisi surat jalan tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
@@ -3622,7 +3621,7 @@ export async function handleOrderDelete(
     if (!order) {
         return NextResponse.json({ error: 'Order tidak ditemukan' }, { status: 404 });
     }
-    if (!useSupabaseBackend() && !order._rev) {
+    if (!isSupabaseBackendEnabled() && !order._rev) {
         return NextResponse.json({ error: 'Revisi order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 

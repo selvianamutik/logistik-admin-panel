@@ -33,15 +33,15 @@ const functionChecks = [
   },
   {
     name: 'handleOrderItemHoldSet',
-    mustInclude: ['useSupabaseBackend()', 'getDocumentById<OrderItemProgressSnapshot', 'updateDocument(id, {'],
+    mustInclude: ['isSupabaseBackendEnabled()', 'getDocumentById<OrderItemProgressSnapshot', 'updateDocument(id, {'],
   },
   {
     name: 'handleOrderItemHoldRelease',
-    mustInclude: ['useSupabaseBackend()', 'getDocumentById<OrderItemProgressSnapshot', 'updateDocument(id, updates)'],
+    mustInclude: ['isSupabaseBackendEnabled()', 'getDocumentById<OrderItemProgressSnapshot', 'updateDocument(id, updates)'],
   },
   {
     name: 'handleOrderDelete',
-    mustInclude: ['useSupabaseBackend()', "listDocumentsByFilter<{ _id: string }>('deliveryOrder'", "listDocumentsByFilter<{ _id: string }>('invoice'", 'deleteDocument(orderItem._id)', 'deleteDocument(id)'],
+    mustInclude: ['isSupabaseBackendEnabled()', "listDocumentsByFilter<{ _id: string }>('deliveryOrder'", "listDocumentsByFilter<{ _id: string }>('invoice'", 'deleteDocument(orderItem._id)', 'deleteDocument(id)'],
   },
   {
     name: 'handleOrderCreate',
@@ -80,7 +80,7 @@ const functionChecks = [
   },
   {
     name: 'releaseDriverTrackingLockIfOwned',
-    mustInclude: ['getDocumentById<{ _id: string; _rev?: string; activeTrackingDeliveryOrderRef?: unknown }>(driverId)', 'useSupabaseBackend()', 'await updateDocument(driverId, {'],
+    mustInclude: ['getDocumentById<{ _id: string; _rev?: string; activeTrackingDeliveryOrderRef?: unknown }>(driverId)', 'isSupabaseBackendEnabled()', 'await updateDocument(driverId, {'],
   },
   {
     name: 'handleDeliveryOrderTripResourceAssign',
@@ -180,7 +180,7 @@ const genericWorkflowChecks = [
       "const deliveryOrder = await getDocumentById<{ _id: string; status?: string }>(deliveryOrderRef)",
       "const orderItem = await getDocumentById<{ _id: string }>(orderItemRef)",
       "const assignments = await listDocumentsByFilter<{ _id: string; deliveryOrderRef?: string; orderItemRef?: string }>('deliveryOrderItem', {",
-      'if (useSupabaseBackend()) {',
+      'if (isSupabaseBackendEnabled()) {',
       'created = await createDocument<Record<string, unknown> & { _id: string }>(newDoc);',
       "await updateDocument(newDoc.driverRef, { updatedAt: new Date().toISOString() });",
     ],
@@ -192,8 +192,8 @@ const supportWorkflowChecks = [
     name: 'normalizeUserCreatePayload',
     mode: 'file',
     mustInclude: [
-      'useSupabaseBackend()',
-      "await listDocumentsByFilter<{ _id: string; email?: string }>('user', {})",
+      'isSupabaseBackendEnabled()',
+      "listDocumentsByFilter<{ _id: string; email?: string }>('user', { email })",
       "const driver = await getDocumentById<{ _id: string; _rev?: string; name?: string; active?: boolean }>(normalizedDriverRef)",
       "await listDocumentsByFilter<{ _id: string; role?: string; driverRef?: string }>('user', {",
     ],

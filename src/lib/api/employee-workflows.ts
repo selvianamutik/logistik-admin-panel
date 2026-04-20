@@ -37,8 +37,10 @@ function requiresAttendanceTime(status: ReturnType<typeof normalizeEmployeeAtten
 }
 
 async function ensureEmployeeCodeUnique(employeeCode: string, excludeId?: string) {
-    const duplicate = (await listDocumentsByFilter<Array<{ _id: string; employeeCode?: string }>[number]>('employee', {}))
-        .find(item => normalizeText(item.employeeCode) === employeeCode && item._id !== (excludeId || ''))
+    const duplicate = (await listDocumentsByFilter<Array<{ _id: string; employeeCode?: string }>[number]>('employee', {
+        employeeCode,
+    }))
+        .find(item => item._id !== (excludeId || ''))
         || null;
     if (duplicate) {
         throw new Error('Kode karyawan sudah digunakan');
@@ -62,8 +64,10 @@ async function resolveEmployeeUserLink(userRef: unknown, excludeId?: string) {
         throw new Error('Akun driver tidak bisa dihubungkan ke master karyawan');
     }
 
-    const duplicateLink = (await listDocumentsByFilter<Array<{ _id: string; userRef?: string }>[number]>('employee', {}))
-        .find(item => normalizeOptionalText(item.userRef) === normalizedUserRef && item._id !== (excludeId || ''))
+    const duplicateLink = (await listDocumentsByFilter<Array<{ _id: string; userRef?: string }>[number]>('employee', {
+        userRef: normalizedUserRef,
+    }))
+        .find(item => item._id !== (excludeId || ''))
         || null;
     if (duplicateLink) {
         throw new Error('Akun user ini sudah terhubung ke karyawan lain');
@@ -84,12 +88,11 @@ async function resolveEmployeeSnapshot(employeeRef: string) {
 }
 
 async function ensureUniqueAttendanceRecord(employeeRef: string, date: string, excludeId?: string) {
-    const duplicate = (await listDocumentsByFilter<Array<{ _id: string; employeeRef?: string; date?: string }>[number]>('employeeAttendanceRecord', {}))
-        .find(item =>
-            normalizeOptionalText(item.employeeRef) === employeeRef
-            && normalizeOptionalText(item.date) === date
-            && item._id !== (excludeId || '')
-        )
+    const duplicate = (await listDocumentsByFilter<Array<{ _id: string; employeeRef?: string; date?: string }>[number]>('employeeAttendanceRecord', {
+        employeeRef,
+        date,
+    }))
+        .find(item => item._id !== (excludeId || ''))
         || null;
     if (duplicate) {
         throw new Error('Absensi karyawan pada tanggal ini sudah tercatat');

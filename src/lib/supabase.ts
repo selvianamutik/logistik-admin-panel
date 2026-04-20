@@ -3,6 +3,42 @@ type SupabaseConfig = {
     serviceRoleKey: string;
 };
 
+type SupabaseErrorPayload = {
+    code?: string;
+    details?: string;
+    error?: string;
+    hint?: string;
+    message?: string;
+};
+
+export class SupabaseServiceError extends Error {
+    code?: string;
+    details?: string;
+    hint?: string;
+    payload?: SupabaseErrorPayload;
+    rawText?: string;
+    status: number;
+    statusCode: number;
+
+    constructor(status: number, message: string, options: {
+        code?: string;
+        details?: string;
+        hint?: string;
+        payload?: SupabaseErrorPayload;
+        rawText?: string;
+    } = {}) {
+        super(message);
+        this.name = 'SupabaseServiceError';
+        this.status = status;
+        this.statusCode = status;
+        this.code = options.code;
+        this.details = options.details;
+        this.hint = options.hint;
+        this.payload = options.payload;
+        this.rawText = options.rawText;
+    }
+}
+
 function cleanEnv(value: string | undefined): string | undefined {
     if (!value) return undefined;
     const trimmed = value.trim();
@@ -41,13 +77,20 @@ async function supabaseFetch(path: string, init: RequestInit = {}) {
     if (!response.ok) {
         const rawText = await response.text();
         let message = rawText || `Supabase request failed with status ${response.status}`;
+        let payload: SupabaseErrorPayload | undefined;
         try {
-            const parsed = JSON.parse(rawText) as { message?: string; error?: string; hint?: string };
-            message = parsed.message || parsed.error || parsed.hint || message;
+            payload = JSON.parse(rawText) as SupabaseErrorPayload;
+            message = payload.message || payload.error || payload.hint || message;
         } catch {
             // Keep the raw Supabase response when it is not JSON.
         }
-        throw new Error(message);
+        throw new SupabaseServiceError(response.status, message, {
+            code: payload?.code,
+            details: payload?.details,
+            hint: payload?.hint,
+            payload,
+            rawText,
+        });
     }
 
     return response;

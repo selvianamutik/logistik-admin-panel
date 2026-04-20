@@ -35,10 +35,6 @@ const CUSTOMER_PRODUCT_CODE_RE = /^[A-Z0-9][A-Z0-9-]{0,19}$/;
 const SUPPLIER_CODE_RE = /^[A-Z0-9][A-Z0-9-]{0,19}$/;
 const WAREHOUSE_ITEM_CODE_RE = /^[A-Z0-9][A-Z0-9-]{0,29}$/;
 
-function lowerText(value: unknown) {
-    return normalizeText(value).toLowerCase();
-}
-
 function parseStrictNumericInput(
     value: unknown,
     label: string,
@@ -136,8 +132,10 @@ export async function normalizeSupplierPayload(data: Record<string, unknown>, ex
         throw new Error('Nama supplier wajib diisi');
     }
 
-    const duplicateCode = (await listDocumentsByFilter<{ _id: string; supplierCode?: string }>('supplier', {}))
-        .find(item => normalizeText(item.supplierCode) === supplierCode && item._id !== (existingId || ''))
+    const duplicateCode = (await listDocumentsByFilter<{ _id: string; supplierCode?: string }>('supplier', {
+        supplierCode,
+    }))
+        .find(item => item._id !== (existingId || ''))
         || null;
     if (duplicateCode) {
         throw new Error('Kode supplier sudah digunakan');
@@ -201,8 +199,10 @@ export async function normalizeWarehouseItemPayload(data: Record<string, unknown
         throw new Error('Nama barang gudang wajib diisi');
     }
 
-    const duplicateCode = (await listDocumentsByFilter<{ _id: string; itemCode?: string }>('warehouseItem', {}))
-        .find(item => normalizeText(item.itemCode) === itemCode && item._id !== (existingId || ''))
+    const duplicateCode = (await listDocumentsByFilter<{ _id: string; itemCode?: string }>('warehouseItem', {
+        itemCode,
+    }))
+        .find(item => item._id !== (existingId || ''))
         || null;
     if (duplicateCode) {
         throw new Error('Kode barang gudang sudah digunakan');
@@ -455,11 +455,10 @@ export async function normalizeBankAccountPayload(data: Record<string, unknown>,
             ? next.accountNumber
             : normalizeOptionalText(existing?.accountNumber);
     if (effectiveAccountNumber) {
-        const duplicateAccountNumber = (await listDocumentsByFilter<{ _id: string; accountNumber?: string }>('bankAccount', {}))
-            .find(item =>
-                normalizeText(item.accountNumber).toLowerCase() === effectiveAccountNumber.toLowerCase()
-                && item._id !== (existingId || '')
-            )
+        const duplicateAccountNumber = (await listDocumentsByFilter<{ _id: string; accountNumber?: string }>('bankAccount', {
+            accountNumber: effectiveAccountNumber,
+        }))
+            .find(item => item._id !== (existingId || ''))
             || null;
         if (duplicateAccountNumber) {
             throw new Error('Nomor rekening / kode kas sudah digunakan');
@@ -532,8 +531,11 @@ export async function normalizeCustomerProductPayload(data: Record<string, unkno
             ? normalizeCustomerProductCode(data.code)
             : normalizeCustomerProductCode(existing?.code);
     if (code) {
-        const duplicateCode = (await listDocumentsByFilter<{ _id: string; code?: string }>('customerProduct', { customerRef }))
-            .find(item => normalizeText(item.code) === code && item._id !== (existingId || ''))
+        const duplicateCode = (await listDocumentsByFilter<{ _id: string; code?: string }>('customerProduct', {
+            customerRef,
+            code,
+        }))
+            .find(item => item._id !== (existingId || ''))
             || null;
         if (duplicateCode) {
             throw new Error('Kode barang customer sudah digunakan');
@@ -886,11 +888,13 @@ export async function normalizeTripRouteRatePayload(data: Record<string, unknown
         serviceName = service.name || '';
     }
 
-    const duplicateRate = (await listDocumentsByFilter<{ _id: string; originArea?: string; destinationArea?: string; serviceRef?: string }>('tripRouteRate', {}))
+    const duplicateRate = (await listDocumentsByFilter<{ _id: string; originArea?: string; destinationArea?: string; serviceRef?: string }>('tripRouteRate', {
+        originArea,
+        destinationArea,
+        ...(serviceRef ? { serviceRef } : {}),
+    }))
         .find(item =>
-            lowerText(item.originArea) === originArea.toLowerCase()
-            && lowerText(item.destinationArea) === destinationArea.toLowerCase()
-            && normalizeOptionalText(item.serviceRef) === (serviceRef || undefined)
+            normalizeOptionalText(item.serviceRef) === (serviceRef || undefined)
             && item._id !== (existingId || '')
         )
         || null;
@@ -953,11 +957,14 @@ export async function resolveTripRouteRateSelection(
             throw new Error('Master biaya rute trip tidak cocok dengan kategori armada surat jalan');
         }
     } else if (requestedTripOriginArea && requestedTripDestinationArea) {
-        const candidateRates = (await listDocumentsByFilter<Array<TripRouteRate & { _rev?: string }>[number]>('tripRouteRate', {}))
+        const candidateRates = (await listDocumentsByFilter<Array<TripRouteRate & { _rev?: string }>[number]>('tripRouteRate', {
+            originArea: requestedTripOriginArea,
+            destinationArea: requestedTripDestinationArea,
+            ...(serviceRef ? { serviceRef } : {}),
+        }))
             .filter(item =>
                 item.active !== false
-                && lowerText(item.originArea) === requestedTripOriginArea.toLowerCase()
-                && lowerText(item.destinationArea) === requestedTripDestinationArea.toLowerCase()
+                && (!serviceRef || normalizeOptionalText(item.serviceRef) === serviceRef)
             );
         matchedTripRouteRate = findMatchingTripRouteRate(candidateRates, {
             originArea: requestedTripOriginArea,

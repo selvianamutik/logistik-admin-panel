@@ -14,8 +14,11 @@ export async function getUserById(id: string) {
 
 export async function findActiveUserByEmail(email: string): Promise<LoginUser | null> {
     const normalizedEmail = normalizeEmail(email);
-    const users = await listDocumentsByFilter<LoginUser>('user', { active: true });
-    return users.find(user => normalizeEmail(user.email || '') === normalizedEmail) || null;
+    const users = await listDocumentsByFilter<LoginUser>('user', {
+        active: true,
+        email: normalizedEmail,
+    });
+    return users[0] || null;
 }
 
 export async function updateUserLoginState(

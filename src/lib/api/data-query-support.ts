@@ -1,6 +1,6 @@
 import type { ApiSession } from '@/lib/api/data-helpers';
 import { addDaysToDateValue, getBusinessCalendarDateParts, getBusinessDateValue } from '@/lib/business-date';
-import { getDocumentById, listDocumentsByFilter } from '@/lib/repositories/document-store';
+import { getDocumentById, listDocuments, listDocumentsByFilter } from '@/lib/repositories/document-store';
 import {
     EMPLOYEE_ATTENDANCE_PERIOD_LABELS,
     summarizeEmployeeAttendanceRecords,
@@ -45,6 +45,15 @@ import { getDriverVoucherFinancialSummary, getDriverVoucherIssuedAmount, getRece
 
 function parseWholeMoneyLike(value: unknown) {
     return Math.max(parseFormattedNumberish(value ?? 0, { maxFractionDigits: 0 }), 0);
+}
+
+async function getDocumentCount(docType: string, filterObj: Record<string, unknown> = {}) {
+    const result = await listDocuments(docType, {
+        filterObj,
+        page: 1,
+        pageSize: 1,
+    });
+    return result.total;
 }
 
 function normalizeTextSearch(value: unknown) {
@@ -837,16 +846,25 @@ export async function getFreightNotaList(params: {
     sortPreset?: string | null;
     countOnly?: boolean;
 }) {
-    const [notaRows, paymentRows, refundRows] = await Promise.all([
-        listDocumentsByFilter<Array<FreightNota & { _createdAt?: string }>[number]>('freightNota', {}),
-        listDocumentsByFilter<Array<{ invoiceRef?: string; amount?: unknown }>[number]>('payment', {}),
-        listDocumentsByFilter<Pick<CustomerOverpaymentRefund, 'sourceType' | 'sourceInvoiceRef' | 'amount'>>('customerOverpaymentRefund', {
-            sourceType: 'INVOICE_OVERPAID',
-        }),
+    const notaRows = await listDocumentsByFilter<Array<FreightNota & { _createdAt?: string }>[number]>('freightNota', {});
+    const notaIds = notaRows
+        .map(nota => nota._id)
+        .filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
+    const [paymentRows, refundRows] = await Promise.all([
+        notaIds.length > 0
+            ? listDocumentsByFilter<Array<{ invoiceRef?: string; amount?: unknown }>[number]>('payment', {
+                invoiceRef: notaIds,
+            })
+            : Promise.resolve([]),
+        notaIds.length > 0
+            ? listDocumentsByFilter<Pick<CustomerOverpaymentRefund, 'sourceType' | 'sourceInvoiceRef' | 'amount'>>('customerOverpaymentRefund', {
+                sourceType: 'INVOICE_OVERPAID',
+                sourceInvoiceRef: notaIds,
+            })
+            : Promise.resolve([]),
     ]);
-    const filteredPaymentRows = paymentRows.filter(row => Boolean(row.invoiceRef));
 
-    const paymentTotalsByInvoice = getFreightNotaPaymentTotals(filteredPaymentRows);
+    const paymentTotalsByInvoice = getFreightNotaPaymentTotals(paymentRows);
     const { invoiceRefundsByRef } = getCustomerOverpaymentRefundTotals(refundRows);
     const search = params.search?.trim().toLowerCase() || '';
     const filterObj = params.filterObj ?? {};
@@ -1015,10 +1033,19 @@ export async function getDriverVoucherList(params: {
     sortPreset?: string | null;
     countOnly?: boolean;
 }) {
-    const [voucherRows, disbursementRows, itemRows] = await Promise.all([
-        listDocumentsByFilter<DriverVoucher>('driverVoucher', {}),
-        listDocumentsByFilter<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>('driverVoucherDisbursement', {}),
-        listDocumentsByFilter<Pick<DriverVoucherItem, 'voucherRef' | 'amount'>>('driverVoucherItem', {}),
+    const voucherRows = await listDocumentsByFilter<DriverVoucher>('driverVoucher', {});
+    const voucherIds = voucherRows.map(voucher => voucher._id).filter(Boolean);
+    const [disbursementRows, itemRows] = await Promise.all([
+        voucherIds.length > 0
+            ? listDocumentsByFilter<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>('driverVoucherDisbursement', {
+                voucherRef: voucherIds,
+            })
+            : Promise.resolve([]),
+        voucherIds.length > 0
+            ? listDocumentsByFilter<Pick<DriverVoucherItem, 'voucherRef' | 'amount'>>('driverVoucherItem', {
+                voucherRef: voucherIds,
+            })
+            : Promise.resolve([]),
     ]);
 
     const search = params.search?.trim().toLowerCase() || '';
@@ -1093,10 +1120,13 @@ export async function getDriverBoronganList(params: {
     sortDir?: 'asc' | 'desc';
     countOnly?: boolean;
 }) {
-    const [docs, itemTotals] = await Promise.all([
-        listDocumentsByFilter<DriverBorongan>('driverBorongan', {}),
-        listDocumentsByFilter<Pick<DriverBoronganItem, 'boronganRef' | 'collie' | 'beratKg' | 'uangRp'>>('driverBoronganItem', {}),
-    ]);
+    const docs = await listDocumentsByFilter<DriverBorongan>('driverBorongan', {});
+    const boronganIds = docs.map(doc => doc._id).filter(Boolean);
+    const itemTotals = boronganIds.length > 0
+        ? await listDocumentsByFilter<Pick<DriverBoronganItem, 'boronganRef' | 'collie' | 'beratKg' | 'uangRp'>>('driverBoronganItem', {
+            boronganRef: boronganIds,
+        })
+        : [];
 
     const query = params.search?.trim().toLowerCase() || '';
     const filterObj = params.filterObj ?? {};
@@ -1191,14 +1221,19 @@ export async function getCustomerReceiptList(params: {
     sortDir?: 'asc' | 'desc';
     countOnly?: boolean;
 }) {
-    const [docs, payments, refundRows] = await Promise.all([
-        listDocumentsByFilter<CustomerReceipt>('customerReceipt', {}),
-        listDocumentsByFilter<Pick<Payment, 'receiptRef' | 'amount'>>('payment', {}),
-        listDocumentsByFilter<Pick<CustomerOverpaymentRefund, 'sourceType' | 'sourceReceiptRef' | 'amount'>>('customerOverpaymentRefund', {
-            sourceType: 'RECEIPT_UNAPPLIED',
-        }),
+    const docs = await listDocumentsByFilter<CustomerReceipt>('customerReceipt', {});
+    const receiptIds = docs.map(doc => doc._id).filter(Boolean);
+    const [paymentRows, refundRows] = await Promise.all([
+        receiptIds.length > 0
+            ? listDocumentsByFilter<Pick<Payment, 'receiptRef' | 'amount'>>('payment', { receiptRef: receiptIds })
+            : Promise.resolve([]),
+        receiptIds.length > 0
+            ? listDocumentsByFilter<Pick<CustomerOverpaymentRefund, 'sourceType' | 'sourceReceiptRef' | 'amount'>>('customerOverpaymentRefund', {
+                sourceType: 'RECEIPT_UNAPPLIED',
+                sourceReceiptRef: receiptIds,
+            })
+            : Promise.resolve([]),
     ]);
-    const paymentRows = payments.filter(row => Boolean(row.receiptRef));
 
     const query = params.search?.trim().toLowerCase() || '';
     const filterObj = params.filterObj ?? {};
@@ -1268,13 +1303,39 @@ export async function getCustomerReceiptList(params: {
 }
 
 export async function getCustomerOverpaymentById(id: string) {
-    const [receipts, notas, payments, refunds, invoiceAdjustments] = await Promise.all([
+    const [receipts, notas] = await Promise.all([
         listDocumentsByFilter<CustomerReceipt>('customerReceipt', {}),
         listDocumentsByFilter<FreightNota>('freightNota', {}),
-        listDocumentsByFilter<Pick<Payment, 'invoiceRef' | 'receiptRef' | 'amount'>>('payment', {}),
-        listDocumentsByFilter<CustomerOverpaymentRefund>('customerOverpaymentRefund', {}),
-        listDocumentsByFilter<Array<{ invoiceRef?: string; date?: string; editedAt?: string; status?: string }>[number]>('invoiceAdjustment', {}),
     ]);
+    const receiptIds = receipts.map(item => item._id).filter(Boolean);
+    const notaIds = notas.map(item => item._id).filter(Boolean);
+    const [receiptPayments, invoicePayments, receiptRefunds, invoiceRefunds, invoiceAdjustments] = await Promise.all([
+        receiptIds.length > 0
+            ? listDocumentsByFilter<Pick<Payment, 'invoiceRef' | 'receiptRef' | 'amount'>>('payment', { receiptRef: receiptIds })
+            : Promise.resolve([]),
+        notaIds.length > 0
+            ? listDocumentsByFilter<Pick<Payment, 'invoiceRef' | 'receiptRef' | 'amount'>>('payment', { invoiceRef: notaIds })
+            : Promise.resolve([]),
+        receiptIds.length > 0
+            ? listDocumentsByFilter<CustomerOverpaymentRefund>('customerOverpaymentRefund', {
+                sourceType: 'RECEIPT_UNAPPLIED',
+                sourceReceiptRef: receiptIds,
+            })
+            : Promise.resolve([]),
+        notaIds.length > 0
+            ? listDocumentsByFilter<CustomerOverpaymentRefund>('customerOverpaymentRefund', {
+                sourceType: 'INVOICE_OVERPAID',
+                sourceInvoiceRef: notaIds,
+            })
+            : Promise.resolve([]),
+        notaIds.length > 0
+            ? listDocumentsByFilter<Array<{ invoiceRef?: string; date?: string; editedAt?: string; status?: string }>[number]>('invoiceAdjustment', {
+                invoiceRef: notaIds,
+            })
+            : Promise.resolve([]),
+    ]);
+    const payments = [...receiptPayments, ...invoicePayments];
+    const refunds = [...receiptRefunds, ...invoiceRefunds];
     const activeInvoiceAdjustments = invoiceAdjustments.filter(row => row.status !== 'VOID' && row.invoiceRef);
 
     const paymentTotalsByInvoice = getFreightNotaPaymentTotals(payments);
@@ -1310,13 +1371,39 @@ export async function getCustomerOverpaymentList(params: {
     sortPreset?: string | null;
     countOnly?: boolean;
 }) {
-    const [receipts, notas, payments, refunds, invoiceAdjustments] = await Promise.all([
+    const [receipts, notas] = await Promise.all([
         listDocumentsByFilter<CustomerReceipt>('customerReceipt', {}),
         listDocumentsByFilter<FreightNota>('freightNota', {}),
-        listDocumentsByFilter<Pick<Payment, 'invoiceRef' | 'receiptRef' | 'amount'>>('payment', {}),
-        listDocumentsByFilter<CustomerOverpaymentRefund>('customerOverpaymentRefund', {}),
-        listDocumentsByFilter<Array<{ invoiceRef?: string; date?: string; editedAt?: string; status?: string }>[number]>('invoiceAdjustment', {}),
     ]);
+    const receiptIds = receipts.map(item => item._id).filter(Boolean);
+    const notaIds = notas.map(item => item._id).filter(Boolean);
+    const [receiptPayments, invoicePayments, receiptRefunds, invoiceRefunds, invoiceAdjustments] = await Promise.all([
+        receiptIds.length > 0
+            ? listDocumentsByFilter<Pick<Payment, 'invoiceRef' | 'receiptRef' | 'amount'>>('payment', { receiptRef: receiptIds })
+            : Promise.resolve([]),
+        notaIds.length > 0
+            ? listDocumentsByFilter<Pick<Payment, 'invoiceRef' | 'receiptRef' | 'amount'>>('payment', { invoiceRef: notaIds })
+            : Promise.resolve([]),
+        receiptIds.length > 0
+            ? listDocumentsByFilter<CustomerOverpaymentRefund>('customerOverpaymentRefund', {
+                sourceType: 'RECEIPT_UNAPPLIED',
+                sourceReceiptRef: receiptIds,
+            })
+            : Promise.resolve([]),
+        notaIds.length > 0
+            ? listDocumentsByFilter<CustomerOverpaymentRefund>('customerOverpaymentRefund', {
+                sourceType: 'INVOICE_OVERPAID',
+                sourceInvoiceRef: notaIds,
+            })
+            : Promise.resolve([]),
+        notaIds.length > 0
+            ? listDocumentsByFilter<Array<{ invoiceRef?: string; date?: string; editedAt?: string; status?: string }>[number]>('invoiceAdjustment', {
+                invoiceRef: notaIds,
+            })
+            : Promise.resolve([]),
+    ]);
+    const payments = [...receiptPayments, ...invoicePayments];
+    const refunds = [...receiptRefunds, ...invoiceRefunds];
     const activeInvoiceAdjustments = invoiceAdjustments.filter(row => row.status !== 'VOID' && row.invoiceRef);
 
     const query = params.search?.trim().toLowerCase() || '';
@@ -1451,78 +1538,115 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
         orderStats,
         doStats,
         unpaidNotas,
-        notaPayments,
-        notaRefunds,
         borongans,
-        boronganItems,
         vouchers,
-        voucherDisbursements,
-        voucherItems,
         fleetStats,
         recentOrders,
         recentNotas,
     ] = await Promise.all([
         canViewOrders
-            ? listDocumentsByFilter<Pick<DashboardSummary['recentOrders'][number], 'status'>>('order', {}).then(rows => ({
-                total: rows.length,
-                open: rows.filter(row => row.status === 'OPEN').length,
-                partial: rows.filter(row => row.status === 'PARTIAL').length,
-                complete: rows.filter(row => row.status === 'COMPLETE').length,
-                onHold: rows.filter(row => row.status === 'ON_HOLD').length,
+            ? Promise.all([
+                getDocumentCount('order'),
+                getDocumentCount('order', { status: 'OPEN' }),
+                getDocumentCount('order', { status: 'PARTIAL' }),
+                getDocumentCount('order', { status: 'COMPLETE' }),
+                getDocumentCount('order', { status: 'ON_HOLD' }),
+            ]).then(([total, open, partial, complete, onHold]) => ({
+                total,
+                open,
+                partial,
+                complete,
+                onHold,
             }))
             : Promise.resolve({ total: 0, open: 0, partial: 0, complete: 0, onHold: 0 }),
-        listDocumentsByFilter<Pick<DashboardSummary['recentOrders'][number], 'status'>>('deliveryOrder', {}).then(rows => ({
-            total: rows.length,
-            onDelivery: rows.filter(row => row.status === 'ON_DELIVERY').length,
+        Promise.all([
+            getDocumentCount('deliveryOrder'),
+            getDocumentCount('deliveryOrder', { status: 'ON_DELIVERY' }),
+        ]).then(([total, onDelivery]) => ({
+            total,
+            onDelivery,
         })),
         canViewInvoices
             ? listDocumentsByFilter<Pick<FreightNota, '_id' | 'status' | 'totalAmount' | 'totalAdjustmentAmount' | 'pph23Enabled' | 'pph23RatePercent' | 'pph23BaseMode' | 'pph23Amount' | 'netAmount'>>('freightNota', {})
             : Promise.resolve([]),
-        canViewInvoices
-            ? listDocumentsByFilter<Array<{ invoiceRef?: string; amount?: number }>[number]>('payment', {}).then(rows =>
-                rows.filter(row => Boolean(row.invoiceRef))
-            )
-            : Promise.resolve([]),
-        canViewInvoices
-            ? listDocumentsByFilter<Pick<CustomerOverpaymentRefund, 'sourceType' | 'sourceInvoiceRef' | 'amount'>>('customerOverpaymentRefund', {
-                sourceType: 'INVOICE_OVERPAID',
-            })
-            : Promise.resolve([]),
         canSeeBorongan
             ? listDocumentsByFilter<Pick<DriverBorongan, '_id' | 'status' | 'totalAmount' | 'totalCollie' | 'totalWeightKg' | 'paidDate' | 'paidMethod' | 'paidBankRef' | 'paidBankName' | 'paidBankNumber'>>('driverBorongan', {})
-            : Promise.resolve([]),
-        canSeeBorongan
-            ? listDocumentsByFilter<Pick<DriverBoronganItem, 'boronganRef' | 'collie' | 'beratKg' | 'uangRp'>>('driverBoronganItem', {}).then(rows =>
-                rows.filter(row => Boolean(row.boronganRef))
-            )
             : Promise.resolve([]),
         canViewTripCash
             ? listDocumentsByFilter<Pick<DriverVoucher, '_id' | 'status' | 'settledDate' | 'settledBy' | 'settlementBankRef' | 'settlementBankName' | 'cashGiven' | 'initialCashGiven' | 'topUpCount' | 'totalIssuedAmount' | 'totalSpent' | 'driverFeeAmount' | 'totalClaimAmount' | 'balance'>>('driverVoucher', {})
             : Promise.resolve([]),
-        canViewTripCash
-            ? listDocumentsByFilter<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>('driverVoucherDisbursement', {}).then(rows =>
-                rows.filter(row => Boolean(row.voucherRef))
-            )
-            : Promise.resolve([]),
-        canViewTripCash
-            ? listDocumentsByFilter<Pick<DriverVoucherItem, 'voucherRef' | 'amount'>>('driverVoucherItem', {}).then(rows =>
-                rows.filter(row => Boolean(row.voucherRef))
-            )
-            : Promise.resolve([]),
         canViewFleet
             ? Promise.all([
-                listDocumentsByFilter<{ status?: string }>('incident', {}),
-                listDocumentsByFilter<{ status?: string }>('maintenance', {}),
-            ]).then(([incidents, maintenanceRows]) => ({
-                openIncidents: incidents.filter(row => row.status === 'OPEN' || row.status === 'IN_PROGRESS').length,
-                maintenanceDue: maintenanceRows.filter(row => row.status === 'SCHEDULED').length,
+                getDocumentCount('incident', { status: ['OPEN', 'IN_PROGRESS'] }),
+                getDocumentCount('maintenance', { status: 'SCHEDULED' }),
+            ]).then(([openIncidents, maintenanceDue]) => ({
+                openIncidents,
+                maintenanceDue,
             }))
             : Promise.resolve({ openIncidents: 0, maintenanceDue: 0 }),
         canViewOrders
-            ? listDocumentsByFilter<DashboardSummary['recentOrders'][number]>('order', {}).then(rows => rows.slice(0, 5))
+            ? listDocuments<DashboardSummary['recentOrders'][number]>('order', {
+                page: 1,
+                pageSize: 5,
+                sortField: 'createdAt',
+                sortDir: 'desc',
+            }).then(result => result.items)
             : Promise.resolve([]),
         canViewInvoices
-            ? listDocumentsByFilter<DashboardSummary['recentNotas'][number]>('freightNota', {}).then(rows => rows.slice(0, 5))
+            ? listDocuments<DashboardSummary['recentNotas'][number]>('freightNota', {
+                page: 1,
+                pageSize: 5,
+                sortField: 'issueDate',
+                sortDir: 'desc',
+            }).then(result => result.items)
+            : Promise.resolve([]),
+    ]);
+
+    const invoiceIdsForDashboard = Array.from(
+        new Set(
+            [...unpaidNotas, ...recentNotas]
+                .map(nota => nota._id)
+                .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+        )
+    );
+    const boronganIds = borongans
+        .map(borongan => borongan._id)
+        .filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
+    const voucherIds = vouchers
+        .map(voucher => voucher._id)
+        .filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
+    const [
+        notaPayments,
+        notaRefunds,
+        boronganItems,
+        voucherDisbursements,
+        voucherItems,
+    ] = await Promise.all([
+        canViewInvoices && invoiceIdsForDashboard.length > 0
+            ? listDocumentsByFilter<Array<{ invoiceRef?: string; amount?: number }>[number]>('payment', {
+                invoiceRef: invoiceIdsForDashboard,
+            })
+            : Promise.resolve([]),
+        canViewInvoices && invoiceIdsForDashboard.length > 0
+            ? listDocumentsByFilter<Pick<CustomerOverpaymentRefund, 'sourceType' | 'sourceInvoiceRef' | 'amount'>>('customerOverpaymentRefund', {
+                sourceType: 'INVOICE_OVERPAID',
+                sourceInvoiceRef: invoiceIdsForDashboard,
+            })
+            : Promise.resolve([]),
+        canSeeBorongan && boronganIds.length > 0
+            ? listDocumentsByFilter<Pick<DriverBoronganItem, 'boronganRef' | 'collie' | 'beratKg' | 'uangRp'>>('driverBoronganItem', {
+                boronganRef: boronganIds,
+            })
+            : Promise.resolve([]),
+        canViewTripCash && voucherIds.length > 0
+            ? listDocumentsByFilter<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>('driverVoucherDisbursement', {
+                voucherRef: voucherIds,
+            })
+            : Promise.resolve([]),
+        canViewTripCash && voucherIds.length > 0
+            ? listDocumentsByFilter<Pick<DriverVoucherItem, 'voucherRef' | 'amount'>>('driverVoucherItem', {
+                voucherRef: voucherIds,
+            })
             : Promise.resolve([]),
     ]);
 
@@ -1571,15 +1695,13 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
 }
 
 export async function getCustomersSummary(ids: string[] = []) {
-    const [customers, customerProducts, productRefs] = await Promise.all([
+    const [customers, customerProducts] = await Promise.all([
         listDocumentsByFilter<Array<Record<string, unknown>>[number]>('customer', {}),
         listDocumentsByFilter<Array<{ customerRef?: string }>[number]>('customerProduct', {}),
-        ids.length > 0
-            ? listDocumentsByFilter<Array<{ customerRef?: string }>[number]>('customerProduct', {}).then(rows =>
-                rows.filter(row => row.customerRef && ids.includes(row.customerRef))
-            )
-            : Promise.resolve([]),
     ]);
+    const productRefs = ids.length > 0
+        ? customerProducts.filter(row => row.customerRef && ids.includes(row.customerRef))
+        : [];
     const totalCustomers = customers.length;
     const totalProducts = customerProducts.length;
     const customersWithCustomPrefix = customers.filter(customer => {
@@ -1634,10 +1756,13 @@ function buildVehicleTireSummary(
 }
 
 export async function getVehiclesSummary(ids: string[] = []) {
-    const [vehicles, tireEvents] = await Promise.all([
-        listDocumentsByFilter<Pick<Vehicle, '_id' | 'status' | 'vehicleType' | 'serviceName' | 'tireLayoutConfig'>>('vehicle', {}),
-        listDocumentsByFilter<Pick<TireEvent, 'vehicleRef' | 'status' | 'holderType' | 'slotCode' | 'posisi' | 'vehiclePlate' | 'externalPartyName' | 'externalPlateNumber'>>('tireEvent', {}),
-    ]);
+    const vehicles = await listDocumentsByFilter<Pick<Vehicle, '_id' | 'status' | 'vehicleType' | 'serviceName' | 'tireLayoutConfig'>>('vehicle', {});
+    const vehicleIds = vehicles.map(vehicle => vehicle._id).filter(Boolean);
+    const tireEvents = vehicleIds.length > 0
+        ? await listDocumentsByFilter<Pick<TireEvent, 'vehicleRef' | 'status' | 'holderType' | 'slotCode' | 'posisi' | 'vehiclePlate' | 'externalPartyName' | 'externalPlateNumber'>>('tireEvent', {
+            vehicleRef: vehicleIds,
+        })
+        : [];
     const filteredTireEvents = tireEvents.filter(event => Boolean(event.vehicleRef));
 
     const vehicleMap = new Map(vehicles.map(vehicle => [vehicle._id, vehicle]));
@@ -1665,12 +1790,18 @@ export async function getVehiclesSummary(ids: string[] = []) {
 }
 
 export async function getExpensesSummary(session: ApiSession, search = '') {
-    const [expenseRows, vehicleRows] = await Promise.all([
-        listDocumentsByFilter<Pick<Expense, 'amount' | 'categoryName' | 'privacyLevel' | 'note' | 'description' | 'relatedVehicleRef' | 'relatedVehiclePlate'>>('expense', {}),
-        listDocumentsByFilter<Pick<Vehicle, '_id' | 'plateNumber'>>('vehicle', {}),
-    ]);
-
+    const expenseRows = await listDocumentsByFilter<Pick<Expense, 'amount' | 'categoryName' | 'privacyLevel' | 'note' | 'description' | 'relatedVehicleRef' | 'relatedVehiclePlate'>>('expense', {});
     const visibleExpenses = filterExpensesByRole(expenseRows as Expense[], session.role);
+    const relatedVehicleRefs = Array.from(
+        new Set(
+            visibleExpenses
+                .map(expense => expense.relatedVehicleRef)
+                .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+        )
+    );
+    const vehicleRows = relatedVehicleRefs.length > 0
+        ? await listDocumentsByFilter<Pick<Vehicle, '_id' | 'plateNumber'>>('vehicle', { _id: relatedVehicleRefs })
+        : [];
     const vehicleMap = new Map(vehicleRows.map(vehicle => [vehicle._id, vehicle.plateNumber || '']));
     const query = search.trim().toLowerCase();
     const filteredExpenses = !query
@@ -1708,12 +1839,15 @@ export async function getExpensesSummary(session: ApiSession, search = '') {
 }
 
 export async function getBankAccountsSummary() {
-    const [accounts, transactionRows] = await Promise.all([
-        listDocumentsByFilter<Pick<BankAccount, '_id' | 'accountType' | 'systemKey' | 'initialBalance' | 'currentBalance' | 'active'>>('bankAccount', {
-            active: true,
-        }),
-        listDocumentsByFilter<Pick<BankTransaction, 'bankAccountRef' | 'type' | 'amount'>>('bankTransaction', {}),
-    ]);
+    const accounts = await listDocumentsByFilter<Pick<BankAccount, '_id' | 'accountType' | 'systemKey' | 'initialBalance' | 'currentBalance' | 'active'>>('bankAccount', {
+        active: true,
+    });
+    const accountIds = accounts.map(account => account._id).filter(Boolean);
+    const transactionRows = accountIds.length > 0
+        ? await listDocumentsByFilter<Pick<BankTransaction, 'bankAccountRef' | 'type' | 'amount'>>('bankTransaction', {
+            bankAccountRef: accountIds,
+        })
+        : [];
     const filteredTransactionRows = transactionRows.filter(row => Boolean(row.bankAccountRef));
     const accountsWithDerivedBalances = applyDerivedBankAccountBalances(accounts, filteredTransactionRows);
 

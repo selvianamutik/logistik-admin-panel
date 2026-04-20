@@ -28,13 +28,14 @@ Keep `SUPABASE_SERVICE_ROLE_KEY` server-side only.
 8. Run [0008_relational_tire_assets.sql](/d:/Work/Web/logistik-admin-panel/supabase/migrations/0008_relational_tire_assets.sql) in the SQL editor.
 9. Run [0010_relational_incident_settlement.sql](/d:/Work/Web/logistik-admin-panel/supabase/migrations/0010_relational_incident_settlement.sql) in the SQL editor.
 10. Run [0011_relational_system_support.sql](/d:/Work/Web/logistik-admin-panel/supabase/migrations/0011_relational_system_support.sql) in the SQL editor.
-11. Seed baseline app data directly from repo seed:
+11. Run [0012_add_missing_foreign_key_indexes.sql](/d:/Work/Web/logistik-admin-panel/supabase/migrations/0012_add_missing_foreign_key_indexes.sql) in the SQL editor.
+12. Seed baseline app data directly from repo seed:
 
 ```bash
 npm run reseed:supabase
 ```
 
-12. Optional: import an existing export file into Supabase:
+13. Optional: import an existing export file into Supabase:
 
 ```bash
 node scripts/import-supabase.mjs artifacts/your-export.json

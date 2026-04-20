@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { getBusinessDateValue } from '@/lib/business-date';
 import { hashPassword, verifyPassword } from '@/lib/auth';
-import { useSupabaseBackend } from '@/lib/data-backend';
+import { isSupabaseBackendEnabled } from '@/lib/data-backend';
 import {
     createDocument,
     deleteDocument,
@@ -115,10 +115,9 @@ export async function normalizeUserCreatePayload(data: Record<string, unknown>) 
         throw new Error('Password minimal 8 karakter');
     }
 
-    const existingUsers = await listDocumentsByFilter<{ _id: string; email?: string }>('user', {});
     const existingEmail =
-        existingUsers.find(user => normalizeText(user.email).toLowerCase() === email) || null;
-    if (!useSupabaseBackend()) {
+        (await listDocumentsByFilter<{ _id: string; email?: string }>('user', { email }))[0] || null;
+    if (!isSupabaseBackendEnabled()) {
         throw new Error('Backend Supabase wajib aktif untuk membuat user');
     }
     if (existingEmail) {
@@ -189,12 +188,8 @@ export async function normalizeUserUpdates(
             throw new Error('Email wajib diisi');
         }
         const duplicateEmail =
-            (await listDocumentsByFilter<{ _id: string; email?: string }>('user', {}))
-                .find(
-                    user =>
-                        user._id !== targetUserId
-                        && normalizeText(user.email).toLowerCase() === normalizedEmail
-                ) || null;
+            (await listDocumentsByFilter<{ _id: string; email?: string }>('user', { email: normalizedEmail }))
+                .find(user => user._id !== targetUserId) || null;
         if (duplicateEmail) {
             throw new Error('Email user sudah digunakan');
         }
@@ -518,30 +513,37 @@ export async function handleCustomerDelete(
         return NextResponse.json({ error: 'Customer tidak ditemukan' }, { status: 404 });
     }
     const customerName = normalizeText(customer.name).toLowerCase();
-    const relatedOrder =
-        (await listDocumentsByFilter<{ _id: string; customerRef?: string; customerName?: string }>('order', {}))
-            .find(doc => doc.customerRef === id || normalizeText(doc.customerName).toLowerCase() === customerName) || null;
+    const findByRefOrLegacyName = async (docType: 'order' | 'deliveryOrder' | 'freightNota' | 'invoice' | 'customerReceipt') => {
+        const exactRefMatch =
+            (await listDocumentsByFilter<{ _id: string; customerRef?: string; customerName?: string }>(docType, {
+                customerRef: id,
+            }))[0] || null;
+        if (exactRefMatch) {
+            return exactRefMatch;
+        }
+        if (!customerName) {
+            return null;
+        }
+        return (await listDocumentsByFilter<{ _id: string; customerRef?: string; customerName?: string }>(docType, {}))
+            .find(doc => !doc.customerRef && normalizeText(doc.customerName).toLowerCase() === customerName) || null;
+    };
+
+    const relatedOrder = await findByRefOrLegacyName('order');
     if (relatedOrder) {
         return NextResponse.json({ error: 'Customer yang sudah dipakai pada order tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedDeliveryOrder =
-        (await listDocumentsByFilter<{ _id: string; customerRef?: string; customerName?: string }>('deliveryOrder', {}))
-            .find(doc => doc.customerRef === id || normalizeText(doc.customerName).toLowerCase() === customerName) || null;
+    const relatedDeliveryOrder = await findByRefOrLegacyName('deliveryOrder');
     if (relatedDeliveryOrder) {
         return NextResponse.json({ error: 'Customer yang sudah dipakai pada surat jalan tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedFreightNota =
-        (await listDocumentsByFilter<{ _id: string; customerRef?: string; customerName?: string }>('freightNota', {}))
-            .find(doc => doc.customerRef === id || normalizeText(doc.customerName).toLowerCase() === customerName) || null;
+    const relatedFreightNota = await findByRefOrLegacyName('freightNota');
     if (relatedFreightNota) {
         return NextResponse.json({ error: 'Customer yang sudah dipakai pada nota tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedInvoice =
-        (await listDocumentsByFilter<{ _id: string; customerRef?: string; customerName?: string }>('invoice', {}))
-            .find(doc => doc.customerRef === id || normalizeText(doc.customerName).toLowerCase() === customerName) || null;
+    const relatedInvoice = await findByRefOrLegacyName('invoice');
     if (relatedInvoice) {
         return NextResponse.json({ error: 'Customer yang sudah dipakai pada invoice tidak boleh dihapus' }, { status: 409 });
     }
@@ -564,9 +566,7 @@ export async function handleCustomerDelete(
         return NextResponse.json({ error: 'Hapus dulu master pickup customer sebelum menghapus customer' }, { status: 409 });
     }
 
-    const relatedCustomerReceipt =
-        (await listDocumentsByFilter<{ _id: string; customerRef?: string; customerName?: string }>('customerReceipt', {}))
-            .find(doc => doc.customerRef === id || normalizeText(doc.customerName).toLowerCase() === customerName) || null;
+    const relatedCustomerReceipt = await findByRefOrLegacyName('customerReceipt');
     if (relatedCustomerReceipt) {
         return NextResponse.json({ error: 'Customer yang sudah dipakai pada penerimaan tidak boleh dihapus' }, { status: 409 });
     }

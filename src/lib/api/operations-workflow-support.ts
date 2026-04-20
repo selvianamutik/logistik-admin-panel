@@ -188,6 +188,20 @@ async function generateVehicleUnitCode(categoryCode: string, excludeId?: string)
 async function findDuplicateLowerTextDoc(docType: string, fieldName: string, value: string, excludeId?: string) {
     if (!value) return null;
     const normalizedValue = value.toLowerCase();
+    const exactMatches = await listDocumentsByFilter<Array<{ _id: string; [key: string]: unknown }>[number]>(docType, {
+        [fieldName]: value,
+    });
+    const exactDuplicate = exactMatches.find(row => {
+        if (excludeId && row._id === excludeId) {
+            return false;
+        }
+        const fieldValue = row[fieldName];
+        return typeof fieldValue === 'string' && fieldValue.toLowerCase() === normalizedValue;
+    }) || null;
+    if (exactDuplicate) {
+        return exactDuplicate;
+    }
+
     const rows = await listDocumentsByFilter<Array<{ _id: string; [key: string]: unknown }>[number]>(docType, {});
     return rows.find(row => {
         if (excludeId && row._id === excludeId) {
@@ -220,12 +234,17 @@ export async function normalizeServicePayload(
         if (options?.excludeId) {
             const currentService = await getDocumentById<{ _id: string; code?: string; name?: string }>(options.excludeId, 'service');
             if (currentService?.code && currentService.code !== code) {
-                const relatedVehicle =
-                    (await listDocumentsByFilter<{ _id: string; serviceRef?: string; serviceName?: string }>('vehicle', {}))
-                        .find(vehicle =>
-                            vehicle.serviceRef === options.excludeId
-                            || normalizeText(vehicle.serviceName).toLowerCase() === normalizeText(currentService.name).toLowerCase()
-                        ) || null;
+                const relatedVehicleByRef =
+                    (await listDocumentsByFilter<{ _id: string; serviceRef?: string; serviceName?: string }>('vehicle', {
+                        serviceRef: options.excludeId,
+                    }))[0] || null;
+                const relatedVehicleByLegacyName =
+                    !relatedVehicleByRef && currentService.name
+                        ? (await listDocumentsByFilter<{ _id: string; serviceRef?: string; serviceName?: string }>('vehicle', {
+                            serviceName: currentService.name,
+                        })).find(vehicle => !vehicle.serviceRef) || null
+                        : null;
+                const relatedVehicle = relatedVehicleByRef || relatedVehicleByLegacyName;
                 if (relatedVehicle) {
                     throw new Error('Kode kategori armada yang sudah dipakai kendaraan tidak boleh diubah');
                 }
