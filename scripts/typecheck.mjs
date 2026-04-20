@@ -60,5 +60,6 @@ if (!typegenResult || typegenResult.status !== 0 || !REQUIRED_TYPE_PATHS.every(f
 
 rmSync(TSCONFIG_BUILD_INFO_PATH, { force: true });
 
-const tscResult = run('tsc', ['--noEmit', '--incremental', 'false']);
+const tscCommand = process.platform === 'win32' ? 'node_modules\\.bin\\tsc.cmd' : 'node_modules/.bin/tsc';
+const tscResult = run(tscCommand, ['--noEmit', '--incremental', 'false']);
 process.exit(tscResult.status ?? 1);

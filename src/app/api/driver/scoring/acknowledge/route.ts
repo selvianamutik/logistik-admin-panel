@@ -1,7 +1,7 @@
 import { acknowledgeDriverWarningScore } from '@/lib/api/driver-score-workflows';
 import { getDriverPortalAccessNotice, requireDriverSessionContext } from '@/lib/api/driver-portal';
 import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
-import { getSanityServiceErrorInfo } from '@/lib/sanity';
+import { getDataServiceErrorInfo } from '@/lib/service-errors';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
         const driverAccessNotice = await getDriverPortalAccessNotice(auth.driver._id);
         return jsonNoStore({ data: updated, driverAccessNotice });
     } catch (error) {
-        const serviceError = getSanityServiceErrorInfo(
+        const serviceError = getDataServiceErrorInfo(
             error,
             'Layanan scoring driver sedang tidak tersedia. Coba lagi beberapa saat.'
         );

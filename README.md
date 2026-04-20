@@ -4,7 +4,7 @@ Sistem manajemen logistik berbasis web untuk operasional pengiriman, penagihan, 
 
 Stack utama:
 - Next.js 16
-- Sanity CMS
+- Supabase PostgreSQL
 - Vercel
 - Flutter untuk app driver mobile
 
@@ -42,8 +42,8 @@ Dokumen alur lengkap ada di:
 ## Demo seed
 
 Script seed aktif:
-- `npm run seed:sanity`
-- `npm run reseed:sanity`
+- `npm run seed:supabase`
+- `npm run reseed:supabase`
 
 Dataset demo saat ini mencakup kondisi:
 - customer, layanan, kategori biaya aktif dan nonaktif
@@ -111,7 +111,7 @@ npm run audit:finance
 Seed ulang demo:
 
 ```bash
-npm run reseed:sanity
+npm run reseed:supabase
 ```
 
 ## Build note
@@ -124,9 +124,7 @@ Jalur build produksi yang stabil di repo ini:
 ## Environment variables
 
 ```bash
-NEXT_PUBLIC_SANITY_PROJECT_ID=...
-NEXT_PUBLIC_SANITY_DATASET=production
-SANITY_API_VERSION=2024-01-01
-SANITY_API_TOKEN=...
+NEXT_PUBLIC_SUPABASE_URL=...
+SUPABASE_SERVICE_ROLE_KEY=...
 JWT_SECRET=...
 ```

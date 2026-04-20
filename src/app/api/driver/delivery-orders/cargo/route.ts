@@ -2,19 +2,25 @@ import { extractRefId } from '@/lib/api/data-helpers';
 import { handleDeliveryOrderAppendCargoItems } from '@/lib/api/order-workflows';
 import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
 import { getDriverPortalAccessNotice, requireDriverSessionContext } from '@/lib/api/driver-portal';
-import { getSanityServiceErrorInfo, sanityCreate, sanityGetById } from '@/lib/sanity';
+import { createDocument, getDocumentById } from '@/lib/repositories/document-store';
 import type { DeliveryOrder } from '@/lib/types';
 
-async function addAuditLog(actor: { _id: string; name: string; email?: string; role?: string }, action: string, entityRef: string, summary: string) {
+async function addAuditLog(
+    actor: { _id: string; name: string; email?: string; role?: string },
+    action: string,
+    entityType: string,
+    entityRef: string,
+    summary: string
+) {
     try {
-        await sanityCreate({
+        await createDocument({
             _type: 'auditLog',
             actorUserRef: actor._id,
             actorUserName: actor.name,
             actorUserEmail: actor.email,
             actorUserRole: actor.role,
             action,
-            entityType: 'delivery-orders',
+            entityType,
             entityRef,
             changesSummary: summary,
             timestamp: new Date().toISOString(),
@@ -70,7 +76,7 @@ export async function POST(request: Request) {
             return jsonNoStore({ error: 'Surat jalan tidak valid' }, { status: 400 });
         }
 
-        const deliveryOrder = await sanityGetById<DeliveryOrder>(id);
+        const deliveryOrder = await getDocumentById<DeliveryOrder>(id, 'deliveryOrder');
         if (!deliveryOrder) {
             return jsonNoStore({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
         }
@@ -92,13 +98,6 @@ export async function POST(request: Request) {
         );
     } catch (error) {
         console.error('Driver delivery cargo update error:', error);
-        const serviceError = getSanityServiceErrorInfo(
-            error,
-            'Layanan data surat jalan driver sedang tidak tersedia. Coba lagi beberapa saat.'
-        );
-        if (serviceError) {
-            return jsonNoStore({ error: serviceError.message }, { status: serviceError.status });
-        }
         return jsonNoStore({ error: 'Terjadi kesalahan server' }, { status: 500 });
     }
 }

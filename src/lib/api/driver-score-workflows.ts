@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { getBusinessDateValue } from '@/lib/business-date';
 import { computeDriverScoreDueDate, parseDriverScoreDayCount } from '@/lib/driver-scoring-support';
-import { getSanityClient, sanityCreate, sanityGetById, sanityUpdate } from '@/lib/sanity';
+import { createDocument, getDocumentById, listDocumentsByFilter, updateDocument } from '@/lib/repositories/document-store';
 import { extractRefId } from './data-helpers';
 
 import { assertIsoDate, normalizeOptionalText, type ApiSession } from './data-helpers';
@@ -30,21 +30,20 @@ type DriverScoreDocument = {
 };
 
 async function fetchCurrentDriverScore(driverRef: string, today: string) {
-    return getSanityClient().fetch<DriverScoreDocument | null>(
-        `*[
-            _type == "driverScore" &&
-            (driverRef == $driverRef || driverRef._ref == $driverRef) &&
-            (
-                (scoreType != "WARNING" && effectiveDate <= $today && dueDate >= $today) ||
-                (scoreType == "WARNING" && effectiveDate <= $today && (
-                    !defined(warningAcknowledgedAt) ||
-                    warningAcknowledgedAt == null ||
-                    warningAcknowledgedAt == ""
-                ))
-            )
-        ] | order(effectiveDate desc, _createdAt desc)[0]`,
-        { driverRef, today }
-    );
+    const scores = await listDocumentsByFilter<DriverScoreDocument>('driverScore', { driverRef });
+
+    return scores
+        .filter(score => {
+            if (score.scoreType === 'WARNING') {
+                return score.effectiveDate <= today && !score.warningAcknowledgedAt;
+            }
+            return score.effectiveDate <= today && score.dueDate >= today;
+        })
+        .sort((left, right) => {
+            const dateCmp = (right.effectiveDate || '').localeCompare(left.effectiveDate || '');
+            if (dateCmp !== 0) return dateCmp;
+            return (right.createdAt || '').localeCompare(left.createdAt || '');
+        })[0] || null;
 }
 
 export async function getCurrentDriverScore(driverRef: string, today = getBusinessDateValue()) {
@@ -52,7 +51,7 @@ export async function getCurrentDriverScore(driverRef: string, today = getBusine
 }
 
 export async function acknowledgeDriverWarningScore(scoreId: string, driverRef: string) {
-    const current = await sanityGetById<DriverScoreDocument>(scoreId);
+    const current = await getDocumentById<DriverScoreDocument>(scoreId, 'driverScore');
     if (
         !current ||
         extractRefId(current.driverRef) !== driverRef ||
@@ -64,7 +63,7 @@ export async function acknowledgeDriverWarningScore(scoreId: string, driverRef: 
         return current;
     }
 
-    return sanityUpdate(scoreId, {
+    return updateDocument(scoreId, {
         warningAcknowledgedAt: new Date().toISOString(),
         warningAcknowledgedByDriverRef: driverRef,
     });
@@ -84,7 +83,7 @@ async function validateDriverScorePayload(
         throw new Error('Supir wajib dipilih');
     }
 
-    const driver = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(driverRefInput);
+    const driver = await getDocumentById<{ _id: string; name?: string; active?: boolean }>(driverRefInput, 'driver');
     if (!driver) {
         throw new Error('Supir tidak ditemukan');
     }
@@ -124,37 +123,16 @@ async function validateDriverScorePayload(
     }
     const hasNotesField = Object.prototype.hasOwnProperty.call(data, 'notes');
 
-    const overlap = await getSanityClient().fetch<{ _id: string } | null>(
-        existing?._id
-            ? `*[
-                _type == "driverScore" &&
-                (driverRef == $driverRef || driverRef._ref == $driverRef) &&
-                _id != $excludeId &&
-                (
-                    (scoreType != "WARNING" && effectiveDate <= $dueDate && dueDate >= $effectiveDate) ||
-                    (scoreType == "WARNING" && effectiveDate <= $dueDate && (
-                        !defined(warningAcknowledgedAt) ||
-                        warningAcknowledgedAt == null ||
-                        warningAcknowledgedAt == ""
-                    ))
-                )
-            ][0]{ _id }`
-            : `*[
-                _type == "driverScore" &&
-                (driverRef == $driverRef || driverRef._ref == $driverRef) &&
-                (
-                    (scoreType != "WARNING" && effectiveDate <= $dueDate && dueDate >= $effectiveDate) ||
-                    (scoreType == "WARNING" && effectiveDate <= $dueDate && (
-                        !defined(warningAcknowledgedAt) ||
-                        warningAcknowledgedAt == null ||
-                        warningAcknowledgedAt == ""
-                    ))
-                )
-            ][0]{ _id }`,
-        existing?._id
-            ? { driverRef: driverRefInput, effectiveDate, dueDate, excludeId: existing._id }
-            : { driverRef: driverRefInput, effectiveDate, dueDate }
-    );
+    const overlap = (await listDocumentsByFilter<DriverScoreDocument>('driverScore', { driverRef: driverRefInput }))
+        .find(score => {
+            if (existing?._id && score._id === existing._id) {
+                return false;
+            }
+            if (score.scoreType === 'WARNING') {
+                return score.effectiveDate <= dueDate && !score.warningAcknowledgedAt;
+            }
+            return score.effectiveDate <= dueDate && score.dueDate >= effectiveDate;
+        });
     if (overlap) {
         throw new Error('Periode skors bentrok dengan warning/skors supir yang sudah ada');
     }
@@ -189,7 +167,7 @@ export async function handleDriverScoreCreate(
     try {
         const normalized = await validateDriverScorePayload(data, session);
         const createdAt = new Date().toISOString();
-        const created = await sanityCreate({
+        const created = await createDocument({
             _type: 'driverScore',
             ...normalized,
             createdAt,
@@ -220,14 +198,14 @@ export async function handleDriverScoreUpdate(
     updates: Record<string, unknown>,
     addAuditLog: AuditLogFn
 ) {
-    const existing = await sanityGetById<DriverScoreDocument>(id);
+    const existing = await getDocumentById<DriverScoreDocument>(id, 'driverScore');
     if (!existing) {
         return NextResponse.json({ error: 'Data skors supir tidak ditemukan' }, { status: 404 });
     }
 
     try {
         const normalized = await validateDriverScorePayload(updates, session, { existing });
-        const updated = await sanityUpdate(id, normalized);
+        const updated = await updateDocument(id, normalized);
         await addAuditLog(
             session,
             'UPDATE',
@@ -252,7 +230,7 @@ export async function handleDriverScoreEndEarly(
     const id = typeof data.id === 'string' ? data.id : '';
     if (!id) return NextResponse.json({ error: 'Data skors supir tidak valid' }, { status: 400 });
 
-    const existing = await sanityGetById<DriverScoreDocument>(id);
+    const existing = await getDocumentById<DriverScoreDocument>(id, 'driverScore');
     if (!existing) return NextResponse.json({ error: 'Data skors supir tidak ditemukan' }, { status: 404 });
 
     let updates: Record<string, unknown> = {};
@@ -272,7 +250,7 @@ export async function handleDriverScoreEndEarly(
     }
 
     try {
-        const updated = await sanityUpdate(id, updates);
+        const updated = await updateDocument(id, updates);
         await addAuditLog(
             session,
             'UPDATE',

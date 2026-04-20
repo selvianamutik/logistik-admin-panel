@@ -1,11 +1,9 @@
 import { createHash } from 'node:crypto';
 
-import { getSanityClient } from '@/lib/sanity';
+import { getSupabaseClient } from '@/lib/supabase';
 
 type PersistedRateLimitBucket = {
-    _id: string;
-    _rev?: string;
-    _type: 'loginRateLimit';
+    id: string;
     count?: number;
     resetAt?: number;
     updatedAt?: string;
@@ -87,8 +85,45 @@ function nowIso(now: number) {
 }
 
 async function getRateLimitBucket(docId: string) {
-    const bucket = await getSanityClient().getDocument<PersistedRateLimitBucket>(docId);
-    return bucket ?? null;
+    const response = await getSupabaseClient().fetch(
+        `rate_limit_buckets?select=*&id=eq.${encodeURIComponent(docId)}&limit=1`
+    );
+    const rows = await response.json() as Array<{
+        id: string;
+        count?: number | null;
+        reset_at?: number | null;
+        updated_at?: string | null;
+    }>;
+    const row = rows[0];
+    if (!row) return null;
+    return {
+        id: row.id,
+        count: typeof row.count === 'number' ? row.count : 0,
+        resetAt: typeof row.reset_at === 'number' ? row.reset_at : 0,
+        updatedAt: row.updated_at || undefined,
+    } satisfies PersistedRateLimitBucket;
+}
+
+async function upsertRateLimitBucket(docId: string, count: number, resetAt: number, now: number) {
+    await getSupabaseClient().fetch('rate_limit_buckets', {
+        method: 'POST',
+        headers: {
+            Prefer: 'resolution=merge-duplicates,return=minimal',
+        },
+        body: JSON.stringify({
+            id: docId,
+            count,
+            reset_at: resetAt,
+            updated_at: nowIso(now),
+        }),
+    });
+}
+
+async function deleteRateLimitBucket(docId: string) {
+    await getSupabaseClient().fetch(
+        `rate_limit_buckets?id=eq.${encodeURIComponent(docId)}`,
+        { method: 'DELETE' }
+    );
 }
 
 function cleanupLocalRateLimitCache(now: number) {
@@ -143,37 +178,23 @@ export async function recordLoginAttempt(key: string, limit: number, windowMs: n
             } satisfies PersistedRateLimitBucket)
             : localBucket
                 ? ({
-                    _id: docId,
-                    _type: RATE_LIMIT_DOC_TYPE,
+                    id: docId,
                     count: localBucket.count,
                     resetAt: localBucket.resetAt,
                 } satisfies PersistedRateLimitBucket)
                 : null;
         const resetAt = bucket && mergedResetAt > 0 ? mergedResetAt : getBucketResetAt(bucket);
-        const bucketRevision = typeof persistedBucket?._rev === 'string' ? persistedBucket._rev : undefined;
 
         if (!bucket || resetAt <= now) {
             const freshBucket = {
-                _type: RATE_LIMIT_DOC_TYPE,
+                id: docId,
                 count: 1,
                 resetAt: now + windowMs,
                 updatedAt: nowIso(now),
-            } satisfies Omit<PersistedRateLimitBucket, '_id' | '_rev'>;
+            } satisfies PersistedRateLimitBucket;
 
             try {
-                if (bucket?._id && bucketRevision) {
-                    await getSanityClient()
-                        .patch(docId)
-                        .ifRevisionId(bucketRevision)
-                        .set(freshBucket)
-                        .commit();
-                } else {
-                    await getSanityClient().create({
-                        _id: docId,
-                        ...freshBucket,
-                    });
-                }
-
+                await upsertRateLimitBucket(docId, freshBucket.count, freshBucket.resetAt, now);
                 writeLocalRateLimitBucket(docId, 1, freshBucket.resetAt);
                 return { limited: false, retryAfterSeconds: 0 };
             } catch (error) {
@@ -186,25 +207,7 @@ export async function recordLoginAttempt(key: string, limit: number, windowMs: n
 
         const nextCount = getBucketCount(bucket) + 1;
         try {
-            if (bucketRevision) {
-                await getSanityClient()
-                    .patch(docId)
-                    .ifRevisionId(bucketRevision)
-                    .set({
-                        count: nextCount,
-                        updatedAt: nowIso(now),
-                    })
-                    .commit();
-            } else {
-                await getSanityClient().create({
-                    _id: docId,
-                    _type: RATE_LIMIT_DOC_TYPE,
-                    count: nextCount,
-                    resetAt,
-                    updatedAt: nowIso(now),
-                });
-            }
-
+            await upsertRateLimitBucket(docId, nextCount, resetAt, now);
             writeLocalRateLimitBucket(docId, nextCount, resetAt);
             if (nextCount > limit) {
                 return {
@@ -233,12 +236,12 @@ export async function clearFailedAttempts(key: string) {
     const docId = buildRateLimitDocId(key);
     clearLocalRateLimitBucket(docId);
     const bucket = await getRateLimitBucket(docId);
-    if (!bucket?._id) {
+    if (!bucket?.id) {
         return;
     }
 
     try {
-        await getSanityClient().delete(docId);
+        await deleteRateLimitBucket(docId);
     } catch (error) {
         if (isRateLimitConflictError(error) || isRateLimitNotFoundError(error)) {
             return;

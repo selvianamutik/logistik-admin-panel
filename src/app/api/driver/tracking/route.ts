@@ -9,19 +9,25 @@ import {
 import { extractRefId, isMutationConflictError } from '@/lib/api/data-helpers';
 import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
 import { handleDeliveryOrderStatusUpdate } from '@/lib/api/order-workflows';
-import { getSanityClient, getSanityServiceErrorInfo, sanityCreate, sanityGetById } from '@/lib/sanity';
+import { createDocument, getDocumentById, listDocumentsByFilter, updateDocument } from '@/lib/repositories/document-store';
 import type { DeliveryOrder, Driver } from '@/lib/types';
 
-async function addAuditLog(actor: { _id: string; name: string; email?: string; role?: string }, action: string, entityRef: string, summary: string) {
+async function addAuditLog(
+    actor: { _id: string; name: string; email?: string; role?: string },
+    action: string,
+    entityType: string,
+    entityRef: string,
+    summary: string
+) {
     try {
-        await sanityCreate({
+        await createDocument({
             _type: 'auditLog',
             actorUserRef: actor._id,
             actorUserName: actor.name,
             actorUserEmail: actor.email,
             actorUserRole: actor.role,
             action,
-            entityType: 'driverTracking',
+            entityType,
             entityRef,
             changesSummary: summary,
             timestamp: new Date().toISOString(),
@@ -42,7 +48,7 @@ async function createTrackingLog(input: {
     accuracyM?: number;
     speedKph?: number;
 }) {
-    await sanityCreate({
+    await createDocument({
         _id: crypto.randomUUID(),
         _type: 'trackingLog',
         refType: 'DO',
@@ -65,20 +71,14 @@ async function createTrackingLog(input: {
 }
 
 async function refreshDriverTrackingState(driverId: string) {
-    return sanityGetById<Driver>(driverId);
+    return getDocumentById<Driver>(driverId, 'driver');
 }
 
 async function clearDriverTrackingLock(driver: Driver, now: string) {
-    if (!driver._rev) {
-        return false;
-    }
-
-    await getSanityClient()
-        .patch(driver._id)
-        .ifRevisionId(driver._rev)
-        .unset(['activeTrackingDeliveryOrderRef'])
-        .set({ activeTrackingUpdatedAt: now })
-        .commit();
+    await updateDocument(driver._id, {
+        activeTrackingDeliveryOrderRef: null,
+        activeTrackingUpdatedAt: now,
+    });
 
     return true;
 }
@@ -124,31 +124,18 @@ function buildTrackingConflictResponse(message = 'Status tracking berubah karena
     return jsonNoStore({ error: message }, { status: 409 });
 }
 
-function ensureTrackingRevision(
-    deliveryOrder: DeliveryOrder & { _rev?: string },
-    message = 'Revisi tracking DO tidak tersedia. Refresh lalu coba lagi.'
-) {
-    if (!deliveryOrder._rev) {
-        return jsonNoStore({ error: message }, { status: 409 });
-    }
-    return null;
-}
-
 async function patchDeliveryOrderTrackingState(
-    deliveryOrder: DeliveryOrder & { _rev?: string },
+    deliveryOrder: DeliveryOrder,
     setData: Record<string, unknown>,
     unsetFields: string[] = []
 ) {
-    const patch = getSanityClient()
-        .patch(deliveryOrder._id)
-        .ifRevisionId(deliveryOrder._rev as string);
-
-    if (unsetFields.length > 0) {
-        patch.unset(unsetFields);
+    const nextPayload: Record<string, unknown> = {
+        ...setData,
+    };
+    for (const field of unsetFields) {
+        nextPayload[field] = null;
     }
-
-    patch.set(setData);
-    return patch.commit() as Promise<DeliveryOrder>;
+    return updateDocument<DeliveryOrder>(deliveryOrder._id, nextPayload);
 }
 
 export async function POST(request: Request) {
@@ -188,7 +175,7 @@ export async function POST(request: Request) {
             return jsonNoStore({ error: 'Aksi tracking tidak valid' }, { status: 400 });
         }
 
-        const deliveryOrder = await sanityGetById<DeliveryOrder & { _rev?: string }>(deliveryOrderRef);
+        const deliveryOrder = await getDocumentById<DeliveryOrder & { _rev?: string }>(deliveryOrderRef, 'deliveryOrder');
         if (!deliveryOrder) {
             return jsonNoStore({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
         }
@@ -273,18 +260,10 @@ export async function POST(request: Request) {
                 );
             }
 
-            const otherActiveDo = await getSanityClient().fetch<{ _id: string; doNumber?: string } | null>(
-                `*[
-                    _type == "deliveryOrder" &&
-                    _id != $deliveryOrderRef &&
-                    (driverRef == $driverRef || driverRef._ref == $driverRef) &&
-                    trackingState == "ACTIVE"
-                ][0]{
-                    _id,
-                    doNumber
-                }`,
-                { deliveryOrderRef, driverRef: auth.driver._id }
-            );
+            const otherActiveDo =
+                (await listDocumentsByFilter<{ _id: string; doNumber?: string; trackingState?: string }>('deliveryOrder', { driverRef: auth.driver._id }))
+                    .find(item => item._id !== deliveryOrderRef && item.trackingState === 'ACTIVE')
+                || null;
             if (otherActiveDo) {
                 return jsonNoStore(
                     { error: `Masih ada tracking aktif pada ${otherActiveDo.doNumber || otherActiveDo._id}. Hentikan dulu sebelum mulai yang baru.` },
@@ -303,7 +282,7 @@ export async function POST(request: Request) {
 
             const lockedDoRef = extractRefId(driverState.activeTrackingDeliveryOrderRef);
             if (lockedDoRef && lockedDoRef !== deliveryOrderRef) {
-                const lockedDo = await sanityGetById<DeliveryOrder>(lockedDoRef);
+                const lockedDo = await getDocumentById<DeliveryOrder>(lockedDoRef, 'deliveryOrder');
                 if (lockedDo && ['ACTIVE', 'PAUSED'].includes(lockedDo.trackingState || '')) {
                     return jsonNoStore(
                         { error: `Tracking supir ini masih terkunci pada ${lockedDo.doNumber || lockedDo._id}. Hentikan dulu sebelum mulai yang baru.` },
@@ -327,22 +306,11 @@ export async function POST(request: Request) {
                 }
             }
 
-            if (!driverState._rev) {
-                return jsonNoStore(
-                    { error: 'Kunci tracking supir tidak tersedia. Refresh lalu coba lagi.' },
-                    { status: 409 }
-                );
-            }
-
             try {
-                await getSanityClient()
-                    .patch(driverState._id)
-                    .ifRevisionId(driverState._rev)
-                    .set({
-                        activeTrackingDeliveryOrderRef: deliveryOrderRef,
-                        activeTrackingUpdatedAt: now,
-                    })
-                    .commit();
+                await updateDocument(driverState._id, {
+                    activeTrackingDeliveryOrderRef: deliveryOrderRef,
+                    activeTrackingUpdatedAt: now,
+                });
             } catch (error) {
                 console.warn('Failed to acquire driver tracking lock', error);
                 return jsonNoStore(
@@ -388,7 +356,7 @@ export async function POST(request: Request) {
                     });
                 }
 
-                const latestDeliveryOrder = await sanityGetById<DeliveryOrder & { _rev?: string }>(deliveryOrderRef);
+                const latestDeliveryOrder = await getDocumentById<DeliveryOrder & { _rev?: string }>(deliveryOrderRef, 'deliveryOrder');
                 if (!latestDeliveryOrder) {
                     await releaseDriverTrackingLockIfOwned(auth.driver._id, deliveryOrderRef, now);
                     return jsonNoStore({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
@@ -396,11 +364,6 @@ export async function POST(request: Request) {
                 if (isClosedDeliveryOrder(latestDeliveryOrder.status)) {
                     await releaseDriverTrackingLockIfOwned(auth.driver._id, deliveryOrderRef, now);
                     return buildTrackingConflictResponse('DO sudah ditutup admin sebelum tracking aktif. Refresh lalu cek status terbaru.');
-                }
-                const revisionError = ensureTrackingRevision(latestDeliveryOrder);
-                if (revisionError) {
-                    await releaseDriverTrackingLockIfOwned(auth.driver._id, deliveryOrderRef, now);
-                    return revisionError;
                 }
 
                 let updated: DeliveryOrder;
@@ -436,11 +399,6 @@ export async function POST(request: Request) {
         if (action === 'heartbeat') {
             if (deliveryOrder.trackingState !== 'ACTIVE') {
                 return jsonNoStore({ error: 'Tracking belum aktif untuk DO ini' }, { status: 409 });
-            }
-
-            const revisionError = ensureTrackingRevision(deliveryOrder);
-            if (revisionError) {
-                return revisionError;
             }
 
             let updated: DeliveryOrder;
@@ -480,11 +438,6 @@ export async function POST(request: Request) {
                 accuracyM: accuracyM ?? undefined,
                 speedKph,
             });
-
-            const revisionError = ensureTrackingRevision(deliveryOrder);
-            if (revisionError) {
-                return revisionError;
-            }
 
             let updated: DeliveryOrder;
             try {
@@ -532,11 +485,6 @@ export async function POST(request: Request) {
                 speedKph,
             });
 
-            const revisionError = ensureTrackingRevision(deliveryOrder);
-            if (revisionError) {
-                return revisionError;
-            }
-
             let updated: DeliveryOrder;
             try {
                 updated = await patchDeliveryOrderTrackingState(deliveryOrder, {
@@ -583,11 +531,6 @@ export async function POST(request: Request) {
                 speedKph,
             });
 
-            const revisionError = ensureTrackingRevision(deliveryOrder);
-            if (revisionError) {
-                return revisionError;
-            }
-
             let updated: DeliveryOrder;
             try {
                 updated = await patchDeliveryOrderTrackingState(deliveryOrder, {
@@ -624,13 +567,6 @@ export async function POST(request: Request) {
         return jsonNoStore({ error: 'Aksi tracking tidak dikenal' }, { status: 400 });
     } catch (error) {
         console.error('Driver tracking route error:', error);
-        const serviceError = getSanityServiceErrorInfo(
-            error,
-            'Layanan tracking driver sedang tidak tersedia. Coba lagi beberapa saat.'
-        );
-        if (serviceError) {
-            return jsonNoStore({ error: serviceError.message }, { status: serviceError.status });
-        }
         return jsonNoStore({ error: 'Terjadi kesalahan server' }, { status: 500 });
     }
 }

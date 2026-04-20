@@ -2,11 +2,18 @@ import { NextResponse } from 'next/server';
 
 import { getBusinessDateValue } from '@/lib/business-date';
 import { hashPassword, verifyPassword } from '@/lib/auth';
-import { getSanityClient, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
+import { useSupabaseBackend } from '@/lib/data-backend';
+import {
+    createDocument,
+    deleteDocument,
+    getDocumentById,
+    getNextNumber,
+    listDocumentsByFilter,
+    updateDocument,
+} from '@/lib/repositories/document-store';
 
 import {
     assertIsoDate,
-    isMutationConflictError,
     isPlainObject,
     normalizeCurrencyNumber,
     normalizeNumber,
@@ -22,8 +29,6 @@ type AuditLogFn = (
     entityRef: string,
     summary: string
 ) => void | Promise<void>;
-
-type SanityMutations = Parameters<ReturnType<typeof getSanityClient>['mutate']>[0];
 
 const MANAGEABLE_USER_ROLES = ['OWNER', 'OPERASIONAL', 'FINANCE', 'ARMADA', 'DRIVER'] as const;
 
@@ -69,21 +74,18 @@ async function validateDriverAccountLink(driverRef: unknown, excludeUserId?: str
         throw new Error('Supir untuk akun mobile wajib dipilih');
     }
 
-    const driver = await sanityGetById<{ _id: string; _rev?: string; name?: string; active?: boolean }>(normalizedDriverRef);
+    const driver = await getDocumentById<{ _id: string; _rev?: string; name?: string; active?: boolean }>(normalizedDriverRef);
     if (!driver) {
         throw new Error('Data supir untuk akun mobile tidak ditemukan');
     }
     if (driver.active === false) {
         throw new Error('Supir tidak aktif dan tidak bisa diberi akun mobile');
     }
-    if (!driver._rev) {
-        throw new Error('Revisi supir untuk akun mobile tidak tersedia. Refresh lalu coba lagi.');
-    }
-
-    const duplicateDriverAccount = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "user" && role == "DRIVER" && driverRef == $driverRef && _id != $excludeId][0]{ _id }`,
-        { driverRef: normalizedDriverRef, excludeId: excludeUserId || '' }
-    );
+    const duplicateDriverAccount =
+        (await listDocumentsByFilter<{ _id: string; role?: string; driverRef?: string }>('user', {
+            role: 'DRIVER',
+            driverRef: normalizedDriverRef,
+        })).find(user => user._id !== (excludeUserId || '')) || null;
     if (duplicateDriverAccount) {
         throw new Error('Supir ini sudah memiliki akun mobile');
     }
@@ -113,10 +115,12 @@ export async function normalizeUserCreatePayload(data: Record<string, unknown>) 
         throw new Error('Password minimal 8 karakter');
     }
 
-    const existingEmail = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "user" && lower(email) == $email][0]{ _id }`,
-        { email }
-    );
+    const existingUsers = await listDocumentsByFilter<{ _id: string; email?: string }>('user', {});
+    const existingEmail =
+        existingUsers.find(user => normalizeText(user.email).toLowerCase() === email) || null;
+    if (!useSupabaseBackend()) {
+        throw new Error('Backend Supabase wajib aktif untuk membuat user');
+    }
     if (existingEmail) {
         throw new Error('Email user sudah digunakan');
     }
@@ -146,7 +150,10 @@ export async function normalizeUserUpdates(
 ) {
     const allowedOwnerFields = new Set(['name', 'email', 'role', 'active', 'driverRef', 'password', 'passwordHash']);
     const allowedSelfFields = new Set(['name', 'password', 'passwordHash']);
-    const existingUser = await sanityGetById<{ _id: string; email: string; role: string; active: boolean; passwordHash: string; driverRef?: string }>(targetUserId);
+    const existingUser = await getDocumentById<{ _id: string; email: string; role: string; active: boolean; passwordHash: string; driverRef?: string }>(
+        targetUserId,
+        'user'
+    );
     if (!existingUser) {
         throw new Error('User tidak ditemukan');
     }
@@ -181,10 +188,13 @@ export async function normalizeUserUpdates(
         if (!normalizedEmail) {
             throw new Error('Email wajib diisi');
         }
-        const duplicateEmail = await getSanityClient().fetch<{ _id: string } | null>(
-            `*[_type == "user" && lower(email) == $email && _id != $excludeId][0]{ _id }`,
-            { email: normalizedEmail, excludeId: targetUserId }
-        );
+        const duplicateEmail =
+            (await listDocumentsByFilter<{ _id: string; email?: string }>('user', {}))
+                .find(
+                    user =>
+                        user._id !== targetUserId
+                        && normalizeText(user.email).toLowerCase() === normalizedEmail
+                ) || null;
         if (duplicateEmail) {
             throw new Error('Email user sudah digunakan');
         }
@@ -212,10 +222,12 @@ export async function normalizeUserUpdates(
     }
 
     if (existingUser.role === 'OWNER' && (nextRole !== 'OWNER' || !nextActive)) {
-        const otherActiveOwners = await getSanityClient().fetch<number>(
-            `count(*[_type == "user" && role == "OWNER" && active == true && _id != $excludeId])`,
-            { excludeId: targetUserId }
-        );
+        const otherActiveOwners = (
+            await listDocumentsByFilter<{ _id: string; role?: string; active?: boolean }>('user', {
+                role: 'OWNER',
+                active: true,
+            })
+        ).filter(user => user._id !== targetUserId).length;
         if (otherActiveOwners === 0) {
             throw new Error('Minimal harus ada satu OWNER aktif');
         }
@@ -315,29 +327,28 @@ export async function handleInvoiceCreate(
     const notes = normalizeOptionalText(data.notes);
 
     const requestedOrderDoc = orderRef
-        ? await sanityGetById<{ _id: string; _rev?: string; customerRef?: unknown; customerName?: string; masterResi?: string }>(orderRef)
+        ? await getDocumentById<{ _id: string; customerRef?: unknown; customerName?: string; masterResi?: string }>(orderRef, 'order')
         : null;
     if (orderRef && !requestedOrderDoc) {
         return NextResponse.json({ error: 'Order invoice tidak ditemukan' }, { status: 404 });
     }
 
     const deliveryOrderDoc = doRef
-        ? await sanityGetById<{
+        ? await getDocumentById<{
             _id: string;
-            _rev?: string;
             orderRef?: unknown;
             customerRef?: unknown;
             customerName?: string;
             doNumber?: string;
             masterResi?: string;
-        }>(doRef)
+        }>(doRef, 'deliveryOrder')
         : null;
     if (doRef && !deliveryOrderDoc) {
         return NextResponse.json({ error: 'Surat jalan invoice tidak ditemukan' }, { status: 404 });
     }
 
     const requestedCustomerDoc = customerRef
-        ? await sanityGetById<{ _id: string; _rev?: string; name?: string }>(customerRef)
+        ? await getDocumentById<{ _id: string; name?: string }>(customerRef, 'customer')
         : null;
     if (customerRef && !requestedCustomerDoc) {
         return NextResponse.json({ error: 'Customer invoice tidak ditemukan' }, { status: 404 });
@@ -351,7 +362,7 @@ export async function handleInvoiceCreate(
     const resolvedOrderDoc =
         requestedOrderDoc ||
         (doOrderRef
-            ? await sanityGetById<{ _id: string; _rev?: string; customerRef?: unknown; customerName?: string; masterResi?: string }>(doOrderRef)
+            ? await getDocumentById<{ _id: string; customerRef?: unknown; customerName?: string; masterResi?: string }>(doOrderRef, 'order')
             : null);
 
     if (doOrderRef && !resolvedOrderDoc) {
@@ -369,23 +380,12 @@ export async function handleInvoiceCreate(
     if (orderCustomerRef && doCustomerRef && orderCustomerRef !== doCustomerRef) {
         return NextResponse.json({ error: 'Order dan surat jalan invoice tidak berasal dari customer yang sama' }, { status: 400 });
     }
-    if (resolvedOrderDoc && !resolvedOrderDoc._rev) {
-        return NextResponse.json({ error: 'Revisi order invoice tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
-    }
-    if (deliveryOrderDoc && !deliveryOrderDoc._rev) {
-        return NextResponse.json({ error: 'Revisi surat jalan invoice tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
-    }
-
     const inferredCustomerRef = customerRef || orderCustomerRef || doCustomerRef;
     const resolvedCustomerDoc =
         requestedCustomerDoc ||
         (inferredCustomerRef
-            ? await sanityGetById<{ _id: string; _rev?: string; name?: string }>(inferredCustomerRef)
+            ? await getDocumentById<{ _id: string; name?: string }>(inferredCustomerRef, 'customer')
             : null);
-
-    if (resolvedCustomerDoc && !resolvedCustomerDoc._rev) {
-        return NextResponse.json({ error: 'Revisi customer invoice tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
-    }
 
     const resolvedMode = hasMode
         ? modeValue as 'ORDER' | 'DO'
@@ -405,7 +405,7 @@ export async function handleInvoiceCreate(
         normalizeOptionalText(deliveryOrderDoc?.masterResi);
 
     const invoiceId = crypto.randomUUID();
-    const invoiceNumber = await sanityGetNextNumber('invoice', issueDate);
+    const invoiceNumber = await getNextNumber('invoice', issueDate);
     const invoiceDoc: { _id: string; _type: 'invoice'; [key: string]: unknown } = {
         _id: invoiceId,
         _type: 'invoice',
@@ -437,8 +437,16 @@ export async function handleInvoiceCreate(
         invoiceDoc.notes = notes;
     }
 
-    const transaction = getSanityClient().transaction().create(invoiceDoc);
     let itemSubtotalTotal = 0;
+    const invoiceItems: Array<{
+        _id: string;
+        _type: 'invoiceItem';
+        invoiceRef: string;
+        description: string;
+        qty: number;
+        price: number;
+        subtotal: number;
+    }> = [];
     for (const item of items) {
         let subtotal: number;
         let qty: number;
@@ -463,8 +471,7 @@ export async function handleInvoiceCreate(
             return NextResponse.json({ error: 'Ada item invoice yang tidak valid' }, { status: 400 });
         }
         itemSubtotalTotal += subtotal;
-
-        transaction.create({
+        invoiceItems.push({
             _id: crypto.randomUUID(),
             _type: 'invoiceItem',
             invoiceRef: invoiceId,
@@ -477,36 +484,20 @@ export async function handleInvoiceCreate(
     if (itemSubtotalTotal !== totalAmount) {
         return NextResponse.json({ error: 'Total invoice harus sama dengan jumlah subtotal item' }, { status: 400 });
     }
+
+    await createDocument(invoiceDoc);
+    for (const invoiceItem of invoiceItems) {
+        await createDocument(invoiceItem);
+    }
     const mutationTimestamp = new Date().toISOString();
     if (resolvedCustomerDoc) {
-        transaction.patch(resolvedCustomerDoc._id, {
-            ifRevisionID: resolvedCustomerDoc._rev,
-            set: { updatedAt: mutationTimestamp },
-        });
+        await updateDocument(resolvedCustomerDoc._id, { updatedAt: mutationTimestamp });
     }
     if (resolvedOrderDoc) {
-        transaction.patch(resolvedOrderDoc._id, {
-            ifRevisionID: resolvedOrderDoc._rev,
-            set: { updatedAt: mutationTimestamp },
-        });
+        await updateDocument(resolvedOrderDoc._id, { updatedAt: mutationTimestamp });
     }
     if (deliveryOrderDoc) {
-        transaction.patch(deliveryOrderDoc._id, {
-            ifRevisionID: deliveryOrderDoc._rev,
-            set: { updatedAt: mutationTimestamp },
-        });
-    }
-
-    try {
-        await transaction.commit();
-    } catch (error) {
-        if (isMutationConflictError(error)) {
-            return NextResponse.json(
-                { error: 'Invoice, customer, atau dokumen sumber berubah karena ada transaksi lain. Muat ulang lalu coba lagi.' },
-                { status: 409 }
-            );
-        }
-        throw error;
+        await updateDocument(deliveryOrderDoc._id, { updatedAt: mutationTimestamp });
     }
     await addAuditLog(session, 'CREATE', 'invoices', invoiceId, `Created invoices: ${invoiceNumber}`);
     return NextResponse.json({ data: invoiceDoc, id: invoiceId });
@@ -522,96 +513,65 @@ export async function handleCustomerDelete(
         return NextResponse.json({ error: 'Customer tidak valid' }, { status: 400 });
     }
 
-    const customer = await sanityGetById<{ _id: string; _rev?: string; name?: string }>(id);
+    const customer = await getDocumentById<{ _id: string; name?: string }>(id, 'customer');
     if (!customer) {
         return NextResponse.json({ error: 'Customer tidak ditemukan' }, { status: 404 });
     }
-    if (!customer._rev) {
-        return NextResponse.json({ error: 'Revisi customer tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
-    }
-
-    const relatedOrder = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "order" && ((customerRef == $ref || customerRef._ref == $ref) || lower(coalesce(customerName, "")) == $customerName)][0]{ _id }`,
-        { ref: id, customerName: (customer.name || '').toLowerCase() }
-    );
+    const customerName = normalizeText(customer.name).toLowerCase();
+    const relatedOrder =
+        (await listDocumentsByFilter<{ _id: string; customerRef?: string; customerName?: string }>('order', {}))
+            .find(doc => doc.customerRef === id || normalizeText(doc.customerName).toLowerCase() === customerName) || null;
     if (relatedOrder) {
         return NextResponse.json({ error: 'Customer yang sudah dipakai pada order tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedDeliveryOrder = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "deliveryOrder" && ((customerRef == $ref || customerRef._ref == $ref) || lower(coalesce(customerName, "")) == $customerName)][0]{ _id }`,
-        { ref: id, customerName: (customer.name || '').toLowerCase() }
-    );
+    const relatedDeliveryOrder =
+        (await listDocumentsByFilter<{ _id: string; customerRef?: string; customerName?: string }>('deliveryOrder', {}))
+            .find(doc => doc.customerRef === id || normalizeText(doc.customerName).toLowerCase() === customerName) || null;
     if (relatedDeliveryOrder) {
         return NextResponse.json({ error: 'Customer yang sudah dipakai pada surat jalan tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedFreightNota = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "freightNota" && ((customerRef == $ref || customerRef._ref == $ref) || lower(coalesce(customerName, "")) == $customerName)][0]{ _id }`,
-        { ref: id, customerName: (customer.name || '').toLowerCase() }
-    );
+    const relatedFreightNota =
+        (await listDocumentsByFilter<{ _id: string; customerRef?: string; customerName?: string }>('freightNota', {}))
+            .find(doc => doc.customerRef === id || normalizeText(doc.customerName).toLowerCase() === customerName) || null;
     if (relatedFreightNota) {
         return NextResponse.json({ error: 'Customer yang sudah dipakai pada nota tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedInvoice = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "invoice" && ((customerRef == $ref || customerRef._ref == $ref) || lower(coalesce(customerName, "")) == $customerName)][0]{ _id }`,
-        { ref: id, customerName: (customer.name || '').toLowerCase() }
-    );
+    const relatedInvoice =
+        (await listDocumentsByFilter<{ _id: string; customerRef?: string; customerName?: string }>('invoice', {}))
+            .find(doc => doc.customerRef === id || normalizeText(doc.customerName).toLowerCase() === customerName) || null;
     if (relatedInvoice) {
         return NextResponse.json({ error: 'Customer yang sudah dipakai pada invoice tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedCustomerProduct = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "customerProduct" && customerRef == $ref][0]{ _id }`,
-        { ref: id }
-    );
+    const relatedCustomerProduct =
+        (await listDocumentsByFilter<{ _id: string }>('customerProduct', { customerRef: id }))[0] || null;
     if (relatedCustomerProduct) {
         return NextResponse.json({ error: 'Hapus dulu master barang customer sebelum menghapus customer' }, { status: 409 });
     }
 
-    const relatedCustomerRecipient = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "customerRecipient" && customerRef == $ref][0]{ _id }`,
-        { ref: id }
-    );
+    const relatedCustomerRecipient =
+        (await listDocumentsByFilter<{ _id: string }>('customerRecipient', { customerRef: id }))[0] || null;
     if (relatedCustomerRecipient) {
         return NextResponse.json({ error: 'Hapus dulu master penerima customer sebelum menghapus customer' }, { status: 409 });
     }
 
-    const relatedCustomerPickup = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "customerPickupLocation" && customerRef == $ref][0]{ _id }`,
-        { ref: id }
-    );
+    const relatedCustomerPickup =
+        (await listDocumentsByFilter<{ _id: string }>('customerPickupLocation', { customerRef: id }))[0] || null;
     if (relatedCustomerPickup) {
         return NextResponse.json({ error: 'Hapus dulu master pickup customer sebelum menghapus customer' }, { status: 409 });
     }
 
-    const relatedCustomerReceipt = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "customerReceipt" && ((customerRef == $ref || customerRef._ref == $ref) || lower(coalesce(customerName, "")) == $customerName)][0]{ _id }`,
-        { ref: id, customerName: (customer.name || '').toLowerCase() }
-    );
+    const relatedCustomerReceipt =
+        (await listDocumentsByFilter<{ _id: string; customerRef?: string; customerName?: string }>('customerReceipt', {}))
+            .find(doc => doc.customerRef === id || normalizeText(doc.customerName).toLowerCase() === customerName) || null;
     if (relatedCustomerReceipt) {
         return NextResponse.json({ error: 'Customer yang sudah dipakai pada penerimaan tidak boleh dihapus' }, { status: 409 });
     }
 
-    try {
-        await getSanityClient().mutate([
-            {
-                delete: {
-                    id,
-                    ifRevisionID: customer._rev,
-                },
-            },
-        ] as unknown as SanityMutations);
-        await addAuditLog(session, 'DELETE', 'customers', id, `Deleted customers ${customer.name || id}`);
-        return NextResponse.json({ success: true });
-    } catch (error) {
-        if (isMutationConflictError(error)) {
-            return NextResponse.json(
-                { error: 'Customer berubah atau baru dipakai pada transaksi lain. Muat ulang lalu coba lagi.' },
-                { status: 409 }
-            );
-        }
-        throw error;
-    }
+    await deleteDocument(id);
+    await addAuditLog(session, 'DELETE', 'customers', id, `Deleted customers ${customer.name || id}`);
+    return NextResponse.json({ success: true });
 }

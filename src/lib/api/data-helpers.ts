@@ -1,10 +1,4 @@
-import {
-    getSanityClient,
-    sanityCreate,
-    sanityGetById,
-    sanityGetCompanyProfile,
-    sanityUpdate,
-} from '@/lib/sanity';
+import { createDocument, getCompanyProfile, getDocumentById, listDocumentsByFilter, updateDocument } from '@/lib/repositories/document-store';
 import { parseFormattedNumberish, type FormattedNumberParseOptions } from '@/lib/formatted-number';
 import { normalizeUserRole } from '@/lib/rbac';
 import type { CompanyProfile, PaymentMethod, User } from '@/lib/types';
@@ -223,29 +217,18 @@ export function sanitizeCompanyProfileForRole(
 }
 
 export async function ensureCashAccount() {
-    const existing = await getSanityClient().fetch<BankAccountSummary | null>(
-        `*[_type == "bankAccount" && systemKey == $key][0]{
-            _id,
-            _rev,
-            currentBalance,
-            bankName,
-            accountNumber,
-            accountType,
-            systemKey,
-            accountHolder,
-            active
-        }`,
-        { key: CASH_ACCOUNT_SYSTEM_KEY }
-    );
+    const existing = (await listDocumentsByFilter<BankAccountSummary>('bankAccount', {
+        systemKey: CASH_ACCOUNT_SYSTEM_KEY,
+    }))[0] || null;
     if (existing) {
         if (existing.active === false) {
-            return sanityUpdate<BankAccountSummary>(existing._id, { active: true });
+            return updateDocument<BankAccountSummary>(existing._id, { active: true });
         }
         return existing;
     }
 
-    const company = await sanityGetCompanyProfile() as { name?: string } | null;
-    return sanityCreate<BankAccountSummary>({
+    const company = await getCompanyProfile<{ name?: string }>();
+    return createDocument<BankAccountSummary>({
         _id: 'bank-cash-on-hand',
         _type: 'bankAccount',
         bankName: 'Kas Tunai',
@@ -261,7 +244,7 @@ export async function ensureCashAccount() {
 }
 
 export async function getLedgerAccount(accountRef: string) {
-    const account = await sanityGetById<BankAccountSummary>(accountRef);
+    const account = await getDocumentById<BankAccountSummary>(accountRef, 'bankAccount');
     if (!account || account.active === false) {
         return null;
     }
@@ -298,7 +281,7 @@ export async function writeAuditLog(
     summary: string
 ) {
     try {
-        await sanityCreate({
+        await createDocument({
             _type: 'auditLog',
             actorUserRef: actor._id,
             actorUserName: actor.name,

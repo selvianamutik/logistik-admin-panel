@@ -1,5 +1,6 @@
 import type { ApiSession } from '@/lib/api/data-helpers';
 import { addDaysToDateValue, getBusinessCalendarDateParts, getBusinessDateValue } from '@/lib/business-date';
+import { getDocumentById, listDocumentsByFilter } from '@/lib/repositories/document-store';
 import {
     EMPLOYEE_ATTENDANCE_PERIOD_LABELS,
     summarizeEmployeeAttendanceRecords,
@@ -9,9 +10,6 @@ import {
     type EmployeeAttendancePeriod,
 } from '@/lib/employee-attendance';
 import { filterExpensesByRole, hasPageAccess, hasPermission } from '@/lib/rbac';
-import {
-    getSanityClient,
-} from '@/lib/sanity';
 import { getSuggestedVehicleTireLayout, resolveTireAssetStatus, resolveTireSlotCode } from '@/lib/tire-slots';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import {
@@ -99,12 +97,8 @@ function buildNormalizedAttendanceRecord(
 
 async function getEmployeeAttendanceDataset() {
     const [employees, attendanceRows] = await Promise.all([
-        getSanityClient().fetch<Employee[]>(
-            `*[_type == "employee"] | order(active desc, employeeCode asc, name asc)`
-        ),
-        getSanityClient().fetch<EmployeeAttendanceRecord[]>(
-            `*[_type == "employeeAttendanceRecord"]`
-        ),
+        listDocumentsByFilter<Employee>('employee', {}),
+        listDocumentsByFilter<EmployeeAttendanceRecord>('employeeAttendanceRecord', {}),
     ]);
 
     const employeesById = new Map(employees.map(employee => [employee._id, employee]));
@@ -278,12 +272,9 @@ async function getFilteredAuditLogs(params: {
     sortDir?: 'asc' | 'desc';
     period?: string | null;
 }) {
-    const client = getSanityClient();
     const [rawLogs, users] = await Promise.all([
-        client.fetch<Array<AuditLog & { _createdAt?: string }>>(`*[_type == "auditLog"]`),
-        client.fetch<Array<{ _id: string; name?: string; email?: string; role?: string }>>(
-            `*[_type == "user"]{ _id, name, email, role }`
-        ),
+        listDocumentsByFilter<AuditLog & { _createdAt?: string }>('auditLog', {}),
+        listDocumentsByFilter<{ _id: string; name?: string; email?: string; role?: string }>('user', {}),
     ]);
     const search = params.search?.trim().toLowerCase() || '';
     const searchFields = (params.searchFields ?? []).map(field => field.trim()).filter(Boolean);
@@ -846,20 +837,16 @@ export async function getFreightNotaList(params: {
     sortPreset?: string | null;
     countOnly?: boolean;
 }) {
-    const client = getSanityClient();
     const [notaRows, paymentRows, refundRows] = await Promise.all([
-        client.fetch<Array<FreightNota & { _createdAt?: string }>>(`*[_type == "freightNota"]`),
-        client.fetch<Array<{ invoiceRef?: string; amount?: unknown }>>(`*[_type == "payment" && defined(invoiceRef)]{ invoiceRef, amount }`),
-        client.fetch<Array<Pick<CustomerOverpaymentRefund, 'sourceType' | 'sourceInvoiceRef' | 'amount'>>>(
-            `*[_type == "customerOverpaymentRefund" && sourceType == "INVOICE_OVERPAID"]{
-                sourceType,
-                sourceInvoiceRef,
-                amount
-            }`
-        ),
+        listDocumentsByFilter<Array<FreightNota & { _createdAt?: string }>[number]>('freightNota', {}),
+        listDocumentsByFilter<Array<{ invoiceRef?: string; amount?: unknown }>[number]>('payment', {}),
+        listDocumentsByFilter<Pick<CustomerOverpaymentRefund, 'sourceType' | 'sourceInvoiceRef' | 'amount'>>('customerOverpaymentRefund', {
+            sourceType: 'INVOICE_OVERPAID',
+        }),
     ]);
+    const filteredPaymentRows = paymentRows.filter(row => Boolean(row.invoiceRef));
 
-    const paymentTotalsByInvoice = getFreightNotaPaymentTotals(paymentRows);
+    const paymentTotalsByInvoice = getFreightNotaPaymentTotals(filteredPaymentRows);
     const { invoiceRefundsByRef } = getCustomerOverpaymentRefundTotals(refundRows);
     const search = params.search?.trim().toLowerCase() || '';
     const filterObj = params.filterObj ?? {};
@@ -916,24 +903,13 @@ export async function getFreightNotaList(params: {
 }
 
 export async function getFreightNotaById(id: string) {
-    const client = getSanityClient();
     const [nota, paymentRows, refundRows] = await Promise.all([
-        client.fetch<(FreightNota & { _createdAt?: string }) | null>(
-            `*[_type == "freightNota" && _id == $id][0]`,
-            { id }
-        ),
-        client.fetch<Array<{ invoiceRef?: string; amount?: unknown }>>(
-            `*[_type == "payment" && invoiceRef == $id]{ invoiceRef, amount }`,
-            { id }
-        ),
-        client.fetch<Array<Pick<CustomerOverpaymentRefund, 'sourceType' | 'sourceInvoiceRef' | 'amount'>>>(
-            `*[_type == "customerOverpaymentRefund" && sourceType == "INVOICE_OVERPAID" && sourceInvoiceRef == $id]{
-                sourceType,
-                sourceInvoiceRef,
-                amount
-            }`,
-            { id }
-        ),
+        getDocumentById<FreightNota & { _createdAt?: string }>(id, 'freightNota'),
+        listDocumentsByFilter<Array<{ invoiceRef?: string; amount?: unknown }>[number]>('payment', { invoiceRef: id }),
+        listDocumentsByFilter<Pick<CustomerOverpaymentRefund, 'sourceType' | 'sourceInvoiceRef' | 'amount'>>('customerOverpaymentRefund', {
+            sourceType: 'INVOICE_OVERPAID',
+            sourceInvoiceRef: id,
+        }),
     ]);
 
     if (!nota) return null;
@@ -943,61 +919,26 @@ export async function getFreightNotaById(id: string) {
 }
 
 export async function getDriverVoucherById(id: string) {
-    const client = getSanityClient();
     const [voucher, disbursements, items] = await Promise.all([
-        client.fetch<DriverVoucher | null>(
-            `*[_type == "driverVoucher" && _id == $id][0]`,
-            { id }
-        ),
-        client.fetch<Array<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>>(
-            `*[_type == "driverVoucherDisbursement" && voucherRef == $id]{ voucherRef, amount, kind }`,
-            { id }
-        ),
-        client.fetch<Array<Pick<DriverVoucherItem, 'voucherRef' | 'amount'>>>(
-            `*[_type == "driverVoucherItem" && voucherRef == $id]{ voucherRef, amount }`,
-            { id }
-        ),
+        getDocumentById<DriverVoucher>(id, 'driverVoucher'),
+        listDocumentsByFilter<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>('driverVoucherDisbursement', { voucherRef: id }),
+        listDocumentsByFilter<Pick<DriverVoucherItem, 'voucherRef' | 'amount'>>('driverVoucherItem', { voucherRef: id }),
     ]);
     if (!voucher) return null;
     return applyDerivedDriverVoucherLedger([voucher], disbursements, items)[0];
 }
 
 export async function getDeliveryOrderTripCashLink(deliveryOrderRef: string) {
-    const client = getSanityClient();
-    const voucher = await client.fetch<DriverVoucher | null>(
-        `*[_type == "driverVoucher" && deliveryOrderRef == $deliveryOrderRef] | order(issuedDate desc, _createdAt desc)[0]{
-            _id,
-            bonNumber,
-            deliveryOrderRef,
-            issuedDate,
-            cashGiven,
-            initialCashGiven,
-            totalIssuedAmount,
-            topUpCount,
-            driverFeeAmount,
-            totalClaimAmount,
-            totalSpent,
-            balance,
-            status,
-            settledDate,
-            settledBy,
-            settlementBankRef,
-            settlementBankName
-        }`,
-        { deliveryOrderRef }
-    );
+    const voucher = (await listDocumentsByFilter<DriverVoucher & { _createdAt?: string }>('driverVoucher', { deliveryOrderRef }))
+        .sort((left, right) =>
+            `${right.issuedDate || ''}${right._createdAt || ''}`.localeCompare(`${left.issuedDate || ''}${left._createdAt || ''}`)
+        )[0] || null;
 
     if (!voucher) return null;
 
     const [disbursements, items] = await Promise.all([
-        client.fetch<Array<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>>(
-            `*[_type == "driverVoucherDisbursement" && voucherRef == $id]{ voucherRef, amount, kind }`,
-            { id: voucher._id }
-        ),
-        client.fetch<Array<Pick<DriverVoucherItem, 'voucherRef' | 'amount'>>>(
-            `*[_type == "driverVoucherItem" && voucherRef == $id]{ voucherRef, amount }`,
-            { id: voucher._id }
-        ),
+        listDocumentsByFilter<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>('driverVoucherDisbursement', { voucherRef: voucher._id }),
+        listDocumentsByFilter<Pick<DriverVoucherItem, 'voucherRef' | 'amount'>>('driverVoucherItem', { voucherRef: voucher._id }),
     ]);
 
     const derivedVoucher = applyDerivedDriverVoucherLedger([voucher], disbursements, items)[0];
@@ -1074,15 +1015,10 @@ export async function getDriverVoucherList(params: {
     sortPreset?: string | null;
     countOnly?: boolean;
 }) {
-    const client = getSanityClient();
     const [voucherRows, disbursementRows, itemRows] = await Promise.all([
-        client.fetch<DriverVoucher[]>(`*[_type == "driverVoucher"]`),
-        client.fetch<Array<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>>(
-            `*[_type == "driverVoucherDisbursement"]{ voucherRef, amount, kind }`
-        ),
-        client.fetch<Array<Pick<DriverVoucherItem, 'voucherRef' | 'amount'>>>(
-            `*[_type == "driverVoucherItem"]{ voucherRef, amount }`
-        ),
+        listDocumentsByFilter<DriverVoucher>('driverVoucher', {}),
+        listDocumentsByFilter<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>('driverVoucherDisbursement', {}),
+        listDocumentsByFilter<Pick<DriverVoucherItem, 'voucherRef' | 'amount'>>('driverVoucherItem', {}),
     ]);
 
     const search = params.search?.trim().toLowerCase() || '';
@@ -1136,16 +1072,9 @@ export async function getDriverVoucherList(params: {
 }
 
 export async function getDriverBoronganById(id: string) {
-    const client = getSanityClient();
     const [borongan, items] = await Promise.all([
-        client.fetch<DriverBorongan | null>(
-            `*[_type == "driverBorongan" && _id == $id][0]`,
-            { id }
-        ),
-        client.fetch<Array<Pick<DriverBoronganItem, 'boronganRef' | 'collie' | 'beratKg' | 'uangRp'>>>(
-            `*[_type == "driverBoronganItem" && boronganRef == $id]{ boronganRef, collie, beratKg, uangRp }`,
-            { id }
-        ),
+        getDocumentById<DriverBorongan>(id, 'driverBorongan'),
+        listDocumentsByFilter<Pick<DriverBoronganItem, 'boronganRef' | 'collie' | 'beratKg' | 'uangRp'>>('driverBoronganItem', { boronganRef: id }),
     ]);
 
     if (!borongan) return null;
@@ -1164,12 +1093,9 @@ export async function getDriverBoronganList(params: {
     sortDir?: 'asc' | 'desc';
     countOnly?: boolean;
 }) {
-    const client = getSanityClient();
     const [docs, itemTotals] = await Promise.all([
-        client.fetch<DriverBorongan[]>(`*[_type == "driverBorongan"]`),
-        client.fetch<Array<Pick<DriverBoronganItem, 'boronganRef' | 'collie' | 'beratKg' | 'uangRp'>>>(
-            `*[_type == "driverBoronganItem"]{ boronganRef, collie, beratKg, uangRp }`
-        ),
+        listDocumentsByFilter<DriverBorongan>('driverBorongan', {}),
+        listDocumentsByFilter<Pick<DriverBoronganItem, 'boronganRef' | 'collie' | 'beratKg' | 'uangRp'>>('driverBoronganItem', {}),
     ]);
 
     const query = params.search?.trim().toLowerCase() || '';
@@ -1236,24 +1162,13 @@ export async function getDriverBoronganList(params: {
 }
 
 export async function getCustomerReceiptById(id: string) {
-    const client = getSanityClient();
     const [receipt, payments, refundRows] = await Promise.all([
-        client.fetch<CustomerReceipt | null>(
-            `*[_type == "customerReceipt" && _id == $id][0]`,
-            { id }
-        ),
-        client.fetch<Array<Pick<Payment, 'receiptRef' | 'amount'>>>(
-            `*[_type == "payment" && receiptRef == $id]{ receiptRef, amount }`,
-            { id }
-        ),
-        client.fetch<Array<Pick<CustomerOverpaymentRefund, 'sourceType' | 'sourceReceiptRef' | 'amount'>>>(
-            `*[_type == "customerOverpaymentRefund" && sourceType == "RECEIPT_UNAPPLIED" && sourceReceiptRef == $id]{
-                sourceType,
-                sourceReceiptRef,
-                amount
-            }`,
-            { id }
-        ),
+        getDocumentById<CustomerReceipt>(id, 'customerReceipt'),
+        listDocumentsByFilter<Pick<Payment, 'receiptRef' | 'amount'>>('payment', { receiptRef: id }),
+        listDocumentsByFilter<Pick<CustomerOverpaymentRefund, 'sourceType' | 'sourceReceiptRef' | 'amount'>>('customerOverpaymentRefund', {
+            sourceType: 'RECEIPT_UNAPPLIED',
+            sourceReceiptRef: id,
+        }),
     ]);
 
     if (!receipt) return null;
@@ -1276,20 +1191,14 @@ export async function getCustomerReceiptList(params: {
     sortDir?: 'asc' | 'desc';
     countOnly?: boolean;
 }) {
-    const client = getSanityClient();
     const [docs, payments, refundRows] = await Promise.all([
-        client.fetch<CustomerReceipt[]>(`*[_type == "customerReceipt"]`),
-        client.fetch<Array<Pick<Payment, 'receiptRef' | 'amount'>>>(
-            `*[_type == "payment" && defined(receiptRef)]{ receiptRef, amount }`
-        ),
-        client.fetch<Array<Pick<CustomerOverpaymentRefund, 'sourceType' | 'sourceReceiptRef' | 'amount'>>>(
-            `*[_type == "customerOverpaymentRefund" && sourceType == "RECEIPT_UNAPPLIED"]{
-                sourceType,
-                sourceReceiptRef,
-                amount
-            }`
-        ),
+        listDocumentsByFilter<CustomerReceipt>('customerReceipt', {}),
+        listDocumentsByFilter<Pick<Payment, 'receiptRef' | 'amount'>>('payment', {}),
+        listDocumentsByFilter<Pick<CustomerOverpaymentRefund, 'sourceType' | 'sourceReceiptRef' | 'amount'>>('customerOverpaymentRefund', {
+            sourceType: 'RECEIPT_UNAPPLIED',
+        }),
     ]);
+    const paymentRows = payments.filter(row => Boolean(row.receiptRef));
 
     const query = params.search?.trim().toLowerCase() || '';
     const filterObj = params.filterObj ?? {};
@@ -1298,7 +1207,7 @@ export async function getCustomerReceiptList(params: {
     const searchFields = (params.searchFields ?? []).map(field => field.trim()).filter(Boolean);
     const { receiptRefundsByRef } = getCustomerOverpaymentRefundTotals(refundRows);
     const withDerivedAllocations = applyDerivedCustomerReceiptOverpaymentState(
-        applyDerivedCustomerReceiptAllocations(docs, payments),
+        applyDerivedCustomerReceiptAllocations(docs, paymentRows),
         receiptRefundsByRef
     );
 
@@ -1359,28 +1268,18 @@ export async function getCustomerReceiptList(params: {
 }
 
 export async function getCustomerOverpaymentById(id: string) {
-    const client = getSanityClient();
     const [receipts, notas, payments, refunds, invoiceAdjustments] = await Promise.all([
-        client.fetch<CustomerReceipt[]>(`*[_type == "customerReceipt"]`),
-        client.fetch<FreightNota[]>(`*[_type == "freightNota"]`),
-        client.fetch<Array<Pick<Payment, 'invoiceRef' | 'receiptRef' | 'amount'>>>(
-            `*[_type == "payment"]{ invoiceRef, receiptRef, amount }`
-        ),
-        client.fetch<CustomerOverpaymentRefund[]>(
-            `*[_type == "customerOverpaymentRefund"]`
-        ),
-        client.fetch<Array<{ invoiceRef?: string; date?: string; editedAt?: string }>>(
-            `*[_type == "invoiceAdjustment" && (!defined(status) || status != "VOID") && defined(invoiceRef)]{
-                invoiceRef,
-                date,
-                editedAt
-            }`
-        ),
+        listDocumentsByFilter<CustomerReceipt>('customerReceipt', {}),
+        listDocumentsByFilter<FreightNota>('freightNota', {}),
+        listDocumentsByFilter<Pick<Payment, 'invoiceRef' | 'receiptRef' | 'amount'>>('payment', {}),
+        listDocumentsByFilter<CustomerOverpaymentRefund>('customerOverpaymentRefund', {}),
+        listDocumentsByFilter<Array<{ invoiceRef?: string; date?: string; editedAt?: string; status?: string }>[number]>('invoiceAdjustment', {}),
     ]);
+    const activeInvoiceAdjustments = invoiceAdjustments.filter(row => row.status !== 'VOID' && row.invoiceRef);
 
     const paymentTotalsByInvoice = getFreightNotaPaymentTotals(payments);
     const { receiptRefundsByRef, invoiceRefundsByRef } = getCustomerOverpaymentRefundTotals(refunds);
-    const invoiceDetectedDatesByRef = buildInvoiceOverpaymentDetectedDateMap(invoiceAdjustments);
+    const invoiceDetectedDatesByRef = buildInvoiceOverpaymentDetectedDateMap(activeInvoiceAdjustments);
     const receiptRows = applyDerivedCustomerReceiptOverpaymentState(
         applyDerivedCustomerReceiptAllocations(receipts, payments),
         receiptRefundsByRef
@@ -1411,22 +1310,14 @@ export async function getCustomerOverpaymentList(params: {
     sortPreset?: string | null;
     countOnly?: boolean;
 }) {
-    const client = getSanityClient();
     const [receipts, notas, payments, refunds, invoiceAdjustments] = await Promise.all([
-        client.fetch<CustomerReceipt[]>(`*[_type == "customerReceipt"]`),
-        client.fetch<FreightNota[]>(`*[_type == "freightNota"]`),
-        client.fetch<Array<Pick<Payment, 'invoiceRef' | 'receiptRef' | 'amount'>>>(
-            `*[_type == "payment"]{ invoiceRef, receiptRef, amount }`
-        ),
-        client.fetch<CustomerOverpaymentRefund[]>(`*[_type == "customerOverpaymentRefund"]`),
-        client.fetch<Array<{ invoiceRef?: string; date?: string; editedAt?: string }>>(
-            `*[_type == "invoiceAdjustment" && (!defined(status) || status != "VOID") && defined(invoiceRef)]{
-                invoiceRef,
-                date,
-                editedAt
-            }`
-        ),
+        listDocumentsByFilter<CustomerReceipt>('customerReceipt', {}),
+        listDocumentsByFilter<FreightNota>('freightNota', {}),
+        listDocumentsByFilter<Pick<Payment, 'invoiceRef' | 'receiptRef' | 'amount'>>('payment', {}),
+        listDocumentsByFilter<CustomerOverpaymentRefund>('customerOverpaymentRefund', {}),
+        listDocumentsByFilter<Array<{ invoiceRef?: string; date?: string; editedAt?: string; status?: string }>[number]>('invoiceAdjustment', {}),
     ]);
+    const activeInvoiceAdjustments = invoiceAdjustments.filter(row => row.status !== 'VOID' && row.invoiceRef);
 
     const query = params.search?.trim().toLowerCase() || '';
     const filterObj = params.filterObj ?? {};
@@ -1435,7 +1326,7 @@ export async function getCustomerOverpaymentList(params: {
     const searchFields = (params.searchFields ?? []).map(field => field.trim()).filter(Boolean);
     const paymentTotalsByInvoice = getFreightNotaPaymentTotals(payments);
     const { receiptRefundsByRef, invoiceRefundsByRef } = getCustomerOverpaymentRefundTotals(refunds);
-    const invoiceDetectedDatesByRef = buildInvoiceOverpaymentDetectedDateMap(invoiceAdjustments);
+    const invoiceDetectedDatesByRef = buildInvoiceOverpaymentDetectedDateMap(activeInvoiceAdjustments);
     const receiptRows = applyDerivedCustomerReceiptOverpaymentState(
         applyDerivedCustomerReceiptAllocations(receipts, payments),
         receiptRefundsByRef
@@ -1551,7 +1442,6 @@ export function getListSortClause(entity: string, sortPreset?: string | null) {
 }
 
 export async function getDashboardSummary(session: ApiSession): Promise<DashboardSummary> {
-    const client = getSanityClient();
     const canViewOrders = hasPageAccess(session.role, 'orders');
     const canViewInvoices = hasPermission(session.role, 'freightNotas', 'view');
     const canViewTripCash = hasPermission(session.role, 'driverVouchers', 'view');
@@ -1573,139 +1463,66 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
         recentNotas,
     ] = await Promise.all([
         canViewOrders
-            ? client.fetch<DashboardSummary['orderStats']>(`{
-                "total": count(*[_type == "order"]),
-                "open": count(*[_type == "order" && status == "OPEN"]),
-                "partial": count(*[_type == "order" && status == "PARTIAL"]),
-                "complete": count(*[_type == "order" && status == "COMPLETE"]),
-                "onHold": count(*[_type == "order" && status == "ON_HOLD"])
-            }`)
+            ? listDocumentsByFilter<Pick<DashboardSummary['recentOrders'][number], 'status'>>('order', {}).then(rows => ({
+                total: rows.length,
+                open: rows.filter(row => row.status === 'OPEN').length,
+                partial: rows.filter(row => row.status === 'PARTIAL').length,
+                complete: rows.filter(row => row.status === 'COMPLETE').length,
+                onHold: rows.filter(row => row.status === 'ON_HOLD').length,
+            }))
             : Promise.resolve({ total: 0, open: 0, partial: 0, complete: 0, onHold: 0 }),
-        client.fetch<DashboardSummary['doStats']>(`{
-            "total": count(*[_type == "deliveryOrder"]),
-            "onDelivery": count(*[_type == "deliveryOrder" && status == "ON_DELIVERY"])
-        }`),
+        listDocumentsByFilter<Pick<DashboardSummary['recentOrders'][number], 'status'>>('deliveryOrder', {}).then(rows => ({
+            total: rows.length,
+            onDelivery: rows.filter(row => row.status === 'ON_DELIVERY').length,
+        })),
         canViewInvoices
-            ? client.fetch<Array<Pick<FreightNota, '_id' | 'status' | 'totalAmount' | 'totalAdjustmentAmount' | 'pph23Enabled' | 'pph23RatePercent' | 'pph23BaseMode' | 'pph23Amount' | 'netAmount'>>>(
-                `*[_type == "freightNota"]{
-                    _id,
-                    status,
-                    totalAmount,
-                    totalAdjustmentAmount,
-                    pph23Enabled,
-                    pph23RatePercent,
-                    pph23BaseMode,
-                    pph23Amount,
-                    netAmount
-                }`
+            ? listDocumentsByFilter<Pick<FreightNota, '_id' | 'status' | 'totalAmount' | 'totalAdjustmentAmount' | 'pph23Enabled' | 'pph23RatePercent' | 'pph23BaseMode' | 'pph23Amount' | 'netAmount'>>('freightNota', {})
+            : Promise.resolve([]),
+        canViewInvoices
+            ? listDocumentsByFilter<Array<{ invoiceRef?: string; amount?: number }>[number]>('payment', {}).then(rows =>
+                rows.filter(row => Boolean(row.invoiceRef))
             )
             : Promise.resolve([]),
         canViewInvoices
-            ? client.fetch<Array<{ invoiceRef?: string; amount?: number }>>(
-                `*[_type == "payment" && defined(invoiceRef)]{ invoiceRef, amount }`
-            )
-            : Promise.resolve([]),
-        canViewInvoices
-            ? client.fetch<Array<Pick<CustomerOverpaymentRefund, 'sourceType' | 'sourceInvoiceRef' | 'amount'>>>(
-                `*[_type == "customerOverpaymentRefund" && sourceType == "INVOICE_OVERPAID"]{
-                    sourceType,
-                    sourceInvoiceRef,
-                    amount
-                }`
-            )
+            ? listDocumentsByFilter<Pick<CustomerOverpaymentRefund, 'sourceType' | 'sourceInvoiceRef' | 'amount'>>('customerOverpaymentRefund', {
+                sourceType: 'INVOICE_OVERPAID',
+            })
             : Promise.resolve([]),
         canSeeBorongan
-            ? client.fetch<Array<Pick<DriverBorongan, '_id' | 'status' | 'totalAmount' | 'totalCollie' | 'totalWeightKg' | 'paidDate' | 'paidMethod' | 'paidBankRef' | 'paidBankName' | 'paidBankNumber'>>>(
-                `*[_type == "driverBorongan"]{
-                    _id,
-                    status,
-                    totalAmount,
-                    totalCollie,
-                    totalWeightKg,
-                    paidDate,
-                    paidMethod,
-                    paidBankRef,
-                    paidBankName,
-                    paidBankNumber
-                }`
-            )
+            ? listDocumentsByFilter<Pick<DriverBorongan, '_id' | 'status' | 'totalAmount' | 'totalCollie' | 'totalWeightKg' | 'paidDate' | 'paidMethod' | 'paidBankRef' | 'paidBankName' | 'paidBankNumber'>>('driverBorongan', {})
             : Promise.resolve([]),
         canSeeBorongan
-            ? client.fetch<Array<Pick<DriverBoronganItem, 'boronganRef' | 'collie' | 'beratKg' | 'uangRp'>>>(
-                `*[_type == "driverBoronganItem" && defined(boronganRef)]{
-                    boronganRef,
-                    collie,
-                    beratKg,
-                    uangRp
-                }`
+            ? listDocumentsByFilter<Pick<DriverBoronganItem, 'boronganRef' | 'collie' | 'beratKg' | 'uangRp'>>('driverBoronganItem', {}).then(rows =>
+                rows.filter(row => Boolean(row.boronganRef))
             )
             : Promise.resolve([]),
         canViewTripCash
-            ? client.fetch<Array<Pick<DriverVoucher, '_id' | 'status' | 'settledDate' | 'settledBy' | 'settlementBankRef' | 'settlementBankName' | 'cashGiven' | 'initialCashGiven' | 'topUpCount' | 'totalIssuedAmount' | 'totalSpent' | 'driverFeeAmount' | 'totalClaimAmount' | 'balance'>>>(
-                `*[_type == "driverVoucher"]{
-                    _id,
-                    status,
-                    settledDate,
-                    settledBy,
-                    settlementBankRef,
-                    settlementBankName,
-                    cashGiven,
-                    initialCashGiven,
-                    topUpCount,
-                    totalIssuedAmount,
-                    totalSpent,
-                    driverFeeAmount,
-                    totalClaimAmount,
-                    balance
-                }`
+            ? listDocumentsByFilter<Pick<DriverVoucher, '_id' | 'status' | 'settledDate' | 'settledBy' | 'settlementBankRef' | 'settlementBankName' | 'cashGiven' | 'initialCashGiven' | 'topUpCount' | 'totalIssuedAmount' | 'totalSpent' | 'driverFeeAmount' | 'totalClaimAmount' | 'balance'>>('driverVoucher', {})
+            : Promise.resolve([]),
+        canViewTripCash
+            ? listDocumentsByFilter<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>('driverVoucherDisbursement', {}).then(rows =>
+                rows.filter(row => Boolean(row.voucherRef))
             )
             : Promise.resolve([]),
         canViewTripCash
-            ? client.fetch<Array<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>>(
-                `*[_type == "driverVoucherDisbursement" && defined(voucherRef)]{
-                    voucherRef,
-                    amount,
-                    kind
-                }`
-            )
-            : Promise.resolve([]),
-        canViewTripCash
-            ? client.fetch<Array<Pick<DriverVoucherItem, 'voucherRef' | 'amount'>>>(
-                `*[_type == "driverVoucherItem" && defined(voucherRef)]{
-                    voucherRef,
-                    amount
-                }`
+            ? listDocumentsByFilter<Pick<DriverVoucherItem, 'voucherRef' | 'amount'>>('driverVoucherItem', {}).then(rows =>
+                rows.filter(row => Boolean(row.voucherRef))
             )
             : Promise.resolve([]),
         canViewFleet
-            ? client.fetch<DashboardSummary['fleetStats']>(`{
-                "openIncidents": count(*[_type == "incident" && (status == "OPEN" || status == "IN_PROGRESS")]),
-                "maintenanceDue": count(*[_type == "maintenance" && status == "SCHEDULED"])
-            }`)
+            ? Promise.all([
+                listDocumentsByFilter<{ status?: string }>('incident', {}),
+                listDocumentsByFilter<{ status?: string }>('maintenance', {}),
+            ]).then(([incidents, maintenanceRows]) => ({
+                openIncidents: incidents.filter(row => row.status === 'OPEN' || row.status === 'IN_PROGRESS').length,
+                maintenanceDue: maintenanceRows.filter(row => row.status === 'SCHEDULED').length,
+            }))
             : Promise.resolve({ openIncidents: 0, maintenanceDue: 0 }),
         canViewOrders
-            ? client.fetch<DashboardSummary['recentOrders']>(`*[_type == "order"] | order(_createdAt desc)[0...5]{
-                _id,
-                masterResi,
-                customerName,
-                status,
-                createdAt
-            }`)
+            ? listDocumentsByFilter<DashboardSummary['recentOrders'][number]>('order', {}).then(rows => rows.slice(0, 5))
             : Promise.resolve([]),
         canViewInvoices
-            ? client.fetch<DashboardSummary['recentNotas']>(`*[_type == "freightNota"] | order(_createdAt desc)[0...5]{
-                _id,
-                notaNumber,
-                customerName,
-                status,
-                totalAmount,
-                totalAdjustmentAmount,
-                pph23Enabled,
-                pph23RatePercent,
-                pph23BaseMode,
-                pph23Amount,
-                netAmount
-            }`)
+            ? listDocumentsByFilter<DashboardSummary['recentNotas'][number]>('freightNota', {}).then(rows => rows.slice(0, 5))
             : Promise.resolve([]),
     ]);
 
@@ -1754,19 +1571,22 @@ export async function getDashboardSummary(session: ApiSession): Promise<Dashboar
 }
 
 export async function getCustomersSummary(ids: string[] = []) {
-    const client = getSanityClient();
-    const [totalCustomers, totalProducts, customersWithCustomPrefix, customersWithProductsRaw, productRefs] = await Promise.all([
-        client.fetch<number>(`count(*[_type == "customer"])`),
-        client.fetch<number>(`count(*[_type == "customerProduct"])`),
-        client.fetch<number>(`count(*[_type == "customer" && defined(deliveryOrderPrefix) && deliveryOrderPrefix != "" && deliveryOrderPrefix != "SJ"])`),
-        client.fetch<string[]>(`array::unique(*[_type == "customerProduct" && defined(customerRef)].customerRef)`),
+    const [customers, customerProducts, productRefs] = await Promise.all([
+        listDocumentsByFilter<Array<Record<string, unknown>>[number]>('customer', {}),
+        listDocumentsByFilter<Array<{ customerRef?: string }>[number]>('customerProduct', {}),
         ids.length > 0
-            ? client.fetch<Array<{ customerRef?: string }>>(
-                `*[_type == "customerProduct" && customerRef in $ids]{ customerRef }`,
-                { ids }
+            ? listDocumentsByFilter<Array<{ customerRef?: string }>[number]>('customerProduct', {}).then(rows =>
+                rows.filter(row => row.customerRef && ids.includes(row.customerRef))
             )
             : Promise.resolve([]),
     ]);
+    const totalCustomers = customers.length;
+    const totalProducts = customerProducts.length;
+    const customersWithCustomPrefix = customers.filter(customer => {
+        const deliveryOrderPrefix = typeof customer.deliveryOrderPrefix === 'string' ? customer.deliveryOrderPrefix : '';
+        return deliveryOrderPrefix && deliveryOrderPrefix !== 'SJ';
+    }).length;
+    const customersWithProductsRaw = Array.from(new Set(customerProducts.map(product => product.customerRef).filter(Boolean)));
 
     const productCounts = productRefs.reduce<Record<string, number>>((acc, product) => {
         if (!product.customerRef) return acc;
@@ -1814,37 +1634,24 @@ function buildVehicleTireSummary(
 }
 
 export async function getVehiclesSummary(ids: string[] = []) {
-    const client = getSanityClient();
     const [vehicles, tireEvents] = await Promise.all([
-        client.fetch<Array<Pick<Vehicle, '_id' | 'status' | 'vehicleType' | 'serviceName' | 'tireLayoutConfig'>>>(
-            `*[_type == "vehicle"]{ _id, status, vehicleType, serviceName, tireLayoutConfig }`
-        ),
-        client.fetch<Array<Pick<TireEvent, 'vehicleRef' | 'status' | 'holderType' | 'slotCode' | 'posisi' | 'vehiclePlate' | 'externalPartyName' | 'externalPlateNumber'>>>(
-            `*[_type == "tireEvent" && defined(vehicleRef)]{
-                vehicleRef,
-                status,
-                holderType,
-                slotCode,
-                posisi,
-                vehiclePlate,
-                externalPartyName,
-                externalPlateNumber
-            }`
-        ),
+        listDocumentsByFilter<Pick<Vehicle, '_id' | 'status' | 'vehicleType' | 'serviceName' | 'tireLayoutConfig'>>('vehicle', {}),
+        listDocumentsByFilter<Pick<TireEvent, 'vehicleRef' | 'status' | 'holderType' | 'slotCode' | 'posisi' | 'vehiclePlate' | 'externalPartyName' | 'externalPlateNumber'>>('tireEvent', {}),
     ]);
+    const filteredTireEvents = tireEvents.filter(event => Boolean(event.vehicleRef));
 
     const vehicleMap = new Map(vehicles.map(vehicle => [vehicle._id, vehicle]));
     const tireSummaries = ids.reduce<Record<string, VehicleTireSummary>>((acc, id) => {
         const vehicle = vehicleMap.get(id);
         if (!vehicle) return acc;
-        acc[id] = buildVehicleTireSummary(vehicle, tireEvents);
+        acc[id] = buildVehicleTireSummary(vehicle, filteredTireEvents);
         return acc;
     }, {});
 
     const totalVehicles = vehicles.length;
     const activeVehicleCount = vehicles.filter(vehicle => vehicle.status === 'ACTIVE').length;
     const incompleteTireCount = vehicles.reduce((sum, vehicle) => {
-        const summary = buildVehicleTireSummary(vehicle, tireEvents);
+        const summary = buildVehicleTireSummary(vehicle, filteredTireEvents);
         return sum + (summary.missing > 0 ? 1 : 0);
     }, 0);
 
@@ -1858,20 +1665,9 @@ export async function getVehiclesSummary(ids: string[] = []) {
 }
 
 export async function getExpensesSummary(session: ApiSession, search = '') {
-    const client = getSanityClient();
     const [expenseRows, vehicleRows] = await Promise.all([
-        client.fetch<Array<Pick<Expense, 'amount' | 'categoryName' | 'privacyLevel' | 'note' | 'description' | 'relatedVehicleRef' | 'relatedVehiclePlate'>>>(
-            `*[_type == "expense"]{
-                amount,
-                categoryName,
-                privacyLevel,
-                note,
-                description,
-                relatedVehicleRef,
-                relatedVehiclePlate
-            }`
-        ),
-        client.fetch<Array<Pick<Vehicle, '_id' | 'plateNumber'>>>(`*[_type == "vehicle"]{ _id, plateNumber }`),
+        listDocumentsByFilter<Pick<Expense, 'amount' | 'categoryName' | 'privacyLevel' | 'note' | 'description' | 'relatedVehicleRef' | 'relatedVehiclePlate'>>('expense', {}),
+        listDocumentsByFilter<Pick<Vehicle, '_id' | 'plateNumber'>>('vehicle', {}),
     ]);
 
     const visibleExpenses = filterExpensesByRole(expenseRows as Expense[], session.role);
@@ -1912,27 +1708,14 @@ export async function getExpensesSummary(session: ApiSession, search = '') {
 }
 
 export async function getBankAccountsSummary() {
-    const client = getSanityClient();
     const [accounts, transactionRows] = await Promise.all([
-        client.fetch<Array<Pick<BankAccount, '_id' | 'accountType' | 'systemKey' | 'initialBalance' | 'currentBalance' | 'active'>>>(
-            `*[_type == "bankAccount" && active != false]{
-                _id,
-                accountType,
-                systemKey,
-                initialBalance,
-                currentBalance,
-                active
-            }`
-        ),
-        client.fetch<Array<Pick<BankTransaction, 'bankAccountRef' | 'type' | 'amount'>>>(
-            `*[_type == "bankTransaction" && defined(bankAccountRef)]{
-                bankAccountRef,
-                type,
-                amount
-            }`
-        ),
+        listDocumentsByFilter<Pick<BankAccount, '_id' | 'accountType' | 'systemKey' | 'initialBalance' | 'currentBalance' | 'active'>>('bankAccount', {
+            active: true,
+        }),
+        listDocumentsByFilter<Pick<BankTransaction, 'bankAccountRef' | 'type' | 'amount'>>('bankTransaction', {}),
     ]);
-    const accountsWithDerivedBalances = applyDerivedBankAccountBalances(accounts, transactionRows);
+    const filteredTransactionRows = transactionRows.filter(row => Boolean(row.bankAccountRef));
+    const accountsWithDerivedBalances = applyDerivedBankAccountBalances(accounts, filteredTransactionRows);
 
     const isCash = (account: Pick<BankAccount, 'accountType' | 'systemKey'>) =>
         account.accountType === 'CASH' || account.systemKey === 'cash-on-hand';
@@ -1952,10 +1735,8 @@ export async function getBankAccountsSummary() {
 }
 
 export async function getDriverBoronganDoRefsSummary() {
-    const client = getSanityClient();
-    const rows = await client.fetch<Array<{ doRef?: string }>>(
-        `*[_type == "driverBoronganItem" && defined(doRef)]{ doRef }`
-    );
+    const rows = (await listDocumentsByFilter<Array<{ doRef?: string }>[number]>('driverBoronganItem', {}))
+        .filter(item => Boolean(item.doRef));
 
     return {
         doRefs: Array.from(

@@ -2,12 +2,7 @@ import { getDriverSession, getSession, getSessionFromToken } from '@/lib/auth';
 import { getBusinessDateValue } from '@/lib/business-date';
 import { getDriverScoreStatusMeta } from '@/lib/driver-scoring-support';
 import { getCurrentDriverScore } from '@/lib/api/driver-score-workflows';
-import {
-    getSanityClient,
-    getSanityServiceErrorInfo,
-    sanityGetById,
-    sanityGetCompanyProfile,
-} from '@/lib/sanity';
+import { getCompanyProfile, getDocumentById, listDocumentsByFilter } from '@/lib/repositories/document-store';
 import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
 import type {
     CompanyProfile,
@@ -32,6 +27,7 @@ export type DriverSessionContext = {
 export type DriverAssignedDeliveryOrderCargoItem = DeliveryOrderItem;
 
 export type DriverAssignedDeliveryOrder = DeliveryOrder & {
+    _createdAt?: string;
     driverCargoItems?: DriverAssignedDeliveryOrderCargoItem[];
     allowsDirectCargoInput?: boolean;
 };
@@ -123,51 +119,31 @@ export async function requireDriverSessionContext(request?: Request): Promise<Dr
         return { error: 'Forbidden', status: 403 };
     }
 
-    try {
-        const user = await sanityGetById<User>(session._id);
-        if (!user || user.role !== 'DRIVER' || !user.driverRef || user.active === false) {
-            return { error: 'Akun driver tidak aktif', status: 403 };
-        }
-
-        const driver = await sanityGetById<Driver>(user.driverRef);
-        if (!driver || driver.active === false) {
-            return { error: 'Data supir tidak aktif atau tidak ditemukan', status: 403 };
-        }
-
-        return { session, user, driver };
-    } catch (error) {
-        const serviceError = getSanityServiceErrorInfo(
-            error,
-            'Layanan data driver sedang tidak tersedia. Coba lagi beberapa saat.'
-        );
-        if (serviceError) {
-            return { error: serviceError.message, status: serviceError.status };
-        }
-        throw error;
+    const user = await getDocumentById<User>(session._id, 'user');
+    if (!user || user.role !== 'DRIVER' || !user.driverRef || user.active === false) {
+        return { error: 'Akun driver tidak aktif', status: 403 };
     }
+
+    const driver = await getDocumentById<Driver>(user.driverRef, 'driver');
+    if (!driver || driver.active === false) {
+        return { error: 'Data supir tidak aktif atau tidak ditemukan', status: 403 };
+    }
+
+    return { session, user, driver };
 }
 
 export async function getDriverAppContext() {
-    try {
-        const company = await sanityGetCompanyProfile() as CompanyProfile | null;
-        return {
-            company: company
-                ? {
-                    _id: company._id,
-                    name: company.name,
-                    phone: company.phone,
-                    themeColor: company.themeColor,
-                }
-                : null,
-        };
-    } catch (error) {
-        if (getSanityServiceErrorInfo(error)) {
-            return {
-                company: null,
-            };
-        }
-        throw error;
-    }
+    const company = await getCompanyProfile<CompanyProfile>();
+    return {
+        company: company
+            ? {
+                _id: company._id,
+                name: company.name,
+                phone: company.phone,
+                themeColor: company.themeColor,
+            }
+            : null,
+    };
 }
 
 export async function getDriverPortalAccessNotice(driverRef: string): Promise<DriverPortalAccessNotice | null> {
@@ -199,73 +175,48 @@ export async function getDriverPortalAccessNotice(driverRef: string): Promise<Dr
 }
 
 export async function getDriverAssignedDeliveryOrders(driverRef: string) {
-    return getSanityClient().fetch<DriverAssignedDeliveryOrder[]>(
-        `*[
-            _type == "deliveryOrder" &&
-            (driverRef == $driverRef || driverRef._ref == $driverRef) &&
-            status in ["CREATED", "HEADING_TO_PICKUP", "ON_DELIVERY", "ARRIVED"]
-        ] | order(date desc, _createdAt desc){
-            _id,
-            "orderRef": coalesce(orderRef._ref, orderRef),
-            doNumber,
-            customerDoNumber,
-            date,
-            status,
-            trackingState,
-            masterResi,
-            "customerRef": coalesce(customerRef._ref, customerRef, orderRef->customerRef._ref, orderRef->customerRef),
-            "customerName": coalesce(customerName, orderRef->customerName),
-            "receiverName": coalesce(receiverName, orderRef->receiverName),
-            "receiverAddress": coalesce(receiverAddress, orderRef->receiverAddress),
-            "pickupAddress": coalesce(pickupAddress, orderRef->pickupAddress),
-            pickupStops,
-            shipperReferences,
-            notes,
-            vehiclePlate,
-            driverName,
-            trackingStartedAt,
-            trackingStoppedAt,
-            trackingLastSeenAt,
-            trackingLastLat,
-            trackingLastLng,
-            trackingLastAccuracyM,
-            trackingLastSpeedKph,
-            pendingDriverStatus,
-            pendingDriverStatusRequestedAt,
-            pendingDriverStatusRequestedByName,
-            pendingDriverStatusNote,
-            pendingDriverActualCargoItems,
-            pendingDriverActualDropPoints,
-            "driverCargoItems": *[_type == "deliveryOrderItem" && deliveryOrderRef == ^._id] | order(_createdAt asc){
-                _id,
-                _type,
-                "deliveryOrderRef": ^._id,
-                "orderItemRef": coalesce(orderItemRef._ref, orderItemRef),
-                pickupStopKey,
-                pickupAddress,
-                shipperReferenceKey,
-                shipperReferenceNumber,
-                orderItemDescription,
-                orderItemQtyKoli,
-                orderItemWeight,
-                orderItemVolumeM3,
-                orderItemWeightInputValue,
-                orderItemWeightInputUnit,
-                orderItemVolumeInputValue,
-                orderItemVolumeInputUnit,
-                shippedQtyKoli,
-                shippedWeight,
-                actualQtyKoli,
-                actualWeightKg,
-                actualVolumeM3,
-                actualWeightInputValue,
-                actualWeightInputUnit,
-                actualVolumeInputValue,
-                actualVolumeInputUnit
-            }
-        }`,
-        { driverRef }
-    );
+    const activeStatuses = new Set<DeliveryOrder['status']>(['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED']);
+    const deliveryOrders = (await listDocumentsByFilter<DriverAssignedDeliveryOrder>('deliveryOrder', { driverRef }))
+        .filter(item => activeStatuses.has(item.status));
+    if (deliveryOrders.length === 0) {
+        return [];
+    }
+
+    const orderRefs = [...new Set(deliveryOrders.map(item => item.orderRef).filter((value): value is string => typeof value === 'string' && value.length > 0))];
+    const [orders, cargoItems, directCargoCapabilities] = await Promise.all([
+        orderRefs.length > 0 ? listDocumentsByFilter<Array<Record<string, unknown> & { _id: string }>[number]>('order', { _id: orderRefs }) : Promise.resolve([]),
+        listDocumentsByFilter<DeliveryOrderItem & { _createdAt?: string }>('deliveryOrderItem', {
+            deliveryOrderRef: deliveryOrders.map(item => item._id),
+        }),
+        getDriverOrderCargoCapabilities(orderRefs),
+    ]);
+
+    const orderMap = new Map(orders.map(order => [order._id, order]));
+    const cargoByDeliveryOrderRef = new Map<string, DeliveryOrderItem[]>();
+    for (const item of cargoItems.sort((left, right) => (left._createdAt || '').localeCompare(right._createdAt || ''))) {
+        const current = cargoByDeliveryOrderRef.get(item.deliveryOrderRef) || [];
+        current.push(item);
+        cargoByDeliveryOrderRef.set(item.deliveryOrderRef, current);
+    }
+
+    return deliveryOrders
+        .sort((left, right) => {
+            const dateCmp = (right.date || '').localeCompare(left.date || '');
+            if (dateCmp !== 0) return dateCmp;
+            return (right._createdAt || '').localeCompare(left._createdAt || '');
+        })
+        .map(item => {
+            const relatedOrder = typeof item.orderRef === 'string' ? orderMap.get(item.orderRef) : undefined;
+            return {
+                ...item,
+                customerName: item.customerName || (typeof relatedOrder?.customerName === 'string' ? relatedOrder.customerName : undefined),
+                receiverName: item.receiverName || (typeof relatedOrder?.receiverName === 'string' ? relatedOrder.receiverName : undefined),
+                receiverAddress: item.receiverAddress || (typeof relatedOrder?.receiverAddress === 'string' ? relatedOrder.receiverAddress : undefined),
+                pickupAddress: item.pickupAddress || (typeof relatedOrder?.pickupAddress === 'string' ? relatedOrder.pickupAddress : undefined),
+                driverCargoItems: cargoByDeliveryOrderRef.get(item._id) || [],
+                allowsDirectCargoInput: typeof item.orderRef === 'string' ? (directCargoCapabilities.get(item.orderRef) ?? false) : false,
+            };
+        });
 }
 
 export async function getDriverOrderCargoCapabilities(orderRefs: string[]) {
@@ -275,34 +226,18 @@ export async function getDriverOrderCargoCapabilities(orderRefs: string[]) {
     }
 
     const [orders, orderItemHints] = await Promise.all([
-        getSanityClient().fetch<Array<{
+        listDocumentsByFilter<Array<{
             _id: string;
             _createdAt?: string;
             createdAt?: string;
             cargoEntryMode?: 'ORDER' | 'DELIVERY_ORDER';
-        }>>(
-            `*[_type == "order" && _id in $ids]{
-                _id,
-                _createdAt,
-                createdAt,
-                cargoEntryMode
-            }`,
-            { ids: normalizedOrderRefs }
-        ),
-        getSanityClient().fetch<Array<{
+        }>[number]>('order', { _id: normalizedOrderRefs }),
+        listDocumentsByFilter<Array<{
             orderRef?: string;
             _createdAt?: string;
             entrySource?: 'ORDER' | 'DELIVERY_ORDER';
             sourceDeliveryOrderRef?: string;
-        }>>(
-            `*[_type == "orderItem" && orderRef in $ids]{
-                orderRef,
-                _createdAt,
-                entrySource,
-                sourceDeliveryOrderRef
-            }`,
-            { ids: normalizedOrderRefs }
-        ),
+        }>[number]>('orderItem', { orderRef: normalizedOrderRefs }),
     ]);
 
     const orderMap = new Map(orders.map(order => [order._id, order]));
@@ -379,7 +314,7 @@ function normalizeTripPlanPickupStops(
 }
 
 export async function getDriverAssignedTripPlans(driverRef: string) {
-    const orders = await getSanityClient().fetch<Array<{
+    const allOrders = await listDocumentsByFilter<Array<{
         _id: string;
         masterResi?: string;
         customerRef?: string;
@@ -388,39 +323,16 @@ export async function getDriverAssignedTripPlans(driverRef: string) {
         pickupAddress?: string;
         pickupStops?: OrderPickupStop[];
         tripPlans?: OrderTripPlan[];
-    }>>(
-        `*[
-            _type == "order" &&
-            count(tripPlans[driverRef == $driverRef]) > 0
-        ] | order(createdAt desc, _createdAt desc){
-            _id,
-            masterResi,
-            "customerRef": coalesce(customerRef._ref, customerRef),
-            customerName,
-            serviceName,
-            pickupAddress,
-            pickupStops,
-            "tripPlans": tripPlans[driverRef == $driverRef]{
-                _key,
-                sequence,
-                pickupStopKeys,
-                vehicleRef,
-                vehiclePlate,
-                driverRef,
-                driverName,
-                tripOriginArea,
-                tripDestinationArea,
-                taripBorongan,
-                cashGiven,
-                issueBankName,
-                date,
-                notes,
-                linkedDeliveryOrderRef,
-                linkedDeliveryOrderNumber
-            }
-        }`,
-        { driverRef }
-    );
+        createdAt?: string;
+        _createdAt?: string;
+    }>[number]>('order', {});
+    const orders = allOrders
+        .map(order => ({
+            ...order,
+            tripPlans: (order.tripPlans || []).filter(plan => plan.driverRef === driverRef),
+        }))
+        .filter(order => (order.tripPlans || []).length > 0)
+        .sort((left, right) => (right.createdAt || right._createdAt || '').localeCompare(left.createdAt || left._createdAt || ''));
 
     const linkedDeliveryOrderRefs = [
         ...new Set(
@@ -433,14 +345,7 @@ export async function getDriverAssignedTripPlans(driverRef: string) {
     ];
 
     const linkedDeliveryOrders = linkedDeliveryOrderRefs.length > 0
-        ? await getSanityClient().fetch<Array<Pick<DeliveryOrder, '_id' | 'status' | 'doNumber'>>>(
-            `*[_type == "deliveryOrder" && _id in $ids]{
-                _id,
-                status,
-                doNumber
-            }`,
-            { ids: linkedDeliveryOrderRefs }
-        )
+        ? await listDocumentsByFilter<Array<Pick<DeliveryOrder, '_id' | 'status' | 'doNumber'>>[number]>('deliveryOrder', { _id: linkedDeliveryOrderRefs })
         : [];
     const linkedDeliveryOrderMap = new Map(linkedDeliveryOrders.map(item => [item._id, item]));
 
@@ -492,27 +397,11 @@ export async function getDriverCustomerProducts(customerRefs: string[]) {
         return [] as CustomerProduct[];
     }
 
-    return getSanityClient().fetch<CustomerProduct[]>(
-        `*[_type == "customerProduct" && coalesce(customerRef._ref, customerRef) in $customerRefs && active != false] | order(coalesce(code, name) asc){
-            _id,
-            _type,
-            "customerRef": coalesce(customerRef._ref, customerRef),
-            customerName,
-            code,
-            name,
-            description,
-            defaultQtyKoli,
-            defaultWeight,
-            defaultWeightInputValue,
-            defaultWeightInputUnit,
-            defaultVolume,
-            defaultVolumeInputValue,
-            defaultVolumeInputUnit,
-            notes,
-            active
-        }`,
-        { customerRefs: normalizedCustomerRefs }
-    );
+    return (await listDocumentsByFilter<CustomerProduct>('customerProduct', {
+        customerRef: normalizedCustomerRefs,
+    }))
+        .filter(item => item.active !== false)
+        .sort((left, right) => `${left.code || left.name || ''}`.localeCompare(`${right.code || right.name || ''}`));
 }
 
 export function sanitizeDriverForMobile(driver: Driver) {

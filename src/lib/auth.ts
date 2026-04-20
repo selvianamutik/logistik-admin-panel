@@ -8,7 +8,7 @@ import { cookies, headers } from 'next/headers';
 
 import type { SessionUser, User } from './types';
 import { normalizeUserRole } from './rbac';
-import { isSanityServiceUnavailableError, sanityGetById } from './sanity';
+import { getUserById } from './repositories/user-store';
 import {
     createSessionToken,
     DRIVER_SESSION_COOKIE,
@@ -28,7 +28,7 @@ export async function verifyPassword(plainPassword: string, storedHash: string):
     if (isPasswordHashMigrated(storedHash)) {
         return compare(plainPassword, storedHash);
     }
-    // Transitional support for legacy plaintext rows already stored in Sanity.
+    // Transitional support for legacy/plaintext seed rows until every user is re-saved.
     return plainPassword === storedHash;
 }
 
@@ -62,19 +62,12 @@ function buildSessionUser(user: User): SessionUser {
 export async function getSessionFromToken(token: string): Promise<SessionUser | null> {
     try {
         const session = await verifySessionToken(token);
-        try {
-            const user = await sanityGetById<User>(session._id);
-            if (!user || user.active === false) {
-                return null;
-            }
-
-            return buildSessionUser(user);
-        } catch (error) {
-            if (isSanityServiceUnavailableError(error)) {
-                return session;
-            }
-            throw error;
+        const user = await getUserById(session._id);
+        if (!user || user.active === false) {
+            return null;
         }
+
+        return buildSessionUser(user);
     } catch {
         return null;
     }

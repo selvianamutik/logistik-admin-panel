@@ -12,7 +12,7 @@ import {
 } from '@/lib/measurement';
 import { normalizeFreightNotaBillingMode, resolveFreightNotaBillingModeInput } from '@/lib/freight-nota-billing';
 import { DEFAULT_PPH23_RATE_PERCENT, normalizePph23BaseMode, normalizePph23Enabled, normalizePph23RatePercent } from '@/lib/pph23';
-import { getSanityClient, sanityGetById } from '@/lib/sanity';
+import { getDocumentById, listDocumentsByFilter } from '@/lib/repositories/document-store';
 
 import {
     normalizeCurrencyNumber,
@@ -34,6 +34,10 @@ const CUSTOMER_DO_PREFIX_RE = /^[A-Z0-9][A-Z0-9-]{0,7}$/;
 const CUSTOMER_PRODUCT_CODE_RE = /^[A-Z0-9][A-Z0-9-]{0,19}$/;
 const SUPPLIER_CODE_RE = /^[A-Z0-9][A-Z0-9-]{0,19}$/;
 const WAREHOUSE_ITEM_CODE_RE = /^[A-Z0-9][A-Z0-9-]{0,29}$/;
+
+function lowerText(value: unknown) {
+    return normalizeText(value).toLowerCase();
+}
 
 function parseStrictNumericInput(
     value: unknown,
@@ -132,10 +136,9 @@ export async function normalizeSupplierPayload(data: Record<string, unknown>, ex
         throw new Error('Nama supplier wajib diisi');
     }
 
-    const duplicateCode = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "supplier" && supplierCode == $supplierCode && _id != $excludeId][0]{ _id }`,
-        { supplierCode, excludeId: existingId || '' }
-    );
+    const duplicateCode = (await listDocumentsByFilter<{ _id: string; supplierCode?: string }>('supplier', {}))
+        .find(item => normalizeText(item.supplierCode) === supplierCode && item._id !== (existingId || ''))
+        || null;
     if (duplicateCode) {
         throw new Error('Kode supplier sudah digunakan');
     }
@@ -198,10 +201,9 @@ export async function normalizeWarehouseItemPayload(data: Record<string, unknown
         throw new Error('Nama barang gudang wajib diisi');
     }
 
-    const duplicateCode = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "warehouseItem" && itemCode == $itemCode && _id != $excludeId][0]{ _id }`,
-        { itemCode, excludeId: existingId || '' }
-    );
+    const duplicateCode = (await listDocumentsByFilter<{ _id: string; itemCode?: string }>('warehouseItem', {}))
+        .find(item => normalizeText(item.itemCode) === itemCode && item._id !== (existingId || ''))
+        || null;
     if (duplicateCode) {
         throw new Error('Kode barang gudang sudah digunakan');
     }
@@ -240,7 +242,7 @@ export async function normalizeWarehouseItemPayload(data: Record<string, unknown
             : normalizeOptionalText(existing?.defaultSupplierName);
 
     if (supplierRef) {
-        const supplier = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(supplierRef);
+        const supplier = await getDocumentById<{ _id: string; name?: string; active?: boolean }>(supplierRef, 'supplier');
         if (!supplier) {
             throw new Error('Supplier default barang gudang tidak ditemukan');
         }
@@ -453,10 +455,12 @@ export async function normalizeBankAccountPayload(data: Record<string, unknown>,
             ? next.accountNumber
             : normalizeOptionalText(existing?.accountNumber);
     if (effectiveAccountNumber) {
-        const duplicateAccountNumber = await getSanityClient().fetch<{ _id: string } | null>(
-            `*[_type == "bankAccount" && lower(accountNumber) == $accountNumber && _id != $excludeId][0]{ _id }`,
-            { accountNumber: effectiveAccountNumber.toLowerCase(), excludeId: existingId || '' }
-        );
+        const duplicateAccountNumber = (await listDocumentsByFilter<{ _id: string; accountNumber?: string }>('bankAccount', {}))
+            .find(item =>
+                normalizeText(item.accountNumber).toLowerCase() === effectiveAccountNumber.toLowerCase()
+                && item._id !== (existingId || '')
+            )
+            || null;
         if (duplicateAccountNumber) {
             throw new Error('Nomor rekening / kode kas sudah digunakan');
         }
@@ -507,7 +511,7 @@ export async function normalizeCustomerProductPayload(data: Record<string, unkno
         throw new Error('Customer barang wajib dipilih');
     }
 
-    const customer = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(customerRef);
+    const customer = await getDocumentById<{ _id: string; name?: string; active?: boolean }>(customerRef, 'customer');
     if (!customer) {
         throw new Error('Customer barang tidak ditemukan');
     }
@@ -528,10 +532,9 @@ export async function normalizeCustomerProductPayload(data: Record<string, unkno
             ? normalizeCustomerProductCode(data.code)
             : normalizeCustomerProductCode(existing?.code);
     if (code) {
-        const duplicateCode = await getSanityClient().fetch<{ _id: string } | null>(
-            `*[_type == "customerProduct" && customerRef == $customerRef && code == $code && _id != $excludeId][0]{ _id }`,
-            { customerRef, code, excludeId: existingId || '' }
-        );
+        const duplicateCode = (await listDocumentsByFilter<{ _id: string; code?: string }>('customerProduct', { customerRef }))
+            .find(item => normalizeText(item.code) === code && item._id !== (existingId || ''))
+            || null;
         if (duplicateCode) {
             throw new Error('Kode barang customer sudah digunakan');
         }
@@ -679,7 +682,7 @@ export async function normalizeCustomerRecipientPayload(data: Record<string, unk
         throw new Error('Customer penerima wajib dipilih');
     }
 
-    const customer = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(customerRef);
+    const customer = await getDocumentById<{ _id: string; name?: string; active?: boolean }>(customerRef, 'customer');
     if (!customer) {
         throw new Error('Customer penerima tidak ditemukan');
     }
@@ -695,10 +698,9 @@ export async function normalizeCustomerRecipientPayload(data: Record<string, unk
         throw new Error('Label master penerima wajib diisi');
     }
 
-    const duplicateLabel = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "customerRecipient" && customerRef == $customerRef && label == $label && _id != $excludeId][0]{ _id }`,
-        { customerRef, label, excludeId: existingId || '' }
-    );
+    const duplicateLabel = (await listDocumentsByFilter<{ _id: string; label?: string }>('customerRecipient', { customerRef }))
+        .find(item => normalizeText(item.label) === label && item._id !== (existingId || ''))
+        || null;
     if (duplicateLabel) {
         throw new Error('Label master penerima sudah digunakan untuk customer ini');
     }
@@ -774,7 +776,7 @@ export async function normalizeCustomerPickupPayload(data: Record<string, unknow
         throw new Error('Customer pickup wajib dipilih');
     }
 
-    const customer = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(customerRef);
+    const customer = await getDocumentById<{ _id: string; name?: string; active?: boolean }>(customerRef, 'customer');
     if (!customer) {
         throw new Error('Customer pickup tidak ditemukan');
     }
@@ -790,10 +792,9 @@ export async function normalizeCustomerPickupPayload(data: Record<string, unknow
         throw new Error('Label master pickup wajib diisi');
     }
 
-    const duplicateLabel = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "customerPickupLocation" && customerRef == $customerRef && label == $label && _id != $excludeId][0]{ _id }`,
-        { customerRef, label, excludeId: existingId || '' }
-    );
+    const duplicateLabel = (await listDocumentsByFilter<{ _id: string; label?: string }>('customerPickupLocation', { customerRef }))
+        .find(item => normalizeText(item.label) === label && item._id !== (existingId || ''))
+        || null;
     if (duplicateLabel) {
         throw new Error('Label master pickup sudah digunakan untuk customer ini');
     }
@@ -875,7 +876,7 @@ export async function normalizeTripRouteRatePayload(data: Record<string, unknown
 
     let serviceName: string | undefined;
     if (serviceRef) {
-        const service = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(serviceRef);
+        const service = await getDocumentById<{ _id: string; name?: string; active?: boolean }>(serviceRef, 'service');
         if (!service) {
             throw new Error('Kategori armada tarif trip tidak ditemukan');
         }
@@ -885,21 +886,14 @@ export async function normalizeTripRouteRatePayload(data: Record<string, unknown
         serviceName = service.name || '';
     }
 
-    const duplicateRate = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[
-            _type == "tripRouteRate" &&
-            lower(originArea) == $originArea &&
-            lower(destinationArea) == $destinationArea &&
-            coalesce(serviceRef, "") == $serviceRef &&
-            _id != $excludeId
-        ][0]{ _id }`,
-        {
-            originArea: originArea.toLowerCase(),
-            destinationArea: destinationArea.toLowerCase(),
-            serviceRef: serviceRef || '',
-            excludeId: existingId || '',
-        }
-    );
+    const duplicateRate = (await listDocumentsByFilter<{ _id: string; originArea?: string; destinationArea?: string; serviceRef?: string }>('tripRouteRate', {}))
+        .find(item =>
+            lowerText(item.originArea) === originArea.toLowerCase()
+            && lowerText(item.destinationArea) === destinationArea.toLowerCase()
+            && normalizeOptionalText(item.serviceRef) === (serviceRef || undefined)
+            && item._id !== (existingId || '')
+        )
+        || null;
     if (duplicateRate) {
         throw new Error('Master biaya rute trip untuk kombinasi area dan kategori ini sudah ada');
     }
@@ -948,7 +942,7 @@ export async function resolveTripRouteRateSelection(
     let matchedTripRouteRate: (TripRouteRate & { _rev?: string }) | null = null;
 
     if (requestedTripRouteRateRef) {
-        matchedTripRouteRate = await sanityGetById<TripRouteRate & { _rev?: string }>(requestedTripRouteRateRef);
+        matchedTripRouteRate = await getDocumentById<TripRouteRate & { _rev?: string }>(requestedTripRouteRateRef, 'tripRouteRate');
         if (!matchedTripRouteRate || matchedTripRouteRate._type !== 'tripRouteRate') {
             throw new Error('Master biaya rute trip tidak ditemukan');
         }
@@ -959,29 +953,12 @@ export async function resolveTripRouteRateSelection(
             throw new Error('Master biaya rute trip tidak cocok dengan kategori armada surat jalan');
         }
     } else if (requestedTripOriginArea && requestedTripDestinationArea) {
-        const candidateRates = await getSanityClient().fetch<Array<TripRouteRate & { _rev?: string }>>(
-            `*[
-                _type == "tripRouteRate" &&
-                active != false &&
-                lower(originArea) == $originArea &&
-                lower(destinationArea) == $destinationArea
-            ]{
-                _id,
-                _rev,
-                _type,
-                originArea,
-                destinationArea,
-                serviceRef,
-                serviceName,
-                rate,
-                notes,
-                active
-            }`,
-            {
-                originArea: requestedTripOriginArea.toLowerCase(),
-                destinationArea: requestedTripDestinationArea.toLowerCase(),
-            }
-        );
+        const candidateRates = (await listDocumentsByFilter<Array<TripRouteRate & { _rev?: string }>[number]>('tripRouteRate', {}))
+            .filter(item =>
+                item.active !== false
+                && lowerText(item.originArea) === requestedTripOriginArea.toLowerCase()
+                && lowerText(item.destinationArea) === requestedTripDestinationArea.toLowerCase()
+            );
         matchedTripRouteRate = findMatchingTripRouteRate(candidateRates, {
             originArea: requestedTripOriginArea,
             destinationArea: requestedTripDestinationArea,

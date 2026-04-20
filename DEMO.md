@@ -7,7 +7,7 @@ Panduan singkat untuk presentasi demo aplikasi logistik.
 1. Reset data demo:
 
 ```bash
-npm run reseed:sanity
+npm run reseed:supabase
 ```
 
 2. Akun demo utama:
@@ -62,7 +62,7 @@ npm run reseed:sanity
 
 ## 3A. Skenario Seed Setelah Reset
 
-Setelah `npm run reseed:sanity`, dataset baseline sudah menyiapkan contoh ini:
+Setelah `npm run reseed:supabase`, dataset baseline sudah menyiapkan contoh ini:
 
 - `DO-202603-0003`: trip aktif `ON_DELIVERY`
 - `DO-202603-0004`: driver sudah `Ajukan Selesai`, admin tinggal review
@@ -246,5 +246,5 @@ Kalau waktu singkat, jalankan urutan ini:
 - Kalau mau ulang demo dari awal, cukup jalankan:
 
 ```bash
-npm run reseed:sanity
+npm run reseed:supabase
 ```

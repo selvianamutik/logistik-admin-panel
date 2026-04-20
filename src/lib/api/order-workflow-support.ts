@@ -15,7 +15,8 @@ import {
     type WeightInputUnit,
 } from '@/lib/measurement';
 import { getBusinessDateValue } from '@/lib/business-date';
-import { getSanityClient, sanityGetById } from '@/lib/sanity';
+import { useSupabaseBackend } from '@/lib/data-backend';
+import { getDocumentById, listDocumentsByFilter } from '@/lib/repositories/document-store';
 import type { DeliveryActualDropPoint, DeliveryActualDropType } from '@/lib/types';
 
 import {
@@ -324,7 +325,7 @@ export function deriveOrderStatusFromItems(items: OrderItemStatusSummary[]) {
 }
 
 export async function resolveOrderPartyData(customerRef: string, serviceRef?: string) {
-    const customer = await sanityGetById<{ _id: string; _rev?: string; name?: string; address?: string; active?: boolean }>(customerRef);
+    const customer = await getDocumentById<{ _id: string; _rev?: string; name?: string; address?: string; active?: boolean }>(customerRef);
     if (!customer) {
         throw new Error('Customer order tidak ditemukan');
     }
@@ -335,7 +336,7 @@ export async function resolveOrderPartyData(customerRef: string, serviceRef?: st
     let serviceName: string | undefined;
     let service: ResolvedOrderPartyData['service'];
     if (serviceRef) {
-        const serviceDoc = await sanityGetById<{ _id: string; _rev?: string; name?: string; active?: boolean }>(serviceRef);
+        const serviceDoc = await getDocumentById<{ _id: string; _rev?: string; name?: string; active?: boolean }>(serviceRef);
         if (!serviceDoc) {
             throw new Error('Kategori armada order tidak ditemukan');
         }
@@ -358,7 +359,7 @@ export async function resolveOrderRecipientData(customerRef: string, customerRec
         return null;
     }
 
-    const recipient = await sanityGetById<ResolvedCustomerRecipientData>(customerRecipientRef);
+    const recipient = await getDocumentById<ResolvedCustomerRecipientData>(customerRecipientRef);
     if (!recipient || recipient._id !== customerRecipientRef) {
         throw new Error('Master penerima customer tidak ditemukan');
     }
@@ -377,7 +378,7 @@ export async function resolveOrderPickupData(customerRef: string, customerPickup
         return null;
     }
 
-    const pickup = await sanityGetById<ResolvedCustomerPickupData>(customerPickupRef);
+    const pickup = await getDocumentById<ResolvedCustomerPickupData>(customerPickupRef);
     if (!pickup || pickup._id !== customerPickupRef) {
         throw new Error('Master pickup customer tidak ditemukan');
     }
@@ -452,25 +453,7 @@ export async function normalizeOrderItemsInput(
         ...new Set(items.map(item => item.customerProductRef).filter((value): value is string => Boolean(value))),
     ];
     const customerProducts = customerProductRefs.length > 0
-        ? await getSanityClient().fetch<CustomerProductOrderSource[]>(
-            `*[_type == "customerProduct" && _id in $ids]{
-                _id,
-                _rev,
-                customerRef,
-                code,
-                name,
-                description,
-                defaultQtyKoli,
-                defaultWeight,
-                defaultWeightInputValue,
-                defaultWeightInputUnit,
-                defaultVolume,
-                defaultVolumeInputValue,
-                defaultVolumeInputUnit,
-                active
-            }`,
-            { ids: customerProductRefs }
-        )
+        ? await listDocumentsByFilter<CustomerProductOrderSource>('customerProduct', { _id: customerProductRefs })
         : [];
     const customerProductMap = new Map(customerProducts.map(item => [item._id, item]));
 

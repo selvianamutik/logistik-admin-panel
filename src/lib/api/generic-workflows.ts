@@ -1,15 +1,17 @@
-import { createHash } from 'node:crypto';
 import { NextResponse } from 'next/server';
 
 import { getBusinessDateValue } from '@/lib/business-date';
 import { createSession, setSessionCookie } from '@/lib/auth';
+import { useSupabaseBackend } from '@/lib/data-backend';
 import {
-    getSanityClient,
-    sanityCreate,
-    sanityGetById,
-    sanityGetCompanyProfile,
-    sanityGetNextNumber,
-} from '@/lib/sanity';
+    createDocument,
+    deleteDocument,
+    getCompanyProfile,
+    getDocumentById,
+    getNextNumber,
+    listDocumentsByFilter,
+    updateDocument,
+} from '@/lib/repositories/document-store';
 import {
     buildDefaultTireLayoutConfig,
     normalizeTireLayoutConfig,
@@ -97,8 +99,6 @@ type AuditLogFn = (
     entityRef: string,
     summary: string
 ) => void | Promise<void>;
-
-type SanityMutations = Parameters<ReturnType<typeof getSanityClient>['mutate']>[0];
 
 const COMPANY_ASSET_DATA_URL_RE = /^data:image\/(?:png|jpeg|jpg|gif|webp|svg\+xml);base64,[a-z0-9+/=]+$/i;
 const COMPANY_ASSET_MAX_LENGTH = 1_500_000;
@@ -219,10 +219,9 @@ async function sanitizeCompanyInvoiceSettings(
     );
     const uniqueRefs = Array.from(new Set(selectedRefs));
     const validRows = uniqueRefs.length > 0
-        ? await getSanityClient().fetch<Array<{ _id: string }>>(
-            `*[_type == "bankAccount" && _id in $refs && active != false && accountType != "CASH"]{ _id }`,
-            { refs: uniqueRefs }
-        )
+        ? (await Promise.all(uniqueRefs.map(ref => getDocumentById<BankAccountSummary>(ref))))
+            .filter((row): row is BankAccountSummary => row !== null && row.active !== false && row.accountType !== 'CASH')
+            .map(row => ({ _id: row._id }))
         : [];
     const validRefSet = new Set(validRows.map(row => row._id));
     const invoiceBankAccountRefs = uniqueRefs.filter(ref => validRefSet.has(ref));
@@ -366,7 +365,7 @@ async function sanitizeCompanyInvoiceSettings(
 }
 
 async function buildInvoiceInstructionAccountRemoval(accountId: string) {
-    const company = await sanityGetCompanyProfile() as (CompanyProfile & { _id?: string; _rev?: string }) | null;
+    const company = await getCompanyProfile<CompanyProfile & { _id?: string; _rev?: string }>();
     if (!company?._id) {
         return null;
     }
@@ -383,7 +382,7 @@ async function buildInvoiceInstructionAccountRemoval(accountId: string) {
         return null;
     }
 
-    if (!company._rev) {
+    if (!company._rev && !useSupabaseBackend()) {
         throw new Error('Revisi profil perusahaan tidak tersedia. Refresh lalu coba lagi.');
     }
 
@@ -405,58 +404,20 @@ async function buildInvoiceInstructionAccountRemoval(accountId: string) {
 }
 
 async function clearOtherCustomerScopedDefaults(docType: 'customerRecipient' | 'customerPickupLocation', customerRef: string, keepId: string) {
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-        const scopedDocs = await getSanityClient().fetch<Array<{ _id: string; _rev?: string; isDefault?: boolean }>>(
-            `*[_type == $docType && customerRef == $customerRef && (_id == $keepId || isDefault == true)]{ _id, _rev, isDefault }`,
-            { docType, customerRef, keepId }
-        );
-        const keepDoc = scopedDocs.find(doc => doc._id === keepId);
-        if (!keepDoc) {
-            return;
-        }
-        if (!keepDoc._rev) {
-            throw new Error('Revisi master default customer tidak tersedia. Refresh lalu coba lagi.');
-        }
+    const scopedDocs = await listDocumentsByFilter<{ _id: string; isDefault?: boolean; customerRef?: string }>(docType, { customerRef });
+    const keepDoc = scopedDocs.find(doc => doc._id === keepId);
+    if (!keepDoc) {
+        return;
+    }
 
-        const docsToUnset = scopedDocs.filter(doc => doc._id !== keepId && doc.isDefault === true);
-        if (docsToUnset.some(doc => !doc._rev)) {
-            throw new Error('Revisi master default customer tidak tersedia. Refresh lalu coba lagi.');
-        }
-        if (keepDoc.isDefault === true && docsToUnset.length === 0) {
-            return;
-        }
+    const docsToUnset = scopedDocs.filter(doc => doc._id !== keepId && doc.isDefault === true);
+    if (keepDoc.isDefault === true && docsToUnset.length === 0) {
+        return;
+    }
 
-        const transaction = getSanityClient().transaction().patch(keepId, {
-            ifRevisionID: keepDoc._rev,
-            set: { isDefault: true },
-        });
-        for (const doc of docsToUnset) {
-            transaction.patch(doc._id, {
-                ifRevisionID: doc._rev as string,
-                set: { isDefault: false },
-            });
-        }
-
-        try {
-            await transaction.commit();
-            return;
-        } catch (error) {
-            if (!isMutationConflictError(error)) {
-                throw error;
-            }
-            if (attempt === 2) {
-                const latestScopedDocs = await getSanityClient().fetch<Array<{ _id: string; isDefault?: boolean }>>(
-                    `*[_type == $docType && customerRef == $customerRef && (_id == $keepId || isDefault == true)]{ _id, isDefault }`,
-                    { docType, customerRef, keepId }
-                );
-                const latestKeepDoc = latestScopedDocs.find(doc => doc._id === keepId);
-                const latestOtherDefaults = latestScopedDocs.filter(doc => doc._id !== keepId && doc.isDefault === true);
-                if (latestKeepDoc?.isDefault === true && latestOtherDefaults.length === 0) {
-                    return;
-                }
-                throw new Error('Default customer berubah karena ada update lain. Refresh lalu coba lagi.');
-            }
-        }
+    await updateDocument(keepId, { isDefault: true });
+    for (const doc of docsToUnset) {
+        await updateDocument(doc._id, { isDefault: false });
     }
 }
 
@@ -605,7 +566,7 @@ function buildCreateAuditSummary(entity: string, newDoc: Record<string, unknown>
 }
 
 async function resolveTrackedTireWarehouseItem(itemRef: string) {
-    const item = await sanityGetById<WarehouseItem & { _rev?: string }>(itemRef);
+    const item = await getDocumentById<WarehouseItem & { _rev?: string }>(itemRef);
     if (!item || item._type !== 'warehouseItem') {
         throw new Error('Master barang gudang ban tidak ditemukan');
     }
@@ -616,7 +577,6 @@ async function resolveTrackedTireWarehouseItem(itemRef: string) {
 }
 
 async function appendTrackedTireWarehouseSync(params: {
-    transaction: ReturnType<ReturnType<typeof getSanityClient>['transaction']>;
     previousDoc: Record<string, unknown> | null;
     nextDoc: Record<string, unknown>;
     session: Pick<ApiSession, '_id' | 'name'>;
@@ -632,7 +592,7 @@ async function appendTrackedTireWarehouseSync(params: {
     }
 
     const warehouseItem = await resolveTrackedTireWarehouseItem(itemRef);
-    if (!warehouseItem._rev) {
+    if (!warehouseItem._rev && !useSupabaseBackend()) {
         throw new Error('Revisi master barang gudang ban tidak tersedia. Refresh lalu coba lagi.');
     }
     const countedBefore = countsTowardTrackedTireWarehouseStock(params.previousDoc || {});
@@ -651,11 +611,8 @@ async function appendTrackedTireWarehouseSync(params: {
     const nextPlacement = resolveTrackedTirePlacementLabel(params.nextDoc);
     const tireCode = normalizeOptionalText(params.nextDoc.tireCode) || normalizeOptionalText(params.previousDoc?.tireCode) || itemRef;
 
-    params.transaction.patch(warehouseItem._id, {
-        ifRevisionID: warehouseItem._rev,
-        set: { currentStockQty: nextStockQty },
-    });
-    params.transaction.create(buildTrackedTireStockMovementDoc({
+    await updateDocument(warehouseItem._id, { currentStockQty: nextStockQty });
+    await createDocument(buildTrackedTireStockMovementDoc({
         warehouseItem,
         quantity: 1,
         balanceAfter: nextStockQty,
@@ -688,468 +645,24 @@ function buildTireEventResponseError(error: unknown, fallbackMessage: string) {
 function buildUniqueConstraintId(entityType: string, fieldName: string, value: string) {
     const normalizedValue = value.trim().toLowerCase();
     const encodedValue = Buffer.from(normalizedValue, 'utf8').toString('base64url');
-    const directId = `unique-constraint.${entityType}.${fieldName}.${encodedValue}`;
-    if (directId.length <= 128) {
-        return directId;
-    }
-    const hash = createHash('sha256')
-        .update(`${entityType}:${fieldName}:${normalizedValue}`)
-        .digest('base64url')
-        .slice(0, 32);
-    return `unique-constraint.${entityType}.${fieldName}.h${hash}`;
-}
-
-type UniqueConstraintMutationSpec = {
-    id: string;
-    message: string;
-    doc: {
-        _id: string;
-        _type: 'uniqueConstraint';
-        entityType: string;
-        fieldName: string;
-        value: string;
-        valueLower: string;
-        ownerRef: string;
-        ownerType: string;
-        createdAt: string;
-        updatedAt: string;
-    };
-};
-
-function buildUniqueConstraintSpec(params: {
-    entityType: string;
-    fieldName: string;
-    ownerRef: string;
-    ownerType: string;
-    value: string;
-    message: string;
-}) {
-    const normalizedValue = params.value.trim();
-    const timestamp = new Date().toISOString();
-    const id = buildUniqueConstraintId(params.entityType, params.fieldName, normalizedValue);
-    return {
-        id,
-        message: params.message,
-        doc: {
-            _id: id,
-            _type: 'uniqueConstraint' as const,
-            entityType: params.entityType,
-            fieldName: params.fieldName,
-            value: normalizedValue,
-            valueLower: normalizedValue.toLowerCase(),
-            ownerRef: params.ownerRef,
-            ownerType: params.ownerType,
-            createdAt: timestamp,
-            updatedAt: timestamp,
-        },
-    } satisfies UniqueConstraintMutationSpec;
+    return `unique-constraint.${entityType}.${fieldName}.${encodedValue}`;
 }
 
 function buildTireCodeUniqueConstraintDoc(tireId: string, tireCode: string) {
-    return buildUniqueConstraintSpec({
+    const timestamp = new Date().toISOString();
+    const normalizedCode = tireCode.trim().toUpperCase();
+    return {
+        _id: buildUniqueConstraintId('tireEvent', 'tireCode', normalizedCode),
+        _type: 'uniqueConstraint',
         entityType: 'tireEvent',
         fieldName: 'tireCode',
+        value: normalizedCode,
+        valueLower: normalizedCode.toLowerCase(),
         ownerRef: tireId,
         ownerType: 'tireEvent',
-        value: tireCode.trim().toUpperCase(),
-        message: 'Kode ban sudah digunakan',
-    }).doc;
-}
-
-function buildUserConstraintSpecs(userId: string, doc: Record<string, unknown>) {
-    const specs: UniqueConstraintMutationSpec[] = [];
-    const email = normalizeOptionalText(doc.email)?.toLowerCase();
-    if (email) {
-        specs.push(buildUniqueConstraintSpec({
-            entityType: 'user',
-            fieldName: 'email',
-            ownerRef: userId,
-            ownerType: 'user',
-            value: email,
-            message: 'Email user sudah digunakan',
-        }));
-    }
-    const role = normalizeOptionalText(doc.role);
-    const driverRef = normalizeOptionalText(doc.driverRef);
-    if (role === 'DRIVER' && driverRef) {
-        specs.push(buildUniqueConstraintSpec({
-            entityType: 'user',
-            fieldName: 'driverRef',
-            ownerRef: userId,
-            ownerType: 'user',
-            value: driverRef,
-            message: 'Supir ini sudah memiliki akun mobile',
-        }));
-    }
-    return specs;
-}
-
-function buildWarehouseItemConstraintSpecs(itemId: string, doc: Record<string, unknown>) {
-    const itemCode = normalizeOptionalText(doc.itemCode)?.toUpperCase();
-    return itemCode
-        ? [
-            buildUniqueConstraintSpec({
-                entityType: 'warehouseItem',
-                fieldName: 'itemCode',
-                ownerRef: itemId,
-                ownerType: 'warehouseItem',
-                value: itemCode,
-                message: 'Kode barang gudang sudah digunakan',
-            }),
-        ]
-        : [];
-}
-
-function buildBankAccountConstraintSpecs(accountId: string, doc: Record<string, unknown>) {
-    const accountNumber = normalizeOptionalText(doc.accountNumber)?.toUpperCase();
-    return accountNumber
-        ? [
-            buildUniqueConstraintSpec({
-                entityType: 'bankAccount',
-                fieldName: 'accountNumber',
-                ownerRef: accountId,
-                ownerType: 'bankAccount',
-                value: accountNumber,
-                message: 'Nomor rekening / kode kas sudah digunakan',
-            }),
-        ]
-        : [];
-}
-
-function buildSupplierConstraintSpecs(supplierId: string, doc: Record<string, unknown>) {
-    const supplierCode = normalizeOptionalText(doc.supplierCode)?.toUpperCase();
-    return supplierCode
-        ? [
-            buildUniqueConstraintSpec({
-                entityType: 'supplier',
-                fieldName: 'supplierCode',
-                ownerRef: supplierId,
-                ownerType: 'supplier',
-                value: supplierCode,
-                message: 'Kode supplier sudah digunakan',
-            }),
-        ]
-        : [];
-}
-
-function buildExpenseCategoryConstraintSpecs(categoryId: string, doc: Record<string, unknown>) {
-    const name = normalizeOptionalText(doc.name);
-    return name
-        ? [
-            buildUniqueConstraintSpec({
-                entityType: 'expenseCategory',
-                fieldName: 'name',
-                ownerRef: categoryId,
-                ownerType: 'expenseCategory',
-                value: name,
-                message: 'Nama kategori biaya sudah digunakan',
-            }),
-        ]
-        : [];
-}
-
-function buildCustomerRecipientConstraintSpecs(recipientId: string, doc: Record<string, unknown>) {
-    const customerRef = normalizeOptionalText(doc.customerRef);
-    const label = normalizeOptionalText(doc.label);
-    if (!customerRef || !label) {
-        return [];
-    }
-    return [
-        buildUniqueConstraintSpec({
-            entityType: 'customerRecipient',
-            fieldName: 'customerRefLabel',
-            ownerRef: recipientId,
-            ownerType: 'customerRecipient',
-            value: `${customerRef}::${label}`,
-            message: 'Label master penerima sudah digunakan untuk customer ini',
-        }),
-    ];
-}
-
-function buildCustomerPickupConstraintSpecs(pickupId: string, doc: Record<string, unknown>) {
-    const customerRef = normalizeOptionalText(doc.customerRef);
-    const label = normalizeOptionalText(doc.label);
-    if (!customerRef || !label) {
-        return [];
-    }
-    return [
-        buildUniqueConstraintSpec({
-            entityType: 'customerPickupLocation',
-            fieldName: 'customerRefLabel',
-            ownerRef: pickupId,
-            ownerType: 'customerPickupLocation',
-            value: `${customerRef}::${label}`,
-            message: 'Label master pickup sudah digunakan untuk customer ini',
-        }),
-    ];
-}
-
-function buildTripRouteRateConstraintSpecs(rateId: string, doc: Record<string, unknown>) {
-    const originArea = normalizeOptionalText(doc.originArea)?.toLowerCase();
-    const destinationArea = normalizeOptionalText(doc.destinationArea)?.toLowerCase();
-    if (!originArea || !destinationArea) {
-        return [];
-    }
-    const serviceRef = normalizeOptionalText(doc.serviceRef) || '__all__';
-    return [
-        buildUniqueConstraintSpec({
-            entityType: 'tripRouteRate',
-            fieldName: 'originDestinationService',
-            ownerRef: rateId,
-            ownerType: 'tripRouteRate',
-            value: `${originArea}::${destinationArea}::${serviceRef}`,
-            message: 'Master biaya rute trip untuk kombinasi area dan kategori ini sudah ada',
-        }),
-    ];
-}
-
-function buildServiceConstraintSpecs(serviceId: string, doc: Record<string, unknown>) {
-    const specs: UniqueConstraintMutationSpec[] = [];
-    const code = normalizeOptionalText(doc.code)?.toUpperCase();
-    if (code) {
-        specs.push(buildUniqueConstraintSpec({
-            entityType: 'service',
-            fieldName: 'code',
-            ownerRef: serviceId,
-            ownerType: 'service',
-            value: code,
-            message: 'Kode kategori armada sudah digunakan',
-        }));
-    }
-    const name = normalizeOptionalText(doc.name);
-    if (name) {
-        specs.push(buildUniqueConstraintSpec({
-            entityType: 'service',
-            fieldName: 'name',
-            ownerRef: serviceId,
-            ownerType: 'service',
-            value: name,
-            message: 'Nama kategori truk/armada sudah digunakan',
-        }));
-    }
-    return specs;
-}
-
-function buildDriverConstraintSpecs(driverId: string, doc: Record<string, unknown>) {
-    const specs: UniqueConstraintMutationSpec[] = [];
-    const licenseNumber = normalizeOptionalText(doc.licenseNumber)?.toUpperCase();
-    if (licenseNumber) {
-        specs.push(buildUniqueConstraintSpec({
-            entityType: 'driver',
-            fieldName: 'licenseNumber',
-            ownerRef: driverId,
-            ownerType: 'driver',
-            value: licenseNumber,
-            message: 'No. SIM sudah digunakan supir lain',
-        }));
-    }
-    const ktpNumber = normalizeOptionalText(doc.ktpNumber)?.toUpperCase();
-    if (ktpNumber) {
-        specs.push(buildUniqueConstraintSpec({
-            entityType: 'driver',
-            fieldName: 'ktpNumber',
-            ownerRef: driverId,
-            ownerType: 'driver',
-            value: ktpNumber,
-            message: 'No. KTP sudah digunakan supir lain',
-        }));
-    }
-    return specs;
-}
-
-function buildEmployeeConstraintSpecs(employeeId: string, doc: Record<string, unknown>) {
-    const specs: UniqueConstraintMutationSpec[] = [];
-    const employeeCode = normalizeOptionalText(doc.employeeCode)?.toUpperCase();
-    if (employeeCode) {
-        specs.push(buildUniqueConstraintSpec({
-                entityType: 'employee',
-                fieldName: 'employeeCode',
-                ownerRef: employeeId,
-                ownerType: 'employee',
-                value: employeeCode,
-                message: 'Kode karyawan sudah digunakan',
-            }));
-    }
-    const userRef = normalizeOptionalText(doc.userRef);
-    if (userRef) {
-        specs.push(buildUniqueConstraintSpec({
-            entityType: 'employee',
-            fieldName: 'userRef',
-            ownerRef: employeeId,
-            ownerType: 'employee',
-            value: userRef,
-            message: 'Akun user ini sudah terhubung ke karyawan lain',
-        }));
-    }
-    return specs;
-}
-
-function buildEmployeeAttendanceConstraintSpecs(recordId: string, doc: Record<string, unknown>) {
-    const employeeRef = normalizeOptionalText(doc.employeeRef);
-    const date = normalizeOptionalText(doc.date);
-    if (!employeeRef || !date) {
-        return [];
-    }
-    return [
-        buildUniqueConstraintSpec({
-            entityType: 'employeeAttendanceRecord',
-            fieldName: 'employeeDate',
-            ownerRef: recordId,
-            ownerType: 'employeeAttendanceRecord',
-            value: `${employeeRef}::${date}`,
-            message: 'Absensi karyawan pada tanggal ini sudah tercatat',
-        }),
-    ];
-}
-
-function buildCustomerProductConstraintSpecs(productId: string, doc: Record<string, unknown>) {
-    const customerRef = normalizeOptionalText(doc.customerRef);
-    const code = normalizeOptionalText(doc.code)?.toUpperCase();
-    if (!customerRef || !code) {
-        return [];
-    }
-    return [
-        buildUniqueConstraintSpec({
-            entityType: 'customerProduct',
-            fieldName: 'customerRefCode',
-            ownerRef: productId,
-            ownerType: 'customerProduct',
-            value: `${customerRef}::${code}`,
-            message: 'Kode barang customer sudah digunakan',
-        }),
-    ];
-}
-
-function buildVehicleConstraintSpecs(vehicleId: string, doc: Record<string, unknown>) {
-    const specs: UniqueConstraintMutationSpec[] = [];
-    const plateNumber = normalizeOptionalText(doc.plateNumber)?.toUpperCase();
-    if (plateNumber) {
-        specs.push(buildUniqueConstraintSpec({
-            entityType: 'vehicle',
-            fieldName: 'plateNumber',
-            ownerRef: vehicleId,
-            ownerType: 'vehicle',
-            value: plateNumber,
-            message: 'Plat nomor kendaraan sudah digunakan',
-        }));
-    }
-    const unitCode = normalizeOptionalText(doc.unitCode)?.toUpperCase();
-    if (unitCode) {
-        specs.push(buildUniqueConstraintSpec({
-            entityType: 'vehicle',
-            fieldName: 'unitCode',
-            ownerRef: vehicleId,
-            ownerType: 'vehicle',
-            value: unitCode,
-            message: 'Kode unit kendaraan sudah digunakan',
-        }));
-    }
-    const chassisNumber = normalizeOptionalText(doc.chassisNumber)?.toUpperCase();
-    if (chassisNumber) {
-        specs.push(buildUniqueConstraintSpec({
-            entityType: 'vehicle',
-            fieldName: 'chassisNumber',
-            ownerRef: vehicleId,
-            ownerType: 'vehicle',
-            value: chassisNumber,
-            message: 'No. rangka kendaraan sudah digunakan',
-        }));
-    }
-    const engineNumber = normalizeOptionalText(doc.engineNumber)?.toUpperCase();
-    if (engineNumber) {
-        specs.push(buildUniqueConstraintSpec({
-            entityType: 'vehicle',
-            fieldName: 'engineNumber',
-            ownerRef: vehicleId,
-            ownerType: 'vehicle',
-            value: engineNumber,
-            message: 'No. mesin kendaraan sudah digunakan',
-        }));
-    }
-    return specs;
-}
-
-async function resolveTripRouteRateServiceRevision(serviceRef: unknown) {
-    const normalizedServiceRef = normalizeOptionalText(serviceRef);
-    if (!normalizedServiceRef) {
-        return null;
-    }
-
-    const service = await sanityGetById<{ _id: string; _rev?: string }>(normalizedServiceRef);
-    if (!service?._id || !service._rev) {
-        throw new Error('Revisi kategori armada tarif trip tidak tersedia. Refresh lalu coba lagi.');
-    }
-
-    return {
-        _id: service._id,
-        _rev: service._rev,
-    };
-}
-
-async function resolveEmployeeUserRevision(userRef: unknown) {
-    const normalizedUserRef = normalizeOptionalText(userRef);
-    if (!normalizedUserRef) {
-        return null;
-    }
-
-    const user = await sanityGetById<{ _id: string; _rev?: string }>(normalizedUserRef);
-    if (!user?._id || !user._rev) {
-        throw new Error('Revisi akun user karyawan tidak tersedia. Refresh lalu coba lagi.');
-    }
-
-    return {
-        _id: user._id,
-        _rev: user._rev,
-    };
-}
-
-async function resolveEmployeeRevision(employeeRef: unknown) {
-    const normalizedEmployeeRef = normalizeOptionalText(employeeRef);
-    if (!normalizedEmployeeRef) {
-        return null;
-    }
-
-    const employee = await sanityGetById<{ _id: string; _rev?: string }>(normalizedEmployeeRef);
-    if (!employee?._id || !employee._rev) {
-        throw new Error('Revisi karyawan tidak tersedia. Refresh lalu coba lagi.');
-    }
-
-    return {
-        _id: employee._id,
-        _rev: employee._rev,
-    };
-}
-
-function appendUniqueConstraintMutations(
-    transaction: ReturnType<ReturnType<typeof getSanityClient>['transaction']>,
-    currentSpecs: UniqueConstraintMutationSpec[],
-    nextSpecs: UniqueConstraintMutationSpec[]
-) {
-    const currentByField = new Map(currentSpecs.map(spec => [spec.doc.fieldName, spec]));
-    const nextByField = new Map(nextSpecs.map(spec => [spec.doc.fieldName, spec]));
-
-    for (const [fieldName, currentSpec] of currentByField.entries()) {
-        const nextSpec = nextByField.get(fieldName);
-        if (!nextSpec || nextSpec.id !== currentSpec.id) {
-            transaction.delete(currentSpec.id);
-        }
-    }
-
-    for (const [fieldName, nextSpec] of nextByField.entries()) {
-        const currentSpec = currentByField.get(fieldName);
-        if (!currentSpec || currentSpec.id !== nextSpec.id) {
-            transaction.create(nextSpec.doc);
-        }
-    }
-}
-
-function resolveUniqueConstraintConflictMessage(error: unknown, specs: UniqueConstraintMutationSpec[]) {
-    for (const spec of specs) {
-        if (isDocumentAlreadyExistsError(error, spec.id)) {
-            return spec.message;
-        }
-    }
-    return null;
+        createdAt: timestamp,
+        updatedAt: timestamp,
+    } as const;
 }
 
 function isDocumentAlreadyExistsError(error: unknown, documentId?: string) {
@@ -1188,10 +701,7 @@ export async function handleGenericUpdate(
     }
     const updates: Record<string, unknown> = { ...updatesInput };
     let sanitizedEntityUpdates: Record<string, unknown> | null = null;
-    let selectedTripRouteRateRevision: { _id: string; _rev: string } | null = null;
-    let tripRouteRateServiceRevision: { _id: string; _rev: string } | null = null;
-    let employeeUserRevision: { _id: string; _rev: string } | null = null;
-    let attendanceEmployeeRevision: { _id: string; _rev: string } | null = null;
+    let selectedTripRouteRateRevision: { _id: string; _rev?: string } | null = null;
 
     if (isProtectedLedgerEntity(entity)) {
         return NextResponse.json({ error: 'Entri keuangan yang sudah terposting tidak boleh diubah lewat API umum' }, { status: 409 });
@@ -1223,23 +733,13 @@ export async function handleGenericUpdate(
             'tripDestinationArea',
             'taripBorongan',
             'keteranganBorongan',
-            'receiverName',
-            'receiverPhone',
-            'receiverAddress',
-            'receiverCompany',
         ]);
         const updateKeys = Object.keys(updates);
-        if (updateKeys.includes('customerDoNumber')) {
-            return NextResponse.json(
-                { error: 'No. SJ pengirim hanya boleh diubah lewat aksi update resmi surat jalan' },
-                { status: 409 }
-            );
-        }
         if (updateKeys.some(key => !allowedDeliveryOrderFields.has(key))) {
             return NextResponse.json({ error: 'Field surat jalan ini tidak boleh diubah lewat API umum' }, { status: 400 });
         }
 
-        const existingDeliveryOrder = await sanityGetById<{
+        const existingDeliveryOrder = await getDocumentById<{
             status?: string;
             podReceiverName?: string;
             podReceivedDate?: string;
@@ -1254,7 +754,6 @@ export async function handleGenericUpdate(
         const updatesPod = updateKeys.some(key => key === 'podReceiverName' || key === 'podReceivedDate' || key === 'podNote');
         const updatesBoronganTariff = updateKeys.some(key => key === 'taripBorongan' || key === 'keteranganBorongan');
         const updatesTripRouteSelection = updateKeys.some(key => key === 'tripRouteRateRef' || key === 'tripOriginArea' || key === 'tripDestinationArea');
-        const updatesDeliveryTarget = updateKeys.some(key => key === 'receiverName' || key === 'receiverPhone' || key === 'receiverAddress' || key === 'receiverCompany');
 
         if (updatesPod) {
             if (existingDeliveryOrder.status !== 'DELIVERED') {
@@ -1288,18 +787,14 @@ export async function handleGenericUpdate(
                 return NextResponse.json({ error: 'Tarip borongan tidak bisa diubah untuk surat jalan yang dibatalkan' }, { status: 409 });
             }
 
-            const relatedBoronganItem = await getSanityClient().fetch<{ _id: string } | null>(
-                `*[_type == "driverBoronganItem" && doRef == $ref][0]{ _id }`,
-                { ref: id }
-            );
+            const relatedBoronganItem =
+                (await listDocumentsByFilter<{ _id: string }>('driverBoronganItem', { doRef: id }))[0] || null;
             if (relatedBoronganItem) {
                 return NextResponse.json({ error: 'Tarip borongan DO yang sudah masuk slip borongan tidak boleh diubah' }, { status: 409 });
             }
 
-            const relatedVoucher = await getSanityClient().fetch<{ _id: string; bonNumber?: string } | null>(
-                `*[_type == "driverVoucher" && (deliveryOrderRef == $ref || deliveryOrderRef._ref == $ref)][0]{ _id, bonNumber }`,
-                { ref: id }
-            );
+            const relatedVoucher =
+                (await listDocumentsByFilter<{ _id: string; bonNumber?: string }>('driverVoucher', { deliveryOrderRef: id }))[0] || null;
             if (relatedVoucher) {
                 return NextResponse.json(
                     {
@@ -1335,7 +830,7 @@ export async function handleGenericUpdate(
                     updates.tripOriginArea = tripRouteSelection.tripOriginArea;
                     updates.tripDestinationArea = tripRouteSelection.tripDestinationArea;
                     if (tripRouteSelection.matchedTripRouteRate?._id) {
-                        if (!tripRouteSelection.matchedTripRouteRate._rev) {
+                        if (!tripRouteSelection.matchedTripRouteRate._rev && !useSupabaseBackend()) {
                             return NextResponse.json(
                                 { error: 'Revisi master biaya rute trip tidak tersedia. Refresh lalu coba lagi.' },
                                 { status: 409 }
@@ -1372,23 +867,6 @@ export async function handleGenericUpdate(
                 updates.keteranganBorongan = normalizeOptionalText(updates.keteranganBorongan);
             }
         }
-        if (updatesDeliveryTarget) {
-            if (existingDeliveryOrder.status === 'CANCELLED') {
-                return NextResponse.json({ error: 'Tujuan surat jalan tidak bisa diubah untuk surat jalan yang dibatalkan' }, { status: 409 });
-            }
-            if (Object.prototype.hasOwnProperty.call(updates, 'receiverName')) {
-                updates.receiverName = normalizeOptionalText(updates.receiverName);
-            }
-            if (Object.prototype.hasOwnProperty.call(updates, 'receiverPhone')) {
-                updates.receiverPhone = normalizeOptionalText(updates.receiverPhone);
-            }
-            if (Object.prototype.hasOwnProperty.call(updates, 'receiverAddress')) {
-                updates.receiverAddress = normalizeOptionalText(updates.receiverAddress);
-            }
-            if (Object.prototype.hasOwnProperty.call(updates, 'receiverCompany')) {
-                updates.receiverCompany = normalizeOptionalText(updates.receiverCompany);
-            }
-        }
     }
 
     if (entity === 'orders') {
@@ -1407,10 +885,8 @@ export async function handleGenericUpdate(
         ]);
         const touchesStructuralFields = Object.keys(updates).some(key => structuralOrderFields.has(key));
         if (touchesStructuralFields) {
-            const relatedDeliveryOrder = await getSanityClient().fetch<{ _id: string } | null>(
-                `*[_type == "deliveryOrder" && orderRef == $ref][0]{ _id }`,
-                { ref: id }
-            );
+            const relatedDeliveryOrder =
+                (await listDocumentsByFilter<{ _id: string }>('deliveryOrder', { orderRef: id }))[0] || null;
             if (relatedDeliveryOrder) {
                 return NextResponse.json(
                     { error: 'Order yang sudah punya surat jalan hanya boleh mengubah catatan. Field utama seperti pengirim, kategori armada, dan penerima dikunci agar dokumen turunan tetap konsisten.' },
@@ -1424,7 +900,7 @@ export async function handleGenericUpdate(
             if (!customerRef) {
                 return NextResponse.json({ error: 'Customer order wajib dipilih' }, { status: 400 });
             }
-            const customer = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(customerRef);
+            const customer = await getDocumentById<{ _id: string; name?: string; active?: boolean }>(customerRef);
             if (!customer) {
                 return NextResponse.json({ error: 'Customer order tidak ditemukan' }, { status: 404 });
             }
@@ -1441,7 +917,7 @@ export async function handleGenericUpdate(
                 updates.serviceRef = '';
                 updates.serviceName = undefined;
             } else {
-                const service = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(serviceRef);
+                const service = await getDocumentById<{ _id: string; name?: string; active?: boolean }>(serviceRef);
                 if (!service) {
                     return NextResponse.json({ error: 'Kategori armada order tidak ditemukan' }, { status: 404 });
                 }
@@ -1459,7 +935,7 @@ export async function handleGenericUpdate(
     }
 
     if (entity === 'employees') {
-        const existingEmployee = await sanityGetById<Record<string, unknown>>(id);
+        const existingEmployee = await getDocumentById<Record<string, unknown>>(id);
         if (!existingEmployee) {
             return NextResponse.json({ error: 'Karyawan tidak ditemukan' }, { status: 404 });
         }
@@ -1478,7 +954,7 @@ export async function handleGenericUpdate(
     }
 
     if (entity === 'employee-attendance-records') {
-        const existingAttendance = await sanityGetById<Record<string, unknown>>(id);
+        const existingAttendance = await getDocumentById<Record<string, unknown>>(id);
         if (!existingAttendance) {
             return NextResponse.json({ error: 'Absensi karyawan tidak ditemukan' }, { status: 404 });
         }
@@ -1494,7 +970,7 @@ export async function handleGenericUpdate(
     }
 
     if (entity === 'customers') {
-        const existingCustomer = await sanityGetById<Record<string, unknown>>(id);
+        const existingCustomer = await getDocumentById<Record<string, unknown>>(id);
         if (!existingCustomer) {
             return NextResponse.json({ error: 'Customer tidak ditemukan' }, { status: 404 });
         }
@@ -1510,7 +986,7 @@ export async function handleGenericUpdate(
     }
 
     if (entity === 'suppliers') {
-        const existingSupplier = await sanityGetById<Record<string, unknown>>(id);
+        const existingSupplier = await getDocumentById<Record<string, unknown>>(id);
         if (!existingSupplier) {
             return NextResponse.json({ error: 'Supplier tidak ditemukan' }, { status: 404 });
         }
@@ -1526,7 +1002,7 @@ export async function handleGenericUpdate(
     }
 
     if (entity === 'warehouse-items') {
-        const existingWarehouseItem = await sanityGetById<Record<string, unknown>>(id);
+        const existingWarehouseItem = await getDocumentById<Record<string, unknown>>(id);
         if (!existingWarehouseItem) {
             return NextResponse.json({ error: 'Barang gudang tidak ditemukan' }, { status: 404 });
         }
@@ -1542,7 +1018,7 @@ export async function handleGenericUpdate(
     }
 
     if (entity === 'customer-products') {
-        const existingCustomerProduct = await sanityGetById<Record<string, unknown>>(id);
+        const existingCustomerProduct = await getDocumentById<Record<string, unknown>>(id);
         if (!existingCustomerProduct) {
             return NextResponse.json({ error: 'Barang customer tidak ditemukan' }, { status: 404 });
         }
@@ -1558,7 +1034,7 @@ export async function handleGenericUpdate(
     }
 
     if (entity === 'customer-recipients') {
-        const existingCustomerRecipient = await sanityGetById<Record<string, unknown>>(id);
+        const existingCustomerRecipient = await getDocumentById<Record<string, unknown>>(id);
         if (!existingCustomerRecipient) {
             return NextResponse.json({ error: 'Master penerima tidak ditemukan' }, { status: 404 });
         }
@@ -1574,7 +1050,7 @@ export async function handleGenericUpdate(
     }
 
     if (entity === 'customer-pickups') {
-        const existingCustomerPickup = await sanityGetById<Record<string, unknown>>(id);
+        const existingCustomerPickup = await getDocumentById<Record<string, unknown>>(id);
         if (!existingCustomerPickup) {
             return NextResponse.json({ error: 'Master pickup tidak ditemukan' }, { status: 404 });
         }
@@ -1590,7 +1066,7 @@ export async function handleGenericUpdate(
     }
 
     if (entity === 'trip-route-rates') {
-        const existingTripRouteRate = await sanityGetById<Record<string, unknown>>(id);
+        const existingTripRouteRate = await getDocumentById<Record<string, unknown>>(id);
         if (!existingTripRouteRate) {
             return NextResponse.json({ error: 'Master biaya rute trip tidak ditemukan' }, { status: 404 });
         }
@@ -1619,7 +1095,7 @@ export async function handleGenericUpdate(
             return NextResponse.json({ error: 'Field maintenance ini tidak boleh diubah lewat API umum' }, { status: 400 });
         }
 
-        const existingMaintenance = await sanityGetById<{ status?: string }>(id);
+        const existingMaintenance = await getDocumentById<{ status?: string }>(id);
         if (!existingMaintenance) {
             return NextResponse.json({ error: 'Maintenance tidak ditemukan' }, { status: 404 });
         }
@@ -1654,11 +1130,11 @@ export async function handleGenericUpdate(
     }
 
     if (entity === 'tire-events') {
-        const existingTire = await sanityGetById<Record<string, unknown> & { _rev?: string }>(id);
+        const existingTire = await getDocumentById<Record<string, unknown> & { _rev?: string }>(id);
         if (!existingTire) {
             return NextResponse.json({ error: 'Catatan ban tidak ditemukan' }, { status: 404 });
         }
-        if (!existingTire._rev) {
+        if (!existingTire._rev && !useSupabaseBackend()) {
             return NextResponse.json({ error: 'Revisi catatan ban tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
         }
         let normalizedTireUpdates: Record<string, unknown>;
@@ -1705,37 +1181,26 @@ export async function handleGenericUpdate(
             session,
             note: normalizeOptionalText(normalizedTireUpdates.notes),
         });
-        const transaction = getSanityClient()
-            .transaction()
-            .patch(id, {
-                ifRevisionID: existingTire._rev,
-                set: tireSetPayload,
-                ...(tireUnsetFields.length > 0 ? { unset: tireUnsetFields } : {}),
-            })
-            .create(historyLogDoc);
         const currentTireCode = normalizeOptionalText(existingTire.tireCode)?.toUpperCase();
         const nextTireCode = normalizeOptionalText(nextTireDoc.tireCode)?.toUpperCase();
-        const currentTireCodeConstraintId = currentTireCode
-            ? buildUniqueConstraintId('tireEvent', 'tireCode', currentTireCode)
-            : null;
         const nextTireCodeConstraint =
             nextTireCode && nextTireCode !== currentTireCode
                 ? buildTireCodeUniqueConstraintDoc(id, nextTireCode)
                 : null;
-        if (nextTireCodeConstraint) {
-            if (currentTireCodeConstraintId) {
-                transaction.delete(currentTireCodeConstraintId);
-            }
-            transaction.create(nextTireCodeConstraint);
-        }
         try {
+            await updateDocument(id, {
+                ...tireSetPayload,
+                ...Object.fromEntries(tireUnsetFields.map(field => [field, undefined])),
+            });
+            await createDocument(historyLogDoc);
+            if (nextTireCodeConstraint) {
+                await createDocument(nextTireCodeConstraint);
+            }
             await appendTrackedTireWarehouseSync({
-                transaction,
                 previousDoc: existingTire,
                 nextDoc: { ...nextTireDoc, _id: id },
                 session,
             });
-            await transaction.commit();
         } catch (error) {
             if (isDocumentAlreadyExistsError(error, nextTireCodeConstraint?._id)) {
                 return NextResponse.json({ error: 'Kode ban sudah digunakan' }, { status: 409 });
@@ -1748,7 +1213,7 @@ export async function handleGenericUpdate(
             }
             return buildTireEventResponseError(error, 'Data ban tidak valid');
         }
-        const updated = await sanityGetById<Record<string, unknown>>(id);
+        const updated = await getDocumentById<Record<string, unknown>>(id);
         await addAuditLog(
             session,
             'UPDATE',
@@ -1778,7 +1243,7 @@ export async function handleGenericUpdate(
             return NextResponse.json({ error: 'Tipe dan kunci sistem rekening tidak boleh diubah manual' }, { status: 409 });
         }
 
-        const existingAccount = await sanityGetById<BankAccountSummary>(id);
+        const existingAccount = await getDocumentById<BankAccountSummary>(id);
         if (!existingAccount) {
             return NextResponse.json({ error: 'Rekening tidak ditemukan' }, { status: 404 });
         }
@@ -1799,7 +1264,7 @@ export async function handleGenericUpdate(
     }
 
     if (entity === 'company') {
-        const existingCompany = await sanityGetCompanyProfile();
+        const existingCompany = await getCompanyProfile<CompanyProfile & { _id?: string; _rev?: string }>();
         if (!existingCompany?._id || existingCompany._id !== id) {
             return NextResponse.json({ error: 'Profil perusahaan tidak ditemukan' }, { status: 404 });
         }
@@ -1840,54 +1305,12 @@ export async function handleGenericUpdate(
             )
             : normalizedUpdates;
 
-    const currentDoc = await sanityGetById<Record<string, unknown> & { _id: string; _rev?: string }>(id);
+    const currentDoc = await getDocumentById<Record<string, unknown> & { _id: string; _rev?: string }>(id);
     if (!currentDoc) {
         return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
-    if (!currentDoc._rev) {
+    if (!currentDoc._rev && !useSupabaseBackend()) {
         return NextResponse.json({ error: 'Revisi dokumen tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
-    }
-    if (entity === 'trip-route-rates') {
-        try {
-            tripRouteRateServiceRevision = await resolveTripRouteRateServiceRevision(
-                Object.prototype.hasOwnProperty.call(persistedNormalizedUpdates, 'serviceRef')
-                    ? persistedNormalizedUpdates.serviceRef
-                    : currentDoc.serviceRef
-            );
-        } catch (error) {
-            return NextResponse.json(
-                { error: error instanceof Error ? error.message : 'Kategori armada tarif trip berubah. Refresh lalu coba lagi.' },
-                { status: 409 }
-            );
-        }
-    }
-    if (entity === 'employees') {
-        try {
-            employeeUserRevision = await resolveEmployeeUserRevision(
-                Object.prototype.hasOwnProperty.call(persistedNormalizedUpdates, 'userRef')
-                    ? persistedNormalizedUpdates.userRef
-                    : currentDoc.userRef
-            );
-        } catch (error) {
-            return NextResponse.json(
-                { error: error instanceof Error ? error.message : 'Akun user karyawan berubah. Refresh lalu coba lagi.' },
-                { status: 409 }
-            );
-        }
-    }
-    if (entity === 'employee-attendance-records') {
-        try {
-            attendanceEmployeeRevision = await resolveEmployeeRevision(
-                Object.prototype.hasOwnProperty.call(persistedNormalizedUpdates, 'employeeRef')
-                    ? persistedNormalizedUpdates.employeeRef
-                    : currentDoc.employeeRef
-            );
-        } catch (error) {
-            return NextResponse.json(
-                { error: error instanceof Error ? error.message : 'Karyawan absensi berubah. Refresh lalu coba lagi.' },
-                { status: 409 }
-            );
-        }
     }
 
     let updated: unknown;
@@ -1902,152 +1325,22 @@ export async function handleGenericUpdate(
                 Object.prototype.hasOwnProperty.call(normalizedUpdates, 'tireLayoutConfig')
                     ? (normalizedUpdates.tireLayoutConfig as Record<string, unknown> | undefined)
                     : (isPlainObject(currentDoc.tireLayoutConfig) ? currentDoc.tireLayoutConfig as Record<string, unknown> : undefined);
-            const relatedVehicles = await getSanityClient().fetch<Array<{ _id: string; _rev?: string; vehicleType?: string }>>(
-                `*[_type == "vehicle" && (serviceRef == $ref || serviceRef._ref == $ref)]{
-                    _id,
-                    _rev,
-                    vehicleType
-                }`,
-                { ref: id }
-            );
-            if (relatedVehicles.some(vehicle => !vehicle._rev)) {
-                return NextResponse.json(
-                    { error: 'Revisi kendaraan turunan tidak tersedia. Refresh lalu coba lagi.' },
-                    { status: 409 }
-                );
-            }
-
-            const transaction = getSanityClient().transaction().patch(id, {
-                ifRevisionID: currentDoc._rev,
-                set: normalizedUpdates,
-            });
-            appendUniqueConstraintMutations(
-                transaction,
-                buildServiceConstraintSpecs(id, currentDoc),
-                buildServiceConstraintSpecs(id, { ...currentDoc, ...normalizedUpdates })
-            );
+            const relatedVehicles = await listDocumentsByFilter<{ _id: string; vehicleType?: string }>('vehicle', { serviceRef: id });
+            updated = await updateDocument(id, normalizedUpdates);
             for (const vehicle of relatedVehicles) {
-                transaction.patch(vehicle._id, {
-                    ifRevisionID: vehicle._rev as string,
-                    set: {
-                        serviceName: nextServiceName,
-                        tireLayoutConfig: normalizeTireLayoutConfig(
-                            nextServiceTireLayoutConfig,
-                            buildDefaultTireLayoutConfig(vehicle.vehicleType || '', nextServiceName)
-                        ),
-                    },
+                await updateDocument(vehicle._id, {
+                    serviceName: nextServiceName,
+                    tireLayoutConfig: normalizeTireLayoutConfig(
+                        nextServiceTireLayoutConfig,
+                        buildDefaultTireLayoutConfig(vehicle.vehicleType || '', nextServiceName)
+                    ),
                 });
             }
-            await transaction.commit();
-            updated = await sanityGetById(id);
+            updated = await getDocumentById(id);
         } else if (entity === 'delivery-orders' && selectedTripRouteRateRevision) {
-            const transaction = getSanityClient()
-                .transaction()
-                .patch(selectedTripRouteRateRevision._id, {
-                    ifRevisionID: selectedTripRouteRateRevision._rev,
-                    set: { updatedAt: new Date().toISOString() },
-                })
-                .patch(id, {
-                    ifRevisionID: currentDoc._rev,
-                    set: normalizedUpdates,
-            });
-            await transaction.commit();
-            updated = await sanityGetById(id);
-        } else if (entity === 'trip-route-rates') {
-            const nextDoc = { ...currentDoc, ...persistedNormalizedUpdates };
-            const transaction = getSanityClient()
-                .transaction()
-                .patch(id, {
-                    ifRevisionID: currentDoc._rev,
-                    set: persistedNormalizedUpdates,
-                });
-            if (tripRouteRateServiceRevision) {
-                transaction.patch(tripRouteRateServiceRevision._id, {
-                    ifRevisionID: tripRouteRateServiceRevision._rev,
-                    set: { updatedAt: new Date().toISOString() },
-                });
-            }
-            appendUniqueConstraintMutations(
-                transaction,
-                buildTripRouteRateConstraintSpecs(id, currentDoc),
-                buildTripRouteRateConstraintSpecs(id, nextDoc)
-            );
-            await transaction.commit();
-            updated = await sanityGetById(id);
-        } else if (
-            entity === 'bank-accounts'
-            || entity === 'expense-categories'
-            || entity === 'customer-recipients'
-            || entity === 'customer-pickups'
-            || entity === 'employees'
-            || entity === 'employee-attendance-records'
-            || entity === 'warehouse-items'
-            || entity === 'vehicles'
-            || entity === 'suppliers'
-            || entity === 'customer-products'
-        ) {
-            const nextDoc = { ...currentDoc, ...persistedNormalizedUpdates };
-            const currentConstraintSpecs =
-                entity === 'bank-accounts'
-                    ? buildBankAccountConstraintSpecs(id, currentDoc)
-                    : entity === 'expense-categories'
-                        ? buildExpenseCategoryConstraintSpecs(id, currentDoc)
-                    : entity === 'customer-recipients'
-                        ? buildCustomerRecipientConstraintSpecs(id, currentDoc)
-                    : entity === 'customer-pickups'
-                        ? buildCustomerPickupConstraintSpecs(id, currentDoc)
-                        : entity === 'employees'
-                            ? buildEmployeeConstraintSpecs(id, currentDoc)
-                            : entity === 'employee-attendance-records'
-                                ? buildEmployeeAttendanceConstraintSpecs(id, currentDoc)
-                    : entity === 'warehouse-items'
-                        ? buildWarehouseItemConstraintSpecs(id, currentDoc)
-                        : entity === 'vehicles'
-                            ? buildVehicleConstraintSpecs(id, currentDoc)
-                            : entity === 'suppliers'
-                                ? buildSupplierConstraintSpecs(id, currentDoc)
-                                : buildCustomerProductConstraintSpecs(id, currentDoc);
-            const nextConstraintSpecs =
-                entity === 'bank-accounts'
-                    ? buildBankAccountConstraintSpecs(id, nextDoc)
-                    : entity === 'expense-categories'
-                        ? buildExpenseCategoryConstraintSpecs(id, nextDoc)
-                    : entity === 'customer-recipients'
-                        ? buildCustomerRecipientConstraintSpecs(id, nextDoc)
-                    : entity === 'customer-pickups'
-                        ? buildCustomerPickupConstraintSpecs(id, nextDoc)
-                        : entity === 'employees'
-                            ? buildEmployeeConstraintSpecs(id, nextDoc)
-                            : entity === 'employee-attendance-records'
-                                ? buildEmployeeAttendanceConstraintSpecs(id, nextDoc)
-                    : entity === 'warehouse-items'
-                        ? buildWarehouseItemConstraintSpecs(id, nextDoc)
-                        : entity === 'vehicles'
-                            ? buildVehicleConstraintSpecs(id, nextDoc)
-                            : entity === 'suppliers'
-                                ? buildSupplierConstraintSpecs(id, nextDoc)
-                                : buildCustomerProductConstraintSpecs(id, nextDoc);
-            const transaction = getSanityClient()
-                .transaction()
-                .patch(id, {
-                    ifRevisionID: currentDoc._rev,
-                    set: persistedNormalizedUpdates,
-                });
-            if (entity === 'employees' && employeeUserRevision) {
-                transaction.patch(employeeUserRevision._id, {
-                    ifRevisionID: employeeUserRevision._rev,
-                    set: { updatedAt: new Date().toISOString() },
-                });
-            }
-            if (entity === 'employee-attendance-records' && attendanceEmployeeRevision) {
-                transaction.patch(attendanceEmployeeRevision._id, {
-                    ifRevisionID: attendanceEmployeeRevision._rev,
-                    set: { updatedAt: new Date().toISOString() },
-                });
-            }
-            appendUniqueConstraintMutations(transaction, currentConstraintSpecs, nextConstraintSpecs);
-            await transaction.commit();
-            updated = await sanityGetById(id);
+            await updateDocument(selectedTripRouteRateRevision._id, { updatedAt: new Date().toISOString() });
+            await updateDocument(id, normalizedUpdates);
+            updated = await getDocumentById(id);
         } else if (entity === 'users') {
             const mutationTimestamp = new Date().toISOString();
             const userUnsetFields = Object.entries(persistedNormalizedUpdates)
@@ -2056,111 +1349,17 @@ export async function handleGenericUpdate(
             const userSetUpdates = Object.fromEntries(
                 Object.entries(persistedNormalizedUpdates).filter(([, value]) => value !== undefined)
             );
-            const transaction = getSanityClient().transaction();
-            const nextUserDoc = { ...currentDoc, ...userSetUpdates } as Record<string, unknown>;
-            for (const unsetField of userUnsetFields) {
-                delete nextUserDoc[unsetField];
-            }
-            const currentConstraintSpecs = buildUserConstraintSpecs(id, currentDoc);
-            const nextConstraintSpecs = buildUserConstraintSpecs(id, nextUserDoc);
             if (userDriverRevision) {
-                transaction.patch(userDriverRevision._id, {
-                    ifRevisionID: userDriverRevision._rev,
-                    set: { updatedAt: mutationTimestamp },
-                });
+                await updateDocument(userDriverRevision._id, { updatedAt: mutationTimestamp });
             }
-            appendUniqueConstraintMutations(transaction, currentConstraintSpecs, nextConstraintSpecs);
-            transaction.patch(id, patch => {
-                let nextPatch = patch.ifRevisionId(currentDoc._rev as string);
-                if (userUnsetFields.length > 0) {
-                    nextPatch = nextPatch.unset(userUnsetFields);
-                }
-                if (Object.keys(userSetUpdates).length > 0) {
-                    nextPatch = nextPatch.set(userSetUpdates);
-                }
-                return nextPatch;
+            updated = await updateDocument(id, {
+                ...userSetUpdates,
+                ...Object.fromEntries(userUnsetFields.map(field => [field, undefined])),
             });
-            await transaction.commit();
-            updated = await sanityGetById(id);
         } else {
-            updated = await getSanityClient()
-                .patch(id)
-                .ifRevisionId(currentDoc._rev)
-                .set(persistedNormalizedUpdates)
-                .commit();
+            updated = await updateDocument(id, persistedNormalizedUpdates);
         }
     } catch (error) {
-        if (entity === 'users') {
-            const nextUserDoc = { ...currentDoc, ...persistedNormalizedUpdates } as Record<string, unknown>;
-            for (const [key, value] of Object.entries(persistedNormalizedUpdates)) {
-                if (value === undefined) {
-                    delete nextUserDoc[key];
-                }
-            }
-            const conflictMessage = resolveUniqueConstraintConflictMessage(
-                error,
-                buildUserConstraintSpecs(id, nextUserDoc)
-            );
-            if (conflictMessage) {
-                return NextResponse.json({ error: conflictMessage }, { status: 409 });
-            }
-        }
-        if (entity === 'services') {
-            const conflictMessage = resolveUniqueConstraintConflictMessage(
-                error,
-                buildServiceConstraintSpecs(id, { ...currentDoc, ...normalizedUpdates })
-            );
-            if (conflictMessage) {
-                return NextResponse.json({ error: conflictMessage }, { status: 409 });
-            }
-        }
-        if (entity === 'trip-route-rates') {
-            const conflictMessage = resolveUniqueConstraintConflictMessage(
-                error,
-                buildTripRouteRateConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
-            );
-            if (conflictMessage) {
-                return NextResponse.json({ error: conflictMessage }, { status: 409 });
-            }
-        }
-        if (
-            entity === 'bank-accounts'
-            || entity === 'expense-categories'
-            || entity === 'customer-recipients'
-            || entity === 'customer-pickups'
-            || entity === 'employees'
-            || entity === 'employee-attendance-records'
-            || entity === 'warehouse-items'
-            || entity === 'vehicles'
-            || entity === 'suppliers'
-            || entity === 'customer-products'
-        ) {
-            const conflictMessage = resolveUniqueConstraintConflictMessage(
-                error,
-                entity === 'bank-accounts'
-                    ? buildBankAccountConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
-                    : entity === 'expense-categories'
-                        ? buildExpenseCategoryConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
-                    : entity === 'customer-recipients'
-                        ? buildCustomerRecipientConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
-                    : entity === 'customer-pickups'
-                        ? buildCustomerPickupConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
-                        : entity === 'employees'
-                            ? buildEmployeeConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
-                            : entity === 'employee-attendance-records'
-                                ? buildEmployeeAttendanceConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
-                    : entity === 'warehouse-items'
-                        ? buildWarehouseItemConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
-                        : entity === 'vehicles'
-                            ? buildVehicleConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
-                            : entity === 'suppliers'
-                                ? buildSupplierConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
-                                : buildCustomerProductConstraintSpecs(id, { ...currentDoc, ...persistedNormalizedUpdates })
-            );
-            if (conflictMessage) {
-                return NextResponse.json({ error: conflictMessage }, { status: 409 });
-            }
-        }
         if (isMutationConflictError(error)) {
             return NextResponse.json(
                 { error: 'Dokumen berubah karena ada update lain. Refresh lalu coba lagi.' },
@@ -2281,37 +1480,21 @@ export async function handleGenericDelete(
             return NextResponse.json({ error: 'Barang customer tidak valid' }, { status: 400 });
         }
 
-        const customerProduct = await sanityGetById<{ _id: string; _rev?: string; code?: string; name?: string }>(id);
+        const customerProduct = await getDocumentById<{ _id: string; _rev?: string; code?: string; name?: string }>(id);
         if (!customerProduct) {
             return NextResponse.json({ error: 'Barang customer tidak ditemukan' }, { status: 404 });
         }
-        if (!customerProduct._rev) {
+        if (!customerProduct._rev && !useSupabaseBackend()) {
             return NextResponse.json({ error: 'Revisi barang customer tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
         }
 
-        const relatedOrderItem = await getSanityClient().fetch<{ _id: string } | null>(
-            `*[_type == "orderItem" && customerProductRef == $ref][0]{ _id }`,
-            { ref: id }
-        );
+        const relatedOrderItem = (await listDocumentsByFilter<{ _id: string }>('orderItem', { customerProductRef: id }))[0] || null;
         if (relatedOrderItem) {
             return NextResponse.json({ error: 'Barang customer yang sudah dipakai order tidak boleh dihapus' }, { status: 409 });
         }
 
         try {
-            const constraintSpecs = buildCustomerProductConstraintSpecs(id, customerProduct as Record<string, unknown>);
-            await getSanityClient().mutate([
-                ...constraintSpecs.map(spec => ({
-                    delete: {
-                        id: spec.id,
-                    },
-                })),
-                {
-                    delete: {
-                        id,
-                        ifRevisionID: customerProduct._rev,
-                    },
-                },
-            ] as unknown as SanityMutations);
+            await deleteDocument(id);
             await addAuditLog(
                 session,
                 'DELETE',
@@ -2337,43 +1520,24 @@ export async function handleGenericDelete(
             return NextResponse.json({ error: 'Supplier tidak valid' }, { status: 400 });
         }
 
-        const supplier = await sanityGetById<{ _id: string; _rev?: string; name?: string }>(id);
+        const supplier = await getDocumentById<{ _id: string; _rev?: string; name?: string }>(id);
         if (!supplier) {
             return NextResponse.json({ error: 'Supplier tidak ditemukan' }, { status: 404 });
         }
-        if (!supplier._rev) {
+        if (!supplier._rev && !useSupabaseBackend()) {
             return NextResponse.json({ error: 'Revisi supplier tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
         }
 
         const [relatedPurchase, defaultWarehouseItem] = await Promise.all([
-            getSanityClient().fetch<{ _id: string } | null>(
-                `*[_type == "purchase" && supplierRef == $ref][0]{ _id }`,
-                { ref: id }
-            ),
-            getSanityClient().fetch<{ _id: string } | null>(
-                `*[_type == "warehouseItem" && defaultSupplierRef == $ref][0]{ _id }`,
-                { ref: id }
-            ),
+            listDocumentsByFilter<{ _id: string }>('purchase', { supplierRef: id }).then(rows => rows[0] || null),
+            listDocumentsByFilter<{ _id: string }>('warehouseItem', { defaultSupplierRef: id }).then(rows => rows[0] || null),
         ]);
         if (relatedPurchase || defaultWarehouseItem) {
             return NextResponse.json({ error: 'Supplier yang sudah dipakai pembelian atau default barang tidak boleh dihapus' }, { status: 409 });
         }
 
         try {
-            const constraintSpecs = buildSupplierConstraintSpecs(id, supplier as Record<string, unknown>);
-            await getSanityClient().mutate([
-                ...constraintSpecs.map(spec => ({
-                    delete: {
-                        id: spec.id,
-                    },
-                })),
-                {
-                    delete: {
-                        id,
-                        ifRevisionID: supplier._rev,
-                    },
-                },
-            ] as unknown as SanityMutations);
+            await deleteDocument(id);
             await addAuditLog(session, 'DELETE', entity, id, `Deleted supplier ${supplier.name || id}`);
             return NextResponse.json({ success: true });
         } catch (error) {
@@ -2393,43 +1557,24 @@ export async function handleGenericDelete(
             return NextResponse.json({ error: 'Barang gudang tidak valid' }, { status: 400 });
         }
 
-        const warehouseItem = await sanityGetById<{ _id: string; _rev?: string; itemCode?: string; name?: string }>(id);
+        const warehouseItem = await getDocumentById<{ _id: string; _rev?: string; itemCode?: string; name?: string }>(id);
         if (!warehouseItem) {
             return NextResponse.json({ error: 'Barang gudang tidak ditemukan' }, { status: 404 });
         }
-        if (!warehouseItem._rev) {
+        if (!warehouseItem._rev && !useSupabaseBackend()) {
             return NextResponse.json({ error: 'Revisi barang gudang tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
         }
 
         const [relatedPurchaseItem, relatedMovement] = await Promise.all([
-            getSanityClient().fetch<{ _id: string } | null>(
-                `*[_type == "purchaseItem" && warehouseItemRef == $ref][0]{ _id }`,
-                { ref: id }
-            ),
-            getSanityClient().fetch<{ _id: string } | null>(
-                `*[_type == "stockMovement" && warehouseItemRef == $ref][0]{ _id }`,
-                { ref: id }
-            ),
+            listDocumentsByFilter<{ _id: string }>('purchaseItem', { warehouseItemRef: id }).then(rows => rows[0] || null),
+            listDocumentsByFilter<{ _id: string }>('stockMovement', { warehouseItemRef: id }).then(rows => rows[0] || null),
         ]);
         if (relatedPurchaseItem || relatedMovement) {
             return NextResponse.json({ error: 'Barang gudang yang sudah punya histori pembelian atau stok tidak boleh dihapus' }, { status: 409 });
         }
 
         try {
-            const constraintSpecs = buildWarehouseItemConstraintSpecs(id, warehouseItem as Record<string, unknown>);
-            await getSanityClient().mutate([
-                ...constraintSpecs.map(spec => ({
-                    delete: {
-                        id: spec.id,
-                    },
-                })),
-                {
-                    delete: {
-                        id,
-                        ifRevisionID: warehouseItem._rev,
-                    },
-                },
-            ] as unknown as SanityMutations);
+            await deleteDocument(id);
             await addAuditLog(
                 session,
                 'DELETE',
@@ -2455,37 +1600,21 @@ export async function handleGenericDelete(
             return NextResponse.json({ error: 'Master penerima tidak valid' }, { status: 400 });
         }
 
-        const recipient = await sanityGetById<{ _id: string; _rev?: string; label?: string; receiverName?: string }>(id);
+        const recipient = await getDocumentById<{ _id: string; _rev?: string; label?: string; receiverName?: string }>(id);
         if (!recipient) {
             return NextResponse.json({ error: 'Master penerima tidak ditemukan' }, { status: 404 });
         }
-        if (!recipient._rev) {
+        if (!recipient._rev && !useSupabaseBackend()) {
             return NextResponse.json({ error: 'Revisi master penerima tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
         }
 
-        const relatedOrder = await getSanityClient().fetch<{ _id: string } | null>(
-            `*[_type == "order" && customerRecipientRef == $ref][0]{ _id }`,
-            { ref: id }
-        );
+        const relatedOrder = (await listDocumentsByFilter<{ _id: string }>('order', { customerRecipientRef: id }))[0] || null;
         if (relatedOrder) {
             return NextResponse.json({ error: 'Master penerima yang sudah dipakai order tidak boleh dihapus' }, { status: 409 });
         }
 
         try {
-            const constraintSpecs = buildCustomerRecipientConstraintSpecs(id, recipient as unknown as Record<string, unknown>);
-            await getSanityClient().mutate([
-                ...constraintSpecs.map(spec => ({
-                    delete: {
-                        id: spec.id,
-                    },
-                })),
-                {
-                    delete: {
-                        id,
-                        ifRevisionID: recipient._rev,
-                    },
-                },
-            ] as unknown as SanityMutations);
+            await deleteDocument(id);
             await addAuditLog(
                 session,
                 'DELETE',
@@ -2511,37 +1640,21 @@ export async function handleGenericDelete(
             return NextResponse.json({ error: 'Master pickup tidak valid' }, { status: 400 });
         }
 
-        const pickup = await sanityGetById<{ _id: string; _rev?: string; label?: string; pickupAddress?: string }>(id);
+        const pickup = await getDocumentById<{ _id: string; _rev?: string; label?: string; pickupAddress?: string }>(id);
         if (!pickup) {
             return NextResponse.json({ error: 'Master pickup tidak ditemukan' }, { status: 404 });
         }
-        if (!pickup._rev) {
+        if (!pickup._rev && !useSupabaseBackend()) {
             return NextResponse.json({ error: 'Revisi master pickup tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
         }
 
-        const relatedOrder = await getSanityClient().fetch<{ _id: string } | null>(
-            `*[_type == "order" && customerPickupRef == $ref][0]{ _id }`,
-            { ref: id }
-        );
+        const relatedOrder = (await listDocumentsByFilter<{ _id: string }>('order', { customerPickupRef: id }))[0] || null;
         if (relatedOrder) {
             return NextResponse.json({ error: 'Master pickup yang sudah dipakai order tidak boleh dihapus' }, { status: 409 });
         }
 
         try {
-            const constraintSpecs = buildCustomerPickupConstraintSpecs(id, pickup as unknown as Record<string, unknown>);
-            await getSanityClient().mutate([
-                ...constraintSpecs.map(spec => ({
-                    delete: {
-                        id: spec.id,
-                    },
-                })),
-                {
-                    delete: {
-                        id,
-                        ifRevisionID: pickup._rev,
-                    },
-                },
-            ] as unknown as SanityMutations);
+            await deleteDocument(id);
             await addAuditLog(
                 session,
                 'DELETE',
@@ -2567,39 +1680,21 @@ export async function handleGenericDelete(
             return NextResponse.json({ error: 'Master biaya rute trip tidak valid' }, { status: 400 });
         }
 
-        const tripRouteRate = await sanityGetById<{ _id: string; _rev?: string; originArea?: string; destinationArea?: string; serviceRef?: string }>(id);
+        const tripRouteRate = await getDocumentById<{ _id: string; _rev?: string; originArea?: string; destinationArea?: string }>(id);
         if (!tripRouteRate) {
             return NextResponse.json({ error: 'Master biaya rute trip tidak ditemukan' }, { status: 404 });
         }
-        if (!tripRouteRate._rev) {
+        if (!tripRouteRate._rev && !useSupabaseBackend()) {
             return NextResponse.json({ error: 'Revisi master biaya rute trip tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
         }
 
-        const relatedDeliveryOrder = await getSanityClient().fetch<{ _id: string } | null>(
-            `*[_type == "deliveryOrder" && tripRouteRateRef == $ref][0]{ _id }`,
-            { ref: id }
-        );
+        const relatedDeliveryOrder = (await listDocumentsByFilter<{ _id: string }>('deliveryOrder', { tripRouteRateRef: id }))[0] || null;
         if (relatedDeliveryOrder) {
             return NextResponse.json({ error: 'Master biaya rute trip yang sudah dipakai surat jalan tidak boleh dihapus' }, { status: 409 });
         }
 
         try {
-            const constraintSpecs = buildTripRouteRateConstraintSpecs(id, tripRouteRate as unknown as Record<string, unknown>);
-            await getSanityClient().mutate(
-                [
-                    ...constraintSpecs.map(spec => ({
-                        delete: {
-                            id: spec.id,
-                        },
-                    })),
-                    {
-                        delete: {
-                            id,
-                            ifRevisionID: tripRouteRate._rev,
-                        },
-                    },
-                ] as unknown as SanityMutations
-            );
+            await deleteDocument(id);
             await addAuditLog(
                 session,
                 'DELETE',
@@ -2676,104 +1771,12 @@ export async function handleGenericDelete(
             return NextResponse.json({ error: 'Karyawan tidak valid' }, { status: 400 });
         }
 
-        const linkedAttendance = await getSanityClient().fetch<{ _id: string } | null>(
-            `*[_type == "employeeAttendanceRecord" && employeeRef == $ref][0]{ _id }`,
-            { ref: id }
-        );
+        const linkedAttendance = (await listDocumentsByFilter<{ _id: string }>('employeeAttendanceRecord', { employeeRef: id }))[0] || null;
         if (linkedAttendance) {
             return NextResponse.json(
                 { error: 'Karyawan yang sudah punya riwayat absensi tidak boleh dihapus. Nonaktifkan saja bila sudah tidak bekerja.' },
                 { status: 409 }
             );
-        }
-
-        const employee = await sanityGetById<{ _id: string; _rev?: string; employeeCode?: string; name?: string }>(id);
-        if (!employee) {
-            return NextResponse.json({ error: 'Karyawan tidak ditemukan' }, { status: 404 });
-        }
-        if (!employee._rev) {
-            return NextResponse.json({ error: 'Revisi karyawan tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
-        }
-
-        try {
-            const constraintSpecs = buildEmployeeConstraintSpecs(id, employee as unknown as Record<string, unknown>);
-            await getSanityClient().mutate([
-                ...constraintSpecs.map(spec => ({
-                    delete: {
-                        id: spec.id,
-                    },
-                })),
-                {
-                    delete: {
-                        id,
-                        ifRevisionID: employee._rev,
-                    },
-                },
-            ] as unknown as SanityMutations);
-            await addAuditLog(
-                session,
-                'DELETE',
-                entity,
-                id,
-                `Deleted employee ${buildEmployeeSummary(employee as unknown as Record<string, unknown>, id)}`
-            );
-            return NextResponse.json({ success: true });
-        } catch (error) {
-            if (isMutationConflictError(error)) {
-                return NextResponse.json(
-                    { error: 'Karyawan berubah karena ada update lain. Muat ulang lalu coba lagi.' },
-                    { status: 409 }
-                );
-            }
-            throw error;
-        }
-    }
-
-    if (entity === 'employee-attendance-records') {
-        const id = typeof data.id === 'string' ? data.id : '';
-        if (!id) {
-            return NextResponse.json({ error: 'Absensi karyawan tidak valid' }, { status: 400 });
-        }
-
-        const attendance = await sanityGetById<{ _id: string; _rev?: string; employeeCode?: string; employeeName?: string; date?: string; status?: string }>(id);
-        if (!attendance) {
-            return NextResponse.json({ error: 'Absensi karyawan tidak ditemukan' }, { status: 404 });
-        }
-        if (!attendance._rev) {
-            return NextResponse.json({ error: 'Revisi absensi karyawan tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
-        }
-
-        try {
-            const constraintSpecs = buildEmployeeAttendanceConstraintSpecs(id, attendance as unknown as Record<string, unknown>);
-            await getSanityClient().mutate([
-                ...constraintSpecs.map(spec => ({
-                    delete: {
-                        id: spec.id,
-                    },
-                })),
-                {
-                    delete: {
-                        id,
-                        ifRevisionID: attendance._rev,
-                    },
-                },
-            ] as unknown as SanityMutations);
-            await addAuditLog(
-                session,
-                'DELETE',
-                entity,
-                id,
-                `Deleted attendance ${buildEmployeeAttendanceSummary(attendance as unknown as Record<string, unknown>, id)}`
-            );
-            return NextResponse.json({ success: true });
-        } catch (error) {
-            if (isMutationConflictError(error)) {
-                return NextResponse.json(
-                    { error: 'Absensi karyawan berubah karena ada update lain. Muat ulang lalu coba lagi.' },
-                    { status: 409 }
-                );
-            }
-            throw error;
         }
     }
 
@@ -2782,76 +1785,8 @@ export async function handleGenericDelete(
         return NextResponse.json({ error: 'Invalid delete payload' }, { status: 400 });
     }
 
-    if (entity === 'users') {
-        if (id === session._id) {
-            return NextResponse.json({ error: 'Anda tidak dapat menghapus akun sendiri' }, { status: 409 });
-        }
-
-        const existingUser = await sanityGetById<{ _id: string; _rev?: string; email?: string; name?: string; role?: string; active?: boolean }>(id);
-        if (!existingUser) {
-            return NextResponse.json({ error: 'User tidak ditemukan' }, { status: 404 });
-        }
-        if (!existingUser._rev) {
-            return NextResponse.json({ error: 'Revisi user tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
-        }
-
-        if (existingUser.role === 'OWNER' && existingUser.active !== false) {
-            const otherActiveOwners = await getSanityClient().fetch<number>(
-                `count(*[_type == "user" && role == "OWNER" && active == true && _id != $excludeId])`,
-                { excludeId: id }
-            );
-            if (otherActiveOwners === 0) {
-                return NextResponse.json({ error: 'Minimal harus ada satu OWNER aktif' }, { status: 409 });
-            }
-        }
-
-        const linkedEmployee = await getSanityClient().fetch<{ _id: string } | null>(
-            `*[_type == "employee" && userRef == $ref][0]{ _id }`,
-            { ref: id }
-        );
-        if (linkedEmployee) {
-            return NextResponse.json(
-                { error: 'User yang masih terhubung ke master karyawan tidak boleh dihapus' },
-                { status: 409 }
-            );
-        }
-
-        try {
-            const constraintSpecs = buildUserConstraintSpecs(id, existingUser as unknown as Record<string, unknown>);
-            await getSanityClient().mutate([
-                ...constraintSpecs.map(spec => ({
-                    delete: {
-                        id: spec.id,
-                    },
-                })),
-                {
-                    delete: {
-                        id,
-                        ifRevisionID: existingUser._rev,
-                    },
-                },
-            ] as unknown as SanityMutations);
-            await addAuditLog(
-                session,
-                'DELETE',
-                entity,
-                id,
-                `Deleted user ${existingUser.name || existingUser.email || id}`
-            );
-            return NextResponse.json({ success: true });
-        } catch (error) {
-            if (isMutationConflictError(error)) {
-                return NextResponse.json(
-                    { error: 'User berubah karena ada update lain. Refresh lalu coba lagi.' },
-                    { status: 409 }
-                );
-            }
-            throw error;
-        }
-    }
-
     if (entity === 'bank-accounts') {
-        const existingAccount = await sanityGetById<BankAccountSummary & { active?: boolean }>(id);
+        const existingAccount = await getDocumentById<BankAccountSummary & { active?: boolean }>(id);
         if (!existingAccount) {
             return NextResponse.json({ error: 'Rekening tidak ditemukan' }, { status: 404 });
         }
@@ -2860,14 +1795,9 @@ export async function handleGenericDelete(
             return NextResponse.json({ success: true });
         }
 
-        const transactionRows = await getSanityClient().fetch<Array<Pick<BankTransaction, 'bankAccountRef' | 'type' | 'amount'>>>(
-            `*[_type == "bankTransaction" && bankAccountRef == $ref]{
-                bankAccountRef,
-                type,
-                amount
-            }`,
-            { ref: id }
-        );
+        const transactionRows = await listDocumentsByFilter<Pick<BankTransaction, 'bankAccountRef' | 'type' | 'amount'>>('bankTransaction', {
+            bankAccountRef: id,
+        });
         const [derivedAccount] = applyDerivedBankAccountBalances([existingAccount], transactionRows);
         const currentBalance = readLedgerBalance(derivedAccount?.currentBalance);
         if (currentBalance !== 0) {
@@ -2882,25 +1812,17 @@ export async function handleGenericDelete(
         }
 
         const companyInvoiceCleanup = await buildInvoiceInstructionAccountRemoval(id);
-        if (!existingAccount._rev) {
+        if (!existingAccount._rev && !useSupabaseBackend()) {
             return NextResponse.json({ error: 'Revisi rekening tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
         }
 
-        const transaction = getSanityClient().transaction().patch(id, {
-            ifRevisionID: existingAccount._rev,
-            set: { active: false },
-        });
-        if (companyInvoiceCleanup) {
-            transaction.patch(companyInvoiceCleanup.companyId, {
-                ifRevisionID: companyInvoiceCleanup.companyRev,
-                set: {
-                    invoiceSettings: companyInvoiceCleanup.invoiceSettings,
-                },
-            });
-        }
-
         try {
-            await transaction.commit();
+            await updateDocument(id, { active: false });
+            if (companyInvoiceCleanup) {
+                await updateDocument(companyInvoiceCleanup.companyId, {
+                    invoiceSettings: companyInvoiceCleanup.invoiceSettings,
+                });
+            }
         } catch (error) {
             if (isMutationConflictError(error)) {
                 return NextResponse.json(
@@ -2920,23 +1842,16 @@ export async function handleGenericDelete(
         return NextResponse.json({ success: true });
     }
 
-    const existing = await sanityGetById<{ _id: string; _rev?: string }>(id);
+    const existing = await getDocumentById<{ _id: string; _rev?: string }>(id);
     if (!existing) {
         return NextResponse.json({ error: 'Dokumen tidak ditemukan' }, { status: 404 });
     }
-    if (!existing._rev) {
+    if (!existing._rev && !useSupabaseBackend()) {
         return NextResponse.json({ error: 'Revisi dokumen tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
     try {
-        await getSanityClient().mutate([
-            {
-                delete: {
-                    id,
-                    ifRevisionID: existing._rev,
-                },
-            },
-        ] as unknown as SanityMutations);
+        await deleteDocument(id);
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
@@ -2959,7 +1874,7 @@ export async function handleGenericCreate(
     addAuditLog: AuditLogFn
 ) {
     if (entity === 'company') {
-        const existing = await sanityGetCompanyProfile() as (CompanyProfile & { _id?: string; _rev?: string }) | null;
+        const existing = await getCompanyProfile<CompanyProfile & { _id?: string; _rev?: string }>();
         let sanitizedCompanyData: Record<string, unknown>;
         try {
             sanitizedCompanyData = await sanitizeCompanyInvoiceSettings(data, existing);
@@ -2970,7 +1885,7 @@ export async function handleGenericCreate(
             );
         }
         if (existing?._id) {
-            if (!existing._rev) {
+            if (!existing._rev && !useSupabaseBackend()) {
                 return NextResponse.json(
                     { error: 'Revisi profil perusahaan tidak tersedia. Refresh lalu coba lagi.' },
                     { status: 409 }
@@ -2979,11 +1894,7 @@ export async function handleGenericCreate(
 
             let updated: unknown;
             try {
-                updated = await getSanityClient()
-                    .patch(existing._id)
-                    .ifRevisionId(existing._rev)
-                    .set(sanitizedCompanyData)
-                    .commit();
+                updated = await updateDocument(existing._id, sanitizedCompanyData);
             } catch (error) {
                 if (isMutationConflictError(error)) {
                     return NextResponse.json(
@@ -2997,7 +1908,7 @@ export async function handleGenericCreate(
             return NextResponse.json({ data: updated });
         }
 
-        const created = await sanityCreate({ _type: 'companyProfile', ...sanitizedCompanyData });
+        const created = await createDocument({ _type: 'companyProfile', ...sanitizedCompanyData });
         const createdId = (created as Record<string, unknown>)._id as string;
         await addAuditLog(session, 'CREATE', 'companyProfile', createdId, 'Company profile created');
         return NextResponse.json({ data: created });
@@ -3013,9 +1924,6 @@ export async function handleGenericCreate(
 
     const newDoc: { _type: string; [key: string]: unknown } = { _type: docType };
     let userDriverRevision: string | undefined;
-    let tripRouteRateServiceRevision: { _id: string; _rev: string } | null = null;
-    let employeeUserRevision: { _id: string; _rev: string } | null = null;
-    let attendanceEmployeeRevision: { _id: string; _rev: string } | null = null;
     let shouldMergeRawCreatePayload = true;
 
     if (entity === 'delivery-order-items') {
@@ -3025,7 +1933,7 @@ export async function handleGenericCreate(
             return NextResponse.json({ error: 'Relasi DO item tidak valid' }, { status: 400 });
         }
 
-        const deliveryOrder = await sanityGetById<{ _id: string; status?: string }>(deliveryOrderRef);
+        const deliveryOrder = await getDocumentById<{ _id: string; status?: string }>(deliveryOrderRef);
         if (!deliveryOrder) {
             return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
         }
@@ -3033,20 +1941,41 @@ export async function handleGenericCreate(
             return NextResponse.json({ error: 'Tidak bisa menambah item ke surat jalan yang dibatalkan' }, { status: 409 });
         }
 
-        const orderItem = await sanityGetById<{ _id: string }>(orderItemRef);
+        const orderItem = await getDocumentById<{ _id: string }>(orderItemRef);
         if (!orderItem) {
             return NextResponse.json({ error: 'Item order tidak ditemukan' }, { status: 404 });
         }
 
-        const activeAssignment = await getSanityClient().fetch<{ _id: string } | null>(
-            `*[
-                _type == "deliveryOrderItem" &&
-                orderItemRef == $orderItemRef &&
-                deliveryOrderRef != $deliveryOrderRef &&
-                defined(*[_type == "deliveryOrder" && _id == ^.deliveryOrderRef && status != "CANCELLED"][0]._id)
-            ][0]{ _id }`,
-            { orderItemRef, deliveryOrderRef }
-        );
+        let activeAssignment: { _id: string } | null = null;
+        if (useSupabaseBackend()) {
+            const assignments = await listDocumentsByFilter<{ _id: string; deliveryOrderRef?: string; orderItemRef?: string }>('deliveryOrderItem', {
+                orderItemRef,
+            });
+            for (const assignment of assignments) {
+                if (assignment.deliveryOrderRef === deliveryOrderRef) {
+                    continue;
+                }
+                const linkedDeliveryOrder = assignment.deliveryOrderRef
+                    ? await getDocumentById<{ _id: string; status?: string }>(assignment.deliveryOrderRef)
+                    : null;
+                if (linkedDeliveryOrder && linkedDeliveryOrder.status !== 'CANCELLED') {
+                    activeAssignment = { _id: assignment._id };
+                    break;
+                }
+            }
+        } else {
+            const assignments = await listDocumentsByFilter<{ _id: string; deliveryOrderRef?: string }>('deliveryOrderItem', { orderItemRef });
+            for (const assignment of assignments) {
+                if (!assignment.deliveryOrderRef || assignment.deliveryOrderRef === deliveryOrderRef) {
+                    continue;
+                }
+                const linkedDeliveryOrder = await getDocumentById<{ _id: string; status?: string }>(assignment.deliveryOrderRef);
+                if (linkedDeliveryOrder && linkedDeliveryOrder.status !== 'CANCELLED') {
+                    activeAssignment = { _id: assignment._id };
+                    break;
+                }
+            }
+        }
         if (activeAssignment) {
             return NextResponse.json({ error: 'Item order sudah terikat ke surat jalan aktif lain' }, { status: 409 });
         }
@@ -3054,7 +1983,7 @@ export async function handleGenericCreate(
 
     if (entity === 'orders') {
         shouldMergeRawCreatePayload = false;
-        newDoc.masterResi = await sanityGetNextNumber('resi');
+        newDoc.masterResi = await getNextNumber('resi');
         newDoc.status = 'OPEN';
         newDoc.createdAt = new Date().toISOString();
         newDoc.createdBy = session._id;
@@ -3062,25 +1991,25 @@ export async function handleGenericCreate(
 
     if (entity === 'delivery-orders') {
         shouldMergeRawCreatePayload = false;
-        newDoc.doNumber = await sanityGetNextNumber('do');
+        newDoc.doNumber = await getNextNumber('do');
         newDoc.status = 'CREATED';
     }
 
     if (entity === 'invoices') {
         shouldMergeRawCreatePayload = false;
-        newDoc.invoiceNumber = await sanityGetNextNumber('invoice');
+        newDoc.invoiceNumber = await getNextNumber('invoice');
         newDoc.status = 'UNPAID';
     }
 
     if (entity === 'freight-notas') {
         shouldMergeRawCreatePayload = false;
-        newDoc.notaNumber = await sanityGetNextNumber('nota');
+        newDoc.notaNumber = await getNextNumber('nota');
         newDoc.status = 'UNPAID';
     }
 
     if (entity === 'driver-borongans') {
         shouldMergeRawCreatePayload = false;
-        newDoc.boronganNumber = await sanityGetNextNumber('borong');
+        newDoc.boronganNumber = await getNextNumber('borong');
         newDoc.status = 'UNPAID';
     }
 
@@ -3178,14 +2107,6 @@ export async function handleGenericCreate(
                 { status: 400 }
             );
         }
-        try {
-            tripRouteRateServiceRevision = await resolveTripRouteRateServiceRevision(newDoc.serviceRef);
-        } catch (error) {
-            return NextResponse.json(
-                { error: error instanceof Error ? error.message : 'Kategori armada tarif trip berubah. Refresh lalu coba lagi.' },
-                { status: 409 }
-            );
-        }
     }
 
     if (entity === 'expense-categories') {
@@ -3232,14 +2153,6 @@ export async function handleGenericCreate(
                 { status: 400 }
             );
         }
-        try {
-            employeeUserRevision = await resolveEmployeeUserRevision(newDoc.userRef);
-        } catch (error) {
-            return NextResponse.json(
-                { error: error instanceof Error ? error.message : 'Akun user karyawan berubah. Refresh lalu coba lagi.' },
-                { status: 409 }
-            );
-        }
     }
 
     if (entity === 'employee-attendance-records') {
@@ -3250,14 +2163,6 @@ export async function handleGenericCreate(
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Data absensi karyawan tidak valid' },
                 { status: 400 }
-            );
-        }
-        try {
-            attendanceEmployeeRevision = await resolveEmployeeRevision(newDoc.employeeRef);
-        } catch (error) {
-            return NextResponse.json(
-                { error: error instanceof Error ? error.message : 'Karyawan absensi berubah. Refresh lalu coba lagi.' },
-                { status: 409 }
             );
         }
     }
@@ -3289,7 +2194,7 @@ export async function handleGenericCreate(
             return NextResponse.json({ error: 'Akun sistem tidak boleh dibuat manual' }, { status: 409 });
         }
         try {
-            Object.assign(newDoc, await normalizeBankAccountPayload(data));
+            Object.assign(newDoc, normalizeBankAccountPayload(data));
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Data rekening / kas tidak valid' },
@@ -3325,19 +2230,15 @@ export async function handleGenericCreate(
             newId,
             normalizeOptionalText(createdTireDoc.tireCode) || newId
         );
-        const transaction = getSanityClient()
-            .transaction()
-            .create(tireCodeConstraint)
-            .create(createdTireDoc)
-            .create(historyLogDoc);
         try {
+            await createDocument(tireCodeConstraint);
+            await createDocument(createdTireDoc);
+            await createDocument(historyLogDoc);
             await appendTrackedTireWarehouseSync({
-                transaction,
                 previousDoc: null,
                 nextDoc: createdTireDoc,
                 session,
             });
-            await transaction.commit();
         } catch (error) {
             if (isDocumentAlreadyExistsError(error, tireCodeConstraint._id)) {
                 return NextResponse.json({ error: 'Kode ban sudah digunakan' }, { status: 409 });
@@ -3368,134 +2269,17 @@ export async function handleGenericCreate(
     const newId = crypto.randomUUID();
     newDoc._id = newId;
     let created: Record<string, unknown> | null;
-    if (
-        entity === 'trip-route-rates'
-    ) {
-        const constraintSpecs = buildTripRouteRateConstraintSpecs(newId, newDoc);
-        try {
-            const transaction = getSanityClient().transaction();
-            if (tripRouteRateServiceRevision) {
-                transaction.patch(tripRouteRateServiceRevision._id, {
-                    ifRevisionID: tripRouteRateServiceRevision._rev,
-                    set: { updatedAt: new Date().toISOString() },
-                });
-            }
-            for (const spec of constraintSpecs) {
-                transaction.create(spec.doc);
-            }
-            transaction.create(newDoc);
-            await transaction.commit();
-        } catch (error) {
-            const conflictMessage = resolveUniqueConstraintConflictMessage(error, constraintSpecs);
-            if (conflictMessage) {
-                return NextResponse.json({ error: conflictMessage }, { status: 409 });
-            }
-            if (isMutationConflictError(error)) {
-                return NextResponse.json(
-                    { error: 'Master biaya rute trip atau kategori armada berubah karena ada update lain. Refresh lalu coba lagi.' },
-                    { status: 409 }
-                );
-            }
-            throw error;
-        }
-        created = await sanityGetById<Record<string, unknown> & { _id: string }>(newId);
-    } else if (
-        entity === 'bank-accounts'
-        || entity === 'expense-categories'
-        || entity === 'customer-recipients'
-        || entity === 'customer-pickups'
-        || entity === 'employees'
-        || entity === 'employee-attendance-records'
-        || entity === 'warehouse-items'
-        || entity === 'vehicles'
-        || entity === 'suppliers'
-        || entity === 'customer-products'
-        || entity === 'services'
-        || entity === 'drivers'
-    ) {
-        const constraintSpecs =
-            entity === 'bank-accounts'
-                ? buildBankAccountConstraintSpecs(newId, newDoc)
-                : entity === 'expense-categories'
-                ? buildExpenseCategoryConstraintSpecs(newId, newDoc)
-                : entity === 'customer-recipients'
-                    ? buildCustomerRecipientConstraintSpecs(newId, newDoc)
-                : entity === 'customer-pickups'
-                    ? buildCustomerPickupConstraintSpecs(newId, newDoc)
-                    : entity === 'employees'
-                        ? buildEmployeeConstraintSpecs(newId, newDoc)
-                        : entity === 'employee-attendance-records'
-                            ? buildEmployeeAttendanceConstraintSpecs(newId, newDoc)
-                : entity === 'warehouse-items'
-                    ? buildWarehouseItemConstraintSpecs(newId, newDoc)
-                    : entity === 'vehicles'
-                        ? buildVehicleConstraintSpecs(newId, newDoc)
-                        : entity === 'suppliers'
-                            ? buildSupplierConstraintSpecs(newId, newDoc)
-                            : entity === 'customer-products'
-                                ? buildCustomerProductConstraintSpecs(newId, newDoc)
-                                : entity === 'services'
-                                    ? buildServiceConstraintSpecs(newId, newDoc)
-                                    : buildDriverConstraintSpecs(newId, newDoc);
-        try {
-            const transaction = getSanityClient().transaction();
-            if (entity === 'employees' && employeeUserRevision) {
-                transaction.patch(employeeUserRevision._id, {
-                    ifRevisionID: employeeUserRevision._rev,
-                    set: { updatedAt: new Date().toISOString() },
-                });
-            }
-            if (entity === 'employee-attendance-records' && attendanceEmployeeRevision) {
-                transaction.patch(attendanceEmployeeRevision._id, {
-                    ifRevisionID: attendanceEmployeeRevision._rev,
-                    set: { updatedAt: new Date().toISOString() },
-                });
-            }
-            for (const spec of constraintSpecs) {
-                transaction.create(spec.doc);
-            }
-            transaction.create(newDoc);
-            await transaction.commit();
-        } catch (error) {
-            const conflictMessage = resolveUniqueConstraintConflictMessage(error, constraintSpecs);
-            if (conflictMessage) {
-                return NextResponse.json({ error: conflictMessage }, { status: 409 });
-            }
-            if (isMutationConflictError(error)) {
-                return NextResponse.json(
-                    { error: 'Dokumen master berubah karena ada update lain. Refresh lalu coba lagi.' },
-                    { status: 409 }
-                );
-            }
-            throw error;
-        }
-        created = await sanityGetById<Record<string, unknown> & { _id: string }>(newId);
-    } else if (entity === 'users') {
-        if (typeof newDoc.driverRef === 'string' && !userDriverRevision) {
+    if (entity === 'users' && typeof newDoc.driverRef === 'string') {
+        if (!userDriverRevision && !useSupabaseBackend()) {
             return NextResponse.json(
                 { error: 'Revisi supir untuk akun mobile tidak tersedia. Refresh lalu coba lagi.' },
                 { status: 409 }
             );
         }
-        const constraintSpecs = buildUserConstraintSpecs(newId, newDoc);
         try {
-            const transaction = getSanityClient().transaction();
-            if (typeof newDoc.driverRef === 'string' && userDriverRevision) {
-                transaction.patch(newDoc.driverRef, {
-                    ifRevisionID: userDriverRevision,
-                    set: { updatedAt: new Date().toISOString() },
-                });
-            }
-            for (const spec of constraintSpecs) {
-                transaction.create(spec.doc);
-            }
-            transaction.create(newDoc);
-            await transaction.commit();
+            created = await createDocument<Record<string, unknown> & { _id: string }>(newDoc);
+            await updateDocument(newDoc.driverRef, { updatedAt: new Date().toISOString() });
         } catch (error) {
-            const conflictMessage = resolveUniqueConstraintConflictMessage(error, constraintSpecs);
-            if (conflictMessage) {
-                return NextResponse.json({ error: conflictMessage }, { status: 409 });
-            }
             if (isMutationConflictError(error)) {
                 return NextResponse.json(
                     { error: 'User atau supir untuk akun mobile berubah karena ada update lain. Refresh lalu coba lagi.' },
@@ -3504,9 +2288,8 @@ export async function handleGenericCreate(
             }
             throw error;
         }
-        created = await sanityGetById<Record<string, unknown> & { _id: string }>(newId);
     } else {
-        created = await sanityCreate(newDoc);
+        created = await createDocument<Record<string, unknown> & { _id: string }>(newDoc);
     }
     if (!created) {
         return NextResponse.json({ error: 'Not found' }, { status: 404 });

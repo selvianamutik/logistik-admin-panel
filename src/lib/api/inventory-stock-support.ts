@@ -1,4 +1,4 @@
-import { getSanityClient } from '@/lib/sanity';
+import { listDocumentsByFilter } from '@/lib/repositories/document-store';
 
 type StockMovementDateRow = {
     warehouseItemRef?: string;
@@ -18,13 +18,9 @@ export async function getLatestWarehouseStockMovementDateMap(itemRefs: string[])
         return new Map<string, string>();
     }
 
-    const rows = await getSanityClient().fetch<StockMovementDateRow[]>(
-        `*[_type == "stockMovement" && warehouseItemRef in $refs && defined(movementDate)]{
-            warehouseItemRef,
-            movementDate
-        }`,
-        { refs }
-    );
+    const rows = await listDocumentsByFilter<StockMovementDateRow>('stockMovement', {
+        warehouseItemRef: refs,
+    });
 
     const latestDates = new Map<string, string>();
     for (const row of rows) {

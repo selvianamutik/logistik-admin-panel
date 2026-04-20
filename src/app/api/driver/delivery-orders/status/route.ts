@@ -6,22 +6,28 @@ import {
 } from '@/lib/api/order-workflows';
 import { validateDriverStatusTransition } from '@/lib/api/driver-status-guards';
 import { ensureSameOriginRequest, jsonNoStore, parseJsonBody } from '@/lib/api/request-security';
-import { getSanityServiceErrorInfo, sanityCreate, sanityGetById } from '@/lib/sanity';
+import { createDocument, getDocumentById } from '@/lib/repositories/document-store';
 import type { DeliveryOrder } from '@/lib/types';
 
 const DRIVER_ALLOWED_STATUS_UPDATES = new Set(['ON_DELIVERY', 'ARRIVED']);
 const DRIVER_APPROVAL_REQUEST_STATUSES = new Set(['DELIVERED']);
 
-async function addAuditLog(actor: { _id: string; name: string; email?: string; role?: string }, action: string, entityRef: string, summary: string) {
+async function addAuditLog(
+    actor: { _id: string; name: string; email?: string; role?: string },
+    action: string,
+    entityType: string,
+    entityRef: string,
+    summary: string
+) {
     try {
-        await sanityCreate({
+        await createDocument({
             _type: 'auditLog',
             actorUserRef: actor._id,
             actorUserName: actor.name,
             actorUserEmail: actor.email,
             actorUserRole: actor.role,
             action,
-            entityType: 'delivery-orders',
+            entityType,
             entityRef,
             changesSummary: summary,
             timestamp: new Date().toISOString(),
@@ -94,7 +100,7 @@ export async function POST(request: Request) {
             );
         }
 
-        const deliveryOrder = await sanityGetById<DeliveryOrder>(id);
+        const deliveryOrder = await getDocumentById<DeliveryOrder>(id, 'deliveryOrder');
         if (!deliveryOrder) {
             return jsonNoStore({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
         }
@@ -123,13 +129,6 @@ export async function POST(request: Request) {
         );
     } catch (error) {
         console.error('Driver delivery status update error:', error);
-        const serviceError = getSanityServiceErrorInfo(
-            error,
-            'Layanan update status driver sedang tidak tersedia. Coba lagi beberapa saat.'
-        );
-        if (serviceError) {
-            return jsonNoStore({ error: serviceError.message }, { status: serviceError.status });
-        }
         return jsonNoStore({ error: 'Terjadi kesalahan server' }, { status: 500 });
     }
 }

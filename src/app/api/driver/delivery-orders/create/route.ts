@@ -5,23 +5,24 @@ import {
     getDriverPortalAccessNotice,
     requireDriverSessionContext,
 } from '@/lib/api/driver-portal';
-import { getSanityServiceErrorInfo, sanityCreate } from '@/lib/sanity';
+import { createDocument } from '@/lib/repositories/document-store';
 
 async function addAuditLog(
     actor: { _id: string; name: string; email?: string; role?: string },
     action: string,
+    entityType: string,
     entityRef: string,
     summary: string
 ) {
     try {
-        await sanityCreate({
+        await createDocument({
             _type: 'auditLog',
             actorUserRef: actor._id,
             actorUserName: actor.name,
             actorUserEmail: actor.email,
             actorUserRole: actor.role,
             action,
-            entityType: 'delivery-orders',
+            entityType,
             entityRef,
             changesSummary: summary,
             timestamp: new Date().toISOString(),
@@ -111,13 +112,6 @@ export async function POST(request: Request) {
         );
     } catch (error) {
         console.error('Driver delivery order create error:', error);
-        const serviceError = getSanityServiceErrorInfo(
-            error,
-            'Layanan pembuatan surat jalan driver sedang tidak tersedia. Coba lagi beberapa saat.'
-        );
-        if (serviceError) {
-            return jsonNoStore({ error: serviceError.message }, { status: serviceError.status });
-        }
         return jsonNoStore({ error: 'Terjadi kesalahan server' }, { status: 500 });
     }
 }

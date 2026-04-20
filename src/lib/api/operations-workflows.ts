@@ -1,14 +1,20 @@
-import { createHash } from 'node:crypto';
 import { NextResponse } from 'next/server';
 
 import { resolveCompanyLogoUrl } from '@/lib/branding';
 import { getBusinessCalendarDateParts, getBusinessDateTimeLocalValue } from '@/lib/business-date';
-import { getSanityClient, sanityGetById, sanityGetNextNumber } from '@/lib/sanity';
+import {
+    createDocument,
+    deleteDocument,
+    getCompanyProfile,
+    getDocumentById,
+    getNextNumber,
+    listDocumentsByFilter,
+    updateDocument,
+} from '@/lib/repositories/document-store';
 import type { Driver, IncidentSettlementLine, User } from '@/lib/types';
 
 import {
     assertIsoDateTime,
-    isMutationConflictError,
     normalizeOptionalText,
     type ApiSession,
 } from './data-helpers';
@@ -35,8 +41,6 @@ type AuditLogFn = (
     summary: string
 ) => void | Promise<void>;
 
-type SanityMutations = Parameters<ReturnType<typeof getSanityClient>['mutate']>[0];
-
 const INCIDENT_STATUS_TRANSITIONS: Record<string, string[]> = {
     OPEN: ['IN_PROGRESS'],
     IN_PROGRESS: ['RESOLVED'],
@@ -51,201 +55,13 @@ const INCIDENT_SETTLEMENT_ALLOWED_CATEGORIES: Record<string, Set<string>> = {
 const ALLOWED_INCIDENT_TYPES = new Set(['BLOWOUT_TIRE', 'ENGINE_TROUBLE', 'ACCIDENT_MINOR', 'ACCIDENT_MAJOR', 'OTHER']);
 const ALLOWED_INCIDENT_URGENCY = new Set(['LOW', 'MEDIUM', 'HIGH']);
 
-function buildUniqueConstraintId(entityType: string, fieldName: string, value: string) {
-    const normalizedValue = value.trim().toLowerCase();
-    const encodedValue = Buffer.from(normalizedValue, 'utf8').toString('base64url');
-    const directId = `unique-constraint.${entityType}.${fieldName}.${encodedValue}`;
-    if (directId.length <= 128) {
-        return directId;
-    }
-    const hash = createHash('sha256')
-        .update(`${entityType}:${fieldName}:${normalizedValue}`)
-        .digest('base64url')
-        .slice(0, 32);
-    return `unique-constraint.${entityType}.${fieldName}.h${hash}`;
-}
-
-type UniqueConstraintMutationSpec = {
-    id: string;
-    message: string;
-    doc: {
-        _id: string;
-        _type: 'uniqueConstraint';
-        entityType: string;
-        fieldName: string;
-        value: string;
-        valueLower: string;
-        ownerRef: string;
-        ownerType: string;
-        createdAt: string;
-        updatedAt: string;
-    };
-};
-
-function buildServiceConstraintSpecs(serviceId: string, doc: Record<string, unknown>) {
-    const specs: UniqueConstraintMutationSpec[] = [];
-    const code = normalizeOptionalText(doc.code)?.toUpperCase();
-    if (code) {
-        const timestamp = new Date().toISOString();
-        specs.push({
-            id: buildUniqueConstraintId('service', 'code', code),
-            message: 'Kode kategori armada sudah digunakan',
-            doc: {
-                _id: buildUniqueConstraintId('service', 'code', code),
-                _type: 'uniqueConstraint',
-                entityType: 'service',
-                fieldName: 'code',
-                value: code,
-                valueLower: code.toLowerCase(),
-                ownerRef: serviceId,
-                ownerType: 'service',
-                createdAt: timestamp,
-                updatedAt: timestamp,
-            },
-        });
-    }
-    const name = normalizeOptionalText(doc.name);
-    if (name) {
-        const timestamp = new Date().toISOString();
-        specs.push({
-            id: buildUniqueConstraintId('service', 'name', name),
-            message: 'Nama kategori truk/armada sudah digunakan',
-            doc: {
-                _id: buildUniqueConstraintId('service', 'name', name),
-                _type: 'uniqueConstraint',
-                entityType: 'service',
-                fieldName: 'name',
-                value: name,
-                valueLower: name.toLowerCase(),
-                ownerRef: serviceId,
-                ownerType: 'service',
-                createdAt: timestamp,
-                updatedAt: timestamp,
-            },
-        });
-    }
-    return specs;
-}
-
-function buildDriverConstraintSpecs(driverId: string, doc: Record<string, unknown>) {
-    const specs: UniqueConstraintMutationSpec[] = [];
-    const licenseNumber = normalizeOptionalText(doc.licenseNumber)?.toUpperCase();
-    if (licenseNumber) {
-        const timestamp = new Date().toISOString();
-        specs.push({
-            id: buildUniqueConstraintId('driver', 'licenseNumber', licenseNumber),
-            message: 'No. SIM sudah digunakan supir lain',
-            doc: {
-                _id: buildUniqueConstraintId('driver', 'licenseNumber', licenseNumber),
-                _type: 'uniqueConstraint',
-                entityType: 'driver',
-                fieldName: 'licenseNumber',
-                value: licenseNumber,
-                valueLower: licenseNumber.toLowerCase(),
-                ownerRef: driverId,
-                ownerType: 'driver',
-                createdAt: timestamp,
-                updatedAt: timestamp,
-            },
-        });
-    }
-    const ktpNumber = normalizeOptionalText(doc.ktpNumber)?.toUpperCase();
-    if (ktpNumber) {
-        const timestamp = new Date().toISOString();
-        specs.push({
-            id: buildUniqueConstraintId('driver', 'ktpNumber', ktpNumber),
-            message: 'No. KTP sudah digunakan supir lain',
-            doc: {
-                _id: buildUniqueConstraintId('driver', 'ktpNumber', ktpNumber),
-                _type: 'uniqueConstraint',
-                entityType: 'driver',
-                fieldName: 'ktpNumber',
-                value: ktpNumber,
-                valueLower: ktpNumber.toLowerCase(),
-                ownerRef: driverId,
-                ownerType: 'driver',
-                createdAt: timestamp,
-                updatedAt: timestamp,
-            },
-        });
-    }
-    return specs;
-}
-
-function buildExpenseCategoryConstraintSpecs(categoryId: string, doc: Record<string, unknown>) {
-    const name = normalizeOptionalText(doc.name);
-    if (!name) {
-        return [];
-    }
-    const timestamp = new Date().toISOString();
-    return [
-        {
-            id: buildUniqueConstraintId('expenseCategory', 'name', name),
-            message: 'Nama kategori biaya sudah digunakan',
-            doc: {
-                _id: buildUniqueConstraintId('expenseCategory', 'name', name),
-                _type: 'uniqueConstraint',
-                entityType: 'expenseCategory',
-                fieldName: 'name',
-                value: name,
-                valueLower: name.toLowerCase(),
-                ownerRef: categoryId,
-                ownerType: 'expenseCategory',
-                createdAt: timestamp,
-                updatedAt: timestamp,
-            },
-        },
-    ];
-}
-
-function appendUniqueConstraintMutations(
-    transaction: ReturnType<ReturnType<typeof getSanityClient>['transaction']>,
-    currentSpecs: UniqueConstraintMutationSpec[],
-    nextSpecs: UniqueConstraintMutationSpec[]
-) {
-    const currentById = new Map(currentSpecs.map(spec => [spec.id, spec]));
-    const nextById = new Map(nextSpecs.map(spec => [spec.id, spec]));
-
-    for (const spec of currentById.values()) {
-        if (!nextById.has(spec.id)) {
-            transaction.delete(spec.id);
-        }
-    }
-    for (const spec of nextById.values()) {
-        if (!currentById.has(spec.id)) {
-            transaction.create(spec.doc);
-        }
-    }
-}
-
-function resolveUniqueConstraintConflictMessage(error: unknown, specs: UniqueConstraintMutationSpec[]) {
-    const message =
-        error instanceof Error
-            ? error.message
-            : error && typeof error === 'object' && 'message' in error && typeof (error as { message?: unknown }).message === 'string'
-                ? (error as { message: string }).message
-                : '';
-    const statusCode =
-        error && typeof error === 'object' && 'statusCode' in error && typeof (error as { statusCode?: unknown }).statusCode === 'number'
-            ? (error as { statusCode: number }).statusCode
-            : error && typeof error === 'object' && 'status' in error && typeof (error as { status?: unknown }).status === 'number'
-                ? (error as { status: number }).status
-                : undefined;
-    if (statusCode !== 409 && !/already exists/i.test(message)) {
-        return null;
-    }
-    for (const spec of specs) {
-        if (message.includes(spec.id) && /already exists/i.test(message)) {
-            return spec.message;
-        }
-    }
-    return null;
-}
-
 function requireIncidentSettlementRevision(
     providedRevision: unknown,
     currentRevision?: string
 ) {
+    if (!currentRevision) {
+        return true;
+    }
     const revision = typeof providedRevision === 'string' ? providedRevision.trim() : '';
     if (!revision || !currentRevision || revision !== currentRevision) {
         return false;
@@ -357,14 +173,14 @@ export async function handleIncidentCreate(
         return NextResponse.json({ error: 'Level urgensi insiden tidak valid' }, { status: 400 });
     }
     if (relatedDeliveryOrderRef) {
-        const deliveryOrder = await sanityGetById<{
+        const deliveryOrder = await getDocumentById<{
             _id: string;
             doNumber?: string;
             vehicleRef?: string;
             vehiclePlate?: string;
             driverRef?: string;
             driverName?: string;
-        }>(relatedDeliveryOrderRef);
+        }>(relatedDeliveryOrderRef, 'deliveryOrder');
         if (!deliveryOrder) {
             return NextResponse.json({ error: 'DO terkait tidak ditemukan' }, { status: 404 });
         }
@@ -387,7 +203,7 @@ export async function handleIncidentCreate(
         return NextResponse.json({ error: 'Kendaraan insiden wajib dipilih atau diturunkan dari DO terkait' }, { status: 400 });
     }
 
-    const vehicle = await sanityGetById<{ _id: string; plateNumber?: string; status?: string }>(vehicleRef);
+    const vehicle = await getDocumentById<{ _id: string; plateNumber?: string; status?: string }>(vehicleRef, 'vehicle');
     if (!vehicle) {
         return NextResponse.json({ error: 'Kendaraan insiden tidak ditemukan' }, { status: 404 });
     }
@@ -397,7 +213,7 @@ export async function handleIncidentCreate(
     vehiclePlate = vehiclePlate || vehicle.plateNumber;
 
     if (driverRef) {
-        const driver = await sanityGetById<{ _id: string; name?: string; active?: boolean }>(driverRef);
+        const driver = await getDocumentById<{ _id: string; name?: string; active?: boolean }>(driverRef, 'driver');
         if (!driver) {
             return NextResponse.json({ error: 'Supir insiden tidak ditemukan' }, { status: 404 });
         }
@@ -409,21 +225,13 @@ export async function handleIncidentCreate(
 
     const incidentId = crypto.randomUUID();
     const timestamp = new Date().toISOString();
-    const companyProfile = await getSanityClient().fetch<{
+    const companyProfile = await getCompanyProfile<{
         name?: string;
         address?: string;
         phone?: string;
         email?: string;
         logoUrl?: string;
-    } | null>(
-        `*[_type == "companyProfile"][0]{
-            name,
-            address,
-            phone,
-            email,
-            logoUrl
-        }`
-    );
+    }>();
     const incidentDateTime =
         typeof data.dateTime === 'string' && data.dateTime
             ? data.dateTime
@@ -440,7 +248,7 @@ export async function handleIncidentCreate(
     const incidentBusinessDate = incidentDateParts
         ? `${incidentDateParts.year}-${incidentDateParts.month}-${incidentDateParts.day}`
         : incidentDateTime.slice(0, 10);
-    const incidentNumber = await sanityGetNextNumber('incident', incidentBusinessDate);
+    const incidentNumber = await getNextNumber('incident', incidentBusinessDate);
     const incidentDoc = {
         _id: incidentId,
         _type: 'incident',
@@ -465,19 +273,16 @@ export async function handleIncidentCreate(
         dateTime: incidentDateTime,
     };
 
-    await getSanityClient()
-        .transaction()
-        .create(incidentDoc)
-        .create({
-            _id: crypto.randomUUID(),
-            _type: 'incidentActionLog',
-            incidentRef: incidentId,
-            timestamp,
-            note: 'Laporan insiden dibuat',
-            userRef: session._id,
-            userName: session.name,
-        })
-        .commit();
+    await createDocument(incidentDoc);
+    await createDocument({
+        _id: crypto.randomUUID(),
+        _type: 'incidentActionLog',
+        incidentRef: incidentId,
+        timestamp,
+        note: 'Laporan insiden dibuat',
+        userRef: session._id,
+        userName: session.name,
+    });
 
     await addAuditLog(session, 'CREATE', 'incidents', incidentId, `Created incidents: ${incidentNumber}`);
     return NextResponse.json({ data: incidentDoc, id: incidentId });
@@ -496,7 +301,7 @@ export async function handleIncidentStatusUpdate(
         return NextResponse.json({ error: 'Status dan catatan insiden wajib diisi' }, { status: 400 });
     }
 
-    const incident = await sanityGetById<{ _id: string; _rev?: string; incidentNumber?: string; status?: string }>(id);
+    const incident = await getDocumentById<{ _id: string; _rev?: string; incidentNumber?: string; status?: string }>(id, 'incident');
     if (!incident) {
         return NextResponse.json({ error: 'Insiden tidak ditemukan' }, { status: 404 });
     }
@@ -509,10 +314,9 @@ export async function handleIncidentStatusUpdate(
         return NextResponse.json({ error: 'Transisi status insiden tidak valid' }, { status: 400 });
     }
     if (status === 'CLOSED') {
-        const pendingSettlement = await getSanityClient().fetch<{ _id: string } | null>(
-            `*[_type == "incidentSettlementLine" && incidentRef == $incidentRef && !(status in ["POSTED", "VOID"])][0]{ _id }`,
-            { incidentRef: id }
-        );
+        const pendingSettlement =
+            (await listDocumentsByFilter<{ _id: string; status?: string }>('incidentSettlementLine', { incidentRef: id }))
+                .find(item => item.status !== 'POSTED' && item.status !== 'VOID') || null;
         if (pendingSettlement) {
             return NextResponse.json(
                 {
@@ -524,26 +328,16 @@ export async function handleIncidentStatusUpdate(
     }
 
     const timestamp = new Date().toISOString();
-    try {
-        await getSanityClient()
-            .transaction()
-            .patch(id, { ifRevisionID: incident._rev, set: { status } })
-            .create({
-                _id: crypto.randomUUID(),
-                _type: 'incidentActionLog',
-                incidentRef: id,
-                timestamp,
-                note,
-                userRef: session._id,
-                userName: session.name,
-            })
-            .commit();
-    } catch (error) {
-        if (isMutationConflictError(error)) {
-            return NextResponse.json({ error: 'Data insiden berubah karena ada update lain. Refresh lalu coba lagi.' }, { status: 409 });
-        }
-        throw error;
-    }
+    await updateDocument(id, { status });
+    await createDocument({
+        _id: crypto.randomUUID(),
+        _type: 'incidentActionLog',
+        incidentRef: id,
+        timestamp,
+        note,
+        userRef: session._id,
+        userName: session.name,
+    });
 
     await addAuditLog(
         session,
@@ -571,7 +365,7 @@ export async function handleIncidentSettlementLineCreate(
         return NextResponse.json({ error: 'Insiden terkait wajib dipilih' }, { status: 400 });
     }
 
-    const incident = await sanityGetById<{ _id: string; incidentNumber?: string; status?: string }>(incidentRef);
+    const incident = await getDocumentById<{ _id: string; incidentNumber?: string; status?: string }>(incidentRef, 'incident');
     if (!incident) {
         return NextResponse.json({ error: 'Insiden tidak ditemukan' }, { status: 404 });
     }
@@ -602,19 +396,16 @@ export async function handleIncidentSettlementLineCreate(
 
         validateIncidentSettlementLineBusinessRules(nextLine);
 
-        await getSanityClient()
-            .transaction()
-            .create(nextLine)
-            .create({
-                _id: crypto.randomUUID(),
-                _type: 'incidentActionLog',
-                incidentRef,
-                timestamp: now,
-                note: `Detail insiden ditambahkan: ${formatIncidentSettlementLabel(nextLine)}`,
-                userRef: session._id,
-                userName: session.name,
-            })
-            .commit();
+        await createDocument(nextLine as unknown as { _type: string; [key: string]: unknown });
+        await createDocument({
+            _id: crypto.randomUUID(),
+            _type: 'incidentActionLog',
+            incidentRef,
+            timestamp: now,
+            note: `Detail insiden ditambahkan: ${formatIncidentSettlementLabel(nextLine)}`,
+            userRef: session._id,
+            userName: session.name,
+        });
 
         await addAuditLog(session, 'CREATE', 'incident-settlement-lines', nextLine._id, `Created incident settlement line ${formatIncidentSettlementLabel(nextLine)}`);
         return NextResponse.json({ data: nextLine, id: nextLine._id });
@@ -641,11 +432,11 @@ export async function handleIncidentSettlementLineUpdate(
         return NextResponse.json({ error: 'Detail insiden tidak valid' }, { status: 400 });
     }
 
-    const existing = await sanityGetById<IncidentSettlementLine>(id);
+    const existing = await getDocumentById<IncidentSettlementLine>(id, 'incidentSettlementLine');
     if (!existing) {
         return NextResponse.json({ error: 'Detail insiden tidak ditemukan' }, { status: 404 });
     }
-    const incident = await sanityGetById<{ _id: string; status?: string }>(existing.incidentRef);
+    const incident = await getDocumentById<{ _id: string; status?: string }>(existing.incidentRef, 'incident');
     if (!incident) {
         return NextResponse.json({ error: 'Insiden terkait detail settlement tidak ditemukan' }, { status: 404 });
     }
@@ -688,31 +479,23 @@ export async function handleIncidentSettlementLineUpdate(
             updatedByName: session.name,
         });
         const now = patch.updatedAt as string;
-        const committed = await getSanityClient()
-            .transaction()
-            .patch(id, {
-                ifRevisionID: existing._rev,
-                set: patch,
-                unset: unsetFields,
-            })
-            .create({
-                _id: crypto.randomUUID(),
-                _type: 'incidentActionLog',
-                incidentRef: existing.incidentRef,
-                timestamp: now,
-                note: `Detail insiden diperbarui: ${formatIncidentSettlementLabel(nextLine)}`,
-                userRef: session._id,
-                userName: session.name,
-            })
-            .commit({ returnDocuments: true });
-
-        const updatedLine = (committed[0] as unknown as IncidentSettlementLine | undefined) || { ...nextLine, ...patch };
+        const nextPatch = {
+            ...patch,
+            ...Object.fromEntries(unsetFields.map(field => [field, undefined])),
+        };
+        const updatedLine = await updateDocument<IncidentSettlementLine>(id, nextPatch);
+        await createDocument({
+            _id: crypto.randomUUID(),
+            _type: 'incidentActionLog',
+            incidentRef: existing.incidentRef,
+            timestamp: now,
+            note: `Detail insiden diperbarui: ${formatIncidentSettlementLabel(nextLine)}`,
+            userRef: session._id,
+            userName: session.name,
+        });
         await addAuditLog(session, 'UPDATE', 'incident-settlement-lines', id, `Updated incident settlement line ${formatIncidentSettlementLabel(nextLine)}`);
         return NextResponse.json({ data: updatedLine });
     } catch (error) {
-        if (isMutationConflictError(error)) {
-            return NextResponse.json({ error: 'Detail insiden berubah karena ada update lain. Refresh lalu coba lagi.' }, { status: 409 });
-        }
         return NextResponse.json(
             { error: error instanceof Error ? error.message : 'Gagal memperbarui detail insiden' },
             { status: 400 }
@@ -731,11 +514,11 @@ export async function handleIncidentSettlementLineDelete(
         return NextResponse.json({ error: 'Detail insiden tidak valid' }, { status: 400 });
     }
 
-    const existing = await sanityGetById<IncidentSettlementLine>(id);
+    const existing = await getDocumentById<IncidentSettlementLine>(id, 'incidentSettlementLine');
     if (!existing) {
         return NextResponse.json({ error: 'Detail insiden tidak ditemukan' }, { status: 404 });
     }
-    const incident = await sanityGetById<{ _id: string; status?: string }>(existing.incidentRef);
+    const incident = await getDocumentById<{ _id: string; status?: string }>(existing.incidentRef, 'incident');
     if (!incident) {
         return NextResponse.json({ error: 'Insiden terkait detail settlement tidak ditemukan' }, { status: 404 });
     }
@@ -752,35 +535,19 @@ export async function handleIncidentSettlementLineDelete(
         return NextResponse.json({ error: 'Hanya detail insiden draft yang belum terposting yang boleh dihapus' }, { status: 409 });
     }
 
-    try {
-        const now = new Date().toISOString();
-        await getSanityClient().mutate([
-            {
-                delete: {
-                    id,
-                    ifRevisionID: existing._rev,
-                },
-            },
-            {
-                create: {
-                    _id: crypto.randomUUID(),
-                    _type: 'incidentActionLog',
-                    incidentRef: existing.incidentRef,
-                    timestamp: now,
-                    note: `Detail insiden dihapus: ${formatIncidentSettlementLabel(existing)}`,
-                    userRef: session._id,
-                    userName: session.name,
-                },
-            },
-        ] as unknown as SanityMutations);
-        await addAuditLog(session, 'DELETE', 'incident-settlement-lines', id, `Deleted incident settlement line ${formatIncidentSettlementLabel(existing)}`);
-        return NextResponse.json({ success: true });
-    } catch (error) {
-        if (isMutationConflictError(error)) {
-            return NextResponse.json({ error: 'Detail insiden berubah karena ada update lain. Refresh lalu coba lagi.' }, { status: 409 });
-        }
-        throw error;
-    }
+    const now = new Date().toISOString();
+    await deleteDocument(id);
+    await createDocument({
+        _id: crypto.randomUUID(),
+        _type: 'incidentActionLog',
+        incidentRef: existing.incidentRef,
+        timestamp: now,
+        note: `Detail insiden dihapus: ${formatIncidentSettlementLabel(existing)}`,
+        userRef: session._id,
+        userName: session.name,
+    });
+    await addAuditLog(session, 'DELETE', 'incident-settlement-lines', id, `Deleted incident settlement line ${formatIncidentSettlementLabel(existing)}`);
+    return NextResponse.json({ success: true });
 }
 
 export async function handleIncidentSettlementLineStatusUpdate(
@@ -795,11 +562,11 @@ export async function handleIncidentSettlementLineStatusUpdate(
         return NextResponse.json({ error: 'Status detail insiden tidak valid' }, { status: 400 });
     }
 
-    const existing = await sanityGetById<IncidentSettlementLine>(id);
+    const existing = await getDocumentById<IncidentSettlementLine>(id, 'incidentSettlementLine');
     if (!existing) {
         return NextResponse.json({ error: 'Detail insiden tidak ditemukan' }, { status: 404 });
     }
-    const incident = await sanityGetById<{ _id: string; status?: string }>(existing.incidentRef);
+    const incident = await getDocumentById<{ _id: string; status?: string }>(existing.incidentRef, 'incident');
     if (!incident) {
         return NextResponse.json({ error: 'Insiden terkait detail settlement tidak ditemukan' }, { status: 404 });
     }
@@ -849,30 +616,26 @@ export async function handleIncidentSettlementLineStatusUpdate(
                 : `Status detail insiden diubah ke ${status}: ${formatIncidentSettlementLabel(existing)}`;
 
     try {
-        const committed = await getSanityClient()
-            .transaction()
-            .patch(id, {
-                ifRevisionID: existing._rev,
-                set: sanitizePatchSet(patch),
-                unset: status === 'VOID' || status === 'POSTED' ? [] : ['voidedAt', 'voidedBy', 'voidedByName'],
-            })
-            .create({
-                _id: crypto.randomUUID(),
-                _type: 'incidentActionLog',
-                incidentRef: existing.incidentRef,
-                timestamp: now,
-                note: actionNote,
-                userRef: session._id,
-                userName: session.name,
-            })
-            .commit({ returnDocuments: true });
-        const updatedLine = (committed[0] as unknown as IncidentSettlementLine | undefined) || { ...existing, ...patch };
+        const unsetPatch =
+            status === 'VOID' || status === 'POSTED'
+                ? {}
+                : { voidedAt: undefined, voidedBy: undefined, voidedByName: undefined };
+        const updatedLine = await updateDocument<IncidentSettlementLine>(id, {
+            ...sanitizePatchSet(patch),
+            ...unsetPatch,
+        });
+        await createDocument({
+            _id: crypto.randomUUID(),
+            _type: 'incidentActionLog',
+            incidentRef: existing.incidentRef,
+            timestamp: now,
+            note: actionNote,
+            userRef: session._id,
+            userName: session.name,
+        });
         await addAuditLog(session, 'UPDATE', 'incident-settlement-lines', id, actionNote);
         return NextResponse.json({ data: updatedLine });
     } catch (error) {
-        if (isMutationConflictError(error)) {
-            return NextResponse.json({ error: 'Detail insiden berubah karena ada update lain. Refresh lalu coba lagi.' }, { status: 409 });
-        }
         throw error;
     }
 }
@@ -887,66 +650,32 @@ export async function handleServiceDelete(
         return NextResponse.json({ error: 'Kategori truk/armada tidak valid' }, { status: 400 });
     }
 
-    const service = await sanityGetById<{ _id: string; _rev?: string; name?: string; code?: string }>(id);
+    const service = await getDocumentById<{ _id: string; name?: string; code?: string }>(id, 'service');
     if (!service) {
         return NextResponse.json({ error: 'Kategori truk/armada tidak ditemukan' }, { status: 404 });
     }
-    if (!service._rev) {
-        return NextResponse.json(
-            { error: 'Revisi kategori truk/armada tidak tersedia. Refresh lalu coba lagi.' },
-            { status: 409 }
-        );
-    }
-
-    const relatedOrder = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "order" && ((serviceRef == $ref || serviceRef._ref == $ref) || lower(coalesce(serviceName, "")) == $serviceName)][0]{ _id }`,
-        { ref: id, serviceName: (service.name || '').toLowerCase() }
-    );
+    const serviceName = normalizeOptionalText(service.name)?.toLowerCase() || '';
+    const relatedOrder = (await listDocumentsByFilter<{ _id: string; serviceRef?: string; serviceName?: string }>('order', {}))
+        .find(doc => doc.serviceRef === id || (normalizeOptionalText(doc.serviceName)?.toLowerCase() || '') === serviceName) || null;
     if (relatedOrder) {
         return NextResponse.json({ error: 'Kategori truk/armada yang sudah dipakai pada order tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedVehicle = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "vehicle" && ((serviceRef == $ref || serviceRef._ref == $ref) || lower(coalesce(serviceName, "")) == $serviceName)][0]{ _id }`,
-        { ref: id, serviceName: (service.name || '').toLowerCase() }
-    );
+    const relatedVehicle = (await listDocumentsByFilter<{ _id: string; serviceRef?: string; serviceName?: string }>('vehicle', {}))
+        .find(doc => doc.serviceRef === id || (normalizeOptionalText(doc.serviceName)?.toLowerCase() || '') === serviceName) || null;
     if (relatedVehicle) {
         return NextResponse.json({ error: 'Kategori truk/armada yang sudah dipakai pada kendaraan tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedTripRouteRate = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "tripRouteRate" && ((serviceRef == $ref || serviceRef._ref == $ref) || lower(coalesce(serviceName, "")) == $serviceName)][0]{ _id }`,
-        { ref: id, serviceName: (service.name || '').toLowerCase() }
-    );
+    const relatedTripRouteRate = (await listDocumentsByFilter<{ _id: string; serviceRef?: string; serviceName?: string }>('tripRouteRate', {}))
+        .find(doc => doc.serviceRef === id || (normalizeOptionalText(doc.serviceName)?.toLowerCase() || '') === serviceName) || null;
     if (relatedTripRouteRate) {
         return NextResponse.json({ error: 'Kategori truk/armada yang sudah dipakai pada biaya rute trip tidak boleh dihapus' }, { status: 409 });
     }
 
-    try {
-        await getSanityClient().mutate([
-            ...buildServiceConstraintSpecs(id, service as unknown as Record<string, unknown>).map(spec => ({
-                delete: {
-                    id: spec.id,
-                },
-            })),
-            {
-                delete: {
-                    id,
-                    ifRevisionID: service._rev,
-                },
-            },
-        ] as unknown as SanityMutations);
-        await addAuditLog(session, 'DELETE', 'services', id, `Deleted vehicle category ${service.name || id}`);
-        return NextResponse.json({ success: true });
-    } catch (err) {
-        if (isMutationConflictError(err)) {
-            return NextResponse.json(
-                { error: 'Kategori truk/armada berubah atau baru dipakai pada transaksi lain. Muat ulang lalu coba lagi.' },
-                { status: 409 }
-            );
-        }
-        throw err;
-    }
+    await deleteDocument(id);
+    await addAuditLog(session, 'DELETE', 'services', id, `Deleted vehicle category ${service.name || id}`);
+    return NextResponse.json({ success: true });
 }
 
 export async function handleExpenseCategoryDelete(
@@ -959,52 +688,20 @@ export async function handleExpenseCategoryDelete(
         return NextResponse.json({ error: 'Kategori biaya tidak valid' }, { status: 400 });
     }
 
-    const category = await sanityGetById<{ _id: string; _rev?: string; name?: string }>(id);
+    const category = await getDocumentById<{ _id: string; name?: string }>(id, 'expenseCategory');
     if (!category) {
         return NextResponse.json({ error: 'Kategori biaya tidak ditemukan' }, { status: 404 });
     }
-    if (!category._rev) {
-        return NextResponse.json(
-            { error: 'Revisi kategori biaya tidak tersedia. Refresh lalu coba lagi.' },
-            { status: 409 }
-        );
-    }
-
-    const relatedExpense = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "expense" && ((categoryRef == $ref || categoryRef._ref == $ref) || lower(coalesce(categoryName, "")) == $categoryName)][0]{ _id }`,
-        { ref: id, categoryName: (category.name || '').toLowerCase() }
-    );
+    const categoryName = normalizeOptionalText(category.name)?.toLowerCase() || '';
+    const relatedExpense = (await listDocumentsByFilter<{ _id: string; categoryRef?: string; categoryName?: string }>('expense', {}))
+        .find(doc => doc.categoryRef === id || (normalizeOptionalText(doc.categoryName)?.toLowerCase() || '') === categoryName) || null;
     if (relatedExpense) {
         return NextResponse.json({ error: 'Kategori biaya yang sudah dipakai pada pengeluaran tidak boleh dihapus' }, { status: 409 });
     }
 
-    try {
-        await getSanityClient().mutate(
-            [
-                ...buildExpenseCategoryConstraintSpecs(id, category as unknown as Record<string, unknown>).map(spec => ({
-                    delete: {
-                        id: spec.id,
-                    },
-                })),
-                {
-                    delete: {
-                        id,
-                        ifRevisionID: category._rev,
-                    },
-                },
-            ] as unknown as SanityMutations
-        );
-        await addAuditLog(session, 'DELETE', 'expense-categories', id, `Deleted expense-categories ${category.name || id}`);
-        return NextResponse.json({ success: true });
-    } catch (err) {
-        if (isMutationConflictError(err)) {
-            return NextResponse.json(
-                { error: 'Kategori biaya berubah atau baru dipakai pada pengeluaran lain. Muat ulang lalu coba lagi.' },
-                { status: 409 }
-            );
-        }
-        throw err;
-    }
+    await deleteDocument(id);
+    await addAuditLog(session, 'DELETE', 'expense-categories', id, `Deleted expense-categories ${category.name || id}`);
+    return NextResponse.json({ success: true });
 }
 
 export async function handleDriverDelete(
@@ -1021,82 +718,44 @@ export async function handleDriverDelete(
         return NextResponse.json({ error: 'Supir tidak valid' }, { status: 400 });
     }
 
-    const driver = await sanityGetById<{ _id: string; _rev?: string; name?: string; licenseNumber?: string; ktpNumber?: string }>(id);
+    const driver = await getDocumentById<{ _id: string; name?: string; licenseNumber?: string; ktpNumber?: string }>(id, 'driver');
     if (!driver) {
         return NextResponse.json({ error: 'Supir tidak ditemukan' }, { status: 404 });
     }
-    if (!driver._rev) {
-        return NextResponse.json(
-            { error: 'Revisi supir tidak tersedia. Refresh lalu coba lagi.' },
-            { status: 409 }
-        );
-    }
-
-    const relatedDeliveryOrder = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "deliveryOrder" && ((driverRef == $ref || driverRef._ref == $ref) || lower(coalesce(driverName, "")) == $driverName)][0]{ _id }`,
-        { ref: id, driverName: (driver.name || '').toLowerCase() }
-    );
+    const driverName = normalizeOptionalText(driver.name)?.toLowerCase() || '';
+    const relatedDeliveryOrder = (await listDocumentsByFilter<{ _id: string; driverRef?: string; driverName?: string }>('deliveryOrder', {}))
+        .find(doc => doc.driverRef === id || (normalizeOptionalText(doc.driverName)?.toLowerCase() || '') === driverName) || null;
     if (relatedDeliveryOrder) {
         return NextResponse.json({ error: 'Supir yang sudah dipakai pada surat jalan tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedBorongan = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "driverBorongan" && ((driverRef == $ref || driverRef._ref == $ref) || lower(coalesce(driverName, "")) == $driverName)][0]{ _id }`,
-        { ref: id, driverName: (driver.name || '').toLowerCase() }
-    );
+    const relatedBorongan = (await listDocumentsByFilter<{ _id: string; driverRef?: string; driverName?: string }>('driverBorongan', {}))
+        .find(doc => doc.driverRef === id || (normalizeOptionalText(doc.driverName)?.toLowerCase() || '') === driverName) || null;
     if (relatedBorongan) {
         return NextResponse.json({ error: 'Supir yang sudah dipakai pada slip borongan tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedVoucher = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "driverVoucher" && ((driverRef == $ref || driverRef._ref == $ref) || lower(coalesce(driverName, "")) == $driverName)][0]{ _id }`,
-        { ref: id, driverName: (driver.name || '').toLowerCase() }
-    );
+    const relatedVoucher = (await listDocumentsByFilter<{ _id: string; driverRef?: string; driverName?: string }>('driverVoucher', {}))
+        .find(doc => doc.driverRef === id || (normalizeOptionalText(doc.driverName)?.toLowerCase() || '') === driverName) || null;
     if (relatedVoucher) {
         return NextResponse.json({ error: 'Supir yang sudah dipakai pada uang jalan trip tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedIncident = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "incident" && ((driverRef == $ref || driverRef._ref == $ref) || lower(coalesce(driverName, "")) == $driverName)][0]{ _id }`,
-        { ref: id, driverName: (driver.name || '').toLowerCase() }
-    );
+    const relatedIncident = (await listDocumentsByFilter<{ _id: string; driverRef?: string; driverName?: string }>('incident', {}))
+        .find(doc => doc.driverRef === id || (normalizeOptionalText(doc.driverName)?.toLowerCase() || '') === driverName) || null;
     if (relatedIncident) {
         return NextResponse.json({ error: 'Supir yang sudah dipakai pada insiden tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedDriverUser = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "user" && role == "DRIVER" && ((driverRef == $ref || driverRef._ref == $ref) || lower(coalesce(driverName, "")) == $driverName)][0]{ _id }`,
-        { ref: id, driverName: (driver.name || '').toLowerCase() }
-    );
+    const relatedDriverUser = (await listDocumentsByFilter<{ _id: string; role?: string; driverRef?: string; driverName?: string }>('user', { role: 'DRIVER' }))
+        .find(doc => doc.driverRef === id || (normalizeOptionalText(doc.driverName)?.toLowerCase() || '') === driverName) || null;
     if (relatedDriverUser) {
         return NextResponse.json({ error: 'Supir yang masih punya akun mobile tidak boleh dihapus' }, { status: 409 });
     }
 
-    try {
-        await getSanityClient().mutate([
-            ...buildDriverConstraintSpecs(id, driver as unknown as Record<string, unknown>).map(spec => ({
-                delete: {
-                    id: spec.id,
-                },
-            })),
-            {
-                delete: {
-                    id,
-                    ifRevisionID: driver._rev,
-                },
-            },
-        ] as unknown as SanityMutations);
-        await addAuditLog(session, 'DELETE', 'drivers', id, `Deleted drivers ${driver.name || id}`);
-        return NextResponse.json({ success: true });
-    } catch (error) {
-        if (isMutationConflictError(error)) {
-            return NextResponse.json(
-                { error: 'Supir berubah atau baru dipakai pada transaksi lain. Muat ulang lalu coba lagi.' },
-                { status: 409 }
-            );
-        }
-        throw error;
-    }
+    await deleteDocument(id);
+    await addAuditLog(session, 'DELETE', 'drivers', id, `Deleted drivers ${driver.name || id}`);
+    return NextResponse.json({ success: true });
 }
 
 export async function handleDriverUpdate(
@@ -1105,32 +764,22 @@ export async function handleDriverUpdate(
     updates: Record<string, unknown>,
     addAuditLog: AuditLogFn
 ) {
-    const existingDriver = await sanityGetById<Driver>(id);
+    const existingDriver = await getDocumentById<Driver>(id, 'driver');
     if (!existingDriver) {
         return NextResponse.json({ error: 'Supir tidak ditemukan' }, { status: 404 });
     }
 
     const normalizedUpdates = await normalizeDriverPayload(updates, { partial: true, excludeId: id });
-    const currentDriverConstraintSpecs = buildDriverConstraintSpecs(id, existingDriver as unknown as Record<string, unknown>);
-    const nextDriverConstraintSpecs = buildDriverConstraintSpecs(id, {
-        ...(existingDriver as unknown as Record<string, unknown>),
-        ...normalizedUpdates,
-    });
     const nextDriverName =
         typeof normalizedUpdates.name === 'string' && normalizedUpdates.name.trim()
             ? normalizedUpdates.name.trim()
             : existingDriver.name;
     const isDeactivatingDriver = existingDriver.active !== false && normalizedUpdates.active === false;
 
-    const linkedDriverUsers = await getSanityClient().fetch<Array<(Pick<User, '_id' | 'active' | 'driverName'> & { _rev?: string })>>(
-        `*[_type == "user" && role == "DRIVER" && driverRef == $ref]{
-            _id,
-            _rev,
-            active,
-            driverName
-        }`,
-        { ref: id }
-    );
+    const linkedDriverUsers = await listDocumentsByFilter<Pick<User, '_id' | 'active' | 'driverName'>>('user', {
+        role: 'DRIVER',
+        driverRef: id,
+    });
 
     const shouldSyncDriverName = nextDriverName !== existingDriver.name;
     const activeLinkedUsers = linkedDriverUsers.filter(user => user.active !== false);
@@ -1139,45 +788,11 @@ export async function handleDriverUpdate(
         : [];
 
     if (!isDeactivatingDriver) {
-        if (!existingDriver._rev) {
-            return NextResponse.json({ error: 'Revisi supir tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
-        }
-        if (linkedUsersToRename.some(user => !user._rev)) {
-            return NextResponse.json({ error: 'Revisi akun mobile driver tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
-        }
-
-        try {
-            const transaction = getSanityClient().transaction().patch(id, {
-                ifRevisionID: existingDriver._rev,
-                set: normalizedUpdates,
+        const updated = await updateDocument<Driver>(id, normalizedUpdates);
+        for (const user of linkedUsersToRename) {
+            await updateDocument(user._id, {
+                driverName: nextDriverName,
             });
-            appendUniqueConstraintMutations(transaction, currentDriverConstraintSpecs, nextDriverConstraintSpecs);
-            for (const user of linkedUsersToRename) {
-                transaction.patch(user._id, {
-                    ifRevisionID: user._rev as string,
-                    set: {
-                        driverName: nextDriverName,
-                    },
-                });
-            }
-            await transaction.commit();
-        } catch (error) {
-            const conflictMessage = resolveUniqueConstraintConflictMessage(error, nextDriverConstraintSpecs);
-            if (conflictMessage) {
-                return NextResponse.json({ error: conflictMessage }, { status: 409 });
-            }
-            if (isMutationConflictError(error)) {
-                return NextResponse.json(
-                    { error: 'Data supir atau akun mobile driver berubah karena ada update lain. Refresh lalu coba lagi.' },
-                    { status: 409 }
-                );
-            }
-            throw error;
-        }
-
-        const updated = await sanityGetById<Driver>(id);
-        if (!updated) {
-            return NextResponse.json({ error: 'Supir tidak ditemukan' }, { status: 404 });
         }
 
         await addAuditLog(session, 'UPDATE', 'drivers', id, `Updated drivers: ${JSON.stringify(normalizedUpdates).slice(0, 200)}`);
@@ -1192,50 +807,23 @@ export async function handleDriverUpdate(
     }
 
     const now = new Date().toISOString();
-    const trackedDeliveryOrders = await getSanityClient().fetch<Array<{ _id: string; _rev?: string; doNumber?: string; status?: string }>>(
-        `*[
-            _type == "deliveryOrder" &&
-            (driverRef == $ref || driverRef._ref == $ref) &&
-            trackingState in ["ACTIVE", "PAUSED"]
-        ]{
-            _id,
-            _rev,
-            doNumber,
-            status
-        }`,
-        { ref: id }
-    );
+    const trackedDeliveryOrders = (await listDocumentsByFilter<{ _id: string; doNumber?: string; status?: string; trackingState?: string }>('deliveryOrder', {
+        driverRef: id,
+    })).filter(deliveryOrder => deliveryOrder.trackingState === 'ACTIVE' || deliveryOrder.trackingState === 'PAUSED');
 
-    if (!existingDriver._rev) {
-        return NextResponse.json({ error: 'Revisi supir tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
-    }
-    if (linkedDriverUsers.some(user => !user._rev)) {
-        return NextResponse.json({ error: 'Revisi akun mobile driver tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
-    }
-    if (trackedDeliveryOrders.some(deliveryOrder => !deliveryOrder._rev)) {
-        return NextResponse.json({ error: 'Revisi tracking surat jalan tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
-    }
-
-    const transaction = getSanityClient().transaction().patch(id, {
-        ifRevisionID: existingDriver._rev,
-        set: {
-            ...normalizedUpdates,
-            activeTrackingUpdatedAt: now,
-        },
-        unset: ['activeTrackingDeliveryOrderRef'],
+    const updated = await updateDocument<Driver>(id, {
+        ...normalizedUpdates,
+        activeTrackingUpdatedAt: now,
+        activeTrackingDeliveryOrderRef: undefined,
     });
-    appendUniqueConstraintMutations(transaction, currentDriverConstraintSpecs, nextDriverConstraintSpecs);
 
     for (const deliveryOrder of trackedDeliveryOrders) {
-        transaction.patch(deliveryOrder._id, {
-            ifRevisionID: deliveryOrder._rev,
-            set: {
-                trackingState: 'STOPPED',
-                trackingStoppedAt: now,
-                trackingLastSeenAt: now,
-            },
+        await updateDocument(deliveryOrder._id, {
+            trackingState: 'STOPPED',
+            trackingStoppedAt: now,
+            trackingLastSeenAt: now,
         });
-        transaction.create({
+        await createDocument({
             _id: crypto.randomUUID(),
             _type: 'trackingLog',
             refType: 'DO',
@@ -1258,32 +846,8 @@ export async function handleDriverUpdate(
             nextUserPatch.driverName = nextDriverName;
         }
         if (Object.keys(nextUserPatch).length > 0) {
-            transaction.patch(user._id, {
-                ifRevisionID: user._rev,
-                set: nextUserPatch,
-            });
+            await updateDocument(user._id, nextUserPatch);
         }
-    }
-
-    try {
-        await transaction.commit();
-    } catch (error) {
-        const conflictMessage = resolveUniqueConstraintConflictMessage(error, nextDriverConstraintSpecs);
-        if (conflictMessage) {
-            return NextResponse.json({ error: conflictMessage }, { status: 409 });
-        }
-        if (isMutationConflictError(error)) {
-            return NextResponse.json(
-                { error: 'Data supir atau tracking berubah karena ada update lain. Refresh lalu coba lagi.' },
-                { status: 409 }
-            );
-        }
-        throw error;
-    }
-
-    const updated = await sanityGetById<Driver>(id);
-    if (!updated) {
-        return NextResponse.json({ error: 'Supir tidak ditemukan' }, { status: 404 });
     }
 
     await addAuditLog(session, 'UPDATE', 'drivers', id, `Updated drivers: ${JSON.stringify(normalizedUpdates).slice(0, 200)}`);
@@ -1326,102 +890,48 @@ export async function handleVehicleDelete(
         return NextResponse.json({ error: 'Kendaraan tidak valid' }, { status: 400 });
     }
 
-    const vehicle = await sanityGetById<{ _id: string; _rev?: string; plateNumber?: string; unitCode?: string; chassisNumber?: string; engineNumber?: string }>(id);
+    const vehicle = await getDocumentById<{ _id: string; plateNumber?: string; unitCode?: string; chassisNumber?: string; engineNumber?: string }>(id, 'vehicle');
     if (!vehicle) {
         return NextResponse.json({ error: 'Kendaraan tidak ditemukan' }, { status: 404 });
     }
-    if (!vehicle._rev) {
-        return NextResponse.json(
-            { error: 'Revisi kendaraan tidak tersedia. Refresh lalu coba lagi.' },
-            { status: 409 }
-        );
-    }
-
-    const relatedDeliveryOrder = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "deliveryOrder" && ((vehicleRef == $ref || vehicleRef._ref == $ref) || lower(coalesce(vehiclePlate, "")) == $plate)][0]{ _id }`,
-        { ref: id, plate: (vehicle.plateNumber || '').toLowerCase() }
-    );
+    const vehiclePlate = normalizeOptionalText(vehicle.plateNumber)?.toLowerCase() || '';
+    const relatedDeliveryOrder = (await listDocumentsByFilter<{ _id: string; vehicleRef?: string; vehiclePlate?: string }>('deliveryOrder', {}))
+        .find(doc => doc.vehicleRef === id || (normalizeOptionalText(doc.vehiclePlate)?.toLowerCase() || '') === vehiclePlate) || null;
     if (relatedDeliveryOrder) {
         return NextResponse.json({ error: 'Kendaraan yang sudah dipakai pada surat jalan tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedMaintenance = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "maintenance" && ((vehicleRef == $ref || vehicleRef._ref == $ref) || lower(coalesce(vehiclePlate, "")) == $plate)][0]{ _id }`,
-        { ref: id, plate: (vehicle.plateNumber || '').toLowerCase() }
-    );
+    const relatedMaintenance = (await listDocumentsByFilter<{ _id: string; vehicleRef?: string; vehiclePlate?: string }>('maintenance', {}))
+        .find(doc => doc.vehicleRef === id || (normalizeOptionalText(doc.vehiclePlate)?.toLowerCase() || '') === vehiclePlate) || null;
     if (relatedMaintenance) {
         return NextResponse.json({ error: 'Kendaraan yang sudah punya maintenance tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedIncident = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "incident" && ((vehicleRef == $ref || vehicleRef._ref == $ref) || lower(coalesce(vehiclePlate, "")) == $plate)][0]{ _id }`,
-        { ref: id, plate: (vehicle.plateNumber || '').toLowerCase() }
-    );
+    const relatedIncident = (await listDocumentsByFilter<{ _id: string; vehicleRef?: string; vehiclePlate?: string }>('incident', {}))
+        .find(doc => doc.vehicleRef === id || (normalizeOptionalText(doc.vehiclePlate)?.toLowerCase() || '') === vehiclePlate) || null;
     if (relatedIncident) {
         return NextResponse.json({ error: 'Kendaraan yang sudah punya insiden tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedTireEvent = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "tireEvent" && ((vehicleRef == $ref || vehicleRef._ref == $ref) || lower(coalesce(vehiclePlate, "")) == $plate)][0]{ _id }`,
-        { ref: id, plate: (vehicle.plateNumber || '').toLowerCase() }
-    );
+    const relatedTireEvent = (await listDocumentsByFilter<{ _id: string; vehicleRef?: string; vehiclePlate?: string }>('tireEvent', {}))
+        .find(doc => doc.vehicleRef === id || (normalizeOptionalText(doc.vehiclePlate)?.toLowerCase() || '') === vehiclePlate) || null;
     if (relatedTireEvent) {
         return NextResponse.json({ error: 'Kendaraan yang sudah punya riwayat ban tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedVoucher = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "driverVoucher" && ((vehicleRef == $ref || vehicleRef._ref == $ref) || lower(coalesce(vehiclePlate, "")) == $plate)][0]{ _id }`,
-        { ref: id, plate: (vehicle.plateNumber || '').toLowerCase() }
-    );
+    const relatedVoucher = (await listDocumentsByFilter<{ _id: string; vehicleRef?: string; vehiclePlate?: string }>('driverVoucher', {}))
+        .find(doc => doc.vehicleRef === id || (normalizeOptionalText(doc.vehiclePlate)?.toLowerCase() || '') === vehiclePlate) || null;
     if (relatedVoucher) {
         return NextResponse.json({ error: 'Kendaraan yang sudah dipakai pada uang jalan trip tidak boleh dihapus' }, { status: 409 });
     }
 
-    const relatedExpense = await getSanityClient().fetch<{ _id: string } | null>(
-        `*[_type == "expense" && ((relatedVehicleRef == $ref || relatedVehicleRef._ref == $ref) || lower(coalesce(relatedVehiclePlate, "")) == $plate)][0]{ _id }`,
-        { ref: id, plate: (vehicle.plateNumber || '').toLowerCase() }
-    );
+    const relatedExpense = (await listDocumentsByFilter<{ _id: string; relatedVehicleRef?: string; relatedVehiclePlate?: string }>('expense', {}))
+        .find(doc => doc.relatedVehicleRef === id || (normalizeOptionalText(doc.relatedVehiclePlate)?.toLowerCase() || '') === vehiclePlate) || null;
     if (relatedExpense) {
         return NextResponse.json({ error: 'Kendaraan yang sudah dipakai pada pengeluaran tidak boleh dihapus' }, { status: 409 });
     }
 
-    try {
-        const constraintIds = [
-            typeof vehicle.plateNumber === 'string' && vehicle.plateNumber.trim()
-                ? buildUniqueConstraintId('vehicle', 'plateNumber', vehicle.plateNumber)
-                : null,
-            typeof vehicle.unitCode === 'string' && vehicle.unitCode.trim()
-                ? buildUniqueConstraintId('vehicle', 'unitCode', vehicle.unitCode)
-                : null,
-            typeof vehicle.chassisNumber === 'string' && vehicle.chassisNumber.trim()
-                ? buildUniqueConstraintId('vehicle', 'chassisNumber', vehicle.chassisNumber)
-                : null,
-            typeof vehicle.engineNumber === 'string' && vehicle.engineNumber.trim()
-                ? buildUniqueConstraintId('vehicle', 'engineNumber', vehicle.engineNumber)
-                : null,
-        ].filter((value): value is string => typeof value === 'string');
-        await getSanityClient().mutate([
-            ...constraintIds.map(constraintId => ({
-                delete: {
-                    id: constraintId,
-                },
-            })),
-            {
-                delete: {
-                    id,
-                    ifRevisionID: vehicle._rev,
-                },
-            },
-        ] as unknown as SanityMutations);
-        await addAuditLog(session, 'DELETE', 'vehicles', id, `Deleted vehicles ${vehicle.plateNumber || id}`);
-        return NextResponse.json({ success: true });
-    } catch (err) {
-        if (isMutationConflictError(err)) {
-            return NextResponse.json(
-                { error: 'Kendaraan berubah atau baru dipakai pada transaksi lain. Muat ulang lalu coba lagi.' },
-                { status: 409 }
-            );
-        }
-        throw err;
-    }
+    await deleteDocument(id);
+    await addAuditLog(session, 'DELETE', 'vehicles', id, `Deleted vehicles ${vehicle.plateNumber || id}`);
+    return NextResponse.json({ success: true });
 }

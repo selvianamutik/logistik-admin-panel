@@ -2,7 +2,12 @@ import { NextResponse } from 'next/server';
 
 import { getBusinessDateValue } from '@/lib/business-date';
 import { isTireTrackedWarehouseItem, parseInventoryQuantity, parseWholeMoneyAmount } from '@/lib/inventory';
-import { getSanityClient, sanityGetById } from '@/lib/sanity';
+import {
+    createDocument,
+    getDocumentById,
+    listDocumentsByFilter,
+    updateDocument,
+} from '@/lib/repositories/document-store';
 import type {
     InventoryUnit,
     Maintenance,
@@ -14,7 +19,6 @@ import type {
 
 import {
     assertIsoDate,
-    isMutationConflictError,
     normalizeOptionalText,
     type ApiSession,
 } from './data-helpers';
@@ -92,7 +96,7 @@ function normalizeMaterialUsageInputs(value: unknown) {
 }
 
 async function loadMaintenanceSnapshot(maintenanceRef: string) {
-    const maintenance = await sanityGetById<MaintenanceSnapshot>(maintenanceRef);
+    const maintenance = await getDocumentById<MaintenanceSnapshot>(maintenanceRef, 'maintenance');
     if (!maintenance || maintenance._type !== 'maintenance') {
         return null;
     }
@@ -100,7 +104,7 @@ async function loadMaintenanceSnapshot(maintenanceRef: string) {
 }
 
 async function loadWarehouseItemSnapshot(itemRef: string) {
-    const item = await sanityGetById<WarehouseItemSnapshot>(itemRef);
+    const item = await getDocumentById<WarehouseItemSnapshot>(itemRef, 'warehouseItem');
     if (!item || item._type !== 'warehouseItem') {
         throw new Error('Barang gudang tidak ditemukan');
     }
@@ -113,20 +117,14 @@ async function loadWarehouseItemSnapshot(itemRef: string) {
     if (isTireTrackedWarehouseItem(item)) {
         throw new Error('Ban tertracking dikelola lewat modul Ban, bukan lewat material maintenance');
     }
-    if (!item._rev) {
-        throw new Error(`Barang gudang ${item.itemCode} belum siap dikunci revisinya`);
-    }
     return item;
 }
 
 async function resolveWarehouseItemUnitCost(item: Pick<WarehouseItem, '_id' | 'defaultPurchasePrice'>) {
-    const receiptRows = await getSanityClient().fetch<Array<Pick<PurchaseItem, 'receivedQty' | 'unitPrice'>>>(
-        `*[_type == "purchaseItem" && warehouseItemRef == $ref && defined(receivedQty) && receivedQty > 0]{
-            receivedQty,
-            unitPrice
-        }`,
-        { ref: item._id }
-    );
+    const receiptRows = (await listDocumentsByFilter<Pick<PurchaseItem, 'receivedQty' | 'unitPrice'>>(
+        'purchaseItem',
+        { warehouseItemRef: item._id }
+    )).filter(row => parseInventoryQuantity(row.receivedQty) > 0);
 
     const aggregate = receiptRows.reduce(
         (accumulator, row) => {
@@ -168,19 +166,16 @@ function buildMaintenanceCompletionAuditSummary(input: {
 }
 
 export async function getMaintenanceMaterialOptions(): Promise<MaintenanceMaterialOption[]> {
-    const rows = await getSanityClient().fetch<Array<Pick<WarehouseItem, '_id' | 'itemCode' | 'name' | 'category' | 'unit' | 'currentStockQty' | 'trackingMode' | 'active'>>>(
-        `*[_type == "warehouseItem" && active != false && coalesce(trackingMode, "STANDARD") == "STANDARD" && coalesce(currentStockQty, 0) > 0]
-        | order(itemCode asc, name asc){
-            _id,
-            itemCode,
-            name,
-            category,
-            unit,
-            currentStockQty,
-            trackingMode,
-            active
-        }`
-    );
+    const rows = (await listDocumentsByFilter<Pick<WarehouseItem, '_id' | 'itemCode' | 'name' | 'category' | 'unit' | 'currentStockQty' | 'trackingMode' | 'active'>>(
+        'warehouseItem',
+        {}
+    ))
+        .filter(row => row.active !== false && (row.trackingMode || 'STANDARD') === 'STANDARD' && Math.max(parseInventoryQuantity(row.currentStockQty), 0) > 0)
+        .sort((left, right) => {
+            const itemCodeCompare = String(left.itemCode || '').localeCompare(String(right.itemCode || ''));
+            if (itemCodeCompare !== 0) return itemCodeCompare;
+            return String(left.name || '').localeCompare(String(right.name || ''));
+        });
 
     return rows.map((row) => ({
         _id: row._id,
@@ -214,9 +209,6 @@ export async function handleMaintenanceComplete(
         if (!maintenance) {
             return NextResponse.json({ error: 'Maintenance tidak ditemukan' }, { status: 404 });
         }
-        if (!maintenance._rev) {
-            return NextResponse.json({ error: 'Maintenance belum siap diproses, coba muat ulang halaman' }, { status: 409 });
-        }
         if (maintenance.status !== 'SCHEDULED') {
             return NextResponse.json({ error: 'Maintenance yang sudah diproses tidak bisa diselesaikan lagi' }, { status: 409 });
         }
@@ -237,7 +229,6 @@ export async function handleMaintenanceComplete(
 
         const movementDocs: StockMovement[] = [];
         const materialUsages: MaintenanceMaterialUsage[] = [];
-        const transaction = getSanityClient().transaction();
 
         for (const [index, item] of warehouseItems.entries()) {
             const materialInput = materialInputs[index];
@@ -259,7 +250,7 @@ export async function handleMaintenanceComplete(
             const unitCostSnapshot = unitCostSnapshots[index];
             const subtotalCost = Math.round(materialInput.quantity * unitCostSnapshot);
 
-            transaction.patch(item._id, (patch) => patch.ifRevisionId(item._rev!).set({ currentStockQty: nextStockQty }));
+            await updateDocument(item._id, { currentStockQty: nextStockQty });
 
             const movementDoc: StockMovement = {
                 _id: `stock-movement-${crypto.randomUUID()}`,
@@ -279,7 +270,7 @@ export async function handleMaintenanceComplete(
                 createdBy: session._id,
                 createdByName: session.name,
             };
-            transaction.create(movementDoc);
+            await createDocument(movementDoc as unknown as { _type: string; [key: string]: unknown });
             movementDocs.push(movementDoc);
 
             materialUsages.push({
@@ -330,25 +321,11 @@ export async function handleMaintenanceComplete(
             unsetFields.push('materialUsages');
         }
 
-        transaction.patch(maintenance._id, (patch) => {
-            let nextPatch = patch.ifRevisionId(maintenance._rev!).set(setPayload);
-            if (unsetFields.length > 0) {
-                nextPatch = nextPatch.unset(unsetFields);
-            }
-            return nextPatch;
-        });
-
-        try {
-            await transaction.commit();
-        } catch (error) {
-            if (isMutationConflictError(error)) {
-                return NextResponse.json(
-                    { error: 'Stok atau maintenance berubah saat diproses. Muat ulang lalu coba lagi.' },
-                    { status: 409 }
-                );
-            }
-            throw error;
-        }
+        const maintenanceUpdates = {
+            ...setPayload,
+            ...Object.fromEntries(unsetFields.map(field => [field, undefined])),
+        };
+        await updateDocument(maintenance._id, maintenanceUpdates);
 
         await addAuditLog(
             session,

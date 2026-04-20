@@ -1,9 +1,17 @@
 /* ============================================================
    LOGISTIK - General Data API
-   Centralized CRUD API - Sanity CMS Backend
+   Centralized CRUD API - Supabase Backend
    ============================================================ */
 
 import { getSession } from '@/lib/auth';
+import {
+    createDocument,
+    getAllDocuments,
+    getCompanyProfile,
+    getDocumentById,
+    listDocuments,
+    listDocumentsByFilter,
+} from '@/lib/repositories/document-store';
 import {
     ensureCashAccount,
     isMutationConflictError,
@@ -115,18 +123,9 @@ import {
     applyDerivedFreightNotaStatus,
 } from '@/lib/api/data-query-support';
 import { getCustomerOverpaymentRefundTotals } from '@/lib/customer-overpayments';
+import { DOCUMENT_TYPE_MAP } from '@/lib/document-types';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
-import {
-    SANITY_TYPE_MAP,
-    getSanityClient,
-    sanityCreate,
-    sanityGetAll,
-    sanityGetByFilter,
-    sanityGetById,
-    sanityGetCompanyProfile,
-    sanityList,
-} from '@/lib/sanity';
-import type { BankAccount, BankTransaction, CustomerOverpaymentRefund, DriverBorongan, DriverBoronganItem, DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem, Expense, FreightNota, User, Vehicle } from '@/lib/types';
+import type { BankAccount, BankTransaction, CompanyProfile, CustomerOverpaymentRefund, DriverBorongan, DriverBoronganItem, DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem, Expense, FreightNota, User, Vehicle } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -142,7 +141,7 @@ type ReceiptResponseShape = Record<string, unknown> & {
     allocationCount?: number | string | null;
 };
 
-const ENTITY_MODULE_MAP: Partial<Record<keyof typeof SANITY_TYPE_MAP, AppModule>> = {
+const ENTITY_MODULE_MAP: Partial<Record<keyof typeof DOCUMENT_TYPE_MAP, AppModule>> = {
     employees: 'employees',
     'employee-attendance-records': 'attendance',
     suppliers: 'suppliers',
@@ -192,8 +191,8 @@ const ENTITY_MODULE_MAP: Partial<Record<keyof typeof SANITY_TYPE_MAP, AppModule>
     'audit-logs': 'auditLogs',
 };
 
-function validateEntity(entity: string | null): entity is keyof typeof SANITY_TYPE_MAP {
-    return Boolean(entity && SANITY_TYPE_MAP[entity]);
+function validateEntity(entity: string | null): entity is keyof typeof DOCUMENT_TYPE_MAP {
+    return Boolean(entity && DOCUMENT_TYPE_MAP[entity]);
 }
 
 function forbidOwnerOnlyEntity(session: Session, entity: string) {
@@ -205,7 +204,7 @@ function forbidOwnerOnlyEntity(session: Session, entity: string) {
 
 function getEntityModule(entity: string | null): AppModule | null {
     if (!entity) return null;
-    return ENTITY_MODULE_MAP[entity as keyof typeof SANITY_TYPE_MAP] || null;
+    return ENTITY_MODULE_MAP[entity as keyof typeof DOCUMENT_TYPE_MAP] || null;
 }
 
 function getMutationPermissionAction(action?: string): keyof ModulePermissions {
@@ -394,13 +393,9 @@ function applyDerivedCustomerReceiptAllocationsLocal<
 async function deriveCustomerReceiptsForResponse<T extends ReceiptResponseShape>(receipts: T[]) {
     if (receipts.length === 0) return receipts;
     const ids = receipts.map(receipt => receipt._id).filter(Boolean);
-    const allocationRows = await getSanityClient().fetch<Array<{ receiptRef?: string; amount?: unknown }>>(
-        `*[_type == "payment" && defined(receiptRef) && receiptRef in $ids]{
-            receiptRef,
-            amount
-        }`,
-        { ids }
-    );
+    const allocationRows = await listDocumentsByFilter<{ receiptRef?: string; amount?: unknown }>('payment', {
+        receiptRef: ids,
+    });
     return applyDerivedCustomerReceiptAllocationsLocal(receipts, allocationRows);
 }
 
@@ -412,7 +407,7 @@ async function addAuditLog(
     summary: string
 ) {
     try {
-        await sanityCreate({
+        await createDocument({
             _type: 'auditLog',
             actorUserRef: session._id,
             actorUserName: session.name,
@@ -773,11 +768,11 @@ export async function GET(request: Request) {
         return jsonNoStore({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const docType = SANITY_TYPE_MAP[entity];
+    const docType = DOCUMENT_TYPE_MAP[entity];
 
     try {
         if (entity === 'company') {
-            const profile = await sanityGetCompanyProfile();
+            const profile = await getCompanyProfile<CompanyProfile>();
             return jsonNoStore({
                 data: profile
                     ? sanitizeCompanyProfileForRole(profile, session.role)
@@ -799,7 +794,7 @@ export async function GET(request: Request) {
                         ? await getDriverBoronganById(id)
                     : entity === 'driver-vouchers'
                         ? await getDriverVoucherById(id)
-                    : await sanityGetById(id);
+                    : await getDocumentById(id);
             if (!item) return jsonNoStore({ error: 'Not found' }, { status: 404 });
             if ((item as { _type?: string })._type !== docType) {
                 return jsonNoStore({ error: 'Not found' }, { status: 404 });
@@ -822,14 +817,9 @@ export async function GET(request: Request) {
             }
 
             if (entity === 'bank-accounts') {
-                const txRows = await getSanityClient().fetch<Array<Pick<BankTransaction, 'bankAccountRef' | 'type' | 'amount'>>>(
-                    `*[_type == "bankTransaction" && bankAccountRef == $id]{
-                        bankAccountRef,
-                        type,
-                        amount
-                    }`,
-                    { id }
-                );
+                const txRows = await listDocumentsByFilter<Pick<BankTransaction, 'bankAccountRef' | 'type' | 'amount'>>('bankTransaction', {
+                    bankAccountRef: id,
+                });
                 item = applyDerivedBankAccountBalances([item as unknown as BankAccount], txRows)[0] as unknown as Record<string, unknown>;
             }
 
@@ -1043,7 +1033,7 @@ export async function GET(request: Request) {
                 const searchFields = searchFieldsParam
                     ? searchFieldsParam.split(',').map(field => field.trim()).filter(Boolean)
                     : [];
-                const result = await sanityList(docType, {
+                const result = await listDocuments(docType, {
                     filterObj,
                     orFilters,
                     definedFields,
@@ -1064,10 +1054,10 @@ export async function GET(request: Request) {
                 );
             }
         } else if (filterObj) {
-            items = await sanityGetByFilter(docType, filterObj);
+            items = await listDocumentsByFilter(docType, filterObj);
             totalItems = items.length;
         } else {
-            items = await sanityGetAll(docType);
+            items = await getAllDocuments(docType);
             totalItems = items.length;
         }
 
@@ -1080,21 +1070,13 @@ export async function GET(request: Request) {
                 .map(item => (typeof item._id === 'string' ? item._id : ''))
                 .filter(Boolean);
             const [paymentRows, refundRows] = await Promise.all([
-                getSanityClient().fetch<Array<{ invoiceRef?: string; amount?: unknown }>>(
-                    `*[_type == "payment" && defined(invoiceRef) && invoiceRef in $ids]{
-                        invoiceRef,
-                        amount
-                    }`,
-                    { ids }
-                ),
-                getSanityClient().fetch<Array<Pick<CustomerOverpaymentRefund, 'sourceType' | 'sourceInvoiceRef' | 'amount'>>>(
-                    `*[_type == "customerOverpaymentRefund" && sourceType == "INVOICE_OVERPAID" && sourceInvoiceRef in $ids]{
-                        sourceType,
-                        sourceInvoiceRef,
-                        amount
-                    }`,
-                    { ids }
-                ),
+                listDocumentsByFilter<{ invoiceRef?: string; amount?: unknown }>('payment', {
+                    invoiceRef: ids,
+                }),
+                listDocumentsByFilter<Pick<CustomerOverpaymentRefund, 'sourceType' | 'sourceInvoiceRef' | 'amount'>>('customerOverpaymentRefund', {
+                    sourceType: 'INVOICE_OVERPAID',
+                    sourceInvoiceRef: ids,
+                }),
             ]);
             const paymentTotalsByInvoice = paymentRows.reduce<Record<string, number>>((acc, payment) => {
                 if (!payment.invoiceRef) return acc;
@@ -1117,14 +1099,9 @@ export async function GET(request: Request) {
             const ids = items
                 .map(item => (typeof item._id === 'string' ? item._id : ''))
                 .filter(Boolean);
-            const txRows = await getSanityClient().fetch<Array<Pick<BankTransaction, 'bankAccountRef' | 'type' | 'amount'>>>(
-                `*[_type == "bankTransaction" && defined(bankAccountRef) && bankAccountRef in $ids]{
-                    bankAccountRef,
-                    type,
-                    amount
-                }`,
-                { ids }
-            );
+            const txRows = await listDocumentsByFilter<Pick<BankTransaction, 'bankAccountRef' | 'type' | 'amount'>>('bankTransaction', {
+                bankAccountRef: ids,
+            });
             items = applyDerivedBankAccountBalances(items as unknown as BankAccount[], txRows) as unknown as Record<string, unknown>[];
         }
 
@@ -1132,20 +1109,12 @@ export async function GET(request: Request) {
             const ids = items
                 .map(item => (typeof item._id === 'string' ? item._id : ''))
                 .filter(Boolean);
-            const boronganItems = await getSanityClient().fetch<Array<{
+            const boronganItems = await listDocumentsByFilter<{
                 boronganRef?: string;
                 collie?: unknown;
                 beratKg?: unknown;
                 uangRp?: unknown;
-            }>>(
-                `*[_type == "driverBoronganItem" && defined(boronganRef) && boronganRef in $ids]{
-                    boronganRef,
-                    collie,
-                    beratKg,
-                    uangRp
-                }`,
-                { ids }
-            );
+            }>('driverBoronganItem', { boronganRef: ids });
             items = applyDerivedDriverBoronganTotals(
                 items as unknown as DriverBorongan[],
                 boronganItems.filter(
@@ -1160,21 +1129,12 @@ export async function GET(request: Request) {
                 .map(item => (typeof item._id === 'string' ? item._id : ''))
                 .filter(Boolean);
             const [disbursementRows, itemRows] = await Promise.all([
-                getSanityClient().fetch<Array<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>>(
-                    `*[_type == "driverVoucherDisbursement" && defined(voucherRef) && voucherRef in $ids]{
-                        voucherRef,
-                        amount,
-                        kind
-                    }`,
-                    { ids }
-                ),
-                getSanityClient().fetch<Array<Pick<DriverVoucherItem, 'voucherRef' | 'amount'>>>(
-                    `*[_type == "driverVoucherItem" && defined(voucherRef) && voucherRef in $ids]{
-                        voucherRef,
-                        amount
-                    }`,
-                    { ids }
-                ),
+                listDocumentsByFilter<Pick<DriverVoucherDisbursement, 'voucherRef' | 'amount' | 'kind'>>('driverVoucherDisbursement', {
+                    voucherRef: ids,
+                }),
+                listDocumentsByFilter<Pick<DriverVoucherItem, 'voucherRef' | 'amount'>>('driverVoucherItem', {
+                    voucherRef: ids,
+                }),
             ]);
             items = applyDerivedDriverVoucherLedger(items as unknown as DriverVoucher[], disbursementRows, itemRows) as unknown as Record<string, unknown>[];
         }
@@ -1309,7 +1269,7 @@ export async function POST(request: Request) {
             );
         }
 
-        const docType = SANITY_TYPE_MAP[entity];
+        const docType = DOCUMENT_TYPE_MAP[entity];
 
         if (entity === 'driver-borongans' && action === 'mark-paid') {
             return await handleBoronganPayment(session, data, addAuditLog);

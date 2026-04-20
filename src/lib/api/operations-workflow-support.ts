@@ -1,5 +1,5 @@
-import { getSanityClient, sanityGetById } from '@/lib/sanity';
 import { getBusinessCalendarDateParts, getBusinessDateValue } from '@/lib/business-date';
+import { getDocumentById, listDocumentsByFilter } from '@/lib/repositories/document-store';
 import {
     buildDefaultTireLayoutConfig,
     buildTirePlacementLabel,
@@ -166,12 +166,8 @@ function normalizeServiceCode(value: unknown) {
 }
 
 async function generateVehicleUnitCode(categoryCode: string, excludeId?: string) {
-    const rows = await getSanityClient().fetch<Array<{ _id: string; unitCode?: string }>>(
-        excludeId
-            ? `*[_type == "vehicle" && _id != $excludeId && defined(unitCode)]{ _id, unitCode }`
-            : `*[_type == "vehicle" && defined(unitCode)]{ _id, unitCode }`,
-        excludeId ? { excludeId } : {}
-    );
+    const rows = (await listDocumentsByFilter<Array<{ _id: string; unitCode?: string }>[number]>('vehicle', {}))
+        .filter(row => row._id !== excludeId && typeof row.unitCode === 'string' && row.unitCode.trim().length > 0);
 
     const prefix = `${categoryCode}-`;
     const highestNumber = rows.reduce((max, row) => {
@@ -191,15 +187,15 @@ async function generateVehicleUnitCode(categoryCode: string, excludeId?: string)
 
 async function findDuplicateLowerTextDoc(docType: string, fieldName: string, value: string, excludeId?: string) {
     if (!value) return null;
-
-    const query = excludeId
-        ? `*[_type == "${docType}" && lower(coalesce(${fieldName}, "")) == $value && _id != $excludeId][0]{ _id }`
-        : `*[_type == "${docType}" && lower(coalesce(${fieldName}, "")) == $value][0]{ _id }`;
-
-    return getSanityClient().fetch<{ _id: string } | null>(
-        query,
-        excludeId ? { value: value.toLowerCase(), excludeId } : { value: value.toLowerCase() }
-    );
+    const normalizedValue = value.toLowerCase();
+    const rows = await listDocumentsByFilter<Array<{ _id: string; [key: string]: unknown }>[number]>(docType, {});
+    return rows.find(row => {
+        if (excludeId && row._id === excludeId) {
+            return false;
+        }
+        const fieldValue = row[fieldName];
+        return typeof fieldValue === 'string' && fieldValue.toLowerCase() === normalizedValue;
+    }) || null;
 }
 
 export async function normalizeServicePayload(
@@ -222,15 +218,14 @@ export async function normalizeServicePayload(
             throw new Error('Kode kategori armada sudah digunakan');
         }
         if (options?.excludeId) {
-            const currentService = await sanityGetById<{ _id: string; code?: string; name?: string }>(options.excludeId);
+            const currentService = await getDocumentById<{ _id: string; code?: string; name?: string }>(options.excludeId, 'service');
             if (currentService?.code && currentService.code !== code) {
-                const relatedVehicle = await getSanityClient().fetch<{ _id: string } | null>(
-                    `*[_type == "vehicle" && ((serviceRef == $ref || serviceRef._ref == $ref) || lower(coalesce(serviceName, "")) == $serviceName)][0]{ _id }`,
-                    {
-                        ref: options.excludeId,
-                        serviceName: normalizeText(currentService.name).toLowerCase(),
-                    }
-                );
+                const relatedVehicle =
+                    (await listDocumentsByFilter<{ _id: string; serviceRef?: string; serviceName?: string }>('vehicle', {}))
+                        .find(vehicle =>
+                            vehicle.serviceRef === options.excludeId
+                            || normalizeText(vehicle.serviceName).toLowerCase() === normalizeText(currentService.name).toLowerCase()
+                        ) || null;
                 if (relatedVehicle) {
                     throw new Error('Kode kategori armada yang sudah dipakai kendaraan tidak boleh diubah');
                 }
@@ -467,7 +462,7 @@ export async function normalizeVehiclePayload(
     const partial = options?.partial === true;
     const next: Record<string, unknown> = {};
     const existingVehicle = options?.excludeId
-        ? await sanityGetById<{ _id: string; lastOdometer?: number; serviceRef?: string; unitCode?: string; vehicleType?: string; capacityMin?: string; capacityMax?: string }>(options.excludeId)
+        ? await getDocumentById<{ _id: string; lastOdometer?: number; serviceRef?: string; unitCode?: string; vehicleType?: string; capacityMin?: string; capacityMax?: string }>(options.excludeId, 'vehicle')
         : null;
 
     if (options?.excludeId && !existingVehicle) {
@@ -557,7 +552,10 @@ export async function normalizeVehiclePayload(
         if (!serviceRef) {
             throw new Error('Kategori armada kendaraan wajib dipilih');
         }
-        const service = await sanityGetById<{ _id: string; name?: string; code?: string; active?: boolean; tireLayoutConfig?: Record<string, unknown> }>(serviceRef);
+        const service = await getDocumentById<{ _id: string; name?: string; code?: string; active?: boolean; tireLayoutConfig?: Record<string, unknown> }>(
+            serviceRef,
+            'service'
+        );
         if (!service) {
             throw new Error('Kategori armada tidak ditemukan');
         }
@@ -686,7 +684,7 @@ export async function normalizeMaintenanceCreatePayload(data: Record<string, unk
     }
     const scheduleType = rawScheduleType as 'DATE' | 'ODOMETER';
     const notes = typeof data.notes === 'string' && data.notes.trim() ? data.notes.trim() : undefined;
-    const vehicle = await sanityGetById<{ _id: string; plateNumber?: string; status?: string }>(vehicleRef);
+    const vehicle = await getDocumentById<{ _id: string; plateNumber?: string; status?: string }>(vehicleRef, 'vehicle');
     if (!vehicle) {
         throw new Error('Kendaraan maintenance tidak ditemukan');
     }
@@ -784,7 +782,7 @@ export async function normalizeTireEventPayload(
     let normalizedVehiclePlate: string | undefined;
     let existingTireEvent: { vehicleRef?: string; vehiclePlate?: string } | null = null;
     if (excludeId) {
-        existingTireEvent = await sanityGetById<{ vehicleRef?: string; vehiclePlate?: string }>(excludeId);
+        existingTireEvent = await getDocumentById<{ vehicleRef?: string; vehiclePlate?: string }>(excludeId, 'tireEvent');
     }
 
     if (holderType === 'INTERNAL_VEHICLE') {
@@ -800,7 +798,7 @@ export async function normalizeTireEventPayload(
         if (!isKnownInternalTireSlotCode(slotCode)) {
             throw new Error('Kode slot ban tidak valid');
         }
-        const vehicle = await sanityGetById<{ _id: string; plateNumber?: string; status?: string }>(vehicleRef);
+        const vehicle = await getDocumentById<{ _id: string; plateNumber?: string; status?: string }>(vehicleRef, 'vehicle');
         if (!vehicle) {
             throw new Error('Kendaraan ban tidak ditemukan');
         }
@@ -810,27 +808,17 @@ export async function normalizeTireEventPayload(
         }
         normalizedVehiclePlate = vehicle.plateNumber;
 
-        const activeTires = await getSanityClient().fetch<Array<{
+        const activeTires = await listDocumentsByFilter<Array<{
             _id: string;
             slotCode?: string;
             holderType?: string;
             status?: string;
             vehicleRef?: string;
-        }>>(
-            `*[
-                _type == "tireEvent" &&
-                vehicleRef == $vehicleRef &&
-                holderType == "INTERNAL_VEHICLE" &&
-                status == "IN_USE"
-            ]{
-                _id,
-                slotCode,
-                holderType,
-                status,
-                vehicleRef
-            }`,
-            { vehicleRef }
-        );
+        }>[number]>('tireEvent', {
+            vehicleRef,
+            holderType: 'INTERNAL_VEHICLE',
+            status: 'IN_USE',
+        });
         const activeDuplicate = activeTires.find(item => item._id !== excludeId && normalizeTireSlotCode(item.slotCode || '') === slotCode);
         if (activeDuplicate) {
             throw new Error('Slot ban ini masih dipakai ban lain pada kendaraan yang sama');

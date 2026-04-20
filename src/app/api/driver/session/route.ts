@@ -1,6 +1,6 @@
 import { getDriverAppContext, getDriverPortalAccessNotice, requireDriverSessionContext, sanitizeDriverForMobile } from '@/lib/api/driver-portal';
 import { jsonNoStore } from '@/lib/api/request-security';
-import { getSanityServiceErrorInfo } from '@/lib/sanity';
+import { getDataServiceErrorInfo } from '@/lib/service-errors';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -22,7 +22,7 @@ export async function GET(request: Request) {
             driverAccessNotice: driverAccessNotice ?? null,
         });
     } catch (error) {
-        const serviceError = getSanityServiceErrorInfo(
+        const serviceError = getDataServiceErrorInfo(
             error,
             'Layanan sesi driver sedang tidak tersedia. Coba lagi beberapa saat.'
         );
