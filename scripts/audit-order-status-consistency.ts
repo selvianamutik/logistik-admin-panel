@@ -35,23 +35,28 @@ type OrderItemResponse = {
 
 function deriveOrderStatusFromItems(items: Array<{ status?: string | null }>) {
     const allDelivered = items.length > 0 && items.every(item => item.status === 'DELIVERED');
-    const anyInProgress = items.some(item =>
+    const anyDelivered = items.some(item =>
         item.status === 'DELIVERED'
         || item.status === 'PARTIAL'
-        || item.status === 'ASSIGNED'
+    );
+    const anyAssigned = items.some(item =>
+        item.status === 'ASSIGNED'
         || item.status === 'ON_DELIVERY'
     );
-    const anyHold = items.some(item => item.status === 'HOLD');
+    const anyNonDeliveryResolved = items.some(item =>
+        item.status === 'HOLD'
+        || item.status === 'RETURNED'
+    );
 
     if (allDelivered) {
         return 'COMPLETE';
     }
 
-    if (anyInProgress) {
+    if (anyDelivered) {
         return 'PARTIAL';
     }
 
-    if (anyHold) {
+    if (anyNonDeliveryResolved && !anyAssigned) {
         return 'ON_HOLD';
     }
 

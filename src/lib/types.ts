@@ -527,6 +527,7 @@ export interface DriverVoucher {
   notes?: string;
   settledDate?: string;
   settledBy?: string;
+  settledByName?: string;
   settlementBankRef?: string;
   settlementBankName?: string;
 }

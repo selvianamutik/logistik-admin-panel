@@ -38,7 +38,6 @@ import {
     getDriverVoucherIssuedAmount,
     isDriverBoronganRowEmpty,
     summarizeBoronganDeliveryOrderItems,
-    toCategoryRef,
     type DriverBoronganDeliveryOrderItemSummarySource,
 } from './driver-workflow-support';
 
@@ -79,6 +78,76 @@ type DriverBoronganDeliveryOrderSource = {
     taripBorongan?: number;
     keteranganBorongan?: string;
 };
+
+type ExpenseCategoryOption = {
+    _id: string;
+    name?: string;
+    active?: boolean;
+};
+
+type VoucherPostedExpense = {
+    _id: string;
+    categoryName?: string;
+    amount?: number;
+    description?: string;
+    voucherRef?: string;
+};
+
+type VoucherBankTransaction = {
+    _id: string;
+    type?: string;
+    amount?: number;
+    description?: string;
+    relatedVoucherRef?: string;
+};
+
+function getExpenseCategoryKey(value: unknown) {
+    return (normalizeOptionalText(value) || '').toLowerCase();
+}
+
+function resolveExpenseCategory(
+    categories: ExpenseCategoryOption[],
+    requestedName: string
+) {
+    const activeCategories = categories.filter(category => category.active !== false);
+    const byName = new Map(
+        activeCategories
+            .map(category => [getExpenseCategoryKey(category.name), category] as const)
+            .filter(([key]) => Boolean(key))
+    );
+    return (
+        byName.get(getExpenseCategoryKey(requestedName)) ||
+        byName.get('lain-lain') ||
+        activeCategories[0] ||
+        null
+    );
+}
+
+function hasMatchingVoucherExpense(
+    expenses: VoucherPostedExpense[],
+    categoryName: string,
+    amount: number,
+    description: string
+) {
+    return expenses.some(expense =>
+        getExpenseCategoryKey(expense.categoryName) === getExpenseCategoryKey(categoryName) &&
+        normalizeNumber(expense.amount || 0, { maxFractionDigits: 0 }) === normalizeCurrencyNumber(amount) &&
+        normalizeText(expense.description) === normalizeText(description)
+    );
+}
+
+function hasMatchingVoucherBankTransaction(
+    transactions: VoucherBankTransaction[],
+    type: string,
+    amount: number,
+    description: string
+) {
+    return transactions.some(transaction =>
+        transaction.type === type &&
+        normalizeNumber(transaction.amount || 0, { maxFractionDigits: 0 }) === normalizeCurrencyNumber(amount) &&
+        normalizeText(transaction.description) === normalizeText(description)
+    );
+}
 
 type DriverBoronganOrderSource = {
     _id: string;
@@ -1402,11 +1471,6 @@ export async function handleDriverVoucherSettlement(
         return NextResponse.json({ error: 'Isi biaya perjalanan atau upah supir sebelum penyelesaian trip' }, { status: 400 });
     }
 
-    const existingExpense = (await listDocumentsByFilter<Array<{ _id: string }>[number]>('expense', { voucherRef: voucherId }))[0] || null;
-    if (existingExpense) {
-        return NextResponse.json({ error: 'Bon supir ini sudah pernah diposting ke pengeluaran' }, { status: 409 });
-    }
-
     if (state.voucher.deliveryOrderRef) {
         const existingBoronganItem = (await listDocumentsByFilter<Array<{ doNumber?: string }>[number]>(
             'driverBoronganItem',
@@ -1458,15 +1522,31 @@ export async function handleDriverVoucherSettlement(
         }
     }
 
+    const expenseCategories = await listDocumentsByFilter<ExpenseCategoryOption>('expenseCategory', {});
+    const existingVoucherExpenses = await listDocumentsByFilter<VoucherPostedExpense>('expense', { voucherRef: voucherId });
+    const existingVoucherTransactions = await listDocumentsByFilter<VoucherBankTransaction>('bankTransaction', { relatedVoucherRef: voucherId });
+
     for (const item of state.items) {
+        const expenseCategory = resolveExpenseCategory(expenseCategories, item.category);
+        if (!expenseCategory) {
+            return NextResponse.json(
+                { error: 'Master kategori biaya belum tersedia untuk posting pengeluaran uang jalan trip' },
+                { status: 409 }
+            );
+        }
+        const expenseAmount = normalizeCurrencyNumber(item.amount);
+        const expenseDescription = item.description || `Pengeluaran uang jalan trip ${state.voucher.bonNumber}`;
+        if (hasMatchingVoucherExpense(existingVoucherExpenses, expenseCategory.name || item.category, expenseAmount, expenseDescription)) {
+            continue;
+        }
         await createDocument({
             _id: crypto.randomUUID(),
             _type: 'expense',
-            categoryRef: toCategoryRef(item.category),
-            categoryName: item.category,
+            categoryRef: expenseCategory._id,
+            categoryName: expenseCategory.name || item.category,
             date: item.expenseDate || settledDate,
-            amount: normalizeCurrencyNumber(item.amount),
-            description: item.description || `Pengeluaran uang jalan trip ${state.voucher.bonNumber}`,
+            amount: expenseAmount,
+            description: expenseDescription,
             note: `Uang jalan trip ${state.voucher.bonNumber}`,
             privacyLevel: 'internal',
             relatedVehicleRef: state.voucher.vehicleRef,
@@ -1476,58 +1556,79 @@ export async function handleDriverVoucherSettlement(
     }
 
     if (driverFeeAmount > 0) {
-        await createDocument({
-            _id: crypto.randomUUID(),
-            _type: 'expense',
-            categoryRef: 'driver-borongan',
-            categoryName: 'Borongan Supir',
-            date: settledDate,
-            amount: driverFeeAmount,
-            description: `Upah supir ${state.voucher.driverName || '-'} - ${state.voucher.bonNumber}`,
-            note: `Settlement uang jalan trip ${state.voucher.bonNumber}`,
-            privacyLevel: 'internal',
-            relatedVehicleRef: state.voucher.vehicleRef,
-            relatedVehiclePlate: state.voucher.vehiclePlate,
-            voucherRef: voucherId,
-        });
+        const driverFeeCategory = resolveExpenseCategory(expenseCategories, 'Borongan Supir');
+        if (!driverFeeCategory) {
+            return NextResponse.json(
+                { error: 'Master kategori Borongan Supir belum tersedia untuk posting upah trip' },
+                { status: 409 }
+            );
+        }
+        const driverFeeDescription = `Upah supir ${state.voucher.driverName || '-'} - ${state.voucher.bonNumber}`;
+        if (!hasMatchingVoucherExpense(existingVoucherExpenses, driverFeeCategory.name || 'Borongan Supir', driverFeeAmount, driverFeeDescription)) {
+            await createDocument({
+                _id: crypto.randomUUID(),
+                _type: 'expense',
+                categoryRef: driverFeeCategory._id,
+                categoryName: driverFeeCategory.name || 'Borongan Supir',
+                date: settledDate,
+                amount: driverFeeAmount,
+                description: driverFeeDescription,
+                note: `Settlement uang jalan trip ${state.voucher.bonNumber}`,
+                privacyLevel: 'internal',
+                relatedVehicleRef: state.voucher.vehicleRef,
+                relatedVehiclePlate: state.voucher.vehiclePlate,
+                voucherRef: voucherId,
+            });
+        }
     }
 
     if (settlementBank && settlementBankRef) {
         const adjustmentAmount = Math.abs(balance);
+        const transactionType = balance > 0 ? 'CREDIT' : 'DEBIT';
+        const transactionDescription =
+            balance > 0
+                ? `Pengembalian sisa bon ${state.voucher.bonNumber}`
+                : `Kekurangan bon ${state.voucher.bonNumber}`;
+        const alreadyPostedSettlementTransaction = hasMatchingVoucherBankTransaction(
+            existingVoucherTransactions,
+            transactionType,
+            adjustmentAmount,
+            transactionDescription
+        );
         const nextBankBalance =
             balance > 0
                 ? readLedgerBalance(settlementBank.currentBalance) + adjustmentAmount
                 : computeLedgerDebitBalance(settlementBank.currentBalance, adjustmentAmount).nextBalance;
-        if (balance < 0 && nextBankBalance < 0) {
+        if (!alreadyPostedSettlementTransaction && balance < 0 && nextBankBalance < 0) {
             const { startingBalance } = computeLedgerDebitBalance(settlementBank.currentBalance, adjustmentAmount);
             return NextResponse.json(
                 { error: `Saldo ${settlementBank.bankName} tidak cukup untuk settlement bon. Saldo tersedia ${startingBalance}` },
                 { status: 409 }
             );
         }
-        await createDocument({
-            _id: crypto.randomUUID(),
-            _type: 'bankTransaction',
-            bankAccountRef: settlementBankRef,
-            bankAccountName: settlementBank.bankName,
-            bankAccountNumber: settlementBank.accountNumber,
-            type: balance > 0 ? 'CREDIT' : 'DEBIT',
-            amount: adjustmentAmount,
-            date: settledDate,
-            description:
-                balance > 0
-                    ? `Pengembalian sisa bon ${state.voucher.bonNumber}`
-                    : `Kekurangan bon ${state.voucher.bonNumber}`,
-            balanceAfter: nextBankBalance,
-            relatedVoucherRef: voucherId,
-        });
-        await updateDocument(settlementBankRef, { currentBalance: nextBankBalance });
+        if (!alreadyPostedSettlementTransaction) {
+            await createDocument({
+                _id: crypto.randomUUID(),
+                _type: 'bankTransaction',
+                bankAccountRef: settlementBankRef,
+                bankAccountName: settlementBank.bankName,
+                bankAccountNumber: settlementBank.accountNumber,
+                type: transactionType,
+                amount: adjustmentAmount,
+                date: settledDate,
+                description: transactionDescription,
+                balanceAfter: nextBankBalance,
+                relatedVoucherRef: voucherId,
+            });
+            await updateDocument(settlementBankRef, { currentBalance: nextBankBalance });
+        }
     }
 
     await updateDocument(voucherId, {
         status: 'SETTLED',
         settledDate,
-        settledBy: session.name,
+        settledBy: session._id,
+        settledByName: session.name,
         totalSpent: totals.totalSpent,
         driverFeeAmount: totals.driverFeeAmount,
         totalClaimAmount: totals.totalClaimAmount,
@@ -1540,7 +1641,8 @@ export async function handleDriverVoucherSettlement(
         ...state.voucher,
         status: 'SETTLED',
         settledDate,
-        settledBy: session.name,
+        settledBy: session._id,
+        settledByName: session.name,
         totalSpent: totals.totalSpent,
         driverFeeAmount: totals.driverFeeAmount,
         totalClaimAmount: totals.totalClaimAmount,
