@@ -124,11 +124,12 @@ import {
 import {
     deriveDeliveryOrdersForResponse,
     deriveFreightNotaItemsForResponse,
+    deriveOrdersForResponse,
 } from '@/lib/api/response-derivations';
 import { getCustomerOverpaymentRefundTotals } from '@/lib/customer-overpayments';
 import { DOCUMENT_TYPE_MAP } from '@/lib/document-types';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
-import type { BankAccount, BankTransaction, CompanyProfile, CustomerOverpaymentRefund, DeliveryOrder, DriverBorongan, DriverBoronganItem, DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem, Expense, FreightNota, FreightNotaItem, User, Vehicle } from '@/lib/types';
+import type { BankAccount, BankTransaction, CompanyProfile, CustomerOverpaymentRefund, DeliveryOrder, DriverBorongan, DriverBoronganItem, DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem, Expense, FreightNota, FreightNotaItem, Order, User, Vehicle } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -830,6 +831,10 @@ export async function GET(request: Request) {
                 item = (await deriveDeliveryOrdersForResponse([item as unknown as DeliveryOrder]))[0] as unknown as Record<string, unknown>;
             }
 
+            if (entity === 'orders') {
+                item = (await deriveOrdersForResponse([item as unknown as Order]))[0] as unknown as Record<string, unknown>;
+            }
+
             if (entity === 'freight-nota-items') {
                 item = (await deriveFreightNotaItemsForResponse([item as unknown as FreightNotaItem]))[0] as unknown as Record<string, unknown>;
             }
@@ -1152,6 +1157,10 @@ export async function GET(request: Request) {
 
         if (entity === 'delivery-orders' && items.length > 0) {
             items = await deriveDeliveryOrdersForResponse(items as unknown as DeliveryOrder[]) as unknown as Record<string, unknown>[];
+        }
+
+        if (entity === 'orders' && items.length > 0) {
+            items = await deriveOrdersForResponse(items as unknown as Order[]) as unknown as Record<string, unknown>[];
         }
 
         if (entity === 'freight-nota-items' && items.length > 0) {

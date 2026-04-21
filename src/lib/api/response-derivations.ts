@@ -1,11 +1,17 @@
+import { deriveOrderItemStatusFromProgress, getOrderItemProgress } from '@/lib/order-item-progress';
 import { computeDeliveryOrderOvertonage } from '@/lib/delivery-order-overtonage';
 import { listDocumentsByFilter } from '@/lib/repositories/document-store';
 import type { DeliveryOrder, DeliveryOrderItem, FreightNotaItem, Order, TrackingLog } from '@/lib/types';
 
 import { summarizeDeliveryOrderItems, type FreightNotaDeliveryOrderItemSource } from './finance-workflow-support';
 import { extractRefId, normalizeCurrencyNumber, normalizeNumber, normalizeOptionalText } from './data-helpers';
+import { deriveOrderStatusFromItems, type OrderItemStatusSummary } from './order-workflow-support';
 
 type DeliveryOrderResponseSource = DeliveryOrder & {
+    _updatedAt?: string;
+};
+
+type OrderResponseSource = Order & {
     _updatedAt?: string;
 };
 
@@ -49,6 +55,11 @@ type ActualCargoSummary = {
     volumeM3: number;
 };
 
+type OrderItemStatusSource = OrderItemStatusSummary & {
+    _id?: string;
+    orderRef?: string;
+};
+
 function roundQuantity(value: number, maxFractionDigits = 3) {
     if (!Number.isFinite(value)) return 0;
     const multiplier = 10 ** maxFractionDigits;
@@ -64,6 +75,49 @@ function buildActualCargoSummary(items: Array<Pick<DeliveryOrderItem, 'actualQty
         }),
         { qtyKoli: 0, weightKg: 0, volumeM3: 0 },
     );
+}
+
+export async function deriveOrdersForResponse(orders: OrderResponseSource[]) {
+    if (orders.length === 0) {
+        return orders;
+    }
+
+    const orderIds = orders.map(item => item._id).filter(Boolean);
+    const orderItems = orderIds.length > 0
+        ? await listDocumentsByFilter<OrderItemStatusSource>('orderItem', { orderRef: orderIds })
+        : [];
+
+    const itemsByOrderRef = new Map<string, Array<{ status: string }>>();
+    for (const item of orderItems) {
+        const orderRef = normalizeOptionalText(item.orderRef);
+        if (!orderRef) continue;
+        const current = itemsByOrderRef.get(orderRef) || [];
+        current.push({
+            status: deriveOrderItemStatusFromProgress(getOrderItemProgress(item)),
+        });
+        itemsByOrderRef.set(orderRef, current);
+    }
+
+    return orders.map(order => {
+        if (order.status === 'CANCELLED') {
+            return order;
+        }
+
+        const linkedItems = itemsByOrderRef.get(order._id) || [];
+        if (linkedItems.length === 0) {
+            return order;
+        }
+
+        const derivedStatus = deriveOrderStatusFromItems(linkedItems);
+        if (!derivedStatus || derivedStatus === order.status) {
+            return order;
+        }
+
+        return {
+            ...order,
+            status: derivedStatus,
+        };
+    });
 }
 
 function buildFallbackActualDropPoint(deliveryOrder: DeliveryOrderResponseSource, totals: ActualCargoSummary) {
