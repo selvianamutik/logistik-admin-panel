@@ -44,6 +44,7 @@ export interface ActualCargoDraft {
 export interface ActualDropDraft {
     draftKey: string;
     stopType: 'DROP' | 'HOLD' | 'TRANSIT' | 'EXTRA_DROP' | 'RETURN';
+    deliveryOrderItemRef: string;
     shipperReferenceKey: string;
     shipperReferenceNumber: string;
     locationName: string;
@@ -244,11 +245,17 @@ export function summarizeActualCargoDrafts(items: ActualCargoDraft[]) {
 }
 
 type DropReferenceLike = {
+    deliveryOrderItemRef?: string;
     shipperReferenceKey?: string;
     shipperReferenceNumber?: string;
 };
 
 export function getActualCargoDraftsForDrop(drop: DropReferenceLike, cargoItems: ActualCargoDraft[]) {
+    const deliveryOrderItemRef = (drop.deliveryOrderItemRef || '').trim();
+    if (deliveryOrderItemRef) {
+        return cargoItems.filter(item => item.deliveryOrderItemRef === deliveryOrderItemRef);
+    }
+
     const shipperReferenceKey = (drop.shipperReferenceKey || '').trim();
     const shipperReferenceNumber = (drop.shipperReferenceNumber || '').trim().toUpperCase();
     if (!shipperReferenceKey && !shipperReferenceNumber) {
@@ -281,6 +288,11 @@ export function summarizeActualCargoDraftDescriptions(items: ActualCargoDraft[])
 }
 
 export function getDeliveryOrderItemsForDrop(drop: DropReferenceLike, items: DeliveryOrderItem[]) {
+    const deliveryOrderItemRef = (drop.deliveryOrderItemRef || '').trim();
+    if (deliveryOrderItemRef) {
+        return items.filter(item => item._id === deliveryOrderItemRef);
+    }
+
     const shipperReferenceKey = (drop.shipperReferenceKey || '').trim();
     const shipperReferenceNumber = (drop.shipperReferenceNumber || '').trim().toUpperCase();
     if (!shipperReferenceKey && !shipperReferenceNumber) {
@@ -405,6 +417,7 @@ export function buildDefaultActualDropDrafts(
         return sourceDropPoints.map((point, index) => ({
             draftKey: point._key || `${index + 1}`,
             stopType: point.stopType,
+            deliveryOrderItemRef: point.deliveryOrderItemRef || '',
             shipperReferenceKey: point.shipperReferenceKey || '',
             shipperReferenceNumber: point.shipperReferenceNumber || '',
             locationName: point.locationName || '',
@@ -439,6 +452,7 @@ export function buildDefaultActualDropDrafts(
             return {
                 draftKey: crypto.randomUUID(),
                 stopType: 'DROP',
+                deliveryOrderItemRef: '',
                 shipperReferenceKey: reference._key || '',
                 shipperReferenceNumber: reference.referenceNumber || '',
                 locationName:
@@ -461,6 +475,7 @@ export function buildDefaultActualDropDrafts(
         {
             draftKey: crypto.randomUUID(),
             stopType: 'DROP',
+            deliveryOrderItemRef: '',
             shipperReferenceKey: singleShipperReference?._key || '',
             shipperReferenceNumber: singleShipperReference?.referenceNumber || '',
             locationName: defaultTarget.locationName,
@@ -482,6 +497,7 @@ export function buildAutoActualDropDraft(doData: DeliveryOrder | null, cargoItem
     return {
         draftKey: 'auto-default-drop',
         stopType: 'DROP',
+        deliveryOrderItemRef: '',
         shipperReferenceKey: singleShipperReference?._key || '',
         shipperReferenceNumber: singleShipperReference?.referenceNumber || '',
         locationName: defaultTarget.locationName,
@@ -936,6 +952,7 @@ export function createEmptyActualDropDraft(): ActualDropDraft {
     return {
         draftKey: crypto.randomUUID(),
         stopType: 'DROP',
+        deliveryOrderItemRef: '',
         shipperReferenceKey: '',
         shipperReferenceNumber: '',
         locationName: '',
@@ -987,6 +1004,7 @@ export function buildDeliveryOrderStatusUpdateData(params: {
                 })),
                 actualDropPoints: params.effectiveActualDropPoints.map(item => ({
                     stopType: item.stopType,
+                    deliveryOrderItemRef: item.deliveryOrderItemRef,
                     shipperReferenceKey: item.shipperReferenceKey,
                     shipperReferenceNumber: item.shipperReferenceNumber,
                     locationName: item.locationName,

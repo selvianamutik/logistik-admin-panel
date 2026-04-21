@@ -318,6 +318,7 @@ export async function deriveDeliveryOrdersForResponse(deliveryOrders: DeliveryOr
 
         return {
             ...deliveryOrder,
+            taripBorongan: derivedOvertonage?.effectiveTripFee ?? deliveryOrder.taripBorongan,
             actualTotalWeightKg,
             actualDropPoints,
             cargoFinalizedAt: resolveDeliveredTimestamp(deliveryOrder, linkedTrackingLogs),
@@ -336,21 +337,15 @@ export async function deriveDeliveryOrdersForResponse(deliveryOrders: DeliveryOr
                     ? normalizeNumber(deliveryOrder.vehicleCapacityKg, { maxFractionDigits: 2 })
                     : derivedOvertonage?.vehicleCapacityKg,
             overtonaseWeightKg:
-                normalizeNumber(deliveryOrder.overtonaseWeightKg, { maxFractionDigits: 2 }) > 0
-                    ? normalizeNumber(deliveryOrder.overtonaseWeightKg, { maxFractionDigits: 2 })
-                    : derivedOvertonage?.overtonaseWeightKg,
+                derivedOvertonage?.overtonaseWeightKg,
             overtonaseDriverRatePerKg:
                 normalizeCurrencyNumber(deliveryOrder.overtonaseDriverRatePerKg ?? 0) > 0
                     ? normalizeCurrencyNumber(deliveryOrder.overtonaseDriverRatePerKg ?? 0)
                     : derivedOvertonage?.overtonaseDriverRatePerKg,
             overtonaseDriverAmount:
-                normalizeCurrencyNumber(deliveryOrder.overtonaseDriverAmount ?? 0) > 0
-                    ? normalizeCurrencyNumber(deliveryOrder.overtonaseDriverAmount ?? 0)
-                    : derivedOvertonage?.overtonaseDriverAmount,
+                derivedOvertonage?.overtonaseDriverAmount,
             vehicleCapacityExceededKg:
-                normalizeNumber(deliveryOrder.vehicleCapacityExceededKg, { maxFractionDigits: 2 }) > 0
-                    ? normalizeNumber(deliveryOrder.vehicleCapacityExceededKg, { maxFractionDigits: 2 })
-                    : derivedOvertonage?.vehicleCapacityExceededKg,
+                derivedOvertonage?.vehicleCapacityExceededKg,
         };
     });
 }

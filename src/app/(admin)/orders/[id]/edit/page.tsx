@@ -675,8 +675,8 @@ export default function OrderEditPage() {
                         <div className="card-body">
                             <div style={{ background: 'var(--color-gray-50)', borderRadius: '0.75rem', padding: '1rem 1.1rem', fontSize: '0.85rem', color: 'var(--color-gray-700)', border: '1px solid var(--color-gray-200)' }}>
                                 {headerFieldsLocked
-                                    ? 'Order ini memakai flow header booking dan sudah punya Surat Jalan. Barang tetap dicatat di Surat Jalan, sedangkan halaman ini hanya dipakai untuk melihat header order dan membetulkan catatan umum.'
-                                    : 'Order ini memakai flow header booking. Barang, tujuan/penerima, truck, driver, dan uang jalan awal dicatat saat Surat Jalan dibuat, jadi halaman edit order hanya dipakai untuk membenahi customer, pickup, layanan armada, dan catatan umum.'}
+                                    ? 'Order ini sudah punya Surat Jalan. Barang dan tujuan tetap mengikuti Surat Jalan, sedangkan halaman ini hanya dipakai untuk membetulkan catatan umum.'
+                                    : 'Order ini memakai flow header booking. Driver, truk, upah trip, dan uang jalan awal mengikuti rencana trip order; barang dan tujuan/penerima dicatat saat Surat Jalan dibuat.'}
                             </div>
                         </div>
                     </div>

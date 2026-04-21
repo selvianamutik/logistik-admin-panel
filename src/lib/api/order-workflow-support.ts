@@ -796,6 +796,7 @@ export function normalizeDeliveryActualDropPoints(
     const actualTotals = summarizeActualCargoInputs(actualCargoByDoItemId);
     const rawDropPoints = Array.isArray(data.actualDropPoints) ? data.actualDropPoints : [];
     const shipperReferences = Array.isArray(deliveryOrder.shipperReferences) ? deliveryOrder.shipperReferences : [];
+    const knownDeliveryOrderItemRefs = new Set(actualCargoByDoItemId.keys());
 
     if (rawDropPoints.length === 0) {
         return [buildDefaultActualDropPoint(deliveryOrder, actualTotals)];
@@ -810,6 +811,19 @@ export function normalizeDeliveryActualDropPoints(
         const locationName = normalizeOptionalText(rawPoint.locationName);
         const locationAddress = normalizeOptionalText(rawPoint.locationAddress);
         const note = normalizeOptionalText(rawPoint.note);
+        const deliveryOrderItemRef = normalizeOptionalText(rawPoint.deliveryOrderItemRef);
+        const deliveryOrderItemRefs = Array.isArray(rawPoint.deliveryOrderItemRefs)
+            ? [...new Set(
+                rawPoint.deliveryOrderItemRefs
+                    .map(value => normalizeOptionalText(value))
+                    .filter((value): value is string => Boolean(value))
+            )]
+            : [];
+        const normalizedDeliveryOrderItemRefs = deliveryOrderItemRefs.length > 0
+            ? deliveryOrderItemRefs
+            : deliveryOrderItemRef
+                ? [deliveryOrderItemRef]
+                : [];
         const requestedShipperReferenceNumber = normalizeOptionalText(rawPoint.shipperReferenceNumber);
         const requestedShipperReferenceKey = normalizeOptionalText(rawPoint.shipperReferenceKey);
         const matchedShipperReference =
@@ -866,11 +880,18 @@ export function normalizeDeliveryActualDropPoints(
         if (qtyKoli <= 0 && weightKg <= 0 && volumeM3 <= 0) {
             throw new Error(`Titik drop #${index + 1} wajib punya qty, berat, atau volume lebih dari 0`);
         }
+        for (const itemRef of normalizedDeliveryOrderItemRefs) {
+            if (!knownDeliveryOrderItemRefs.has(itemRef)) {
+                throw new Error(`Barang pada titik drop #${index + 1} bukan milik surat jalan ini`);
+            }
+        }
 
         normalized.push({
             _key: crypto.randomUUID(),
             sequence: index + 1,
             stopType: normalizeDeliveryDropType(rawPoint.stopType, `Tipe titik drop #${index + 1}`),
+            deliveryOrderItemRef: normalizedDeliveryOrderItemRefs[0],
+            deliveryOrderItemRefs: normalizedDeliveryOrderItemRefs.length > 1 ? normalizedDeliveryOrderItemRefs : undefined,
             shipperReferenceKey: normalizeOptionalText(matchedShipperReference?._key) || requestedShipperReferenceKey,
             shipperReferenceNumber: normalizeOptionalText(matchedShipperReference?.referenceNumber) || requestedShipperReferenceNumber,
             locationName: locationName || locationAddress || `Titik drop ${index + 1}`,

@@ -156,6 +156,7 @@ function splitActualCargoForOrderProgress(params: {
     actualQtyKoli: number;
     actualWeight: number;
     actualVolume: number;
+    deliveryOrderItemRef?: string;
     shipperReferenceNumber?: string;
     actualDropPoints?: ReturnType<typeof normalizeDeliveryActualDropPoints>;
 }) {
@@ -167,8 +168,9 @@ function splitActualCargoForOrderProgress(params: {
     const empty = { qtyKoli: 0, weight: 0, volume: 0 };
     const deliveryOrderSnapshot = { actualDropPoints: params.actualDropPoints || [] };
     const referenceNumber = normalizeOptionalText(params.shipperReferenceNumber);
-    const billable = getDeliveryOrderBillableCargoSummary(deliveryOrderSnapshot, referenceNumber);
-    const nonBillable = getDeliveryOrderNonBillableCargoSummary(deliveryOrderSnapshot, referenceNumber);
+    const deliveryOrderItemRef = normalizeOptionalText(params.deliveryOrderItemRef);
+    const billable = getDeliveryOrderBillableCargoSummary(deliveryOrderSnapshot, referenceNumber, deliveryOrderItemRef);
+    const nonBillable = getDeliveryOrderNonBillableCargoSummary(deliveryOrderSnapshot, referenceNumber, deliveryOrderItemRef);
     const billablePart = {
         qtyKoli: billable.qtyKoli,
         weight: billable.weightKg,
@@ -892,6 +894,9 @@ export async function handleOrderUpdateWithItems(
         _rev?: string;
         masterResi?: string;
         cargoEntryMode?: 'ORDER' | 'DELIVERY_ORDER';
+        receiverName?: string;
+        receiverAddress?: string;
+        pickupAddress?: string;
     }>(id);
     if (!order) {
         return NextResponse.json({ error: 'Order tidak ditemukan' }, { status: 404 });
@@ -972,10 +977,22 @@ export async function handleOrderUpdateWithItems(
         );
     }
 
-    const receiverName = normalizeText(data.receiverName) || normalizeOptionalText(customerRecipient?.receiverName) || '';
-    const receiverAddress = normalizeText(data.receiverAddress) || normalizeOptionalText(customerRecipient?.receiverAddress) || '';
+    const receiverName =
+        normalizeText(data.receiverName) ||
+        normalizeText(order.receiverName) ||
+        normalizeOptionalText(customerRecipient?.receiverName) ||
+        customer.name ||
+        '';
+    const receiverAddress =
+        normalizeText(data.receiverAddress) ||
+        normalizeText(order.receiverAddress) ||
+        normalizeOptionalText(customerRecipient?.receiverAddress) ||
+        normalizeOptionalText(data.pickupAddress) ||
+        normalizeOptionalText(order.pickupAddress) ||
+        customer.address ||
+        '';
     if (!receiverName || !receiverAddress) {
-        return NextResponse.json({ error: 'Order, customer, penerima, dan alamat tujuan wajib diisi' }, { status: 400 });
+        return NextResponse.json({ error: 'Order, customer, dan pickup wajib diisi' }, { status: 400 });
     }
     if (!isSupabaseBackendEnabled() && existingItems.some(item => !item._rev)) {
         return NextResponse.json({ error: 'Revisi item order tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
@@ -1086,6 +1103,8 @@ export async function handleOrderHeaderBookingUpdate(
         receiverAddress?: string;
         receiverCompany?: string;
         pickupAddress?: string;
+        pickupStops?: OrderPickupStop[];
+        tripPlans?: OrderTripPlan[];
         serviceRef?: string;
         notes?: string;
     }>(id);
@@ -1102,16 +1121,20 @@ export async function handleOrderHeaderBookingUpdate(
     const relatedDeliveryOrder = (await listDocumentsByFilter<{ _id: string }>('deliveryOrder', { orderRef: id }))[0] || null;
 
     if (relatedDeliveryOrder) {
+        const hasChanged = (field: string, currentValue: unknown, normalizer: (value: unknown) => string | undefined = normalizeOptionalText) => (
+            Object.prototype.hasOwnProperty.call(data, field) && (normalizer(currentValue) || '') !== (normalizer(data[field]) || '')
+        );
         const attemptedHeaderChanges =
-            normalizeText(order.customerRef) !== customerRef ||
-            normalizeOptionalText(order.serviceRef) !== serviceRef ||
-            normalizeOptionalText(order.customerRecipientRef) !== customerRecipientRef ||
-            normalizeOptionalText(order.customerPickupRef) !== customerPickupRef ||
-            normalizeText(order.receiverName) !== normalizeText(data.receiverName) ||
-            normalizeOptionalText(order.receiverPhone) !== normalizeOptionalText(data.receiverPhone) ||
-            normalizeText(order.receiverAddress) !== normalizeText(data.receiverAddress) ||
-            normalizeOptionalText(order.receiverCompany) !== normalizeOptionalText(data.receiverCompany) ||
-            normalizeOptionalText(order.pickupAddress) !== normalizeOptionalText(data.pickupAddress);
+            hasChanged('customerRef', order.customerRef, normalizeText) ||
+            hasChanged('serviceRef', order.serviceRef) ||
+            hasChanged('customerRecipientRef', order.customerRecipientRef) ||
+            hasChanged('customerPickupRef', order.customerPickupRef) ||
+            hasChanged('receiverName', order.receiverName, normalizeText) ||
+            hasChanged('receiverPhone', order.receiverPhone) ||
+            hasChanged('receiverAddress', order.receiverAddress, normalizeText) ||
+            hasChanged('receiverCompany', order.receiverCompany) ||
+            hasChanged('pickupAddress', order.pickupAddress) ||
+            Object.prototype.hasOwnProperty.call(data, 'pickupStops');
 
         if (attemptedHeaderChanges) {
             return NextResponse.json(
@@ -1164,10 +1187,22 @@ export async function handleOrderHeaderBookingUpdate(
         return NextResponse.json({ error: message }, { status });
     }
 
-    const receiverName = normalizeText(data.receiverName) || normalizeOptionalText(customerRecipient?.receiverName) || '';
-    const receiverAddress = normalizeText(data.receiverAddress) || normalizeOptionalText(customerRecipient?.receiverAddress) || '';
+    const receiverName =
+        normalizeText(data.receiverName) ||
+        normalizeText(order.receiverName) ||
+        normalizeOptionalText(customerRecipient?.receiverName) ||
+        customer.name ||
+        '';
+    const receiverAddress =
+        normalizeText(data.receiverAddress) ||
+        normalizeText(order.receiverAddress) ||
+        normalizeOptionalText(customerRecipient?.receiverAddress) ||
+        normalizeOptionalText(data.pickupAddress) ||
+        normalizeOptionalText(order.pickupAddress) ||
+        customer.address ||
+        '';
     if (!receiverName || !receiverAddress) {
-        return NextResponse.json({ error: 'Order, customer, penerima, dan alamat tujuan wajib diisi' }, { status: 400 });
+        return NextResponse.json({ error: 'Order, customer, dan pickup wajib diisi' }, { status: 400 });
     }
 
     if (!order._rev && !isSupabaseBackendEnabled()) {
@@ -1185,6 +1220,26 @@ export async function handleOrderHeaderBookingUpdate(
     if (customerPickupRef && !customerPickup?._rev && !isSupabaseBackendEnabled()) {
         return NextResponse.json({ error: 'Revisi master pickup tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
+
+    const pickupStops = normalizeOrderPickupStopsInput(
+        Array.isArray(data.pickupStops) ? data.pickupStops : [],
+        normalizeOptionalText(data.pickupAddress) || normalizeOptionalText(order.pickupAddress) || normalizeOptionalText(customerPickup?.pickupAddress) || customer.address
+    );
+    if (pickupStops.length === 0) {
+        return NextResponse.json({ error: 'Minimal 1 titik pickup wajib diisi' }, { status: 400 });
+    }
+    const pickupStopKeys = pickupStops.map(stop => stop._key).filter((key): key is string => Boolean(key));
+    const currentTripPlans = Array.isArray(order.tripPlans) ? order.tripPlans : [];
+    const nextTripPlans = currentTripPlans.map(plan => {
+        const existingKeys = Array.isArray(plan.pickupStopKeys) ? plan.pickupStopKeys : [];
+        const validKeys = existingKeys.filter(key => pickupStopKeys.includes(key));
+        const nextKeys = currentTripPlans.length === 1
+            ? pickupStopKeys
+            : validKeys.length > 0
+                ? validKeys
+                : pickupStopKeys.slice(0, 1);
+        return { ...plan, pickupStopKeys: nextKeys };
+    });
 
     let updatedOrder: unknown;
     try {
@@ -1204,12 +1259,14 @@ export async function handleOrderHeaderBookingUpdate(
             customerRef,
             customerName: customer.name,
             customerRecipientRef: customerRecipientRef || undefined,
-            customerPickupRef: customerPickupRef || undefined,
-            receiverName,
-            receiverPhone: normalizeOptionalText(data.receiverPhone) || normalizeOptionalText(customerRecipient?.receiverPhone) || '',
-            receiverAddress,
-            receiverCompany: normalizeOptionalText(data.receiverCompany) || normalizeOptionalText(customerRecipient?.receiverCompany),
-            pickupAddress: normalizeOptionalText(data.pickupAddress) || normalizeOptionalText(customerPickup?.pickupAddress) || customer.address || undefined,
+            customerPickupRef: pickupStops[0]?.customerPickupRef || customerPickupRef || undefined,
+            receiverName: receiverName || normalizeText(order.receiverName) || customer.name,
+            receiverPhone: normalizeOptionalText(data.receiverPhone) || normalizeOptionalText(order.receiverPhone) || normalizeOptionalText(customerRecipient?.receiverPhone) || '',
+            receiverAddress: receiverAddress || normalizeText(order.receiverAddress) || normalizeOptionalText(customer.address),
+            receiverCompany: normalizeOptionalText(data.receiverCompany) || normalizeOptionalText(order.receiverCompany) || normalizeOptionalText(customerRecipient?.receiverCompany),
+            pickupAddress: pickupStops[0]?.pickupAddress || normalizeOptionalText(data.pickupAddress) || normalizeOptionalText(customerPickup?.pickupAddress) || customer.address || undefined,
+            pickupStops,
+            tripPlans: nextTripPlans.length > 0 ? nextTripPlans : undefined,
             serviceRef: serviceRef || '',
             serviceName,
             notes,
@@ -1801,6 +1858,7 @@ export async function handleDeliveryOrderStatusUpdate(
                     actualQtyKoli,
                     actualWeight,
                     actualVolume,
+                    deliveryOrderItemRef: item._id,
                     shipperReferenceNumber: item.shipperReferenceNumber,
                     actualDropPoints,
                 });

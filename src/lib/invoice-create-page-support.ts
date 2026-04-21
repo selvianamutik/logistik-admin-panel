@@ -187,8 +187,18 @@ export function buildNotaRowsFromDeliveryOrder(params: {
         items: DeliveryOrderItem[] = []
     ): NotaItemRow => {
         const matchedReference = shipperReferenceMap.get(shipperReferenceNumber.trim());
-        const itemDescriptions = items.length > 0
-            ? [...new Set(items.map(item => item.orderItemDescription?.trim()).filter((value): value is string => Boolean(value)))].join(', ')
+        const billableItems = hasActualDropPoints
+            ? items.filter(item => {
+                const itemBillableCargo = getDeliveryOrderBillableCargoSummary(
+                    deliveryOrder,
+                    shipperReferenceNumber,
+                    item._id
+                );
+                return itemBillableCargo.qtyKoli > 0 || itemBillableCargo.weightKg > 0 || itemBillableCargo.volumeM3 > 0;
+            })
+            : items;
+        const itemDescriptions = billableItems.length > 0
+            ? [...new Set(billableItems.map(item => item.orderItemDescription?.trim()).filter((value): value is string => Boolean(value)))].join(', ')
             : '';
         const billableCargo = getDeliveryOrderBillableCargoSummary(deliveryOrder, shipperReferenceNumber);
         const destinationSummary = getDeliveryOrderActualDropDestinations(deliveryOrder, {
@@ -199,8 +209,8 @@ export function buildNotaRowsFromDeliveryOrder(params: {
         return {
             id: Math.random().toString(36).slice(2),
             ...baseRow,
-            deliveryOrderItemRef: items[0]?._id,
-            deliveryOrderItemRefs: items.map(item => item._id).filter(Boolean),
+            deliveryOrderItemRef: billableItems[0]?._id,
+            deliveryOrderItemRefs: billableItems.map(item => item._id).filter(Boolean),
             customerRef: matchedReference?.billingCustomerRef || baseRow.customerRef,
             customerName: matchedReference?.billingCustomerName || baseRow.customerName,
             noSJ: shipperReferenceNumber,

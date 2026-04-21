@@ -34,10 +34,11 @@ export function computeDeliveryOrderOvertonage(params: {
     const vehicleCapacityKg = roundQuantity(normalizeNonNegative(params.vehicleCapacityKg));
     const baseTripFee = Math.round(normalizeNonNegative(params.baseTripFee));
     const overtonaseDriverRatePerKg = Math.round(normalizeNonNegative(params.overtonaseDriverRatePerKg));
+    const effectivePayloadLimitKg = vehicleCapacityKg > 0 ? vehicleCapacityKg : serviceMaxPayloadKg;
 
     const overtonaseWeightKg =
-        actualTotalWeightKg > 0 && serviceMaxPayloadKg > 0
-            ? roundQuantity(Math.max(actualTotalWeightKg - serviceMaxPayloadKg, 0))
+        actualTotalWeightKg > 0 && effectivePayloadLimitKg > 0
+            ? roundQuantity(Math.max(actualTotalWeightKg - effectivePayloadLimitKg, 0))
             : 0;
     const vehicleCapacityExceededKg =
         actualTotalWeightKg > 0 && vehicleCapacityKg > 0

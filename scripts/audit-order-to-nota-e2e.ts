@@ -2,6 +2,7 @@ import { loadScriptEnv } from './_env';
 
 loadScriptEnv();
 
+import { buildNotaRowsFromDeliveryOrder } from '../src/lib/invoice-create-page-support';
 import type { DeliveryOrder, DeliveryOrderItem, Driver, FreightNota, FreightNotaItem, Order, Vehicle } from '../src/lib/types';
 
 type ApiResponse<T> = {
@@ -656,6 +657,26 @@ async function main() {
         assert(deliveredOrder.data.status === 'PARTIAL', `Order harus PARTIAL setelah campuran drop/hold dan 1 trip hold-only, sekarang ${deliveredOrder.data.status}.`);
 
         auditStep('create nota dari SJ billable pada DO campuran dan verifikasi row per SJ');
+        const doOneState = await requestJson<{ data: DeliveryOrder }>(
+            `/api/data?entity=delivery-orders&id=${encodeURIComponent(doOneId)}`,
+            cookieHeader
+        );
+        const suggestedNotaRows = buildNotaRowsFromDeliveryOrder({
+            deliveryOrder: doOneState.data,
+            orders: [deliveredOrder.data],
+            deliveryOrderItems: doOneItems,
+        });
+        const suggestedBillableRow = suggestedNotaRows.find(row => row.noSJ === sjA);
+        assert(suggestedBillableRow, 'Builder nota harus menghasilkan row untuk SJ billable.');
+        assert(
+            normalizeText(suggestedBillableRow.barang).includes('Audit barang A') &&
+            !normalizeText(suggestedBillableRow.barang).includes('Audit barang B'),
+            'Builder nota tidak boleh mencampur nama barang hold ke row SJ billable.'
+        );
+        assert(
+            suggestedNotaRows.every(row => row.noSJ !== sjB),
+            'Builder nota tidak boleh menghasilkan row untuk SJ yang hanya hold.'
+        );
         const notaRows = doOneItems
             .sort((left, right) => String(left.shipperReferenceNumber || '').localeCompare(String(right.shipperReferenceNumber || '')))
             .filter(item => item.shipperReferenceNumber === sjA)

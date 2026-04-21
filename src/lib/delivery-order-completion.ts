@@ -8,6 +8,8 @@ export type DeliveryCargoSummary = {
 
 type DeliveryActualDropPointLike = {
     stopType?: string | null;
+    deliveryOrderItemRef?: string | null;
+    deliveryOrderItemRefs?: string[] | null;
     shipperReferenceNumber?: string | null;
     locationName?: string | null;
     locationAddress?: string | null;
@@ -63,6 +65,22 @@ function normalizeText(value: unknown) {
     return typeof value === 'string' ? value.trim() : '';
 }
 
+function hasDeliveryOrderItemRef(point: DeliveryActualDropPointLike, deliveryOrderItemRef?: string) {
+    const normalizedRef = normalizeText(deliveryOrderItemRef);
+    if (!normalizedRef) {
+        return true;
+    }
+
+    const refs = [
+        normalizeText(point.deliveryOrderItemRef),
+        ...(Array.isArray(point.deliveryOrderItemRefs)
+            ? point.deliveryOrderItemRefs.map(item => normalizeText(item))
+            : []),
+    ].filter(Boolean);
+
+    return refs.length === 0 || refs.includes(normalizedRef);
+}
+
 function hasCargo(summary: DeliveryCargoSummary) {
     return summary.qtyKoli > 0 || summary.weightKg > 0 || summary.volumeM3 > 0;
 }
@@ -70,31 +88,59 @@ function hasCargo(summary: DeliveryCargoSummary) {
 function summarizeByTypes(
     points: DeliveryActualDropPointLike[] | null | undefined,
     allowedTypes: Set<string>,
-    shipperReferenceNumber?: string
+    options?: {
+        shipperReferenceNumber?: string;
+        deliveryOrderItemRef?: string;
+        itemSpecificOnly?: boolean;
+    }
 ) {
-    const normalizedReference = normalizeText(shipperReferenceNumber);
+    const normalizedReference = normalizeText(options?.shipperReferenceNumber);
+    const normalizedItemRef = normalizeText(options?.deliveryOrderItemRef);
     return (Array.isArray(points) ? points : [])
         .filter(point => allowedTypes.has(normalizeStopType(point.stopType)))
         .filter(point =>
             !normalizedReference ||
             normalizeText(point.shipperReferenceNumber) === normalizedReference
         )
+        .filter(point => {
+            if (!normalizedItemRef) {
+                return true;
+            }
+            const pointHasItemRef =
+                normalizeText(point.deliveryOrderItemRef) ||
+                (Array.isArray(point.deliveryOrderItemRefs) && point.deliveryOrderItemRefs.some(value => normalizeText(value)));
+            if (options?.itemSpecificOnly) {
+                return Boolean(pointHasItemRef && hasDeliveryOrderItemRef(point, normalizedItemRef));
+            }
+            return hasDeliveryOrderItemRef(point, normalizedItemRef);
+        })
         .reduce<DeliveryCargoSummary>((sum, point) => addSummary(sum, point), createSummary());
 }
 
 export function getDeliveryOrderBillableCargoSummary(
     deliveryOrder: DeliveryOrderCompletionLike | null | undefined,
-    shipperReferenceNumber?: string
+    shipperReferenceNumber?: string,
+    deliveryOrderItemRef?: string
 ) {
-    return summarizeByTypes(deliveryOrder?.actualDropPoints, BILLABLE_ACTUAL_DROP_TYPES, shipperReferenceNumber);
+    return summarizeByTypes(deliveryOrder?.actualDropPoints, BILLABLE_ACTUAL_DROP_TYPES, {
+        shipperReferenceNumber,
+        deliveryOrderItemRef,
+    });
 }
 
 export function getDeliveryOrderNonBillableCargoSummary(
     deliveryOrder: DeliveryOrderCompletionLike | null | undefined,
-    shipperReferenceNumber?: string
+    shipperReferenceNumber?: string,
+    deliveryOrderItemRef?: string
 ) {
-    const holdSummary = summarizeByTypes(deliveryOrder?.actualDropPoints, HOLD_ACTUAL_DROP_TYPES, shipperReferenceNumber);
-    const returnSummary = summarizeByTypes(deliveryOrder?.actualDropPoints, RETURN_ACTUAL_DROP_TYPES, shipperReferenceNumber);
+    const holdSummary = summarizeByTypes(deliveryOrder?.actualDropPoints, HOLD_ACTUAL_DROP_TYPES, {
+        shipperReferenceNumber,
+        deliveryOrderItemRef,
+    });
+    const returnSummary = summarizeByTypes(deliveryOrder?.actualDropPoints, RETURN_ACTUAL_DROP_TYPES, {
+        shipperReferenceNumber,
+        deliveryOrderItemRef,
+    });
 
     return {
         qtyKoli: roundQuantity(holdSummary.qtyKoli + returnSummary.qtyKoli, 2),
