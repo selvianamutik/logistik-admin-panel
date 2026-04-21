@@ -68,6 +68,61 @@ function normalizeNumber(value: unknown) {
     return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
+function normalizeIdArray(values: unknown) {
+    return Array.isArray(values)
+        ? [...new Set(values.map(value => normalizeText(value)).filter(Boolean))]
+        : [];
+}
+
+function getRowDeliveryOrderItemRefs(row: {
+    deliveryOrderItemRef?: string;
+    deliveryOrderItemRefs?: string[];
+}) {
+    const normalizedRefs = normalizeIdArray(row.deliveryOrderItemRefs);
+    if (normalizedRefs.length > 0) {
+        return normalizedRefs;
+    }
+    const singleRef = normalizeText(row.deliveryOrderItemRef);
+    return singleRef ? [singleRef] : [];
+}
+
+function hasMultiItemShipperRow(rows: Array<{
+    deliveryOrderItemRef?: string;
+    deliveryOrderItemRefs?: string[];
+}>) {
+    return rows.some(row => getRowDeliveryOrderItemRefs(row).length > 1);
+}
+
+function assertFreightNotaRowsKeepItemRefs(params: {
+    label: string;
+    expectedRows: NotaItemRow[];
+    actualRows: FreightNotaItem[];
+}) {
+    for (const expectedRow of params.expectedRows) {
+        const expectedItemRefs = getRowDeliveryOrderItemRefs(expectedRow);
+        if (expectedItemRefs.length === 0) {
+            continue;
+        }
+        const matchedRow = params.actualRows.find(row =>
+            normalizeText(row.doRef) === normalizeText(expectedRow.doRef) &&
+            normalizeText(row.noSJ) === normalizeText(expectedRow.noSJ)
+        );
+        assert(
+            matchedRow,
+            `${params.label}: row ${expectedRow.noSJ || expectedRow.doRef || '-'} tidak ditemukan`
+        );
+        const actualItemRefs = getRowDeliveryOrderItemRefs(matchedRow);
+        assert(
+            actualItemRefs.length === expectedItemRefs.length,
+            `${params.label}: row ${expectedRow.noSJ || expectedRow.doRef || '-'} harus menyimpan ${expectedItemRefs.length} item ref, sekarang ${actualItemRefs.length}`
+        );
+        assert(
+            expectedItemRefs.every(itemRef => actualItemRefs.includes(itemRef)),
+            `${params.label}: row ${expectedRow.noSJ || expectedRow.doRef || '-'} kehilangan item ref saat disimpan`
+        );
+    }
+}
+
 function assert(condition: unknown, message: string): asserts condition {
     if (!condition) {
         throw new Error(message);
@@ -463,11 +518,21 @@ async function createFixtureIfNeeded(cookieHeader: string, createdState: Created
             ],
             cargoItems: [
                 {
-                    description: 'Barang Audit Revision',
+                    description: 'Barang Audit Revision A',
                     qtyKoli: 2,
                     weightInputValue: 200,
                     weightInputUnit: 'KG',
                     volumeInputValue: 1,
+                    volumeInputUnit: 'M3',
+                    pickupStopKey: pickupKey,
+                    shipperReferenceNumber: sjNumber,
+                },
+                {
+                    description: 'Barang Audit Revision B',
+                    qtyKoli: 1,
+                    weightInputValue: 150,
+                    weightInputUnit: 'KG',
+                    volumeInputValue: 0.75,
                     volumeInputUnit: 'M3',
                     pickupStopKey: pickupKey,
                     shipperReferenceNumber: sjNumber,
@@ -480,7 +545,7 @@ async function createFixtureIfNeeded(cookieHeader: string, createdState: Created
     createdState.deliveryOrderIds.push(deliveryOrderId);
 
     const doItems = await getDeliveryOrderItems(cookieHeader, deliveryOrderId);
-    assert(doItems.length === 1, 'Fixture DO harus punya 1 barang.');
+    assert(doItems.length === 2, 'Fixture DO harus punya 2 barang dalam 1 SJ.');
 
     await advanceDeliveryOrderToDelivered({
         cookieHeader,
@@ -499,10 +564,10 @@ async function createFixtureIfNeeded(cookieHeader: string, createdState: Created
                 shipperReferenceNumber: sjNumber,
                 locationName: 'Audit Revision Drop',
                 locationAddress: 'Audit Revision Drop Address',
-                qtyKoli: 2,
-                weightInputValue: 200,
+                qtyKoli: 3,
+                weightInputValue: 350,
                 weightInputUnit: 'KG',
-                volumeInputValue: 1,
+                volumeInputValue: 1.75,
                 volumeInputUnit: 'M3',
             },
         ],
@@ -563,7 +628,8 @@ async function main() {
             }))
             .filter(candidate => candidate.valid && candidate.customerRef && candidate.customerName);
 
-        if (prepared.length === 0) {
+        let firstCandidate = prepared.find(candidate => hasMultiItemShipperRow(candidate.rows));
+        if (!firstCandidate) {
             const fixtureData = await createFixtureIfNeeded(cookieHeader, createdState);
             deliveryOrders = [fixtureData.deliveryOrder];
             orders = fixtureData.orders;
@@ -574,10 +640,14 @@ async function main() {
                     ...buildCandidateRows({ deliveryOrder, orders, deliveryOrderItems }),
                 }))
                 .filter(candidate => candidate.valid && candidate.customerRef && candidate.customerName);
+            firstCandidate = prepared.find(candidate => hasMultiItemShipperRow(candidate.rows));
         }
 
-        const firstCandidate = prepared[0];
         assert(firstCandidate, 'Audit revision tidak berhasil menyiapkan kandidat DO billable.');
+        assert(
+            hasMultiItemShipperRow(firstCandidate.rows),
+            'Audit revision harus memakai minimal 1 row SJ dengan banyak item.'
+        );
 
         const manualAuditRows: NotaItemRow[] = [{
             id: `manual-audit-${Date.now().toString(36)}`,
@@ -633,6 +703,11 @@ async function main() {
             createdRows.length === firstCandidate.rows.length,
             `Jumlah row nota awal harus ${firstCandidate.rows.length}, sekarang ${createdRows.length}`
         );
+        assertFreightNotaRowsKeepItemRefs({
+            label: 'create nota awal',
+            expectedRows: firstCandidate.rows,
+            actualRows: createdRows,
+        });
 
         auditStep('revisi nota ke row manual dan pastikan DO ter-unlink');
         await postData<FreightNotaMutationResponse>(cookieHeader, {
@@ -712,6 +787,11 @@ async function main() {
             relinkedRows.every(row => normalizeText(row.doRef) === normalizeText(firstCandidate.deliveryOrder._id)),
             'Masih ada row manual tertinggal setelah nota direvisi kembali ke DO.'
         );
+        assertFreightNotaRowsKeepItemRefs({
+            label: 'relink nota ke DO',
+            expectedRows: firstCandidate.rows,
+            actualRows: relinkedRows,
+        });
 
         auditStep('hapus nota temporary dan pastikan DO terlepas lagi');
         await postData<FreightNotaMutationResponse>(cookieHeader, {
