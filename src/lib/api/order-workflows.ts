@@ -289,13 +289,27 @@ function normalizeDeliveryOrderShipperReferencesForUpdate(
                 pickupAddress:
                     normalizeOptionalText(pickupStop?.pickupAddress)
                     || normalizeOptionalText(existingReference?.pickupAddress),
-                billingCustomerRef: existingReference?.billingCustomerRef,
-                billingCustomerName: existingReference?.billingCustomerName,
-                receiverName: existingReference?.receiverName,
-                receiverPhone: existingReference?.receiverPhone,
-                receiverAddress: existingReference?.receiverAddress,
-                receiverCompany: existingReference?.receiverCompany,
-                notes: existingReference?.notes,
+                billingCustomerRef:
+                    normalizeOptionalText(reference.billingCustomerRef)
+                    || normalizeOptionalText(existingReference?.billingCustomerRef),
+                billingCustomerName:
+                    normalizeOptionalText(reference.billingCustomerName)
+                    || normalizeOptionalText(existingReference?.billingCustomerName),
+                receiverName:
+                    normalizeOptionalText(reference.receiverName)
+                    || normalizeOptionalText(existingReference?.receiverName),
+                receiverPhone:
+                    normalizeOptionalText(reference.receiverPhone)
+                    || normalizeOptionalText(existingReference?.receiverPhone),
+                receiverAddress:
+                    normalizeOptionalText(reference.receiverAddress)
+                    || normalizeOptionalText(existingReference?.receiverAddress),
+                receiverCompany:
+                    normalizeOptionalText(reference.receiverCompany)
+                    || normalizeOptionalText(existingReference?.receiverCompany),
+                notes:
+                    normalizeOptionalText(reference.notes)
+                    || normalizeOptionalText(existingReference?.notes),
             };
         });
 
@@ -306,10 +320,24 @@ function areDeliveryOrderShipperReferencesEquivalent(
     left: Array<{
         referenceNumber?: string;
         pickupStopKey?: string;
+        billingCustomerRef?: string;
+        billingCustomerName?: string;
+        receiverName?: string;
+        receiverPhone?: string;
+        receiverAddress?: string;
+        receiverCompany?: string;
+        notes?: string;
     }> | undefined,
     right: Array<{
         referenceNumber?: string;
         pickupStopKey?: string;
+        billingCustomerRef?: string;
+        billingCustomerName?: string;
+        receiverName?: string;
+        receiverPhone?: string;
+        receiverAddress?: string;
+        receiverCompany?: string;
+        notes?: string;
     }> | undefined,
 ) {
     const normalizeReferences = (value: typeof left) =>
@@ -318,6 +346,13 @@ function areDeliveryOrderShipperReferencesEquivalent(
                 sequence: index + 1,
                 referenceNumber: normalizeOptionalText(reference.referenceNumber)?.toUpperCase() || '',
                 pickupStopKey: normalizeOptionalText(reference.pickupStopKey) || '',
+                billingCustomerRef: normalizeOptionalText(reference.billingCustomerRef) || '',
+                billingCustomerName: normalizeOptionalText(reference.billingCustomerName) || '',
+                receiverName: normalizeOptionalText(reference.receiverName) || '',
+                receiverPhone: normalizeOptionalText(reference.receiverPhone) || '',
+                receiverAddress: normalizeOptionalText(reference.receiverAddress) || '',
+                receiverCompany: normalizeOptionalText(reference.receiverCompany) || '',
+                notes: normalizeOptionalText(reference.notes) || '',
             }))
             .filter(reference => reference.referenceNumber.length > 0);
 
@@ -2326,6 +2361,13 @@ export async function handleDeliveryOrderCreate(
                 referenceNumber,
                 pickupStopKey: pickupStop?._key || pickupStopKey,
                 pickupAddress: pickupStop?.pickupAddress,
+                billingCustomerRef: normalizeOptionalText(reference.billingCustomerRef),
+                billingCustomerName: normalizeOptionalText(reference.billingCustomerName),
+                receiverName: normalizeOptionalText(reference.receiverName),
+                receiverPhone: normalizeOptionalText(reference.receiverPhone),
+                receiverAddress: normalizeOptionalText(reference.receiverAddress),
+                receiverCompany: normalizeOptionalText(reference.receiverCompany),
+                notes: normalizeOptionalText(reference.notes),
             };
         })
         .filter((reference): reference is NonNullable<typeof reference> => Boolean(reference));

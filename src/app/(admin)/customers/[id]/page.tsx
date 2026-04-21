@@ -6,13 +6,14 @@ import Link from 'next/link';
 import { useApp, useToast } from '../../layout';
 import { Edit, Package, DollarSign, Plus, Save, Trash2, X } from 'lucide-react';
 import CollapsibleCard from '@/components/CollapsibleCard';
+import CurrencyInput from '@/components/CurrencyInput';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { FREIGHT_NOTA_BILLING_MODE_OPTIONS, getFreightNotaBillingModeLabel } from '@/lib/freight-nota-billing';
 import { buildPph23Label, DEFAULT_PPH23_RATE_PERCENT, PPH23_BASE_MODE_OPTIONS } from '@/lib/pph23';
 import { formatDate, formatCurrency, getReceivableNetAmount } from '@/lib/utils';
 import { formatCargoSummary, VOLUME_INPUT_UNIT_OPTIONS, WEIGHT_INPUT_UNIT_OPTIONS, type VolumeInputUnit, type WeightInputUnit } from '@/lib/measurement';
-import type { Customer, CustomerPickupLocation, CustomerProduct, CustomerRecipient, Order, FreightNota } from '@/lib/types';
+import type { Customer, CustomerBillingRate, CustomerBillingRateBasis, CustomerPickupLocation, CustomerProduct, CustomerRecipient, Order, FreightNota, Service } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
 
@@ -48,6 +49,16 @@ type CustomerPickupForm = {
     isDefault: boolean;
 };
 
+type CustomerBillingRateForm = {
+    serviceRef: string;
+    basis: CustomerBillingRateBasis;
+    rate: number;
+    routeFrom: string;
+    routeTo: string;
+    notes: string;
+    active: boolean;
+};
+
 const DEFAULT_PRODUCT_FORM: CustomerProductForm = {
     code: '',
     name: '',
@@ -80,6 +91,16 @@ const DEFAULT_PICKUP_FORM: CustomerPickupForm = {
     isDefault: false,
 };
 
+const DEFAULT_BILLING_RATE_FORM: CustomerBillingRateForm = {
+    serviceRef: '',
+    basis: 'PER_KG',
+    rate: 0,
+    routeFrom: '',
+    routeTo: '',
+    notes: '',
+    active: true,
+};
+
 export default function CustomerDetailPage() {
     const params = useParams();
     const { user } = useApp();
@@ -87,17 +108,23 @@ export default function CustomerDetailPage() {
     const customerId = params.id as string;
     const [customer, setCustomer] = useState<Customer | null>(null);
     const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
+    const [customerBillingRates, setCustomerBillingRates] = useState<CustomerBillingRate[]>([]);
     const [customerRecipients, setCustomerRecipients] = useState<CustomerRecipient[]>([]);
     const [customerPickups, setCustomerPickups] = useState<CustomerPickupLocation[]>([]);
+    const [services, setServices] = useState<Service[]>([]);
     const [orders, setOrders] = useState<Order[]>([]);
     const [notas, setNotas] = useState<FreightNota[]>([]);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(false);
     const [saving, setSaving] = useState(false);
     const [showProductModal, setShowProductModal] = useState(false);
+    const [showBillingRateModal, setShowBillingRateModal] = useState(false);
     const [savingProduct, setSavingProduct] = useState(false);
+    const [savingBillingRate, setSavingBillingRate] = useState(false);
     const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
+    const [deletingBillingRateId, setDeletingBillingRateId] = useState<string | null>(null);
     const [editProduct, setEditProduct] = useState<CustomerProduct | null>(null);
+    const [editBillingRate, setEditBillingRate] = useState<CustomerBillingRate | null>(null);
     const [showRecipientModal, setShowRecipientModal] = useState(false);
     const [savingRecipient, setSavingRecipient] = useState(false);
     const [deletingRecipientId, setDeletingRecipientId] = useState<string | null>(null);
@@ -114,12 +141,13 @@ export default function CustomerDetailPage() {
         email: '',
         npwp: '',
         deliveryOrderPrefix: 'SJ',
-        defaultFreightNotaBillingMode: 'PER_KG' as 'PER_KG' | 'PER_TON',
+        defaultFreightNotaBillingMode: 'PER_KG' as CustomerBillingRateBasis,
         defaultPph23Enabled: false,
         defaultPph23RatePercent: DEFAULT_PPH23_RATE_PERCENT,
         defaultPph23BaseMode: 'BEFORE_CLAIM' as 'BEFORE_CLAIM' | 'AFTER_CLAIM',
     });
     const [productForm, setProductForm] = useState<CustomerProductForm>(DEFAULT_PRODUCT_FORM);
+    const [billingRateForm, setBillingRateForm] = useState<CustomerBillingRateForm>(DEFAULT_BILLING_RATE_FORM);
     const [recipientForm, setRecipientForm] = useState<CustomerRecipientForm>(DEFAULT_RECIPIENT_FORM);
     const [pickupForm, setPickupForm] = useState<CustomerPickupForm>(DEFAULT_PICKUP_FORM);
     const canOpenCustomerOrderHistory = user ? hasPageAccess(user.role, 'orders') : false;
@@ -128,11 +156,13 @@ export default function CustomerDetailPage() {
         const loadCustomerDetail = async () => {
             setLoading(true);
             try {
-                const [cust, productRows, recipientRows, pickupRows, customerOrders, customerNotas] = await Promise.all([
+                const [cust, productRows, billingRateRows, recipientRows, pickupRows, serviceRows, customerOrders, customerNotas] = await Promise.all([
                     fetchAdminData<Customer | null>(`/api/data?entity=customers&id=${customerId}`, 'Gagal memuat data customer'),
                     fetchAllAdminCollectionData<CustomerProduct>(`/api/data?entity=customer-products&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data customer'),
+                    fetchAllAdminCollectionData<CustomerBillingRate>(`/api/data?entity=customer-billing-rates&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data tarif customer'),
                     fetchAllAdminCollectionData<CustomerRecipient>(`/api/data?entity=customer-recipients&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data customer'),
                     fetchAllAdminCollectionData<CustomerPickupLocation>(`/api/data?entity=customer-pickups&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data customer'),
+                    fetchAllAdminCollectionData<Service>('/api/data?entity=services', 'Gagal memuat jenis armada'),
                     canOpenCustomerOrderHistory
                         ? fetchAllAdminCollectionData<Order>(`/api/data?entity=orders&filter=${encodeURIComponent(JSON.stringify({ customerRef: customerId }))}`, 'Gagal memuat data customer')
                         : Promise.resolve([] as Order[]),
@@ -141,8 +171,10 @@ export default function CustomerDetailPage() {
 
                 setCustomer(cust);
                 setCustomerProducts(productRows || []);
+                setCustomerBillingRates(billingRateRows || []);
                 setCustomerRecipients(recipientRows || []);
                 setCustomerPickups(pickupRows || []);
+                setServices((serviceRows || []).filter(service => service.active !== false));
                 setOrders([...(customerOrders || [])].sort((a, b) => `${b.createdAt || ''}-${b._id}`.localeCompare(`${a.createdAt || ''}-${a._id}`)));
                 setNotas([...(customerNotas || [])].sort((a, b) => `${b.dueDate || b.issueDate || ''}-${b._id}`.localeCompare(`${a.dueDate || a.issueDate || ''}-${a._id}`)));
                 if (cust) {
@@ -154,7 +186,7 @@ export default function CustomerDetailPage() {
                         email: cust.email,
                         npwp: cust.npwp || '',
                         deliveryOrderPrefix: cust.deliveryOrderPrefix || 'SJ',
-                        defaultFreightNotaBillingMode: cust.defaultFreightNotaBillingMode === 'PER_TON' ? 'PER_TON' : 'PER_KG',
+                        defaultFreightNotaBillingMode: cust.defaultFreightNotaBillingMode || 'PER_KG',
                         defaultPph23Enabled: cust.defaultPph23Enabled === true,
                         defaultPph23RatePercent: typeof cust.defaultPph23RatePercent === 'number' ? cust.defaultPph23RatePercent : DEFAULT_PPH23_RATE_PERCENT,
                         defaultPph23BaseMode: cust.defaultPph23BaseMode === 'AFTER_CLAIM' ? 'AFTER_CLAIM' : 'BEFORE_CLAIM',
@@ -191,6 +223,26 @@ export default function CustomerDetailPage() {
             active: product.active !== false,
         });
         setShowProductModal(true);
+    };
+
+    const openNewBillingRate = () => {
+        setEditBillingRate(null);
+        setBillingRateForm(DEFAULT_BILLING_RATE_FORM);
+        setShowBillingRateModal(true);
+    };
+
+    const openEditBillingRate = (rate: CustomerBillingRate) => {
+        setEditBillingRate(rate);
+        setBillingRateForm({
+            serviceRef: rate.serviceRef || '',
+            basis: rate.basis || 'PER_KG',
+            rate: rate.rate || 0,
+            routeFrom: rate.routeFrom || '',
+            routeTo: rate.routeTo || '',
+            notes: rate.notes || '',
+            active: rate.active !== false,
+        });
+        setShowBillingRateModal(true);
     };
 
     const openNewRecipient = () => {
@@ -293,6 +345,72 @@ export default function CustomerDetailPage() {
             addToast('error', 'Gagal menghapus barang customer');
         } finally {
             setDeletingProductId(null);
+        }
+    };
+
+    const handleSaveBillingRate = async () => {
+        if (!billingRateForm.rate || billingRateForm.rate <= 0) {
+            addToast('error', 'Tarif customer harus lebih besar dari 0');
+            return;
+        }
+
+        setSavingBillingRate(true);
+        try {
+            const selectedService = services.find(service => service._id === billingRateForm.serviceRef);
+            const payload = {
+                customerRef: customerId,
+                ...billingRateForm,
+                serviceName: selectedService?.name || undefined,
+            };
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(
+                    editBillingRate
+                        ? { entity: 'customer-billing-rates', action: 'update', data: { id: editBillingRate._id, updates: payload } }
+                        : { entity: 'customer-billing-rates', data: payload }
+                ),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menyimpan tarif customer');
+                return;
+            }
+
+            const savedRate = result.data as CustomerBillingRate;
+            setCustomerBillingRates(prev =>
+                editBillingRate
+                    ? prev.map(item => item._id === editBillingRate._id ? savedRate : item)
+                    : [savedRate, ...prev]
+            );
+            setShowBillingRateModal(false);
+            addToast('success', editBillingRate ? 'Tarif customer diperbarui' : 'Tarif customer ditambahkan');
+        } catch {
+            addToast('error', 'Gagal menyimpan tarif customer');
+        } finally {
+            setSavingBillingRate(false);
+        }
+    };
+
+    const handleDeleteBillingRate = async (rateId: string) => {
+        setDeletingBillingRateId(rateId);
+        try {
+            const res = await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entity: 'customer-billing-rates', action: 'delete', data: { id: rateId } }),
+            });
+            const result = await res.json();
+            if (!res.ok) {
+                addToast('error', result.error || 'Gagal menghapus tarif customer');
+                return;
+            }
+            setCustomerBillingRates(prev => prev.filter(item => item._id !== rateId));
+            addToast('success', 'Tarif customer dihapus');
+        } catch {
+            addToast('error', 'Gagal menghapus tarif customer');
+        } finally {
+            setDeletingBillingRateId(null);
         }
     };
 
@@ -475,6 +593,7 @@ export default function CustomerDetailPage() {
                     </div>
                 </div>
                 <div className="page-actions">
+                    {canManageCustomer && !editing && <button className="btn btn-secondary" onClick={openNewBillingRate}><Plus size={16} /> Tambah Tarif</button>}
                     {canManageCustomer && !editing && <button className="btn btn-secondary" onClick={openNewProduct}><Plus size={16} /> Tambah Barang</button>}
                     {canManageCustomer && !editing && <button className="btn btn-primary" onClick={() => setEditing(true)}><Edit size={16} /> Edit</button>}
                 </div>
@@ -508,7 +627,7 @@ export default function CustomerDetailPage() {
                                     <select
                                         className="form-select"
                                         value={form.defaultFreightNotaBillingMode}
-                                        onChange={e => setForm({ ...form, defaultFreightNotaBillingMode: e.target.value as 'PER_KG' | 'PER_TON' })}
+                                        onChange={e => setForm({ ...form, defaultFreightNotaBillingMode: e.target.value as CustomerBillingRateBasis })}
                                     >
                                         {FREIGHT_NOTA_BILLING_MODE_OPTIONS.map(option => (
                                             <option key={option.value} value={option.value}>{option.label}</option>
@@ -577,7 +696,7 @@ export default function CustomerDetailPage() {
                                     <div className="detail-item"><div className="detail-label">Email</div><div className="detail-value">{customer.email}</div></div>
                                 </div>
                                 <div className="detail-row">
-                                    <div className="detail-item"><div className="detail-label">Default Basis Billing Nota</div><div className="detail-value">{getFreightNotaBillingModeLabel(customer.defaultFreightNotaBillingMode === 'PER_TON' ? 'PER_TON' : 'PER_KG')}</div></div>
+                                    <div className="detail-item"><div className="detail-label">Default Basis Billing Nota</div><div className="detail-value">{getFreightNotaBillingModeLabel(customer.defaultFreightNotaBillingMode || 'PER_KG')}</div></div>
                                     <div className="detail-item"><div className="detail-label">Default PPh 23</div><div className="detail-value">{buildPph23Label({
                                         enabled: customer.defaultPph23Enabled,
                                         ratePercent: customer.defaultPph23RatePercent,
@@ -806,6 +925,77 @@ export default function CustomerDetailPage() {
             </CollapsibleCard>
 
             <CollapsibleCard
+                title={`Tarif Billing Customer (${customerBillingRates.length})`}
+                defaultOpen
+            >
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
+                    {canManageCustomer && <button className="btn btn-primary btn-sm" onClick={openNewBillingRate}>
+                        <Plus size={14} /> Tambah Tarif
+                    </button>}
+                </div>
+                <div className="table-wrapper table-desktop-only">
+                    <table>
+                        <thead><tr><th>Jenis Armada</th><th>Basis</th><th>Tarif</th><th>Rute</th><th>Status</th><th>Aksi</th></tr></thead>
+                        <tbody>
+                            {customerBillingRates.length === 0 ? (
+                                <tr><td colSpan={6} className="text-center text-muted" style={{ padding: '2rem' }}>Belum ada tarif billing untuk customer ini</td></tr>
+                            ) : customerBillingRates.map(rate => (
+                                <tr key={rate._id}>
+                                    <td>{rate.serviceName || 'Semua jenis armada'}</td>
+                                    <td>{getFreightNotaBillingModeLabel(rate.basis)}</td>
+                                    <td className="font-medium">{formatCurrency(rate.rate)}</td>
+                                    <td>{rate.routeFrom || rate.routeTo ? `${rate.routeFrom || '*'} -> ${rate.routeTo || '*'}` : 'Semua rute'}</td>
+                                    <td><span className={`badge ${rate.active !== false ? 'badge-green' : 'badge-gray'}`}>{rate.active !== false ? 'Aktif' : 'Nonaktif'}</span></td>
+                                    <td>
+                                        <div className="table-actions">
+                                            {canManageCustomer && <button className="table-action-btn" onClick={() => openEditBillingRate(rate)}><Edit size={14} /> Edit</button>}
+                                            {canManageCustomer && <button className="table-action-btn danger" onClick={() => handleDeleteBillingRate(rate._id)} disabled={deletingBillingRateId === rate._id}>
+                                                <Trash2 size={14} /> {deletingBillingRateId === rate._id ? 'Menghapus...' : 'Hapus'}
+                                            </button>}
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+                <div className="mobile-record-list">
+                    {customerBillingRates.length === 0 ? (
+                        <div className="mobile-record-card">
+                            <div className="mobile-record-title">Belum ada tarif billing</div>
+                            <div className="mobile-record-actions">
+                                {canManageCustomer && <button className="btn btn-primary" onClick={openNewBillingRate}>
+                                    <Plus size={16} /> Tambah Tarif
+                                </button>}
+                            </div>
+                        </div>
+                    ) : customerBillingRates.map(rate => (
+                        <div key={rate._id} className="mobile-record-card">
+                            <div className="mobile-record-header">
+                                <div>
+                                    <div className="mobile-record-title">{rate.serviceName || 'Semua jenis armada'}</div>
+                                    <div className="mobile-record-subtitle">{getFreightNotaBillingModeLabel(rate.basis)} - {formatCurrency(rate.rate)}</div>
+                                </div>
+                                <span className={`badge ${rate.active !== false ? 'badge-green' : 'badge-gray'}`}>{rate.active !== false ? 'Aktif' : 'Nonaktif'}</span>
+                            </div>
+                            <div className="mobile-record-meta">
+                                <div className="mobile-record-kv">
+                                    <span className="mobile-record-label">Rute</span>
+                                    <span className="mobile-record-value">{rate.routeFrom || rate.routeTo ? `${rate.routeFrom || '*'} -> ${rate.routeTo || '*'}` : 'Semua rute'}</span>
+                                </div>
+                            </div>
+                            <div className="mobile-record-actions">
+                                {canManageCustomer && <button className="btn btn-secondary" onClick={() => openEditBillingRate(rate)}><Edit size={14} /> Edit</button>}
+                                {canManageCustomer && <button className="btn btn-danger" onClick={() => handleDeleteBillingRate(rate._id)} disabled={deletingBillingRateId === rate._id}>
+                                    <Trash2 size={14} /> {deletingBillingRateId === rate._id ? 'Menghapus...' : 'Hapus'}
+                                </button>}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </CollapsibleCard>
+
+            <CollapsibleCard
                 title={`Master Barang Customer (${customerProducts.length})`}
                 defaultOpen
             >
@@ -1007,6 +1197,69 @@ export default function CustomerDetailPage() {
                 </div>
             </CollapsibleCard>
             </div>
+
+            {canManageCustomer && showBillingRateModal && (
+                <div className="modal-overlay" onClick={() => { if (!savingBillingRate) setShowBillingRateModal(false); }}>
+                    <div className="modal" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3 className="modal-title">{editBillingRate ? 'Edit Tarif Billing Customer' : 'Tambah Tarif Billing Customer'}</h3>
+                            <button className="modal-close" onClick={() => setShowBillingRateModal(false)} disabled={savingBillingRate}><X size={20} /></button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Jenis Armada</label>
+                                    <select className="form-select" value={billingRateForm.serviceRef} onChange={e => setBillingRateForm(prev => ({ ...prev, serviceRef: e.target.value }))}>
+                                        <option value="">Semua jenis armada</option>
+                                        {services.map(service => (
+                                            <option key={service._id} value={service._id}>{service.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Basis Tarif <span className="required">*</span></label>
+                                    <select className="form-select" value={billingRateForm.basis} onChange={e => setBillingRateForm(prev => ({ ...prev, basis: e.target.value as CustomerBillingRateBasis }))}>
+                                        {FREIGHT_NOTA_BILLING_MODE_OPTIONS.map(option => (
+                                            <option key={option.value} value={option.value}>{option.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Tarif <span className="required">*</span></label>
+                                    <CurrencyInput value={billingRateForm.rate} onValueChange={value => setBillingRateForm(prev => ({ ...prev, rate: value }))} />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Status</label>
+                                    <select className="form-select" value={billingRateForm.active ? 'ACTIVE' : 'INACTIVE'} onChange={e => setBillingRateForm(prev => ({ ...prev, active: e.target.value === 'ACTIVE' }))}>
+                                        <option value="ACTIVE">Aktif</option>
+                                        <option value="INACTIVE">Nonaktif</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Rute Dari</label>
+                                    <input className="form-input" value={billingRateForm.routeFrom} onChange={e => setBillingRateForm(prev => ({ ...prev, routeFrom: e.target.value }))} placeholder="Kosong = semua asal" />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Rute Tujuan</label>
+                                    <input className="form-input" value={billingRateForm.routeTo} onChange={e => setBillingRateForm(prev => ({ ...prev, routeTo: e.target.value }))} placeholder="Kosong = semua tujuan" />
+                                </div>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Catatan</label>
+                                <input className="form-input" value={billingRateForm.notes} onChange={e => setBillingRateForm(prev => ({ ...prev, notes: e.target.value }))} placeholder="Opsional" />
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setShowBillingRateModal(false)} disabled={savingBillingRate}>Batal</button>
+                            <button className="btn btn-primary" onClick={handleSaveBillingRate} disabled={savingBillingRate}><Save size={16} /> {savingBillingRate ? 'Menyimpan...' : 'Simpan'}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {canManageCustomer && showRecipientModal && (
                 <div className="modal-overlay" onClick={() => { if (!savingRecipient) setShowRecipientModal(false); }}>

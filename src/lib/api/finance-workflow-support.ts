@@ -22,6 +22,7 @@ export type NormalizedFreightNotaRow = {
     barang?: string;
     collie?: number;
     beratKg: number;
+    volumeM3?: number;
     tarip: number;
     uangRp: number;
     ket?: string;
@@ -45,6 +46,8 @@ export type FreightNotaDeliveryOrderItemSource = {
     orderItemWeight?: number;
     actualQtyKoli?: number;
     actualWeightKg?: number;
+    orderItemVolumeM3?: number;
+    actualVolumeM3?: number;
 };
 
 export type ReceivableDoc = Record<string, unknown> & {
@@ -131,11 +134,16 @@ export function summarizeDeliveryOrderItems(items: FreightNotaDeliveryOrderItemS
         (sum, item) => sum + normalizeNumber(item.actualWeightKg ?? item.orderItemWeight ?? 0),
         0
     );
+    const volumeM3 = items.reduce(
+        (sum, item) => sum + normalizeNumber(item.actualVolumeM3 ?? item.orderItemVolumeM3 ?? 0, { maxFractionDigits: 3 }),
+        0
+    );
 
     return {
         barang: descriptions.join(', '),
         collie,
         beratKg,
+        volumeM3,
     };
 }
 
@@ -147,6 +155,7 @@ export function isFreightNotaRowEmpty(row: Record<string, unknown>) {
         !normalizeText(row.barang) &&
         normalizeNumber(row.collie || 0) === 0 &&
         normalizeNumber(row.beratKg || 0) === 0 &&
+        normalizeNumber(row.volumeM3 || 0) === 0 &&
         normalizeNumber(row.tarip || 0) === 0
     );
 }

@@ -362,6 +362,7 @@ export function buildFreightNotaPrintDocument(opts: {
         .replace(/^./, character => character.toUpperCase());
     const billedWeightLabel = formatFreightNotaDisplayWeight({
         beratKg: nota.totalWeightKg || 0,
+        volumeM3: nota.totalVolumeM3 || 0,
         billingMode,
         includeCanonical: billingMode === 'PER_TON',
     });
@@ -378,6 +379,7 @@ export function buildFreightNotaPrintDocument(opts: {
         const qtyText = collie > 0 ? fmtNumber(collie) : '-';
         const weightText = formatFreightNotaDisplayWeight({
             beratKg: item.beratKg || 0,
+            volumeM3: item.volumeM3 || 0,
             billingMode,
             includeCanonical: false,
         });

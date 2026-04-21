@@ -9,6 +9,7 @@ import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData, fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
+import { findMatchingCustomerBillingRate } from '@/lib/customer-billing-rates';
 import {
     calculateFreightNotaRowAmount,
     FREIGHT_NOTA_BILLING_MODE_OPTIONS,
@@ -29,7 +30,7 @@ import {
 } from '@/lib/invoice-create-page-support';
 import { convertWeightToKg } from '@/lib/measurement';
 import { buildPph23Label, calculatePph23Summary, DEFAULT_PPH23_RATE_PERCENT, PPH23_BASE_MODE_OPTIONS } from '@/lib/pph23';
-import type { CompanyProfile, Customer, DeliveryOrder, DeliveryOrderItem, FreightNota, FreightNotaBillingMode, FreightNotaItem, Order } from '@/lib/types';
+import type { CompanyProfile, Customer, CustomerBillingRate, DeliveryOrder, DeliveryOrderItem, FreightNota, FreightNotaBillingMode, FreightNotaItem, Order } from '@/lib/types';
 import { formatCurrency, formatInternalDeliveryOrderNumber, formatQuantity, formatShipperDeliveryOrderNumber, formatShipperReceiverSummary, getShipperReferenceCount } from '@/lib/utils';
 
 import { useToast } from '../../layout';
@@ -46,6 +47,7 @@ export default function NewNotaPage() {
     const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([]);
     const [deliveryOrderItems, setDeliveryOrderItems] = useState<DeliveryOrderItem[]>([]);
     const [orders, setOrders] = useState<Order[]>([]);
+    const [customerBillingRates, setCustomerBillingRates] = useState<CustomerBillingRate[]>([]);
     const [usedNotaDoRowKeys, setUsedNotaDoRowKeys] = useState<string[]>([]);
     const [usedNotaDoItemRefs, setUsedNotaDoItemRefs] = useState<string[]>([]);
     const [saving, setSaving] = useState(false);
@@ -67,12 +69,13 @@ export default function NewNotaPage() {
     useEffect(() => {
         async function loadData() {
             try {
-                const [cust, comp, dos, ords, doItems, notaItems, editNota, editNotaItems] = await Promise.all([
+                const [cust, comp, dos, ords, doItems, billingRates, notaItems, editNota, editNotaItems] = await Promise.all([
                     fetchAdminCollectionData<Customer[]>('/api/data?entity=customers', 'Gagal memuat customer'),
                     fetchAdminData<CompanyProfile | null>('/api/data?entity=company', 'Gagal memuat profil perusahaan').catch(() => null),
                     fetchAdminCollectionData<DeliveryOrder[]>('/api/data?entity=delivery-orders', 'Gagal memuat surat jalan'),
                     fetchAdminCollectionData<Order[]>('/api/data?entity=orders', 'Gagal memuat order'),
                     fetchAdminCollectionData<DeliveryOrderItem[]>('/api/data?entity=delivery-order-items', 'Gagal memuat item DO'),
+                    fetchAdminCollectionData<CustomerBillingRate[]>('/api/data?entity=customer-billing-rates', 'Gagal memuat tarif customer'),
                     fetchAllAdminCollectionData<{
                         doRef?: string;
                         noSJ?: string;
@@ -95,6 +98,7 @@ export default function NewNotaPage() {
                 setDeliveryOrders((dos || []).filter((item: DeliveryOrder) => item.status === 'DELIVERED'));
                 setOrders(ords || []);
                 setDeliveryOrderItems(doItems || []);
+                setCustomerBillingRates((billingRates || []).filter(rate => rate.active !== false));
                 const usableNotaItems = (notaItems || []).filter(item => !editNotaId || item.notaRef !== editNotaId);
                 const deliveryOrderMap = new Map((dos || []).map(item => [item._id, item]));
                 setUsedNotaDoRowKeys(
@@ -160,6 +164,7 @@ export default function NewNotaPage() {
                                 barang: item.barang || '',
                                 collie: item.collie || 0,
                                 beratKg: item.beratKg || 0,
+                                volumeM3: item.volumeM3 || 0,
                                 tarip: item.tarip || 0,
                                 uangRp: item.uangRp || 0,
                                 ket: item.ket || '',
@@ -213,20 +218,42 @@ export default function NewNotaPage() {
             ...row,
             uangRp: Math.round(calculateFreightNotaRowAmount({
                 beratKg: row.beratKg,
+                volumeM3: row.volumeM3,
                 tarip: row.tarip,
                 billingMode,
             })),
         })));
     }, [billingMode]);
 
-    const buildCalculatedRow = (row: NotaItemRow) => ({
-        ...row,
-        uangRp: Math.round(calculateFreightNotaRowAmount({
-            beratKg: row.beratKg,
-            tarip: row.tarip,
-            billingMode,
-        })),
-    });
+    const resolveRowBillingRate = useCallback((row: NotaItemRow, mode: FreightNotaBillingMode = billingMode) => {
+        const deliveryOrder = row.doRef ? deliveryOrders.find(item => item._id === row.doRef) : null;
+        return findMatchingCustomerBillingRate(customerBillingRates, {
+            customerRef: row.customerRef || customerRef,
+            serviceRef: deliveryOrder?.vehicleServiceRef || deliveryOrder?.serviceRef,
+            basis: mode,
+            routeFrom: row.dari,
+            routeTo: row.tujuan,
+        });
+    }, [billingMode, customerBillingRates, customerRef, deliveryOrders]);
+
+    const buildCalculatedRow = useCallback((row: NotaItemRow, mode: FreightNotaBillingMode = billingMode) => {
+        const matchedRate = resolveRowBillingRate(row, mode);
+        const tarip = matchedRate?.rate || row.tarip;
+        return {
+            ...row,
+            tarip,
+            uangRp: Math.round(calculateFreightNotaRowAmount({
+                beratKg: row.beratKg,
+                volumeM3: row.volumeM3,
+                tarip,
+                billingMode: mode,
+            })),
+        };
+    }, [billingMode, resolveRowBillingRate]);
+
+    useEffect(() => {
+        setRows(previous => previous.map(row => buildCalculatedRow(row)));
+    }, [buildCalculatedRow]);
 
     const updateRow = (id: string, field: keyof NotaItemRow, value: string | number) => {
         setRows(previous =>
@@ -353,9 +380,9 @@ export default function NewNotaPage() {
 
             const next = [...previous];
             const [firstRow, ...remainingRows] = nextRows;
-            next[emptyIndex] = { ...firstRow, id: previous[emptyIndex].id };
+            next[emptyIndex] = buildCalculatedRow({ ...firstRow, id: previous[emptyIndex].id });
             if (remainingRows.length > 0) {
-                next.push(...remainingRows);
+                next.push(...remainingRows.map(row => buildCalculatedRow(row)));
             }
             return next;
         });
@@ -374,6 +401,7 @@ export default function NewNotaPage() {
 
     const totalCollie = rows.reduce((sum, row) => sum + (row.collie || 0), 0);
     const totalBerat = rows.reduce((sum, row) => sum + (row.beratKg || 0), 0);
+    const totalVolume = rows.reduce((sum, row) => sum + (row.volumeM3 || 0), 0);
     const totalAmount = rows.reduce((sum, row) => sum + (row.uangRp || 0), 0);
     const pph23Summary = calculatePph23Summary({
         grossAmount: totalAmount,
@@ -385,6 +413,7 @@ export default function NewNotaPage() {
     const hasSelectedRows = rows.some(row => Boolean(row.doRef));
     const totalBeratLabel = formatFreightNotaDisplayWeight({
         beratKg: totalBerat,
+        volumeM3: totalVolume,
         billingMode,
         includeCanonical: billingMode === 'PER_TON',
     });
@@ -830,20 +859,37 @@ export default function NewNotaPage() {
                                     </td>
                                     <td>
                                         <FormattedNumberInput
-                                            maxFractionDigits={billingMode === 'PER_TON' ? 3 : 2}
-                                            value={getFreightNotaDisplayWeightValue(row.beratKg, billingMode)}
-                                            onValueChange={value => updateRow(
-                                                row.id,
-                                                'beratKg',
-                                                convertWeightToKg(value, billingMode === 'PER_TON' ? 'TON' : 'KG'),
-                                            )}
+                                            maxFractionDigits={billingMode === 'PER_TON' || billingMode === 'PER_VOLUME' ? 3 : 2}
+                                            value={getFreightNotaDisplayWeightValue(row.beratKg, billingMode, row.volumeM3)}
+                                            onValueChange={value => {
+                                                if (billingMode === 'PER_VOLUME') {
+                                                    updateRow(row.id, 'volumeM3', value);
+                                                    return;
+                                                }
+                                                if (billingMode === 'PER_TRIP') {
+                                                    return;
+                                                }
+                                                updateRow(
+                                                    row.id,
+                                                    'beratKg',
+                                                    convertWeightToKg(value, billingMode === 'PER_TON' ? 'TON' : 'KG'),
+                                                );
+                                            }}
                                         />
                                     </td>
                                     <td>
                                         <CurrencyInput
                                             value={row.tarip}
                                             onValueChange={value => updateRow(row.id, 'tarip', value)}
-                                            placeholder={billingMode === 'PER_TON' ? 'Ketik tarif per ton' : 'Ketik tarif per kg'}
+                                            placeholder={
+                                                billingMode === 'PER_TON'
+                                                    ? 'Ketik tarif per ton'
+                                                    : billingMode === 'PER_VOLUME'
+                                                        ? 'Ketik tarif per m3'
+                                                        : billingMode === 'PER_TRIP'
+                                                            ? 'Ketik tarif per trip'
+                                                            : 'Ketik tarif per kg'
+                                            }
                                         />
                                     </td>
                                     <td style={{ fontWeight: 600, color: 'var(--color-primary)' }}>{formatCurrency(row.uangRp)}</td>
@@ -877,7 +923,7 @@ export default function NewNotaPage() {
                                     Jumlah
                                 </td>
                                 <td>{formatQuantity(totalCollie)}</td>
-                                <td>{getFreightNotaDisplayWeightValue(totalBerat, billingMode).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: billingMode === 'PER_TON' ? 3 : 2 })}</td>
+                                <td>{getFreightNotaDisplayWeightValue(totalBerat, billingMode, totalVolume).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: billingMode === 'PER_TON' || billingMode === 'PER_VOLUME' ? 3 : 2 })}</td>
                                 <td />
                                 <td style={{ color: 'var(--color-danger)' }}>{formatCurrency(totalAmount)}</td>
                                 <td colSpan={2} />
@@ -972,12 +1018,21 @@ export default function NewNotaPage() {
                                 <div className="form-group">
                                     <label className="form-label">{getFreightNotaWeightColumnLabel(billingMode)}</label>
                                     <FormattedNumberInput
-                                        maxFractionDigits={billingMode === 'PER_TON' ? 3 : 2}
-                                        value={getFreightNotaDisplayWeightValue(editingRow.beratKg, billingMode)}
-                                        onValueChange={value => updateEditingRow(
-                                            'beratKg',
-                                            convertWeightToKg(value, billingMode === 'PER_TON' ? 'TON' : 'KG'),
-                                        )}
+                                        maxFractionDigits={billingMode === 'PER_TON' || billingMode === 'PER_VOLUME' ? 3 : 2}
+                                        value={getFreightNotaDisplayWeightValue(editingRow.beratKg, billingMode, editingRow.volumeM3)}
+                                        onValueChange={value => {
+                                            if (billingMode === 'PER_VOLUME') {
+                                                updateEditingRow('volumeM3', value);
+                                                return;
+                                            }
+                                            if (billingMode === 'PER_TRIP') {
+                                                return;
+                                            }
+                                            updateEditingRow(
+                                                'beratKg',
+                                                convertWeightToKg(value, billingMode === 'PER_TON' ? 'TON' : 'KG'),
+                                            );
+                                        }}
                                     />
                                 </div>
                             </div>
@@ -988,7 +1043,15 @@ export default function NewNotaPage() {
                                     <CurrencyInput
                                         value={editingRow.tarip}
                                         onValueChange={value => updateEditingRow('tarip', value)}
-                                        placeholder={billingMode === 'PER_TON' ? 'Ketik tarif per ton' : 'Ketik tarif per kg'}
+                                        placeholder={
+                                            billingMode === 'PER_TON'
+                                                ? 'Ketik tarif per ton'
+                                                : billingMode === 'PER_VOLUME'
+                                                    ? 'Ketik tarif per m3'
+                                                    : billingMode === 'PER_TRIP'
+                                                        ? 'Ketik tarif per trip'
+                                                        : 'Ketik tarif per kg'
+                                        }
                                     />
                                 </div>
                                 <div className="form-group">

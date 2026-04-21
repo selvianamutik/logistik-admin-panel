@@ -23,6 +23,7 @@ export interface NotaItemRow {
     barang: string;
     collie: number;
     beratKg: number;
+    volumeM3?: number;
     tarip: number;
     uangRp: number;
     ket: string;
@@ -43,6 +44,7 @@ export function createEmptyNotaRow(): NotaItemRow {
         barang: '',
         collie: 0,
         beratKg: 0,
+        volumeM3: 0,
         tarip: 0,
         uangRp: 0,
         ket: '',
@@ -63,6 +65,7 @@ export function isEmptyNotaRow(row: NotaItemRow) {
         !row.ket &&
         (row.collie || 0) === 0 &&
         (row.beratKg || 0) === 0 &&
+        (row.volumeM3 || 0) === 0 &&
         (row.tarip || 0) === 0 &&
         (row.uangRp || 0) === 0
     );
@@ -213,6 +216,9 @@ export function buildNotaRowsFromDeliveryOrder(params: {
             beratKg: hasActualDropPoints
                 ? billableCargo.weightKg
                 : items.reduce((sum, item) => sum + parseFormattedNumberish(item.actualWeightKg ?? item.orderItemWeight ?? 0), 0),
+            volumeM3: hasActualDropPoints
+                ? billableCargo.volumeM3
+                : items.reduce((sum, item) => sum + parseFormattedNumberish(item.actualVolumeM3 ?? item.orderItemVolumeM3 ?? 0, { maxFractionDigits: 3 }), 0),
         };
     };
 
@@ -239,6 +245,7 @@ export function buildNotaRowsFromDeliveryOrder(params: {
                     barang: '',
                     collie: hasActualDropPoints ? billableCargo.qtyKoli : 0,
                     beratKg: hasActualDropPoints ? billableCargo.weightKg : 0,
+                    volumeM3: hasActualDropPoints ? billableCargo.volumeM3 : 0,
                 };
             });
 
@@ -253,6 +260,7 @@ export function buildNotaRowsFromDeliveryOrder(params: {
             barang: '',
             collie: 0,
             beratKg: 0,
+            volumeM3: 0,
         }];
     }
 

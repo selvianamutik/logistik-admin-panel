@@ -673,6 +673,104 @@ export async function normalizeCustomerProductPayload(data: Record<string, unkno
     return next;
 }
 
+export async function normalizeCustomerBillingRatePayload(data: Record<string, unknown>, existing?: Record<string, unknown>) {
+    const next: Record<string, unknown> = {};
+    const existingId = typeof existing?._id === 'string' ? existing._id : undefined;
+    const customerRef =
+        Object.prototype.hasOwnProperty.call(data, 'customerRef') || !existing
+            ? normalizeText(data.customerRef)
+            : normalizeOptionalText(existing?.customerRef) || '';
+    if (!customerRef) {
+        throw new Error('Customer tarif wajib dipilih');
+    }
+
+    const customer = await getDocumentById<{ _id: string; name?: string; active?: boolean }>(customerRef, 'customer');
+    if (!customer) {
+        throw new Error('Customer tarif tidak ditemukan');
+    }
+    if (customer.active === false && (!existing || customerRef !== normalizeOptionalText(existing.customerRef))) {
+        throw new Error('Customer tidak aktif dan tidak bisa dipakai untuk tarif baru');
+    }
+
+    const serviceRef =
+        Object.prototype.hasOwnProperty.call(data, 'serviceRef') || !existing
+            ? normalizeOptionalText(data.serviceRef)
+            : normalizeOptionalText(existing?.serviceRef);
+    let serviceName: string | undefined;
+    if (serviceRef) {
+        const service = await getDocumentById<{ _id: string; name?: string; active?: boolean }>(serviceRef, 'service');
+        if (!service) {
+            throw new Error('Jenis armada tarif customer tidak ditemukan');
+        }
+        if (service.active === false) {
+            throw new Error('Jenis armada tarif customer tidak aktif');
+        }
+        serviceName = service.name || '';
+    }
+
+    const basis =
+        Object.prototype.hasOwnProperty.call(data, 'basis') || !existing
+            ? resolveFreightNotaBillingModeInput(data.basis, 'Basis tarif customer')
+            : normalizeFreightNotaBillingMode(existing?.basis);
+    const rate =
+        Object.prototype.hasOwnProperty.call(data, 'rate') || !existing
+            ? normalizeCurrencyNumber(data.rate)
+            : normalizeCurrencyNumber(existing?.rate);
+    if (!Number.isFinite(rate) || rate <= 0) {
+        throw new Error('Tarif customer harus lebih besar dari 0');
+    }
+
+    const routeFrom =
+        Object.prototype.hasOwnProperty.call(data, 'routeFrom') || !existing
+            ? normalizeOptionalText(data.routeFrom)
+            : normalizeOptionalText(existing?.routeFrom);
+    const routeTo =
+        Object.prototype.hasOwnProperty.call(data, 'routeTo') || !existing
+            ? normalizeOptionalText(data.routeTo)
+            : normalizeOptionalText(existing?.routeTo);
+
+    const duplicateRate = (await listDocumentsByFilter<{
+        _id: string;
+        customerRef?: string;
+        serviceRef?: string;
+        basis?: string;
+        routeFrom?: string;
+        routeTo?: string;
+    }>('customerBillingRate', { customerRef }))
+        .find(item =>
+            item._id !== (existingId || '') &&
+            normalizeOptionalText(item.serviceRef) === (serviceRef || undefined) &&
+            normalizeFreightNotaBillingMode(item.basis) === basis &&
+            normalizeOptionalText(item.routeFrom)?.toLowerCase() === routeFrom?.toLowerCase() &&
+            normalizeOptionalText(item.routeTo)?.toLowerCase() === routeTo?.toLowerCase()
+        )
+        || null;
+    if (duplicateRate) {
+        throw new Error('Tarif customer untuk kombinasi armada, basis, dan rute ini sudah ada');
+    }
+
+    next.customerRef = customerRef;
+    next.customerName = customer.name || '';
+    next.serviceRef = serviceRef;
+    next.serviceName = serviceName;
+    next.basis = basis;
+    next.rate = rate;
+    next.routeFrom = routeFrom;
+    next.routeTo = routeTo;
+    next.notes =
+        Object.prototype.hasOwnProperty.call(data, 'notes') || !existing
+            ? normalizeOptionalText(data.notes)
+            : normalizeOptionalText(existing?.notes);
+    if (Object.prototype.hasOwnProperty.call(data, 'active') || !existing) {
+        if (data.active !== undefined && typeof data.active !== 'boolean') {
+            throw new Error('Status tarif customer tidak valid');
+        }
+        next.active = typeof data.active === 'boolean' ? data.active : true;
+    }
+
+    return next;
+}
+
 export async function normalizeCustomerRecipientPayload(data: Record<string, unknown>, existing?: Record<string, unknown>) {
     const next: Record<string, unknown> = {};
     const existingId = typeof existing?._id === 'string' ? existing._id : undefined;

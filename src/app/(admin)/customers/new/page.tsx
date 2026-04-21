@@ -8,6 +8,7 @@ import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { FREIGHT_NOTA_BILLING_MODE_OPTIONS } from '@/lib/freight-nota-billing';
 import { DEFAULT_PPH23_RATE_PERCENT, PPH23_BASE_MODE_OPTIONS } from '@/lib/pph23';
+import type { CustomerBillingRateBasis } from '@/lib/types';
 
 export default function CustomerNewPage() {
     const router = useRouter();
@@ -22,7 +23,7 @@ export default function CustomerNewPage() {
         defaultPaymentTerm: number;
         npwp: string;
         deliveryOrderPrefix: string;
-        defaultFreightNotaBillingMode: 'PER_KG' | 'PER_TON';
+        defaultFreightNotaBillingMode: CustomerBillingRateBasis;
         defaultPph23Enabled: boolean;
         defaultPph23RatePercent: number;
         defaultPph23BaseMode: 'BEFORE_CLAIM' | 'AFTER_CLAIM';
@@ -101,7 +102,7 @@ export default function CustomerNewPage() {
                             <select
                                 className="form-select"
                                 value={form.defaultFreightNotaBillingMode}
-                                onChange={e => setForm({ ...form, defaultFreightNotaBillingMode: e.target.value as 'PER_KG' | 'PER_TON' })}
+                                onChange={e => setForm({ ...form, defaultFreightNotaBillingMode: e.target.value as CustomerBillingRateBasis })}
                             >
                                 {FREIGHT_NOTA_BILLING_MODE_OPTIONS.map(option => (
                                     <option key={option.value} value={option.value}>{option.label}</option>

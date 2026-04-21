@@ -47,6 +47,7 @@ import { applyDerivedBankAccountBalances } from './data-query-support';
 import {
     normalizeBankAccountPayload,
     normalizeCustomerPayload,
+    normalizeCustomerBillingRatePayload,
     normalizeCustomerPickupPayload,
     normalizeCustomerProductPayload,
     normalizeCustomerRecipientPayload,
@@ -1028,6 +1029,22 @@ export async function handleGenericUpdate(
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Data barang customer tidak valid' },
+                { status: 400 }
+            );
+        }
+    }
+
+    if (entity === 'customer-billing-rates') {
+        const existingCustomerBillingRate = await getDocumentById<Record<string, unknown>>(id);
+        if (!existingCustomerBillingRate) {
+            return NextResponse.json({ error: 'Tarif customer tidak ditemukan' }, { status: 404 });
+        }
+
+        try {
+            sanitizedEntityUpdates = await normalizeCustomerBillingRatePayload(updates, existingCustomerBillingRate);
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Data tarif customer tidak valid' },
                 { status: 400 }
             );
         }
@@ -2068,6 +2085,18 @@ export async function handleGenericCreate(
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Data barang customer tidak valid' },
+                { status: 400 }
+            );
+        }
+    }
+
+    if (entity === 'customer-billing-rates') {
+        shouldMergeRawCreatePayload = false;
+        try {
+            Object.assign(newDoc, await normalizeCustomerBillingRatePayload(data));
+        } catch (error) {
+            return NextResponse.json(
+                { error: error instanceof Error ? error.message : 'Data tarif customer tidak valid' },
                 { status: 400 }
             );
         }

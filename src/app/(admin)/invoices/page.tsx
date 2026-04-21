@@ -690,7 +690,7 @@ export default function NotaListPage() {
                     <table><thead><tr><th>No. Nota</th><th>Customer</th><th>Tanggal</th><th>Total Collie</th><th>Dasar Tagihan</th><th class="r">Tagihan Transfer Final</th><th>Status</th></tr></thead>
                     <tbody>${allMatchingNotas.map(n => {
                         const displayStatus = deriveReceivableStatus(n, getNotaEffectivePaid(n));
-                        return `<tr><td><div class="b">${formatFreightNotaDisplayNumber(n, co)}</div><div style="font-size:11px;color:#64748b">${n.notaNumber}</div></td><td>${n.customerName}</td><td>${formatDate(n.issueDate)}</td><td>${formatQuantity(n.totalCollie || 0)}</td><td>${formatFreightNotaDisplayWeight({ beratKg: n.totalWeightKg || 0, billingMode: normalizeFreightNotaBillingMode(n.billingMode), includeCanonical: false })}</td><td class="r b">${formatCurrency(getReceivableNetAmount(n))}</td><td>${STATUS_MAP[displayStatus]?.label || displayStatus}</td></tr>`;
+                        return `<tr><td><div class="b">${formatFreightNotaDisplayNumber(n, co)}</div><div style="font-size:11px;color:#64748b">${n.notaNumber}</div></td><td>${n.customerName}</td><td>${formatDate(n.issueDate)}</td><td>${formatQuantity(n.totalCollie || 0)}</td><td>${formatFreightNotaDisplayWeight({ beratKg: n.totalWeightKg || 0, volumeM3: n.totalVolumeM3 || 0, billingMode: normalizeFreightNotaBillingMode(n.billingMode), includeCanonical: false })}</td><td class="r b">${formatCurrency(getReceivableNetAmount(n))}</td><td>${STATUS_MAP[displayStatus]?.label || displayStatus}</td></tr>`;
                     }).join('')}
                     <tr style="border-top:2px solid #1e293b"><td colspan="5" class="r b">TOTAL</td><td class="r b">${formatCurrency(grandTotal)}</td><td></td></tr></tbody></table>`,
                 targetWindow: printWindow,
@@ -885,7 +885,7 @@ export default function NotaListPage() {
                                         <td>{n.customerName}</td>
                                         <td className="text-muted">{formatDate(n.issueDate)}</td>
                                     <td>{formatQuantity(n.totalCollie || 0)}</td>
-                                        <td>{formatFreightNotaDisplayWeight({ beratKg: n.totalWeightKg || 0, billingMode: normalizeFreightNotaBillingMode(n.billingMode), includeCanonical: false })}</td>
+                                        <td>{formatFreightNotaDisplayWeight({ beratKg: n.totalWeightKg || 0, volumeM3: n.totalVolumeM3 || 0, billingMode: normalizeFreightNotaBillingMode(n.billingMode), includeCanonical: false })}</td>
                                         <td>
                                             <div className="font-semibold">{formatCurrency(getReceivableNetAmount(n))}</div>
                                             {(parseWholeMoneyLike(n.totalAdjustmentAmount) > 0 || parseWholeMoneyLike(n.pph23Amount) > 0) && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Bruto {formatCurrency(n.totalAmount)} • Klaim {formatCurrency(parseWholeMoneyLike(n.totalAdjustmentAmount))} • PPh 23 {formatCurrency(parseWholeMoneyLike(n.pph23Amount))}</div>}
@@ -939,7 +939,7 @@ export default function NotaListPage() {
                                     </div>
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Dasar Tagihan</span>
-                                        <span className="mobile-record-value">{formatFreightNotaDisplayWeight({ beratKg: n.totalWeightKg || 0, billingMode: normalizeFreightNotaBillingMode(n.billingMode), includeCanonical: false })}</span>
+                                        <span className="mobile-record-value">{formatFreightNotaDisplayWeight({ beratKg: n.totalWeightKg || 0, volumeM3: n.totalVolumeM3 || 0, billingMode: normalizeFreightNotaBillingMode(n.billingMode), includeCanonical: false })}</span>
                                     </div>
                                     <div className="mobile-record-kv">
                                         <span className="mobile-record-label">Tagihan Transfer Final</span>

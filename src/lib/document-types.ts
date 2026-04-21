@@ -11,6 +11,7 @@ export const DOCUMENT_TYPE_MAP: Record<string, string> = {
     'stock-movements': 'stockMovement',
     customers: 'customer',
     'customer-products': 'customerProduct',
+    'customer-billing-rates': 'customerBillingRate',
     'customer-recipients': 'customerRecipient',
     'customer-pickups': 'customerPickupLocation',
     'trip-route-rates': 'tripRouteRate',

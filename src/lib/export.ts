@@ -901,6 +901,7 @@ export async function exportInvoices(invoices: Record<string, unknown>[]) {
                 width: 18,
                 formatter: (value, row) => formatFreightNotaDisplayWeight({
                     beratKg: value,
+                    volumeM3: row.totalVolumeM3,
                     billingMode: normalizeFreightNotaBillingMode(row.billingMode),
                     includeCanonical: false,
                 }),
@@ -1046,6 +1047,7 @@ export async function exportFreightNotaDetail(
             collie: parseFormattedNumberish(item.collie || 0) || '',
             billedWeight: formatFreightNotaDisplayWeight({
                 beratKg: item.beratKg || 0,
+                volumeM3: item.volumeM3 || 0,
                 billingMode,
                 includeCanonical: false,
             }),
@@ -1139,6 +1141,7 @@ export async function exportFreightNotaDetail(
         parseFormattedNumberish(nota.totalCollie || 0) || 0,
         formatFreightNotaDisplayWeight({
             beratKg: nota.totalWeightKg || 0,
+            volumeM3: nota.totalVolumeM3 || 0,
             billingMode,
             includeCanonical: false,
         }),

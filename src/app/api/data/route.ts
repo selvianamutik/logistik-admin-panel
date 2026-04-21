@@ -156,6 +156,7 @@ const ENTITY_MODULE_MAP: Partial<Record<keyof typeof DOCUMENT_TYPE_MAP, AppModul
     'stock-movements': 'warehouseItems',
     customers: 'customers',
     'customer-products': 'customers',
+    'customer-billing-rates': 'customers',
     'customer-recipients': 'customers',
     'customer-pickups': 'customers',
     'trip-route-rates': 'tripRouteRates',

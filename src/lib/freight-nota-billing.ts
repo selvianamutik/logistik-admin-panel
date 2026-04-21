@@ -17,14 +17,24 @@ export const FREIGHT_NOTA_BILLING_MODE_OPTIONS: Array<{
         label: 'Ton / Tarif per ton',
         description: 'Nota tampil dalam ton dan total dihitung per ton.',
     },
+    {
+        value: 'PER_VOLUME',
+        label: 'Volume / Tarif per m3',
+        description: 'Nota dihitung dari volume muatan dalam meter kubik.',
+    },
+    {
+        value: 'PER_TRIP',
+        label: 'Trip / Tarif per surat jalan',
+        description: 'Nota dihitung satu tarif tetap per baris surat jalan.',
+    },
 ];
 
 export function isFreightNotaBillingMode(value: unknown): value is FreightNotaBillingMode {
-    return value === 'PER_KG' || value === 'PER_TON';
+    return value === 'PER_KG' || value === 'PER_TON' || value === 'PER_VOLUME' || value === 'PER_TRIP';
 }
 
 export function normalizeFreightNotaBillingMode(value: unknown): FreightNotaBillingMode {
-    return value === 'PER_TON' ? 'PER_TON' : 'PER_KG';
+    return isFreightNotaBillingMode(value) ? value : 'PER_KG';
 }
 
 export function resolveFreightNotaBillingModeInput(
@@ -49,23 +59,38 @@ export function resolveFreightNotaBillingModeInput(
 }
 
 export function getFreightNotaBillingModeLabel(mode: FreightNotaBillingMode) {
-    return mode === 'PER_TON' ? 'Per Ton' : 'Per Kg';
+    if (mode === 'PER_TON') return 'Per Ton';
+    if (mode === 'PER_VOLUME') return 'Per Volume';
+    if (mode === 'PER_TRIP') return 'Per Trip';
+    return 'Per Kg';
 }
 
 export function getFreightNotaWeightColumnLabel(mode: FreightNotaBillingMode) {
+    if (mode === 'PER_VOLUME') return 'VOLUME M3';
+    if (mode === 'PER_TRIP') return 'QTY TRIP';
     return mode === 'PER_TON' ? 'BERAT TON' : 'BERAT KG';
 }
 
 export function getFreightNotaRateColumnLabel(mode: FreightNotaBillingMode) {
+    if (mode === 'PER_VOLUME') return 'TARIF/M3';
+    if (mode === 'PER_TRIP') return 'TARIF/TRIP';
     return mode === 'PER_TON' ? 'TARIF/TON' : 'TARIF/KG';
 }
 
 export function getFreightNotaWeightUnitLabel(mode: FreightNotaBillingMode) {
+    if (mode === 'PER_VOLUME') return 'm3';
+    if (mode === 'PER_TRIP') return 'trip';
     return mode === 'PER_TON' ? 'ton' : 'kg';
 }
 
-export function getFreightNotaDisplayWeightValue(beratKg: unknown, mode: FreightNotaBillingMode) {
+export function getFreightNotaDisplayWeightValue(beratKg: unknown, mode: FreightNotaBillingMode, volumeM3?: unknown) {
     const normalizedKg = Math.max(parseFormattedNumberish(beratKg || 0), 0);
+    if (mode === 'PER_VOLUME') {
+        return Math.max(parseFormattedNumberish(volumeM3 || 0, { maxFractionDigits: 3 }), 0);
+    }
+    if (mode === 'PER_TRIP') {
+        return 1;
+    }
     return mode === 'PER_TON'
         ? convertKgToWeightInputValue(normalizedKg, 'TON')
         : normalizedKg;
@@ -81,14 +106,20 @@ export function roundFreightNotaCurrencyAmount(value: unknown) {
 
 export function calculateFreightNotaRowAmount(params: {
     beratKg: unknown;
+    volumeM3?: unknown;
     tarip: unknown;
     billingMode: FreightNotaBillingMode;
 }) {
     const beratKg = Math.max(parseFormattedNumberish(params.beratKg || 0), 0);
+    const volumeM3 = Math.max(parseFormattedNumberish(params.volumeM3 || 0, { maxFractionDigits: 3 }), 0);
     const tarip = Math.max(parseFormattedNumberish(params.tarip || 0), 0);
-    const billedWeight = params.billingMode === 'PER_TON'
-        ? convertKgToWeightInputValue(beratKg, 'TON')
-        : beratKg;
+    if (params.billingMode === 'PER_TRIP') {
+        return roundFreightNotaCurrencyAmount(tarip);
+    }
+    if (params.billingMode === 'PER_VOLUME') {
+        return roundFreightNotaCurrencyAmount(volumeM3 * tarip);
+    }
+    const billedWeight = params.billingMode === 'PER_TON' ? convertKgToWeightInputValue(beratKg, 'TON') : beratKg;
     return roundFreightNotaCurrencyAmount(billedWeight * tarip);
 }
 
@@ -101,10 +132,17 @@ function formatBillingValue(value: number, maxFractionDigits: number) {
 
 export function formatFreightNotaDisplayWeight(params: {
     beratKg: unknown;
+    volumeM3?: unknown;
     billingMode: FreightNotaBillingMode;
     includeCanonical?: boolean;
 }) {
     const beratKg = Math.max(parseFormattedNumberish(params.beratKg || 0), 0);
+    if (params.billingMode === 'PER_VOLUME') {
+        return `${formatBillingValue(Math.max(parseFormattedNumberish(params.volumeM3 || 0, { maxFractionDigits: 3 }), 0), 3)} m3`;
+    }
+    if (params.billingMode === 'PER_TRIP') {
+        return '1 trip';
+    }
     if (params.billingMode === 'PER_TON') {
         const tonValue = getFreightNotaDisplayWeightValue(beratKg, 'PER_TON');
         const tonLabel = `${formatBillingValue(tonValue, 3)} ton`;

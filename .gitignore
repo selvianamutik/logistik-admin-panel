@@ -59,3 +59,13 @@ next-env.d.ts
 
 .vercel
 .env*.local
+
+# local editor/workspace state
+.vscode/
+
+# local agent/skill state
+.agents/
+skills-lock.json
+
+# supabase cli local link/cache state
+supabase/.temp/

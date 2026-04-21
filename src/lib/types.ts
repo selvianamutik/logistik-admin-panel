@@ -205,6 +205,23 @@ export interface CustomerPickupLocation {
   isDefault?: boolean;
 }
 
+export type CustomerBillingRateBasis = 'PER_KG' | 'PER_TON' | 'PER_VOLUME' | 'PER_TRIP';
+
+export interface CustomerBillingRate {
+  _id: string;
+  _type: 'customerBillingRate';
+  customerRef: string;
+  customerName?: string;
+  serviceRef?: string;
+  serviceName?: string;
+  basis: CustomerBillingRateBasis;
+  rate: number;
+  routeFrom?: string;
+  routeTo?: string;
+  notes?: string;
+  active: boolean;
+}
+
 export interface OrderPickupStop {
   _key?: string;
   sequence: number;
@@ -781,7 +798,7 @@ export interface FreightNotaInstructionAccount {
   accountHolder?: string;
 }
 
-export type FreightNotaBillingMode = 'PER_KG' | 'PER_TON';
+export type FreightNotaBillingMode = CustomerBillingRateBasis;
 export type Pph23BaseMode = 'BEFORE_CLAIM' | 'AFTER_CLAIM';
 
 export interface FreightNota {
@@ -818,6 +835,7 @@ export interface FreightNota {
   openOverpaymentAmount?: number;
   totalCollie: number;
   totalWeightKg: number;
+  totalVolumeM3?: number;
   billingMode?: FreightNotaBillingMode;
   bankAccountRef?: string;
   instructionAccounts?: FreightNotaInstructionAccount[];
@@ -843,6 +861,7 @@ export interface FreightNotaItem {
   barang?: string;
   collie?: number;
   beratKg: number;
+  volumeM3?: number;
   tarip: number;
   uangRp: number;
   ket?: string;

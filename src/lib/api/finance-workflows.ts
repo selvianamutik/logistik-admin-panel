@@ -23,6 +23,7 @@ import {
     updateDocument,
 } from '@/lib/repositories/document-store';
 import { buildFreightNotaDisplayNumberFromParts } from '@/lib/nota-numbering';
+import { findMatchingCustomerBillingRate } from '@/lib/customer-billing-rates';
 import { buildFreightNotaCoverageRowKeys } from '@/lib/invoice-create-page-support';
 import { DEFAULT_PPH23_RATE_PERCENT, normalizePph23BaseMode, normalizePph23Enabled, normalizePph23RatePercent } from '@/lib/pph23';
 import type {
@@ -1885,6 +1886,7 @@ export async function handleFreightNotaCreate(
                 const tujuan = normalizeText(row.tujuan);
                 const dari = normalizeText(row.dari);
                 const beratKg = normalizeNumber(row.beratKg);
+                const volumeM3 = normalizeNumber(row.volumeM3 ?? 0, { maxFractionDigits: 3 });
                 const tarip = normalizeCurrencyNumber(row.tarip);
                 const collie = parseOptionalStrictNotaRowNumber(
                     row.collie,
@@ -1899,8 +1901,11 @@ export async function handleFreightNotaCreate(
                 if ((!date || !noSJ || !tujuan) && !doRef) {
                     throw new Error('Baris nota wajib punya tanggal, nomor SJ, dan tujuan');
                 }
-                if ((!Number.isFinite(beratKg) || beratKg <= 0) && !doRef) {
+                if ((!Number.isFinite(beratKg) || beratKg <= 0) && billingMode !== 'PER_VOLUME' && billingMode !== 'PER_TRIP' && !doRef) {
                     throw new Error('Berat pada baris nota harus lebih besar dari 0');
+                }
+                if ((!Number.isFinite(volumeM3) || volumeM3 <= 0) && billingMode === 'PER_VOLUME' && !doRef) {
+                    throw new Error('Volume pada baris nota harus lebih besar dari 0');
                 }
                 if (!Number.isFinite(tarip) || tarip <= 0) {
                     throw new Error('Tarif nota pada baris harus lebih besar dari 0');
@@ -1913,6 +1918,8 @@ export async function handleFreightNotaCreate(
                     doRef,
                     deliveryOrderItemRef: normalizedDeliveryOrderItemRefs[0],
                     deliveryOrderItemRefs: normalizedDeliveryOrderItemRefs.length > 0 ? normalizedDeliveryOrderItemRefs : undefined,
+                    customerRef: normalizeOptionalText(row.customerRef),
+                    customerName: normalizeOptionalText(row.customerName),
                     doNumber,
                     vehiclePlate: normalizeOptionalText(row.vehiclePlate),
                     date,
@@ -1922,8 +1929,9 @@ export async function handleFreightNotaCreate(
                     barang: normalizeOptionalText(row.barang),
                     collie: collie > 0 ? collie : undefined,
                     beratKg,
+                    volumeM3: volumeM3 > 0 ? volumeM3 : undefined,
                     tarip,
-                    uangRp: normalizeFreightNotaAmount(calculateFreightNotaRowAmount({ beratKg, tarip, billingMode })),
+                    uangRp: normalizeFreightNotaAmount(calculateFreightNotaRowAmount({ beratKg, volumeM3, tarip, billingMode })),
                     ket: normalizeOptionalText(row.ket),
                 };
             });
@@ -1950,6 +1958,8 @@ export async function handleFreightNotaCreate(
             doNumber?: string;
             customerDoNumber?: string;
             vehiclePlate?: string;
+            serviceRef?: string;
+            vehicleServiceRef?: string;
             pickupAddress?: string;
             receiverAddress?: string;
             shipperReferences?: Array<{
@@ -2087,6 +2097,12 @@ export async function handleFreightNotaCreate(
         const matchedShipperReference = (deliveryOrder.shipperReferences || []).find(reference =>
             normalizeOptionalText(reference.referenceNumber) === row.noSJ
         );
+        row.customerRef =
+            normalizeOptionalText(row.customerRef) ||
+            normalizeOptionalText(matchedShipperReference?.billingCustomerRef);
+        row.customerName =
+            normalizeOptionalText(row.customerName) ||
+            normalizeOptionalText(matchedShipperReference?.billingCustomerName);
         row.vehiclePlate = normalizeOptionalText(deliveryOrder.vehiclePlate) || row.vehiclePlate;
         row.date = normalizeOptionalText(deliveryOrder.date) || row.date || '';
         row.dari =
@@ -2112,9 +2128,49 @@ export async function handleFreightNotaCreate(
         } else if (!Number.isFinite(row.beratKg) || row.beratKg <= 0) {
             row.beratKg = hasActualDropPoints ? billableCargoSummary.weightKg : itemSummary.beratKg;
         }
+        if (hasActualDropPoints ? billableCargoSummary.volumeM3 > 0 : itemSummary.volumeM3 > 0) {
+            row.volumeM3 = hasActualDropPoints ? billableCargoSummary.volumeM3 : itemSummary.volumeM3;
+        } else if (!Number.isFinite(row.volumeM3 || 0) || (row.volumeM3 || 0) <= 0) {
+            row.volumeM3 = hasActualDropPoints ? billableCargoSummary.volumeM3 : itemSummary.volumeM3;
+        }
         row.uangRp = normalizeFreightNotaAmount(
-            calculateFreightNotaRowAmount({ beratKg: row.beratKg, tarip: row.tarip, billingMode })
+            calculateFreightNotaRowAmount({ beratKg: row.beratKg, volumeM3: row.volumeM3, tarip: row.tarip, billingMode })
         );
+    }
+
+    const billingRateCustomerRefs = [...new Set(
+        rows
+            .map(row => normalizeOptionalText(row.customerRef))
+            .filter((ref): ref is string => Boolean(ref))
+    )];
+    const customerBillingRates = billingRateCustomerRefs.length > 0
+        ? (await listDocumentsByFilter<{
+            _id: string;
+            customerRef?: string;
+            serviceRef?: string;
+            basis?: string;
+            rate?: number;
+            routeFrom?: string;
+            routeTo?: string;
+            active?: boolean;
+        }>('customerBillingRate', { customerRef: billingRateCustomerRefs })).filter(rate => rate.active !== false)
+        : [];
+    for (const row of rows) {
+        if (row.tarip > 0) continue;
+        const deliveryOrder = row.doRef ? deliveryOrderMap.get(row.doRef) : undefined;
+        const matchedRate = findMatchingCustomerBillingRate(customerBillingRates, {
+            customerRef: row.customerRef,
+            serviceRef: deliveryOrder?.vehicleServiceRef || deliveryOrder?.serviceRef,
+            basis: billingMode,
+            routeFrom: row.dari,
+            routeTo: row.tujuan,
+        });
+        if (matchedRate?.rate && matchedRate.rate > 0) {
+            row.tarip = matchedRate.rate;
+            row.uangRp = normalizeFreightNotaAmount(
+                calculateFreightNotaRowAmount({ beratKg: row.beratKg, volumeM3: row.volumeM3, tarip: row.tarip, billingMode })
+            );
+        }
     }
 
     const payloadCoverageByDoRef = new Map<
@@ -2218,9 +2274,15 @@ export async function handleFreightNotaCreate(
                 { status: 400 }
             );
         }
-        if (!Number.isFinite(row.beratKg) || row.beratKg <= 0) {
+        if ((!Number.isFinite(row.beratKg) || row.beratKg <= 0) && billingMode !== 'PER_VOLUME' && billingMode !== 'PER_TRIP') {
             return NextResponse.json(
                 { error: `Berat pada baris nota ${row.doNumber || row.noSJ || row.doRef || ''} tidak valid` },
+                { status: 400 }
+            );
+        }
+        if ((!Number.isFinite(row.volumeM3 || 0) || (row.volumeM3 || 0) <= 0) && billingMode === 'PER_VOLUME') {
+            return NextResponse.json(
+                { error: `Volume pada baris nota ${row.doNumber || row.noSJ || row.doRef || ''} tidak valid` },
                 { status: 400 }
             );
         }
@@ -2231,7 +2293,7 @@ export async function handleFreightNotaCreate(
             );
         }
         row.uangRp = normalizeFreightNotaAmount(
-            calculateFreightNotaRowAmount({ beratKg: row.beratKg, tarip: row.tarip, billingMode })
+            calculateFreightNotaRowAmount({ beratKg: row.beratKg, volumeM3: row.volumeM3, tarip: row.tarip, billingMode })
         );
     }
 
@@ -2312,15 +2374,9 @@ export async function handleFreightNotaCreate(
         }
     }
 
-    const orderCustomerMap = new Map(
-        sourceOrders.map(order => [order._id, extractRefId(order.customerRef)])
-    );
     const inferredCustomerRefs = [...new Set(
-        deliveryOrders
-            .map(deliveryOrder => {
-                const orderRef = extractRefId(deliveryOrder.orderRef);
-                return orderRef ? orderCustomerMap.get(orderRef) : undefined;
-            })
+        rows
+            .map(row => normalizeOptionalText(row.customerRef))
             .filter((ref): ref is string => Boolean(ref))
     )];
 
@@ -2342,15 +2398,13 @@ export async function handleFreightNotaCreate(
         resolvedCustomerRef = inferredCustomerRef;
     }
 
-    if (resolvedCustomerRef && deliveryOrders.length > 0) {
-        for (const deliveryOrder of deliveryOrders) {
-            const orderRef = extractRefId(deliveryOrder.orderRef);
-            if (orderRef && orderCustomerMap.get(orderRef) !== resolvedCustomerRef) {
-                return NextResponse.json(
-                    { error: `DO ${deliveryOrder.doNumber || deliveryOrder._id} bukan milik customer yang dipilih` },
-                    { status: 409 }
-                );
-            }
+    if (resolvedCustomerRef) {
+        const mismatchedRow = rows.find(row => row.customerRef && row.customerRef !== resolvedCustomerRef);
+        if (mismatchedRow) {
+            return NextResponse.json(
+                { error: `SJ ${mismatchedRow.noSJ || '-'} memakai customer tagihan berbeda dari nota ini` },
+                { status: 409 }
+            );
         }
     }
 
@@ -2360,7 +2414,7 @@ export async function handleFreightNotaCreate(
         return issueDateError;
     }
     const customerDerivedFromDo = Boolean(inferredCustomerRef && inferredCustomerRef === resolvedCustomerRef && deliveryOrders.length > 0);
-    let finalCustomerName = customerName;
+    let finalCustomerName = customerName || rows.find(row => normalizeOptionalText(row.customerName))?.customerName || '';
     let finalCustomerAddress = normalizeOptionalText(data.customerAddress);
     let finalCustomerContactPerson = normalizeOptionalText(data.customerContactPerson);
     let finalCustomerPhone = normalizeOptionalText(data.customerPhone);
@@ -2423,7 +2477,7 @@ export async function handleFreightNotaCreate(
             billingMode = normalizeFreightNotaBillingMode(customerDoc?.defaultFreightNotaBillingMode);
             for (const row of rows) {
                 row.uangRp = normalizeFreightNotaAmount(
-                    calculateFreightNotaRowAmount({ beratKg: row.beratKg, tarip: row.tarip, billingMode })
+                    calculateFreightNotaRowAmount({ beratKg: row.beratKg, volumeM3: row.volumeM3, tarip: row.tarip, billingMode })
                 );
             }
         }
@@ -2435,6 +2489,7 @@ export async function handleFreightNotaCreate(
     const totalAmount = normalizeFreightNotaAmount(rows.reduce((sum, row) => sum + row.uangRp, 0));
     const totalCollie = rows.reduce((sum, row) => sum + (row.collie || 0), 0);
     const totalWeightKg = rows.reduce((sum, row) => sum + row.beratKg, 0);
+    const totalVolumeM3 = rows.reduce((sum, row) => sum + (row.volumeM3 || 0), 0);
     if (totalAmount <= 0) {
         return NextResponse.json({ error: 'Total nota harus lebih besar dari 0' }, { status: 400 });
     }
@@ -2547,6 +2602,7 @@ export async function handleFreightNotaCreate(
         netAmount: initialReceivablePatch.netAmount,
         totalCollie,
         totalWeightKg,
+        totalVolumeM3,
         billingMode,
         instructionAccounts: instructionAccounts.length > 0 ? instructionAccounts : undefined,
         footerNote,
@@ -2577,6 +2633,7 @@ export async function handleFreightNotaCreate(
             barang: row.barang,
             collie: row.collie,
             beratKg: row.beratKg,
+            volumeM3: row.volumeM3,
             tarip: row.tarip,
             uangRp: row.uangRp,
             ket: row.ket,
@@ -2654,16 +2711,20 @@ export async function handleFreightNotaUpdate(
                     { maxFractionDigits: 2 }
                 );
                 const beratKg = normalizeNumber(row.beratKg);
+                const volumeM3 = normalizeNumber(row.volumeM3 ?? 0, { maxFractionDigits: 3 });
                 const tarip = normalizeCurrencyNumber(row.tarip);
 
                 assertIsoDate(date, 'Tanggal baris nota');
                 if (!normalizeText(row.noSJ) || !normalizeText(row.tujuan)) {
                     throw new Error('Baris nota wajib punya nomor SJ dan tujuan');
                 }
-                if (!Number.isFinite(beratKg) || beratKg <= 0) {
+                if ((!Number.isFinite(beratKg) || beratKg <= 0) && billingMode !== 'PER_VOLUME' && billingMode !== 'PER_TRIP') {
                     throw new Error('Berat pada baris nota harus lebih besar dari 0');
                 }
-                if (!Number.isFinite(tarip) || tarip <= 0) {
+                if ((!Number.isFinite(volumeM3) || volumeM3 <= 0) && billingMode === 'PER_VOLUME') {
+                    throw new Error('Volume pada baris nota harus lebih besar dari 0');
+                }
+                if ((!Number.isFinite(tarip) || tarip <= 0) && !doRef) {
                     throw new Error('Tarif nota pada baris harus lebih besar dari 0');
                 }
                 if (!Number.isFinite(collie) || collie < 0) {
@@ -2685,8 +2746,9 @@ export async function handleFreightNotaUpdate(
                     barang: normalizeOptionalText(row.barang),
                     collie: collie > 0 ? collie : undefined,
                     beratKg,
-                    tarip,
-                    uangRp: normalizeFreightNotaAmount(calculateFreightNotaRowAmount({ beratKg, tarip, billingMode })),
+                    volumeM3: volumeM3 > 0 ? volumeM3 : undefined,
+                    tarip: Number.isFinite(tarip) && tarip > 0 ? tarip : 0,
+                    uangRp: normalizeFreightNotaAmount(calculateFreightNotaRowAmount({ beratKg, volumeM3, tarip, billingMode })),
                     ket: normalizeOptionalText(row.ket),
                 };
             });
@@ -2960,7 +3022,7 @@ export async function handleFreightNotaUpdate(
             billingMode = normalizeFreightNotaBillingMode(customerDoc?.defaultFreightNotaBillingMode);
             for (const row of rows) {
                 row.uangRp = normalizeFreightNotaAmount(
-                    calculateFreightNotaRowAmount({ beratKg: row.beratKg, tarip: row.tarip, billingMode })
+                    calculateFreightNotaRowAmount({ beratKg: row.beratKg, volumeM3: row.volumeM3, tarip: row.tarip, billingMode })
                 );
             }
         }
@@ -3017,6 +3079,7 @@ export async function handleFreightNotaUpdate(
     const totalAmount = normalizeFreightNotaAmount(rows.reduce((sum, row) => sum + row.uangRp, 0));
     const totalCollie = rows.reduce((sum, row) => sum + (row.collie || 0), 0);
     const totalWeightKg = rows.reduce((sum, row) => sum + row.beratKg, 0);
+    const totalVolumeM3 = rows.reduce((sum, row) => sum + (row.volumeM3 || 0), 0);
     if (totalAmount <= 0) {
         return NextResponse.json({ error: 'Total nota harus lebih besar dari 0' }, { status: 400 });
     }
@@ -3083,6 +3146,7 @@ export async function handleFreightNotaUpdate(
         status: receivablePatch.status,
         totalCollie,
         totalWeightKg,
+        totalVolumeM3,
         billingMode,
         instructionAccounts: instructionAccounts.length > 0 ? instructionAccounts : undefined,
         footerNote,
@@ -3110,6 +3174,7 @@ export async function handleFreightNotaUpdate(
             barang: row.barang,
             collie: row.collie,
             beratKg: row.beratKg,
+            volumeM3: row.volumeM3,
             tarip: row.tarip,
             uangRp: row.uangRp,
             ket: row.ket,

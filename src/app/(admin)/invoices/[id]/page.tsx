@@ -490,6 +490,7 @@ export default function NotaDetailPage() {
     const billingMode = normalizeFreightNotaBillingMode(nota.billingMode);
     const totalBilledWeightLabel = formatFreightNotaDisplayWeight({
         beratKg: nota.totalWeightKg || 0,
+        volumeM3: nota.totalVolumeM3 || 0,
         billingMode,
         includeCanonical: false,
     });
@@ -705,7 +706,7 @@ export default function NotaDetailPage() {
                                             <td>{it.tujuan}</td>
                                             <td>{it.barang || '-'}</td>
                                     <td>{it.collie ? formatQuantity(it.collie) : '-'}</td>
-                                            <td>{formatFreightNotaDisplayWeight({ beratKg: it.beratKg || 0, billingMode, includeCanonical: false })}</td>
+                                            <td>{formatFreightNotaDisplayWeight({ beratKg: it.beratKg || 0, volumeM3: it.volumeM3 || 0, billingMode, includeCanonical: false })}</td>
                                             <td>{formatCurrency(it.tarip || 0)}</td>
                                             <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatCurrency(it.uangRp)}</td>
                                             <td className="text-muted">{it.ket || '-'}</td>
