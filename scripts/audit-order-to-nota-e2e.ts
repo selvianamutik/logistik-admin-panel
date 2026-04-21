@@ -504,7 +504,7 @@ async function main() {
         );
 
         doOneItems = await getDeliveryOrderItems(cookieHeader, doOneId);
-        auditStep('finalisasi DO trip 1 sebagai drop billable');
+        auditStep('finalisasi DO trip 1 sebagai campuran drop billable dan hold non-billable');
         await advanceDeliveryOrderToDelivered({
             cookieHeader,
             deliveryOrderId: doOneId,
@@ -529,10 +529,10 @@ async function main() {
                     volumeInputUnit: 'M3',
                 },
                 {
-                    stopType: 'EXTRA_DROP',
+                    stopType: 'HOLD',
                     shipperReferenceNumber: sjB,
-                    locationName: 'Audit Drop B',
-                    locationAddress: 'Audit Drop B Address',
+                    locationName: 'Audit Gudang Hold B',
+                    locationAddress: 'Audit Gudang Hold B Address',
                     qtyKoli: 3,
                     weightInputValue: 300,
                     weightInputUnit: 'KG',
@@ -653,11 +653,12 @@ async function main() {
             `/api/data?entity=orders&id=${encodeURIComponent(createdState.orderId)}`,
             cookieHeader
         );
-        assert(deliveredOrder.data.status === 'PARTIAL', `Order harus PARTIAL setelah 1 trip drop dan 1 trip hold, sekarang ${deliveredOrder.data.status}.`);
+        assert(deliveredOrder.data.status === 'PARTIAL', `Order harus PARTIAL setelah campuran drop/hold dan 1 trip hold-only, sekarang ${deliveredOrder.data.status}.`);
 
-        auditStep('create nota dari DO billable dan verifikasi row per SJ');
+        auditStep('create nota dari SJ billable pada DO campuran dan verifikasi row per SJ');
         const notaRows = doOneItems
             .sort((left, right) => String(left.shipperReferenceNumber || '').localeCompare(String(right.shipperReferenceNumber || '')))
+            .filter(item => item.shipperReferenceNumber === sjA)
             .map(item => ({
                 doRef: doOneId,
                 deliveryOrderItemRef: item._id,
@@ -682,16 +683,36 @@ async function main() {
             cookieHeader
         );
         const notaItems = Array.isArray(notaItemsResponse.data) ? notaItemsResponse.data : [];
-        assert(notaItems.length === 2, `Nota harus punya 2 row per SJ, sekarang ${notaItems.length}.`);
+        assert(notaItems.length === 1, `Nota harus hanya punya 1 row SJ billable, sekarang ${notaItems.length}.`);
         assert(
-            notaItems.some(item => item.noSJ === sjA && normalizeNumber(item.beratKg) === 200) &&
-            notaItems.some(item => item.noSJ === sjB && normalizeNumber(item.beratKg) === 300),
-            'Row nota harus mengikuti berat billable per SJ.'
+            notaItems.some(item => item.noSJ === sjA && normalizeNumber(item.beratKg) === 200),
+            'Row nota harus mengikuti berat billable per SJ A.'
         );
         assert(
             notaItems.every(item => normalizeText(item.tujuan).startsWith('Audit Drop')),
             'Tujuan nota harus berasal dari titik drop aktual per SJ.'
         );
+
+        auditStep('pastikan SJ hold pada DO campuran tidak bisa ditagihkan');
+        const heldMixedItem = doOneItems.find(item => item.shipperReferenceNumber === sjB);
+        assert(heldMixedItem, 'Item hold pada DO campuran harus ditemukan.');
+        await postData(cookieHeader, {
+            entity: 'freight-notas',
+            action: 'create-with-items',
+            data: {
+                issueDate: AUDIT_DATE,
+                dueDate: AUDIT_DATE,
+                billingMode: 'PER_KG',
+                items: [
+                    {
+                        doRef: doOneId,
+                        deliveryOrderItemRef: heldMixedItem._id,
+                        noSJ: sjB,
+                        tarip: 1000,
+                    },
+                ],
+            },
+        }, { expectStatus: 409 });
 
         auditStep('pastikan DO hold-only ditolak untuk nota');
         await postData(cookieHeader, {
@@ -727,7 +748,7 @@ async function main() {
         assert((deletedNotaItems.data || []).length === 0, 'Delete nota harus menghapus row freightNotaItem.');
         createdState.notaId = undefined;
 
-        console.log('Order to nota E2E audit OK: create order, multi-trip DO, multi-SJ items, append/edit/delete cargo, drop/hold completion, nota create/delete verified.');
+        console.log('Order to nota E2E audit OK: create order, multi-trip DO, mixed drop/hold SJ, append/edit/delete cargo, hold-only completion, nota create/delete verified.');
     } finally {
         auditStep('cleanup data audit berjalan');
         await cleanupCreatedState(createdState);

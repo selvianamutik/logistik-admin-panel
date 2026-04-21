@@ -38,6 +38,8 @@ export type FreightNotaOrderSource = {
 export type FreightNotaDeliveryOrderItemSource = {
     _id?: string;
     deliveryOrderRef?: string;
+    shipperReferenceKey?: string;
+    shipperReferenceNumber?: string;
     orderItemDescription?: string;
     orderItemQtyKoli?: number;
     orderItemWeight?: number;

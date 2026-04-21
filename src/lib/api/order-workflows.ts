@@ -3438,8 +3438,8 @@ export async function handleDeliveryOrderCargoItemRemove(
     }
 
     try {
-        await deleteDocument(deliveryOrderItemId);
-        await deleteDocument(orderItemRef);
+        await deleteDocument(deliveryOrderItemId, 'deliveryOrderItem');
+        await deleteDocument(orderItemRef, 'orderItem');
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(

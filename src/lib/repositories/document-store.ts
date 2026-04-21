@@ -214,8 +214,8 @@ export async function updateDocument<T = Record<string, unknown>>(
     throw new Error(`Unsupported relational document type for update: ${existing._type}`);
 }
 
-export async function deleteDocument(id: string) {
-    const existing = await getDocumentById<{ _type?: string }>(id);
+export async function deleteDocument(id: string, docType?: string) {
+    const existing = await getDocumentById<{ _type?: string }>(id, docType);
     if (!existing?._type) {
         return true;
     }

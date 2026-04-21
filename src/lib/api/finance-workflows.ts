@@ -2142,19 +2142,37 @@ export async function handleFreightNotaCreate(
         payloadCoverageByDoRef.set(row.doRef, coverage);
     }
     for (const [doRef, coverage] of payloadCoverageByDoRef.entries()) {
-        if (coverage.fullDoIncluded || coverage.deliveryOrderItemRefs.size === 0) {
+        if (coverage.deliveryOrderItemRefs.size === 0 && !coverage.fullDoIncluded) {
             continue;
         }
+        const deliveryOrder = deliveryOrderMap.get(doRef);
         const doItems = doItemMap.get(doRef) || [];
         const doItemIds = doItems
             .map(item => normalizeOptionalText(item._id))
             .filter((itemId): itemId is string => Boolean(itemId));
-        const missingItemIds = doItemIds.filter(itemId => !coverage.deliveryOrderItemRefs.has(itemId));
+        const hasActualDropPoints = Array.isArray(deliveryOrder?.actualDropPoints) && deliveryOrder.actualDropPoints.length > 0;
+        const billableDoItemIds = hasActualDropPoints
+            ? doItems
+                .filter(item => hasDeliveryOrderBillableCargo(deliveryOrder, normalizeOptionalText(item.shipperReferenceNumber)))
+                .map(item => normalizeOptionalText(item._id))
+                .filter((itemId): itemId is string => Boolean(itemId))
+            : doItemIds;
+        if (coverage.fullDoIncluded) {
+            if (hasActualDropPoints && billableDoItemIds.length !== doItemIds.length) {
+                return NextResponse.json(
+                    {
+                        error: `DO ${deliveryOrder?.doNumber || doRef} punya item hold/non-billable. Pilih item SJ billable satu per satu untuk nota.`,
+                    },
+                    { status: 409 }
+                );
+            }
+            continue;
+        }
+        const missingItemIds = billableDoItemIds.filter(itemId => !coverage.deliveryOrderItemRefs.has(itemId));
         if (missingItemIds.length > 0) {
-            const deliveryOrder = deliveryOrderMap.get(doRef);
             return NextResponse.json(
                 {
-                    error: `DO ${deliveryOrder?.doNumber || doRef} harus memasukkan semua item muatan dalam payload nota`,
+                    error: `DO ${deliveryOrder?.doNumber || doRef} harus memasukkan semua item muatan billable dalam payload nota`,
                 },
                 { status: 409 }
             );
