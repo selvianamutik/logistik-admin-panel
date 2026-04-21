@@ -145,7 +145,7 @@ const functionChecks = [
       "const deliveryOrder = await getDocumentById<{",
       'await updateDocument(id, {',
       "status: 'DRIVER_REQUEST_REJECTED'",
-      'pendingDriverStatus: undefined,',
+      'pendingDriverStatus: null,',
     ],
   },
 ];

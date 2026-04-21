@@ -13,6 +13,10 @@ type SupabaseErrorPayload = {
     message?: string;
 };
 
+const TRANSIENT_STATUS_CODES = new Set([429, 502, 503, 504]);
+const MAX_FETCH_ATTEMPTS = 3;
+const RETRY_BASE_DELAY_MS = 250;
+
 export class SupabaseServiceError extends Error {
     code?: string;
     details?: string;
@@ -89,6 +93,37 @@ function getSupabaseConfig(): SupabaseConfig {
     };
 }
 
+function delay(ms: number) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function isTransientSupabaseResponse(status: number, rawText: string) {
+    return TRANSIENT_STATUS_CODES.has(status) || /bad gateway|temporarily unavailable|gateway timeout/i.test(rawText);
+}
+
+function isTransientFetchError(error: unknown) {
+    const message = error instanceof Error ? error.message : '';
+    return /fetch failed|network|econnreset|etimedout|socket|terminated/i.test(message);
+}
+
+function buildSupabaseServiceError(status: number, rawText: string) {
+    let message = rawText || `Supabase request failed with status ${status}`;
+    let payload: SupabaseErrorPayload | undefined;
+    try {
+        payload = JSON.parse(rawText) as SupabaseErrorPayload;
+        message = payload.message || payload.error || payload.hint || message;
+    } catch {
+        // Keep the raw Supabase response when it is not JSON.
+    }
+    return new SupabaseServiceError(status, message, {
+        code: payload?.code,
+        details: payload?.details,
+        hint: payload?.hint,
+        payload,
+        rawText,
+    });
+}
+
 async function supabaseFetch(path: string, init: RequestInit = {}) {
     const config = getSupabaseConfig();
     const headers = new Headers(init.headers);
@@ -96,32 +131,38 @@ async function supabaseFetch(path: string, init: RequestInit = {}) {
     headers.set('Authorization', `Bearer ${config.serviceRoleKey}`);
     headers.set('Content-Type', 'application/json');
 
-    const response = await fetch(`${config.url}/rest/v1/${path}`, {
-        ...init,
-        headers,
-        cache: 'no-store',
-    });
+    let lastError: unknown;
 
-    if (!response.ok) {
-        const rawText = await response.text();
-        let message = rawText || `Supabase request failed with status ${response.status}`;
-        let payload: SupabaseErrorPayload | undefined;
+    for (let attempt = 1; attempt <= MAX_FETCH_ATTEMPTS; attempt += 1) {
         try {
-            payload = JSON.parse(rawText) as SupabaseErrorPayload;
-            message = payload.message || payload.error || payload.hint || message;
-        } catch {
-            // Keep the raw Supabase response when it is not JSON.
+            const response = await fetch(`${config.url}/rest/v1/${path}`, {
+                ...init,
+                headers,
+                cache: 'no-store',
+            });
+
+            if (response.ok) {
+                return response;
+            }
+
+            const rawText = await response.text();
+            const error = buildSupabaseServiceError(response.status, rawText);
+            lastError = error;
+
+            if (!isTransientSupabaseResponse(response.status, rawText) || attempt === MAX_FETCH_ATTEMPTS) {
+                throw error;
+            }
+        } catch (error) {
+            lastError = error;
+            if (error instanceof SupabaseServiceError || !isTransientFetchError(error) || attempt === MAX_FETCH_ATTEMPTS) {
+                throw error;
+            }
         }
-        throw new SupabaseServiceError(response.status, message, {
-            code: payload?.code,
-            details: payload?.details,
-            hint: payload?.hint,
-            payload,
-            rawText,
-        });
+
+        await delay(RETRY_BASE_DELAY_MS * attempt);
     }
 
-    return response;
+    throw lastError instanceof Error ? lastError : new Error('Supabase request failed');
 }
 
 export function getSupabaseClient() {

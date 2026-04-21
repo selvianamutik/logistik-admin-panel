@@ -160,20 +160,27 @@ async function main() {
     const deliveryOrders = Array.isArray(deliveryOrderResponse.data) ? deliveryOrderResponse.data : [];
     const users = Array.isArray(usersResponse.data) ? usersResponse.data : [];
 
-    const candidate = deliveryOrders.find(item =>
-        ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(normalizeText(item.status)) &&
-        normalizeText(item.driverRef) &&
-        !normalizeText(item.pendingDriverStatus) &&
-        mapShipperReferences(item).length > 0
-    );
-    assert(candidate, 'Tidak ada DO aktif yang punya driver dan daftar SJ untuk audit driver.');
+    const candidatePairs = deliveryOrders
+        .filter(item =>
+            ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(normalizeText(item.status)) &&
+            normalizeText(item.driverRef) &&
+            !normalizeText(item.pendingDriverStatus) &&
+            mapShipperReferences(item).length > 0
+        )
+        .map(item => ({
+            deliveryOrder: item,
+            driverUser: users.find(user =>
+                user.role === 'DRIVER' &&
+                user.active !== false &&
+                normalizeText(user.driverRef) === normalizeText(item.driverRef) &&
+                normalizeText(user.email)
+            ),
+        }));
 
-    const driverUser = users.find(user =>
-        user.role === 'DRIVER' &&
-        user.active !== false &&
-        normalizeText(user.driverRef) === normalizeText(candidate.driverRef) &&
-        normalizeText(user.email)
-    );
+    const candidatePair = candidatePairs.find(item => item.driverUser);
+    const candidate = candidatePair?.deliveryOrder;
+    const driverUser = candidatePair?.driverUser;
+    assert(candidate, 'Tidak ada DO aktif yang punya driver dan daftar SJ untuk audit driver.');
     assert(driverUser, `Akun driver untuk ${candidate.doNumber || candidate._id} tidak ditemukan.`);
 
     const driverCookie = await loginAndGetCookieHeader({

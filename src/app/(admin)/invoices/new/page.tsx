@@ -39,6 +39,7 @@ export default function NewNotaPage() {
     const searchParams = useSearchParams();
     const { addToast } = useToast();
     const editNotaId = searchParams.get('edit')?.trim() || '';
+    const returnTo = searchParams.get('returnTo')?.trim() || '';
     const isEditMode = Boolean(editNotaId);
     const skipCustomerDefaultsRef = useRef(false);
     const [customers, setCustomers] = useState<Customer[]>([]);
@@ -103,17 +104,28 @@ export default function NewNotaPage() {
                 setUsedNotaDoRowKeys(
                     usableNotaItems.flatMap(item => {
                         const doRef = item.doRef?.trim();
+                        const itemRefs =
+                            Array.isArray(item.deliveryOrderItemRefs) && item.deliveryOrderItemRefs.length > 0
+                                ? item.deliveryOrderItemRefs
+                                : item.deliveryOrderItemRef
+                                    ? [item.deliveryOrderItemRef]
+                                    : [];
                         if (!doRef) {
                             return [];
                         }
                         const matchedDeliveryOrder = deliveryOrderMap.get(doRef);
                         if (!matchedDeliveryOrder) {
                             const noSJ = item.noSJ?.trim();
-                            return noSJ ? [`${doRef}::${noSJ}`] : [];
+                            return itemRefs.length > 0
+                                ? itemRefs.map(itemRef => `${doRef}::item::${itemRef}`)
+                                : noSJ
+                                    ? [`${doRef}::${noSJ}`]
+                                    : [];
                         }
                         return buildFreightNotaCoverageRowKeys({
                             deliveryOrder: matchedDeliveryOrder,
                             noSJ: item.noSJ,
+                            deliveryOrderItemRefs: itemRefs,
                         });
                     })
                 );
@@ -305,9 +317,20 @@ export default function NewNotaPage() {
             ))
         );
         const selectedRowKeys = new Set(
-            rows
-                .filter(row => !isEmptyNotaRow(row))
-                .map(row => `${row.doRef || 'manual'}::${row.noSJ || row.id}`)
+            rows.flatMap(row => {
+                if (isEmptyNotaRow(row)) {
+                    return [];
+                }
+                const rowItemRefs =
+                    Array.isArray(row.deliveryOrderItemRefs) && row.deliveryOrderItemRefs.length > 0
+                        ? row.deliveryOrderItemRefs
+                        : row.deliveryOrderItemRef
+                            ? [row.deliveryOrderItemRef]
+                            : [];
+                return rowItemRefs.length > 0
+                    ? rowItemRefs.map(itemRef => `${row.doRef || 'manual'}::item::${itemRef}`)
+                    : [`${row.doRef || 'manual'}::${row.noSJ || row.id}`];
+            })
         );
 
         return buildNotaRowsFromDeliveryOrder({
@@ -328,7 +351,10 @@ export default function NewNotaPage() {
                 return false;
             }
             const rowKey = `${row.doRef || 'manual'}::${row.noSJ || row.id}`;
-            if (usedDoRowKeySet.has(rowKey) || selectedRowKeys.has(rowKey)) {
+            const rowCoverageKeys = rowItemRefs.length > 0
+                ? rowItemRefs.map(itemRef => `${row.doRef || 'manual'}::item::${itemRef}`)
+                : [rowKey];
+            if (rowCoverageKeys.some(key => usedDoRowKeySet.has(key) || selectedRowKeys.has(key))) {
                 return false;
             }
             return true;
@@ -465,7 +491,12 @@ export default function NewNotaPage() {
             }
 
             addToast('success', isEditMode ? 'Nota berhasil direvisi' : 'Nota berhasil dibuat');
-            router.push(`/invoices/${isEditMode ? editNotaId : notaPayload.data._id}`);
+            const nextNotaId = isEditMode ? editNotaId : notaPayload.data._id;
+            router.push(
+                returnTo
+                    ? `/invoices/${nextNotaId}?returnTo=${encodeURIComponent(returnTo)}`
+                    : `/invoices/${nextNotaId}`
+            );
         } catch {
             addToast('error', isEditMode ? 'Gagal merevisi nota' : 'Gagal membuat nota');
         } finally {
@@ -505,7 +536,7 @@ export default function NewNotaPage() {
         <div>
             <div className="page-header">
                 <div className="page-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                    <PageBackButton href={isEditMode ? `/invoices/${editNotaId}` : '/invoices'} />
+                    <PageBackButton href={returnTo || (isEditMode ? `/invoices/${editNotaId}` : '/invoices')} />
                     <h1 className="page-title" style={{ margin: 0 }}>{isEditMode ? 'Revisi Nota Ongkos Angkut' : 'Buat Nota Ongkos Angkut'}</h1>
                 </div>
             </div>

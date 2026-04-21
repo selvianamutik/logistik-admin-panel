@@ -310,23 +310,30 @@ export function buildDriverRequestedTrackingStatus(status: string) {
 
 export function deriveOrderStatusFromItems(items: OrderItemStatusSummary[]) {
     const allDelivered = items.length > 0 && items.every(item => item.status === 'DELIVERED');
-    const anyInProgress = items.some(
+    const anyDelivered = items.some(
         item =>
             item.status === 'DELIVERED' ||
-            item.status === 'PARTIAL' ||
+            item.status === 'PARTIAL'
+    );
+    const anyAssigned = items.some(
+        item =>
             item.status === 'ASSIGNED' ||
             item.status === 'ON_DELIVERY'
     );
-    const anyHold = items.some(item => item.status === 'HOLD');
+    const anyNonDeliveryResolved = items.some(
+        item =>
+            item.status === 'HOLD' ||
+            item.status === 'RETURNED'
+    );
 
     if (allDelivered) return 'COMPLETE';
-    if (anyInProgress) return 'PARTIAL';
-    if (anyHold) return 'ON_HOLD';
+    if (anyDelivered) return 'PARTIAL';
+    if (anyNonDeliveryResolved && !anyAssigned) return 'ON_HOLD';
     return 'OPEN';
 }
 
 export async function resolveOrderPartyData(customerRef: string, serviceRef?: string) {
-    const customer = await getDocumentById<{ _id: string; _rev?: string; name?: string; address?: string; active?: boolean }>(customerRef);
+    const customer = await getDocumentById<{ _id: string; _rev?: string; name?: string; address?: string; active?: boolean }>(customerRef, 'customer');
     if (!customer) {
         throw new Error('Customer order tidak ditemukan');
     }
@@ -337,7 +344,7 @@ export async function resolveOrderPartyData(customerRef: string, serviceRef?: st
     let serviceName: string | undefined;
     let service: ResolvedOrderPartyData['service'];
     if (serviceRef) {
-        const serviceDoc = await getDocumentById<{ _id: string; _rev?: string; name?: string; active?: boolean }>(serviceRef);
+        const serviceDoc = await getDocumentById<{ _id: string; _rev?: string; name?: string; active?: boolean }>(serviceRef, 'service');
         if (!serviceDoc) {
             throw new Error('Kategori armada order tidak ditemukan');
         }
@@ -360,7 +367,7 @@ export async function resolveOrderRecipientData(customerRef: string, customerRec
         return null;
     }
 
-    const recipient = await getDocumentById<ResolvedCustomerRecipientData>(customerRecipientRef);
+    const recipient = await getDocumentById<ResolvedCustomerRecipientData>(customerRecipientRef, 'customerRecipient');
     if (!recipient || recipient._id !== customerRecipientRef) {
         throw new Error('Master penerima customer tidak ditemukan');
     }
@@ -379,7 +386,7 @@ export async function resolveOrderPickupData(customerRef: string, customerPickup
         return null;
     }
 
-    const pickup = await getDocumentById<ResolvedCustomerPickupData>(customerPickupRef);
+    const pickup = await getDocumentById<ResolvedCustomerPickupData>(customerPickupRef, 'customerPickup');
     if (!pickup || pickup._id !== customerPickupRef) {
         throw new Error('Master pickup customer tidak ditemukan');
     }

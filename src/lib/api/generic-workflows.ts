@@ -1207,7 +1207,7 @@ export async function handleGenericUpdate(
         try {
             await updateDocument(id, {
                 ...tireSetPayload,
-                ...Object.fromEntries(tireUnsetFields.map(field => [field, undefined])),
+                ...Object.fromEntries(tireUnsetFields.map(field => [field, null])),
             });
             await createDocument(historyLogDoc);
             if (nextTireCodeConstraint) {
@@ -1371,7 +1371,7 @@ export async function handleGenericUpdate(
             }
             updated = await updateDocument(id, {
                 ...userSetUpdates,
-                ...Object.fromEntries(userUnsetFields.map(field => [field, undefined])),
+                ...Object.fromEntries(userUnsetFields.map(field => [field, null])),
             });
         } else {
             updated = await updateDocument(id, persistedNormalizedUpdates);

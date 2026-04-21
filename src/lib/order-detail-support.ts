@@ -160,15 +160,15 @@ export function formatProgressLine(label: string, cargo: CargoAggregate) {
 
 export function buildDefaultShipmentSelection(item: OrderItem, progressInfo: OrderItemProgressInfo): SelectedShipmentMap[string] {
     return {
-        qtyKoli: progressInfo.totalQtyKoli > 0 ? String(progressInfo.pendingQtyKoli) : '0',
+        qtyKoli: progressInfo.totalQtyKoli > 0 ? String(progressInfo.assignableQtyKoli) : '0',
         weightInputValue:
-            progressInfo.totalQtyKoli === 0 && progressInfo.pendingWeight > 0
-                ? String(convertKgToWeightInputValue(progressInfo.pendingWeight, item.weightInputUnit || 'KG'))
+            progressInfo.totalQtyKoli === 0 && progressInfo.assignableWeight > 0
+                ? String(convertKgToWeightInputValue(progressInfo.assignableWeight, item.weightInputUnit || 'KG'))
                 : '',
         weightInputUnit: item.weightInputUnit || 'KG',
         volumeInputValue:
-            progressInfo.totalQtyKoli === 0 && progressInfo.pendingVolume > 0
-                ? String(convertM3ToVolumeInputValue(progressInfo.pendingVolume, item.volumeInputUnit || 'M3'))
+            progressInfo.totalQtyKoli === 0 && progressInfo.assignableVolume > 0
+                ? String(convertM3ToVolumeInputValue(progressInfo.assignableVolume, item.volumeInputUnit || 'M3'))
                 : '',
         volumeInputUnit: item.volumeInputUnit || 'M3',
         holdRemaining: false,
@@ -203,13 +203,13 @@ export function buildOrderDetailMetrics(
         acc[item._id] = getOrderItemProgress(item);
         return acc;
     }, {});
-    const deliveredActualCargoByItemId = doItems.reduce<Record<string, CargoAggregate>>((acc, doItem) => {
-        const deliveryOrder = dos.find(item => item._id === doItem.deliveryOrderRef);
-        if (!deliveryOrder || deliveryOrder.status !== 'DELIVERED' || !doItem.orderItemRef) {
-            return acc;
-        }
-        const current = acc[doItem.orderItemRef] || createCargoAggregate();
-        acc[doItem.orderItemRef] = addCargoAggregate(current, getActualDoItemCargo(doItem));
+    const deliveredActualCargoByItemId = items.reduce<Record<string, CargoAggregate>>((acc, item) => {
+        const progress = itemProgressById[item._id];
+        acc[item._id] = {
+            qtyKoli: roundQuantity(progress.deliveredQtyKoli),
+            weightKg: roundQuantity(progress.deliveredWeight),
+            volumeM3: roundQuantity(progress.deliveredVolume, 3),
+        };
         return acc;
     }, {});
     const activePlannedCargoByItemId = doItems.reduce<Record<string, CargoAggregate>>((acc, doItem) => {
@@ -228,7 +228,7 @@ export function buildOrderDetailMetrics(
     const availableItems = items.filter(item => {
         const progress = itemProgressById[item._id];
         return (
-            (progress.pendingQtyKoli > 0 || progress.pendingWeight > 0 || progress.pendingVolume > 0) &&
+            (progress.assignableQtyKoli > 0 || progress.assignableWeight > 0 || progress.assignableVolume > 0) &&
             !activeAssignmentByItemId[item._id]
         );
     });

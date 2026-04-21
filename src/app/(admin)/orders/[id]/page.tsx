@@ -9,6 +9,7 @@ import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
 import { fetchAdminCollectionData, fetchAdminData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
+import { getDeliveryOrderDisplayStatusMeta } from '@/lib/delivery-order-completion';
 import { formatDate, formatCurrency, formatNumber, getReceivableNetAmount, ORDER_STATUS_MAP, ITEM_STATUS_MAP, DO_STATUS_MAP, INVOICE_STATUS_MAP, formatInternalDeliveryOrderNumber } from '@/lib/utils';
 import {
     formatCargoSummary,
@@ -1236,10 +1237,15 @@ export default function OrderDetailPage() {
                                         weightKg: progressInfo.heldWeight,
                                         volumeM3: progressInfo.heldVolume,
                                     }),
-                                    formatProgressLine('Sisa siap kirim', {
+                                    formatProgressLine('Belum ditugaskan', {
                                         qtyKoli: progressInfo.pendingQtyKoli,
                                         weightKg: progressInfo.pendingWeight,
                                         volumeM3: progressInfo.pendingVolume,
+                                    }),
+                                    formatProgressLine('Sisa siap kirim', {
+                                        qtyKoli: progressInfo.assignableQtyKoli,
+                                        weightKg: progressInfo.assignableWeight,
+                                        volumeM3: progressInfo.assignableVolume,
                                     }),
                                 ].filter((line): line is string => Boolean(line));
                                 return (
@@ -1351,6 +1357,7 @@ export default function OrderDetailPage() {
                                 const relatedDeliveryOrderItems = doItems.filter(item => item.deliveryOrderRef === d._id);
                                 const shipperReferenceNumbers = getDeliveryOrderShipperReferenceNumbers(d, relatedDeliveryOrderItems);
                                 const shipperReferencePreview = formatDeliveryOrderShipperReferencePreview(d, relatedDeliveryOrderItems, 3);
+                                const doStatusMeta = getDeliveryOrderDisplayStatusMeta(d);
                                 return (
                                 <tr key={d._id}>
                                     <td>
@@ -1395,7 +1402,7 @@ export default function OrderDetailPage() {
                                             {d.status === 'DELIVERED' ? 'Aktual final' : 'Rencana Trip (estimasi)'}
                                         </div>
                                     </td>
-                                    <td><span className={`badge badge-${DO_STATUS_MAP[d.status]?.color}`}><span className="badge-dot" /> {DO_STATUS_MAP[d.status]?.label}</span></td>
+                                    <td><span className={`badge badge-${doStatusMeta.color}`}><span className="badge-dot" /> {doStatusMeta.label}</span></td>
                                     <td><Link href={withReturnTo(`/delivery-orders/${d._id}`)} className="table-action-btn"><Eye size={14} /> Lihat</Link></td>
                                 </tr>
                                 );
@@ -1884,8 +1891,8 @@ export default function OrderDetailPage() {
                                                     ? selectedNonKoliCargo
                                                     : {
                                                         qtyKoli: 0,
-                                                        weightKg: progressInfo.pendingWeight,
-                                                        volumeM3: progressInfo.pendingVolume,
+                                                        weightKg: progressInfo.assignableWeight,
+                                                        volumeM3: progressInfo.assignableVolume,
                                                     };
                                                 const remainingAfterShipment = roundQuantity(Math.max(progressInfo.pendingQtyKoli - selectedQty, 0));
                                                 const remainingNonKoliCargo = {
@@ -1957,9 +1964,9 @@ export default function OrderDetailPage() {
                                                                 <div>
                                                                     Siap kirim:{' '}
                                                                     {formatCargoSummary({
-                                                                        qtyKoli: progressInfo.pendingQtyKoli,
-                                                                        weightKg: progressInfo.pendingWeight,
-                                                                        volumeM3: progressInfo.pendingVolume,
+                                                                        qtyKoli: progressInfo.assignableQtyKoli,
+                                                                        weightKg: progressInfo.assignableWeight,
+                                                                        volumeM3: progressInfo.assignableVolume,
                                                                     })}
                                                                 </div>
                                                             </div>
@@ -2000,7 +2007,7 @@ export default function OrderDetailPage() {
                                                                 <div style={{ display: 'grid', gap: '0.35rem' }}>
                                                                     {selection ? (
                                                                         <>
-                                                                            {progressInfo.pendingWeight > 0 && (
+                                                                            {progressInfo.assignableWeight > 0 && (
                                                                                 <div className="form-group" style={{ marginBottom: 0 }}>
                                                                                     <label className="form-label">Berat Kirim</label>
                                                                                     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 92px', gap: '0.5rem' }}>
@@ -2040,7 +2047,7 @@ export default function OrderDetailPage() {
                                                                                     </div>
                                                                                 </div>
                                                                             )}
-                                                                            {progressInfo.pendingVolume > 0 && (
+                                                                            {progressInfo.assignableVolume > 0 && (
                                                                                 <div className="form-group" style={{ marginBottom: 0 }}>
                                                                                     <label className="form-label">Volume Kirim</label>
                                                                                     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 92px', gap: '0.5rem' }}>

@@ -442,12 +442,40 @@ export function buildDefaultActualDropDrafts(
     const totals = summarizeActualCargoDrafts(cargoItems);
     const defaultTarget = resolveDefaultActualDropTarget(doData);
     const shipperReferences = doData?.shipperReferences || [];
+    const buildDraftFromCargoItem = (
+        cargoItem: ActualCargoDraft,
+        locationName: string,
+        locationAddress: string
+    ): ActualDropDraft => ({
+        draftKey: crypto.randomUUID(),
+        stopType: 'DROP',
+        deliveryOrderItemRef: cargoItem.deliveryOrderItemRef,
+        shipperReferenceKey: cargoItem.shipperReferenceKey || '',
+        shipperReferenceNumber: cargoItem.shipperReferenceNumber || '',
+        locationName,
+        locationAddress,
+        qtyKoli: cargoItem.actualQtyKoli || '',
+        weightInputValue: cargoItem.actualWeightInputValue || '',
+        weightInputUnit: cargoItem.actualWeightInputUnit || 'KG',
+        volumeInputValue: cargoItem.actualVolumeInputValue || '',
+        volumeInputUnit: cargoItem.actualVolumeInputUnit || 'M3',
+        note: '',
+    });
     if (shipperReferences.length > 1) {
-        return shipperReferences.map((reference, index) => {
+        return shipperReferences.flatMap((reference, index) => {
             const referenceCargoItems = getActualCargoDraftsForDrop({
                 shipperReferenceKey: reference._key || '',
                 shipperReferenceNumber: reference.referenceNumber || '',
             }, cargoItems);
+            const locationName =
+                reference.receiverCompany?.trim()
+                || reference.receiverName?.trim()
+                || reference.receiverAddress?.trim()
+                || `Tujuan SJ ${index + 1}`;
+            const locationAddress = reference.receiverAddress || '';
+            if (referenceCargoItems.length > 1) {
+                return referenceCargoItems.map(item => buildDraftFromCargoItem(item, locationName, locationAddress));
+            }
             const referenceTotals = summarizeActualCargoDrafts(referenceCargoItems);
             return {
                 draftKey: crypto.randomUUID(),
@@ -455,12 +483,8 @@ export function buildDefaultActualDropDrafts(
                 deliveryOrderItemRef: '',
                 shipperReferenceKey: reference._key || '',
                 shipperReferenceNumber: reference.referenceNumber || '',
-                locationName:
-                    reference.receiverCompany?.trim()
-                    || reference.receiverName?.trim()
-                    || reference.receiverAddress?.trim()
-                    || `Tujuan SJ ${index + 1}`,
-                locationAddress: reference.receiverAddress || '',
+                locationName,
+                locationAddress,
                 qtyKoli: referenceTotals.qtyKoli > 0 ? String(referenceTotals.qtyKoli) : '',
                 weightInputValue: referenceTotals.weightKg > 0 ? String(referenceTotals.weightKg) : '',
                 weightInputUnit: 'KG' as const,
@@ -471,6 +495,11 @@ export function buildDefaultActualDropDrafts(
         });
     }
     const singleShipperReference = shipperReferences.length === 1 ? shipperReferences[0] : null;
+    const singleLocationName = defaultTarget.locationName;
+    const singleLocationAddress = defaultTarget.locationAddress;
+    if (cargoItems.length > 1) {
+        return cargoItems.map(item => buildDraftFromCargoItem(item, singleLocationName, singleLocationAddress));
+    }
     return [
         {
             draftKey: crypto.randomUUID(),

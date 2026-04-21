@@ -30,6 +30,9 @@ export type OrderItemProgress = {
   heldQtyKoli: number;
   heldWeight: number;
   heldVolume: number;
+  assignableQtyKoli: number;
+  assignableWeight: number;
+  assignableVolume: number;
   pendingQtyKoli: number;
   pendingWeight: number;
   pendingVolume: number;
@@ -154,6 +157,9 @@ export function getOrderItemProgress(source: OrderItemProgressSource): OrderItem
     heldQtyKoli,
     heldWeight,
     heldVolume,
+    assignableQtyKoli: roundQuantity(Math.max(totalQtyKoli - deliveredQtyKoli - assignedQtyKoli, 0)),
+    assignableWeight: roundQuantity(Math.max(totalWeight - deliveredWeight - assignedWeight, 0)),
+    assignableVolume: roundQuantity(Math.max(totalVolume - deliveredVolume - assignedVolume, 0), 3),
     pendingQtyKoli: roundQuantity(Math.max(totalQtyKoli - deliveredQtyKoli - assignedQtyKoli - heldQtyKoli, 0)),
     pendingWeight: roundQuantity(Math.max(totalWeight - deliveredWeight - assignedWeight - heldWeight, 0)),
     pendingVolume: roundQuantity(Math.max(totalVolume - deliveredVolume - assignedVolume - heldVolume, 0), 3),

@@ -7,6 +7,7 @@ import { Search, Eye, Truck, FileDown, Printer } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
 import { getBusinessDateValue } from '@/lib/business-date';
+import { getDeliveryOrderDisplayStatusMeta } from '@/lib/delivery-order-completion';
 import { formatDate, formatDateTime, DO_STATUS_MAP, formatInternalDeliveryOrderNumber, formatShipperDeliveryOrderNumber, getShipperReferenceCount } from '@/lib/utils';
 import {
     buildDeliveryOrderExportRows,
@@ -251,8 +252,9 @@ export default function DeliveryOrdersPage() {
                             {loading ? [1, 2, 3].map(i => <tr key={i}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].map(j => <td key={j}><div className="skeleton skeleton-text" /></td>)}</tr>) :
                                 totalItems === 0 ? (
                                     <tr><td colSpan={13}><div className="empty-state"><Truck size={48} className="empty-state-icon" /><div className="empty-state-title">Belum ada surat jalan</div><div className="empty-state-text">Buat surat jalan dari halaman detail order</div></div></td></tr>
-                                ) : items.map(d => (
-                                    <tr key={d._id}>
+                                ) : items.map(d => {
+                                    const statusMeta = getDeliveryOrderDisplayStatusMeta(d);
+                                    return <tr key={d._id}>
                                         <td>{getShipperReferenceCount(d) > 0 ? <Link href={`/delivery-orders/${d._id}`} className="font-semibold" style={{ color: 'var(--color-primary)' }}>{formatShipperDeliveryOrderNumber(d)}</Link> : <span className="text-muted">-</span>}</td>
                                         <td className="font-mono text-muted"><Link href={`/delivery-orders/${d._id}`} style={{ color: 'inherit' }}>{d.doNumber}</Link></td>
                                         <td>{canOpenSourceOrderPage ? <Link href={`/orders/${d.orderRef}`} className="text-muted">{d.masterResi}</Link> : <span className="text-muted">{d.masterResi}</span>}</td>
@@ -265,7 +267,7 @@ export default function DeliveryOrdersPage() {
                                         </td>
                                         <td>{d.vehiclePlate || '-'}</td>
                                         <td className="text-muted">{formatDate(d.date)}</td>
-                                        <td><span className={`badge badge-${DO_STATUS_MAP[d.status]?.color}`}><span className="badge-dot" /> {DO_STATUS_MAP[d.status]?.label}</span></td>
+                                        <td><span className={`badge badge-${statusMeta.color}`}><span className="badge-dot" /> {statusMeta.label}</span></td>
                                         <td><span style={{ fontWeight: 500 }}>{getNextDeliveryOrderAction(d)}</span></td>
                                         <td>
                                             {d.pendingDriverStatus ? (
@@ -300,8 +302,8 @@ export default function DeliveryOrdersPage() {
                                             )}
                                         </td>
                                         <td><button className="table-action-btn" onClick={() => router.push(`/delivery-orders/${d._id}`)}><Eye size={14} /> Buka Trip</button></td>
-                                    </tr>
-                                ))}
+                                    </tr>;
+                                })}
                         </tbody>
                     </table>
                 </div>
@@ -312,15 +314,16 @@ export default function DeliveryOrdersPage() {
                                 <div className="mobile-record-title">Belum ada surat jalan</div>
                                 <div className="mobile-record-subtitle">Buat surat jalan dari halaman detail order.</div>
                             </div>
-                        ) : items.map(d => (
-                            <div key={d._id} className="mobile-record-card">
+                        ) : items.map(d => {
+                            const statusMeta = getDeliveryOrderDisplayStatusMeta(d);
+                            return <div key={d._id} className="mobile-record-card">
                                 <div className="mobile-record-header">
                                     <div>
                                         <div className="mobile-record-title">{formatInternalDeliveryOrderNumber(d)}</div>
                                         <div className="mobile-record-subtitle">{d.customerName || '-'} | {formatDate(d.date)}</div>
                                     </div>
-                                    <span className={`badge badge-${DO_STATUS_MAP[d.status]?.color}`}>
-                                        <span className="badge-dot" /> {DO_STATUS_MAP[d.status]?.label}
+                                    <span className={`badge badge-${statusMeta.color}`}>
+                                        <span className="badge-dot" /> {statusMeta.label}
                                     </span>
                                 </div>
                                 <div className="mobile-record-meta">
@@ -371,8 +374,8 @@ export default function DeliveryOrdersPage() {
                                         <Eye size={14} /> Buka Trip
                                     </button>
                                 </div>
-                            </div>
-                        ))}
+                            </div>;
+                        })}
                     </div>
                 )}
                 {totalItems > 0 && (

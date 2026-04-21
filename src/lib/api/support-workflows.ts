@@ -74,7 +74,7 @@ async function validateDriverAccountLink(driverRef: unknown, excludeUserId?: str
         throw new Error('Supir untuk akun mobile wajib dipilih');
     }
 
-    const driver = await getDocumentById<{ _id: string; _rev?: string; name?: string; active?: boolean }>(normalizedDriverRef);
+    const driver = await getDocumentById<{ _id: string; _rev?: string; name?: string; active?: boolean }>(normalizedDriverRef, 'driver');
     if (!driver) {
         throw new Error('Data supir untuk akun mobile tidak ditemukan');
     }
@@ -486,13 +486,13 @@ export async function handleInvoiceCreate(
     }
     const mutationTimestamp = new Date().toISOString();
     if (resolvedCustomerDoc) {
-        await updateDocument(resolvedCustomerDoc._id, { updatedAt: mutationTimestamp });
+        await updateDocument(resolvedCustomerDoc._id, { updatedAt: mutationTimestamp }, 'customer');
     }
     if (resolvedOrderDoc) {
-        await updateDocument(resolvedOrderDoc._id, { updatedAt: mutationTimestamp });
+        await updateDocument(resolvedOrderDoc._id, { updatedAt: mutationTimestamp }, 'order');
     }
     if (deliveryOrderDoc) {
-        await updateDocument(deliveryOrderDoc._id, { updatedAt: mutationTimestamp });
+        await updateDocument(deliveryOrderDoc._id, { updatedAt: mutationTimestamp }, 'deliveryOrder');
     }
     await addAuditLog(session, 'CREATE', 'invoices', invoiceId, `Created invoices: ${invoiceNumber}`);
     return NextResponse.json({ data: invoiceDoc, id: invoiceId });

@@ -129,6 +129,7 @@ import {
 import { getCustomerOverpaymentRefundTotals } from '@/lib/customer-overpayments';
 import { DOCUMENT_TYPE_MAP } from '@/lib/document-types';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
+import { getDataServiceErrorInfo } from '@/lib/service-errors';
 import type { BankAccount, BankTransaction, CompanyProfile, CustomerOverpaymentRefund, DeliveryOrder, DriverBorongan, DriverBoronganItem, DriverVoucher, DriverVoucherDisbursement, DriverVoucherItem, Expense, FreightNota, FreightNotaItem, Order, User, Vehicle } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -1226,6 +1227,11 @@ export async function GET(request: Request) {
 
         return jsonNoStore({ data: items });
     } catch (err) {
+        const serviceError = getDataServiceErrorInfo(err);
+        if (serviceError) {
+            console.error('API GET Service Error:', err);
+            return jsonNoStore({ error: serviceError.message }, { status: serviceError.status });
+        }
         console.error('API GET Error:', err);
         return jsonNoStore({ error: 'Server error' }, { status: 500 });
     }
@@ -1505,6 +1511,11 @@ export async function POST(request: Request) {
 
         return await handleGenericCreate(session, entity, docType, data, addAuditLog);
     } catch (err) {
+        const serviceError = getDataServiceErrorInfo(err);
+        if (serviceError) {
+            console.error('API POST Service Error:', err);
+            return jsonNoStore({ error: serviceError.message }, { status: serviceError.status });
+        }
         const message = err instanceof Error ? err.message : 'Server error';
         const status =
             message === 'Forbidden'

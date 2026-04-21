@@ -24,12 +24,15 @@ import {
 } from '@/lib/repositories/document-store';
 import { buildFreightNotaDisplayNumberFromParts } from '@/lib/nota-numbering';
 import { findMatchingCustomerBillingRate } from '@/lib/customer-billing-rates';
-import { buildFreightNotaCoverageRowKeys } from '@/lib/invoice-create-page-support';
+import { buildFreightNotaCoverageRowKeys, buildNotaRowsFromDeliveryOrder } from '@/lib/invoice-create-page-support';
 import { DEFAULT_PPH23_RATE_PERCENT, normalizePph23BaseMode, normalizePph23Enabled, normalizePph23RatePercent } from '@/lib/pph23';
 import type {
     CustomerOverpaymentRefund,
+    DeliveryOrder,
+    DeliveryOrderItem,
     FreightNotaInstructionAccount,
     InvoiceAdjustmentKind,
+    Order,
     Payment,
     PaymentMethod,
     Pph23BaseMode,
@@ -100,6 +103,63 @@ function normalizeFreightNotaAmount(value: number) {
     return Math.round(value);
 }
 
+function normalizeFreightNotaRowItemRefs(row: Pick<NormalizedFreightNotaRow, 'deliveryOrderItemRef' | 'deliveryOrderItemRefs'>) {
+    const refs = Array.isArray(row.deliveryOrderItemRefs) && row.deliveryOrderItemRefs.length > 0
+        ? row.deliveryOrderItemRefs
+        : row.deliveryOrderItemRef
+            ? [row.deliveryOrderItemRef]
+            : [];
+    return [...new Set(
+        refs
+            .map(value => normalizeOptionalText(value))
+            .filter((value): value is string => Boolean(value))
+    )];
+}
+
+function haveSameFreightNotaRowItemRefs(left: string[], right: string[]) {
+    return left.length === right.length && left.every(value => right.includes(value));
+}
+
+function findBuiltNotaRowMatch(params: {
+    row: NormalizedFreightNotaRow;
+    deliveryOrder: DeliveryOrder;
+    builtRows: ReturnType<typeof buildNotaRowsFromDeliveryOrder>;
+}) {
+    const { row, deliveryOrder, builtRows } = params;
+    const rowItemRefs = normalizeFreightNotaRowItemRefs(row);
+    if (rowItemRefs.length > 0) {
+        return builtRows.find(candidate =>
+            haveSameFreightNotaRowItemRefs(
+                normalizeFreightNotaRowItemRefs({
+                    deliveryOrderItemRef: candidate.deliveryOrderItemRef,
+                    deliveryOrderItemRefs: candidate.deliveryOrderItemRefs,
+                }),
+                rowItemRefs
+            )
+        ) || null;
+    }
+
+    const rowCoverageKeys = buildFreightNotaCoverageRowKeys({
+        deliveryOrder,
+        noSJ: row.noSJ,
+    });
+
+    return builtRows.find(candidate => {
+        const candidateCoverageKeys = buildFreightNotaCoverageRowKeys({
+            deliveryOrder,
+            noSJ: candidate.noSJ,
+            deliveryOrderItemRefs: normalizeFreightNotaRowItemRefs({
+                deliveryOrderItemRef: candidate.deliveryOrderItemRef,
+                deliveryOrderItemRefs: candidate.deliveryOrderItemRefs,
+            }),
+        });
+        return (
+            candidateCoverageKeys.some(key => rowCoverageKeys.includes(key))
+            || normalizeOptionalText(candidate.noSJ) === normalizeOptionalText(row.noSJ)
+        );
+    }) || null;
+}
+
 async function syncFreightNotaDeliveryOrderLinks(params: {
     notaId: string;
     notaNumber: string;
@@ -121,8 +181,8 @@ async function syncFreightNotaDeliveryOrderLinks(params: {
 
     for (const deliveryOrderRef of refsToClear) {
         await updateDocument(deliveryOrderRef, {
-            freightNotaRef: undefined,
-            freightNotaNumber: undefined,
+            freightNotaRef: null,
+            freightNotaNumber: null,
         });
     }
 
@@ -1957,6 +2017,8 @@ export async function handleFreightNotaCreate(
             orderRef?: unknown;
             doNumber?: string;
             customerDoNumber?: string;
+            customerRef?: unknown;
+            customerName?: string;
             vehiclePlate?: string;
             serviceRef?: string;
             vehicleServiceRef?: string;
@@ -2030,6 +2092,19 @@ export async function handleFreightNotaCreate(
         current.push(item);
         doItemMap.set(deliveryOrderRef, current);
     }
+    const builtNotaRowsByDoRef = new Map<string, ReturnType<typeof buildNotaRowsFromDeliveryOrder>>();
+    for (const deliveryOrder of deliveryOrders) {
+        const linkedOrderRef = extractRefId(deliveryOrder.orderRef);
+        const linkedOrder = linkedOrderRef ? orderMap.get(linkedOrderRef) : undefined;
+        builtNotaRowsByDoRef.set(
+            deliveryOrder._id,
+            buildNotaRowsFromDeliveryOrder({
+                deliveryOrder: deliveryOrder as DeliveryOrder,
+                orders: linkedOrder ? [linkedOrder as Order] : [],
+                deliveryOrderItems: (doItemMap.get(deliveryOrder._id) || []) as DeliveryOrderItem[],
+            })
+        );
+    }
 
     for (const row of rows) {
         if (!row.doRef) continue;
@@ -2082,6 +2157,11 @@ export async function handleFreightNotaCreate(
             shipperReferenceNumber: resolvedNoSj,
             billableOnly: true,
         }).join(', ');
+        const matchedBuiltRow = findBuiltNotaRowMatch({
+            row,
+            deliveryOrder: deliveryOrder as DeliveryOrder,
+            builtRows: builtNotaRowsByDoRef.get(row.doRef) || [],
+        });
 
         if (hasActualDropPoints && !hasDeliveryOrderBillableCargo(deliveryOrder, resolvedNoSj)) {
             return NextResponse.json(
@@ -2099,10 +2179,14 @@ export async function handleFreightNotaCreate(
         );
         row.customerRef =
             normalizeOptionalText(row.customerRef) ||
-            normalizeOptionalText(matchedShipperReference?.billingCustomerRef);
+            normalizeOptionalText(matchedShipperReference?.billingCustomerRef) ||
+            normalizeOptionalText(deliveryOrder.customerRef) ||
+            normalizeOptionalText(sourceOrder?.customerRef);
         row.customerName =
             normalizeOptionalText(row.customerName) ||
-            normalizeOptionalText(matchedShipperReference?.billingCustomerName);
+            normalizeOptionalText(matchedShipperReference?.billingCustomerName) ||
+            normalizeOptionalText(deliveryOrder.customerName) ||
+            normalizeOptionalText(sourceOrder?.customerName);
         row.vehiclePlate = normalizeOptionalText(deliveryOrder.vehiclePlate) || row.vehiclePlate;
         row.date = normalizeOptionalText(deliveryOrder.date) || row.date || '';
         row.dari =
@@ -2117,21 +2201,33 @@ export async function handleFreightNotaCreate(
             normalizeOptionalText(sourceOrder?.receiverAddress) ||
             row.tujuan ||
             '';
-        row.barang = itemSummary.barang || row.barang || undefined;
-        if (hasActualDropPoints ? billableCargoSummary.qtyKoli > 0 : itemSummary.collie > 0) {
-            row.collie = hasActualDropPoints ? billableCargoSummary.qtyKoli : itemSummary.collie;
-        } else if (!row.collie || row.collie <= 0) {
-            row.collie = undefined;
-        }
-        if (hasActualDropPoints ? billableCargoSummary.weightKg > 0 : itemSummary.beratKg > 0) {
-            row.beratKg = hasActualDropPoints ? billableCargoSummary.weightKg : itemSummary.beratKg;
-        } else if (!Number.isFinite(row.beratKg) || row.beratKg <= 0) {
-            row.beratKg = hasActualDropPoints ? billableCargoSummary.weightKg : itemSummary.beratKg;
-        }
-        if (hasActualDropPoints ? billableCargoSummary.volumeM3 > 0 : itemSummary.volumeM3 > 0) {
-            row.volumeM3 = hasActualDropPoints ? billableCargoSummary.volumeM3 : itemSummary.volumeM3;
-        } else if (!Number.isFinite(row.volumeM3 || 0) || (row.volumeM3 || 0) <= 0) {
-            row.volumeM3 = hasActualDropPoints ? billableCargoSummary.volumeM3 : itemSummary.volumeM3;
+        if (matchedBuiltRow) {
+            row.customerRef = normalizeOptionalText(matchedBuiltRow.customerRef) || row.customerRef;
+            row.customerName = normalizeOptionalText(matchedBuiltRow.customerName) || row.customerName;
+            row.noSJ = normalizeOptionalText(matchedBuiltRow.noSJ) || row.noSJ;
+            row.dari = normalizeOptionalText(matchedBuiltRow.dari) || row.dari;
+            row.tujuan = normalizeOptionalText(matchedBuiltRow.tujuan) || row.tujuan;
+            row.barang = normalizeOptionalText(matchedBuiltRow.barang) || row.barang || undefined;
+            row.collie = matchedBuiltRow.collie > 0 ? matchedBuiltRow.collie : undefined;
+            row.beratKg = matchedBuiltRow.beratKg > 0 ? matchedBuiltRow.beratKg : row.beratKg;
+            row.volumeM3 = (matchedBuiltRow.volumeM3 || 0) > 0 ? matchedBuiltRow.volumeM3 : row.volumeM3;
+        } else {
+            row.barang = itemSummary.barang || row.barang || undefined;
+            if (hasActualDropPoints ? billableCargoSummary.qtyKoli > 0 : itemSummary.collie > 0) {
+                row.collie = hasActualDropPoints ? billableCargoSummary.qtyKoli : itemSummary.collie;
+            } else if (!row.collie || row.collie <= 0) {
+                row.collie = undefined;
+            }
+            if (hasActualDropPoints ? billableCargoSummary.weightKg > 0 : itemSummary.beratKg > 0) {
+                row.beratKg = hasActualDropPoints ? billableCargoSummary.weightKg : itemSummary.beratKg;
+            } else if (!Number.isFinite(row.beratKg) || row.beratKg <= 0) {
+                row.beratKg = hasActualDropPoints ? billableCargoSummary.weightKg : itemSummary.beratKg;
+            }
+            if (hasActualDropPoints ? billableCargoSummary.volumeM3 > 0 : itemSummary.volumeM3 > 0) {
+                row.volumeM3 = hasActualDropPoints ? billableCargoSummary.volumeM3 : itemSummary.volumeM3;
+            } else if (!Number.isFinite(row.volumeM3 || 0) || (row.volumeM3 || 0) <= 0) {
+                row.volumeM3 = hasActualDropPoints ? billableCargoSummary.volumeM3 : itemSummary.volumeM3;
+            }
         }
         row.uangRp = normalizeFreightNotaAmount(
             calculateFreightNotaRowAmount({ beratKg: row.beratKg, volumeM3: row.volumeM3, tarip: row.tarip, billingMode })
@@ -2328,9 +2424,14 @@ export async function handleFreightNotaCreate(
                     buildFreightNotaCoverageRowKeys({
                         deliveryOrder: matchedDeliveryOrder,
                         noSJ: existingNoSJ,
+                        deliveryOrderItemRefs: existingItemRefs,
                     }).forEach(rowKey => existingRowKeys.add(rowKey));
                 } else {
-                    existingRowKeys.add(`${existingDoRef}::${existingNoSJ}`);
+                    if (existingItemRefs.length > 0) {
+                        existingItemRefs.forEach(itemRef => existingRowKeys.add(`${existingDoRef}::item::${itemRef}`));
+                    } else {
+                        existingRowKeys.add(`${existingDoRef}::${existingNoSJ}`);
+                    }
                 }
             }
             for (const itemRef of existingItemRefs.map(value => normalizeOptionalText(value)).filter((value): value is string => Boolean(value))) {
@@ -2355,6 +2456,7 @@ export async function handleFreightNotaCreate(
             const rowKeys = buildFreightNotaCoverageRowKeys({
                 deliveryOrder: rowDeliveryOrder,
                 noSJ: row.noSJ,
+                deliveryOrderItemRefs: rowItemRefs,
             });
             if (rowKeys.some(rowKey => existingRowKeys.has(rowKey))) {
                 return NextResponse.json(
@@ -2771,7 +2873,13 @@ export async function handleFreightNotaUpdate(
             status?: string;
             doNumber?: string;
             customerDoNumber?: string;
-            shipperReferences?: Array<{ referenceNumber?: string }>;
+            customerRef?: unknown;
+            customerName?: string;
+            shipperReferences?: Array<{
+                referenceNumber?: string;
+                billingCustomerRef?: unknown;
+                billingCustomerName?: string;
+            }>;
         }>[number]>('deliveryOrder', { _id: uniqueDoRefs })
         : [];
     if (deliveryOrders.length !== uniqueDoRefs.length) {
@@ -2787,6 +2895,17 @@ export async function handleFreightNotaUpdate(
         if (deliveryOrder.status !== 'DELIVERED') {
             return NextResponse.json({ error: `DO ${deliveryOrder.doNumber || row.doRef} belum selesai dikirim` }, { status: 409 });
         }
+        const matchedShipperReference = (deliveryOrder.shipperReferences || []).find(reference =>
+            normalizeOptionalText(reference.referenceNumber) === normalizeOptionalText(row.noSJ)
+        );
+        row.customerRef =
+            normalizeOptionalText(row.customerRef) ||
+            normalizeOptionalText(matchedShipperReference?.billingCustomerRef) ||
+            normalizeOptionalText(deliveryOrder.customerRef);
+        row.customerName =
+            normalizeOptionalText(row.customerName) ||
+            normalizeOptionalText(matchedShipperReference?.billingCustomerName) ||
+            normalizeOptionalText(deliveryOrder.customerName);
     }
 
     const referencedDeliveryOrderItemRefs = [
@@ -2894,9 +3013,14 @@ export async function handleFreightNotaUpdate(
                     buildFreightNotaCoverageRowKeys({
                         deliveryOrder: matchedDeliveryOrder,
                         noSJ: existingNoSJ,
+                        deliveryOrderItemRefs: existingItemRefs,
                     }).forEach(rowKey => existingRowKeys.add(rowKey));
                 } else {
-                    existingRowKeys.add(`${existingDoRef}::${existingNoSJ}`);
+                    if (existingItemRefs.length > 0) {
+                        existingItemRefs.forEach(itemRef => existingRowKeys.add(`${existingDoRef}::item::${itemRef}`));
+                    } else {
+                        existingRowKeys.add(`${existingDoRef}::${existingNoSJ}`);
+                    }
                 }
             }
             for (const itemRef of existingItemRefs.map(value => normalizeOptionalText(value)).filter((value): value is string => Boolean(value))) {
@@ -2909,18 +3033,20 @@ export async function handleFreightNotaUpdate(
         }
         for (const row of rows) {
             if (!row.doRef) continue;
-            const rowKey = `${row.doRef}::${normalizeOptionalText(row.noSJ) || '-'}`;
-            if (existingRowKeys.has(rowKey)) {
-                return NextResponse.json(
-                    { error: `SJ ${row.noSJ || '-'} pada DO ${row.doNumber || row.doRef} sudah tertagih di nota lain` },
-                    { status: 409 }
-                );
-            }
             const rowItemRefs = Array.isArray(row.deliveryOrderItemRefs) && row.deliveryOrderItemRefs.length > 0
                 ? row.deliveryOrderItemRefs
                 : row.deliveryOrderItemRef
                     ? [row.deliveryOrderItemRef]
                     : [];
+            const rowCoverageKeys = rowItemRefs.length > 0
+                ? rowItemRefs.map(itemRef => `${row.doRef}::item::${normalizeOptionalText(itemRef)}`)
+                : [`${row.doRef}::${normalizeOptionalText(row.noSJ) || '-'}`];
+            if (rowCoverageKeys.some(rowKey => existingRowKeys.has(rowKey))) {
+                return NextResponse.json(
+                    { error: `SJ ${row.noSJ || '-'} pada DO ${row.doNumber || row.doRef} sudah tertagih di nota lain` },
+                    { status: 409 }
+                );
+            }
             for (const itemRef of rowItemRefs) {
                 const existingUsage = existingItemUsage.get(itemRef);
                 if (existingUsage) {
@@ -3313,8 +3439,8 @@ export async function handleFreightNotaDelete(
             await updateDocument(
                 deliveryOrder._id,
                 {
-                    freightNotaRef: undefined,
-                    freightNotaNumber: undefined,
+                    freightNotaRef: null,
+                    freightNotaNumber: null,
                 }
             );
         }

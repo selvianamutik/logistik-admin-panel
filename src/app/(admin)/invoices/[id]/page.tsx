@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useApp, useToast } from '../../layout';
 import { Printer, DollarSign, Landmark, Trash2, FileDown, Pencil } from 'lucide-react';
 import CollapsibleCard from '@/components/CollapsibleCard';
@@ -32,9 +32,11 @@ import { hasPageAccess, hasPermission } from '@/lib/rbac';
 export default function NotaDetailPage() {
     const params = useParams();
     const router = useRouter();
+    const searchParams = useSearchParams();
     const { user } = useApp();
     const { addToast } = useToast();
     const notaId = params.id as string;
+    const returnTo = searchParams.get('returnTo')?.trim() || '';
     const [nota, setNota] = useState<FreightNota | null>(null);
     const [items, setItems] = useState<FreightNotaItem[]>([]);
     const [payments, setPayments] = useState<Payment[]>([]);
@@ -460,7 +462,7 @@ export default function NotaDetailPage() {
                 return;
             }
             addToast('success', 'Nota dihapus');
-            router.push('/invoices');
+            router.push(returnTo || '/invoices');
         } catch {
             addToast('error', 'Gagal menghapus nota');
         } finally {
@@ -498,7 +500,7 @@ export default function NotaDetailPage() {
         <div>
             <div className="page-header" style={{ marginBottom: '0.5rem' }}>
                 <div className="page-header-left" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, flexWrap: 'wrap' }}>
-                    <PageBackButton href="/invoices" />
+                    <PageBackButton href={returnTo || '/invoices'} />
                 <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
                         <h1 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>{displayNotaNumber}</h1>
@@ -513,7 +515,11 @@ export default function NotaDetailPage() {
                     {canManageInvoice && (
                         <button
                             className="btn btn-secondary btn-sm"
-                            onClick={() => router.push(`/invoices/new?edit=${nota._id}`)}
+                            onClick={() => router.push(
+                                returnTo
+                                    ? `/invoices/new?edit=${nota._id}&returnTo=${encodeURIComponent(returnTo)}`
+                                    : `/invoices/new?edit=${nota._id}`
+                            )}
                             disabled={!canReviseInvoice}
                             title={canReviseInvoice ? 'Revisi nota ini' : 'Revisi nota hanya tersedia sebelum ada pembayaran, refund, atau klaim/potongan aktif'}
                         >

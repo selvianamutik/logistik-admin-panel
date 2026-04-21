@@ -521,7 +521,7 @@ export async function handleIncidentSettlementLineUpdate(
         const now = patch.updatedAt as string;
         const nextPatch = {
             ...patch,
-            ...Object.fromEntries(unsetFields.map(field => [field, undefined])),
+            ...Object.fromEntries(unsetFields.map(field => [field, null])),
         };
         const updatedLine = await updateDocument<IncidentSettlementLine>(id, nextPatch);
         await createDocument({
@@ -900,7 +900,7 @@ export async function handleDriverUpdate(
     const updated = await updateDocument<Driver>(id, {
         ...normalizedUpdates,
         activeTrackingUpdatedAt: now,
-        activeTrackingDeliveryOrderRef: undefined,
+        activeTrackingDeliveryOrderRef: null,
     });
 
     for (const deliveryOrder of trackedDeliveryOrders) {

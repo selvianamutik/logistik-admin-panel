@@ -37,7 +37,7 @@ import {
     type ActualCargoDraft,
     type ActualDropDraft,
 } from '@/lib/delivery-order-detail-support';
-import { deriveDeliveryOrderCompletionOutcome } from '@/lib/delivery-order-completion';
+import { getDeliveryOrderDisplayStatusMeta } from '@/lib/delivery-order-completion';
 import { fetchCompanyProfile, openBrandedPrint, openPrintWindow, resolveDocumentIssuerProfile } from '@/lib/print';
 import {
     DO_ACTUAL_DROP_TYPE_MAP,
@@ -1173,6 +1173,12 @@ export default function DODetailPage() {
                 return;
             }
 
+            if (d.data) {
+                setDoData(prev => buildResolvedDeliveryOrder({
+                    ...(prev || {}),
+                    ...d.data,
+                } as DeliveryOrder, null));
+            }
             setTrackingLogs(prev => [...prev, {
                 _id: 'new-' + Date.now(),
                 _type: 'trackingLog',
@@ -1658,9 +1664,7 @@ export default function DODetailPage() {
         actualDropPoints,
         showAdvancedDropEditor,
     });
-    const completionOutcome = doData.status === 'DELIVERED'
-        ? deriveDeliveryOrderCompletionOutcome(doData)
-        : null;
+    const displayStatusMeta = getDeliveryOrderDisplayStatusMeta(doData);
 
     return (
         <div>
@@ -1670,21 +1674,16 @@ export default function DODetailPage() {
                     <div>
                         <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                             {formatInternalDeliveryOrderNumber(doData)}
-                            <span className={`badge badge-${DO_STATUS_MAP[doData.status]?.color}`}>
-                                <span className="badge-dot" /> {DO_STATUS_MAP[doData.status]?.label}
+                            <span className={`badge badge-${displayStatusMeta.color}`}>
+                                <span className="badge-dot" /> {displayStatusMeta.label}
                             </span>
-                            {completionOutcome && completionOutcome.key !== 'FULLY_DELIVERED' && (
-                                <span className={`badge badge-${completionOutcome.color}`}>
-                                    <span className="badge-dot" /> {completionOutcome.label}
-                                </span>
-                            )}
                         </h1>
                     </div>
                 </div>
                 <div className="page-actions">
                     {availableNextStatuses.length > 0 && canManageDeliveryStatus && !doData.pendingDriverStatus && (
                         <button className="btn btn-primary" onClick={() => openStatusModal()}>
-                            <Truck size={16} /> {availableNextStatuses.includes('DELIVERED') ? 'Lanjut / Selesaikan DO' : 'Ubah Status'}
+                            <Truck size={16} /> {availableNextStatuses.includes('DELIVERED') ? 'Lanjut / Finalkan Trip' : 'Ubah Status'}
                         </button>
                     )}
                     {doData.status === 'DELIVERED' && !doData.podReceiverName && canManageDeliveryStatus && (
@@ -1735,7 +1734,7 @@ export default function DODetailPage() {
                             <div style={{ display: 'grid', gap: '0.35rem' }}>
                                 <div className="form-section-title" style={{ marginBottom: 0 }}>Permintaan Driver Menunggu Approval</div>
                                 <div className="detail-value">
-                                    Driver mengajukan status{' '}
+                                    Driver mengajukan finalisasi trip dengan status{' '}
                                     <span className={`badge badge-${pendingDriverStatusMeta?.color || 'warning'}`}>
                                         <span className="badge-dot" /> {pendingDriverStatusMeta?.label || doData.pendingDriverStatus}
                                     </span>
@@ -2361,7 +2360,7 @@ export default function DODetailPage() {
                     <div className="card-body">
                         <div className="empty-state" style={{ padding: '1rem 0' }}>
                             <div className="empty-state-title">Muatan Surat Jalan belum diisi</div>
-                            <div className="empty-state-text">Barang masih bisa ditambahkan sebelum trip diajukan selesai.</div>
+                            <div className="empty-state-text">Barang masih bisa ditambahkan sebelum finalisasi trip diajukan.</div>
                         </div>
                     </div>
                 ) : (
@@ -2948,13 +2947,13 @@ export default function DODetailPage() {
                             )}
                             <div className="form-group">
                                 <label className="form-label">Catatan</label>
-                                <textarea className="form-textarea" rows={3} value={statusNote} onChange={e => setStatusNote(e.target.value)} placeholder={isCompletingDelivery ? 'Catatan penyelesaian DO...' : 'Catatan tracking...'} disabled={updatingStatus} />
+                                <textarea className="form-textarea" rows={3} value={statusNote} onChange={e => setStatusNote(e.target.value)} placeholder={isCompletingDelivery ? 'Catatan finalisasi realisasi trip...' : 'Catatan tracking...'} disabled={updatingStatus} />
                             </div>
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => { setShowStatusModal(false); setReviewingDriverRequest(false); }} disabled={updatingStatus}>Batal</button>
                             <button className={`btn ${isCompletingDelivery ? 'btn-success' : 'btn-primary'}`} onClick={updateDOStatus} disabled={!newStatus || updatingStatus || (isCompletingDelivery && (!podName.trim() || !podDate || !actualCargoReady || !actualDropReady))}>
-                                <Save size={16} /> {updatingStatus ? 'Menyimpan...' : (reviewingDriverRequest ? 'Approve & Selesaikan' : (isCompletingDelivery ? 'Selesaikan DO' : 'Simpan'))}
+                                <Save size={16} /> {updatingStatus ? 'Menyimpan...' : (reviewingDriverRequest ? 'Approve Finalisasi' : (isCompletingDelivery ? 'Finalkan Trip' : 'Simpan'))}
                             </button>
                         </div>
                     </div>

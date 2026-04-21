@@ -99,7 +99,7 @@ async function releaseDriverTrackingLockIfOwned(driverRef: unknown, deliveryOrde
     }
 
     await updateDocument(driverId, {
-        activeTrackingDeliveryOrderRef: undefined,
+        activeTrackingDeliveryOrderRef: null,
         activeTrackingUpdatedAt: timestamp,
     }, 'driver');
 }
@@ -493,7 +493,7 @@ export async function handleOrderItemHoldSet(
         return NextResponse.json({ error: 'Alasan hold wajib diisi' }, { status: 400 });
     }
 
-    const orderItem = await getDocumentById<OrderItemProgressSnapshot & { _rev?: string }>(id);
+    const orderItem = await getDocumentById<OrderItemProgressSnapshot & { _rev?: string }>(id, 'orderItem');
     if (!orderItem) {
         return NextResponse.json({ error: 'Item order tidak ditemukan' }, { status: 404 });
     }
@@ -540,7 +540,7 @@ export async function handleOrderItemHoldSet(
             updated = await updateDocument(id, {
                 ...updates,
                 holdLocation: holdLocation || undefined,
-            });
+            }, 'orderItem');
         } catch (error) {
             if (isMutationConflictError(error)) {
                 return NextResponse.json(
@@ -597,7 +597,7 @@ export async function handleOrderItemHoldSet(
         updated = await updateDocument(id, {
             ...updates,
             holdLocation: holdLocation || undefined,
-        });
+        }, 'orderItem');
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
@@ -632,7 +632,7 @@ export async function handleOrderItemHoldRelease(
         return NextResponse.json({ error: 'Item order tidak valid' }, { status: 400 });
     }
 
-    const orderItem = await getDocumentById<OrderItemProgressSnapshot & { _rev?: string }>(id);
+    const orderItem = await getDocumentById<OrderItemProgressSnapshot & { _rev?: string }>(id, 'orderItem');
     if (!orderItem) {
         return NextResponse.json({ error: 'Item order tidak ditemukan' }, { status: 404 });
     }
@@ -660,7 +660,7 @@ export async function handleOrderItemHoldRelease(
         };
         let updated: unknown;
         try {
-            updated = await updateDocument(id, updates);
+            updated = await updateDocument(id, updates, 'orderItem');
         } catch (error) {
             if (isMutationConflictError(error)) {
                 return NextResponse.json(
@@ -704,7 +704,7 @@ export async function handleOrderItemHoldRelease(
     };
     let updated: unknown;
     try {
-        updated = await updateDocument(id, updates);
+        updated = await updateDocument(id, updates, 'orderItem');
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
@@ -834,23 +834,23 @@ export async function handleOrderCreate(
 
     try {
         await createDocument(orderDoc);
-        await updateDocument(customer._id, { updatedAt: createdAt });
+        await updateDocument(customer._id, { updatedAt: createdAt }, 'customer');
         if (serviceRef && service?._id) {
-            await updateDocument(service._id, { updatedAt: createdAt });
+            await updateDocument(service._id, { updatedAt: createdAt }, 'service');
         }
         const seenProductRefs = new Set<string>();
         for (const item of items) {
             if (!item.customerProductRef || seenProductRefs.has(item.customerProductRef)) {
                 continue;
             }
-            await updateDocument(item.customerProductRef, { updatedAt: createdAt });
+            await updateDocument(item.customerProductRef, { updatedAt: createdAt }, 'customerProduct');
             seenProductRefs.add(item.customerProductRef);
         }
         if (customerRecipientRef && customerRecipient?._id) {
-            await updateDocument(customerRecipient._id, { updatedAt: createdAt });
+            await updateDocument(customerRecipient._id, { updatedAt: createdAt }, 'customerRecipient');
         }
         if (customerPickupRef && customerPickup?._id) {
-            await updateDocument(customerPickup._id, { updatedAt: createdAt });
+            await updateDocument(customerPickup._id, { updatedAt: createdAt }, 'customerPickup');
         }
         for (const item of items) {
             await createDocument(buildOrderItemDraftDocument(orderId, item));
@@ -897,7 +897,7 @@ export async function handleOrderUpdateWithItems(
         receiverName?: string;
         receiverAddress?: string;
         pickupAddress?: string;
-    }>(id);
+    }>(id, 'order');
     if (!order) {
         return NextResponse.json({ error: 'Order tidak ditemukan' }, { status: 404 });
     }
@@ -1012,7 +1012,7 @@ export async function handleOrderUpdateWithItems(
 
     const mutationTimestamp = new Date().toISOString();
     try {
-        await updateDocument(customer._id, { updatedAt: mutationTimestamp });
+        await updateDocument(customer._id, { updatedAt: mutationTimestamp }, 'customer');
         await updateDocument(id, {
             cargoEntryMode: 'ORDER',
             customerRef,
@@ -1027,23 +1027,23 @@ export async function handleOrderUpdateWithItems(
             serviceRef: serviceRef || '',
             serviceName,
             notes: normalizeOptionalText(data.notes),
-        });
+        }, 'order');
         if (serviceRef && service?._id) {
-            await updateDocument(service._id, { updatedAt: mutationTimestamp });
+            await updateDocument(service._id, { updatedAt: mutationTimestamp }, 'service');
         }
         const seenProductRefs = new Set<string>();
         for (const item of items) {
             if (!item.customerProductRef || seenProductRefs.has(item.customerProductRef)) {
                 continue;
             }
-            await updateDocument(item.customerProductRef, { updatedAt: mutationTimestamp });
+            await updateDocument(item.customerProductRef, { updatedAt: mutationTimestamp }, 'customerProduct');
             seenProductRefs.add(item.customerProductRef);
         }
         if (customerRecipientRef && customerRecipient?._id) {
-            await updateDocument(customerRecipient._id, { updatedAt: mutationTimestamp });
+            await updateDocument(customerRecipient._id, { updatedAt: mutationTimestamp }, 'customerRecipient');
         }
         if (customerPickupRef && customerPickup?._id) {
-            await updateDocument(customerPickup._id, { updatedAt: mutationTimestamp });
+            await updateDocument(customerPickup._id, { updatedAt: mutationTimestamp }, 'customerPickup');
         }
         for (const existingItem of existingItems) {
             await deleteDocument(existingItem._id);
@@ -1068,7 +1068,7 @@ export async function handleOrderUpdateWithItems(
         `Update order ${order.masterResi || id}${items.length > 0 ? ` dengan ${items.length} item` : ' sebagai header booking tanpa item'}`
     );
 
-    const updatedOrder = await getDocumentById(id);
+    const updatedOrder = await getDocumentById(id, 'order');
     return NextResponse.json({ data: updatedOrder, id });
 }
 
@@ -1107,7 +1107,7 @@ export async function handleOrderHeaderBookingUpdate(
         tripPlans?: OrderTripPlan[];
         serviceRef?: string;
         notes?: string;
-    }>(id);
+    }>(id, 'order');
     if (!order) {
         return NextResponse.json({ error: 'Order tidak ditemukan' }, { status: 404 });
     }
@@ -1149,7 +1149,7 @@ export async function handleOrderHeaderBookingUpdate(
 
         let updatedOrder: unknown;
         try {
-            updatedOrder = await updateDocument(id, { notes });
+            updatedOrder = await updateDocument(id, { notes }, 'order');
         } catch (error) {
             if (isMutationConflictError(error)) {
                 return NextResponse.json(
@@ -1244,15 +1244,15 @@ export async function handleOrderHeaderBookingUpdate(
     let updatedOrder: unknown;
     try {
         const mutationTimestamp = new Date().toISOString();
-        await updateDocument(customer._id, { updatedAt: mutationTimestamp });
+        await updateDocument(customer._id, { updatedAt: mutationTimestamp }, 'customer');
         if (serviceRef && service?._id) {
-            await updateDocument(service._id, { updatedAt: mutationTimestamp });
+            await updateDocument(service._id, { updatedAt: mutationTimestamp }, 'service');
         }
         if (customerRecipientRef && customerRecipient?._id) {
-            await updateDocument(customerRecipient._id, { updatedAt: mutationTimestamp });
+            await updateDocument(customerRecipient._id, { updatedAt: mutationTimestamp }, 'customerRecipient');
         }
         if (customerPickupRef && customerPickup?._id) {
-            await updateDocument(customerPickup._id, { updatedAt: mutationTimestamp });
+            await updateDocument(customerPickup._id, { updatedAt: mutationTimestamp }, 'customerPickup');
         }
         updatedOrder = await updateDocument(id, {
             cargoEntryMode: 'DELIVERY_ORDER',
@@ -1270,7 +1270,7 @@ export async function handleOrderHeaderBookingUpdate(
             serviceRef: serviceRef || '',
             serviceName,
             notes,
-        });
+        }, 'order');
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
@@ -1305,7 +1305,7 @@ export async function handleOrderTargetRevision(
         return NextResponse.json({ error: 'Alasan revisi order wajib diisi' }, { status: 400 });
     }
 
-    const order = await getDocumentById<{ _id: string; _rev?: string; masterResi?: string; notes?: string; cargoEntryMode?: 'ORDER' | 'DELIVERY_ORDER' }>(id);
+    const order = await getDocumentById<{ _id: string; _rev?: string; masterResi?: string; notes?: string; cargoEntryMode?: 'ORDER' | 'DELIVERY_ORDER' }>(id, 'order');
     if (!order) {
         return NextResponse.json({ error: 'Order tidak ditemukan' }, { status: 404 });
     }
@@ -1461,7 +1461,7 @@ export async function handleOrderTargetRevision(
             holdReason: undefined,
             holdLocation: undefined,
             status: nextStatus,
-        });
+        }, 'orderItem');
 
         const itemChanges: string[] = [];
         if (roundQuantity(normalizeNumber(existingItem.qtyKoli)) !== qtyKoli) {
@@ -1484,7 +1484,7 @@ export async function handleOrderTargetRevision(
     try {
         await updateDocument(id, {
             notes: normalizeOptionalText(data.notes),
-        });
+        }, 'order');
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
@@ -1503,7 +1503,7 @@ export async function handleOrderTargetRevision(
         `Revisi order ${order.masterResi || id}: ${revisionReason}${revisionSummaries.length > 0 ? ` | ${revisionSummaries.join('; ')}` : ''}`
     );
 
-    const updatedOrder = await getDocumentById(id);
+    const updatedOrder = await getDocumentById(id, 'order');
     return NextResponse.json({ data: updatedOrder, id });
 }
 
@@ -1712,13 +1712,13 @@ export async function handleDeliveryOrderStatusUpdate(
     const shouldStopTracking = status === 'DELIVERED' || status === 'CANCELLED';
     const deliveryOrderUpdates: Record<string, unknown> = {
         status,
-        pendingDriverStatus: undefined,
-        pendingDriverStatusRequestedAt: undefined,
-        pendingDriverStatusRequestedBy: undefined,
-        pendingDriverStatusRequestedByName: undefined,
-        pendingDriverStatusNote: undefined,
-        pendingDriverActualCargoItems: undefined,
-        pendingDriverActualDropPoints: undefined,
+        pendingDriverStatus: null,
+        pendingDriverStatusRequestedAt: null,
+        pendingDriverStatusRequestedBy: null,
+        pendingDriverStatusRequestedByName: null,
+        pendingDriverStatusNote: null,
+        pendingDriverActualCargoItems: null,
+        pendingDriverActualDropPoints: null,
         ...(status === 'DELIVERED'
             ? {
                 podReceiverName,
@@ -1814,7 +1814,7 @@ export async function handleDeliveryOrderStatusUpdate(
                         );
                     }
                     const otherReservedQtyKoli = roundQuantity(
-                        Math.max(progress.deliveredQtyKoli + progress.assignedQtyKoli + progress.heldQtyKoli - plannedQtyKoli, 0)
+                        Math.max(progress.deliveredQtyKoli + progress.assignedQtyKoli - plannedQtyKoli, 0)
                     );
                     const maxActualQtyKoli = roundQuantity(Math.max(progress.totalQtyKoli - otherReservedQtyKoli, 0));
                     if (!usesDeliveryOrderOwnedTarget && actualCargo.actualQtyKoli > maxActualQtyKoli) {
@@ -1863,7 +1863,7 @@ export async function handleDeliveryOrderStatusUpdate(
                     actualDropPoints,
                 });
                 const otherReservedWeight = roundQuantity(
-                    Math.max(progress.deliveredWeight + progress.assignedWeight + progress.heldWeight - plannedWeight, 0)
+                    Math.max(progress.deliveredWeight + progress.assignedWeight - plannedWeight, 0)
                 );
                 if (!usesDeliveryOrderOwnedTarget && progress.totalWeight > 0) {
                     const maxActualWeight = roundQuantity(Math.max(progress.totalWeight - otherReservedWeight, 0));
@@ -1877,7 +1877,7 @@ export async function handleDeliveryOrderStatusUpdate(
                     }
                 }
                 const otherReservedVolume = roundQuantity(
-                    Math.max(progress.deliveredVolume + progress.assignedVolume + progress.heldVolume - plannedVolume, 0),
+                    Math.max(progress.deliveredVolume + progress.assignedVolume - plannedVolume, 0),
                     3
                 );
                 if (!usesDeliveryOrderOwnedTarget && progress.totalVolume > 0) {
@@ -1938,13 +1938,13 @@ export async function handleDeliveryOrderStatusUpdate(
                 const orderItemUpdates: Record<string, unknown> = {
                     ...orderItemPatch.set,
                     ...(orderItemPatch.unset
-                        ? Object.fromEntries(orderItemPatch.unset.map(field => [field, undefined]))
+                        ? Object.fromEntries(orderItemPatch.unset.map(field => [field, null]))
                         : {}),
                 };
                 const deliveryOrderItemUpdates: Record<string, unknown> = {
-                    actualQtyKoli: requireQty ? actualCargo.actualQtyKoli : undefined,
+                    actualQtyKoli: requireQty ? actualCargo.actualQtyKoli : null,
                     actualWeightKg: actualWeight,
-                    actualVolumeM3: actualVolume > 0 ? actualVolume : undefined,
+                    actualVolumeM3: actualVolume > 0 ? actualVolume : null,
                     actualWeightInputValue: actualCargo.actualWeightInputValue,
                     actualWeightInputUnit: actualCargo.actualWeightInputUnit,
                     actualVolumeInputValue: actualCargo.actualVolumeInputValue,
@@ -2014,13 +2014,13 @@ export async function handleDeliveryOrderStatusUpdate(
                     overtonaseDriverRatePerKg: overtonageResult?.overtonaseDriverRatePerKg,
                     overtonaseDriverAmount: overtonageResult?.overtonaseDriverAmount,
                     vehicleCapacityExceededKg: overtonageResult?.vehicleCapacityExceededKg,
-                    pendingDriverStatus: undefined,
-                    pendingDriverStatusRequestedAt: undefined,
-                    pendingDriverStatusRequestedBy: undefined,
-                    pendingDriverStatusRequestedByName: undefined,
-                    pendingDriverStatusNote: undefined,
-                    pendingDriverActualCargoItems: undefined,
-                    pendingDriverActualDropPoints: undefined,
+                    pendingDriverStatus: null,
+                    pendingDriverStatusRequestedAt: null,
+                    pendingDriverStatusRequestedBy: null,
+                    pendingDriverStatusRequestedByName: null,
+                    pendingDriverStatusNote: null,
+                    pendingDriverActualCargoItems: null,
+                    pendingDriverActualDropPoints: null,
                     cargoFinalizedAt: timestamp,
                     cargoFinalizedBy: session._id,
                     cargoFinalizedByName: session.name,
@@ -2029,13 +2029,13 @@ export async function handleDeliveryOrderStatusUpdate(
                 : {}),
             ...(status !== 'DELIVERED'
                 ? {
-                    pendingDriverStatus: undefined,
-                    pendingDriverStatusRequestedAt: undefined,
-                    pendingDriverStatusRequestedBy: undefined,
-                    pendingDriverStatusRequestedByName: undefined,
-                    pendingDriverStatusNote: undefined,
-                    pendingDriverActualCargoItems: undefined,
-                    pendingDriverActualDropPoints: undefined,
+                    pendingDriverStatus: null,
+                    pendingDriverStatusRequestedAt: null,
+                    pendingDriverStatusRequestedBy: null,
+                    pendingDriverStatusRequestedByName: null,
+                    pendingDriverStatusNote: null,
+                    pendingDriverActualCargoItems: null,
+                    pendingDriverActualDropPoints: null,
                 }
                 : {}),
             trackingState: shouldStopTracking ? 'STOPPED' : deliveryOrder.trackingState,
@@ -2089,7 +2089,7 @@ export async function handleDeliveryOrderDriverStatusRequest(
             actualVolumeInputUnit?: VolumeInputUnit;
         }>;
         pendingDriverActualDropPoints?: ReturnType<typeof normalizeDeliveryActualDropPoints>;
-    }>(id);
+    }>(id, 'deliveryOrder');
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
     }
@@ -2193,7 +2193,7 @@ export async function handleDeliveryOrderDriverStatusRequest(
             pendingDriverStatusNote: note,
             pendingDriverActualCargoItems,
             pendingDriverActualDropPoints,
-        });
+        }, 'deliveryOrder');
         await createDocument({
             _id: crypto.randomUUID(),
             _type: 'trackingLog',
@@ -2269,7 +2269,7 @@ export async function handleDeliveryOrderDriverStatusRequestReject(
             actualVolumeInputUnit?: VolumeInputUnit;
         }>;
         pendingDriverActualDropPoints?: ReturnType<typeof normalizeDeliveryActualDropPoints>;
-    }>(id);
+    }>(id, 'deliveryOrder');
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
     }
@@ -2283,14 +2283,14 @@ export async function handleDeliveryOrderDriverStatusRequestReject(
     const timestamp = new Date().toISOString();
     try {
         await updateDocument(id, {
-            pendingDriverStatus: undefined,
-            pendingDriverStatusRequestedAt: undefined,
-            pendingDriverStatusRequestedBy: undefined,
-            pendingDriverStatusRequestedByName: undefined,
-            pendingDriverStatusNote: undefined,
-            pendingDriverActualCargoItems: undefined,
-            pendingDriverActualDropPoints: undefined,
-        });
+            pendingDriverStatus: null,
+            pendingDriverStatusRequestedAt: null,
+            pendingDriverStatusRequestedBy: null,
+            pendingDriverStatusRequestedByName: null,
+            pendingDriverStatusNote: null,
+            pendingDriverActualCargoItems: null,
+            pendingDriverActualDropPoints: null,
+        }, 'deliveryOrder');
         await createDocument({
             _id: crypto.randomUUID(),
             _type: 'trackingLog',
@@ -2323,13 +2323,13 @@ export async function handleDeliveryOrderDriverStatusRequestReject(
     return NextResponse.json({
         data: {
             ...deliveryOrder,
-            pendingDriverStatus: undefined,
-            pendingDriverStatusRequestedAt: undefined,
-            pendingDriverStatusRequestedBy: undefined,
-            pendingDriverStatusRequestedByName: undefined,
-            pendingDriverStatusNote: undefined,
-            pendingDriverActualCargoItems: undefined,
-            pendingDriverActualDropPoints: undefined,
+            pendingDriverStatus: null,
+            pendingDriverStatusRequestedAt: null,
+            pendingDriverStatusRequestedBy: null,
+            pendingDriverStatusRequestedByName: null,
+            pendingDriverStatusNote: null,
+            pendingDriverActualCargoItems: null,
+            pendingDriverActualDropPoints: null,
         },
     });
 }
@@ -2360,7 +2360,7 @@ export async function handleDeliveryOrderCreate(
         tripPlans?: OrderTripPlan[];
         serviceRef?: string;
         serviceName?: string;
-    }>(orderRef);
+    }>(orderRef, 'order');
     if (!order) {
         return NextResponse.json({ error: 'Order tidak ditemukan' }, { status: 404 });
     }
@@ -2440,7 +2440,7 @@ export async function handleDeliveryOrderCreate(
             deliveryOrderPrefix?: string;
             deliveryOrderCounter?: number;
             deliveryOrderPeriod?: string;
-        }>(orderCustomerRef)
+        }>(orderCustomerRef, 'customer')
         : null;
     if (orderCustomerRef && !customer) {
         return NextResponse.json({ error: 'Customer order tidak ditemukan' }, { status: 404 });
@@ -2489,7 +2489,7 @@ export async function handleDeliveryOrderCreate(
             serviceName?: string;
             capacityKg?: number;
             _rev?: string;
-        }>(vehicleRef);
+        }>(vehicleRef, 'vehicle');
         if (!vehicle) {
             return NextResponse.json({ error: 'Kendaraan DO tidak ditemukan' }, { status: 404 });
         }
@@ -2552,7 +2552,7 @@ export async function handleDeliveryOrderCreate(
         vehiclePlate = vehicle.plateNumber || vehiclePlate;
     }
     if (driverRef) {
-        const driver = await getDocumentById<{ _id: string; _rev?: string; name?: string; active?: boolean }>(driverRef);
+        const driver = await getDocumentById<{ _id: string; _rev?: string; name?: string; active?: boolean }>(driverRef, 'driver');
         if (!driver) {
             return NextResponse.json({ error: 'Supir DO tidak ditemukan' }, { status: 404 });
         }
@@ -2748,7 +2748,7 @@ export async function handleDeliveryOrderCreate(
         );
     } else {
         selectedItems = (await Promise.all(
-            requestedItemIds.map(itemId => getDocumentById<OrderItemProgressSnapshot & { _rev?: string }>(itemId))
+            requestedItemIds.map(itemId => getDocumentById<OrderItemProgressSnapshot & { _rev?: string }>(itemId, 'orderItem'))
         )).filter((item): item is OrderItemProgressSnapshot & { _rev?: string } => Boolean(item));
         if (selectedItems.length !== requestedItemIds.length) {
             return NextResponse.json({ error: 'Sebagian item order tidak ditemukan' }, { status: 404 });
@@ -2794,7 +2794,7 @@ export async function handleDeliveryOrderCreate(
             });
             for (const assignment of existingAssignments) {
                 const linkedDeliveryOrder = assignment.deliveryOrderRef
-                    ? await getDocumentById<{ _id: string; status?: string }>(assignment.deliveryOrderRef)
+                    ? await getDocumentById<{ _id: string; status?: string }>(assignment.deliveryOrderRef, 'deliveryOrder')
                     : null;
                 if (linkedDeliveryOrder && ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'].includes(linkedDeliveryOrder.status || '')) {
                     activeAssignment = { _id: assignment._id };
@@ -2809,11 +2809,13 @@ export async function handleDeliveryOrderCreate(
                 if (!Number.isFinite(selection.qtyKoli) || selection.qtyKoli <= 0) {
                     return NextResponse.json({ error: 'Jumlah koli kirim harus lebih besar dari 0' }, { status: 400 });
                 }
-                if (selection.qtyKoli > progress.pendingQtyKoli) {
-                    return NextResponse.json({ error: `Jumlah koli kirim untuk ${item.description || 'item order'} melebihi sisa qty yang siap dikirim` }, { status: 409 });
+                if (selection.qtyKoli > progress.assignableQtyKoli) {
+                    return NextResponse.json({ error: `Jumlah koli kirim untuk ${item.description || 'item order'} melebihi muatan yang siap ditripkan` }, { status: 409 });
                 }
 
-                const remainingQtyAfterShipment = roundQuantity(Math.max(progress.pendingQtyKoli - selection.qtyKoli, 0));
+                const heldQtyUsed = roundQuantity(Math.min(progress.heldQtyKoli, selection.qtyKoli));
+                const pendingQtyUsed = roundQuantity(Math.max(selection.qtyKoli - heldQtyUsed, 0));
+                const remainingQtyAfterShipment = roundQuantity(Math.max(progress.pendingQtyKoli - pendingQtyUsed, 0));
                 if (selection.holdRemaining) {
                     if (remainingQtyAfterShipment <= 0) {
                         return NextResponse.json({ error: `Tidak ada sisa qty ${item.description || 'item order'} yang bisa ditahan` }, { status: 409 });
@@ -2831,8 +2833,8 @@ export async function handleDeliveryOrderCreate(
                 continue;
             }
 
-            if (progress.pendingWeight <= 0 && progress.pendingVolume <= 0) {
-                return NextResponse.json({ error: `Tidak ada sisa berat/volume ${item.description || 'item order'} yang siap dikirim` }, { status: 409 });
+            if (progress.assignableWeight <= 0 && progress.assignableVolume <= 0) {
+                return NextResponse.json({ error: `Tidak ada sisa berat/volume ${item.description || 'item order'} yang siap ditripkan` }, { status: 409 });
             }
             if (selection.qtyKoli > 0) {
                 return NextResponse.json(
@@ -2852,23 +2854,27 @@ export async function handleDeliveryOrderCreate(
             const selectedVolumeM3 = selectedVolumeInputValue > 0 && selection.volumeInputUnit
                 ? roundQuantity(convertVolumeToM3(selectedVolumeInputValue, selection.volumeInputUnit), 3)
                 : 0;
-            if (progress.pendingWeight > 0 && selectedWeightKg <= 0) {
+            if (progress.assignableWeight > 0 && selectedWeightKg <= 0) {
                 return NextResponse.json({ error: `Berat kirim untuk ${item.description || 'item order'} wajib diisi` }, { status: 400 });
             }
-            if (progress.pendingVolume > 0 && selectedVolumeM3 <= 0) {
+            if (progress.assignableVolume > 0 && selectedVolumeM3 <= 0) {
                 return NextResponse.json({ error: `Volume kirim untuk ${item.description || 'item order'} wajib diisi` }, { status: 400 });
             }
             if (selectedWeightKg <= 0 && selectedVolumeM3 <= 0) {
                 return NextResponse.json({ error: `Muatan kirim untuk ${item.description || 'item order'} tidak valid` }, { status: 400 });
             }
-            if (selectedWeightKg - progress.pendingWeight > 0.00001) {
-                return NextResponse.json({ error: `Berat kirim untuk ${item.description || 'item order'} melebihi sisa berat yang siap dikirim` }, { status: 409 });
+            if (selectedWeightKg - progress.assignableWeight > 0.00001) {
+                return NextResponse.json({ error: `Berat kirim untuk ${item.description || 'item order'} melebihi muatan berat yang siap ditripkan` }, { status: 409 });
             }
-            if (selectedVolumeM3 - progress.pendingVolume > 0.00001) {
-                return NextResponse.json({ error: `Volume kirim untuk ${item.description || 'item order'} melebihi sisa volume yang siap dikirim` }, { status: 409 });
+            if (selectedVolumeM3 - progress.assignableVolume > 0.00001) {
+                return NextResponse.json({ error: `Volume kirim untuk ${item.description || 'item order'} melebihi muatan volume yang siap ditripkan` }, { status: 409 });
             }
-            const remainingWeightAfterShipment = roundQuantity(Math.max(progress.pendingWeight - selectedWeightKg, 0));
-            const remainingVolumeAfterShipment = roundQuantity(Math.max(progress.pendingVolume - selectedVolumeM3, 0), 3);
+            const heldWeightUsed = roundQuantity(Math.min(progress.heldWeight, selectedWeightKg));
+            const pendingWeightUsed = roundQuantity(Math.max(selectedWeightKg - heldWeightUsed, 0));
+            const heldVolumeUsed = roundQuantity(Math.min(progress.heldVolume, selectedVolumeM3), 3);
+            const pendingVolumeUsed = roundQuantity(Math.max(selectedVolumeM3 - heldVolumeUsed, 0), 3);
+            const remainingWeightAfterShipment = roundQuantity(Math.max(progress.pendingWeight - pendingWeightUsed, 0));
+            const remainingVolumeAfterShipment = roundQuantity(Math.max(progress.pendingVolume - pendingVolumeUsed, 0), 3);
             if (selection.holdRemaining) {
                 if (remainingWeightAfterShipment <= 0 && remainingVolumeAfterShipment <= 0) {
                     return NextResponse.json({ error: `Tidak ada sisa muatan ${item.description || 'item order'} yang bisa ditahan` }, { status: 409 });
@@ -2949,13 +2955,13 @@ export async function handleDeliveryOrderCreate(
     try {
         await createDocument(doDoc);
         if (tripRouteSelection?.matchedTripRouteRate?._id) {
-            await updateDocument(tripRouteSelection.matchedTripRouteRate._id, { updatedAt: mutationTimestamp });
+            await updateDocument(tripRouteSelection.matchedTripRouteRate._id, { updatedAt: mutationTimestamp }, 'tripRouteRate');
         }
         if (selectedVehicle?._id) {
-            await updateDocument(selectedVehicle._id, { updatedAt: mutationTimestamp });
+            await updateDocument(selectedVehicle._id, { updatedAt: mutationTimestamp }, 'vehicle');
         }
         if (selectedDriver?._id) {
-            await updateDocument(selectedDriver._id, { updatedAt: mutationTimestamp });
+            await updateDocument(selectedDriver._id, { updatedAt: mutationTimestamp }, 'driver');
         }
         const orderUpdates: Record<string, unknown> = {};
         if (selectedTripPlan?._key) {
@@ -2978,7 +2984,7 @@ export async function handleDeliveryOrderCreate(
                 if (!item.customerProductRef || seenProductRefs.has(item.customerProductRef)) {
                     continue;
                 }
-                await updateDocument(item.customerProductRef, { updatedAt: mutationTimestamp });
+                await updateDocument(item.customerProductRef, { updatedAt: mutationTimestamp }, 'customerProduct');
                 seenProductRefs.add(item.customerProductRef);
             }
             for (const item of directCargoItems) {
@@ -3022,7 +3028,7 @@ export async function handleDeliveryOrderCreate(
             }
         }
         if (Object.keys(orderUpdates).length > 0) {
-            await updateDocument(orderRef, orderUpdates);
+            await updateDocument(orderRef, orderUpdates, 'order');
         }
         for (const item of selectedItems) {
             const selection = selectionByItemId.get(item._id);
@@ -3069,9 +3075,15 @@ export async function handleDeliveryOrderCreate(
                     shippedVolumeInputValue !== undefined
                         ? (usesQtyBasis ? item.volumeInputUnit : selection.volumeInputUnit)
                         : undefined;
-                const remainingQtyAfterShipment = roundQuantity(Math.max(progress.pendingQtyKoli - shippedQtyKoli, 0));
-                const remainingWeightAfterShipment = roundQuantity(Math.max(progress.pendingWeight - shippedWeight, 0));
-                const remainingVolumeAfterShipment = roundQuantity(Math.max(progress.pendingVolume - shippedVolumeM3, 0), 3);
+                const heldQtyUsed = roundQuantity(Math.min(progress.heldQtyKoli, shippedQtyKoli));
+                const pendingQtyUsed = roundQuantity(Math.max(shippedQtyKoli - heldQtyUsed, 0));
+                const heldWeightUsed = roundQuantity(Math.min(progress.heldWeight, shippedWeight));
+                const pendingWeightUsed = roundQuantity(Math.max(shippedWeight - heldWeightUsed, 0));
+                const heldVolumeUsed = roundQuantity(Math.min(progress.heldVolume, shippedVolumeM3), 3);
+                const pendingVolumeUsed = roundQuantity(Math.max(shippedVolumeM3 - heldVolumeUsed, 0), 3);
+                const remainingQtyAfterShipment = roundQuantity(Math.max(progress.pendingQtyKoli - pendingQtyUsed, 0));
+                const remainingWeightAfterShipment = roundQuantity(Math.max(progress.pendingWeight - pendingWeightUsed, 0));
+                const remainingVolumeAfterShipment = roundQuantity(Math.max(progress.pendingVolume - pendingVolumeUsed, 0), 3);
                 const holdQtyToApply = selection.holdRemaining ? (usesQtyBasis ? remainingQtyAfterShipment : 0) : 0;
                 const holdWeightToApply = selection.holdRemaining ? remainingWeightAfterShipment : 0;
                 const holdVolumeToApply = selection.holdRemaining ? remainingVolumeAfterShipment : 0;
@@ -3080,12 +3092,12 @@ export async function handleDeliveryOrderCreate(
                     assignedQtyKoli: roundQuantity(progress.assignedQtyKoli + shippedQtyKoli),
                     assignedWeight: roundQuantity(progress.assignedWeight + shippedWeight),
                     assignedVolume: roundQuantity(progress.assignedVolume + shippedVolumeM3, 3),
-                    heldQtyKoli: roundQuantity(progress.heldQtyKoli + holdQtyToApply),
-                    heldWeight: roundQuantity(progress.heldWeight + holdWeightToApply),
-                    heldVolume: roundQuantity(progress.heldVolume + holdVolumeToApply, 3),
-                    pendingQtyKoli: roundQuantity(Math.max(progress.pendingQtyKoli - shippedQtyKoli - holdQtyToApply, 0)),
-                    pendingWeight: roundQuantity(Math.max(progress.pendingWeight - shippedWeight - holdWeightToApply, 0)),
-                    pendingVolume: roundQuantity(Math.max(progress.pendingVolume - shippedVolumeM3 - holdVolumeToApply, 0), 3),
+                    heldQtyKoli: roundQuantity(Math.max(progress.heldQtyKoli - heldQtyUsed, 0) + holdQtyToApply),
+                    heldWeight: roundQuantity(Math.max(progress.heldWeight - heldWeightUsed, 0) + holdWeightToApply),
+                    heldVolume: roundQuantity(Math.max(progress.heldVolume - heldVolumeUsed, 0) + holdVolumeToApply, 3),
+                    pendingQtyKoli: roundQuantity(Math.max(progress.pendingQtyKoli - pendingQtyUsed - holdQtyToApply, 0)),
+                    pendingWeight: roundQuantity(Math.max(progress.pendingWeight - pendingWeightUsed - holdWeightToApply, 0)),
+                    pendingVolume: roundQuantity(Math.max(progress.pendingVolume - pendingVolumeUsed - holdVolumeToApply, 0), 3),
                 };
 
                 await createDocument({
@@ -3400,11 +3412,11 @@ export async function handleDeliveryOrderAppendCargoItems(
     const mutationTimestamp = new Date().toISOString();
     try {
         if (directCargoItems.length > 0 && order.cargoEntryMode !== 'DELIVERY_ORDER') {
-            await updateDocument(orderRef, { cargoEntryMode: 'DELIVERY_ORDER' });
+            await updateDocument(orderRef, { cargoEntryMode: 'DELIVERY_ORDER' }, 'order');
         }
         for (const item of directCargoItems) {
             if (item.customerProductRef) {
-                await updateDocument(item.customerProductRef, { updatedAt: mutationTimestamp });
+                await updateDocument(item.customerProductRef, { updatedAt: mutationTimestamp }, 'customerProduct');
             }
             const orderItemId = crypto.randomUUID();
             const usesQtyBasis = item.qtyKoli > 0;
@@ -3449,7 +3461,7 @@ export async function handleDeliveryOrderAppendCargoItems(
             await updateDocument(id, {
                 shipperReferences: nextShipperReferences,
                 customerDoNumber: resolvedCustomerDoNumber,
-            });
+            }, 'deliveryOrder');
         }
     } catch (error) {
         if (isMutationConflictError(error)) {
@@ -3662,7 +3674,7 @@ export async function handleDeliveryOrderCargoItemUpdate(
         : null;
     try {
         if (normalizedItem.customerProductRef) {
-            await updateDocument(normalizedItem.customerProductRef, { updatedAt: new Date().toISOString() });
+            await updateDocument(normalizedItem.customerProductRef, { updatedAt: new Date().toISOString() }, 'customerProduct');
         }
         await updateDocument(orderItemRef, {
             customerProductRef: normalizedItem.customerProductRef,
@@ -3680,7 +3692,7 @@ export async function handleDeliveryOrderCargoItemUpdate(
             assignedQtyKoli: usesQtyBasis ? normalizedItem.qtyKoli : 0,
             assignedWeight: normalizedItem.weight,
             assignedVolume: normalizedItem.volume || 0,
-        });
+        }, 'orderItem');
         await updateDocument(deliveryOrderItemId, {
             orderItemDescription: normalizedItem.description,
             orderItemQtyKoli: usesQtyBasis ? normalizedItem.qtyKoli : undefined,
@@ -3700,7 +3712,7 @@ export async function handleDeliveryOrderCargoItemUpdate(
                     shipperReferenceNumber: cargoItemContext.shipperReferenceNumber,
                 }
                 : {}),
-        });
+        }, 'deliveryOrderItem');
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
@@ -3765,7 +3777,7 @@ export async function handleDeliveryOrderTripResourceAssign(
         vehicleCategoryOverrideReason?: string;
         driverRef?: unknown;
         driverName?: string;
-    }>(id);
+    }>(id, 'deliveryOrder');
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
     }
@@ -3823,7 +3835,7 @@ export async function handleDeliveryOrderTripResourceAssign(
             status?: string;
             serviceRef?: string;
             serviceName?: string;
-        }>(vehicleRef);
+        }>(vehicleRef, 'vehicle');
         if (!vehicle) {
             return NextResponse.json({ error: 'Kendaraan DO tidak ditemukan' }, { status: 404 });
         }
@@ -3894,7 +3906,7 @@ export async function handleDeliveryOrderTripResourceAssign(
     }
 
     if (driverRef) {
-        const driver = await getDocumentById<{ _id: string; _rev?: string; name?: string; active?: boolean }>(driverRef);
+        const driver = await getDocumentById<{ _id: string; _rev?: string; name?: string; active?: boolean }>(driverRef, 'driver');
         if (!driver) {
             return NextResponse.json({ error: 'Supir DO tidak ditemukan' }, { status: 404 });
         }
@@ -3944,7 +3956,7 @@ export async function handleDeliveryOrderTripResourceAssign(
         nextDriverName !== (deliveryOrder.driverName || '');
 
     if (!vehicleChanged && !driverChanged) {
-        const unchangedDeliveryOrder = await getDocumentById(id);
+        const unchangedDeliveryOrder = await getDocumentById(id, 'deliveryOrder');
         return NextResponse.json({ data: unchangedDeliveryOrder, id });
     }
 
@@ -3956,10 +3968,10 @@ export async function handleDeliveryOrderTripResourceAssign(
     try {
         const mutationTimestamp = new Date().toISOString();
         if (vehicleChanged && selectedVehicle?._id) {
-            await updateDocument(selectedVehicle._id, { updatedAt: mutationTimestamp });
+            await updateDocument(selectedVehicle._id, { updatedAt: mutationTimestamp }, 'vehicle');
         }
         if (driverChanged && selectedDriver?._id) {
-            await updateDocument(selectedDriver._id, { updatedAt: mutationTimestamp });
+            await updateDocument(selectedDriver._id, { updatedAt: mutationTimestamp }, 'driver');
         }
         updatedDeliveryOrder = await updateDocument(id, {
             vehicleRef: nextVehicleRef || undefined,
@@ -3969,7 +3981,7 @@ export async function handleDeliveryOrderTripResourceAssign(
             vehicleCategoryOverrideReason: nextVehicleCategoryOverrideReason || undefined,
             driverRef: nextDriverRef || undefined,
             driverName: nextDriverName || undefined,
-        });
+        }, 'deliveryOrder');
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
@@ -4008,13 +4020,10 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
     addAuditLog: AuditLogFn
 ) {
     const id = typeof data.id === 'string' ? data.id : '';
-    const customerDoNumber = normalizeOptionalText(data.customerDoNumber)?.toUpperCase();
+    const legacyCustomerDoNumber = normalizeOptionalText(data.customerDoNumber)?.toUpperCase();
 
     if (!id) {
         return NextResponse.json({ error: 'Surat jalan tidak valid' }, { status: 400 });
-    }
-    if (!customerDoNumber) {
-        return NextResponse.json({ error: 'No. SJ pengirim wajib diisi' }, { status: 400 });
     }
 
     const deliveryOrder = await getDocumentById<{
@@ -4024,14 +4033,81 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
         customerDoNumber?: string;
         customerRef?: unknown;
         customerName?: string;
-    }>(id);
+        pickupStops?: Array<{
+            _key?: string;
+            pickupAddress?: string;
+        }>;
+        shipperReferences?: Array<{
+            _key?: string;
+            sequence?: number;
+            referenceNumber?: string;
+            pickupStopKey?: string;
+            pickupAddress?: string;
+            billingCustomerRef?: string;
+            billingCustomerName?: string;
+            receiverName?: string;
+            receiverPhone?: string;
+            receiverAddress?: string;
+            receiverCompany?: string;
+            notes?: string;
+        }>;
+        actualDropPoints?: Array<{
+            _key?: string;
+            deliveryOrderItemRef?: string;
+            shipperReferenceKey?: string;
+            shipperReferenceNumber?: string;
+            [key: string]: unknown;
+        }>;
+    }>(id, 'deliveryOrder');
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
     }
 
+    let nextShipperReferences:
+        | Array<{
+            _key: string;
+            sequence: number;
+            referenceNumber: string;
+            pickupStopKey?: string;
+            pickupAddress?: string;
+            billingCustomerRef?: string;
+            billingCustomerName?: string;
+            receiverName?: string;
+            receiverPhone?: string;
+            receiverAddress?: string;
+            receiverCompany?: string;
+            notes?: string;
+        }>
+        | undefined;
+    try {
+        nextShipperReferences = normalizeDeliveryOrderShipperReferencesForUpdate(
+            deliveryOrder,
+            Array.isArray(data.shipperReferences) && data.shipperReferences.length > 0
+                ? data.shipperReferences
+                : legacyCustomerDoNumber
+                    ? [{ referenceNumber: legacyCustomerDoNumber }]
+                    : []
+        );
+    } catch (error) {
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Daftar SJ pengirim tidak valid' },
+            { status: 400 }
+        );
+    }
+
+    const customerDoNumber = (nextShipperReferences?.[0]?.referenceNumber || legacyCustomerDoNumber)?.toUpperCase();
+    if (!customerDoNumber || !nextShipperReferences || nextShipperReferences.length === 0) {
+        return NextResponse.json({ error: 'No. SJ pengirim wajib diisi' }, { status: 400 });
+    }
+
     const existingCustomerDoNumber = normalizeOptionalText(deliveryOrder.customerDoNumber)?.toUpperCase();
-    if (existingCustomerDoNumber === customerDoNumber) {
-        const unchangedDeliveryOrder = await getDocumentById(id);
+    const shipperReferencesChanged = !areDeliveryOrderShipperReferencesEquivalent(
+        deliveryOrder.shipperReferences,
+        nextShipperReferences
+    );
+    const customerDoNumberChanged = existingCustomerDoNumber !== customerDoNumber;
+    if (!customerDoNumberChanged && !shipperReferencesChanged) {
+        const unchangedDeliveryOrder = await getDocumentById(id, 'deliveryOrder');
         return NextResponse.json({ data: unchangedDeliveryOrder, id });
     }
 
@@ -4057,14 +4133,21 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
 
     const customerRef = extractRefId(deliveryOrder.customerRef);
     if (customerRef) {
+        const requestedReferenceNumbers = new Set(nextShipperReferences.map(reference => reference.referenceNumber.toLowerCase()));
         const duplicateCustomerDoNumber =
             (await listDocumentsByFilter<{
                 _id: string;
                 customerRef?: unknown;
                 customerDoNumber?: string;
+                shipperReferences?: Array<{ referenceNumber?: string }>;
             }>('deliveryOrder', { customerRef })).find(candidate =>
                 candidate._id !== id
-                && normalizeOptionalText(candidate.customerDoNumber)?.toLowerCase() === customerDoNumber.toLowerCase()
+                && (
+                    normalizeOptionalText(candidate.customerDoNumber)?.toLowerCase() === customerDoNumber.toLowerCase()
+                    || (candidate.shipperReferences || []).some(reference =>
+                        requestedReferenceNumbers.has(normalizeOptionalText(reference.referenceNumber)?.toLowerCase() || '')
+                    )
+                )
             ) || null;
         if (duplicateCustomerDoNumber) {
             return NextResponse.json(
@@ -4078,9 +4161,77 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
         return NextResponse.json({ error: 'Revisi surat jalan tidak tersedia. Refresh lalu coba lagi.' }, { status: 409 });
     }
 
+    const deliveryOrderItems = await listDocumentsByFilter<{
+        _id: string;
+        shipperReferenceKey?: string;
+        shipperReferenceNumber?: string;
+        pickupStopKey?: string;
+        pickupAddress?: string;
+    }>('deliveryOrderItem', { deliveryOrderRef: id });
+    const previousReferences = Array.isArray(deliveryOrder.shipperReferences) ? deliveryOrder.shipperReferences : [];
+    const previousReferenceByKey = new Map(
+        previousReferences
+            .map(reference => [normalizeOptionalText(reference._key), reference] as const)
+            .filter((entry): entry is [string, NonNullable<typeof entry[1]>] => Boolean(entry[0]))
+    );
+    const previousReferenceByNumber = new Map(
+        previousReferences
+            .map(reference => [normalizeOptionalText(reference.referenceNumber)?.toUpperCase(), reference] as const)
+            .filter((entry): entry is [string, NonNullable<typeof entry[1]>] => Boolean(entry[0]))
+    );
+    const nextReferenceByKey = new Map(nextShipperReferences.map(reference => [reference._key, reference]));
+    const singleNextReference = nextShipperReferences.length === 1 ? nextShipperReferences[0] : null;
+    const itemReferencePatches = new Map<string, NonNullable<typeof singleNextReference>>();
+
+    for (const item of deliveryOrderItems) {
+        const currentReferenceKey = normalizeOptionalText(item.shipperReferenceKey);
+        const currentReferenceNumber = normalizeOptionalText(item.shipperReferenceNumber)?.toUpperCase();
+        const previousReference =
+            (currentReferenceKey ? previousReferenceByKey.get(currentReferenceKey) : undefined)
+            || (currentReferenceNumber ? previousReferenceByNumber.get(currentReferenceNumber) : undefined);
+        const nextReference =
+            (previousReference?._key ? nextReferenceByKey.get(previousReference._key) : undefined)
+            || (singleNextReference && (!currentReferenceNumber || currentReferenceNumber === existingCustomerDoNumber)
+                ? singleNextReference
+                : undefined);
+        if (nextReference) {
+            itemReferencePatches.set(item._id, nextReference);
+        }
+    }
+
+    const nextActualDropPoints = Array.isArray(deliveryOrder.actualDropPoints)
+        ? deliveryOrder.actualDropPoints.map(point => {
+            const itemRef = normalizeOptionalText(point.deliveryOrderItemRef);
+            const nextReference = itemRef ? itemReferencePatches.get(itemRef) : undefined;
+            return nextReference
+                ? {
+                    ...point,
+                    shipperReferenceKey: nextReference._key,
+                    shipperReferenceNumber: nextReference.referenceNumber,
+                }
+                : point;
+        })
+        : undefined;
+
     let updatedDeliveryOrder: unknown;
     try {
-        updatedDeliveryOrder = await updateDocument(id, { customerDoNumber });
+        updatedDeliveryOrder = await updateDocument(id, {
+            customerDoNumber,
+            shipperReferences: nextShipperReferences,
+            ...(nextActualDropPoints ? { actualDropPoints: nextActualDropPoints } : {}),
+        }, 'deliveryOrder');
+        for (const item of deliveryOrderItems) {
+            const nextReference = itemReferencePatches.get(item._id);
+            if (!nextReference) {
+                continue;
+            }
+            await updateDocument(item._id, {
+                shipperReferenceKey: nextReference._key,
+                shipperReferenceNumber: nextReference.referenceNumber,
+                pickupStopKey: nextReference.pickupStopKey || item.pickupStopKey,
+                pickupAddress: nextReference.pickupAddress || item.pickupAddress,
+            }, 'deliveryOrderItem');
+        }
     } catch (error) {
         if (isMutationConflictError(error)) {
             return NextResponse.json(
@@ -4096,7 +4247,7 @@ export async function handleDeliveryOrderShipperReferenceUpdate(
         'UPDATE',
         'delivery-orders',
         id,
-        `Update SJ pengirim ${deliveryOrder.doNumber || id}: ${existingCustomerDoNumber || '-'} -> ${customerDoNumber}`
+        `Update SJ pengirim ${deliveryOrder.doNumber || id}: ${existingCustomerDoNumber || '-'} -> ${nextShipperReferences.map(reference => reference.referenceNumber).join(', ')}`
     );
 
     return NextResponse.json({ data: updatedDeliveryOrder, id });
@@ -4112,7 +4263,7 @@ export async function handleOrderDelete(
         return NextResponse.json({ error: 'Order tidak valid' }, { status: 400 });
     }
 
-    const order = await getDocumentById<{ _id: string; _rev?: string; masterResi?: string }>(id);
+    const order = await getDocumentById<{ _id: string; _rev?: string; masterResi?: string }>(id, 'order');
     if (!order) {
         return NextResponse.json({ error: 'Order tidak ditemukan' }, { status: 404 });
     }

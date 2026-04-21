@@ -323,7 +323,7 @@ export async function handleMaintenanceComplete(
 
         const maintenanceUpdates = {
             ...setPayload,
-            ...Object.fromEntries(unsetFields.map(field => [field, undefined])),
+            ...Object.fromEntries(unsetFields.map(field => [field, null])),
         };
         await updateDocument(maintenance._id, maintenanceUpdates);
 

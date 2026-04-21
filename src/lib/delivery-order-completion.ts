@@ -19,6 +19,7 @@ type DeliveryActualDropPointLike = {
 };
 
 type DeliveryOrderCompletionLike = {
+    status?: string | null;
     actualDropPoints?: DeliveryActualDropPointLike[] | null;
 };
 
@@ -63,6 +64,13 @@ function normalizeStopType(value: unknown) {
 
 function normalizeText(value: unknown) {
     return typeof value === 'string' ? value.trim() : '';
+}
+
+function hasSpecificItemReference(point: DeliveryActualDropPointLike) {
+    return Boolean(
+        normalizeText(point.deliveryOrderItemRef) ||
+        (Array.isArray(point.deliveryOrderItemRefs) && point.deliveryOrderItemRefs.some(value => normalizeText(value)))
+    );
 }
 
 function hasDeliveryOrderItemRef(point: DeliveryActualDropPointLike, deliveryOrderItemRef?: string) {
@@ -154,6 +162,40 @@ export function hasDeliveryOrderBillableCargo(
     shipperReferenceNumber?: string
 ) {
     return hasCargo(getDeliveryOrderBillableCargoSummary(deliveryOrder, shipperReferenceNumber));
+}
+
+export function hasDeliveryOrderItemSpecificDropMapping(
+    deliveryOrder: DeliveryOrderCompletionLike | null | undefined,
+    shipperReferenceNumber?: string
+) {
+    const normalizedReference = normalizeText(shipperReferenceNumber);
+    return (Array.isArray(deliveryOrder?.actualDropPoints) ? deliveryOrder.actualDropPoints : [])
+        .filter(point => !normalizedReference || normalizeText(point.shipperReferenceNumber) === normalizedReference)
+        .some(point => hasSpecificItemReference(point));
+}
+
+export function hasDeliveryOrderItemSpecificBillableCargo(
+    deliveryOrder: DeliveryOrderCompletionLike | null | undefined,
+    shipperReferenceNumber?: string,
+    deliveryOrderItemRef?: string
+) {
+    return hasCargo(summarizeByTypes(deliveryOrder?.actualDropPoints, BILLABLE_ACTUAL_DROP_TYPES, {
+        shipperReferenceNumber,
+        deliveryOrderItemRef,
+        itemSpecificOnly: true,
+    }));
+}
+
+export function getDeliveryOrderItemSpecificBillableCargoSummary(
+    deliveryOrder: DeliveryOrderCompletionLike | null | undefined,
+    shipperReferenceNumber?: string,
+    deliveryOrderItemRef?: string
+) {
+    return summarizeByTypes(deliveryOrder?.actualDropPoints, BILLABLE_ACTUAL_DROP_TYPES, {
+        shipperReferenceNumber,
+        deliveryOrderItemRef,
+        itemSpecificOnly: true,
+    });
 }
 
 export function getDeliveryOrderActualDropDestinations(
@@ -263,4 +305,44 @@ export function deriveDeliveryOrderCompletionOutcome(
         hasBillableCargo,
         hasNonBillableCargo,
     };
+}
+
+export function getDeliveryOrderDisplayStatusMeta(
+    deliveryOrder: DeliveryOrderCompletionLike | null | undefined
+) {
+    const status = normalizeText(deliveryOrder?.status).toUpperCase();
+    if (status === 'DELIVERED') {
+        const outcome = deriveDeliveryOrderCompletionOutcome(deliveryOrder);
+        if (outcome) {
+            return {
+                label: outcome.label,
+                color: outcome.color,
+                tripClosed: true,
+            };
+        }
+        return {
+            label: 'Trip Selesai',
+            color: 'success',
+            tripClosed: true,
+        };
+    }
+
+    switch (status) {
+        case 'CREATED':
+            return { label: 'Dibuat', color: 'gray', tripClosed: false };
+        case 'HEADING_TO_PICKUP':
+            return { label: 'Menuju Pickup', color: 'warning', tripClosed: false };
+        case 'ON_DELIVERY':
+            return { label: 'Dalam Pengiriman', color: 'info', tripClosed: false };
+        case 'ARRIVED':
+            return { label: 'Tiba di Tujuan', color: 'primary', tripClosed: false };
+        case 'CANCELLED':
+            return { label: 'Dibatalkan', color: 'danger', tripClosed: true };
+        default:
+            return {
+                label: status || '-',
+                color: 'gray',
+                tripClosed: false,
+            };
+    }
 }

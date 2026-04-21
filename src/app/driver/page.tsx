@@ -48,7 +48,8 @@ import {
     updateOrderItemVolumeUnit,
     updateOrderItemWeightUnit,
 } from '@/lib/order-create-page-support';
-import { DO_STATUS_MAP, formatCurrency, formatDate, formatDateTime, formatShipperDeliveryOrderNumber, formatShipperReceiverSummary, getShipperReferenceCount } from '@/lib/utils';
+import { getDeliveryOrderDisplayStatusMeta } from '@/lib/delivery-order-completion';
+import { formatCurrency, formatDate, formatDateTime, formatShipperDeliveryOrderNumber, formatShipperReceiverSummary, getShipperReferenceCount } from '@/lib/utils';
 import type { CustomerProduct, Driver, SessionUser } from '@/lib/types';
 import type { DriverAssignedDeliveryOrder, DriverAssignedTripPlan } from '@/lib/api/driver-portal';
 
@@ -139,7 +140,7 @@ function getDriverProgressButtonLabel(nextStatus: DriverProgressStatus) {
         case 'ARRIVED':
             return 'Tandai Sudah Tiba';
         case 'DELIVERED':
-            return 'Ajukan Selesai';
+            return 'Ajukan Finalisasi';
         default:
             return 'Lanjutkan Trip';
     }
@@ -152,7 +153,7 @@ function getDriverProgressSuccessMessage(nextStatus: DriverProgressStatus) {
         case 'ARRIVED':
             return 'Status DO diperbarui menjadi sudah tiba.';
         case 'DELIVERED':
-            return 'Permintaan selesai dikirim. Menunggu approval admin.';
+            return 'Permintaan finalisasi dikirim. Menunggu approval admin.';
         default:
             return 'Status DO berhasil diperbarui.';
     }
@@ -1231,7 +1232,7 @@ export default function DriverPortalPage() {
             if (nextStatus === 'DELIVERED') {
                 const targetOrder = orders.find(item => item._id === deliveryOrderRef);
                 if (!targetOrder) {
-                    setFeedback({ type: 'error', message: 'Surat jalan tidak ditemukan untuk diajukan selesai.' });
+                    setFeedback({ type: 'error', message: 'Surat jalan tidak ditemukan untuk diajukan finalisasi.' });
                     return;
                 }
                 openDeliveredRequestModal(targetOrder);
@@ -1415,7 +1416,10 @@ export default function DriverPortalPage() {
                                         <div className="text-muted text-sm">{item.masterResi || '-'} | {formatDate(item.date)}</div>
                                     </div>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', alignItems: 'flex-end' }}>
-                                        <span className={`badge badge-${DO_STATUS_MAP[item.status]?.color || 'gray'}`}>{DO_STATUS_MAP[item.status]?.label || item.status}</span>
+                                        {(() => {
+                                            const statusMeta = getDeliveryOrderDisplayStatusMeta(item);
+                                            return <span className={`badge badge-${statusMeta.color}`}>{statusMeta.label}</span>;
+                                        })()}
                                         <span className={`badge ${trackingBadge.color}`}>{trackingBadge.label}</span>
                                     </div>
                                 </div>
@@ -1434,7 +1438,7 @@ export default function DriverPortalPage() {
                                             <>
                                                 {item.pendingDriverStatus === 'DELIVERED' ? (
                                                     <div className="text-muted text-sm" style={{ flex: 1, lineHeight: 1.5 }}>
-                                                        Driver sudah mengajukan selesai. Menunggu approval admin sebelum trip benar-benar ditutup.
+                                                        Driver sudah mengajukan finalisasi. Menunggu approval admin sebelum trip benar-benar ditutup.
                                                     </div>
                                                 ) : nextProgressStatus && (
                                                     <button
@@ -2052,7 +2056,7 @@ export default function DriverPortalPage() {
                     <div className="modal modal-lg" onClick={event => event.stopPropagation()}>
                         <div className="modal-header">
                             <div>
-                                <h3 className="modal-title">Ajukan Selesai {completionOrder.doNumber}</h3>
+                                <h3 className="modal-title">Ajukan Finalisasi {completionOrder.doNumber}</h3>
                                 <div className="text-muted text-sm" style={{ marginTop: '0.3rem' }}>
                                     Isi barang aktual yang benar-benar sampai supaya admin tinggal review.
                                 </div>
@@ -2086,7 +2090,7 @@ export default function DriverPortalPage() {
                             <div className="driver-completion-list">
                                 {completionCargoItems.length === 0 ? (
                                     <div className="driver-completion-empty">
-                                        Belum ada item muatan di surat jalan ini. Isi barang dulu dari tombol Input Barang sebelum mengajukan selesai.
+                                        Belum ada item muatan di surat jalan ini. Isi barang dulu dari tombol Input Barang sebelum mengajukan finalisasi.
                                     </div>
                                 ) : (
                                     completionCargoItems.map(item => (
@@ -2401,7 +2405,7 @@ export default function DriverPortalPage() {
                                 onClick={() => void submitDeliveredRequest()}
                                 disabled={isActionInFlight || completionCargoItems.length === 0 || !completionCargoReady || !completionDetailState.actualDropReady}
                             >
-                                <Truck size={15} /> {actionLoadingId === completionOrder._id ? 'Mengirim...' : 'Ajukan Selesai'}
+                                <Truck size={15} /> {actionLoadingId === completionOrder._id ? 'Mengirim...' : 'Ajukan Finalisasi'}
                             </button>
                         </div>
                     </div>
