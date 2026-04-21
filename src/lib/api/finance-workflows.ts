@@ -94,6 +94,40 @@ function normalizeFreightNotaAmount(value: number) {
     return Math.round(value);
 }
 
+async function syncFreightNotaDeliveryOrderLinks(params: {
+    notaId: string;
+    notaNumber: string;
+    nextDeliveryOrderRefs: string[];
+}) {
+    const nextDeliveryOrderRefs = [...new Set(
+        params.nextDeliveryOrderRefs
+            .map(value => normalizeOptionalText(value))
+            .filter((value): value is string => Boolean(value))
+    )];
+    const currentlyLinkedDeliveryOrders = await listDocumentsByFilter<Array<{
+        _id: string;
+        freightNotaRef?: string | null;
+    }>[number]>('deliveryOrder', { freightNotaRef: params.notaId });
+    const currentlyLinkedRefs = currentlyLinkedDeliveryOrders
+        .map(item => normalizeOptionalText(item._id))
+        .filter((value): value is string => Boolean(value));
+    const refsToClear = currentlyLinkedRefs.filter(ref => !nextDeliveryOrderRefs.includes(ref));
+
+    for (const deliveryOrderRef of refsToClear) {
+        await updateDocument(deliveryOrderRef, {
+            freightNotaRef: undefined,
+            freightNotaNumber: undefined,
+        });
+    }
+
+    for (const deliveryOrderRef of nextDeliveryOrderRefs) {
+        await updateDocument(deliveryOrderRef, {
+            freightNotaRef: params.notaId,
+            freightNotaNumber: params.notaNumber,
+        });
+    }
+}
+
 function normalizeWholeMoneyAmount(value: unknown) {
     const normalized = normalizeNumber(value);
     if (!Number.isFinite(normalized) || normalized <= 0) {
@@ -2474,12 +2508,6 @@ export async function handleFreightNotaCreate(
     if (linkedCustomer) {
         await updateDocument(linkedCustomer._id, { updatedAt: new Date().toISOString() });
     }
-    for (const deliveryOrder of deliveryOrders) {
-        await updateDocument(deliveryOrder._id, {
-            freightNotaRef: notaId,
-            freightNotaNumber: notaNumber,
-        });
-    }
     for (const row of rows) {
         await createDocument({
             _id: crypto.randomUUID(),
@@ -2487,6 +2515,9 @@ export async function handleFreightNotaCreate(
             notaRef: notaId,
             doRef: row.doRef,
             deliveryOrderItemRef: row.deliveryOrderItemRef,
+            deliveryOrderItemRefs: row.deliveryOrderItemRefs,
+            customerRef: row.customerRef,
+            customerName: row.customerName,
             doNumber: row.doNumber,
             vehiclePlate: row.vehiclePlate,
             date: row.date,
@@ -2501,6 +2532,11 @@ export async function handleFreightNotaCreate(
             ket: row.ket,
         });
     }
+    await syncFreightNotaDeliveryOrderLinks({
+        notaId,
+        notaNumber,
+        nextDeliveryOrderRefs: uniqueDoRefs,
+    });
     await addAuditLog(session, 'CREATE', 'freight-notas', notaId, `Created freight-notas: ${notaNumber}`);
     return NextResponse.json({ data: notaDoc, id: notaId });
 }
@@ -3029,6 +3065,11 @@ export async function handleFreightNotaUpdate(
             ket: row.ket,
         });
     }
+    await syncFreightNotaDeliveryOrderLinks({
+        notaId,
+        notaNumber,
+        nextDeliveryOrderRefs: uniqueDoRefs,
+    });
 
     await addAuditLog(session, 'UPDATE', 'freight-notas', notaId, `Revised freight-notas: ${notaNumber}`);
     return NextResponse.json({ success: true, id: notaId });
