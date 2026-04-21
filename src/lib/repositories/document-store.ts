@@ -190,9 +190,10 @@ export async function createDocument<T = Record<string, unknown>>(
 
 export async function updateDocument<T = Record<string, unknown>>(
     id: string,
-    updates: Record<string, unknown>
+    updates: Record<string, unknown>,
+    docType?: string
 ) {
-    const existing = await getDocumentById<Record<string, unknown> & { _type?: string }>(id);
+    const existing = await getDocumentById<Record<string, unknown> & { _type?: string }>(id, docType);
     if (!existing?._type) {
         throw new Error(`Document not found: ${id}`);
     }

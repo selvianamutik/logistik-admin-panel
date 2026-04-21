@@ -69,6 +69,10 @@ import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
 import { resolveTripRouteRateSelection } from './generic-workflow-support';
 import { computeDriverVoucherTotals } from './driver-workflow-support';
 import { computeDeliveryOrderOvertonage } from '@/lib/delivery-order-overtonage';
+import {
+    getDeliveryOrderBillableCargoSummary,
+    getDeliveryOrderNonBillableCargoSummary,
+} from '@/lib/delivery-order-completion';
 import type { CompanyProfile, OrderPickupStop, OrderTripPlan } from '@/lib/types';
 
 type AuditLogFn = (
@@ -85,7 +89,7 @@ async function releaseDriverTrackingLockIfOwned(driverRef: unknown, deliveryOrde
         return;
     }
 
-    const driver = await getDocumentById<{ _id: string; _rev?: string; activeTrackingDeliveryOrderRef?: unknown }>(driverId);
+    const driver = await getDocumentById<{ _id: string; _rev?: string; activeTrackingDeliveryOrderRef?: unknown }>(driverId, 'driver');
     if (!driver || (!driver._rev && !isSupabaseBackendEnabled())) {
         return;
     }
@@ -97,7 +101,7 @@ async function releaseDriverTrackingLockIfOwned(driverRef: unknown, deliveryOrde
     await updateDocument(driverId, {
         activeTrackingDeliveryOrderRef: undefined,
         activeTrackingUpdatedAt: timestamp,
-    });
+    }, 'driver');
 }
 
 function buildOrderItemDraftDocument(
@@ -134,6 +138,83 @@ function buildOrderItemDraftDocument(
         heldVolume: 0,
         status: 'PENDING',
         ...extras,
+    };
+}
+
+function hasCargoProgressPart(part: { qtyKoli: number; weight: number; volume: number }) {
+    return part.qtyKoli > 0 || part.weight > 0 || part.volume > 0;
+}
+
+function ratioOrFallback(value: number, total: number, fallback: number) {
+    if (total > 0) {
+        return Math.min(Math.max(value / total, 0), 1);
+    }
+    return fallback;
+}
+
+function splitActualCargoForOrderProgress(params: {
+    actualQtyKoli: number;
+    actualWeight: number;
+    actualVolume: number;
+    shipperReferenceNumber?: string;
+    actualDropPoints?: ReturnType<typeof normalizeDeliveryActualDropPoints>;
+}) {
+    const actual = {
+        qtyKoli: params.actualQtyKoli,
+        weight: params.actualWeight,
+        volume: params.actualVolume,
+    };
+    const empty = { qtyKoli: 0, weight: 0, volume: 0 };
+    const deliveryOrderSnapshot = { actualDropPoints: params.actualDropPoints || [] };
+    const referenceNumber = normalizeOptionalText(params.shipperReferenceNumber);
+    const billable = getDeliveryOrderBillableCargoSummary(deliveryOrderSnapshot, referenceNumber);
+    const nonBillable = getDeliveryOrderNonBillableCargoSummary(deliveryOrderSnapshot, referenceNumber);
+    const billablePart = {
+        qtyKoli: billable.qtyKoli,
+        weight: billable.weightKg,
+        volume: billable.volumeM3,
+    };
+    const nonBillablePart = {
+        qtyKoli: nonBillable.qtyKoli,
+        weight: nonBillable.weightKg,
+        volume: nonBillable.volumeM3,
+    };
+    const hasBillable = hasCargoProgressPart(billablePart);
+    const hasNonBillable = hasCargoProgressPart(nonBillablePart);
+
+    if (!hasBillable && !hasNonBillable) {
+        return { delivered: actual, held: empty };
+    }
+    if (hasBillable && !hasNonBillable) {
+        return { delivered: actual, held: empty };
+    }
+    if (!hasBillable && hasNonBillable) {
+        return { delivered: empty, held: actual };
+    }
+
+    const total = {
+        qtyKoli: roundQuantity(billablePart.qtyKoli + nonBillablePart.qtyKoli),
+        weight: roundQuantity(billablePart.weight + nonBillablePart.weight),
+        volume: roundQuantity(billablePart.volume + nonBillablePart.volume, 3),
+    };
+    const fallbackRatio = ratioOrFallback(
+        billablePart.qtyKoli || billablePart.weight || billablePart.volume,
+        total.qtyKoli || total.weight || total.volume,
+        0
+    );
+    const delivered = {
+        qtyKoli: roundQuantity(actual.qtyKoli * ratioOrFallback(billablePart.qtyKoli, total.qtyKoli, fallbackRatio)),
+        weight: roundQuantity(actual.weight * ratioOrFallback(billablePart.weight, total.weight, fallbackRatio)),
+        volume: roundQuantity(actual.volume * ratioOrFallback(billablePart.volume, total.volume, fallbackRatio), 3),
+    };
+
+    return {
+        delivered,
+        held: {
+            qtyKoli: roundQuantity(Math.max(actual.qtyKoli - delivered.qtyKoli, 0)),
+            weight: roundQuantity(Math.max(actual.weight - delivered.weight, 0)),
+            volume: roundQuantity(Math.max(actual.volume - delivered.volume, 0), 3),
+        },
     };
 }
 
@@ -246,9 +327,71 @@ function areDeliveryOrderShipperReferencesEquivalent(
     return JSON.stringify(normalizedLeft) === JSON.stringify(normalizedRight);
 }
 
+function resolveDeliveryOrderCargoItemContext(
+    item: Pick<NormalizedOrderItemInput, 'pickupStopKey' | 'shipperReferenceNumber'>,
+    deliveryOrder: {
+        pickupStops?: Array<{
+            _key?: string;
+            orderPickupStopKey?: string;
+            pickupAddress?: string;
+        }>;
+        shipperReferences?: Array<{
+            _key?: string;
+            referenceNumber?: string;
+            pickupStopKey?: string;
+            pickupAddress?: string;
+        }>;
+    }
+) {
+    const requestedPickupStopKey = normalizeOptionalText(item.pickupStopKey);
+    const requestedReferenceNumber = normalizeOptionalText(item.shipperReferenceNumber)?.toUpperCase();
+    const pickupStops = Array.isArray(deliveryOrder.pickupStops) ? deliveryOrder.pickupStops : [];
+    const shipperReferences = Array.isArray(deliveryOrder.shipperReferences) ? deliveryOrder.shipperReferences : [];
+
+    const matchedReference =
+        shipperReferences.find(reference =>
+            requestedReferenceNumber &&
+            normalizeOptionalText(reference.referenceNumber)?.toUpperCase() === requestedReferenceNumber
+        ) ||
+        shipperReferences.find(reference =>
+            requestedPickupStopKey &&
+            normalizeOptionalText(reference.pickupStopKey) === requestedPickupStopKey
+        );
+    const resolvedPickupStopKey =
+        normalizeOptionalText(matchedReference?.pickupStopKey) ||
+        requestedPickupStopKey ||
+        (pickupStops.length === 1 ? normalizeOptionalText(pickupStops[0]?._key) : undefined);
+    const matchedPickupStop =
+        pickupStops.find(stop =>
+            resolvedPickupStopKey &&
+            (
+                normalizeOptionalText(stop._key) === resolvedPickupStopKey ||
+                normalizeOptionalText(stop.orderPickupStopKey) === resolvedPickupStopKey
+            )
+        ) ||
+        pickupStops.find(stop =>
+            requestedPickupStopKey &&
+            (
+                normalizeOptionalText(stop._key) === requestedPickupStopKey ||
+                normalizeOptionalText(stop.orderPickupStopKey) === requestedPickupStopKey
+            )
+        );
+
+    return {
+        pickupStopKey: normalizeOptionalText(matchedPickupStop?._key) || resolvedPickupStopKey,
+        pickupAddress:
+            normalizeOptionalText(matchedPickupStop?.pickupAddress) ||
+            normalizeOptionalText(matchedReference?.pickupAddress),
+        shipperReferenceKey: normalizeOptionalText(matchedReference?._key),
+        shipperReferenceNumber:
+            normalizeOptionalText(matchedReference?.referenceNumber) ||
+            requestedReferenceNumber,
+    };
+}
+
 export async function syncOrderStatusFromItems(orderRef: string, session: ApiSession, addAuditLog: AuditLogFn) {
     for (let attempt = 0; attempt < 3; attempt += 1) {
-        const order = await getDocumentById<{ _id: string; _rev?: string; status?: string }>(orderRef);
+        const order = await getDocumentById<{ _id: string; _rev?: string; status?: string }>(orderRef, 'order');
         if (!order || order.status === 'CANCELLED') {
             return;
         }
@@ -261,7 +404,7 @@ export async function syncOrderStatusFromItems(orderRef: string, session: ApiSes
         }
 
         try {
-            await updateDocument(orderRef, { status: nextStatus });
+            await updateDocument(orderRef, { status: nextStatus }, 'order');
             await addAuditLog(
                 session,
                 'UPDATE',
@@ -1316,7 +1459,7 @@ export async function handleDeliveryOrderStatusUpdate(
             actualVolumeInputUnit?: VolumeInputUnit;
         }>;
         pendingDriverActualDropPoints?: ReturnType<typeof normalizeDeliveryActualDropPoints>;
-    }>(id);
+    }>(id, 'deliveryOrder');
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
     }
@@ -1416,13 +1559,13 @@ export async function handleDeliveryOrderStatusUpdate(
                     _id: string;
                     maxPayloadKg?: number;
                     overtonaseDriverRatePerKg?: number;
-                }>(serviceRef)
+                }>(serviceRef, 'service')
                 : Promise.resolve(null),
             vehicleRef
                 ? getDocumentById<{
                     _id: string;
                     capacityKg?: number;
-                }>(vehicleRef)
+                }>(vehicleRef, 'vehicle')
                 : Promise.resolve(null),
             listDocumentsByFilter<{
                 _id: string;
@@ -1512,7 +1655,7 @@ export async function handleDeliveryOrderStatusUpdate(
             : {}),
     };
 
-    await updateDocument(id, deliveryOrderUpdates);
+    await updateDocument(id, deliveryOrderUpdates, 'deliveryOrder');
     await createDocument({
         _id: crypto.randomUUID(),
         _type: 'trackingLog',
@@ -1529,13 +1672,13 @@ export async function handleDeliveryOrderStatusUpdate(
         await updateDocument(linkedVoucherPatch._id, {
             driverFeeAmount: linkedVoucherPatch.driverFeeAmount,
             totalClaimAmount: linkedVoucherPatch.totalClaimAmount,
-        });
+        }, 'driverVoucher');
     }
 
     for (const item of doItems) {
         const orderItemRef = extractRefId(item.orderItemRef);
         if (orderItemRef) {
-            const orderItem = await getDocumentById<OrderItemProgressSnapshot & { _rev?: string }>(orderItemRef);
+            const orderItem = await getDocumentById<OrderItemProgressSnapshot & { _rev?: string }>(orderItemRef, 'orderItem');
             if (!orderItem) {
                 continue;
             }
@@ -1555,7 +1698,7 @@ export async function handleDeliveryOrderStatusUpdate(
             const plannedVolume = roundQuantity(normalizeNumber(item.orderItemVolumeM3 ?? 0), 3);
 
             if (status === 'HEADING_TO_PICKUP' || status === 'ON_DELIVERY' || status === 'ARRIVED') {
-                await updateDocument(orderItemRef, { status: 'ON_DELIVERY' });
+                await updateDocument(orderItemRef, { status: 'ON_DELIVERY' }, 'orderItem');
                 continue;
             }
 
@@ -1619,6 +1762,13 @@ export async function handleDeliveryOrderStatusUpdate(
                 const actualQtyKoli = requireQty ? actualCargo.actualQtyKoli : 0;
                 const actualWeight = roundQuantity(actualCargo.actualWeightKg);
                 const actualVolume = roundQuantity(normalizeNumber(actualCargo.actualVolumeM3 ?? 0), 3);
+                const progressSplit = splitActualCargoForOrderProgress({
+                    actualQtyKoli,
+                    actualWeight,
+                    actualVolume,
+                    shipperReferenceNumber: item.shipperReferenceNumber,
+                    actualDropPoints,
+                });
                 const otherReservedWeight = roundQuantity(
                     Math.max(progress.deliveredWeight + progress.assignedWeight + progress.heldWeight - plannedWeight, 0)
                 );
@@ -1653,9 +1803,12 @@ export async function handleDeliveryOrderStatusUpdate(
                     assignedQtyKoli: roundQuantity(Math.max(progress.assignedQtyKoli - plannedQtyKoli, 0)),
                     assignedWeight: roundQuantity(Math.max(progress.assignedWeight - plannedWeight, 0)),
                     assignedVolume: roundQuantity(Math.max(progress.assignedVolume - plannedVolume, 0), 3),
-                    deliveredQtyKoli: roundQuantity(progress.deliveredQtyKoli + actualQtyKoli),
-                    deliveredWeight: roundQuantity(progress.deliveredWeight + actualWeight),
-                    deliveredVolume: roundQuantity(progress.deliveredVolume + actualVolume, 3),
+                    deliveredQtyKoli: roundQuantity(progress.deliveredQtyKoli + progressSplit.delivered.qtyKoli),
+                    deliveredWeight: roundQuantity(progress.deliveredWeight + progressSplit.delivered.weight),
+                    deliveredVolume: roundQuantity(progress.deliveredVolume + progressSplit.delivered.volume, 3),
+                    heldQtyKoli: roundQuantity(progress.heldQtyKoli + progressSplit.held.qtyKoli),
+                    heldWeight: roundQuantity(progress.heldWeight + progressSplit.held.weight),
+                    heldVolume: roundQuantity(progress.heldVolume + progressSplit.held.volume, 3),
                 };
                 const orderItemPatch: {
                     set: Record<string, unknown>;
@@ -1668,6 +1821,9 @@ export async function handleDeliveryOrderStatusUpdate(
                         deliveredQtyKoli: nextProgress.deliveredQtyKoli,
                         deliveredWeight: nextProgress.deliveredWeight,
                         deliveredVolume: nextProgress.deliveredVolume,
+                        heldQtyKoli: nextProgress.heldQtyKoli,
+                        heldWeight: nextProgress.heldWeight,
+                        heldVolume: nextProgress.heldVolume,
                         status: deriveOrderItemStatusFromProgress(nextProgress),
                     },
                 };
@@ -1701,8 +1857,8 @@ export async function handleDeliveryOrderStatusUpdate(
                     actualVolumeInputValue: actualCargo.actualVolumeInputValue,
                     actualVolumeInputUnit: actualCargo.actualVolumeInputUnit,
                 };
-                await updateDocument(orderItemRef, orderItemUpdates);
-                await updateDocument(item._id, deliveryOrderItemUpdates);
+                await updateDocument(orderItemRef, orderItemUpdates, 'orderItem');
+                await updateDocument(item._id, deliveryOrderItemUpdates, 'deliveryOrderItem');
                 continue;
             }
 
@@ -1719,7 +1875,7 @@ export async function handleDeliveryOrderStatusUpdate(
                     assignedVolume: nextProgress.assignedVolume,
                     status: deriveOrderItemStatusFromProgress(nextProgress),
                 };
-                await updateDocument(orderItemRef, orderItemUpdates);
+                await updateDocument(orderItemRef, orderItemUpdates, 'orderItem');
             }
         }
     }
@@ -2168,7 +2324,7 @@ export async function handleDeliveryOrderCreate(
                 _key: crypto.randomUUID(),
                 sequence: index + 1,
                 referenceNumber,
-                pickupStopKey: pickupStop?.orderPickupStopKey || pickupStopKey,
+                pickupStopKey: pickupStop?._key || pickupStopKey,
                 pickupAddress: pickupStop?.pickupAddress,
             };
         })
@@ -2728,6 +2884,10 @@ export async function handleDeliveryOrderCreate(
             for (const item of directCargoItems) {
                 const orderItemId = crypto.randomUUID();
                 const usesQtyBasis = item.qtyKoli > 0;
+                const cargoItemContext = resolveDeliveryOrderCargoItemContext(item, {
+                    pickupStops: deliveryOrderPickupStops,
+                    shipperReferences: deliveryOrderShipperReferences,
+                });
                 await createDocument({
                     ...buildOrderItemDraftDocument(orderRef, item, orderItemId, {
                         entrySource: 'DELIVERY_ORDER',
@@ -2744,6 +2904,10 @@ export async function handleDeliveryOrderCreate(
                     _type: 'deliveryOrderItem',
                     deliveryOrderRef: doId,
                     orderItemRef: orderItemId,
+                    pickupStopKey: cargoItemContext.pickupStopKey,
+                    pickupAddress: cargoItemContext.pickupAddress,
+                    shipperReferenceKey: cargoItemContext.shipperReferenceKey,
+                    shipperReferenceNumber: cargoItemContext.shipperReferenceNumber,
                     orderItemDescription: item.description,
                     orderItemQtyKoli: usesQtyBasis ? item.qtyKoli : undefined,
                     orderItemWeight: item.weight,
@@ -3144,6 +3308,11 @@ export async function handleDeliveryOrderAppendCargoItems(
             }
             const orderItemId = crypto.randomUUID();
             const usesQtyBasis = item.qtyKoli > 0;
+            const effectiveDeliveryOrderForContext = {
+                pickupStops: deliveryOrder.pickupStops,
+                shipperReferences: nextShipperReferences || deliveryOrder.shipperReferences,
+            };
+            const cargoItemContext = resolveDeliveryOrderCargoItemContext(item, effectiveDeliveryOrderForContext);
             await createDocument({
                 ...buildOrderItemDraftDocument(orderRef, item, orderItemId, {
                     entrySource: 'DELIVERY_ORDER',
@@ -3160,6 +3329,10 @@ export async function handleDeliveryOrderAppendCargoItems(
                 _type: 'deliveryOrderItem',
                 deliveryOrderRef: id,
                 orderItemRef: orderItemId,
+                pickupStopKey: cargoItemContext.pickupStopKey,
+                pickupAddress: cargoItemContext.pickupAddress,
+                shipperReferenceKey: cargoItemContext.shipperReferenceKey,
+                shipperReferenceNumber: cargoItemContext.shipperReferenceNumber,
                 orderItemDescription: item.description,
                 orderItemQtyKoli: usesQtyBasis ? item.qtyKoli : undefined,
                 orderItemWeight: item.weight,
@@ -3317,6 +3490,17 @@ export async function handleDeliveryOrderCargoItemUpdate(
         pendingDriverStatus?: string;
         orderRef?: unknown;
         customerRef?: unknown;
+        pickupStops?: Array<{
+            _key?: string;
+            orderPickupStopKey?: string;
+            pickupAddress?: string;
+        }>;
+        shipperReferences?: Array<{
+            _key?: string;
+            referenceNumber?: string;
+            pickupStopKey?: string;
+            pickupAddress?: string;
+        }>;
     }>(id, 'deliveryOrder');
     if (!deliveryOrder) {
         return NextResponse.json({ error: 'Surat jalan tidak ditemukan' }, { status: 404 });
@@ -3372,6 +3556,10 @@ export async function handleDeliveryOrderCargoItemUpdate(
     }
 
     const usesQtyBasis = normalizedItem.qtyKoli > 0;
+    const shouldUpdateCargoItemContext = Boolean(normalizedItem.pickupStopKey || normalizedItem.shipperReferenceNumber);
+    const cargoItemContext = shouldUpdateCargoItemContext
+        ? resolveDeliveryOrderCargoItemContext(normalizedItem, deliveryOrder)
+        : null;
     try {
         if (normalizedItem.customerProductRef) {
             await updateDocument(normalizedItem.customerProductRef, { updatedAt: new Date().toISOString() });
@@ -3404,6 +3592,14 @@ export async function handleDeliveryOrderCargoItemUpdate(
             orderItemVolumeInputUnit: normalizedItem.volumeInputUnit,
             shippedQtyKoli: usesQtyBasis ? normalizedItem.qtyKoli : undefined,
             shippedWeight: normalizedItem.weight,
+            ...(cargoItemContext
+                ? {
+                    pickupStopKey: cargoItemContext.pickupStopKey,
+                    pickupAddress: cargoItemContext.pickupAddress,
+                    shipperReferenceKey: cargoItemContext.shipperReferenceKey,
+                    shipperReferenceNumber: cargoItemContext.shipperReferenceNumber,
+                }
+                : {}),
         });
     } catch (error) {
         if (isMutationConflictError(error)) {

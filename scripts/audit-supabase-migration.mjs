@@ -31,7 +31,7 @@ const migrationHotspots = [
 const functionChecks = [
   {
     name: 'syncOrderStatusFromItems',
-    mustInclude: ['getDocumentById<', "listDocumentsByFilter<OrderItemStatusSummary>('orderItem'", 'updateDocument(orderRef, { status: nextStatus })'],
+    mustInclude: ['getDocumentById<', "listDocumentsByFilter<OrderItemStatusSummary>('orderItem'", "updateDocument(orderRef, { status: nextStatus }, 'order')"],
   },
   {
     name: 'handleOrderItemHoldSet',
@@ -82,7 +82,7 @@ const functionChecks = [
   },
   {
     name: 'releaseDriverTrackingLockIfOwned',
-    mustInclude: ['getDocumentById<{ _id: string; _rev?: string; activeTrackingDeliveryOrderRef?: unknown }>(driverId)', 'isSupabaseBackendEnabled()', 'await updateDocument(driverId, {'],
+    mustInclude: ["getDocumentById<{ _id: string; _rev?: string; activeTrackingDeliveryOrderRef?: unknown }>(driverId, 'driver')", 'isSupabaseBackendEnabled()', 'await updateDocument(driverId, {'],
   },
   {
     name: 'handleDeliveryOrderTripResourceAssign',
@@ -123,9 +123,9 @@ const functionChecks = [
     mustInclude: [
       "const deliveryOrder = await getDocumentById<{",
       "listDocumentsByFilter<DeliveryOrderItemCargoSnapshot & { _rev?: string }>('deliveryOrderItem', { deliveryOrderRef: id })",
-      'await updateDocument(id, deliveryOrderUpdates);',
+      "await updateDocument(id, deliveryOrderUpdates, 'deliveryOrder');",
       'await createDocument({',
-      'const orderItem = await getDocumentById<OrderItemProgressSnapshot & { _rev?: string }>(orderItemRef);',
+      "const orderItem = await getDocumentById<OrderItemProgressSnapshot & { _rev?: string }>(orderItemRef, 'orderItem');",
     ],
   },
   {
