@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import AppPagination from "@/components/AppPagination";
 import BankLogo from "@/components/BankLogo";
-import CurrencyInput from "@/components/CurrencyInput";
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import {
   BANK_PRESETS,
   buildBankAccountExportRows,
@@ -834,7 +834,7 @@ export default function BankAccountsPage() {
               {!editAccount && (
                 <div className="form-group">
                   <label className="form-label">Saldo Awal (Rp)</label>
-                  <CurrencyInput
+                  <FormattedNumberInput allowDecimal={false}
                     value={form.initialBalance}
                     onValueChange={(value) =>
                       setForm({
@@ -963,7 +963,7 @@ export default function BankAccountsPage() {
                   <label className="form-label">
                     Jumlah (Rp) <span className="required">*</span>
                   </label>
-                  <CurrencyInput
+                  <FormattedNumberInput allowDecimal={false}
                     value={transferForm.amount}
                     disabled={transferring}
                     onValueChange={(value) =>

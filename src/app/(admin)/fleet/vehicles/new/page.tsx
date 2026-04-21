@@ -132,7 +132,7 @@ export default function VehicleNewPage() {
                                 </div>
                             )}
                             <div className="form-row">
-                                <div className="form-group"><label className="form-label">Tahun</label><input type="number" className="form-input" value={form.year} onChange={e => setForm({ ...form, year: Number(e.target.value) })} /></div>
+                                <div className="form-group"><label className="form-label">Tahun</label><FormattedNumberInput allowDecimal={false} value={form.year} onValueChange={value => setForm({ ...form, year: value })} /></div>
                             </div>
                         </div>
                     </div>

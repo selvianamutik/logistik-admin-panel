@@ -1,11 +1,10 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useApp, useToast } from '../../layout';
 import { Printer, FileDown, Truck, Upload, Save, MapPin, Radio, Edit, Wallet, Plus, X } from 'lucide-react';
-import CurrencyInput from '@/components/CurrencyInput';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
@@ -2258,7 +2257,7 @@ export default function DODetailPage() {
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Upah Dasar Trip per DO (Rp) <span className="required">*</span></label>
-                                    <CurrencyInput
+                                    <FormattedNumberInput allowDecimal={false}
                                         value={matchedTripRouteRate?.rate ?? taripBorongan}
                                         onValueChange={value => setTaripBorongan(value)}
                                         placeholder={isTripFeeLockedToMaster ? 'Mengikuti master biaya rute trip' : 'Ketik upah trip per DO'}

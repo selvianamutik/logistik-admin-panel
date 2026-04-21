@@ -188,7 +188,7 @@ export default function VehicleEditPage() {
                                 <div className="form-group"><label className="form-label">Tanggal Update Odometer</label><input type="date" className="form-input" value={form.lastOdometerAt} onChange={e => setForm({ ...form, lastOdometerAt: e.target.value })} /></div>
                             </div>
                             <div className="form-row">
-                                <div className="form-group"><label className="form-label">Tahun</label><input type="number" className="form-input" value={form.year} onChange={e => setForm({ ...form, year: Number(e.target.value) })} /></div>
+                                <div className="form-group"><label className="form-label">Tahun</label><FormattedNumberInput allowDecimal={false} value={form.year} onValueChange={value => setForm({ ...form, year: value })} /></div>
                                 <div className="form-group"><label className="form-label">Odometer Terakhir</label><FormattedNumberInput allowDecimal={false} value={form.lastOdometer} onValueChange={value => setForm({ ...form, lastOdometer: value })} /></div>
                             </div>
                         </div>

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { Edit, History, Receipt, Save, X } from 'lucide-react';
 
-import CurrencyInput from '@/components/CurrencyInput';
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import {
@@ -59,7 +59,7 @@ type ItemFormState = {
   category: string;
   unit: WarehouseItem['unit'];
   trackingMode: NonNullable<WarehouseItem['trackingMode']>;
-  minStockQty: string;
+  minStockQty: number;
   defaultSupplierRef: string;
   defaultPurchasePrice: number;
   tireTypeDefault: string;
@@ -77,7 +77,7 @@ const createItemForm = (item?: Partial<WarehouseItem>): ItemFormState => ({
   category: item?.category || '',
   unit: item?.unit || 'PCS',
   trackingMode: item?.trackingMode || 'STANDARD',
-  minStockQty: item?.minStockQty !== undefined ? String(item.minStockQty) : '',
+  minStockQty: typeof item?.minStockQty === 'number' ? item.minStockQty : 0,
   defaultSupplierRef: item?.defaultSupplierRef || '',
   defaultPurchasePrice: typeof item?.defaultPurchasePrice === 'number' ? item.defaultPurchasePrice : 0,
   tireTypeDefault: item?.tireTypeDefault || 'Tubeless',
@@ -617,19 +617,16 @@ export default function WarehouseItemDetailPage() {
         <div className="modal-overlay" onClick={closeEditModal}>
           <div className="modal" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
-              <div>
-                <div className="modal-title">Edit Barang Gudang</div>
-                <div className="modal-subtitle">{item.itemCode} - {item.name}</div>
-              </div>
-              <button className="icon-btn" onClick={closeEditModal} disabled={saving}>
-                <X size={18} />
+              <h3 className="modal-title">Edit Barang Gudang</h3>
+              <button className="modal-close" onClick={closeEditModal} disabled={saving}>
+                <X size={20} />
               </button>
             </div>
             <div className="modal-body">
               <div className="form-row"><div className="form-group"><label className="form-label">Kode Barang</label><input className="form-input" value={form.itemCode} onChange={(event) => setForm((current) => ({ ...current, itemCode: event.target.value }))} /></div><div className="form-group"><label className="form-label">Nama Barang</label><input className="form-input" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} /></div></div>
               <div className="form-row"><div className="form-group"><label className="form-label">Kategori</label><input className="form-input" value={form.category} onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))} /></div><div className="form-group"><label className="form-label">Mode Tracking</label><select className="form-select" value={form.trackingMode} onChange={(event) => setForm((current) => ({ ...current, trackingMode: event.target.value as ItemFormState['trackingMode'], unit: event.target.value === 'TIRE_ASSET' && current.unit !== 'PCS' && current.unit !== 'UNIT' ? 'PCS' : current.unit }))}>{WAREHOUSE_ITEM_TRACKING_MODE_OPTIONS.map((option) => <option key={option} value={option}>{WAREHOUSE_ITEM_TRACKING_MODE_LABELS[option]}</option>)}</select></div></div>
-              <div className="form-row"><div className="form-group"><label className="form-label">Satuan</label><select className="form-select" value={form.unit} onChange={(event) => setForm((current) => ({ ...current, unit: event.target.value as WarehouseItem['unit'] }))}>{INVENTORY_UNIT_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></div><div className="form-group"><label className="form-label">Min. Stok</label><input type="number" min={0} step={form.trackingMode === 'TIRE_ASSET' ? '1' : '0.001'} className="form-input" value={form.minStockQty} onChange={(event) => setForm((current) => ({ ...current, minStockQty: event.target.value }))} /></div></div>
-              <div className="form-row"><div className="form-group"><label className="form-label">Supplier Default</label><select className="form-select" value={form.defaultSupplierRef} onChange={(event) => setForm((current) => ({ ...current, defaultSupplierRef: event.target.value }))}><option value="">-- Tidak dipilih --</option>{activeSuppliers.map((supplierItem) => <option key={supplierItem._id} value={supplierItem._id}>{supplierItem.supplierCode} - {supplierItem.name}</option>)}</select></div><div className="form-group"><label className="form-label">Harga Beli Default (Rp)</label><CurrencyInput value={form.defaultPurchasePrice} onValueChange={(value) => setForm((current) => ({ ...current, defaultPurchasePrice: value }))} placeholder="Ketik harga beli default" /></div></div>
+              <div className="form-row"><div className="form-group"><label className="form-label">Satuan</label><select className="form-select" value={form.unit} onChange={(event) => setForm((current) => ({ ...current, unit: event.target.value as WarehouseItem['unit'] }))}>{INVENTORY_UNIT_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></div><div className="form-group"><label className="form-label">Min. Stok</label><FormattedNumberInput min={0} maxFractionDigits={form.trackingMode === 'TIRE_ASSET' ? 0 : 3} allowDecimal={form.trackingMode !== 'TIRE_ASSET'} value={form.minStockQty} onValueChange={(value) => setForm((current) => ({ ...current, minStockQty: value }))} /></div></div>
+              <div className="form-row"><div className="form-group"><label className="form-label">Supplier Default</label><select className="form-select" value={form.defaultSupplierRef} onChange={(event) => setForm((current) => ({ ...current, defaultSupplierRef: event.target.value }))}><option value="">-- Tidak dipilih --</option>{activeSuppliers.map((supplierItem) => <option key={supplierItem._id} value={supplierItem._id}>{supplierItem.supplierCode} - {supplierItem.name}</option>)}</select></div><div className="form-group"><label className="form-label">Harga Beli Default (Rp)</label><FormattedNumberInput allowDecimal={false} value={form.defaultPurchasePrice} onValueChange={(value) => setForm((current) => ({ ...current, defaultPurchasePrice: value }))} placeholder="Ketik harga beli default" /></div></div>
               <div className="form-row"><div className="form-group"><label className="form-label">Status</label><select className="form-select" value={form.active ? 'active' : 'inactive'} onChange={(event) => setForm((current) => ({ ...current, active: event.target.value === 'active' }))}><option value="active">Aktif</option><option value="inactive">Nonaktif</option></select></div></div>
               {form.trackingMode === 'TIRE_ASSET' && (
                 <>

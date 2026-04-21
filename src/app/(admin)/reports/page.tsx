@@ -10,6 +10,7 @@ import {
   Landmark,
   Printer,
 } from "lucide-react";
+import FormattedNumberInput from "@/components/FormattedNumberInput";
 import { useApp, useToast } from "../layout";
 import { openBrandedPrint } from "@/lib/print";
 import { fetchAdminData, fetchAllAdminCollectionData } from "@/lib/api/admin-client";
@@ -387,13 +388,10 @@ export default function ReportsPage() {
               >
                 <ChevronLeft size={14} />
               </button>
-              <input
-                className="form-input"
-                type="number"
+              <FormattedNumberInput
+                allowDecimal={false}
                 value={year}
-                onChange={(event) =>
-                  setYear(Number(event.target.value) || defaultBusinessYear)
-                }
+                onValueChange={(value) => setYear(value || defaultBusinessYear)}
               />
               <button
                 className="btn btn-secondary btn-sm"

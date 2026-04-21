@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { Building2, Edit, FileDown, Plus, RefreshCw, Save, Search, X } from 'lucide-react';
 
 import AppPagination from '@/components/AppPagination';
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
 import { exportToExcel } from '@/lib/export';
@@ -21,7 +22,7 @@ type SupplierFormState = {
     contactPerson: string;
     phone: string;
     address: string;
-    defaultTermDays: string;
+    defaultTermDays: number;
     notes: string;
     active: boolean;
 };
@@ -32,7 +33,7 @@ const createDefaultForm = (supplier?: Partial<Supplier>): SupplierFormState => (
     contactPerson: supplier?.contactPerson || '',
     phone: supplier?.phone || '',
     address: supplier?.address || '',
-    defaultTermDays: supplier?.defaultTermDays !== undefined ? String(supplier.defaultTermDays) : '14',
+    defaultTermDays: typeof supplier?.defaultTermDays === 'number' ? supplier.defaultTermDays : 14,
     notes: supplier?.notes || '',
     active: supplier?.active !== false,
 });
@@ -472,12 +473,9 @@ export default function SuppliersPage() {
                 <div className="modal-overlay" onClick={closeModal}>
                     <div className="modal" onClick={event => event.stopPropagation()}>
                         <div className="modal-header">
-                            <div>
-                                <div className="modal-title">{editSupplier ? 'Edit Supplier' : 'Tambah Supplier'}</div>
-                                <div className="modal-subtitle">Kelola master supplier untuk pembelian barang gudang.</div>
-                            </div>
-                            <button className="icon-btn" onClick={closeModal} disabled={saving}>
-                                <X size={18} />
+                            <h3 className="modal-title">{editSupplier ? 'Edit Supplier' : 'Tambah Supplier'}</h3>
+                            <button className="modal-close" onClick={closeModal} disabled={saving}>
+                                <X size={20} />
                             </button>
                         </div>
                         <div className="modal-body">
@@ -504,7 +502,7 @@ export default function SuppliersPage() {
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Termin Default (hari)</label>
-                                    <input type="number" min={0} className="form-input" value={form.defaultTermDays} onChange={event => setForm(current => ({ ...current, defaultTermDays: event.target.value }))} />
+                                    <FormattedNumberInput allowDecimal={false} min={0} value={form.defaultTermDays} onValueChange={value => setForm(current => ({ ...current, defaultTermDays: value }))} />
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Status</label>

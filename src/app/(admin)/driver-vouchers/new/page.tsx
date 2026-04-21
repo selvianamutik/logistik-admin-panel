@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useToast } from '../../layout';
 import { Save } from 'lucide-react';
-import CurrencyInput from '@/components/CurrencyInput';
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
@@ -280,7 +280,7 @@ export default function NewDriverVoucherPage() {
                         </div>
                         <div className="form-group">
                             <label className="form-label">Uang Jalan Awal <span className="required">*</span></label>
-                            <CurrencyInput value={form.cashGiven} onValueChange={value => setForm({ ...form, cashGiven: value })} placeholder="Ketik uang jalan awal" />
+                            <FormattedNumberInput allowDecimal={false} value={form.cashGiven} onValueChange={value => setForm({ ...form, cashGiven: value })} placeholder="Ketik uang jalan awal" />
                         </div>
                     </div>
                     <div className="form-group">

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Edit, MapPin, Plus, Save, Trash2, X } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
-import CurrencyInput from '@/components/CurrencyInput';
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { useApp, useToast } from '../layout';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
@@ -345,7 +345,7 @@ export default function TripRouteRatesPage() {
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Tarif Trip <span className="required">*</span></label>
-                                    <CurrencyInput
+                                    <FormattedNumberInput allowDecimal={false}
                                         value={form.rate}
                                         onValueChange={value => setForm(previous => ({ ...previous, rate: value }))}
                                         placeholder="Ketik tarif upah trip"

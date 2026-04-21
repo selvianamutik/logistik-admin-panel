@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { CheckCircle, Plus, Printer, Save, Trash2, X } from 'lucide-react';
 
 import CollapsibleCard from '@/components/CollapsibleCard';
-import CurrencyInput from '@/components/CurrencyInput';
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData, fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
@@ -630,7 +630,7 @@ export default function DriverVoucherDetailPage() {
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Jumlah <span className="required">*</span></label>
-                                <CurrencyInput value={itemForm.amount} onValueChange={value => setItemForm({ ...itemForm, amount: value })} placeholder="Ketik nominal biaya" />
+                                <FormattedNumberInput allowDecimal={false} value={itemForm.amount} onValueChange={value => setItemForm({ ...itemForm, amount: value })} placeholder="Ketik nominal biaya" />
                             </div>
                         </div>
                         <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowAddItem(false)} disabled={savingItem}>Batal</button><button className="btn btn-primary" onClick={handleAddItem} disabled={savingItem}><Save size={16} /> {savingItem ? 'Menyimpan...' : 'Simpan'}</button></div>
@@ -672,7 +672,7 @@ export default function DriverVoucherDetailPage() {
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Jumlah Tambahan <span className="required">*</span></label>
-                                <CurrencyInput value={topUpForm.amount} onValueChange={value => setTopUpForm({ ...topUpForm, amount: value })} placeholder="Ketik nominal tambahan bon" />
+                                <FormattedNumberInput allowDecimal={false} value={topUpForm.amount} onValueChange={value => setTopUpForm({ ...topUpForm, amount: value })} placeholder="Ketik nominal tambahan bon" />
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Catatan</label>

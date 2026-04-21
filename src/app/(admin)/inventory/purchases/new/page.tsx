@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Save, Trash2 } from 'lucide-react';
 
-import CurrencyInput from '@/components/CurrencyInput';
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { addDaysToDateValue, getBusinessDateValue } from '@/lib/business-date';
@@ -22,13 +22,13 @@ import { useApp, useToast } from '../../../layout';
 type PurchaseLineForm = {
   rowId: string;
   warehouseItemRef: string;
-  orderedQty: string;
+  orderedQty: number;
   unitPrice: number;
   notes: string;
 };
 
 function createLine(): PurchaseLineForm {
-  return { rowId: crypto.randomUUID(), warehouseItemRef: '', orderedQty: '', unitPrice: 0, notes: '' };
+  return { rowId: crypto.randomUUID(), warehouseItemRef: '', orderedQty: 0, unitPrice: 0, notes: '' };
 }
 
 export default function PurchaseNewPage() {
@@ -179,10 +179,10 @@ export default function PurchaseNewPage() {
                     </div>
                     <div className="form-row">
                       <div className="form-group"><label className="form-label">Barang Gudang</label><select className="form-select" value={line.warehouseItemRef} onChange={(event) => handleItemChange(line.rowId, event.target.value)}><option value="">Pilih barang</option>{activeItems.map((item) => <option key={item._id} value={item._id}>{item.itemCode} - {item.name}</option>)}</select></div>
-                      <div className="form-group"><label className="form-label">Qty Pesan</label><input type="number" min={0} step={isTrackedTireItem ? '1' : '0.001'} className="form-input" value={line.orderedQty} onChange={(event) => updateLine(line.rowId, { orderedQty: event.target.value })} /></div>
+                      <div className="form-group"><label className="form-label">Qty Pesan</label><FormattedNumberInput min={0} maxFractionDigits={isTrackedTireItem ? 0 : 3} allowDecimal={!isTrackedTireItem} value={line.orderedQty} onValueChange={(value) => updateLine(line.rowId, { orderedQty: value })} /></div>
                     </div>
                     <div className="form-row">
-                      <div className="form-group"><label className="form-label">Harga Satuan (Rp)</label><CurrencyInput value={line.unitPrice} onValueChange={(value) => updateLine(line.rowId, { unitPrice: value })} placeholder="Ketik harga satuan" /></div>
+                      <div className="form-group"><label className="form-label">Harga Satuan (Rp)</label><FormattedNumberInput allowDecimal={false} value={line.unitPrice} onValueChange={(value) => updateLine(line.rowId, { unitPrice: value })} placeholder="Ketik harga satuan" /></div>
                       <div className="form-group"><label className="form-label">Subtotal</label><input className="form-input" value={lineSubtotal > 0 ? formatCurrency(lineSubtotal) : '-'} readOnly /></div>
                     </div>
                     <div className="form-group"><label className="form-label">Catatan Baris</label><textarea className="form-textarea" rows={2} value={line.notes} onChange={(event) => updateLine(line.rowId, { notes: event.target.value })} /></div>

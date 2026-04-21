@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useApp, useToast } from '../../layout';
 import { Save } from 'lucide-react';
 import { getBusinessDateValue } from '@/lib/business-date';
-import CurrencyInput from '@/components/CurrencyInput';
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import type { ExpenseCategory, BankAccount, Vehicle } from '@/lib/types';
@@ -103,7 +103,7 @@ export default function ExpenseNewPage() {
                         <div className="form-row">
                             <div className="form-group">
                                 <label className="form-label">Jumlah (Rp) <span className="required">*</span></label>
-                                <CurrencyInput value={form.amount} onValueChange={value => setForm({ ...form, amount: value })} placeholder="Ketik nominal pengeluaran" />
+                                <FormattedNumberInput allowDecimal={false} value={form.amount} onValueChange={value => setForm({ ...form, amount: value })} placeholder="Ketik nominal pengeluaran" />
                             </div>
                             {isOwner && (
                                 <div className="form-group">

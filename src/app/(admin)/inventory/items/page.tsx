@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { ArrowDownCircle, ArrowUpCircle, Edit, FileDown, Package, Plus, RefreshCw, Save, Search, X } from 'lucide-react';
 
 import AppPagination from '@/components/AppPagination';
-import CurrencyInput from '@/components/CurrencyInput';
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
 import { exportToExcel } from '@/lib/export';
@@ -30,7 +30,7 @@ type ItemFormState = {
   category: string;
   unit: WarehouseItem['unit'];
   trackingMode: NonNullable<WarehouseItem['trackingMode']>;
-  minStockQty: string;
+  minStockQty: number;
   defaultSupplierRef: string;
   defaultPurchasePrice: number;
   tireTypeDefault: string;
@@ -43,7 +43,7 @@ type ItemFormState = {
 type MovementFormState = {
   movementDate: string;
   sourceType: 'MANUAL_IN' | 'MANUAL_OUT';
-  quantity: string;
+  quantity: number;
   note: string;
 };
 
@@ -53,7 +53,7 @@ const createItemForm = (item?: Partial<WarehouseItem>): ItemFormState => ({
   category: item?.category || '',
   unit: item?.unit || 'PCS',
   trackingMode: item?.trackingMode || 'STANDARD',
-  minStockQty: item?.minStockQty !== undefined ? String(item.minStockQty) : '',
+  minStockQty: typeof item?.minStockQty === 'number' ? item.minStockQty : 0,
   defaultSupplierRef: item?.defaultSupplierRef || '',
   defaultPurchasePrice: typeof item?.defaultPurchasePrice === 'number' ? item.defaultPurchasePrice : 0,
   tireTypeDefault: item?.tireTypeDefault || 'Tubeless',
@@ -66,7 +66,7 @@ const createItemForm = (item?: Partial<WarehouseItem>): ItemFormState => ({
 const createMovementForm = (sourceType: 'MANUAL_IN' | 'MANUAL_OUT' = 'MANUAL_IN'): MovementFormState => ({
   movementDate: getBusinessDateValue(),
   sourceType,
-  quantity: '',
+  quantity: 0,
   note: '',
 });
 
@@ -445,14 +445,14 @@ export default function WarehouseItemsPage() {
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
-              <div><div className="modal-title">{editItem ? 'Edit Barang Gudang' : 'Tambah Barang Gudang'}</div><div className="modal-subtitle">Kelola master barang untuk pembelian dan pergerakan stok gudang.</div></div>
-              <button className="icon-btn" onClick={closeModal} disabled={saving}><X size={18} /></button>
+              <h3 className="modal-title">{editItem ? 'Edit Barang Gudang' : 'Tambah Barang Gudang'}</h3>
+              <button className="modal-close" onClick={closeModal} disabled={saving}><X size={20} /></button>
             </div>
             <div className="modal-body">
               <div className="form-row"><div className="form-group"><label className="form-label">Kode Barang</label><input className="form-input" value={form.itemCode} onChange={(event) => setForm((current) => ({ ...current, itemCode: event.target.value }))} /></div><div className="form-group"><label className="form-label">Nama Barang</label><input className="form-input" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} /></div></div>
               <div className="form-row"><div className="form-group"><label className="form-label">Kategori</label><input className="form-input" value={form.category} onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))} /></div><div className="form-group"><label className="form-label">Mode Tracking</label><select className="form-select" value={form.trackingMode} onChange={(event) => setForm((current) => ({ ...current, trackingMode: event.target.value as ItemFormState['trackingMode'], unit: event.target.value === 'TIRE_ASSET' && current.unit !== 'PCS' && current.unit !== 'UNIT' ? 'PCS' : current.unit }))}>{WAREHOUSE_ITEM_TRACKING_MODE_OPTIONS.map((option) => <option key={option} value={option}>{WAREHOUSE_ITEM_TRACKING_MODE_LABELS[option]}</option>)}</select></div></div>
-              <div className="form-row"><div className="form-group"><label className="form-label">Satuan</label><select className="form-select" value={form.unit} onChange={(event) => setForm((current) => ({ ...current, unit: event.target.value as WarehouseItem['unit'] }))}>{INVENTORY_UNIT_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></div><div className="form-group"><label className="form-label">Min. Stok</label><input type="number" min={0} step={form.trackingMode === 'TIRE_ASSET' ? '1' : '0.001'} className="form-input" value={form.minStockQty} onChange={(event) => setForm((current) => ({ ...current, minStockQty: event.target.value }))} /></div></div>
-              <div className="form-row"><div className="form-group"><label className="form-label">Supplier Default</label><select className="form-select" value={form.defaultSupplierRef} onChange={(event) => setForm((current) => ({ ...current, defaultSupplierRef: event.target.value }))}><option value="">-- Tidak dipilih --</option>{activeSuppliers.map((supplier) => <option key={supplier._id} value={supplier._id}>{supplier.supplierCode} - {supplier.name}</option>)}</select></div><div className="form-group"><label className="form-label">Harga Beli Default (Rp)</label><CurrencyInput value={form.defaultPurchasePrice} onValueChange={(value) => setForm((current) => ({ ...current, defaultPurchasePrice: value }))} placeholder="Ketik harga beli default" /></div></div>
+              <div className="form-row"><div className="form-group"><label className="form-label">Satuan</label><select className="form-select" value={form.unit} onChange={(event) => setForm((current) => ({ ...current, unit: event.target.value as WarehouseItem['unit'] }))}>{INVENTORY_UNIT_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></div><div className="form-group"><label className="form-label">Min. Stok</label><FormattedNumberInput min={0} maxFractionDigits={form.trackingMode === 'TIRE_ASSET' ? 0 : 3} allowDecimal={form.trackingMode !== 'TIRE_ASSET'} value={form.minStockQty} onValueChange={(value) => setForm((current) => ({ ...current, minStockQty: value }))} /></div></div>
+              <div className="form-row"><div className="form-group"><label className="form-label">Supplier Default</label><select className="form-select" value={form.defaultSupplierRef} onChange={(event) => setForm((current) => ({ ...current, defaultSupplierRef: event.target.value }))}><option value="">-- Tidak dipilih --</option>{activeSuppliers.map((supplier) => <option key={supplier._id} value={supplier._id}>{supplier.supplierCode} - {supplier.name}</option>)}</select></div><div className="form-group"><label className="form-label">Harga Beli Default (Rp)</label><FormattedNumberInput allowDecimal={false} value={form.defaultPurchasePrice} onValueChange={(value) => setForm((current) => ({ ...current, defaultPurchasePrice: value }))} placeholder="Ketik harga beli default" /></div></div>
               <div className="form-row"><div className="form-group"><label className="form-label">Status</label><select className="form-select" value={form.active ? 'active' : 'inactive'} onChange={(event) => setForm((current) => ({ ...current, active: event.target.value === 'active' }))}><option value="active">Aktif</option><option value="inactive">Nonaktif</option></select></div></div>
               {form.trackingMode === 'TIRE_ASSET' && (
                 <>
@@ -483,11 +483,11 @@ export default function WarehouseItemsPage() {
         <div className="modal-overlay" onClick={closeMovementModal}>
           <div className="modal" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
-              <div><div className="modal-title">{movementForm.sourceType === 'MANUAL_OUT' ? 'Catat Stok Keluar' : 'Catat Stok Masuk'}</div><div className="modal-subtitle">{movementItem.itemCode} - {movementItem.name}</div></div>
-              <button className="icon-btn" onClick={closeMovementModal} disabled={savingMovement}><X size={18} /></button>
+              <h3 className="modal-title">{movementForm.sourceType === 'MANUAL_OUT' ? 'Catat Stok Keluar' : 'Catat Stok Masuk'}</h3>
+              <button className="modal-close" onClick={closeMovementModal} disabled={savingMovement}><X size={20} /></button>
             </div>
             <div className="modal-body">
-              <div className="form-row"><div className="form-group"><label className="form-label">Tanggal Mutasi</label><input type="date" className="form-input" value={movementForm.movementDate} onChange={(event) => setMovementForm((current) => ({ ...current, movementDate: event.target.value }))} /></div><div className="form-group"><label className="form-label">Qty</label><input type="number" min={0} step="0.001" className="form-input" value={movementForm.quantity} onChange={(event) => setMovementForm((current) => ({ ...current, quantity: event.target.value }))} /></div></div>
+              <div className="form-row"><div className="form-group"><label className="form-label">Tanggal Mutasi</label><input type="date" className="form-input" value={movementForm.movementDate} onChange={(event) => setMovementForm((current) => ({ ...current, movementDate: event.target.value }))} /></div><div className="form-group"><label className="form-label">Qty</label><FormattedNumberInput min={0} maxFractionDigits={3} value={movementForm.quantity} onValueChange={(value) => setMovementForm((current) => ({ ...current, quantity: value }))} /></div></div>
               <div className="form-group"><label className="form-label">Catatan</label><textarea className="form-textarea" rows={3} value={movementForm.note} onChange={(event) => setMovementForm((current) => ({ ...current, note: event.target.value }))} placeholder="Contoh: dipakai ke lapangan atau stok tambahan supplier." /></div>
               <div className="info-banner" style={{ marginTop: '0.5rem' }}><div className="info-banner-title">Stok Saat Ini</div><div className="info-banner-text">{formatInventoryQuantity(movementItem.currentStockQty || 0)} {movementItem.unit}</div></div>
             </div>

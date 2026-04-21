@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { FileDown, Printer, Save, Wallet, X } from 'lucide-react';
 
-import CurrencyInput from '@/components/CurrencyInput';
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
@@ -24,7 +24,7 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 
 import { useApp, useToast } from '../../../layout';
 
-type ReceiveLineState = { purchaseItemRef: string; itemName: string; remainingQty: number; receivedQty: string; note: string; unit: string };
+type ReceiveLineState = { purchaseItemRef: string; itemName: string; remainingQty: number; receivedQty: number; note: string; unit: string };
 type PaymentFormState = { date: string; bankAccountRef: string; amount: number; note: string };
 
 function getStatusBadge(status: Purchase['status']) {
@@ -38,7 +38,7 @@ function buildReceiveState(items: PurchaseItem[]): ReceiveLineState[] {
   return items
     .map((item) => {
       const remainingQty = Math.max(Number(item.orderedQty || 0) - Number(item.receivedQty || 0), 0);
-      return { purchaseItemRef: item._id, itemName: item.itemName || item.itemCode || item._id, remainingQty, receivedQty: remainingQty > 0 ? String(remainingQty) : '', note: '', unit: item.itemUnit || '' };
+      return { purchaseItemRef: item._id, itemName: item.itemName || item.itemCode || item._id, remainingQty, receivedQty: remainingQty > 0 ? remainingQty : 0, note: '', unit: item.itemUnit || '' };
     })
     .filter((item) => item.remainingQty > 0);
 }
@@ -404,8 +404,8 @@ export default function PurchaseDetailPage() {
         <div className="modal-backdrop" onClick={() => !savingReceive && setShowReceiveModal(false)}>
           <div className="modal" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
-              <div><div className="modal-title">Terima Barang</div><div className="modal-subtitle">{purchase.purchaseNumber}</div></div>
-              <button className="icon-btn" onClick={() => setShowReceiveModal(false)} disabled={savingReceive}><X size={18} /></button>
+              <h3 className="modal-title">Terima Barang</h3>
+              <button className="modal-close" onClick={() => setShowReceiveModal(false)} disabled={savingReceive}><X size={20} /></button>
             </div>
             <div className="modal-body">
               <div className="form-group"><label className="form-label">Tanggal Penerimaan</label><input type="date" className="form-input" value={receiveDate} onChange={(event) => setReceiveDate(event.target.value)} /></div>
@@ -422,7 +422,7 @@ export default function PurchaseDetailPage() {
                         </div>
                       )}
                       <div className="form-row">
-                        <div className="form-group"><label className="form-label">Qty Terima</label><input type="number" min={0} step="0.001" className="form-input" value={line.receivedQty} onChange={(event) => setReceiveLines((current) => current.map((row) => row.purchaseItemRef === line.purchaseItemRef ? { ...row, receivedQty: event.target.value } : row))} /></div>
+                        <div className="form-group"><label className="form-label">Qty Terima</label><FormattedNumberInput min={0} maxFractionDigits={3} value={line.receivedQty} onValueChange={(value) => setReceiveLines((current) => current.map((row) => row.purchaseItemRef === line.purchaseItemRef ? { ...row, receivedQty: value } : row))} /></div>
                         <div className="form-group"><label className="form-label">Catatan</label><input className="form-input" value={line.note} onChange={(event) => setReceiveLines((current) => current.map((row) => row.purchaseItemRef === line.purchaseItemRef ? { ...row, note: event.target.value } : row))} /></div>
                       </div>
                     </div>
@@ -439,8 +439,8 @@ export default function PurchaseDetailPage() {
         <div className="modal-backdrop" onClick={() => !savingPayment && setShowPaymentModal(false)}>
           <div className="modal" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
-              <div><div className="modal-title">Bayar Supplier</div><div className="modal-subtitle">{purchase.purchaseNumber}</div></div>
-              <button className="icon-btn" onClick={() => setShowPaymentModal(false)} disabled={savingPayment}><X size={18} /></button>
+              <h3 className="modal-title">Bayar Supplier</h3>
+              <button className="modal-close" onClick={() => setShowPaymentModal(false)} disabled={savingPayment}><X size={20} /></button>
             </div>
             <div className="modal-body">
               <div className="form-row">
@@ -448,7 +448,7 @@ export default function PurchaseDetailPage() {
                 <div className="form-group"><label className="form-label">Rekening / Kas</label><select className="form-select" value={paymentForm.bankAccountRef} onChange={(event) => setPaymentForm((current) => ({ ...current, bankAccountRef: event.target.value }))}><option value="">Pilih rekening</option>{bankAccounts.map((account) => <option key={account._id} value={account._id}>{account.bankName} - {account.accountNumber}</option>)}</select></div>
               </div>
               <div className="form-row">
-                <div className="form-group"><label className="form-label">Nominal Bayar (Rp)</label><CurrencyInput value={paymentForm.amount} onValueChange={(value) => setPaymentForm((current) => ({ ...current, amount: value }))} placeholder="Ketik nominal pembayaran" /></div>
+                <div className="form-group"><label className="form-label">Nominal Bayar (Rp)</label><FormattedNumberInput allowDecimal={false} value={paymentForm.amount} onValueChange={(value) => setPaymentForm((current) => ({ ...current, amount: value }))} placeholder="Ketik nominal pembayaran" /></div>
                 <div className="form-group"><label className="form-label">Outstanding Saat Ini</label><input className="form-input" value={formatCurrency(Number(summary.outstandingAmount || 0))} readOnly /></div>
               </div>
               <div className="form-group"><label className="form-label">Catatan</label><textarea className="form-textarea" rows={3} value={paymentForm.note} onChange={(event) => setPaymentForm((current) => ({ ...current, note: event.target.value }))} /></div>

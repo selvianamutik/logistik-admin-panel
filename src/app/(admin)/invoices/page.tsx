@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Search, Plus, FileText, Printer, FileDown, Receipt } from 'lucide-react';
 import AppPagination from '@/components/AppPagination';
 import SortableTableHeader, { type SortDirection } from '@/components/SortableTableHeader';
-import CurrencyInput from '@/components/CurrencyInput';
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { fetchAdminCollectionData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
 import { parseFormattedNumberish } from '@/lib/formatted-number';
@@ -995,7 +995,7 @@ export default function NotaListPage() {
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Nominal Refund (Rp)</label>
-                                <CurrencyInput value={refundAmount} onValueChange={value => setRefundAmount(value)} disabled={refunding} placeholder="Ketik nominal refund" />
+                                <FormattedNumberInput allowDecimal={false} value={refundAmount} onValueChange={value => setRefundAmount(value)} disabled={refunding} placeholder="Ketik nominal refund" />
                             </div>
                             <div className="form-group">
                                 <label className="form-label">Rekening / Kas Sumber</label>
@@ -1072,7 +1072,7 @@ export default function NotaListPage() {
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Total Penerimaan (Rp)</label>
-                                    <CurrencyInput value={receiptAmount} onValueChange={value => setReceiptAmount(value)} disabled={receiving} placeholder="Ketik total penerimaan" />
+                                    <FormattedNumberInput allowDecimal={false} value={receiptAmount} onValueChange={value => setReceiptAmount(value)} disabled={receiving} placeholder="Ketik total penerimaan" />
                                 </div>
                                 {!hasSingleOpenNota && (
                                     <div className="form-group" style={{ alignSelf: 'end' }}>
@@ -1164,7 +1164,7 @@ export default function NotaListPage() {
                                                         <div className="font-semibold">{formatCurrency(item.remainingAmount)}</div>
                                                         <button className="table-action-btn" type="button" onClick={() => updateReceiptAllocation(item.nota._id, item.remainingAmount)} disabled={receiving}>Isi penuh</button>
                                                     </td>
-                                                    <td><CurrencyInput value={receiptAllocations[item.nota._id] || 0} onValueChange={value => updateReceiptAllocation(item.nota._id, value)} disabled={receiving} placeholder="Alokasi" /></td>
+                                                    <td><FormattedNumberInput allowDecimal={false} value={receiptAllocations[item.nota._id] || 0} onValueChange={value => updateReceiptAllocation(item.nota._id, value)} disabled={receiving} placeholder="Alokasi" /></td>
                                                 </tr>
                                             ))}
                                         </tbody>

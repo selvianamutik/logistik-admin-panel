@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { CreditCard, Edit, Package, Receipt, Save, X } from 'lucide-react';
 
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
@@ -23,7 +24,7 @@ type SupplierFormState = {
   contactPerson: string;
   phone: string;
   address: string;
-  defaultTermDays: string;
+  defaultTermDays: number;
   notes: string;
   active: boolean;
 };
@@ -34,7 +35,7 @@ const createDefaultForm = (supplier?: Partial<Supplier>): SupplierFormState => (
   contactPerson: supplier?.contactPerson || '',
   phone: supplier?.phone || '',
   address: supplier?.address || '',
-  defaultTermDays: supplier?.defaultTermDays !== undefined ? String(supplier.defaultTermDays) : '14',
+  defaultTermDays: typeof supplier?.defaultTermDays === 'number' ? supplier.defaultTermDays : 14,
   notes: supplier?.notes || '',
   active: supplier?.active !== false,
 });
@@ -567,12 +568,9 @@ export default function SupplierDetailPage() {
         <div className="modal-overlay" onClick={closeEditModal}>
           <div className="modal" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
-              <div>
-                <div className="modal-title">Edit Supplier</div>
-                <div className="modal-subtitle">Kelola master supplier untuk pembelian barang gudang.</div>
-              </div>
-              <button className="icon-btn" onClick={closeEditModal} disabled={saving}>
-                <X size={18} />
+              <h3 className="modal-title">Edit Supplier</h3>
+              <button className="modal-close" onClick={closeEditModal} disabled={saving}>
+                <X size={20} />
               </button>
             </div>
             <div className="modal-body">
@@ -599,7 +597,7 @@ export default function SupplierDetailPage() {
               <div className="form-row">
                 <div className="form-group">
                   <label className="form-label">Termin Default (hari)</label>
-                  <input type="number" min={0} className="form-input" value={form.defaultTermDays} onChange={(event) => setForm((current) => ({ ...current, defaultTermDays: event.target.value }))} />
+                  <FormattedNumberInput allowDecimal={false} min={0} value={form.defaultTermDays} onValueChange={(value) => setForm((current) => ({ ...current, defaultTermDays: value }))} />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Status</label>

@@ -6,7 +6,6 @@ import Link from 'next/link';
 import { useApp, useToast } from '../../layout';
 import { Edit, Package, DollarSign, Plus, Save, Trash2, X } from 'lucide-react';
 import CollapsibleCard from '@/components/CollapsibleCard';
-import CurrencyInput from '@/components/CurrencyInput';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import { fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
 import { FREIGHT_NOTA_BILLING_MODE_OPTIONS, getFreightNotaBillingModeLabel } from '@/lib/freight-nota-billing';
@@ -1228,7 +1227,7 @@ export default function CustomerDetailPage() {
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Tarif <span className="required">*</span></label>
-                                    <CurrencyInput value={billingRateForm.rate} onValueChange={value => setBillingRateForm(prev => ({ ...prev, rate: value }))} />
+                                    <FormattedNumberInput allowDecimal={false} value={billingRateForm.rate} onValueChange={value => setBillingRateForm(prev => ({ ...prev, rate: value }))} />
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Status</label>

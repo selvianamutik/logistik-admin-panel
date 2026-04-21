@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Pencil, Plus, Save, Trash2, X } from 'lucide-react';
 
-import CurrencyInput from '@/components/CurrencyInput';
 import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData, fetchAdminData, fetchAllAdminCollectionData } from '@/lib/api/admin-client';
@@ -878,7 +877,7 @@ export default function NewNotaPage() {
                                         />
                                     </td>
                                     <td>
-                                        <CurrencyInput
+                                        <FormattedNumberInput allowDecimal={false}
                                             value={row.tarip}
                                             onValueChange={value => updateRow(row.id, 'tarip', value)}
                                             placeholder={
@@ -1040,7 +1039,7 @@ export default function NewNotaPage() {
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">{getFreightNotaRateColumnLabel(billingMode)}</label>
-                                    <CurrencyInput
+                                    <FormattedNumberInput allowDecimal={false}
                                         value={editingRow.tarip}
                                         onValueChange={value => updateEditingRow('tarip', value)}
                                         placeholder={

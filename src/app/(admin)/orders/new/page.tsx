@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Save, X } from 'lucide-react';
 
-import CurrencyInput from '@/components/CurrencyInput';
+import FormattedNumberInput from '@/components/FormattedNumberInput';
 import PageBackButton from '@/components/PageBackButton';
 import { fetchAdminCollectionData } from '@/lib/api/admin-client';
 import { getBusinessDateValue } from '@/lib/business-date';
@@ -707,7 +707,7 @@ export default function NewOrderPage() {
                                     <div className="form-row">
                                         <div className="form-group">
                                             <label className="form-label">Upah Trip <span className="required">*</span></label>
-                                            <CurrencyInput
+                                            <FormattedNumberInput allowDecimal={false}
                                                 value={isTripFeeLockedToMaster ? (matchedTripRate?.rate || 0) : trip.tripFee}
                                                 onValueChange={value => updateTripDraft(index, 'tripFee', value)}
                                                 placeholder="Isi upah trip"
@@ -740,7 +740,7 @@ export default function NewOrderPage() {
                                         </div>
                                         <div className="form-group">
                                             <label className="form-label">Uang Jalan Awal <span className="required">*</span></label>
-                                            <CurrencyInput
+                                            <FormattedNumberInput allowDecimal={false}
                                                 value={trip.cashGiven}
                                                 onValueChange={value => updateTripDraft(index, 'cashGiven', value)}
                                                 placeholder="Isi uang jalan awal"
