@@ -73,6 +73,7 @@ export type DeliveryOrderDetailState = {
     actualCargoReady: boolean;
     actualDropReady: boolean;
     actualDropMismatchMessage: string | null;
+    actualDropAmbiguityMessage: string | null;
     actualDropPointCount: number;
     actualDropSummary: NonNullable<DeliveryOrder['actualDropPoints']>;
     hasLiveCoordinates: boolean;
@@ -367,6 +368,57 @@ function getActualDropMismatchMessage(
     return null;
 }
 
+function getActualDropAmbiguityMessage(
+    actualDropPoints: ActualDropDraft[],
+    cargoItems: ActualCargoDraft[]
+) {
+    if (actualDropPoints.length <= 1 || cargoItems.length <= 1) {
+        return null;
+    }
+
+    const billableTypes = new Set<ActualDropDraft['stopType']>(['DROP', 'EXTRA_DROP']);
+    const nonBillableTypes = new Set<ActualDropDraft['stopType']>(['HOLD', 'TRANSIT', 'RETURN']);
+    const cargoGroups = cargoItems.reduce<Map<string, ActualCargoDraft[]>>((acc, item) => {
+        const key = item.shipperReferenceKey || item.shipperReferenceNumber || 'TANPA-SJ';
+        const current = acc.get(key) || [];
+        current.push(item);
+        acc.set(key, current);
+        return acc;
+    }, new Map());
+
+    for (const [groupKey, groupItems] of cargoGroups.entries()) {
+        if (groupItems.length <= 1) {
+            continue;
+        }
+
+        const groupItemRefs = new Set(groupItems.map(item => item.deliveryOrderItemRef));
+        const groupDrops = actualDropPoints.filter(drop => {
+            const dropItems = getActualCargoDraftsForDrop(drop, cargoItems);
+            return dropItems.some(item => groupItemRefs.has(item.deliveryOrderItemRef));
+        });
+        const hasBillable = groupDrops.some(drop => billableTypes.has(drop.stopType));
+        const hasNonBillable = groupDrops.some(drop => nonBillableTypes.has(drop.stopType));
+        if (!hasBillable || !hasNonBillable) {
+            continue;
+        }
+
+        const hasAmbiguousDrop = groupDrops.some(drop => {
+            if (drop.deliveryOrderItemRef.trim()) {
+                return false;
+            }
+            return getActualCargoDraftsForDrop(drop, cargoItems).length > 1;
+        });
+        if (hasAmbiguousDrop) {
+            const groupLabel = groupKey === 'TANPA-SJ'
+                ? 'SJ ini'
+                : `SJ ${groupItems[0]?.shipperReferenceNumber || groupKey}`;
+            return `${groupLabel} punya campuran drop dan hold/return. Pilih barang spesifik untuk setiap titik agar invoice per barang tidak salah.`;
+        }
+    }
+
+    return null;
+}
+
 function resolveDefaultActualDropTarget(doData: DeliveryOrder | null) {
     const shipperTargets = Array.from(new Set(
         (doData?.shipperReferences || [])
@@ -439,30 +491,38 @@ export function buildDefaultActualDropDrafts(
         }));
     }
 
-    const totals = summarizeActualCargoDrafts(cargoItems);
     const defaultTarget = resolveDefaultActualDropTarget(doData);
     const shipperReferences = doData?.shipperReferences || [];
-    const buildDraftFromCargoItem = (
-        cargoItem: ActualCargoDraft,
+    const buildDraftFromCargoItems = (
+        items: ActualCargoDraft[],
         locationName: string,
-        locationAddress: string
-    ): ActualDropDraft => ({
+        locationAddress: string,
+        reference?: {
+            key?: string;
+            number?: string;
+        }
+    ): ActualDropDraft => {
+        const itemTotals = summarizeActualCargoDrafts(items);
+        const singleItem = items.length === 1 ? items[0] : null;
+        return {
         draftKey: crypto.randomUUID(),
         stopType: 'DROP',
-        deliveryOrderItemRef: cargoItem.deliveryOrderItemRef,
-        shipperReferenceKey: cargoItem.shipperReferenceKey || '',
-        shipperReferenceNumber: cargoItem.shipperReferenceNumber || '',
+        deliveryOrderItemRef: '',
+        shipperReferenceKey: reference?.key || singleItem?.shipperReferenceKey || '',
+        shipperReferenceNumber: reference?.number || singleItem?.shipperReferenceNumber || '',
         locationName,
         locationAddress,
-        qtyKoli: cargoItem.actualQtyKoli || '',
-        weightInputValue: cargoItem.actualWeightInputValue || '',
-        weightInputUnit: cargoItem.actualWeightInputUnit || 'KG',
-        volumeInputValue: cargoItem.actualVolumeInputValue || '',
-        volumeInputUnit: cargoItem.actualVolumeInputUnit || 'M3',
+        qtyKoli: itemTotals.qtyKoli > 0 ? String(itemTotals.qtyKoli) : '',
+        weightInputValue: itemTotals.weightKg > 0 ? String(itemTotals.weightKg) : '',
+        weightInputUnit: 'KG',
+        volumeInputValue: itemTotals.volumeM3 > 0 ? String(itemTotals.volumeM3) : '',
+        volumeInputUnit: 'M3',
         note: '',
-    });
+        };
+    };
+
     if (shipperReferences.length > 1) {
-        return shipperReferences.flatMap((reference, index) => {
+        return shipperReferences.map((reference, index) => {
             const referenceCargoItems = getActualCargoDraftsForDrop({
                 shipperReferenceKey: reference._key || '',
                 shipperReferenceNumber: reference.referenceNumber || '',
@@ -473,49 +533,18 @@ export function buildDefaultActualDropDrafts(
                 || reference.receiverAddress?.trim()
                 || `Tujuan SJ ${index + 1}`;
             const locationAddress = reference.receiverAddress || '';
-            if (referenceCargoItems.length > 1) {
-                return referenceCargoItems.map(item => buildDraftFromCargoItem(item, locationName, locationAddress));
-            }
-            const referenceTotals = summarizeActualCargoDrafts(referenceCargoItems);
-            return {
-                draftKey: crypto.randomUUID(),
-                stopType: 'DROP',
-                deliveryOrderItemRef: '',
-                shipperReferenceKey: reference._key || '',
-                shipperReferenceNumber: reference.referenceNumber || '',
-                locationName,
-                locationAddress,
-                qtyKoli: referenceTotals.qtyKoli > 0 ? String(referenceTotals.qtyKoli) : '',
-                weightInputValue: referenceTotals.weightKg > 0 ? String(referenceTotals.weightKg) : '',
-                weightInputUnit: 'KG' as const,
-                volumeInputValue: referenceTotals.volumeM3 > 0 ? String(referenceTotals.volumeM3) : '',
-                volumeInputUnit: 'M3' as const,
-                note: '',
-            };
+            return buildDraftFromCargoItems(referenceCargoItems, locationName, locationAddress, {
+                key: reference._key || '',
+                number: reference.referenceNumber || '',
+            });
         });
     }
     const singleShipperReference = shipperReferences.length === 1 ? shipperReferences[0] : null;
-    const singleLocationName = defaultTarget.locationName;
-    const singleLocationAddress = defaultTarget.locationAddress;
-    if (cargoItems.length > 1) {
-        return cargoItems.map(item => buildDraftFromCargoItem(item, singleLocationName, singleLocationAddress));
-    }
     return [
-        {
-            draftKey: crypto.randomUUID(),
-            stopType: 'DROP',
-            deliveryOrderItemRef: '',
-            shipperReferenceKey: singleShipperReference?._key || '',
-            shipperReferenceNumber: singleShipperReference?.referenceNumber || '',
-            locationName: defaultTarget.locationName,
-            locationAddress: defaultTarget.locationAddress,
-            qtyKoli: totals.qtyKoli > 0 ? String(totals.qtyKoli) : '',
-            weightInputValue: totals.weightKg > 0 ? String(totals.weightKg) : '',
-            weightInputUnit: 'KG',
-            volumeInputValue: totals.volumeM3 > 0 ? String(totals.volumeM3) : '',
-            volumeInputUnit: 'M3',
-            note: '',
-        },
+        buildDraftFromCargoItems(cargoItems, defaultTarget.locationName, defaultTarget.locationAddress, {
+            key: singleShipperReference?._key || '',
+            number: singleShipperReference?.referenceNumber || '',
+        }),
     ];
 }
 
@@ -691,6 +720,7 @@ export function buildDeliveryOrderDetailState(params: {
         );
     });
     const actualDropMismatchMessage = getActualDropMismatchMessage(actualCargoTotals, actualDropTotals);
+    const actualDropAmbiguityMessage = getActualDropAmbiguityMessage(effectiveActualDropPoints, actualCargoItems);
     const actualDropReady = effectiveActualDropPoints.length > 0 && effectiveActualDropPoints.every(item => {
         const qty = parseFormattedNumberish(item.qtyKoli);
         const weight = parseFormattedNumberish(item.weightInputValue, {
@@ -703,7 +733,7 @@ export function buildDeliveryOrderDetailState(params: {
             Boolean(item.locationName.trim() || item.locationAddress.trim()) &&
             ((Number.isFinite(qty) && qty > 0) || (Number.isFinite(weight) && weight > 0) || (Number.isFinite(volume) && volume > 0))
         );
-    }) && !actualDropMismatchMessage;
+    }) && !actualDropMismatchMessage && !actualDropAmbiguityMessage;
     const actualDropPointCount = effectiveActualDropPoints.length;
     const actualDropSummary = doData?.actualDropPoints || [];
     const hasLiveCoordinates = typeof doData?.trackingLastLat === 'number' && typeof doData?.trackingLastLng === 'number';
@@ -722,6 +752,7 @@ export function buildDeliveryOrderDetailState(params: {
         actualCargoReady,
         actualDropReady,
         actualDropMismatchMessage,
+        actualDropAmbiguityMessage,
         actualDropPointCount,
         actualDropSummary,
         hasLiveCoordinates,

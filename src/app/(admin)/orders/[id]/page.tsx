@@ -50,7 +50,7 @@ import {
 import { resolveOrderCargoEntryMode } from '@/lib/order-cargo-entry-mode';
 import { hasDeliveryOrderBillableCargo } from '@/lib/delivery-order-completion';
 import { buildServiceCapacityRangeMap, formatCapacityRangeLabel } from '@/lib/service-capacity-support';
-import type { Customer, CustomerProduct, Order, OrderItem, DeliveryOrder, DeliveryOrderItem, FreightNota, FreightNotaItem, Vehicle } from '@/lib/types';
+import type { Customer, CustomerProduct, CustomerRecipient, Order, OrderItem, DeliveryOrder, DeliveryOrderItem, FreightNota, FreightNotaItem, Vehicle } from '@/lib/types';
 import PageBackButton from '@/components/PageBackButton';
 import { hasPageAccess, hasPermission } from '@/lib/rbac';
 import { useApp } from '../../layout';
@@ -170,6 +170,7 @@ export default function OrderDetailPage() {
     const [selectedOrderTripPlanKey, setSelectedOrderTripPlanKey] = useState('');
     const [creatingDO, setCreatingDO] = useState(false);
     const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
+    const [customerRecipients, setCustomerRecipients] = useState<CustomerRecipient[]>([]);
     // DO form
     const [doDate, setDoDate] = useState(getBusinessDateValue());
     const [doCustomerDoNumber, setDoCustomerDoNumber] = useState('');
@@ -230,7 +231,7 @@ export default function OrderDetailPage() {
                 fetchAdminCollectionData<Array<Pick<DeliveryOrder, '_id' | 'vehicleRef' | 'driverRef' | 'status'>>>(`/api/data?entity=delivery-orders&filter=${encodeURIComponent(JSON.stringify({ status: ['CREATED', 'HEADING_TO_PICKUP', 'ON_DELIVERY', 'ARRIVED'] }))}`, 'Gagal memuat detail order'),
             ]);
             const deliveryOrderIds = (deliveryOrders || []).map(item => item._id);
-            const [deliveryOrderItems, notaItems, customerData, customerProductData] = await Promise.all([
+            const [deliveryOrderItems, notaItems, customerData, customerProductData, customerRecipientData] = await Promise.all([
                 deliveryOrderIds.length > 0
                     ? fetchAdminCollectionData<DeliveryOrderItem[]>(`/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: deliveryOrderIds }))}`, 'Gagal memuat detail order')
                     : Promise.resolve([] as DeliveryOrderItem[]),
@@ -246,6 +247,12 @@ export default function OrderDetailPage() {
                         'Gagal memuat detail order'
                     )
                     : Promise.resolve([] as CustomerProduct[]),
+                orderData?.customerRef
+                    ? fetchAdminCollectionData<CustomerRecipient[]>(
+                        `/api/data?entity=customer-recipients&filter=${encodeURIComponent(JSON.stringify({ customerRef: orderData.customerRef, active: true }))}&sortField=label&sortDir=asc`,
+                        'Gagal memuat master tujuan customer'
+                    )
+                    : Promise.resolve([] as CustomerRecipient[]),
             ]);
             const notaIds = [...new Set((notaItems || []).map(item => item.notaRef).filter(Boolean))];
             const orderNotas = notaIds.length > 0
@@ -259,6 +266,7 @@ export default function OrderDetailPage() {
             setNotas([...(orderNotas || [])].sort((a, b) => `${b.issueDate || ''}-${b._id}`.localeCompare(`${a.issueDate || ''}-${a._id}`)));
             setShipperReferenceFormat((customerData?.deliveryOrderPrefix || 'SJ').toUpperCase());
             setCustomerProducts((customerProductData || []).filter(product => product.active !== false));
+            setCustomerRecipients((customerRecipientData || []).filter(recipient => recipient.active !== false));
             const { busyVehicleIds: nextBusyVehicleIds } = buildBusyAssignmentIds(activeDeliveryOrders || []);
             setVehicles(vehicleData || []);
             setBusyVehicleIds(nextBusyVehicleIds);
@@ -415,6 +423,20 @@ export default function OrderDetailPage() {
                     : group
             ))
         );
+    };
+
+    const formatCustomerRecipientLabel = (recipient: CustomerRecipient) => {
+        const targetName = recipient.receiverCompany || recipient.receiverName || recipient.label;
+        return `${recipient.label}${targetName && targetName !== recipient.label ? ` - ${targetName}` : ''}`;
+    };
+
+    const applyDoRecipient = (recipientId: string) => {
+        const recipient = customerRecipients.find(item => item._id === recipientId);
+        if (!recipient) return;
+        setDoReceiverName(recipient.receiverName || '');
+        setDoReceiverPhone(recipient.receiverPhone || '');
+        setDoReceiverCompany(recipient.receiverCompany || '');
+        setDoReceiverAddress(recipient.receiverAddress || '');
     };
 
     const openCreateDOModal = (tripPlanKey?: string) => {
@@ -1598,6 +1620,24 @@ export default function OrderDetailPage() {
                                 </div>
                             )}
                             <div className="form-section-title">Tujuan / Penerima Surat Jalan</div>
+                            {customerRecipients.length > 0 && (
+                                <div className="form-group">
+                                    <label className="form-label">Ambil dari Master Tujuan</label>
+                                    <select
+                                        className="form-select"
+                                        value=""
+                                        onChange={event => applyDoRecipient(event.target.value)}
+                                        disabled={creatingDO}
+                                    >
+                                        <option value="">Pilih tujuan customer...</option>
+                                        {customerRecipients.map(recipient => (
+                                            <option key={recipient._id} value={recipient._id}>
+                                                {formatCustomerRecipientLabel(recipient)}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Nama Penerima / PIC</label>

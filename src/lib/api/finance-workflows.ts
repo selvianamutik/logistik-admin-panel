@@ -2169,6 +2169,14 @@ export async function handleFreightNotaCreate(
                 { status: 409 }
             );
         }
+        if (hasActualDropPoints && rowItemRefs.length > 0 && !matchedBuiltRow) {
+            return NextResponse.json(
+                {
+                    error: `Item pada SJ ${resolvedNoSj || deliveryOrder.doNumber || row.doRef} belum punya realisasi drop yang bisa ditagihkan. Jangan tagihkan barang yang masih hold/return.`,
+                },
+                { status: 409 }
+            );
+        }
 
         row.doNumber = normalizeOptionalText(deliveryOrder.doNumber) || row.doNumber;
         row.noSJ = resolvedNoSj;

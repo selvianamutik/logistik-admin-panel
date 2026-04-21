@@ -266,12 +266,20 @@ export default function NewNotaPage() {
         setRows(previous => previous.map(row => buildCalculatedRow(row)));
     }, [buildCalculatedRow]);
 
+    const shouldRecalculateRow = (field: keyof NotaItemRow) =>
+        field === 'beratKg' ||
+        field === 'volumeM3' ||
+        field === 'tarip' ||
+        field === 'dari' ||
+        field === 'tujuan' ||
+        field === 'customerRef';
+
     const updateRow = (id: string, field: keyof NotaItemRow, value: string | number) => {
         setRows(previous =>
             previous.map(row => {
                 if (row.id !== id) return row;
                 const updated = { ...row, [field]: value };
-                return field === 'beratKg' || field === 'tarip'
+                return shouldRecalculateRow(field)
                     ? buildCalculatedRow(updated)
                     : updated;
             })
@@ -282,7 +290,7 @@ export default function NewNotaPage() {
         setEditingRow(previous => {
             if (!previous) return previous;
             const updated = { ...previous, [field]: value };
-            return field === 'beratKg' || field === 'tarip'
+            return shouldRecalculateRow(field)
                 ? buildCalculatedRow(updated)
                 : updated;
         });

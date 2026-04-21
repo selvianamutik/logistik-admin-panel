@@ -69,7 +69,7 @@ import { applyCustomerProductToOrderItem, summarizeDraftOrderCargo, updateOrderI
 import { generateDOPdf } from '@/lib/pdf/doTemplate';
 import { hasPageAccess, hasPermission, normalizeUserRole } from '@/lib/rbac';
 import { buildTripRateAreaOptions, findMatchingTripRouteRate, formatTripRouteRateLabel } from '@/lib/trip-route-rate-support';
-import type { Customer, CustomerProduct, DeliveryOrder, DeliveryOrderItem, TrackingLog, CompanyProfile, Order, OrderItem, Driver, DriverVoucher, TripRouteRate, Vehicle } from '@/lib/types';
+import type { Customer, CustomerProduct, CustomerRecipient, DeliveryOrder, DeliveryOrderItem, TrackingLog, CompanyProfile, Order, OrderItem, Driver, DriverVoucher, TripRouteRate, Vehicle } from '@/lib/types';
 
 type DeliveryOrderTripCashLink = {
     hasVoucher: true;
@@ -245,6 +245,7 @@ export default function DODetailPage() {
     const [vehicles, setVehicles] = useState<Vehicle[]>([]);
     const [billingCustomers, setBillingCustomers] = useState<Array<Pick<Customer, '_id' | 'name' | 'active'>>>([]);
     const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
+    const [customerRecipients, setCustomerRecipients] = useState<CustomerRecipient[]>([]);
     const [activeDeliveryOrders, setActiveDeliveryOrders] = useState<DeliveryOrder[]>([]);
     const [loading, setLoading] = useState(true);
     const [showStatusModal, setShowStatusModal] = useState(false);
@@ -465,7 +466,7 @@ export default function DODetailPage() {
 
         try {
             const deliveryOrder = await fetchAdminData<DeliveryOrder | null>(`/api/data?entity=delivery-orders&id=${doId}`, 'Gagal memuat detail surat jalan');
-            const [itemRows, logRows, sourceOrder, customerData, tripRateRows, linkedVoucherRows, tripCashLink, customerRows, productRows] = await Promise.all([
+            const [itemRows, logRows, sourceOrder, customerData, tripRateRows, linkedVoucherRows, tripCashLink, customerRows, productRows, recipientRows] = await Promise.all([
                 fetchAllAdminCollectionData<DeliveryOrderItem>(`/api/data?entity=delivery-order-items&filter=${encodeURIComponent(JSON.stringify({ deliveryOrderRef: doId }))}`, 'Gagal memuat detail surat jalan'),
                 fetchAllAdminCollectionData<TrackingLog>(`/api/data?entity=tracking-logs&filter=${encodeURIComponent(JSON.stringify({ refRef: doId, refType: 'DO' }))}`, 'Gagal memuat detail surat jalan'),
                 deliveryOrder?.orderRef
@@ -494,6 +495,12 @@ export default function DODetailPage() {
                         'Gagal memuat master barang customer'
                     )
                     : Promise.resolve([] as CustomerProduct[]),
+                (canEditDeliveryTarget || canEditShipperReference)
+                    ? fetchAdminCollectionData<CustomerRecipient[]>(
+                        `/api/data?entity=customer-recipients&filter=${encodeURIComponent(JSON.stringify({ active: true }))}&sortField=label&sortDir=asc`,
+                        'Gagal memuat master tujuan customer'
+                    )
+                    : Promise.resolve([] as CustomerRecipient[]),
             ]);
             const deliveryOrderItems = itemRows || [];
             const linkedOrderItemRefs = Array.from(
@@ -526,6 +533,7 @@ export default function DODetailPage() {
             setDoData(resolvedDeliveryOrder);
             setBillingCustomers((customerRows || []).filter(customer => customer.active !== false || customer._id === resolvedDeliveryOrder?.customerRef));
             setCustomerProducts((productRows || []).filter(product => product.active !== false));
+            setCustomerRecipients((recipientRows || []).filter(recipient => recipient.active !== false));
             setShipperReferenceFormat((customerData?.deliveryOrderPrefix || 'SJ').toUpperCase());
             setTripRouteRates((tripRateRows || []).filter(rate => rate.active !== false));
             setLinkedVoucher(linkedVoucherRows?.[0] || null);
@@ -548,7 +556,7 @@ export default function DODetailPage() {
                 setLoading(false);
             }
         }
-    }, [addToast, canCreateTripCash, canManageTripFee, canViewCustomerDetails, canViewTripCash, doId]);
+    }, [addToast, canCreateTripCash, canEditDeliveryTarget, canEditShipperReference, canManageTripFee, canViewCustomerDetails, canViewTripCash, doId]);
 
     const loadTripResources = useCallback(async () => {
         setLoadingTripResources(true);
@@ -627,6 +635,39 @@ export default function DODetailPage() {
 
     const removeShipperReferenceDraft = (draftKey: string) => {
         setShipperReferenceDrafts(previous => previous.filter(entry => entry.draftKey !== draftKey));
+    };
+
+    const getCustomerRecipientOptions = (customerRef?: string) => {
+        const normalizedCustomerRef = customerRef?.trim();
+        return customerRecipients.filter(recipient =>
+            recipient.active !== false &&
+            (!normalizedCustomerRef || recipient.customerRef === normalizedCustomerRef)
+        );
+    };
+
+    const formatCustomerRecipientLabel = (recipient: CustomerRecipient) => {
+        const targetName = recipient.receiverCompany || recipient.receiverName || recipient.label;
+        return `${recipient.label}${targetName && targetName !== recipient.label ? ` - ${targetName}` : ''}`;
+    };
+
+    const applyTargetRecipient = (recipientId: string) => {
+        const recipient = customerRecipients.find(item => item._id === recipientId);
+        if (!recipient) return;
+        setTargetReceiverName(recipient.receiverName || '');
+        setTargetReceiverPhone(recipient.receiverPhone || '');
+        setTargetReceiverCompany(recipient.receiverCompany || '');
+        setTargetReceiverAddress(recipient.receiverAddress || '');
+    };
+
+    const applyShipperReferenceRecipient = (draftKey: string, recipientId: string) => {
+        const recipient = customerRecipients.find(item => item._id === recipientId);
+        if (!recipient) return;
+        updateShipperReferenceDraft(draftKey, {
+            receiverName: recipient.receiverName || '',
+            receiverPhone: recipient.receiverPhone || '',
+            receiverCompany: recipient.receiverCompany || '',
+            receiverAddress: recipient.receiverAddress || '',
+        });
     };
 
     const openTargetModal = () => {
@@ -1653,6 +1694,7 @@ export default function DODetailPage() {
         actualCargoReady,
         actualDropReady,
         actualDropMismatchMessage,
+        actualDropAmbiguityMessage,
         actualDropPointCount,
         actualDropSummary,
         hasLiveCoordinates,
@@ -2790,6 +2832,11 @@ export default function DODetailPage() {
                                                 {actualDropMismatchMessage} Muatan aktual {formatCargoSummary(actualCargoTotals)} tetapi alokasi drop baru {formatCargoSummary(actualDropTotals)}.
                                             </div>
                                         )}
+                                        {actualDropAmbiguityMessage && (
+                                            <div style={{ background: 'var(--color-warning-light)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-warning-dark)' }}>
+                                                {actualDropAmbiguityMessage}
+                                            </div>
+                                        )}
                                         {!showAdvancedDropEditor ? (
                                             <div style={{ border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem', padding: '0.9rem', background: 'var(--color-gray-50)' }}>
                                                 <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Realisasi Default</div>
@@ -3008,6 +3055,24 @@ export default function DODetailPage() {
                             <button className="modal-close" onClick={() => setShowTargetModal(false)} disabled={savingTarget}>&times;</button>
                         </div>
                         <div className="modal-body">
+                            {getCustomerRecipientOptions(doData?.customerRef).length > 0 && (
+                                <div className="form-group">
+                                    <label className="form-label">Ambil dari Master Tujuan</label>
+                                    <select
+                                        className="form-select"
+                                        value=""
+                                        onChange={event => applyTargetRecipient(event.target.value)}
+                                        disabled={savingTarget}
+                                    >
+                                        <option value="">Pilih tujuan customer...</option>
+                                        {getCustomerRecipientOptions(doData?.customerRef).map(recipient => (
+                                            <option key={recipient._id} value={recipient._id}>
+                                                {formatCustomerRecipientLabel(recipient)}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
                             <div className="form-row">
                                 <div className="form-group">
                                     <label className="form-label">Nama Penerima / PIC</label>
@@ -3124,6 +3189,27 @@ export default function DODetailPage() {
                                                     ))}
                                                 </select>
                                             </div>
+                                            {(() => {
+                                                const recipientOptions = getCustomerRecipientOptions(entry.billingCustomerRef || doData?.customerRef);
+                                                return recipientOptions.length > 0 ? (
+                                                    <div className="form-group" style={{ marginBottom: 0 }}>
+                                                        <label className="form-label">Tujuan dari Master Customer</label>
+                                                        <select
+                                                            className="form-select"
+                                                            value=""
+                                                            onChange={event => applyShipperReferenceRecipient(entry.draftKey, event.target.value)}
+                                                            disabled={savingShipperReference}
+                                                        >
+                                                            <option value="">Pilih tujuan untuk SJ ini...</option>
+                                                            {recipientOptions.map(recipient => (
+                                                                <option key={recipient._id} value={recipient._id}>
+                                                                    {formatCustomerRecipientLabel(recipient)}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                ) : null;
+                                            })()}
                                             <div className="form-row">
                                                 <div className="form-group">
                                                     <label className="form-label">Nama Penerima</label>
@@ -3241,6 +3327,10 @@ export default function DODetailPage() {
                             <div style={{ display: 'grid', gap: '0.85rem' }}>
                                 {cargoDraftGroups.map((group, groupIndex) => {
                                     const draftItemsInGroup = getDeliveryOrderCargoDraftItems(group);
+                                    const normalizedGroupReference = group.shipperReferenceNumber.trim().toUpperCase();
+                                    const existingItemsInGroup = normalizedGroupReference
+                                        ? doItems.filter(item => (item.shipperReferenceNumber || doData?.customerDoNumber || '').trim().toUpperCase() === normalizedGroupReference)
+                                        : [];
                                     return (
                                         <div key={group.id} style={{ display: 'grid', gap: '0.85rem', padding: '1rem', background: 'var(--color-gray-50)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-gray-200)' }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -3254,6 +3344,31 @@ export default function DODetailPage() {
                                                     </button>
                                                 )}
                                             </div>
+
+                                            {existingItemsInGroup.length > 0 && (
+                                                <div style={{ display: 'grid', gap: '0.45rem', padding: '0.75rem', background: 'var(--color-white)', border: '1px solid var(--color-gray-200)', borderRadius: '0.75rem' }}>
+                                                    <div className="text-muted text-sm">Barang tersimpan di SJ ini</div>
+                                                    {existingItemsInGroup.map(existingItem => (
+                                                        <div key={existingItem._id} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', fontSize: '0.8rem' }}>
+                                                            <span className="font-medium">{existingItem.orderItemDescription || 'Barang'}</span>
+                                                            <span className="text-muted">
+                                                                {formatCargoSummary({
+                                                                    qtyKoli: existingItem.orderItemQtyKoli,
+                                                                    weightKg: existingItem.orderItemWeight,
+                                                                    weightInputValue: existingItem.orderItemWeightInputValue,
+                                                                    weightInputUnit: existingItem.orderItemWeightInputUnit,
+                                                                    volumeM3: existingItem.orderItemVolumeM3,
+                                                                    volumeInputValue: existingItem.orderItemVolumeInputValue,
+                                                                    volumeInputUnit: existingItem.orderItemVolumeInputUnit,
+                                                                })}
+                                                            </span>
+                                                            <span style={{ color: existingItem.actualQtyKoli !== undefined || existingItem.actualWeightKg !== undefined ? 'var(--color-success)' : 'var(--color-gray-500)' }}>
+                                                                {existingItem.actualQtyKoli !== undefined || existingItem.actualWeightKg !== undefined ? 'Sudah final' : 'Belum final'}
+                                                            </span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
 
                                             {pickupStopList.length > 0 && (
                                                 <div className="form-group" style={{ marginBottom: 0 }}>

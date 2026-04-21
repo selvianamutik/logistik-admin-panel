@@ -20,9 +20,13 @@ type DeliveryOrderItemLike = {
 
 type FreightNotaItemLike = {
     _id: string;
+    doRef?: string | null;
     doNumber?: string | null;
     noSJ?: string | null;
+    barang?: string | null;
     tujuan?: string | null;
+    deliveryOrderItemRef?: string | null;
+    deliveryOrderItemRefs?: string[] | null;
 };
 
 type AuditIssue = {
@@ -175,9 +179,16 @@ async function main() {
     }
 
     for (const item of freightNotaItems) {
+        const doRef = normalizeText(item.doRef);
         const doNumber = normalizeText(item.doNumber);
         const noSJ = normalizeText(item.noSJ);
+        const barang = normalizeText(item.barang);
         const tujuan = normalizeText(item.tujuan);
+        const rowItemRefs = [
+            normalizeText(item.deliveryOrderItemRef),
+            ...(Array.isArray(item.deliveryOrderItemRefs) ? item.deliveryOrderItemRefs.map(ref => normalizeText(ref)) : []),
+        ].filter(Boolean);
+        const linkedDeliveryOrderItems = doRef ? (itemGroups.get(doRef) || []) : [];
 
         if (doNumber && noSJ && doNumber === noSJ) {
             issues.push({
@@ -200,6 +211,14 @@ async function main() {
                 kind: 'freight-nota-item',
                 ref: item._id,
                 message: 'Baris nota tidak punya tujuan',
+            });
+        }
+
+        if (doRef && linkedDeliveryOrderItems.length > 1 && rowItemRefs.length === 0) {
+            issues.push({
+                kind: 'freight-nota-item',
+                ref: item._id,
+                message: `Baris nota DO multi-item harus mengacu ke item SJ spesifik, bukan gabungan (${barang || 'barang kosong'})`,
             });
         }
     }

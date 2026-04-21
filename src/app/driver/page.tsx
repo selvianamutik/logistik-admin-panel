@@ -334,15 +334,49 @@ export default function DriverPortalPage() {
         }),
         [completionCargoItems]
     );
-    const completionShipperReferences = completionOrder?.shipperReferences || [];
-    const resolveCompletionDropShipperReferenceValue = (drop: Pick<ActualDropDraft, 'shipperReferenceKey' | 'shipperReferenceNumber'>) => {
+    const completionShipperReferences = useMemo(
+        () => completionOrder?.shipperReferences || [],
+        [completionOrder?.shipperReferences]
+    );
+    const completionDropTargetOptions = useMemo(() => [
+        ...completionShipperReferences.map(reference => ({
+            optionValue: `sj:${reference._key || reference.referenceNumber || ''}`,
+            referenceKey: reference._key || '',
+            referenceNumber: reference.referenceNumber || '',
+            receiverCompany: reference.receiverCompany || '',
+            receiverName: reference.receiverName || '',
+            receiverAddress: reference.receiverAddress || '',
+            deliveryOrderItemRef: '',
+            label: `${reference.referenceNumber || '-'}${reference.receiverCompany || reference.receiverName ? ` - ${reference.receiverCompany || reference.receiverName}` : ''} (semua barang)`,
+        })),
+        ...completionCargoItems.map(item => ({
+            optionValue: `item:${item.deliveryOrderItemRef}`,
+            referenceKey: item.shipperReferenceKey || '',
+            referenceNumber: item.shipperReferenceNumber || completionOrder?.customerDoNumber || completionOrder?.doNumber || '',
+            receiverCompany: '',
+            receiverName: '',
+            receiverAddress: '',
+            deliveryOrderItemRef: item.deliveryOrderItemRef,
+            label: `${item.shipperReferenceNumber || completionOrder?.customerDoNumber || 'Tanpa SJ'} - ${item.description || 'Barang'}`,
+        })),
+    ].filter(option => option.optionValue !== 'sj:'), [
+        completionCargoItems,
+        completionOrder?.customerDoNumber,
+        completionOrder?.doNumber,
+        completionShipperReferences,
+    ]);
+    const resolveCompletionDropShipperReferenceValue = (drop: Pick<ActualDropDraft, 'deliveryOrderItemRef' | 'shipperReferenceKey' | 'shipperReferenceNumber'>) => {
+        if (drop.deliveryOrderItemRef) {
+            return `item:${drop.deliveryOrderItemRef}`;
+        }
         const matchedReference = completionShipperReferences.find(reference =>
             (drop.shipperReferenceKey && reference._key === drop.shipperReferenceKey) ||
             (drop.shipperReferenceNumber && reference.referenceNumber === drop.shipperReferenceNumber)
         );
-        return matchedReference?._key || matchedReference?.referenceNumber || '';
+        const referenceValue = matchedReference?._key || matchedReference?.referenceNumber || '';
+        return referenceValue ? `sj:${referenceValue}` : '';
     };
-    const getCompletionDropCargoSummary = (drop: Pick<ActualDropDraft, 'shipperReferenceKey' | 'shipperReferenceNumber'>) =>
+    const getCompletionDropCargoSummary = (drop: Pick<ActualDropDraft, 'deliveryOrderItemRef' | 'shipperReferenceKey' | 'shipperReferenceNumber'>) =>
         summarizeActualCargoDraftDescriptions(getActualCargoDraftsForDrop(drop, completionCargoItems));
 
     const applyOrderUpdate = useCallback((updated: DriverAssignedDeliveryOrder) => {
@@ -952,34 +986,33 @@ export default function DriverPortalPage() {
     }, []);
 
     const applyCompletionDropShipperReference = useCallback((draftKey: string, optionValue: string) => {
-        const selectedReference = (completionOrder?.shipperReferences || []).find(reference => {
-            const referenceOptionValue = reference._key || reference.referenceNumber || '';
-            return referenceOptionValue === optionValue;
-        });
+        const selectedTarget = completionDropTargetOptions.find(option => option.optionValue === optionValue);
         setCompletionDropPoints(previous => previous.map(item => {
             if (item.draftKey !== draftKey) {
                 return item;
             }
-            if (!selectedReference) {
+            if (!selectedTarget) {
                 return {
                     ...item,
+                    deliveryOrderItemRef: '',
                     shipperReferenceKey: '',
                     shipperReferenceNumber: '',
                 };
             }
             return {
                 ...item,
-                shipperReferenceKey: selectedReference._key || '',
-                shipperReferenceNumber: selectedReference.referenceNumber || '',
+                deliveryOrderItemRef: selectedTarget.deliveryOrderItemRef || '',
+                shipperReferenceKey: selectedTarget.referenceKey || '',
+                shipperReferenceNumber: selectedTarget.referenceNumber || '',
                 locationName:
-                    selectedReference.receiverCompany?.trim()
-                    || selectedReference.receiverName?.trim()
-                    || selectedReference.receiverAddress?.trim()
+                    selectedTarget.receiverCompany?.trim()
+                    || selectedTarget.receiverName?.trim()
+                    || selectedTarget.receiverAddress?.trim()
                     || item.locationName,
-                locationAddress: selectedReference.receiverAddress || item.locationAddress,
+                locationAddress: selectedTarget.receiverAddress || item.locationAddress,
             };
         }));
-    }, [completionOrder?.shipperReferences]);
+    }, [completionDropTargetOptions]);
 
     const addCompletionDropDraft = useCallback(() => {
         setCompletionDropPoints(previous => [...previous, createEmptyActualDropDraft()]);
@@ -2205,6 +2238,11 @@ export default function DriverPortalPage() {
                                         {completionDetailState.actualDropMismatchMessage} Muatan aktual {formatCargoSummary(completionDetailState.actualCargoTotals)} tetapi alokasi drop baru {formatCargoSummary(completionDetailState.actualDropTotals)}.
                                     </div>
                                 )}
+                                {completionDetailState.actualDropAmbiguityMessage && (
+                                    <div style={{ background: 'var(--color-warning-light)', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-warning-dark)' }}>
+                                        {completionDetailState.actualDropAmbiguityMessage}
+                                    </div>
+                                )}
                                 {!showCompletionAdvancedDropEditor ? (
                                     <div className="driver-completion-item">
                                         <div className="driver-completion-item-header">
@@ -2252,7 +2290,7 @@ export default function DriverPortalPage() {
                                                     )}
                                                 </div>
                                                 <div className="driver-completion-metrics">
-                                                    {completionShipperReferences.length > 0 && (
+                                                    {completionDropTargetOptions.length > 0 && (
                                                         <div className="form-group">
                                                             <label className="form-label">No. SJ / Barang</label>
                                                             <select
@@ -2262,15 +2300,11 @@ export default function DriverPortalPage() {
                                                                 disabled={isActionInFlight}
                                                             >
                                                                 <option value="">Tidak spesifik / semua barang</option>
-                                                                {completionShipperReferences.map(reference => {
-                                                                    const optionValue = reference._key || reference.referenceNumber || '';
-                                                                    return (
-                                                                        <option key={optionValue} value={optionValue}>
-                                                                            {reference.referenceNumber || '-'}
-                                                                            {reference.receiverCompany || reference.receiverName ? ` - ${reference.receiverCompany || reference.receiverName}` : ''}
-                                                                        </option>
-                                                                    );
-                                                                })}
+                                                                {completionDropTargetOptions.map(option => (
+                                                                    <option key={option.optionValue} value={option.optionValue}>
+                                                                        {option.label}
+                                                                    </option>
+                                                                ))}
                                                             </select>
                                                             <div className="text-muted text-sm" style={{ marginTop: '0.35rem' }}>
                                                                 Barang: {getCompletionDropCargoSummary(item)}
@@ -2299,7 +2333,7 @@ export default function DriverPortalPage() {
                                                             value={item.locationName}
                                                             onChange={event => updateCompletionDropDraft(item.draftKey, 'locationName', event.target.value)}
                                                             disabled={isActionInFlight}
-                                                            placeholder="Mis. Gudang transit / tujuan drop"
+                                                            placeholder="Nama tujuan aktual"
                                                         />
                                                     </div>
                                                     <div className="form-group" style={{ gridColumn: '1 / -1' }}>

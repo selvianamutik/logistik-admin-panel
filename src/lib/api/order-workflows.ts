@@ -220,6 +220,82 @@ function splitActualCargoForOrderProgress(params: {
     };
 }
 
+function getAmbiguousActualDropMappingMessage(
+    actualDropPoints: ReturnType<typeof normalizeDeliveryActualDropPoints> | undefined,
+    doItems: DeliveryOrderItemCargoSnapshot[]
+) {
+    const points = actualDropPoints || [];
+    if (points.length <= 1 || doItems.length <= 1) {
+        return null;
+    }
+
+    const billableTypes = new Set(['DROP', 'EXTRA_DROP']);
+    const nonBillableTypes = new Set(['HOLD', 'TRANSIT', 'RETURN']);
+    const itemGroups = doItems.reduce<Map<string, DeliveryOrderItemCargoSnapshot[]>>((acc, item) => {
+        const key = normalizeOptionalText(item.shipperReferenceKey) || normalizeOptionalText(item.shipperReferenceNumber) || 'TANPA-SJ';
+        const current = acc.get(key) || [];
+        current.push(item);
+        acc.set(key, current);
+        return acc;
+    }, new Map());
+
+    const dropMatchesItem = (
+        point: ReturnType<typeof normalizeDeliveryActualDropPoints>[number],
+        item: DeliveryOrderItemCargoSnapshot
+    ) => {
+        const itemRef = normalizeOptionalText(point.deliveryOrderItemRef);
+        const itemRefs = Array.isArray(point.deliveryOrderItemRefs)
+            ? point.deliveryOrderItemRefs.map(ref => normalizeOptionalText(ref)).filter(Boolean)
+            : [];
+        if (itemRef || itemRefs.length > 0) {
+            return itemRef === item._id || itemRefs.includes(item._id);
+        }
+
+        const pointReferenceKey = normalizeOptionalText(point.shipperReferenceKey);
+        const pointReferenceNumber = normalizeOptionalText(point.shipperReferenceNumber);
+        if (!pointReferenceKey && !pointReferenceNumber) {
+            return true;
+        }
+
+        return (
+            (pointReferenceKey && pointReferenceKey === normalizeOptionalText(item.shipperReferenceKey)) ||
+            (pointReferenceNumber && pointReferenceNumber === normalizeOptionalText(item.shipperReferenceNumber))
+        );
+    };
+
+    for (const [groupKey, groupItems] of itemGroups.entries()) {
+        if (groupItems.length <= 1) {
+            continue;
+        }
+
+        const groupDrops = points.filter(point => groupItems.some(item => dropMatchesItem(point, item)));
+        const hasBillable = groupDrops.some(point => billableTypes.has(point.stopType));
+        const hasNonBillable = groupDrops.some(point => nonBillableTypes.has(point.stopType));
+        if (!hasBillable || !hasNonBillable) {
+            continue;
+        }
+
+        const hasAmbiguousDrop = groupDrops.some(point => {
+            const itemRef = normalizeOptionalText(point.deliveryOrderItemRef);
+            const itemRefs = Array.isArray(point.deliveryOrderItemRefs)
+                ? point.deliveryOrderItemRefs.map(ref => normalizeOptionalText(ref)).filter(Boolean)
+                : [];
+            if (itemRef || itemRefs.length > 0) {
+                return false;
+            }
+            return doItems.filter(item => dropMatchesItem(point, item)).length > 1;
+        });
+        if (hasAmbiguousDrop) {
+            const groupLabel = groupKey === 'TANPA-SJ'
+                ? 'SJ ini'
+                : `SJ ${groupItems[0]?.shipperReferenceNumber || groupKey}`;
+            return `${groupLabel} punya campuran drop dan hold/return. Pilih barang spesifik untuk setiap titik sebelum finalisasi agar status dan nota per barang tidak salah.`;
+        }
+    }
+
+    return null;
+}
+
 function normalizeDeliveryOrderShipperReferencesForUpdate(
     deliveryOrder: {
         pickupStops?: Array<{
@@ -1637,6 +1713,10 @@ export async function handleDeliveryOrderStatusUpdate(
         try {
             actualCargoByDoItemId = normalizeDeliveryOrderActualCargoInputs(data, doItems);
             actualDropPoints = normalizeDeliveryActualDropPoints(data, deliveryOrder, actualCargoByDoItemId);
+            const ambiguousDropMappingMessage = getAmbiguousActualDropMappingMessage(actualDropPoints, doItems);
+            if (ambiguousDropMappingMessage) {
+                return NextResponse.json({ error: ambiguousDropMappingMessage }, { status: 400 });
+            }
         } catch (error) {
             return NextResponse.json(
                 { error: error instanceof Error ? error.message : 'Muatan aktual surat jalan tidak valid' },
@@ -2178,6 +2258,10 @@ export async function handleDeliveryOrderDriverStatusRequest(
             actualVolumeInputUnit: item.actualVolumeInputUnit,
         }));
         pendingDriverActualDropPoints = normalizeDeliveryActualDropPoints(data, deliveryOrder, actualCargoByDoItemId);
+        const ambiguousDropMappingMessage = getAmbiguousActualDropMappingMessage(pendingDriverActualDropPoints, doItems);
+        if (ambiguousDropMappingMessage) {
+            return NextResponse.json({ error: ambiguousDropMappingMessage }, { status: 400 });
+        }
     } catch (error) {
         return NextResponse.json(
             { error: error instanceof Error ? error.message : 'Muatan aktual draft driver tidak valid' },

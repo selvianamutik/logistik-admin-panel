@@ -2193,21 +2193,49 @@
     "_updatedAt": "2026-04-19T15:24:41.71+00:00"
   },
   {
-    "ket": "Tagihan distribusi retail.",
+    "ket": "Tagihan distribusi retail - beras.",
     "dari": "Gudang PT Gading Mas Surya - Tulangan",
     "date": "2026-03-03",
     "noSJ": "DO-202603-0001",
     "doRef": "do-001",
     "tarip": 15000,
-    "barang": "Beras premium 25 kg, Minyak goreng kemasan",
-    "collie": 10,
+    "barang": "Beras premium 25 kg",
+    "collie": 4,
     "tujuan": "Jl. Pelabuhan No. 5, Surabaya",
-    "uangRp": 3000000,
-    "beratKg": 200,
+    "uangRp": 1200000,
+    "beratKg": 80,
     "notaRef": "nota-001",
     "doNumber": "DO-202603-0001",
+    "deliveryOrderItemRef": "doi-001",
+    "deliveryOrderItemRefs": [
+      "doi-001"
+    ],
     "vehiclePlate": "W 8123 GS",
     "_id": "notaitem-001",
+    "_type": "freightNotaItem",
+    "_createdAt": "2026-04-19T15:24:41.71+00:00",
+    "_updatedAt": "2026-04-19T15:24:41.71+00:00"
+  },
+  {
+    "ket": "Tagihan distribusi retail - minyak.",
+    "dari": "Gudang PT Gading Mas Surya - Tulangan",
+    "date": "2026-03-03",
+    "noSJ": "DO-202603-0001",
+    "doRef": "do-001",
+    "tarip": 15000,
+    "barang": "Minyak goreng kemasan",
+    "collie": 6,
+    "tujuan": "Jl. Pelabuhan No. 5, Surabaya",
+    "uangRp": 1800000,
+    "beratKg": 120,
+    "notaRef": "nota-001",
+    "doNumber": "DO-202603-0001",
+    "deliveryOrderItemRef": "doi-002",
+    "deliveryOrderItemRefs": [
+      "doi-002"
+    ],
+    "vehiclePlate": "W 8123 GS",
+    "_id": "notaitem-001b",
     "_type": "freightNotaItem",
     "_createdAt": "2026-04-19T15:24:41.71+00:00",
     "_updatedAt": "2026-04-19T15:24:41.71+00:00"
@@ -3234,13 +3262,13 @@
     "actualDropPoints": [
       {
         "_key": "do-011-drop-1",
-        "note": "Batch pertama diinapkan di gudang transit karena gudang Cakung penuh. Tagihan tetap Jakarta Timur.",
+        "note": "Batch pertama diterima di Cakung. Sisa order tetap hold di gudang transit dan akan dibuat trip lanjutan.",
         "qtyKoli": 50,
         "sequence": 1,
-        "stopType": "HOLD",
+        "stopType": "DROP",
         "weightKg": 1000,
-        "locationName": "Gudang Transit Bekasi",
-        "locationAddress": "Jl. Raya Industri MM2100 Blok A, Bekasi",
+        "locationName": "Gudang Proyek Baja Cakung",
+        "locationAddress": "Jl. Pergudangan Cakung No. 22, Jakarta Timur",
         "weightInputUnit": "TON",
         "weightInputValue": 1
       }
